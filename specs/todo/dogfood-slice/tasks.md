@@ -431,7 +431,7 @@
 - **Domain/agent**: go-implementer
 - **Budget**: complex
 - **Depends on**: Task 12
-- **Change**: `adapters/claudecode` probe and capabilities (design §6.1). Add admission for billing posture (§6.2 steps 1–4): environment overrides, the settings inventory with `native_config` trust grants, `auth status` evidence, declarations, `subscription-only` blocking, and `subscription-declared` labelling. Windows is blocked. Write ADR 0002 (dogfood billing posture), marked for maintainer decision.
+- **Change**: `adapters/claudecode` probe and capabilities (design §6.1). Add admission for billing posture (§6.2 steps 1–4): environment overrides, the settings inventory with `native_config` trust grants, `auth status` evidence, declarations, `subscription-only` blocking, and `subscription-declared` labelling. Windows is blocked. Write ADR 0002 (dogfood billing posture), recording the maintainer decisions of 2026-09-29: `subscription-declared` is the dogfood default and the opt-in `CLAUDE_CODE_OAUTH_TOKEN` route follows AC-4.7.
 - **Files**:
   - `adapters/claudecode/probe.go`
   - `adapters/claudecode/compat.go`
