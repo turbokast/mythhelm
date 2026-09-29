@@ -188,18 +188,29 @@ expect_rc 0 "the worktree's own markers clear it" "$HOOK" "$P"
 R="$MAIN"
 payload; expect_rc 0 "the orchestrator's main checkout has no claim" "$HOOK" "$P"
 
-echo "== fail-open paths =="
-repo failopen
+echo "== the checker cannot decide: fail closed on a possible claim, never trap =="
+repo failclosed
 claim; edited_by_session
 payload
+OUT="$(printf '%s' "$P" | HOOK_PYTHON_PROBE=no-such-python "$HOOK" 2>"$TEST_TMP/err")"; RC=$?
+check "python3 missing with a changed tasks.md blocks" [ "$RC" == 2 ]
+check "the block is the stanza naming the tasks.md" grep -q '^File: specs/in-progress/demo/tasks.md' "$TEST_TMP/err"
+payload Stop true
 OUT="$(printf '%s' "$P" | HOOK_PYTHON_PROBE=no-such-python "$HOOK" 2>/dev/null)"; RC=$?
-check "python3 missing: the stop is allowed" [ "$RC" == 0 ]
-check "and the user is told the gate did not run" grep -q 'systemMessage' <<<"$OUT"
-expect_rc 0 "a payload that is not JSON is allowed with a notice" "$HOOK" "not json"
-rm -rf "$R/.claude/data" && mkdir -p "$R/.claude" && : > "$R/.claude/data"
-expect_rc 0 "an internal error (state directory unwritable) never becomes a block" "$HOOK" "$P"
-check "and says the gate did not run" grep -q 'internal error' <<<"$OUT"
+check "the stop after it is allowed" [ "$RC" == 0 ]
+check "with a notice to the user" grep -q 'systemMessage' <<<"$OUT"
+payload
+mkdir -p "$R/.claude" && : > "$R/.claude/data"
+expect_rc 2 "an internal error (state directory unwritable) with a possible claim blocks" "$HOOK" "$P"
+expect_err "the checker could not decide (exit 3: internal error" "the block says why"
 rm -f "$R/.claude/data"
+repo noclaim-fault
+echo "// edit" >> "$R/internal/x/x.go"
+payload
+OUT="$(printf '%s' "$P" | HOOK_PYTHON_PROBE=no-such-python "$HOOK" 2>/dev/null)"; RC=$?
+check "python3 missing with no tasks.md change allows" [ "$RC" == 0 ]
+check "and tells the user the gate did not run" grep -q 'did not run' <<<"$OUT"
+expect_rc 0 "a payload that is not JSON, with no repository to inspect, is allowed" "$HOOK" "not json"
 P3="$(jq -c --arg d "$TEST_TMP" '.cwd = $d' <<<"$P")"
 expect_rc 0 "a cwd outside any repository is allowed" "$HOOK" "$P3"
 

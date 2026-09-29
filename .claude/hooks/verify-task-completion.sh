@@ -29,10 +29,15 @@
 # session forever; the release is shown to the user.
 #
 # The logic lives in scripts/harness/gatelib.py (stop-hook), next to the gate
-# runner, so the marker format and the fingerprint have one implementation. When
-# python3 is missing or the checker crashes, the hook allows the stop and says so
-# in a systemMessage: a Stop hook that fails closed would trap every session.
+# runner, so the marker format and the fingerprint have one implementation.
 #
+# When the checker cannot decide (python3 missing, a payload that is not JSON, an
+# internal error), this wrapper fails closed on what it guards and allows the
+# rest: it blocks when a spec's tasks.md differs from the base in the payload's
+# tree, so a completion claim may exist, and allows every other stop with a
+# notice. A stop with stop_hook_active=true after such a block is allowed with the
+# notice, so an environment fault costs one extra turn and never traps a session.
+
 # Residual: a completion claim made without editing tasks.md through a tool the
 # transcript records (for example by a script the session ran) is attributed only
 # when the command names the file.
@@ -43,13 +48,40 @@ HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHECKER="$HOOK_DIR/../../scripts/harness/gatelib.py"
 payload="$(cat)"
 
-notice() {
-  python3 -c 'import json, sys; print(json.dumps({"systemMessage": "verify-task-completion: " + sys.argv[1]}))' "$1"
+notice() {   # a systemMessage for the user; printf-escaped by hand, python3 may be missing
+  local m="verify-task-completion: $1"
+  m="${m//\\/\\\\}"
+  m="${m//\"/\\\"}"
+  printf '{"systemMessage":"%s"}\n' "$m"
+}
+
+# fallback <why>: the checker could not decide; fail closed only on a possible claim.
+fallback() {
+  local why="$1" cwd="" base="" changed=""
+  if [[ "$payload" =~ \"cwd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    cwd="${BASH_REMATCH[1]}"
+  fi
+  cwd="${cwd:-${CLAUDE_PROJECT_DIR:-$PWD}}"
+  if git -C "$cwd" rev-parse --show-toplevel >/dev/null 2>&1; then
+    base="$(git -C "$cwd" merge-base HEAD origin/main 2>/dev/null || echo HEAD)"
+    changed="$( { git -C "$cwd" diff --name-only "$base" -- 'specs/*/*/tasks.md' 2>/dev/null
+                  git -C "$cwd" ls-files --others --exclude-standard -- 'specs/*/*/tasks.md' 2>/dev/null; } | head -5)"
+  fi
+  if [[ -z "$changed" ]]; then
+    notice "$why; no tasks.md changed, so no completion claim was possible."
+    exit 0
+  fi
+  if [[ "$payload" =~ \"stop_hook_active\"[[:space:]]*:[[:space:]]*true ]]; then
+    notice "$why; a completion may be claimed in ${changed//$'\n'/, } but was not verified."
+    exit 0
+  fi
+  printf 'BLOCK: verify-task-completion\nFile: %s\nDetail: %s, and tasks.md differs from the base, so a completion claim cannot be ruled out. A guard fails closed on what it cannot check.\nFix: repair the checker (install python3 3.10+, or run python3 scripts/harness/gatelib.py stop-hook with the payload to see the error), then stop again; a second stop is allowed with a notice.\n' \
+    "${changed//$'\n'/, }" "$why" >&2
+  exit 2
 }
 
 if ! command -v "${HOOK_PYTHON_PROBE:-python3}" >/dev/null 2>&1; then
-  printf '{"systemMessage":"verify-task-completion: python3 is not installed, so the task-completion gate did not run. Install python3 3.10+."}\n'
-  exit 0
+  fallback "python3 is not installed, so the task-completion gate did not run"
 fi
 
 rc=0
@@ -60,7 +92,7 @@ case "$rc" in
     exit "$rc"
     ;;
   *)
-    notice "the checker failed (exit $rc), so the task-completion gate did not run; run python3 scripts/harness/gatelib.py stop-hook with the payload to see why."
-    exit 0
+    out="${out//$'\n'/ }"
+    fallback "the checker could not decide (exit $rc${out:+: ${out:0:200}})"
     ;;
 esac

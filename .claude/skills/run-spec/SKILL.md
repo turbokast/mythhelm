@@ -49,7 +49,7 @@ The orchestrator decides only from mechanical facts: `scripts/harness/runspec.py
    ```
 
    Commit the move (both paths) and `handoff.md`, push, and open it titled `docs(spec): start <spec> implementation`. Merge it through `/run-spec-worktree-merge` with `runspec.py pr-check --lifecycle`, then `git fetch origin`. Task pull requests already open against the old path merge cleanly after it: git's rename detection carries their edits.
-2. **Resume.** For every incomplete task, look for its open pull request (`gh pr list --state open --limit 200 --json number,title,headRefName --jq '.[] | select(.title | endswith("(<alias> task <N>)"))'`). A task with one is **in flight**: it goes straight to the review loop (`/run-spec-worktree-merge`), never to a second dispatch.
+2. **Resume.** For every incomplete task, look for its open pull request (`gh pr list --state open --search '"<alias> task <N>" in:title' --json number,title,headRefName --jq '.[] | select(.title | endswith("(<alias> task <N>)"))'`). A task with one is **in flight**: it goes straight to the review loop (`/run-spec-worktree-merge`), never to a second dispatch.
 3. Record the baseline: `python3 scripts/harness/runspec.py status specs/in-progress/<spec>/tasks.md --in-flight <in-flight tasks>`. A non-empty `marker_mismatch` (a task complete by heading or by Status, not both) is bookkeeping to backfill with `completion-clerk` through a small pull request; it never blocks scheduling.
 
 ## Phase 2 — Execution loop

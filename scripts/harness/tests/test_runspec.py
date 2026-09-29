@@ -354,6 +354,32 @@ class HandoffTests(Tmp):
         self.assertIn("journal gotcha", out)
         self.assertIn("Task 4 — Security (from none)", out)
 
+    def test_handoff_is_capped_and_can_read_the_merged_state(self):
+        repo = os.path.join(self.tmp, "r")
+        new_repo(repo)
+        d = os.path.join(repo, "specs", "in-progress", "demo")
+        write(os.path.join(d, "tasks.md"), TASKS)
+        runspec.handoff_seed(d)
+        hp = os.path.join(d, "handoff.md")
+        long_note = "\n".join("- merged note %d" % i for i in range(40))
+        write(hp, read(hp).replace("## Task 1 — Module skeleton\n\n%s" % runspec.PENDING_PLACEHOLDER,
+                                   "## Task 1 — Module skeleton\n\n" + long_note))
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "merged")
+        write(hp, read(hp).replace("- merged note 0", "- uncommitted local edit"))
+        cwd = os.getcwd()
+        os.chdir(repo)
+        try:
+            _, merged = runspec.handoff_for("specs/in-progress/demo", 2, ref="HEAD")
+            _, local = runspec.handoff_for("specs/in-progress/demo", 2)
+        finally:
+            os.chdir(cwd)
+        self.assertIn("merged note 0", merged)
+        self.assertNotIn("uncommitted local edit", merged)
+        self.assertIn("uncommitted local edit", local)
+        self.assertIn("truncated at %d lines" % runspec.HANDOFF_MAX_LINES, merged)
+        self.assertNotIn("merged note 39", merged)
+
     def test_parallel_fills_of_adjacent_sections_merge_cleanly(self):
         repo = os.path.join(self.tmp, "r")
         new_repo(repo)

@@ -53,7 +53,7 @@ At most one bookkeeping fix per task; a second means a real failure.
 
 ## Lost and stalled workers
 
-- **Lost.** A dispatch that came back empty is unknown, not failed. Before retrying, look: `gh pr list --state all --limit 200 --json number,title,headRefName --jq '.[] | select(.title | endswith("(<alias> task <N>)"))'` and `git ls-remote origin '<type>/<alias>-t<N>'`. A pull request or branch means the work happened: verify it as a return (`/run-spec` Phase 2 step 3) and record `return`. Nothing at all: record `lost`, then retry.
+- **Lost.** A dispatch that came back empty is unknown, not failed. Before retrying, look: `gh pr list --state all --search '"<alias> task <N>" in:title' --json number,title,headRefName --jq '.[] | select(.title | endswith("(<alias> task <N>)"))'` and `git ls-remote origin '<type>/<alias>-t<N>'`. A pull request or branch means the work happened: verify it as a return (`/run-spec` Phase 2 step 3) and record `return`. Nothing at all: record `lost`, then retry.
 - **Stalled.** A worker that ends its turn "waiting for" a command, CI or a notification is not failed. A subagent is never notified when its own background command ends. Check the evidence (the branch, the pull request's checks, the gate markers in its worktree), then `SendMessage` the same worker with what you found and the remaining steps, restating that every command runs in the foreground. Never dispatch a duplicate while the first worker can still be resumed.
 - **Long-running.** The Agent tool cannot abort a worker. One that has not returned an hour after dispatch is checked the same way; if it is still working, let it finish and report the overrun.
 

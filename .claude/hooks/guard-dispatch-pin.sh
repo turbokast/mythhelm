@@ -18,10 +18,12 @@
 # or one of the read-only built-ins Explore and Plan. Anything else blocks
 # (exit 2, BLOCK/Command/Detail/Fix stanza).
 #
-# Fails open: missing jq, an unreadable payload or transcript, or no project
-# directory allows the dispatch. The guard enforces a routing convention, not a
-# safety property, and must never wedge dispatch; the routing lint and the
-# run summary's agent column are the backstop.
+# Fails closed on what it guards (.claude/rules/strict-by-default.md): when jq is
+# missing or the payload is not JSON, it blocks a payload that names the Agent or
+# Task tool and allows the rest; when the transcript cannot be read, the session
+# is treated as in scope, so the pins are enforced rather than skipped. Without a
+# project .claude/agents directory it cannot check a name, so it blocks only the
+# unpinned forms (omitted, general-purpose, claude, fork).
 
 set -euo pipefail
 
@@ -29,38 +31,53 @@ HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=hook-helpers.sh
 . "$HOOK_DIR/hook-helpers.sh"
 
-command -v "${HOOK_JQ_PROBE:-jq}" >/dev/null 2>&1 || exit 0
+HH_GUARD=guard-dispatch-pin
 input="$(cat)"
-fields="$(printf '%s' "$input" | jq -r '[
+names_agent_tool() { [[ "$input" =~ \"tool_name\"[[:space:]]*:[[:space:]]*\"(Agent|Task)\" ]]; }
+if ! command -v "${HOOK_JQ_PROBE:-jq}" >/dev/null 2>&1; then
+  names_agent_tool || exit 0
+  HH_COMMAND="<unparsed Agent payload>"
+  hh_block "jq is not installed, so ${HH_GUARD} cannot read this Agent dispatch. A guard fails closed on what it cannot parse." \
+    "Install jq (apt install jq / brew install jq) from your own terminal, then retry."
+fi
+if ! fields="$(printf '%s' "$input" | jq -r '[
     (.tool_name // ""),
     (if (.tool_input // {}) | has("subagent_type") then (.tool_input.subagent_type // "") else "<omitted>" end),
     (.transcript_path // ""),
     (.cwd // "")
-  ] | map(gsub("[\u001f\n]"; " ")) | join("\u001f")' 2>/dev/null)" || exit 0
+  ] | map(gsub("[\u001f\n]"; " ")) | join("\u001f")' 2>/dev/null)"; then
+  names_agent_tool || exit 0
+  HH_COMMAND="<unparsed Agent payload>"
+  hh_block "the hook payload is not valid JSON and names the Agent tool, so the dispatch cannot be checked." \
+    "Retry the dispatch. If this persists, report the malformed payload."
+fi
 # A non-whitespace separator, so an empty subagent_type stays an empty field.
 IFS=$'\x1f' read -r tool agent transcript cwd <<<"$fields"
 [[ "$tool" == Agent || "$tool" == Task ]] || exit 0
-[[ -n "$transcript" && -r "$transcript" ]] || exit 0
 
-grep -Eq '"skill" *: *"(run-spec|implement)"|command-name>/?(run-spec|implement)<' "$transcript" 2>/dev/null || exit 0
+# In scope when the transcript shows an implementation skill, or cannot be read.
+if [[ -n "$transcript" && -r "$transcript" ]]; then
+  grep -Eq '"skill" *: *"(run-spec|implement)"|command-name>/?(run-spec|implement)<' "$transcript" 2>/dev/null || exit 0
+fi
 
 project="${CLAUDE_PROJECT_DIR:-}"
 if [[ -z "$project" && -n "$cwd" ]]; then
   project="$( (cd "$cwd" && git rev-parse --show-toplevel) 2>/dev/null || true)"
 fi
-[[ -n "$project" && -d "$project/.claude/agents" ]] || exit 0
+agents_dir=""
+[[ -n "$project" && -d "$project/.claude/agents" ]] && agents_dir="$project/.claude/agents"
 
 case "$agent" in
   Explore|Plan) exit 0 ;;
   "<omitted>"|""|general-purpose|claude|fork) ;;
   *)
-    if [[ "$agent" =~ ^[a-z0-9][a-z0-9-]*$ && -f "$project/.claude/agents/$agent.md" ]]; then
+    [[ -n "$agents_dir" ]] || exit 0
+    if [[ "$agent" =~ ^[a-z0-9][a-z0-9-]*$ && -f "$agents_dir/$agent.md" ]]; then
       exit 0
     fi
     ;;
 esac
 
-HH_GUARD=guard-dispatch-pin
 HH_COMMAND="$tool(subagent_type=$agent)"
 hh_block "this session is running /run-spec or /implement, and a dispatch without a project agent runs on the session's own model: the agent's model and effort pins never engage (knowledge/agent-routing.md)." \
   "Name the agent the task's Domain/agent line gives, e.g. subagent_type=\"go-implementer\" (agents: .claude/agents/), and pass no model. Read-only research may use Explore or Plan."

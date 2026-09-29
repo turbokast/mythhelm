@@ -9,7 +9,7 @@ from parsed facts and GitHub state, never from an agent's prose.
     runspec.py closure      <tasks.md> <N>                  transitive dependencies of N
     runspec.py entry-check  <tasks.md> <N> [--pr P]         completion entry well-formed
     runspec.py handoff-seed <spec-dir>                      create or extend handoff.md
-    runspec.py handoff      <spec-dir> <N>                  hand-off notes of N's dependencies
+    runspec.py handoff      <spec-dir> <N> [--ref origin/main]  hand-off notes of N's dependencies
     runspec.py report       [--file F]                      parse a task-report block
     runspec.py deps-merged  <spec-name> <N> [--ref origin/main] [--no-fetch]
     runspec.py pr-check     --spec <name> (--task <N> | --lifecycle) --pr <P> [--repo O/R]
@@ -401,17 +401,27 @@ def handoff_seed(spec_dir):
     return path, added
 
 
-def handoff_for(spec_dir, n):
-    tasks = load_tasks(os.path.join(spec_dir, "tasks.md"))
-    idx = by_number(tasks)
-    deps = closure(tasks, n)
+HANDOFF_MAX_LINES = 20
 
+
+def handoff_for(spec_dir, n, ref=None):
+    """(dependencies, text): the hand-off sections of task n's transitive dependencies,
+    each capped at HANDOFF_MAX_LINES lines. With ref, every file is read from that git ref
+    (the merged, reviewed state) instead of the working tree."""
     def read(name):
+        if ref:
+            r = run(["git", "show", "%s:%s" % (ref, os.path.join(spec_dir, name))], check=False)
+            return r.stdout if r.returncode == 0 else ""
         try:
             with open(os.path.join(spec_dir, name), encoding="utf-8") as fh:
                 return fh.read()
         except OSError:
             return ""
+    tasks = parse_tasks(read("tasks.md"))
+    if not tasks:
+        raise Usage("no '### Task N' blocks in %s/tasks.md%s" % (spec_dir, " at " + ref if ref else ""))
+    idx = by_number(tasks)
+    deps = closure(tasks, n)
     sections = handoff_sections(read("handoff.md"))
     scratch = scratchpad_entries(read("scratchpad.md"))
     out = []
@@ -423,7 +433,10 @@ def handoff_for(spec_dir, n):
             source = "scratchpad.md"
         if not body:
             body, source = "(no hand-off recorded)", "none"
-        out.append("### Task %d — %s (from %s)\n\n%s" % (d, idx[d]["name"], source, body))
+        lines = body.split("\n")
+        if len(lines) > HANDOFF_MAX_LINES:
+            lines = lines[:HANDOFF_MAX_LINES] + ["(truncated at %d lines; the full text is in %s)" % (HANDOFF_MAX_LINES, source)]
+        out.append("### Task %d — %s (from %s)\n\n%s" % (d, idx[d]["name"], source, "\n".join(lines)))
     return deps, "\n\n".join(out)
 
 
@@ -732,6 +745,7 @@ def cmd_main(argv):
     p.add_argument("--pr", type=int)
     p = sub.add_parser("handoff-seed"); p.add_argument("spec_dir")
     p = sub.add_parser("handoff"); p.add_argument("spec_dir"); p.add_argument("n", type=int)
+    p.add_argument("--ref", help="read the spec files from this git ref, e.g. origin/main")
     p = sub.add_parser("report"); p.add_argument("--file")
     p = sub.add_parser("deps-merged"); p.add_argument("spec"); p.add_argument("n", type=int)
     p.add_argument("--ref", default="origin/main"); p.add_argument("--no-fetch", action="store_true")
@@ -775,7 +789,7 @@ def cmd_main(argv):
         path, added = handoff_seed(a.spec_dir)
         print("handoff-seed: %s: added sections for tasks %s" % (path, added or "none"))
     elif a.cmd == "handoff":
-        deps, text = handoff_for(a.spec_dir, a.n)
+        deps, text = handoff_for(a.spec_dir, a.n, a.ref)
         print(text if deps else "(task %d has no dependencies)" % a.n)
     elif a.cmd == "report":
         text = open(a.file, encoding="utf-8").read() if a.file else sys.stdin.read()

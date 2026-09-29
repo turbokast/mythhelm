@@ -37,7 +37,7 @@ contract. override writes the session's escape hatch and its audit row.
 
 Exit codes: run 0 all passed, 1 a gate failed or was not recorded, 2 usage, 127 a
 gate's tool is missing; status 0 all required gates fresh, 1 otherwise; stop-hook
-0 allow, 2 block.
+0 allow, 2 block, 3 could not decide (the hook wrapper then fails closed on a possible claim).
 """
 
 import argparse
@@ -375,8 +375,8 @@ def stop_hook(stdin_text, env=os.environ):
     try:
         payload = json.loads(stdin_text or "{}")
     except ValueError:
-        emit_system_message("verify-task-completion: the Stop payload is not JSON; the completion gate did not run.")
-        return 0
+        print("the Stop payload is not JSON")
+        return 3
     sid = safe_id(payload.get("session_id"))
     cwd = payload.get("cwd") or env.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     event = payload.get("hook_event_name") or "Stop"
@@ -486,9 +486,9 @@ def main(argv=None):
     if a.cmd == "stop-hook":
         try:
             return stop_hook(sys.stdin.read())
-        except Exception as e:  # noqa: BLE001  exit 2 is a block, so no internal error may reach it
-            emit_system_message("verify-task-completion: internal error, the completion gate did not run: %s" % e)
-            return 0
+        except Exception as e:  # noqa: BLE001  exit 2 is a verdict, so an internal error must not produce it
+            print("internal error: %s" % e)
+            return 3
     try:
         root = toplevel(a.root)
         if a.cmd == "run":
