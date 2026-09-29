@@ -52,7 +52,7 @@ native agent (claude -p ... | mythhelm __fake-agent ...)
 - **Single SQLite writer per run.** The worker never opens SQLite; it owns only its attempt directory. Whichever process holds `owner.lock` ingests the spool into the journal (flock via `golang.org/x/sys/unix`, `LockFileEx` on Windows). The OS releases the lock when that process dies, so a lock can't go stale while its holder lives, and a live holder is never pre-empted (§18.4 stale-lease row). This is the slice's substitute for the per-user daemon (N11). Writes from different runs are serialised by SQLite transactions with `busy_timeout`.
 - **Identity** (§7.3). The supervisor accepts a worker only if all three of these match: `worker.json.launch_token` equals the journaled token, the PID is alive, and the PID's start time equals `worker.json.start_time`. Start time comes from `/proc/<pid>/stat` field 22 on Linux, `sysctl kern.proc.pid` (`unix.SysctlKinfoProc`) on macOS, and `GetProcessTimes` on Windows. A PID that is alive but has a different start time is a reused PID (AC-10.3).
 - **Native launch window.** The worker writes `native_launch_intent` before `exec.Cmd.Start` and the PID and PGID after it. If it crashes between those writes, recovery reports `ownership_unresolved`. On Linux it also scans `/proc/*/environ` for the marker `MYTHHELM_ATTEMPT_ID=<id>`, which is set in the child environment, and lists matching PIDs without signalling them. macOS prints the marker for manual inspection. Where ownership cannot be proven, the slice says so (§7.4).
-- **Stop ladder.** The adapter supplies it; the worker executes it on the process group. `claudecode` sends SIGTERM (documented: exit 143, turn left unfinished), waits 10 s, then sends SIGKILL. `fake` sends SIGINT, waits 3 s, sends SIGTERM, waits 3 s, then sends SIGKILL, so the whole ladder is exercised. While a stop request is active, any native exit, whatever its code or signal (130 after SIGINT, 143 after SIGTERM, SIGKILL), is classified as `stopped`, never `failed_native`. A stop is confirmed only when `kill(-pgid, 0)` returns `ESRCH`. Descendants that leave the group, for example through `setsid`, are not tracked; if any are known, the worker reports `unresolved_descendants` with their PIDs (AC-5.6). On Windows, the fake child is a single process stopped with `Process.Kill` and confirmed by `Wait`. `claudecode` is blocked on Windows (N7).
+- **Stop ladder.** The adapter supplies it; the worker executes it on the process group. `claudecode` sends SIGTERM (documented: exit 143, turn left unfinished), waits 10 s, then sends SIGKILL. `fake` sends SIGINT, waits 3 s, sends SIGTERM, waits 3 s, then sends SIGKILL, so the whole ladder is exercised. While a stop request is active, any native exit, whatever its code or signal (130 after SIGINT, 143 after SIGTERM, SIGKILL), is classified as `stopped`, never `failed_native`. A stop is confirmed only when `kill(-pgid, 0)` returns `ESRCH`. Descendants that leave the group, for example through `setsid`, are not tracked; if any are known, the worker reports `unresolved_descendants` with their PIDs (AC-5.6). A non-empty `unresolved_pids` set blocks freezing, because an escaped descendant could still write to the workspace. In that case the attempt becomes `quarantined` and the run becomes `interrupted` with reason `unresolved_descendants` (exit 6). `recover` re-checks each PID by PID and start time, and freezes only once all of them are gone. On Windows, the fake child is a single process stopped with `Process.Kill` and confirmed by `Wait`. `claudecode` is blocked on Windows (N7).
 - **Foreground Ctrl-C** (AC-5.5). The first SIGINT writes `stop.request` and prints `stop requested — waiting for worker confirmation`; the command exits 130 after `attempt.stopped`. A second SIGINT detaches, exiting 6 with `stop not yet confirmed; run 'mythhelm recover <id>'`. Terminal hangup and SIGKILL of the CLI leave the worker running. `runs list` then shows `executing (worker alive, unattached)` and `recover` reattaches.
 
 ### 4. State machines (§7.2 subset)
@@ -68,7 +68,7 @@ Run states and transitions. Any other transition is rejected by `supervisor.Tran
 | `ready_for_review` | `applying` |
 | `applying` | `completed`, `blocked` (`branch_exists`, `base_missing`, `flags_unaccepted`) |
 | `stopping` | `cancelled`, `interrupted` (`stop_unconfirmed`) |
-| `interrupted` | `recovering` |
+| `interrupted` (`stop_unconfirmed`, `unresolved_descendants`, `worker_lost`) | `recovering` |
 | `recovering` | `executing`, `verifying`, `failed`, `interrupted` (`quarantined`) |
 
 `blocked`, `failed`, `cancelled` and `completed` are terminal. The planning and integrating states are not entered (N4): with one candidate based on the admitted snapshot, the candidate commit is the combined revision, and the receipt says so.
@@ -137,6 +137,8 @@ CREATE TABLE declarations (
   identity_ref TEXT NOT NULL,  -- sha256(orgId || configDirectory) from auth status
   declared_at TEXT NOT NULL, superseded_at TEXT
 ) STRICT;
+-- at most one current declaration per adapter and identity; declaring supersedes the previous row in the same transaction
+CREATE UNIQUE INDEX declarations_current ON declarations (adapter_id, identity_ref) WHERE superseded_at IS NULL;
 CREATE TABLE applies (
   apply_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id),
   target_repo TEXT NOT NULL, branch TEXT NOT NULL, candidate_commit TEXT NOT NULL,
@@ -181,7 +183,7 @@ Event types are listed below. A leading `*` means the event is durable and criti
 | `*attempt.native_session` | `{session_id, model, native_version, permission_mode, auth_source, tool_count, mcp:[{name,status}], plugin_count}` |
 | `attempt.progress` | at most one per second: `{assistant_turns, tool_uses:{name:count}, retries}` |
 | `*attempt.permission_denied` | `{tool_name}` |
-| `*attempt.native_result` | `{subtype, is_error, exit_code, num_turns, duration_ms, stop_reason, usage_native_reported, retail_equivalent_estimate_usd, denials}` |
+| `*attempt.native_result` | `{exit_code, signal, stop_requested, result_observed, subtype, is_error, num_turns, duration_ms, stop_reason, usage_native_reported, retail_equivalent_estimate_usd, denials}`. It is emitted for every native exit, including stopped ones. When no result frame was observed, `result_observed` is `false` and every result field is an explicit `null`, never omitted and never `0`. The terminal attempt state is carried separately by `attempt.state_changed`. |
 | `*attempt.stop_requested`, `*attempt.stopped` | `{requested_by}` / `{confirmed, unresolved_pids}` |
 | `*attempt.state_changed` | `{state, reason}` |
 | `attempt.protocol_counters` | `{malformed, oversized, invalid_utf8, depth_exceeded, unknown_types}` |
@@ -334,7 +336,7 @@ Scenarios:
 
 **Freeze** (FR-6).
 
-1. After `attempt.stopped` or a native exit is confirmed, run with a temporary `GIT_INDEX_FILE`: `add -A`, then `write-tree`, then `commit-tree <tree> -p <base_rev>` with the message `<first heading of task.md>` plus a `MYTHHELM-Run: <run_id>` trailer. Author and committer come from the user's git identity, read at admission.
+1. After `attempt.stopped` or a native exit is confirmed, and only when `unresolved_pids` is empty (§3), run with a temporary `GIT_INDEX_FILE`: `add -A`, then `write-tree`, then `commit-tree <tree> -p <base_rev>` with the message `<first heading of task.md>` plus a `MYTHHELM-Run: <run_id>` trailer. Author and committer come from the user's git identity, read at admission.
 2. Point `update-ref refs/mythhelm/candidates/<att>` at the commit.
 3. Collect changed paths and blob IDs with `diff-tree -r --no-renames -z <base> <commit>`, and compute `patch_sha256` over `diff --binary <base> <commit>`.
 4. Validation flags: `symlink_escape`, `binary`, `large_file` (> 1 MiB), `check_config_changed` (`mythhelm.toml`), `test_files_changed` (paths matching `_test.go`, `/testdata/` or `tests/`), `secret_pattern` (the §12.7 regex set, path and pattern name only), and `ignored_outputs` (from `status --ignored` counts).

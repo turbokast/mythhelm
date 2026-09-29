@@ -247,6 +247,7 @@
   - `TestWorkerSurvivesParentExit` (Linux, macOS): kill the spawning test helper; the worker keeps writing heartbeats.
   - `TestStopLadderEscalatesToKill`: the `ignore-term` scenario goes SIGINT → SIGTERM → SIGKILL, and `attempt.stopped{confirmed:true}` is reached.
   - `TestFakeStopExit130ClassifiedStopped`: a child that exits 130 on the first SIGINT is recorded as `stopped`, not `failed_native`.
+  - `TestStoppedExitEmitsNativeResultWithNulls`: a stopped attempt's `attempt.native_result` has `result_observed:false` and explicit `null` result fields, and its attempt state is `stopped`.
   - `TestUnresolvedDescendantReported` (Linux, macOS): the `escapee` scenario reports a PID in `unresolved_pids`.
   - `TestSpoolSequencesContiguous`.
   - `TestCriticalEventsFsynced`: through the injected `syncer` seam.
@@ -312,6 +313,7 @@
   - `TestFreezeIncludesUncommittedAndUntracked`.
   - `TestFreezeIgnoresAgentMovedHEAD`: the agent committed and then reset; the candidate still reflects the working tree, with its parent on the admitted base.
   - `TestFreezeWaitsForStopConfirmation`.
+  - `TestFreezeRefusedWithUnresolvedDescendants` (Linux, macOS): with the `escapee` scenario, the run ends `interrupted`/`unresolved_descendants` with exit 6. No candidate row exists, and `apply` refuses.
   - `TestFlagsSymlinkEscapeBinaryLargeSecretConfigChange`: one subtest per flag.
   - `TestCandidateHasNoSignedOffBy`.
 - **Test plan**: fixture workspaces; secret fixtures use obviously fake values.
@@ -450,14 +452,15 @@
   - `TestSettingsEnvCredentialBlocksNoStripOption`.
   - `TestApiKeyHelperBlocks`.
   - `TestAuthStatusMismatchNeedsNativeSetup`: fakeclaude returns `authMethod:"console"`.
-  - `TestAuthStatusPIIDropped`: `email` and `orgName` are never persisted; `orgId` is stored hashed.
+  - `TestAuthStatusPIIDropped`: `email` and `orgName` are never persisted. The raw `orgId` fixture value appears nowhere in the database, the receipt or the logs; only `identity_ref` does.
   - `TestUntestedMinorVersionExit7`.
   - `TestResolvedVersionedBinaryLaunched`.
   - `TestWindowsClaudecodeExit7`.
   - `TestProjectHooksRequireNativeTrust`.
   - `TestUserScopeMCPRequiresNativeTrust`: an MCP server defined in the `~/.claude.json` fixture, at user scope and per project, blocks without a grant.
   - `TestClaudeJSONAccountDataNeverDecoded`: the planted session and account fields in `~/.claude.json` are absent from the decode struct (it has no such fields), and the planted values never appear in the manifest or under the state dir.
-  - `TestDeclarationBoundToIdentity`: after an account switch (a different `orgId`), the old declaration is rejected with `declaration_identity_mismatch`.
+  - `TestDeclarationBoundToIdentity`: changing `orgId`, or changing `configDirectory`, gets the old declaration rejected with `declaration_identity_mismatch`. Each is a separate subtest.
+  - `TestSingleCurrentDeclaration`: declaring twice leaves exactly one row with `superseded_at IS NULL`, and a direct second insert violates `declarations_current`.
 - **Test plan**: fakeclaude helper mode (design §12) serves `--version` and `auth status` fixtures; settings fixtures live in temp homes.
 - **Invariants touched**: I01, I02, I03, I04, I15 (honest non-satisfaction), I16, I19, §9.3, §13.10, G05 (recorded not-passed).
 
