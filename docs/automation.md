@@ -20,7 +20,7 @@ Every automated check, bot and housekeeping job in this repository, what it does
 
 | Automation | What it does | Trigger | Configured in | Tier |
 |---|---|---|---|---|
-| CI (`CI OK`, required) | actionlint on all workflows; once `go.mod` exists, `gofmt`, `go vet`, `go test -race` and `go mod tidy -diff` on Linux, macOS and Windows. `CI OK` aggregates the jobs. | push to `main`, PR, merge queue | `.github/workflows/ci.yml` | OSS-in-Actions |
+| CI (`CI OK`, required) | actionlint on all workflows; once `go.mod` exists, `gofmt`, `go vet`, `go test -race` and `go mod tidy -diff` on Linux, macOS and Windows; the harness self-tests (shellcheck, hook and script tests, the agent-harness lint, public hygiene). `CI OK` aggregates the jobs. | push to `main`, PR, merge queue | `.github/workflows/ci.yml` | OSS-in-Actions |
 | DCO (`DCO sign-off`, required) | Fails a PR with any commit lacking a matching `Signed-off-by`. | PR, merge queue (skipped) | `.github/workflows/dco.yml` | GitHub-native |
 | Dependency review (`Dependency review`, required) | Blocks PRs adding dependencies with moderate+ advisories or licences outside the allow-list. | PR, merge queue (skipped) | `.github/workflows/dependency-review.yml` | GitHub-native |
 | CodeQL (`Analyze (actions)`, required) | CodeQL `security-extended` analysis of the workflows. | push to `main`, PR, merge queue, weekly | `.github/workflows/codeql.yml` | GitHub-native |
