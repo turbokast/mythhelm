@@ -39,7 +39,7 @@
 - **Spec deviations**: `ExitInternal = 1` is added next to the listed constants, because design §11 requires exit 1 for unexpected errors.
 - **Files modified**: `go.mod`, `cmd/mythhelm/main.go`, `internal/cli/dispatch.go`, `internal/cli/exit.go`, `internal/cli/dispatch_test.go`, `internal/buildinfo/buildinfo.go`, `CONTRIBUTING.md`, `specs/todo/dogfood-slice/tasks.md`.
 
-### Task 2 — CI quality gates: golangci-lint, govulncheck, CodeQL Go, Dependabot gomod
+### Task 2 — CI quality gates: golangci-lint, govulncheck, CodeQL Go, Dependabot gomod ✅ COMPLETED
 
 - **Domain/agent**: release-engineer
 - **Budget**: standard
@@ -60,8 +60,13 @@
   - The PR description tells the maintainer to add `Analyze (go)` to the ruleset's required checks.
 - **Test plan**: CI run on the PR; paste the job URLs in the completion entry.
 - **Invariants touched**: §19.4 (pinned, least-privilege CI), G10.
+- **Status**: ✅ Completed — `.golangci.yml` (v2, design §13 linter set, G204 excluded in tests), CI `golangci-lint` and `govulncheck` jobs in `CI OK`, CodeQL `go`, Dependabot `gomod`; PR #8.
+- **Implementation**: golangci-lint-action v9.3.0 runs lint v2.13.2; govulncheck runs as `go run golang.org/x/vuln/cmd/govulncheck@v1.8.0`; the CodeQL Go leg runs `setup-go` from `go.mod` before `init`. The maintainer adds `Analyze (go)` to the ruleset. Commit 49d22cb.
+- **CI evidence** (merge commit 26c2cbe): [golangci-lint](https://github.com/turbokast/mythhelm/actions/runs/36613272255/job/109560081258) (`0 issues.`), [govulncheck](https://github.com/turbokast/mythhelm/actions/runs/36613272255/job/109560081285) (`No vulnerabilities found.`), [Analyze (go)](https://github.com/turbokast/mythhelm/actions/runs/36613272237/job/109559790588), [Lint workflows](https://github.com/turbokast/mythhelm/actions/runs/36613272255/job/109559791216), [zizmor](https://github.com/turbokast/mythhelm/actions/runs/36613272609/job/109559791963).
+- **Spec deviations**: golangci-lint v2.13.2, not v2.14.0, because v2.14.0 (2026-09-24) is inside the 7-day cooldown. govulncheck runs through `go run`, because `golang/govulncheck-action` is not on the repository's action allow-list. The CodeQL Go leg adds `setup-go`, so the extractor uses the toolchain pinned in `go.mod`.
+- **Files modified**: `.golangci.yml`, `.github/workflows/ci.yml`, `.github/workflows/codeql.yml`, `.github/dependabot.yml`, `docs/automation.md`, `specs/todo/dogfood-slice/tasks.md`.
 
-### Task 3 — CI supply chain and runner matrix
+### Task 3 — CI supply chain and runner matrix ✅ COMPLETED
 
 - **Domain/agent**: release-engineer
 - **Budget**: standard
@@ -77,6 +82,11 @@
   - The arm64 Go jobs pass.
 - **Test plan**: CI runs on the PR.
 - **Invariants touched**: NFR-3, §19.2, §19.4.
+- **Status**: ✅ Completed — OSV-Scanner workflow (SARIF upload), a `go-licenses` job in `CI OK` checked against the dependency-review allow-list, and the `ubuntu-24.04-arm` and `windows-11-arm` Go runners; PR #13.
+- **Implementation**: OSV-Scanner v2.6.0 and go-licenses v2.0.1 run through `go run` at pinned versions. go-licenses reads `allow-licenses` from `dependency-review.yml` at run time and checks with `--include_tests`. `windows-11-arm` runs `go test` without `-race`. Commit 4244d71.
+- **CI evidence**: [go-licenses failing on the scratch GPL branch](https://github.com/turbokast/mythhelm/actions/runs/36616296064/job/109570149904) (`Not allowed license 'GPL-3.0' found for library 'github.com/evilsocket/islazy/str'`; probe PR #14 closed, branch deleted), [Go (ubuntu-24.04-arm)](https://github.com/turbokast/mythhelm/actions/runs/36616291969/job/109570137238), [Go (windows-11-arm)](https://github.com/turbokast/mythhelm/actions/runs/36616291969/job/109570137336), [go-licenses](https://github.com/turbokast/mythhelm/actions/runs/36616291969/job/109570137123), [OSV-Scanner](https://github.com/turbokast/mythhelm/actions/runs/36616292060/job/109570022136).
+- **Spec deviations**: OSV-Scanner and go-licenses run through `go run`, because their actions are not on the action allow-list. `windows-11-arm` has no `-race`, because the race detector does not support windows/arm64. go-licenses notice generation and a macOS x64 runner stay deferred until the first release.
+- **Files modified**: `.github/workflows/osv-scanner.yml`, `.github/workflows/ci.yml`, `docs/automation.md`, `specs/todo/dogfood-slice/tasks.md`.
 
 ### Task 4 — State directory, IDs and the SQLite journal
 
@@ -168,6 +178,8 @@
   - `TestResolvesOutsideSymlinkEscape`.
 - **Test plan**: table tests; fuzz `TermSafe` (`FuzzTermSafe`, seed corpus only in CI).
 - **Invariants touched**: I19, §12.5, §12.7.
+- **Status**: ✅ Completed — `internal/security` with `Redact` + `RedactingHandler`, `TermSafe` (C0/C1/ESC sequences, OSC 8), `BuildEnv` allowlist with the denylist winning (`ErrDeniedPassthrough`) and `ResolvesOutside` (component-wise symlink resolution, dangling links included); PR #9
+- **Spec deviations**: key/value redaction also matches quoted keys and masks a quoted value to its closing quote (superset); `ResolvesOutside` errors on an unreadable symlink (fail closed); credential-named attributes are dropped by suffix (`…TOKEN`, `…APIKEY`, `…SECRET`, …) so `apiKeySource` and `input_tokens` survive; `BuildEnv` always denies `CLAUDE_CODE_OAUTH_TOKEN` (the AC-4.7 opt-in is the adapter's to apply after `BuildEnv`) and also checks `set` names; control strings end at a newline; `ErrDeniedPassthrough` → exit 2 mapping in `internal/cli/exit.go` is left to the task that wires `[environment] passthrough`.
 
 ### Task 7 — Workspace: safe git runner, preflight and snapshot
 
@@ -225,6 +237,18 @@
   - `TestCapabilityRecordUnknownNotOptimistic`: the fake's `billing.entitlement` is `local-scripted`; `hard_monetary_limit` is `unsupported`.
 - **Test plan**: the fake agent runs as a real child via the test binary re-exec.
 - **Invariants touched**: §9.1, §9.2, §9.7, I11, I14.
+- **Status**: ✅ Completed. Adds the `internal/adapter` seam, the bounded `ndjson.Reader` and the `fake` adapter with 13 embedded scenarios, played by `__fake-agent` as a real child; PR #11.
+- **Spec deviations**:
+  - The build-tagged `adapters/fake/escapee_{unix,other}.go` are added, because `Setsid` exists only on Unix and `os/exec` is banned.
+  - `OwnedProc` is defined as `{Stdout, Signal, Wait, GroupGone}`, and `NativeExit` gains `Err`.
+  - The capability record gains a `platform` block (NFR-4): `unknown` on Unix until Task 9's tests, and ownership `unsupported` on Windows.
+  - The fake agent exits 130 on SIGINT and 143 on SIGTERM unless the scenario ignores the signal.
+  - `emit` has four variants: `frame`, `raw`, `raw_base64` and `synth`.
+  - `__fake-agent` is dispatched in `main.go`, not the `commands` map.
+  - `Prepare` requires a scenario.
+  - The oversized-frame bound is measured in bytes, and the object count separately with `AllocsPerRun`.
+  - The `doc.go` note is in the package comment.
+  - `ProbeInput` is empty.
 
 ### Task 9 — Worker ownership: detached worker, process group, spool, stop ladder
 

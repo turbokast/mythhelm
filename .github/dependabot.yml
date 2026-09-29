@@ -11,3 +11,14 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: ci
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      go-modules:
+        patterns: ["*"]
+    commit-message:
+      prefix: build

@@ -1,0 +1,27 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - nolintlint
+  settings:
+    misspell:
+      locale: UK
+  exclusions:
+    rules:
+      # G204 (subprocess launched with a variable) is expected in tests: they
+      # build and run the mythhelm binary from a temp-dir path the test chose.
+      # Non-test code keeps G204.
+      - path: _test\.go
+        linters:
+          - gosec
+        text: G204
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
