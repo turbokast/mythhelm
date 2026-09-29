@@ -10,7 +10,8 @@
 #   --only LIST   run only the named checks (see harness_lint.py --list).
 #
 # The checks, in order: frontmatter, routing-pins, haiku-effort, rule-budget,
-# paths-globs, hook-inventory, skill-contexts, dollar-zero, abs-paths, references.
+# paths-globs, hook-inventory, skill-contexts, dollar-zero, abs-paths, references,
+# specs.
 # What each one enforces is documented at the top of harness_lint.py.
 #
 # Read-only: no network, no writes. Exit 0 when every check passes, 1 when any

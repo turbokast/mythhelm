@@ -26,6 +26,13 @@ Checks (each reads the tree at DIR, default the repository root):
   abs-paths       no harness file names an absolute home directory
   references      markdown links in harness files resolve, and backticked file paths
                   under .claude/, knowledge/, scripts/, docs/ and specs/ exist
+  specs           every spec directory under specs/<state>/ has the files its
+                  lifecycle state requires; each tasks.md task block carries
+                  Domain/agent (a known agent), Budget (standard|complex), Change,
+                  Files, Depends on (the first task may omit it), Acceptance and
+                  Invariants touched; Depends on names existing tasks with no cycle;
+                  an epic plan.md's Work Streams name existing specs; a spec name
+                  lives in one lifecycle state only
 
 Findings print as "path:line: check: detail". Exit 0 clean, 1 findings, 2 usage or
 an unreadable tree. Standard library only; no network, no writes.
@@ -529,6 +536,196 @@ def check_references(root, files):
                     finding(rel, i, "references", "path %r does not exist" % token)
 
 
+SPEC_STATES = ("unrefined", "refined", "todo", "in-progress", "unfinalized", "done", "archived")
+SPEC_REQUIRED = {
+    "unrefined": ("requirements.md",),
+    "refined": ("requirements.md",),
+    "todo": ("requirements.md", "design.md", "tasks.md"),
+    "in-progress": ("requirements.md", "design.md", "tasks.md"),
+    "unfinalized": ("requirements.md", "design.md", "tasks.md"),
+    "done": ("requirements.md", "design.md", "tasks.md"),
+    "archived": ("requirements.md",),
+}
+SPEC_BUDGETS = ("standard", "complex")
+# Fields every task block carries. The first task in a file may omit Depends on:
+# tasks are listed in dependency order, so it has nothing earlier to depend on.
+TASK_FIELDS = ("Domain/agent", "Budget", "Change", "Files", "Depends on", "Acceptance", "Invariants touched")
+TASK_HEADING = re.compile(r"^###\s+Task\s+(\d+)\b")
+TASK_FIELD = re.compile(r"^- \*\*([^*]+?)\*\*(?:\s*\([^)]*\))?\s*:\s*(.*)$")
+
+
+def task_blocks(text):
+    """[(number, heading line, {field: (line, value, has sub-bullets)})] outside code fences."""
+    blocks, cur, fence = [], None, False
+    lines = text.split("\n")
+    for i, line in enumerate(lines, 1):
+        if line.lstrip().startswith("```"):
+            fence = not fence
+            continue
+        if fence:
+            continue
+        m = TASK_HEADING.match(line)
+        if m:
+            cur = (int(m.group(1)), i, {})
+            blocks.append(cur)
+            continue
+        if line.startswith(("## ", "### ")):
+            cur = None
+            continue
+        fm = TASK_FIELD.match(line)
+        if cur is not None and fm:
+            name = fm.group(1).strip()
+            if name == "Acceptance criteria":
+                name = "Acceptance"
+            nested = i < len(lines) and lines[i].startswith(("  -", "  *", "  1"))
+            cur[2].setdefault(name, (i, fm.group(2).strip(), nested))
+    return blocks
+
+
+def depends_refs(value):
+    """Task numbers named before any parenthesis, [] for None, or None when unreadable."""
+    head = value.split("(", 1)[0].strip().rstrip(".")
+    if re.fullmatch(r"(?i)none", head):
+        return []
+    parts = [p.strip() for p in re.split(r",|\band\b", head) if p.strip()]
+    refs = []
+    for p in parts:
+        m = re.fullmatch(r"Task\s+(\d+)", p)
+        if not m:
+            return None
+        refs.append(int(m.group(1)))
+    return refs or None
+
+
+def check_tasks(root, rel, agents):
+    blocks = task_blocks(read(root, rel))
+    if not blocks:
+        finding(rel, 0, "specs", "no '### Task N' blocks")
+        return
+    numbers = {}
+    for n, line, _ in blocks:
+        if n in numbers:
+            finding(rel, line, "specs", "Task %d is defined twice (first at line %d)" % (n, numbers[n]))
+        numbers.setdefault(n, line)
+    edges = {}
+    for idx, (n, line, fields) in enumerate(blocks):
+        for name in TASK_FIELDS:
+            if name not in fields:
+                if name == "Depends on" and idx == 0:
+                    continue
+                finding(rel, line, "specs", "Task %d has no '- **%s**:' field" % (n, name))
+                continue
+            fline, value, nested = fields[name]
+            if not value and not nested:
+                finding(rel, fline, "specs", "Task %d: '%s' is empty" % (n, name))
+                continue
+            if name == "Domain/agent":
+                first = re.sub(r"[`*]", "", value).split()[0].rstrip(",;") if value else ""
+                if first not in agents:
+                    finding(rel, fline, "specs", "Task %d: Domain/agent %r is not an agent in .claude/agents/ or 'maintainer'"
+                            % (n, first))
+            elif name == "Budget":
+                tier = re.sub(r"[`*]", "", value).split()[0].rstrip(",;") if value else ""
+                if tier not in SPEC_BUDGETS:
+                    finding(rel, fline, "specs", "Task %d: Budget %r is not one of %s" % (n, tier, "/".join(SPEC_BUDGETS)))
+            elif name == "Depends on":
+                refs = depends_refs(value)
+                if refs is None:
+                    finding(rel, fline, "specs", "Task %d: Depends on %r is not 'None' or a list of 'Task N'" % (n, value))
+                    continue
+                for r in refs:
+                    if r == n:
+                        finding(rel, fline, "specs", "Task %d depends on itself" % n)
+                    elif r not in numbers:
+                        finding(rel, fline, "specs", "Task %d depends on Task %d, which does not exist" % (n, r))
+                edges[n] = [r for r in refs if r in numbers and r != n]
+    # Cycles: an iterative depth-first search that reports each cycle once.
+    state, reported = {}, set()
+    for start in sorted(edges):
+        if state.get(start):
+            continue
+        stack, path = [(start, iter(edges.get(start, [])))], [start]
+        state[start] = 1
+        while stack:
+            node, it = stack[-1]
+            nxt = next(it, None)
+            if nxt is None:
+                state[node] = 2
+                stack.pop()
+                path.pop()
+            elif state.get(nxt) == 1:
+                cyc = path[path.index(nxt):] + [nxt]
+                key = frozenset(cyc)
+                if key not in reported:
+                    reported.add(key)
+                    finding(rel, numbers[nxt], "specs", "dependency cycle: %s" % " -> ".join("Task %d" % c for c in cyc))
+            elif not state.get(nxt):
+                state[nxt] = 1
+                stack.append((nxt, iter(edges.get(nxt, []))))
+                path.append(nxt)
+
+
+def work_stream_specs(text):
+    """Backticked names in column 2 of the Work Streams table, or None without the section."""
+    names, inside, found = [], False, False
+    for line in text.split("\n"):
+        if re.match(r"^#{2,3} ", line):
+            inside = bool(re.match(r"^#{2,3} Work Streams\s*$", line))
+            found = found or inside
+            continue
+        if inside:
+            m = re.match(r"^\|[^|]*\|\s*`([^`]+)`", line)
+            if m:
+                names.append(m.group(1))
+    return names if found else None
+
+
+def check_specs(root, files):
+    agents = {os.path.basename(a)[:-3] for a in agent_files(root)} | {"maintainer"}
+    dirs = {}
+    for rel in files:
+        if not rel.startswith("specs/"):
+            continue
+        parts = rel.split("/")
+        if len(parts) == 2:
+            if parts[1] != "README.md":
+                finding(rel, 0, "specs", "only README.md sits directly under specs/; specs live in specs/<state>/<name>/")
+            continue
+        if parts[1] not in SPEC_STATES:
+            finding(rel, 0, "specs", "%r is not a lifecycle state (%s)" % (parts[1], ", ".join(SPEC_STATES)))
+            continue
+        if len(parts) == 3:
+            if parts[2] != ".gitkeep":
+                finding(rel, 0, "specs", "a file directly under specs/%s/ is not in a spec directory" % parts[1])
+            continue
+        dirs.setdefault((parts[1], parts[2]), set()).add("/".join(parts[3:]))
+    homes = {}
+    for state, name in sorted(dirs):
+        homes.setdefault(name, []).append(state)
+    for name, states in sorted(homes.items()):
+        if len(states) > 1:
+            finding("specs/%s/%s" % (states[0], name), 0, "specs",
+                    "spec %r exists in %d lifecycle states (%s); exactly one copy may exist"
+                    % (name, len(states), ", ".join(states)))
+    for (state, name), present in sorted(dirs.items()):
+        base = "specs/%s/%s" % (state, name)
+        if "plan.md" in present and "requirements.md" not in present:
+            streams = work_stream_specs(read(root, base + "/plan.md"))
+            if streams is None:
+                finding(base + "/plan.md", 0, "specs", "epic plan has no '## Work Streams' section")
+            elif not streams:
+                finding(base + "/plan.md", 0, "specs", "the Work Streams table names no spec in backticks")
+            for s in streams or []:
+                if s not in homes:
+                    finding(base + "/plan.md", 0, "specs", "work stream spec %r has no directory under specs/<state>/" % s)
+            continue
+        for req in SPEC_REQUIRED[state]:
+            if req not in present:
+                finding(base, 0, "specs", "a spec in %s/ needs %s" % (state, req))
+        if "tasks.md" in present:
+            check_tasks(root, base + "/tasks.md", agents)
+
+
 CHECKS = {
     "frontmatter": check_frontmatter,
     "routing-pins": check_routing_pins,
@@ -540,6 +737,7 @@ CHECKS = {
     "dollar-zero": check_dollar_zero,
     "abs-paths": check_abs_paths,
     "references": check_references,
+    "specs": check_specs,
 }
 
 

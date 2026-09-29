@@ -19,14 +19,19 @@
 #                  (explicit, or implied by -f/-F/--field/--raw-field/--input) to a
 #                  release, ref, tag, dispatch, workflow run, secret, variable,
 #                  ruleset, key, hook, environment, merge or transfer endpoint, or to
-#                  orgs/; a GraphQL mutation; a non-literal endpoint with a write method
+#                  orgs/; a GraphQL mutation other than the review-thread ones below; a
+#                  non-literal endpoint with a write method
 #   git push       --tags, --follow-tags, --mirror, or a refspec whose source or
 #                  destination is a v* tag (v1.2.3, refs/tags/v1.2.3, :refs/tags/v1),
 #                  or a refspec the guard cannot read literally
 # Blocked even inside an armed window: deleting the repository (gh repo delete,
 # gh api DELETE repos/<owner>/<repo>, or a DELETE to an endpoint the guard cannot
 # read). The operator runs it.
-# Read-only gh commands pass.
+# Read-only gh commands pass, and so do GraphQL documents whose every mutation field
+# is one of REVIEW_THREAD_MUTATIONS (replying to, resolving or unresolving a review
+# thread is conversation, not publishing). A mutation document the guard cannot read
+# field by field (from --input or a -F query=@file, a fragment spread among the
+# mutation fields, an unterminated string) is gated.
 #
 # Arming is witnessed here (see hook-helpers.sh, section 5):
 #   scripts/harness/arm-main-push.sh --publish --reason "<why>"   arm for 30 minutes
@@ -51,6 +56,8 @@ hh_load_bash_payload guard-publish '(^|[^a-z])gh([^a-z]|$)|git.*push|arm-main-pu
 
 DATA_DIR="$(hh_data_dir "${CLAUDE_PROJECT_DIR:-}" "$HH_CWD" "$PWD")"
 KIND=publish
+
+REVIEW_THREAD_MUTATIONS=" addPullRequestReviewThreadReply resolveReviewThread unresolveReviewThread "
 
 POST_ENDPOINT_RE='^repos/.*/(releases|git/refs|git/tags|dispatches|actions/workflows|actions/runs|actions/secrets|actions/variables|rulesets|keys|hooks|environments|merges|transfer)(/|$)'
 
@@ -104,20 +111,135 @@ gh_verdict() {
   return 0
 }
 
+# graphql_tokens <document>: one GraphQL token per line (names, numbers,
+# punctuators, "..."), with strings and commas dropped. Prints "?" and stops at
+# anything it cannot read: an unterminated string, or a comment (the command
+# tokenizer turns newlines inside quotes into spaces, so a comment's end is lost).
+graphql_tokens() {
+  local s="$1" n=${#1} i=0 j c rest
+  while (( i < n )); do
+    c="${s:i:1}"
+    case "$c" in
+      [[:space:],]) i=$((i + 1)) ;;
+      '#') echo '?'; return 0 ;;
+      '"')
+        if [[ "${s:i:3}" == '"""' ]]; then
+          rest="${s:i+3}"
+          [[ "$rest" == *'"""'* ]] || { echo '?'; return 0; }
+          rest="${rest%%\"\"\"*}"
+          i=$((i + 6 + ${#rest}))
+        else
+          j=$((i + 1))
+          while (( j < n )); do
+            case "${s:j:1}" in
+              \\) j=$((j + 2)) ;;
+              '"') break ;;
+              *) j=$((j + 1)) ;;
+            esac
+          done
+          (( j < n )) || { echo '?'; return 0; }
+          i=$((j + 1))
+        fi ;;
+      [_A-Za-z])
+        j=$i
+        while (( j < n )) && [[ "${s:j:1}" == [_A-Za-z0-9] ]]; do j=$((j + 1)); done
+        echo "${s:i:j-i}"
+        i=$j ;;
+      [0-9+-])
+        j=$i
+        while (( j < n )) && [[ "${s:j:1}" == [0-9eE.+-] ]]; do j=$((j + 1)); done
+        echo "${s:i:j-i}"
+        i=$j ;;
+      '.')
+        [[ "${s:i:3}" == '...' ]] || { echo '?'; return 0; }
+        echo '...'
+        i=$((i + 3)) ;;
+      *) echo "$c"; i=$((i + 1)) ;;
+    esac
+  done
+}
+
+# graphql_mutation_fields <document>: prints "@mutation" for each mutation
+# operation, then the top-level field names of its selection set (the name after
+# an alias). Prints "?" for anything that hides a field: a fragment spread or
+# inline fragment among the mutation fields, or unbalanced braces or parentheses.
+graphql_mutation_fields() {
+  local -a T=()
+  local t op="" depth=0 paren=0 k
+  mapfile -t T < <(graphql_tokens "$1")
+  for (( k = 0; k < ${#T[@]}; k++ )); do
+    t="${T[k]}"
+    [[ "$t" == '?' ]] && { echo '?'; return 0; }
+    case "$t" in
+      '(') paren=$((paren + 1)); continue ;;
+      ')') paren=$((paren - 1)); continue ;;
+    esac
+    (( paren > 0 )) && continue
+    if (( depth == 0 )); then
+      case "$t" in
+        mutation|query|subscription|fragment) op="$t"; [[ "$t" == mutation ]] && echo '@mutation' ;;
+        '{') depth=1; [[ -n "$op" ]] || op=query ;;
+      esac
+      continue
+    fi
+    case "$t" in
+      '{') depth=$((depth + 1)); continue ;;
+      '}') depth=$((depth - 1)); (( depth == 0 )) && op=""; continue ;;
+    esac
+    (( depth == 1 )) && [[ "$op" == mutation ]] || continue
+    if [[ "$t" == '...' ]]; then
+      echo '?'
+    elif [[ "$t" =~ ^[_A-Za-z] && "${T[k-1]:-}" != '@' && "${T[k+1]:-}" != ':' ]]; then
+      echo "$t"
+    fi
+  done
+  (( depth == 0 && paren == 0 )) || echo '?'
+}
+
+# graphql_verdict <query field value...>: prints nothing when every mutation field in
+# the documents is a review-thread mutation, else GATE:<what>.
+graphql_verdict() {
+  local doc f seen=0 fields="" bad=""
+  for doc in "$@"; do
+    while IFS= read -r f; do
+      case "$f" in
+        '@mutation') seen=1 ;;
+        '?') bad="$bad an unreadable selection" ;;
+        *) fields="$fields $f"
+           [[ "$REVIEW_THREAD_MUTATIONS" == *" $f "* ]] || bad="$bad $f" ;;
+      esac
+    done < <(graphql_mutation_fields "$doc")
+  done
+  if (( seen == 0 )) || [[ -z "$fields" ]]; then
+    echo "GATE:gh api graphql mutation the guard cannot read"
+  elif [[ -n "$bad" ]]; then
+    echo "GATE:gh api graphql mutation${bad}"
+  fi
+  return 0
+}
+
 # api_verdict <args after `api`>
 api_verdict() {
-  local w skip="" method="" implied_post=0 input=0 mutation=0 ep=""
+  local w skip="" method="" implied_post=0 input=0 mutation=0 query_file=0 ep=""
+  local -a queries=()
   for w in "$@"; do
     [[ "$w" =~ (^|[^A-Za-z])mutation([^A-Za-z]|$) ]] && mutation=1
     if [[ -n "$skip" ]]; then
       [[ "$skip" == method ]] && method="$w"
+      if [[ "$skip" == raw || "$skip" == typed ]] && [[ "$w" == query=* ]]; then
+        queries+=("${w#query=}")
+        [[ "$skip" == typed && "$w" == query=@* ]] && query_file=1
+      fi
       skip=""; continue
     fi
     case "$w" in
       -X|--method) skip=method ;;
       --method=*) method="${w#--method=}" ;;
       -X?*) method="${w#-X}" ;;
-      -f|-F|--field|--raw-field) implied_post=1; skip=value ;;
+      -f|--raw-field) implied_post=1; skip=raw ;;
+      -F|--field) implied_post=1; skip=typed ;;
+      -fquery=*|--raw-field=query=*) implied_post=1; queries+=("${w#*query=}") ;;
+      -Fquery=*|--field=query=*) implied_post=1; queries+=("${w#*query=}"); [[ "$w" == *query=@* ]] && query_file=1 ;;
       -f?*|-F?*|--field=*|--raw-field=*) implied_post=1 ;;
       --input) implied_post=1; input=1; skip=value ;;
       --input=*) implied_post=1; input=1 ;;
@@ -136,7 +258,13 @@ api_verdict() {
   ep="${ep%%\?*}"
 
   if [[ "$ep" == graphql ]]; then
-    (( mutation == 1 || input == 1 )) && echo "GATE:gh api graphql mutation"
+    if (( input == 1 )); then
+      echo "GATE:gh api graphql --input (the document is not visible)"
+    elif (( query_file == 1 )); then
+      echo "GATE:gh api graphql with the query read from a file"
+    elif (( mutation == 1 )); then
+      graphql_verdict ${queries[@]+"${queries[@]}"}
+    fi
     return 0
   fi
   [[ "$method" == GET || "$method" == HEAD ]] && return 0

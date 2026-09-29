@@ -16,6 +16,7 @@ In Claude Code sessions, guard hooks run on every tool call; other agents get no
 
 - **Orientation.** Run `/bootstrap` at the start of task work. [`knowledge/`](knowledge/README.md) holds the domain map, the invariants restated from spec §4, and the evidence behind each rule.
 - **Agents and routing.** Route work by path with [`knowledge/domains.md`](knowledge/domains.md): `go-implementer` (core, adapters, protocol, docs), `tui-implementer`, `release-engineer`, `agent-config-editor` (harness); `architect` and `code-reviewer` review. [`knowledge/agent-routing.md`](knowledge/agent-routing.md) pins each agent's model and effort; never pass `effort` to a haiku agent (`completion-clerk`, `harness-clerk`).
+- **Spec lifecycle.** Work moves through `specs/<state>/<name>/` via `/create-spec`, `/refine-spec`, `/spec` and `/evaluate-spec`: [`specs/README.md`](specs/README.md), [`knowledge/spec-authoring.md`](knowledge/spec-authoring.md).
 - **Rules.** `.claude/rules/` holds always-on rules (behavioural posture, coding standards, formatter first, skill invocation contexts, prompt refinement, public-repo hygiene) and rules that load with the files they govern (Go, tests, workflows, harness).
 
 ## Conventions

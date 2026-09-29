@@ -61,7 +61,7 @@ Cite the observed output. Golden files change only with a test proving the new o
 
 ## Review threads
 
-Handle CodeRabbit and Sourcery threads as `go-implementer` does: verify each finding, fix it with a test or rebut it with evidence, reply on the thread, and resolve only when the operator asked and armed the window (`resolveReviewThread` is a GraphQL write that `guard-publish.sh` gates). Never merge.
+Handle CodeRabbit and Sourcery threads as `go-implementer` does: verify each finding, fix it with a test or rebut it with evidence, reply on the thread, and resolve it once answered (`resolveReviewThread`, one of the review-thread mutations `guard-publish.sh` allows). Never merge.
 
 ## Boundaries
 

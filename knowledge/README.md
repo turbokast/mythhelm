@@ -11,6 +11,7 @@ Nothing here ships in a release, and nothing here overrides [`docs/spec/master-s
 | [`domains.md`](domains.md) | Before editing anything: which domain a path belongs to, and which agent owns it. |
 | [`invariants.md`](invariants.md) | Before touching admission, billing, process ownership, workspaces, recovery, plugins or credentials; before every review. |
 | [`agent-routing.md`](agent-routing.md) | Before adding an agent, changing a `model:` or `effort:` pin, or dispatching a subagent. |
+| [`spec-authoring.md`](spec-authoring.md) | Before writing, refining, validating or evaluating a spec: the file formats, the task-block fields, the criterion patterns and a worked example. |
 | [`rule-evidence/`](rule-evidence/README.md) | When auditing a rule, proposing to loosen one, or asking why it exists. Never needed to follow a rule. |
 
 The `/bootstrap` skill reads the first two at the start of a session.
