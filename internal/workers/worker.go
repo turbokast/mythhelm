@@ -348,8 +348,9 @@ type outcome struct {
 	exited       bool   // exit holds the native's observed exit
 	exit         adapter.NativeExit
 	report       adapter.InterruptReport
-	launchFailed bool // no native process was created
-	aborted      bool // the worker stopped the native because it could not record the attempt
+	pending      <-chan adapter.InterruptReport // an in-flight stop ladder's report
+	launchFailed bool                           // no native process was created
+	aborted      bool                           // the worker stopped the native because it could not record the attempt
 }
 
 func (w *worker) run(ctx context.Context) error {
@@ -425,8 +426,15 @@ func (w *worker) abort(ctx context.Context, sp *spool, sess adapter.Session, out
 		for range sess.Observations() {
 		}
 	}()
-	out.aborted, out.stopBy = true, "worker"
-	out.report = sess.Interrupt(ctx)
+	out.aborted = true
+	switch {
+	case out.pending != nil:
+		// Join the ladder already running; never run two at once.
+		out.report, out.pending = <-out.pending, nil
+	case out.stopBy == "":
+		out.stopBy = "worker"
+		out.report = sess.Interrupt(ctx)
+	}
 	if !out.exited {
 		select {
 		case out.exit = <-sess.Done():
@@ -444,11 +452,10 @@ func (w *worker) abort(ctx context.Context, sp *spool, sess adapter.Session, out
 // until the native process has exited and any stop ladder has finished.
 func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session) (outcome, error) {
 	var (
-		out         outcome
-		prog        progress
-		obs         = sess.Observations()
-		done        = sess.Done()
-		interrupted chan adapter.InterruptReport
+		out  outcome
+		prog progress
+		obs  = sess.Observations()
+		done = sess.Done()
 	)
 	poll := time.NewTicker(stopPollInterval)
 	defer poll.Stop()
@@ -456,7 +463,7 @@ func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session)
 	defer beat.Stop()
 	w.heartbeat()
 
-	for !out.exited || interrupted != nil {
+	for !out.exited || out.pending != nil {
 		select {
 		case ob, ok := <-obs:
 			if !ok {
@@ -478,8 +485,8 @@ func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session)
 				}
 			}
 			obs = nil
-		case rep := <-interrupted:
-			out.report, interrupted = rep, nil
+		case rep := <-out.pending:
+			out.report, out.pending = rep, nil
 		case <-beat.C:
 			w.heartbeat()
 		case <-poll.C:
@@ -501,8 +508,9 @@ func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session)
 				return out, err
 			}
 			w.log.Info("stop requested", "requested_by", by)
-			interrupted = make(chan adapter.InterruptReport, 1)
-			go func(ch chan<- adapter.InterruptReport) { ch <- sess.Interrupt(ctx) }(interrupted)
+			pending := make(chan adapter.InterruptReport, 1)
+			out.pending = pending
+			go func() { pending <- sess.Interrupt(ctx) }()
 		}
 	}
 	return out, prog.flush(sp, true)
@@ -546,18 +554,18 @@ func (w *worker) observe(sp *spool, ob adapter.Observation, prog *progress, out 
 // conclude confirms the process group is gone, reports known descendants
 // that escaped it, and spools the attempt's terminal state.
 func (w *worker) conclude(ctx context.Context, sp *spool, sess adapter.Session, out outcome) error {
+	if out.stopBy == "" && sess != nil {
+		// The native exited by itself; anything left in its group is
+		// stopped before anything else, even if the spool then fails.
+		// Nothing is sent when the group is already gone.
+		out.report = sess.Interrupt(ctx)
+	}
 	w.saveStderr()
 	if out.exit.Err != nil {
 		w.log.Warn("native exit not fully observed", "err", out.exit.Err)
 	}
 	if err := sp.emit(evNativeResult, nativeResult(out)); err != nil {
 		return err
-	}
-	if out.stopBy == "" && sess != nil {
-		// The native exited by itself; anything left in its group is still
-		// stopped before the attempt can be frozen. Nothing is sent when
-		// the group is already gone.
-		out.report = sess.Interrupt(ctx)
 	}
 	unresolved, scan := w.unresolvedDescendants()
 	sent := out.report.Sent

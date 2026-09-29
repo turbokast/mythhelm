@@ -650,6 +650,71 @@ func TestIdentityFailureStopsNative(t *testing.T) {
 	checkAborted(t, evs)
 }
 
+// stubSession is a session whose native has already exited; it counts
+// Interrupt calls.
+type stubSession struct{ interrupts int }
+
+func (s *stubSession) Observations() <-chan adapter.Observation {
+	ch := make(chan adapter.Observation)
+	close(ch)
+	return ch
+}
+
+func (s *stubSession) Done() <-chan adapter.NativeExit {
+	ch := make(chan adapter.NativeExit, 1)
+	ch <- adapter.NativeExit{Code: 130}
+	return ch
+}
+
+func (s *stubSession) Interrupt(context.Context) adapter.InterruptReport {
+	s.interrupts++
+	return adapter.InterruptReport{Sent: []adapter.StopSignal{adapter.StopKill}, Confirmed: true}
+}
+
+func stubWorker(t *testing.T) (*worker, *spool) {
+	t.Helper()
+	dir := t.TempDir()
+	sp, err := createSpool(filepath.Join(dir, "spool.jsonl"), "run_1", "task_1", "att_1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sp.close() })
+	w := &worker{dir: dir, attemptID: ids.New("att"), log: slog.New(slog.NewTextHandler(io.Discard, nil)), stderr: &ring{max: stderrRingBytes}}
+	return w, sp
+}
+
+func TestAbortJoinsInFlightLadder(t *testing.T) {
+	w, sp := stubWorker(t)
+	sess := &stubSession{}
+	pending := make(chan adapter.InterruptReport, 1)
+	pending <- adapter.InterruptReport{Sent: []adapter.StopSignal{adapter.StopInterrupt}, Confirmed: true}
+	cause := errors.New("spool failed")
+	out := outcome{stopBy: "user", pending: pending}
+	if err := w.abort(context.Background(), sp, sess, out, cause); !errors.Is(err, cause) {
+		t.Fatalf("abort = %v, want the cause", err)
+	}
+	if sess.interrupts != 0 {
+		t.Errorf("abort started %d more stop ladders while one was in flight, want 0", sess.interrupts)
+	}
+	evs := attempt{dir: w.dir}.events(t)
+	if p := stoppedOf(t, evs); !p.Confirmed || !slices.Equal(p.SignalsSent, []adapter.StopSignal{adapter.StopInterrupt}) {
+		t.Errorf("attempt.stopped = %+v, want the in-flight ladder's report", p)
+	}
+}
+
+func TestConcludeStopsGroupBeforeSpooling(t *testing.T) {
+	w, sp := stubWorker(t)
+	sp.sync = func(*os.File) error { return errors.New("disk full") }
+	sess := &stubSession{}
+	out := outcome{exited: true}
+	if err := w.conclude(context.Background(), sp, sess, out); err == nil {
+		t.Fatal("conclude succeeded with a failing spool")
+	}
+	if sess.interrupts != 1 {
+		t.Errorf("conclude ran the stop ladder %d times before failing, want 1: group members must be stopped even when the spool fails", sess.interrupts)
+	}
+}
+
 func TestWorkerRejectsInvalidLaunch(t *testing.T) {
 	a := newAttempt(t)
 	good := a.launch(t, "happy")
