@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/release-drafter/release-drafter/master/schema.json
+# Drafts the next release from merged PR titles (Conventional Commits, see
+# CONTRIBUTING.md) and labels. A maintainer reviews and publishes the draft.
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+change-template: "- $TITLE (#$NUMBER) $AUTHORS"
+change-title-escapes: '\<*_&'
+categories:
+  - type: pre-exclude
+    when:
+      label: skip-changelog
+  - title: "Breaking changes"
+    exclusive: true
+    semver-increment: major
+    when:
+      - conventional:
+          breaking: true
+      - label: breaking-change
+  - title: "Security"
+    exclusive: true
+    when:
+      label: security
+  - title: "Features"
+    exclusive: true
+    semver-increment: minor
+    when:
+      - conventional:
+          type: feat
+      - label: enhancement
+  - title: "Fixes"
+    exclusive: true
+    when:
+      - conventional:
+          type: fix
+      - label: bug
+  - title: "Performance"
+    exclusive: true
+    when:
+      conventional:
+        type: perf
+  - title: "Documentation"
+    exclusive: true
+    when:
+      conventional:
+        type: docs
+  - title: "Dependencies"
+    exclusive: true
+    collapse-after: 3
+    when:
+      label: dependencies
+  - title: "Maintenance"
+    exclusive: true
+    when:
+      conventional:
+        types: [refactor, test, build, ci, chore, revert, harness]
+  - title: "Other changes"
+  - type: version-resolver
+    semver-increment: major
+    when:
+      label: semver:major
+  - type: version-resolver
+    semver-increment: minor
+    when:
+      label: semver:minor
+  - type: version-resolver
+    semver-increment: patch
+template: |
+  ## What's changed
+
+  $CHANGES
+
+  ## Contributors
+
+  $CONTRIBUTORS
