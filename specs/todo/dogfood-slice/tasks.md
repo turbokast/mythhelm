@@ -66,7 +66,7 @@
 - **Spec deviations**: golangci-lint v2.13.2, not v2.14.0, because v2.14.0 (2026-09-24) is inside the 7-day cooldown. govulncheck runs through `go run`, because `golang/govulncheck-action` is not on the repository's action allow-list. The CodeQL Go leg adds `setup-go`, so the extractor uses the toolchain pinned in `go.mod`.
 - **Files modified**: `.golangci.yml`, `.github/workflows/ci.yml`, `.github/workflows/codeql.yml`, `.github/dependabot.yml`, `docs/automation.md`, `specs/todo/dogfood-slice/tasks.md`.
 
-### Task 3 — CI supply chain and runner matrix
+### Task 3 — CI supply chain and runner matrix ✅ COMPLETED
 
 - **Domain/agent**: release-engineer
 - **Budget**: standard
@@ -82,6 +82,11 @@
   - The arm64 Go jobs pass.
 - **Test plan**: CI runs on the PR.
 - **Invariants touched**: NFR-3, §19.2, §19.4.
+- **Status**: ✅ Completed — OSV-Scanner workflow (SARIF upload), a `go-licenses` job in `CI OK` checked against the dependency-review allow-list, and the `ubuntu-24.04-arm` and `windows-11-arm` Go runners; PR #13.
+- **Implementation**: OSV-Scanner v2.6.0 and go-licenses v2.0.1 run through `go run` at pinned versions. go-licenses reads `allow-licenses` from `dependency-review.yml` at run time and checks with `--include_tests`. `windows-11-arm` runs `go test` without `-race`. Commit 4244d71.
+- **CI evidence**: [go-licenses failing on the scratch GPL branch](https://github.com/turbokast/mythhelm/actions/runs/36616296064/job/109570149904) (`Not allowed license 'GPL-3.0' found for library 'github.com/evilsocket/islazy/str'`; probe PR #14 closed, branch deleted), [Go (ubuntu-24.04-arm)](https://github.com/turbokast/mythhelm/actions/runs/36616291969/job/109570137238), [Go (windows-11-arm)](https://github.com/turbokast/mythhelm/actions/runs/36616291969/job/109570137336), [go-licenses](https://github.com/turbokast/mythhelm/actions/runs/36616291969/job/109570137123), [OSV-Scanner](https://github.com/turbokast/mythhelm/actions/runs/36616292060/job/109570022136).
+- **Spec deviations**: OSV-Scanner and go-licenses run through `go run`, because their actions are not on the action allow-list. `windows-11-arm` has no `-race`, because the race detector does not support windows/arm64. go-licenses notice generation and a macOS x64 runner stay deferred until the first release.
+- **Files modified**: `.github/workflows/osv-scanner.yml`, `.github/workflows/ci.yml`, `docs/automation.md`, `specs/todo/dogfood-slice/tasks.md`.
 
 ### Task 4 — State directory, IDs and the SQLite journal
 
