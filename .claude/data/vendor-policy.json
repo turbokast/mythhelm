@@ -1,5 +1,5 @@
 {
-  "$comment": "Tracked seed for the optional cross-vendor layer (knowledge/vendors.md). Read by scripts/vendors/vendors.py. Nothing is enabled here: a contributor opts in from their own terminal, which writes the gitignored .claude/data/vendor-policy.local.json that is merged over this file (objects merge key by key, every other value is replaced).",
+  "$comment": "Tracked seed for the optional cross-vendor layer (knowledge/vendors.md). Read by scripts/vendors/vendors.py. enabled and lanes_enabled are ignored here: a contributor opts in from their own terminal, which writes the gitignored .claude/data/vendor-policy.local.json, the only file that can enable a vendor. That file is merged over this one (objects merge key by key, every other value is replaced).",
   "schema_version": 1,
   "enabled": [],
   "lanes_enabled": [],

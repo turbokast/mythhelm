@@ -62,7 +62,9 @@ Everything the layer writes is under the main checkout's `.claude/data/` and git
 
 ## What leaves your machine
 
-Prompts: a shared preamble, the stage prompt, and the context files you pass, with tokens, private keys, secret-looking assignments, e-mail addresses and your home path masked. A consult vendor also reads the snapshot worktree it runs in, which holds tracked and untracked-but-not-ignored files only. Redaction is mechanical; keep private prose out of context files.
+Prompts: a shared preamble, the stage prompt, and the context files you pass, with tokens, private keys, secret-looking assignments, e-mail addresses and your home path masked. Redaction is mechanical; keep private prose out of context files.
+
+Files: a consult runs in a snapshot worktree that holds tracked and untracked-but-not-ignored files only, and the vendor is pointed at it. The consult is **not** confined to it, though. Codex runs under its own `read-only` sandbox, and Muse runs with its write, shell and web tools disabled. Both settings prevent writes (the envelope also checks the snapshot afterwards). Whether the vendor can read other files your user can read depends on the vendor's sandbox and your operating system, not on this harness. Only the implementer lanes run under bubblewrap, where nothing outside the worktree is visible. Keep secrets out of files the vendor could reach, or leave the vendor disabled.
 
 ## Response shape
 

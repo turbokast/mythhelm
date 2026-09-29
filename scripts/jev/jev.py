@@ -148,12 +148,12 @@ def cmd_private(args) -> int:
 def cmd_scope(args) -> int:
     task = V.parse_task(args.spec_dir, args.task)
     root = args.root or os.getcwd()
-    r = subprocess.run(["git", "-C", root, "diff", "--name-only", "--no-renames", f"{args.base}...HEAD"],
+    r = subprocess.run(["git", "-C", root, "diff", "--name-only", "-z", "--no-renames", f"{args.base}...HEAD"],
                        capture_output=True, text=True, timeout=60)
     if r.returncode != 0:
         print(f"jev.py: cannot diff {args.base}...HEAD in {root}", file=sys.stderr)
         return V.EXIT_USAGE
-    outside = [p for p in r.stdout.split() if not V.path_in(p, task["files"])]
+    outside = [p for p in r.stdout.split("\0") if p and not V.path_in(p, task["files"])]
     rows = [{"path": p, "band": None, "p": None} for p in outside]
     answers = None
     if outside:

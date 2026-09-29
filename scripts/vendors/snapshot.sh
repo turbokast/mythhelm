@@ -27,7 +27,10 @@
 set -euo pipefail
 
 usage() {
-  sed -n '4,5p' "${BASH_SOURCE[0]}" | sed 's/^# *//' >&2
+  {
+    echo "usage: snapshot.sh create --from <dir> [--include-uncommitted] [--only <path>]..."
+    echo "       snapshot.sh remove --dir <snapshot-dir>"
+  } >&2
   exit 64
 }
 

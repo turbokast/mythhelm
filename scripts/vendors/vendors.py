@@ -154,20 +154,27 @@ def policy_paths() -> tuple[str, str]:
             os.path.join(data_dir(), "vendor-policy.local.json"))
 
 
-def load_policy() -> dict:
-    """The merged policy. Raises Unavailable(policy-unreadable) on a broken file."""
-    tracked, local = policy_paths()
+def _read_policy_file(path: str) -> dict:
     try:
-        with open(tracked, encoding="utf-8") as fh:
-            pol = json.load(fh)
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
     except (OSError, ValueError) as err:
-        raise Unavailable("policy-unreadable", f"{tracked}: {err}") from err
+        raise Unavailable("policy-unreadable", f"{path}: {err}") from err
+    if not isinstance(data, dict):
+        raise Unavailable("policy-unreadable", f"{path}: not a JSON object")
+    return data
+
+
+def load_policy() -> dict:
+    """The merged policy. Raises Unavailable(policy-unreadable) on a broken file.
+    `enabled` and `lanes_enabled` come from the local file only."""
+    tracked, local = policy_paths()
+    pol = _read_policy_file(tracked)
+    # Opt-in belongs to the contributor: only the gitignored local file can enable
+    # anything, so a committed edit to the seed never opts anyone in.
+    pol["enabled"], pol["lanes_enabled"] = [], []
     if os.path.exists(local):
-        try:
-            with open(local, encoding="utf-8") as fh:
-                pol = _merge(pol, json.load(fh))
-        except (OSError, ValueError) as err:
-            raise Unavailable("policy-unreadable", f"{local}: {err}") from err
+        pol = _merge(pol, _read_policy_file(local))
     if not isinstance(pol.get("vendors"), dict) or not isinstance(pol.get("stages"), dict):
         raise Unavailable("policy-unreadable", "policy lacks vendors or stages")
     return pol
@@ -215,7 +222,16 @@ def run_bounded(argv, cwd=None, stdin_path=None, timeout=900, env=None):
         except subprocess.TimeoutExpired:
             with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(proc.pid, signal.SIGKILL)
-            out, err = proc.communicate()
+            try:
+                out, err = proc.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                # A descendant that left the group still holds a pipe open.
+                for pipe in (proc.stdout, proc.stderr):
+                    with contextlib.suppress(OSError):
+                        pipe.close()
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    proc.wait(timeout=10)
+                out, err = b"", b""
             return proc.returncode, out, err, True
     finally:
         if stdin_path:

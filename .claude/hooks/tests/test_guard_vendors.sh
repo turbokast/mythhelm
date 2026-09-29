@@ -59,6 +59,13 @@ block "a reader with a redirect" 'cat other.json > .claude/data/vendor-policy.lo
 block "tee" 'echo x | tee .claude/data/vendor-policy.local.json'
 block "cp" 'cp /tmp/p.json .claude/data/vendor-policy.local.json'
 block "sed in place" "sed -i s/a/b/ .claude/data/vendor-policy.local.json"
+block "git config --file" 'git config --file .claude/data/vendor-policy.local.json enabled codex'
+block "git checkout of the file" 'git checkout -- .claude/data/vendor-policy.local.json'
+block "git -C config" 'git -C . config -f .claude/data/vendor-policy.local.json x y'
+block "python -X value before the script" 'python3 -X dev scripts/vendors/vendors.py enable codex'
+block "python -W value before the script" 'python3 -W ignore scripts/vendors/vendors.py enable codex'
+block "python -m vendors" 'cd scripts/vendors && python3 -m vendors enable codex'
+block "python -mvendors" 'python3 -mvendors enable codex' 
 expect_rc 2 "Write of the opt-in file" "$HOOK" "$(edit_payload Write "$PROJ/.claude/data/vendor-policy.local.json")"
 expect_err "File: $PROJ/.claude/data/vendor-policy.local.json" "file stanza names the file"
 expect_rc 2 "Edit of the opt-in file" "$HOOK" "$(edit_payload Edit "$PROJ/.claude/data/vendor-policy.local.json")"
@@ -80,6 +87,8 @@ allow "echo" 'echo "run codex exec through the wrapper"'
 allow "heredoc body" $'cat > notes.md <<EOF\ncodex exec x\nEOF'
 allow "path argument" 'ls scripts/codex/ && cat scripts/vendors/muse-consult.sh'
 allow "reading the opt-in file" 'cat .claude/data/vendor-policy.local.json && jq .enabled .claude/data/vendor-policy.local.json'
+allow "git status of the opt-in file" 'git status --short -- .claude/data/vendor-policy.local.json && git check-ignore .claude/data/vendor-policy.local.json'
+allow "python -m vendors status" 'python3 -m vendors status'
 allow "npx of another package" 'npx prettier --check .'
 allow "unrelated" 'go test ./...'
 expect_rc 0 "Write of the tracked policy" "$HOOK" "$(edit_payload Write "$PROJ/.claude/data/vendor-policy.json")"

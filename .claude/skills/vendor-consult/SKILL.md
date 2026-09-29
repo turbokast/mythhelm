@@ -12,7 +12,7 @@ One stage consult through the shared envelope, for any lifecycle step that wants
 
 `$ARGUMENTS`: the vendor (`codex` or `muse`), the stage, and one or more context files the stage needs (the task text, the spec files, the failure record). Optional: `--diff-base <ref>` to append the diff `<ref>...HEAD`, and `--spec <name>`.
 
-**Missing vendor, stage or context (input step).** Take them from `$ARGUMENTS` and the invoking context. In a slash command or model invocation, ask for what is still missing. When the vendor is unspecified and both are available, the policy row decides: prefer Codex, and Muse for `dossier` or a context too large for Codex's cap.
+**Missing vendor, stage or context (input step).** Take them from `$ARGUMENTS` and the invoking context. In a slash command or model invocation, ask for what is still missing. When the vendor is unspecified and both are available, prefer Codex, and Muse for `dossier` (the one stage only Muse answers). The context cap is per stage, so switching vendors never helps an oversized context: trim it instead.
 
 ## Invocation contexts
 

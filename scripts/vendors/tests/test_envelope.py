@@ -216,9 +216,18 @@ class Consult(unittest.TestCase):
         self.assertEqual(rc, 64, err)
 
     def test_broken_local_policy_fails_open(self):
-        self.f.write(".claude/data/vendor-policy.local.json", "{not json")
-        resp = self.consult()
-        self.assertEqual((resp["outcome"], resp["reason"]), ("unavailable", "policy-unreadable"))
+        for text in ("{not json", "[]"):
+            self.f.write(".claude/data/vendor-policy.local.json", text)
+            resp = self.consult()
+            self.assertEqual((resp["outcome"], resp["reason"]), ("unavailable", "policy-unreadable"), text)
+
+    def test_the_tracked_seed_cannot_opt_anyone_in(self):
+        seed = self.f.data("vendor-policy.json")
+        pol = json.loads(read(seed))
+        pol["enabled"], pol["lanes_enabled"] = ["codex", "muse", "jev"], ["codex", "muse"]
+        self.f.write(".claude/data/vendor-policy.json", json.dumps(pol))
+        self.assertEqual(self.consult()["reason"], "disabled")
+        self.assertEqual(self.argv_log(), "")
 
     def test_muse_consult_runs_with_writes_and_shell_disabled(self):
         self.f.enable("muse")
@@ -267,6 +276,9 @@ class Snapshot(unittest.TestCase):
             self.assertFalse(os.path.lexists(os.path.join(wt, absent)), absent)
         self.assertEqual(f.git("rev-parse", "HEAD~1", cwd=wt), kv["snapshot_base"])
         self.assertEqual(V.is_clean_linked_worktree(wt), (True, ""))
+        rc, _o, err = f.run("scripts/vendors/snapshot.sh", "create")
+        self.assertEqual(rc, 64)
+        self.assertIn("usage: snapshot.sh create --from <dir>", err)
         rc, _o, _e = f.run("scripts/vendors/snapshot.sh", "remove", "--dir", f.repo)
         self.assertEqual(rc, 65)
         self.assertTrue(os.path.isdir(f.repo))

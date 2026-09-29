@@ -13,11 +13,12 @@
 #       daily caps and the call record. `--version` and `--help` are not exempt;
 #       `python3 scripts/vendors/vendors.py status` reports availability instead.
 #       Lookups (`command -v`, `type`, `which`) pass.
-#   (b) `vendors.py enable`: opting in spends the contributor's subscription, so the
+#   (b) `vendors.py enable` (also as `python3 -m vendors enable`): opting in spends the contributor's subscription, so the
 #       contributor runs it from their own terminal (hooks never bind it).
 #   (c) writing .claude/data/vendor-policy.local.json (the opt-in file): an Edit or
 #       Write of it, a shell redirection into it, or any command naming it other
-#       than a reader (cat, less, head, tail, jq, grep, rg, wc, ls, stat, diff, git).
+#       than a reader (cat, less, head, tail, jq, grep, rg, wc, ls, stat, diff, and
+#       read-only git subcommands such as status, log, show and diff).
 # The sanctioned wrappers pass: scripts/codex/codex-consult.sh,
 # scripts/codex/codex-review.sh, scripts/vendors/muse-consult.sh,
 # scripts/vendors/codex-implement.sh, scripts/vendors/muse-implement.sh and the
@@ -76,7 +77,8 @@ esac
 
 hh_load_bash_payload guard-vendors 'codex|muse|vendors\.py|vendor-policy\.local' <<< "$INPUT" || exit 0
 
-READERS=" cat less more head tail jq grep egrep rg wc ls stat diff git file "
+READERS=" cat less more head tail jq grep egrep rg wc ls stat diff file "
+GIT_READERS=" status log show diff ls-files check-ignore blame grep "
 CODEX_PKG_RE='^(@openai/codex|codex)(@.*)?$'
 
 block_cli() {
@@ -106,7 +108,12 @@ while IFS= read -r seg; do
     w="${HH_WORDS[k]}"
     [[ "$w" == *"$LOCAL_POLICY"* ]] || continue
     prev="${HH_WORDS[k-1]}"
-    if [[ "$w" == *'>'* || "$prev" =~ ^[0-9]*('>'|'>>'|'>|'|'&>')$ || "$READERS" != *" $cmd "* ]]; then
+    reader=0
+    [[ "$READERS" == *" $cmd "* ]] && reader=1
+    if [[ "$cmd" == git ]] && hh_git_parse "$HH_CWD" && [[ "$GIT_READERS" == *" $HH_GIT_SUB "* ]]; then
+      reader=1
+    fi
+    if [[ "$w" == *'>'* || "$prev" =~ ^[0-9]*('>'|'>>'|'>|'|'&>')$ || $reader -eq 0 ]]; then
       hh_block "this command can write .claude/data/$LOCAL_POLICY, which opts the checkout in to paid vendors and sets their caps; only the contributor changes it." \
         "Ask the contributor to run 'python3 scripts/vendors/vendors.py enable|disable <vendor>' from their own terminal (knowledge/vendors.md)."
     fi
@@ -132,10 +139,15 @@ while IFS= read -r seg; do
   if [[ "$cmd" == vendors.py ]]; then
     script_at=$HH_CI
   elif [[ "$cmd" =~ ^python(3(\.[0-9]+)?)?$ ]]; then
+    # Every word is scanned: an interpreter option can take a value (-X dev,
+    # -W ignore), and `-m vendors` runs the module without naming the file.
     for (( k = HH_CI + 1; k < ${#HH_WORDS[@]}; k++ )); do
-      [[ "${HH_WORDS[k]}" == -* ]] && continue
-      [[ "$(hh_basename "${HH_WORDS[k]}")" == vendors.py ]] && script_at=$k
-      break
+      w="${HH_WORDS[k]}"
+      if [[ "$(hh_basename "$w")" == vendors.py || "$w" == -mvendors \
+            || ( "$w" == vendors && "${HH_WORDS[k-1]}" == -m ) ]]; then
+        script_at=$k
+        break
+      fi
     done
   fi
   if (( script_at >= 0 )) && [[ "${HH_WORDS[script_at+1]:-}" == enable ]]; then
