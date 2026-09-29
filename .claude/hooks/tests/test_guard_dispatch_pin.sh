@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# test_guard_dispatch_pin.sh: in a session running /run-spec or /implement, an
+# Agent dispatch must name a project agent (or Explore/Plan); every other session
+# and every unreadable input is left alone.
+
+# shellcheck source=lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+HOOK="$HOOKS_DIR/guard-dispatch-pin.sh"
+
+PROJ="$TEST_TMP/proj"
+new_repo "$PROJ"
+mkdir -p "$PROJ/.claude/agents"
+printf -- '---\nname: go-implementer\n---\n' > "$PROJ/.claude/agents/go-implementer.md"
+export CLAUDE_PROJECT_DIR="$PROJ"
+
+RUN="$TEST_TMP/run.jsonl"
+jq -nc '{type:"assistant",message:{content:[{type:"tool_use",name:"Skill",input:{skill:"run-spec",args:"demo"}}]}}' > "$RUN"
+SLASH="$TEST_TMP/slash.jsonl"
+jq -nc '{type:"user",message:{content:"<command-name>/implement</command-name> demo"}}' > "$SLASH"
+PLAIN="$TEST_TMP/plain.jsonl"
+jq -nc '{type:"user",message:{content:"explain the run-spec skill, then implement nothing"}}' > "$PLAIN"
+
+# agent <transcript> [subagent_type|-] [tool]: an Agent payload; "-" omits the type.
+agent() {
+  jq -nc --arg t "$1" --arg a "${2--}" --arg tool "${3:-Agent}" --arg cwd "$PROJ" \
+    '{hook_event_name:"PreToolUse",tool_name:$tool,session_id:"s1",cwd:$cwd,transcript_path:$t,
+      tool_input:({description:"d",prompt:"p"} + (if $a == "-" then {} else {subagent_type:$a} end))}'
+}
+
+echo "== in an implementation run =="
+expect_rc 2 "an omitted subagent_type blocks" "$HOOK" "$(agent "$RUN")"
+expect_stanza guard-dispatch-pin "omitted"
+expect_err "go-implementer" "the fix names an agent to use"
+for a in general-purpose claude fork "" "no-such-agent" "../agents/go-implementer"; do
+  expect_rc 2 "subagent_type '$a' blocks" "$HOOK" "$(agent "$RUN" "$a")"
+done
+expect_rc 0 "a project agent passes" "$HOOK" "$(agent "$RUN" go-implementer)"
+expect_rc 0 "Explore passes" "$HOOK" "$(agent "$RUN" Explore)"
+expect_rc 0 "Plan passes" "$HOOK" "$(agent "$RUN" Plan)"
+expect_rc 2 "the older tool name Task is guarded too" "$HOOK" "$(agent "$RUN" general-purpose Task)"
+expect_rc 2 "a slash-command /implement puts the session in scope" "$HOOK" "$(agent "$SLASH" general-purpose)"
+
+echo "== outside a run, and on unreadable input =="
+expect_rc 0 "an ordinary session may dispatch general-purpose" "$HOOK" "$(agent "$PLAIN" general-purpose)"
+expect_rc 0 "an ordinary session may omit the type" "$HOOK" "$(agent "$PLAIN")"
+expect_rc 0 "another tool is ignored" "$HOOK" "$(agent "$RUN" general-purpose Bash)"
+expect_rc 0 "an unreadable transcript fails open" "$HOOK" "$(agent "$TEST_TMP/missing.jsonl" general-purpose)"
+expect_rc 0 "a payload that is not JSON fails open" "$HOOK" "not json"
+agent "$RUN" general-purpose | HOOK_JQ_PROBE=no-such-jq "$HOOK" >/dev/null 2>&1; RC=$?
+check "missing jq fails open" [ "$RC" == 0 ]
+agent "$RUN" general-purpose | CLAUDE_PROJECT_DIR="$TEST_TMP/nowhere" "$HOOK" >/dev/null 2>&1; RC=$?
+check "a project without .claude/agents fails open" [ "$RC" == 0 ]
+
+finish

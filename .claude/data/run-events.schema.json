@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/turbokast/mythhelm/.claude/data/run-events.schema.json",
+  "title": "run-event",
+  "description": "One row of <main checkout>/.claude/data/run-events.jsonl, appended by scripts/harness/runspec.py event and only by the orchestrator. Append-only and stamped with the spec, so concurrent runs share the file safely; runspec.py summary folds a spec's rows into the run report and its dispatched/returned/failed accounting.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "ts", "spec", "kind", "task", "attempt", "agent", "pr", "result", "detail"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "ts": {"type": "string", "format": "date-time"},
+    "spec": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "kind": {"enum": ["run_start", "lifecycle", "dispatch", "return", "verify", "review_round", "pr_ready", "merge", "retry", "fail", "lost", "blocked", "deadlock", "override", "run_end"]},
+    "task": {"type": ["integer", "null"]},
+    "attempt": {"type": ["integer", "null"]},
+    "agent": {"type": ["string", "null"]},
+    "pr": {"type": ["integer", "null"]},
+    "result": {"enum": ["ok", "fail", "unknown", null]},
+    "detail": {"type": "string"}
+  }
+}

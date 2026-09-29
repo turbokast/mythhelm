@@ -16,7 +16,7 @@ How to write one is in [`knowledge/spec-authoring.md`](../knowledge/spec-authori
 | `done/` | Finalized and shipped. Kept as the record of what was built and why. | `requirements.md`, `design.md`, `tasks.md` |
 | `archived/` | Abandoned or superseded, never deleted. | `requirements.md` |
 
-A spec directory also holds `scratchpad.md` (discoveries appended by each task, read at the start of the next) and, after refinement, `refinement-log.md`. An **epic** is work too large for one spec: its directory holds only `plan.md`, whose Work Streams table names the sub-specs. The sub-specs are ordinary spec directories, siblings of each other, never nested inside the epic's directory.
+A spec directory also holds `scratchpad.md` (open questions, research and spec-wide discoveries), from implementation on `handoff.md` (one section per task, filled by that task for the tasks that depend on it) and, after refinement, `refinement-log.md`. An **epic** is work too large for one spec: its directory holds only `plan.md`, whose Work Streams table names the sub-specs. The sub-specs are ordinary spec directories, siblings of each other, never nested inside the epic's directory.
 
 ## Transitions
 
@@ -26,8 +26,8 @@ A spec directory also holds `scratchpad.md` (discoveries appended by each task, 
 | `unrefined/` | `refined/` | `/refine-spec`, when its assessment passes |
 | `refined/` | `refined/` | `/refine-spec` again, to re-polish |
 | `unrefined/` or `refined/` | `todo/` | `/spec`, after design and tasks pass validation |
-| `todo/` | `in-progress/` | the implementation run, when it starts the first task |
-| `in-progress/` | `unfinalized/` | the implementation run, when the last task completes |
+| `todo/` | `in-progress/` | `/run-spec`, in a lifecycle pull request before it dispatches the first task |
+| `in-progress/` | `unfinalized/` | `/run-spec`, in a lifecycle pull request after the last task's pull request merges |
 | `unfinalized/` | `done/` | the finalize step, after review and CI |
 | any state | `archived/` | `/evaluate-spec`, when a spec is stale, superseded or abandoned |
 
@@ -43,6 +43,7 @@ Only the lifecycle skills move a spec, and they move it with `scripts/harness/sp
 | `/refine-spec` | Assess and fix requirements until ready → `refined/` |
 | `/spec` | Investigate, choose single spec or epic, write design and tasks, validate → `todo/` |
 | `/evaluate-spec` | Compare a stale spec with the code → update it, or archive it |
+| `/run-spec` | Implement a spec's tasks as merged pull requests; moves it `todo/` → `in-progress/` → `unfinalized/` through lifecycle pull requests ([`WORKFLOW.md`](../WORKFLOW.md)) |
 | `/spec-resolution` | Reference: how every skill finds a spec by name |
 
 `/spec` runs its phases through `/spec-investigate`, `/spec-scope`, `/spec-create-single` or `/spec-create-epic` (which follow `/spec-decomposition`), `/spec-validate` and `/spec-fix-and-report`.
