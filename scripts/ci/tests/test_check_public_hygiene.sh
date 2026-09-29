@@ -83,7 +83,27 @@ check "binary files are still scanned for tokens" grep -q '^blob.bin:1: token:' 
 printf 'x\0%s\n' "-----BEGIN EC PRIV""ATE KEY-----" > "$R/blob.bin"
 run_check
 check "binary files are still scanned for private keys" grep -q '^blob.bin:1: private-key:' <<< "$OUT"
+printf 'x\0/%s/alice/private db.prod%s\n' "$H" ".internal" > "$R/blob.bin"
+run_check
+check "binary files are still scanned for home paths" grep -q '^blob.bin:1: home-path:' <<< "$OUT"
+check "binary files are still scanned for hostnames" grep -q '^blob.bin:1: host:' <<< "$OUT"
 rm -f "$R/blob.bin"
+ln -s "/$H/alice/private-notes" "$R/link-to-home"
+run_check
+check "a symlink's own target text is scanned" grep -q '^link-to-home:1: home-path:' <<< "$OUT"
+rm -f "$R/link-to-home"
+BADNAME="$(printf 'bad\377name.txt')"
+printf 'token=%s\n' "gh""p_$A36" > "$R/$BADNAME"
+run_check
+check "a file with a non-UTF-8 name is scanned" grep -q 'token:' <<< "$OUT"
+rm -f "$R/$BADNAME"
+printf 'x\n' > "$R/unreadable.txt"
+chmod 000 "$R/unreadable.txt"
+if [[ ! -r "$R/unreadable.txt" ]]; then
+  run_check
+  check "an unreadable file fails the check" grep -q '^unreadable.txt: unreadable:' <<< "$OUT"
+fi
+rm -f "$R/unreadable.txt"
 printf 'secret.txt\n' > "$R/.gitignore"
 printf 'alice@corp''mail.io\n' > "$R/secret.txt"
 run_check
