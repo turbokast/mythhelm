@@ -1,0 +1,44 @@
+name: OSV-Scanner
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 5 * * 1"
+
+permissions: {}
+
+concurrency:
+  group: osv-scanner-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  scan:
+    name: OSV-Scanner
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
+      security-events: write # upload SARIF to code scanning
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - id: scan
+        name: Scan dependencies (SARIF)
+        continue-on-error: true
+        run: go run github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.6.0 scan source --recursive --format sarif --output-file osv-results.sarif .
+      - name: Upload SARIF
+        if: hashFiles('osv-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: osv-results.sarif
+          category: osv-scanner
+      - name: Report findings and fail
+        if: steps.scan.outcome == 'failure'
+        run: |
+          go run github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.6.0 scan source --recursive .
+          exit 1
