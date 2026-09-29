@@ -637,7 +637,9 @@ def write_out(root, out, text):
         raise InputError("--out %s is inside product/. pm.py drafts and never writes a product file: write the "
                          "draft to a scratch file, then file it with python3 scripts/orchestration/approvals.py "
                          "request" % out)
-    with open(out, "w", encoding="utf-8") as f:
+    # O_NOFOLLOW: a symlink swapped in after the check above cannot redirect the write.
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o666)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(text)
     print("drafted %s" % out)
 

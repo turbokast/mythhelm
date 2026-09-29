@@ -19,8 +19,9 @@ the repository; `--apply` also writes the file.
 
 `check-write` is called by .claude/hooks/guard-product-write.sh for Edit, Write,
 MultiEdit and NotebookEdit payloads. It computes the content the tool would leave
-and releases the write only when a signed, unconsumed approval names that path, that
-base and that result. The release is recorded as a `consumed` row, so one approval
+and releases the write only when a signed, unconsumed approval names that worktree,
+that path, that base and that result. `approve` checks that the request's worktree
+is a worktree of this repository, shows it, and signs it with the hashes. The release is recorded as a `consumed` row, so one approval
 releases one write. Because the approval binds the base, a change that lands after
 the request makes it stale instead of being overwritten; because it binds the
 result, it releases exactly the approved content and nothing else (not a deletion,
@@ -211,6 +212,8 @@ class Ledger:
         return {r.get("consumes") for r in self.rows() if r.get("state") == "consumed"}
 
     def request(self, ident):
+        if not ID_RE.match(ident or ""):
+            raise Refused("%r is not a request id" % ident)
         d = os.path.join(self.requests, ident)
         try:
             with open(os.path.join(d, "request.json"), encoding="utf-8") as f:
@@ -378,7 +381,13 @@ def verified_request(ledger, ident):
         if sha256_bytes(f.read()) != req.get("diff_sha256"):
             raise Refused("request %s was altered after it was filed (the diff no longer matches its "
                           "recorded hash); reject it and ask for a new request" % ident)
-    target = os.path.join(req.get("worktree", ""), rel)
+    worktree = os.path.realpath(req.get("worktree") or "/nonexistent")
+    top = toplevel_of(worktree)
+    if not top or os.path.realpath(top) != worktree:
+        raise Refused("request %s names %s, which is not the top of a worktree" % (ident, worktree))
+    if os.path.realpath(orchestration_dir(worktree)) != os.path.realpath(ledger.orch):
+        raise Refused("request %s names a worktree of another repository (%s)" % (ident, worktree))
+    target = os.path.join(worktree, rel)
     if sha256_file(target) != req.get("base_sha256"):
         raise Refused("%s has changed since request %s was filed, so the diff no longer describes what "
                       "would change; reject it and ask for a redraft" % (target, ident))
@@ -401,11 +410,12 @@ def decide(a, state):
         else:
             req, _ = ledger.request(a.id)
             rel, target, proposed = req.get("path"), None, None
-        print("\n%s: %s\n  %s" % (a.id, rel, req.get("summary", "")))
+        worktree = os.path.realpath(req.get("worktree") or "/nonexistent")
+        print("\n%s: %s in %s\n  %s" % (a.id, rel, worktree, req.get("summary", "")))
         if not confirm("%s request %s?" % ("Approve" if state == "approved" else "Reject", a.id), a.yes):
             print("nothing recorded")
             return
-        row = {"schema_version": 1, "id": a.id, "state": state, "path": rel,
+        row = {"schema_version": 1, "id": a.id, "state": state, "path": rel, "worktree": worktree,
                "base_sha256": req.get("base_sha256"), "result_sha256": req.get("result_sha256"),
                "diff_sha256": req.get("diff_sha256"), "decided_at": now(),
                "decided_by": "terminal:" + (getpass.getuser() or "maintainer"), "prev": ledger.chain_head()}
@@ -515,6 +525,9 @@ def cmd_check_write(_a):
                 continue
             if row["mac"] in consumed:
                 reasons.append("approval %s was already used for one write" % ident)
+                continue
+            if row.get("worktree") != os.path.realpath(top):
+                reasons.append("approval %s was signed for the worktree %s, not this one" % (ident, row.get("worktree")))
                 continue
             if row.get("base_sha256") != base:
                 reasons.append("approval %s was made against different content of %s, which has changed since "

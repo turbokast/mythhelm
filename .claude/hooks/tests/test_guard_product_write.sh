@@ -144,6 +144,10 @@ request "$WT" w1 product/backlog.md "from the worktree"
 check "the request lands in the main checkout" [ -f "$PROJ/orchestration/requests/w1/request.json" ]
 maintainer "$PROJ" approve w1 --yes
 expect_rc 0 "an approved worktree write" "$HOOK" "$(write_payload Write "$WT/product/backlog.md" "from the worktree" "$WT")"
+request "$PROJ" x1 product/backlog.md "cross"
+maintainer "$PROJ" approve x1 --yes
+expect_rc 2 "an approval for the main checkout does not release a worktree write" "$HOOK" "$(write_payload Write "$WT/product/backlog.md" "cross" "$WT")"
+expect_err "signed for the worktree" "the worktree mismatch is named"
 
 echo "== what is never released =="
 nb="$(jq -nc --arg p "$PROJ/product/x.ipynb" '{tool_name:"NotebookEdit",cwd:"/",tool_input:{notebook_path:$p,new_source:"x"}}')"

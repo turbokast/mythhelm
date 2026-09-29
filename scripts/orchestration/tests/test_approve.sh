@@ -108,4 +108,20 @@ tty "$(printf '%q' "$APPROVE") approve a1 --yes"
 run "$APPROVE" audit
 has "audited 2 decision(s)" "a decided request cannot be decided again"
 
+echo "== approve checks the worktree a request names =="
+OTHER="$TEST_TMP/other"
+new_repo "$OTHER"
+mkdir -p "$OTHER/product"
+printf 'v1\n' > "$OTHER/product/backlog.md"
+printf 'w\n' > "$TEST_TMP/w"
+run python3 "$APPROVALS" request wt1 --path product/backlog.md --proposed "$TEST_TMP/w"
+jq --arg o "$OTHER" '.worktree = $o' "$R/orchestration/requests/wt1/request.json" > "$TEST_TMP/req.json"
+cp "$TEST_TMP/req.json" "$R/orchestration/requests/wt1/request.json"
+tty "$(printf '%q' "$APPROVE") approve wt1 --yes"
+check "a request retargeted to another repository is not approved" bash -c "! grep -q '\"id\": \"wt1\"' '$LEDGER'"
+run "$APPROVE" audit
+has "audited 2 decision(s)" "no decision was recorded for it"
+run "$APPROVE" show ../../x
+expect 1 "show refuses a path-like id"
+
 finish
