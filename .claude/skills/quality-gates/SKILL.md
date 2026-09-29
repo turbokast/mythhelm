@@ -21,7 +21,7 @@ Optional `$ARGUMENTS`: the changed paths or a domain (`go`, `harness`, `workflow
 
 1. **Format first** (`.claude/rules/formatter-before-gate.md`): `gofmt -w <changed .go files>`; `go mod tidy` when imports or `go.mod` changed.
 2. **Select gates** by changed path with the matrix below. Run every row that matches; a cross-domain change runs all of its rows.
-3. **Run each gate unpiped**, or capture `${PIPESTATUS[0]}`, and record its exit code and the summary line (counts). A gate that did not print a result did not pass.
+3. **Run each gate through `scripts/harness/gate.sh <gate>`** (or a group: `go`, `harness`, `all` — the gates the change set needs). The wrapper runs the gate's command unpiped from the tree root and writes `.claude/data/gate-marker-<gate>.json` only for an exit-0 run over an unchanged tree; `python3 scripts/harness/gatelib.py status` shows which markers are fresh. A gate run another way records nothing, so capture its own exit status (`${PIPESTATUS[0]}`) and summary line yourself. A gate that did not print a result did not pass.
 4. **Report** in the output format. Fix every failure before claiming completion (`.claude/skills/investigating-failures/SKILL.md`).
 
 ## Gate matrix

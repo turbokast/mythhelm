@@ -12,6 +12,7 @@ The format of a MYTHHELM spec, and the patterns that make one implementable with
 | `design.md` | `/spec` | Current state, the design by area, decisions, honesty register. |
 | `tasks.md` | `/spec`; completion entries by the implementing agents | Dependency notes, shared gates, and one block per task. |
 | `scratchpad.md` | `/spec` seeds it; every task appends | Open questions with their defaults, research notes, discoveries. |
+| `handoff.md` | `/run-spec` seeds one section per task; each task fills its own | What each task produced and what its dependants must know; pasted into their dispatch prompts. |
 | `refinement-log.md` | `/refine-spec` | Assessment rounds and the changes each made. |
 | `plan.md` | `/spec-create-epic` | An epic's master plan; the only file in an epic directory. |
 
@@ -114,7 +115,7 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 
 The lint is `scripts/ci/lint-agent-harness.sh` (check `specs`); it parses `### Task N` headings outside code fences and `- **Field**:` bullets. The validator is the fresh-context review in `/spec-validate`.
 
-**Completion entries.** An implementing agent appends ` ✅ COMPLETED` to its task's heading and adds `Status`, `Implementation` (with commit SHAs), `Spec deviations` (`None`, or each deviation with its reason) and `Files modified`, keeping every original field. The spec's own "Completion convention" bullet states the exact form.
+**Completion entries.** An implementing agent appends ` ✅ COMPLETED` to its task's heading and adds `Status` (`✅ Completed — …; PR #<n>`), `Implementation` (with commit SHAs), `Spec deviations` (`None`, or each deviation with its reason) and `Files modified`, keeping every original field. `.claude/skills/task-completion/SKILL.md` is the authoritative format and `scripts/harness/runspec.py entry-check` checks it; the spec's own "Completion convention" bullet may add fields.
 
 ### Epic plans
 

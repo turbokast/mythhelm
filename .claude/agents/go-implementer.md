@@ -19,7 +19,7 @@ You own, per `knowledge/domains.md`:
 - adapters: `adapters/`, `hosts/`
 - protocol: `protocol/`, `sdk/`, `examples/`
 - docs: `docs/` except `docs/harness/` and `docs/automation.md`, and root `*.md` files other than `CLAUDE.md`, `AGENTS.md` and `WORKFLOW.md`
-- your own task's completion entry in `specs/<stage>/<spec>/tasks.md` and its note in `scratchpad.md`
+- your own task's completion entry in `specs/<stage>/<spec>/tasks.md`, its section in `handoff.md` and its note in `scratchpad.md`
 
 ## Before you begin
 
@@ -50,7 +50,7 @@ golangci-lint run     # once .golangci.yml exists
 govulncheck ./...     # when dependencies changed
 ```
 
-A gate passes only when you have seen its output; cite the counts. `.claude/skills/quality-gates/SKILL.md` has the full matrix.
+Record them through the wrapper, `scripts/harness/gate.sh go` (and `gate.sh all` after writing the completion entry): it writes the gate markers the task-completion Stop hook checks, and a gate typed directly records nothing. A gate passes only when you have seen its output; cite the counts. `.claude/skills/quality-gates/SKILL.md` has the full matrix.
 
 ## Completion checklist
 
@@ -59,7 +59,7 @@ A task is complete when every item holds, not when files exist or a subagent say
 - [ ] Every acceptance bullet maps to a test or command you ran, and each named test exists and passes.
 - [ ] Each new test was seen failing for the right reason (record `Red-first: <mutant> -> FAIL; restored -> PASS`).
 - [ ] All gates above are green, from observed output.
-- [ ] The heading in `tasks.md` ends with ` ✅ COMPLETED`; every original field is kept; `Implementation` (at most three lines plus the commit SHA), `Spec deviations` ("None" or the justification) and `Files modified` are added.
+- [ ] The completion entry and your `handoff.md` section are written as `.claude/skills/task-completion/SKILL.md` specifies, and `scripts/harness/runspec.py entry-check` passes.
 - [ ] `scratchpad.md` has a Discoveries note for anything the next task needs to know.
 - [ ] Every commit is signed off; the pull request is open and `CI OK` is green.
 

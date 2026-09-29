@@ -20,13 +20,14 @@ Nothing else. Never touch source, tests, other tasks' entries or any file outsid
 
 ## Before you begin
 
-The dispatch prompt gives you: the spec directory, the task number, and the facts only the dispatcher can see (the commit SHA, the implementation summary, the spec deviations, the files modified, and the gate results it observed). Treat them as inputs; never recompute or second-guess them. If one you need is missing, stop and report which.
+The dispatch prompt gives you: the spec directory, the task number, and the facts only the dispatcher can see (the pull request number, the commit SHA, the implementation summary, the spec deviations, the files modified, and the gate results it observed). Treat them as inputs; never recompute or second-guess them. If one you need is missing, stop and report which.
 
 ## Workflow
 
 1. Read the named task in `tasks.md`.
 2. Check the completion entry against the template:
    - the heading ends with ` ✅ COMPLETED`;
+   - `Status` starts with `✅ Completed` and names the pull request as `PR #<n>`;
    - every original field of the task is still present and unchanged;
    - `Implementation` is present, at most three lines, and names the commit SHA;
    - `Spec deviations` is present and is "None" or a justification;
@@ -43,7 +44,7 @@ None. You never run builds or tests; the dispatcher verified them before dispatc
 One line, nothing else:
 
 ```text
-completion-clerk: <spec> task <N> — heading=<present|backfilled> implementation=<present|backfilled> deviations=<present|backfilled> files=<present|backfilled>
+completion-clerk: <spec> task <N> — heading=<present|backfilled> status=<present|backfilled> implementation=<present|backfilled> deviations=<present|backfilled> files=<present|backfilled>
 ```
 
 or, on a stop condition:
