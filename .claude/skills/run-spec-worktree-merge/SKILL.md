@@ -35,7 +35,7 @@ Every task's work reaches `main` through its own pull request, merged by the orc
 2. **Review round.** Send the `reason=` lines to the same worker with the review-round template (`/run-spec-dispatch`). Record `review_round`. When it returns, re-run `/run-spec` Phase 2 step 3 (verification) on the new head, then step 1 here. After three rounds that still end `not-ready`, stop the run: escalation 1.
    - `behind` or `conflict`: the worker merges `origin/main` into its branch in its worktree (never a rebase, never a force push), re-runs its gates and pushes.
    - `scope:` for a file the task legitimately needed: the worker names it in `Spec deviations` with the reason. The orchestrator passes `--accept-scope <path>` only for a file the spec itself sanctions elsewhere, and records why in a `verify` event.
-   - `leak:` in the diff: the worker removes it and pushes. A leak in the title or body stops the run and goes to the operator: the body's edit history stays public, and a `gh api` write to the pull request is a publishing action (`.claude/hooks/guard-publish.sh`).
+   - `leak:` in the diff: the worker removes it and pushes. A credential (`token`, `private-key`) that was pushed at all stays exposed in the branch history: stop the run and have the operator revoke it. A leak in the title or body stops the run and goes to the operator: the body's edit history stays public, and a `gh api` write to the pull request is a publishing action (`.claude/hooks/guard-publish.sh`).
 3. **Merge.**
 
    ```bash
