@@ -94,7 +94,7 @@ Then `## Implementation Tasks` with the task blocks.
 - [ ] Ordered contract-first; no task depends on a later one; parallel groups named.
 - [ ] Every consumed interface has an exact `Produces` signature.
 - [ ] Every acceptance item names its test or command and its failing counterfactual.
-- [ ] More than 12 tasks only for a vertical slice whose design says why it was not split.
+- [ ] More than 12 tasks only with `design.md` stating why the spec was not split (`/spec-scope`).
 
 ## Output
 

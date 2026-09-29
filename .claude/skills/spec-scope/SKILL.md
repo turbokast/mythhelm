@@ -20,12 +20,11 @@ Phase 2 of `/spec`. After the investigation, decides single spec or epic. Both f
 
 ## Steps
 
-1. **Estimate** the task count with `/spec-decomposition`'s sizing rules, and list the work streams: groups of tasks that could be built by different agents at the same time, and could ship on their own.
-2. **Decide**, in this order:
-   - **Epic** when any holds: more than 12 estimated tasks; two or more independent work streams; work across domains (`knowledge/domains.md`) whose parts are independent subsystems; parts that deliver value shipped alone.
-   - **Single spec** otherwise: one work stream, tightly coupled changes, 12 or fewer tasks.
-   - **Vertical-slice exception.** Work above 12 tasks stays one spec when no part can ship alone (every task is needed before anything is usable, as in a first end-to-end slice). `design.md` then states why it was not split.
-   - **Ambiguous** (10 to 14 tasks, partly independent streams): split when two streams could be implemented in parallel by different agents; otherwise stay single. Give the reasoning.
+1. **Estimate** the task count with `/spec-decomposition`'s sizing rules, and list the work streams. A work stream is **independent** when different agents could build it in parallel with the others and it delivers something usable shipped alone; independent subsystems in different domains (`knowledge/domains.md`) are independent work streams.
+2. **Decide** by the first rule that applies:
+   1. Two or more independent work streams: **epic**.
+   2. More than 14 estimated tasks: **epic**, unless no part can ship alone (every task is needed before anything is usable, as in a first end-to-end slice). Then **single spec**, and `design.md` states why it was not split.
+   3. Otherwise: **single spec**. Above 12 tasks, `design.md` states why it was not split.
 3. **Present** the determination (advisory step):
 
    ```text

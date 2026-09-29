@@ -21,7 +21,7 @@ Phase 3a of `/spec`: writes the files of one spec. The format of every file, wit
 ## Steps
 
 1. **Locate.**
-   - Mode C: create `specs/unrefined/<name>/` and write all four files.
+   - Mode C: confirm the name is free (`scripts/harness/spec-lifecycle.sh resolve <name>` reports no spec, in the working tree or the index), then create `specs/unrefined/<name>/` and write all four files. A taken name goes back to `/spec` for a new one.
    - Mode A: write into `specs/refined/<name>/`. Keep `requirements.md` and `refinement-log.md` as they are; a requirement that turns out wrong during design is a finding for `/spec-fix-and-report` to escalate, not an edit made here.
 2. **requirements.md** (mode C only): objectives, a non-goals table with what still binds, `FR-N` sections with `AC-N.M` criteria in EARS form tagged with invariant, gate and section IDs, NFRs and a Definition of Done.
 3. **design.md**:
