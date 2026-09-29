@@ -112,6 +112,13 @@ while IFS= read -r seg; do
     [[ "$READERS" == *" $cmd "* ]] && reader=1
     if [[ "$cmd" == git ]] && hh_git_parse "$HH_CWD" && [[ "$GIT_READERS" == *" $HH_GIT_SUB "* ]]; then
       reader=1
+      # A read-only subcommand still writes a file with --output, and git grep
+      # runs a command with -O/--open-files-in-pager.
+      for g in ${HH_GIT_ARGS[@]+"${HH_GIT_ARGS[@]}"}; do
+        case "$g" in
+          --output|--output=*|-O*|--open-files-in-pager*) reader=0 ;;
+        esac
+      done
     fi
     if [[ "$w" == *'>'* || "$prev" =~ ^[0-9]*('>'|'>>'|'>|'|'&>')$ || $reader -eq 0 ]]; then
       hh_block "this command can write .claude/data/$LOCAL_POLICY, which opts the checkout in to paid vendors and sets their caps; only the contributor changes it." \
