@@ -1,0 +1,51 @@
+{
+  "title": "oracle",
+  "description": "Answer shape of stuck-oracle: ranked mechanisms, each with the check that tells it apart from the others.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "hypotheses"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "hypotheses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "rank",
+          "hypothesis",
+          "mechanism",
+          "discriminating_test",
+          "likelihood"
+        ],
+        "properties": {
+          "rank": {
+            "type": "integer"
+          },
+          "hypothesis": {
+            "type": "string"
+          },
+          "mechanism": {
+            "type": "string"
+          },
+          "discriminating_test": {
+            "type": "string"
+          },
+          "likelihood": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

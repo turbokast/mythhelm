@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Offline stand-in for the Muse CLI, used only by the vendor tests. Behaviour comes
+# from stub.env beside it. Never calls a network service.
+set -uo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STUB_MODE=ok STUB_VERSION=1.4.0 STUB_SIGNED_IN=0 STUB_WRITE="" STUB_ANSWER="$HERE/answer.json"
+# shellcheck source=/dev/null
+[[ -f "$HERE/stub.env" ]] && . "$HERE/stub.env"
+{ printf '%q ' "$@"; echo; } >> "$HERE/argv.log" 2>/dev/null || true
+ARGV="$*"
+
+if [[ "${1:-}" == --version ]]; then echo "muse $STUB_VERSION"; exit 0; fi
+if [[ "${1:-}" == auth && "${2:-}" == status ]]; then exit "$STUB_SIGNED_IN"; fi
+done_record() {
+  jq -cn --arg t "$1" '{payload_type:"run.terminal.completed",payload:{terminal:"completed",text:$t}}'
+}
+[[ "$STUB_MODE" == lane* ]] && jq -cn --arg a "$ARGV" '{type:"argv",argv:$a}'
+case "$STUB_MODE" in
+  ok) done_record "$(cat "$STUB_ANSWER")" ;;
+  notjson) done_record "prose, not JSON" ;;
+  fail) echo '{"payload_type":"task.lifecycle.failed","payload":{"event":{"reason":"stub failure"}}}' ;;
+  sleep) sleep 30 ;;
+  lane) for f in $STUB_WRITE; do mkdir -p "$(dirname "$f")"; echo "// written by the stub" > "$f"; done; done_record "done" ;;
+esac
+exit 0

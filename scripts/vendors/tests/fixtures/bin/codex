@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Offline stand-in for the Codex CLI, used only by the vendor tests. Its behaviour
+# comes from stub.env beside it (the implementer lane scrubs the environment, so a
+# file is the one channel that reaches the stub inside the sandbox). Never calls a
+# network service.
+set -uo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STUB_MODE=ok STUB_VERSION=0.155.1 STUB_SIGNED_IN=0 STUB_WRITE="" STUB_ANSWER="$HERE/answer.json"
+# shellcheck source=/dev/null
+[[ -f "$HERE/stub.env" ]] && . "$HERE/stub.env"
+{ printf '%q ' "$@"; echo; } >> "$HERE/argv.log" 2>/dev/null || true
+ARGV="$*"
+
+if [[ "${1:-}" == --version ]]; then echo "codex-cli $STUB_VERSION"; exit 0; fi
+if [[ "${1:-}" == login && "${2:-}" == status ]]; then
+  (( STUB_SIGNED_IN == 0 )) && echo "Logged in" || echo "Not logged in"
+  exit "$STUB_SIGNED_IN"
+fi
+out=""
+while (( $# > 0 )); do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+cat > /dev/null
+completed() { echo '{"type":"turn.completed","usage":{"input_tokens":120,"output_tokens":30}}'; }
+# shellcheck source=probe.sh
+probe() { . "$HERE/probe.sh"; }
+[[ "$STUB_MODE" == lane* ]] && jq -cn --arg a "$ARGV" '{type:"argv",argv:$a}'
+case "$STUB_MODE" in
+  ok) cp "$STUB_ANSWER" "$out"; completed ;;
+  notjson) echo "I think the code is fine." > "$out"; completed ;;
+  badschema) echo '{"summary":"missing findings"}' > "$out"; completed ;;
+  fail) echo '{"type":"turn.failed","error":{"message":"stub failure"}}' ;;
+  sleep) sleep 30 ;;
+  write-through) touch leaked.txt; cp "$STUB_ANSWER" "$out"; completed ;;
+  lane) for f in $STUB_WRITE; do mkdir -p "$(dirname "$f")"; echo "// written by the stub" > "$f"; done; completed ;;
+  lane-link) mkdir -p internal && ln -s /etc/passwd internal/link.go; completed ;;
+  lane-probe) probe; for f in $STUB_WRITE; do mkdir -p "$(dirname "$f")"; echo "// ok" > "$f"; done; completed ;;
+  lane-nothing) completed ;;
+esac
+exit 0
