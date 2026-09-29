@@ -114,7 +114,7 @@ func hashTree(h hash.Hash, label, root string, skipGit bool) error {
 			if err != nil {
 				return err
 			}
-			put(h, "%s\n", target)
+			put(h, "%s\x00", target) // NUL cannot occur in a target or path
 		case mode.IsRegular():
 			return hashContent(h, p)
 		default:

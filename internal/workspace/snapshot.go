@@ -2,7 +2,10 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -11,7 +14,8 @@ import (
 // the new directory dst (AC-3.3). The clone copies objects instead of
 // hardlinking them, is checked out detached at rev, and has every remote
 // removed so nothing in it can push back into src. Untracked and ignored files
-// in src never reach dst, because only committed objects are cloned.
+// in src never reach dst, because only committed objects are cloned. dst must
+// not exist; if a step after the clone fails, the partial clone is removed.
 func Snapshot(ctx context.Context, src, rev, dst string) error {
 	src, err := filepath.Abs(src)
 	if err != nil {
@@ -20,6 +24,12 @@ func Snapshot(ctx context.Context, src, rev, dst string) error {
 	if dst, err = filepath.Abs(dst); err != nil {
 		return err
 	}
+	switch _, err := os.Lstat(dst); {
+	case err == nil:
+		return fmt.Errorf("snapshot destination %s already exists", dst)
+	case !errors.Is(err, fs.ErrNotExist):
+		return fmt.Errorf("snapshot destination: %w", err)
+	}
 	oid, err := gitLine(ctx, src, "rev-parse", "--verify", "--end-of-options", rev+"^{commit}")
 	if err != nil {
 		return fmt.Errorf("resolve %q: %w", rev, err)
@@ -27,6 +37,16 @@ func Snapshot(ctx context.Context, src, rev, dst string) error {
 	if _, err := Git(ctx, src, true, "clone", "--quiet", "--no-hardlinks", "--no-checkout", "--", src, dst); err != nil {
 		return err
 	}
+	if err := detachAndDisconnect(ctx, dst, oid); err != nil {
+		if rmErr := os.RemoveAll(dst); rmErr != nil {
+			return errors.Join(err, fmt.Errorf("remove partial snapshot: %w", rmErr))
+		}
+		return err
+	}
+	return nil
+}
+
+func detachAndDisconnect(ctx context.Context, dst, oid string) error {
 	if _, err := Git(ctx, dst, false, "checkout", "--quiet", "--detach", oid); err != nil {
 		return err
 	}

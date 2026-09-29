@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -99,6 +100,8 @@ func unsupportedFeatures(ctx context.Context, top string) ([]string, error) {
 	}
 	if _, err := os.Lstat(filepath.Join(top, ".gitmodules")); err == nil {
 		submodules = true
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("check .gitmodules: %w", err)
 	}
 	if submodules {
 		found = append(found, FeatureSubmodules)

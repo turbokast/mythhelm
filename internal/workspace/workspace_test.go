@@ -369,6 +369,55 @@ func TestSnapshotRejectsUnknownRevision(t *testing.T) {
 	}
 }
 
+func TestSnapshotRefusesExistingDestination(t *testing.T) {
+	repo := newRepo(t)
+	t.Run("empty directory", func(t *testing.T) {
+		dst := t.TempDir()
+		if err := Snapshot(context.Background(), repo, "HEAD", dst); err == nil {
+			t.Fatal("Snapshot into an existing directory succeeded")
+		}
+		if entries, err := os.ReadDir(dst); err != nil || len(entries) != 0 {
+			t.Errorf("destination after a refused Snapshot: %d entries, %v", len(entries), err)
+		}
+	})
+	t.Run("directory with caller data", func(t *testing.T) {
+		dst := t.TempDir()
+		write(t, dst, "keep.txt", "caller data\n")
+		if err := Snapshot(context.Background(), repo, "HEAD", dst); err == nil {
+			t.Fatal("Snapshot into an existing directory succeeded")
+		}
+		if got := readFile(t, dst, "keep.txt"); got != "caller data\n" {
+			t.Errorf("keep.txt = %q after a refused Snapshot", got)
+		}
+	})
+}
+
+func TestSnapshotRemovesDestinationWhenCheckoutFails(t *testing.T) {
+	repo := newRepo(t)
+	// A commit whose tree holds a ".git" entry: clone copies it, checkout
+	// refuses it.
+	blob := run(t, repo, "hash-object", "-w", "a.txt")
+	cmd := exec.Command("git", "mktree")
+	cmd.Dir = repo
+	cmd.Stdin = strings.NewReader("100644 blob " + blob + "\t.git\n")
+	tree, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("mktree: %v", err)
+	}
+	bad := run(t, repo, "commit-tree", strings.TrimSpace(string(tree)), "-m", "bad")
+	run(t, repo, "branch", "bad", bad)
+
+	dst := filepath.Join(t.TempDir(), "workspace")
+	err = Snapshot(context.Background(), repo, bad, dst)
+	var gitErr *GitError
+	if !errors.As(err, &gitErr) || gitErr.Args[0] != "checkout" {
+		t.Fatalf("Snapshot err = %v, want a checkout *GitError", err)
+	}
+	if _, err := os.Lstat(dst); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("partial snapshot left behind: %v", err)
+	}
+}
+
 func TestAgentPlantedHookNotRun(t *testing.T) {
 	ctx := context.Background()
 	repo := newRepo(t)
@@ -442,6 +491,30 @@ func TestGitErrorCarriesExitCodeAndStderr(t *testing.T) {
 	if gitErr.ExitCode == 0 || gitErr.Stderr == "" {
 		t.Errorf("GitError = %+v, want a non-zero exit code and stderr", gitErr)
 	}
+}
+
+func TestGitOutputIsBounded(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	t.Run("stdout over the limit is an error", func(t *testing.T) {
+		defer func(n int) { maxStdout = n }(maxStdout)
+		maxStdout = 10
+		if _, err := Git(ctx, repo, true, "rev-parse", "HEAD"); !errors.Is(err, ErrOutputTooLarge) {
+			t.Errorf("err = %v, want ErrOutputTooLarge", err)
+		}
+	})
+	t.Run("stderr is truncated", func(t *testing.T) {
+		defer func(n int) { maxStderr = n }(maxStderr)
+		maxStderr = 16
+		_, err := Git(ctx, repo, true, "rev-parse", "--verify", "no-such-ref-"+strings.Repeat("x", 100))
+		var gitErr *GitError
+		if !errors.As(err, &gitErr) {
+			t.Fatalf("err = %v, want *GitError", err)
+		}
+		if len(gitErr.Stderr) > 16+len(truncatedMark) || !strings.HasSuffix(gitErr.Stderr, truncatedMark) {
+			t.Errorf("Stderr = %q, want at most 16 bytes plus %q", gitErr.Stderr, truncatedMark)
+		}
+	})
 }
 
 func TestSourceFingerprintTracksCheckoutState(t *testing.T) {

@@ -14,6 +14,18 @@ import (
 	"sync"
 )
 
+// ErrOutputTooLarge means git wrote more than maxStdout bytes to stdout.
+var ErrOutputTooLarge = errors.New("git output exceeds the size limit")
+
+// Output limits. Stdout over the limit fails the call rather than being cut
+// short; stderr, which only explains a failure, is truncated.
+var (
+	maxStdout = 256 << 20
+	maxStderr = 16 << 10
+)
+
+const truncatedMark = " …[truncated]"
+
 // GitError is a git invocation that ran and exited non-zero.
 type GitError struct {
 	Args     []string
@@ -47,18 +59,43 @@ func Git(ctx context.Context, dir string, userRepo bool, args ...string) ([]byte
 	cmd := exec.CommandContext(ctx, "git", argv...) // #nosec G204 -- fixed binary, argv array, no shell
 	cmd.Dir = dir
 	cmd.Env = gitEnv(os.Environ(), userRepo)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	stdout := &cappedBuffer{max: maxStdout}
+	stderr := &cappedBuffer{max: maxStderr}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	err = cmd.Run()
 	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return stdout.Bytes(), &GitError{Args: args, ExitCode: exitErr.ExitCode(), Stderr: strings.TrimSpace(stderr.String())}
-	}
-	if err != nil {
+	switch {
+	case errors.As(err, &exitErr):
+		msg := strings.TrimSpace(stderr.buf.String())
+		if stderr.over {
+			msg += truncatedMark
+		}
+		return nil, &GitError{Args: args, ExitCode: exitErr.ExitCode(), Stderr: msg}
+	case err != nil:
 		return nil, fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+	case stdout.over:
+		return nil, fmt.Errorf("git %s: %w (%d bytes)", strings.Join(args, " "), ErrOutputTooLarge, maxStdout)
 	}
-	return stdout.Bytes(), nil
+	return stdout.buf.Bytes(), nil
+}
+
+// cappedBuffer keeps at most max bytes and records whether more arrived. It
+// accepts every write, so git is never blocked on a full pipe.
+type cappedBuffer struct {
+	buf  bytes.Buffer
+	max  int
+	over bool
+}
+
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	room := c.max - c.buf.Len()
+	if len(p) > room {
+		c.over = true
+		c.buf.Write(p[:max(room, 0)])
+		return len(p), nil
+	}
+	return c.buf.Write(p)
 }
 
 func gitEnv(parent []string, userRepo bool) []string {
