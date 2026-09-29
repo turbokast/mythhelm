@@ -39,7 +39,7 @@
 - **Spec deviations**: `ExitInternal = 1` is added next to the listed constants, because design §11 requires exit 1 for unexpected errors.
 - **Files modified**: `go.mod`, `cmd/mythhelm/main.go`, `internal/cli/dispatch.go`, `internal/cli/exit.go`, `internal/cli/dispatch_test.go`, `internal/buildinfo/buildinfo.go`, `CONTRIBUTING.md`, `specs/todo/dogfood-slice/tasks.md`.
 
-### Task 2 — CI quality gates: golangci-lint, govulncheck, CodeQL Go, Dependabot gomod
+### Task 2 — CI quality gates: golangci-lint, govulncheck, CodeQL Go, Dependabot gomod ✅ COMPLETED
 
 - **Domain/agent**: release-engineer
 - **Budget**: standard
@@ -60,6 +60,10 @@
   - The PR description tells the maintainer to add `Analyze (go)` to the ruleset's required checks.
 - **Test plan**: CI run on the PR; paste the job URLs in the completion entry.
 - **Invariants touched**: §19.4 (pinned, least-privilege CI), G10.
+- **Status**: ✅ Completed — `.golangci.yml` (v2, design §13 linter set, G204 excluded in tests), CI `golangci-lint` and `govulncheck` jobs in `CI OK`, CodeQL `go`, Dependabot `gomod`; PR #8.
+- **Implementation**: golangci-lint-action v9.3.0 runs lint v2.13.2; govulncheck runs as `go run golang.org/x/vuln/cmd/govulncheck@v1.8.0`; the CodeQL Go leg runs `setup-go` from `go.mod` before `init`. The maintainer adds `Analyze (go)` to the ruleset. Commit 49d22cb.
+- **Spec deviations**: golangci-lint v2.13.2, not v2.14.0, because v2.14.0 (2026-09-24) is inside the 7-day cooldown. govulncheck runs through `go run`, because `golang/govulncheck-action` is not on the repository's action allow-list. The CodeQL Go leg adds `setup-go`, so the extractor uses the toolchain pinned in `go.mod`.
+- **Files modified**: `.golangci.yml`, `.github/workflows/ci.yml`, `.github/workflows/codeql.yml`, `.github/dependabot.yml`, `docs/automation.md`, `specs/todo/dogfood-slice/tasks.md`.
 
 ### Task 3 — CI supply chain and runner matrix
 
