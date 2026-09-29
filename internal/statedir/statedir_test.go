@@ -97,6 +97,27 @@ func TestEnsureRejectsFile(t *testing.T) {
 	}
 }
 
+func TestEnsureRefusesSymlink(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "shared")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "mythhelm")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("cannot create a symlink here: %v", err)
+	}
+	if err := Ensure(link); err == nil {
+		t.Fatal("Ensure accepted a symlinked state directory")
+	}
+	if runtime.GOOS != "windows" {
+		assertMode(t, target, 0o755)
+	}
+}
+
 func assertMode(t *testing.T, dir string, want os.FileMode) {
 	t.Helper()
 	fi, err := os.Stat(dir)

@@ -49,22 +49,41 @@ func resolve(goos string, getenv func(string) string, homeDir func() (string, er
 
 // Ensure creates dir, and any missing parents, with mode 0700. An existing
 // directory with wider permissions is narrowed to 0700 on Unix. It fails if
-// dir exists and is not a directory.
+// dir is a symlink or not a directory, so it never changes the permissions
+// of a directory someone else pointed it at.
 func Ensure(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating state directory: %w", err)
 	}
-	fi, err := os.Stat(dir)
+	fi, err := os.Lstat(dir)
 	if err != nil {
 		return fmt.Errorf("checking state directory: %w", err)
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("state directory %s is a symlink; set MYTHHELM_HOME to the real directory", dir)
 	}
 	if !fi.IsDir() {
 		return fmt.Errorf("state directory %s is not a directory", dir)
 	}
-	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o700 {
-		if err := os.Chmod(dir, 0o700); err != nil {
-			return fmt.Errorf("restricting state directory to 0700: %w", err)
-		}
+	if runtime.GOOS == "windows" || fi.Mode().Perm() == 0o700 {
+		return nil
+	}
+	// Change the mode through a handle that is verified to be the directory
+	// just checked, so a swap for a symlink in between cannot redirect it.
+	f, err := os.Open(dir)
+	if err != nil {
+		return fmt.Errorf("opening state directory: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	opened, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("checking state directory: %w", err)
+	}
+	if !os.SameFile(fi, opened) {
+		return fmt.Errorf("state directory %s changed while it was being checked", dir)
+	}
+	if err := f.Chmod(0o700); err != nil {
+		return fmt.Errorf("restricting state directory to 0700: %w", err)
 	}
 	return nil
 }

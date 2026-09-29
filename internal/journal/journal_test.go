@@ -468,17 +468,7 @@ func TestOpenIsIdempotent(t *testing.T) {
 
 func TestMigrationBacksUpBeforeUpgrade(t *testing.T) {
 	ctx := t.Context()
-	dir := t.TempDir()
-	v1, err := open(ctx, dir, migrations[:1])
-	if err != nil {
-		t.Fatal(err)
-	}
-	mustAppend(t, v1, event("run_a", "sup_a", 1, 1))
-	if err := v1.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	v2 := append(migrations[:1:1], `CREATE TABLE v2_marker (x INTEGER) STRICT;`)
+	dir, v2 := v1Database(t)
 	j, err := open(ctx, dir, v2)
 	if err != nil {
 		t.Fatalf("migrating to v2: %v", err)
@@ -502,6 +492,99 @@ func TestMigrationBacksUpBeforeUpgrade(t *testing.T) {
 	}
 	if backupVersion != 1 || rows != 1 {
 		t.Fatalf("backup has user_version %d and %d journal rows, want 1 and 1", backupVersion, rows)
+	}
+}
+
+// v1Database creates a schema v1 database with one journal row in a new
+// directory and returns the directory and the two-step migration list.
+func v1Database(t *testing.T) (dir string, v2 []string) {
+	t.Helper()
+	dir = t.TempDir()
+	v1, err := open(t.Context(), dir, migrations[:1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustAppend(t, v1, event("run_a", "sup_a", 1, 1))
+	if err := v1.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return dir, append(migrations[:1:1], `CREATE TABLE v2_marker (x INTEGER) STRICT;`)
+}
+
+func TestConcurrentOpensMigrateOnce(t *testing.T) {
+	dir, v2 := v1Database(t)
+	const openers = 4
+	var wg sync.WaitGroup
+	errs := make(chan error, openers)
+	for range openers {
+		wg.Go(func() {
+			j, err := open(t.Context(), dir, v2)
+			if err != nil {
+				errs <- err
+				return
+			}
+			errs <- j.Close()
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent Open during migration: %v", err)
+		}
+	}
+	backup := rawOpen(t, filepath.Join(dir, DBName+".bak-v1"))
+	var version int
+	if err := backup.QueryRowContext(t.Context(), "PRAGMA user_version").Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != 1 {
+		t.Fatalf("backup user_version = %d, want 1", version)
+	}
+}
+
+func TestMigrationReusesCompleteBackup(t *testing.T) {
+	// A crash after the backup but before the migration commit leaves a
+	// complete backup behind; the retry must not be stuck on it.
+	dir, v2 := v1Database(t)
+	path := filepath.Join(dir, DBName)
+	db := rawOpen(t, path)
+	if _, err := db.ExecContext(t.Context(), "VACUUM INTO ?", path+".bak-v1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	j, err := open(t.Context(), dir, v2)
+	if err != nil {
+		t.Fatalf("Open with a complete earlier backup: %v", err)
+	}
+	_ = j.Close()
+}
+
+func TestMigrationRefusesUnusableBackup(t *testing.T) {
+	dir, v2 := v1Database(t)
+	backup := filepath.Join(dir, DBName+".bak-v1")
+	if err := os.WriteFile(backup, []byte("not a database"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	j, err := open(t.Context(), dir, v2)
+	if err == nil {
+		_ = j.Close()
+		t.Fatal("Open migrated although the backup path holds something that is not a v1 backup")
+	}
+	if !strings.Contains(err.Error(), backup) {
+		t.Fatalf("error %q does not name the backup path", err)
+	}
+	if got, err := os.ReadFile(backup); err != nil || string(got) != "not a database" {
+		t.Fatalf("existing file at the backup path was changed: %q, %v", got, err)
+	}
+	var version int
+	if err := rawOpen(t, filepath.Join(dir, DBName)).QueryRowContext(t.Context(), "PRAGMA user_version").Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != 1 {
+		t.Fatalf("user_version = %d after a refused migration, want 1", version)
 	}
 }
 

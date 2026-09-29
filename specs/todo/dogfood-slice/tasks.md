@@ -125,7 +125,9 @@
   - The payload must be a JSON object (I09).
   - The exit-2 mapping for `ErrSchemaTooNew` in `internal/cli/exit.go` is left to the first command that opens the journal (Task 5).
   - `Open` does not create the directory.
-- **Files modified**: `go.mod`, `go.sum`, `internal/statedir/statedir.go`, `internal/statedir/statedir_test.go`, `internal/ids/ids.go`, `internal/ids/ids_test.go`, `internal/journal/journal.go`, `internal/journal/journal_test.go`, `internal/journal/migrations/0001_init.sql`, `docs/decisions/0003-local-state-sqlite.md`, `specs/todo/dogfood-slice/tasks.md`.
+  - `.github/workflows/dependency-review.yml` allows `LicenseRef-scancode-google-patent-license-golang`, the Go patent grant on `golang.org/x/sys`, which the required dependency review otherwise rejects.
+  - `statedir.Ensure` refuses a symlinked state directory.
+- **Files modified**: `.github/workflows/dependency-review.yml`, `go.mod`, `go.sum`, `internal/statedir/statedir.go`, `internal/statedir/statedir_test.go`, `internal/ids/ids.go`, `internal/ids/ids_test.go`, `internal/journal/journal.go`, `internal/journal/journal_test.go`, `internal/journal/migrations/0001_init.sql`, `docs/decisions/0003-local-state-sqlite.md`, `specs/todo/dogfood-slice/tasks.md`.
 
 ### Task 5 — State machines, projections and `runs list`
 

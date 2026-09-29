@@ -140,8 +140,12 @@ func dsn(path, query string) string {
 }
 
 func probeVersion(ctx context.Context, path string, supported int) error {
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+	_, err := os.Stat(path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
 		return nil
+	case err != nil:
+		return fmt.Errorf("inspecting %s: %w", path, err)
 	}
 	db, err := sql.Open("sqlite", dsn(path, "mode=ro&_pragma=busy_timeout(5000)"))
 	if err != nil {
@@ -178,26 +182,27 @@ func migrate(ctx context.Context, db *sql.DB, path string, migs []string) error 
 	if version == len(migs) {
 		return nil
 	}
-	if version > 0 {
-		backup := fmt.Sprintf("%s.bak-v%d", path, version)
-		// VACUUM INTO refuses to overwrite a non-empty file, so an earlier
-		// backup is never clobbered.
-		if _, err := db.ExecContext(ctx, "VACUUM INTO ?", backup); err != nil {
-			return fmt.Errorf("backing up schema v%d to %s before migrating: %w", version, backup, err)
-		}
-	}
 
+	// BEGIN IMMEDIATE holds the write lock from here to the commit, so
+	// concurrent openers take turns and only the first one migrates.
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("starting migration: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	// Another process may have migrated since the check above.
 	if err := tx.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return fmt.Errorf("reading schema version: %w", err)
 	}
 	if err := checkVersion(path, version, len(migs)); err != nil {
 		return err
+	}
+	if version == len(migs) {
+		return nil
+	}
+	if version > 0 {
+		if err := backup(ctx, db, path, version); err != nil {
+			return err
+		}
 	}
 	for v := version; v < len(migs); v++ {
 		if _, err := tx.ExecContext(ctx, migs[v]); err != nil {
@@ -209,6 +214,52 @@ func migrate(ctx context.Context, db *sql.DB, path string, migs []string) error 
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("committing migration: %w", err)
+	}
+	return nil
+}
+
+// backup writes <path>.bak-v<version> while the caller holds the write lock.
+// VACUUM INTO cannot run inside a transaction, so it runs on another pooled
+// connection as a WAL reader of the committed database. A backup left by an
+// interrupted migration is reused only if it is an intact database at the
+// same version; anything else at that path is never overwritten.
+func backup(ctx context.Context, db *sql.DB, path string, version int) error {
+	dst := fmt.Sprintf("%s.bak-v%d", path, version)
+	_, err := os.Lstat(dst)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		if _, err := db.ExecContext(ctx, "VACUUM INTO ?", dst); err != nil {
+			return fmt.Errorf("backing up schema v%d to %s before migrating: %w", version, dst, err)
+		}
+		return nil
+	case err != nil:
+		return fmt.Errorf("inspecting backup %s: %w", dst, err)
+	}
+	if err := checkBackup(ctx, dst, version); err != nil {
+		return fmt.Errorf("%s already exists and is not a usable schema v%d backup (%w); move it aside and retry", dst, version, err)
+	}
+	return nil
+}
+
+func checkBackup(ctx context.Context, path string, version int) error {
+	bak, err := sql.Open("sqlite", dsn(path, "mode=ro"))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = bak.Close() }()
+	var got int
+	var check string
+	if err := bak.QueryRowContext(ctx, "PRAGMA user_version").Scan(&got); err != nil {
+		return err
+	}
+	if got != version {
+		return fmt.Errorf("its schema version is %d", got)
+	}
+	if err := bak.QueryRowContext(ctx, "PRAGMA quick_check").Scan(&check); err != nil {
+		return err
+	}
+	if check != "ok" {
+		return fmt.Errorf("quick_check: %s", check)
 	}
 	return nil
 }
