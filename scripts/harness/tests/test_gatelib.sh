@@ -154,7 +154,12 @@ CHECKS=$((CHECKS + 1))
 echo "== tools, groups, directories =="
 repo tools
 echo "// y" >> "$R/internal/x/x.go"
-OUT="$(cd "$R" && PATH="/usr/bin:/bin" "$GATE" go-vet 2>&1)"; RC=$?
+# A PATH holding only what the wrapper itself needs, so no real go can be found.
+MIN="$TEST_TMP/minbin"
+mkdir -p "$MIN"
+for t in bash git dirname env; do ln -s "$(command -v "$t")" "$MIN/$t"; done
+ln -s "$(python3 -c 'import sys; print(sys.executable)')" "$MIN/python3"   # the interpreter, not a version-manager shim
+OUT="$(cd "$R" && PATH="$MIN" "$GATE" go-vet 2>&1)"; RC=$?
 expect 127 "a missing tool is exit 127"
 has "not found on PATH" "and says which"
 check "a missing tool records nothing" [ ! -e "$R/.claude/data/gate-marker-go-vet.json" ]
