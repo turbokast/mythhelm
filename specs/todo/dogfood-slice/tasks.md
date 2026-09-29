@@ -302,7 +302,7 @@
   - `attempt.stopped` adds `signals_sent` and `descendant_scan`, and `attempt.protocol_counters` adds `progress_dropped`.
   - The worker receives `workers.Launch` as JSON on its stdin, never on disk. `Spawn` and `AttemptDir` are added.
   - Extra files: `worker.log`, `proc_other.go` and `worker_unix_test.go`.
-  - New reason codes: `launch_failed`, `native_signal_<name>`, and the native error class.
+  - New reason codes: `launch_failed`, `worker_persistence_failed`, `native_signal_<name>`, and the native error class.
   - Files touched outside the list: `adapters/fake/fake.go` and `fake_test.go`, `cmd/mythhelm/main.go` and `go.mod`.
 
 ### Task 10 — Supervisor run pipeline, first against the fake adapter

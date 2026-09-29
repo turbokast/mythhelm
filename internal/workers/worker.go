@@ -334,15 +334,22 @@ type worker struct {
 	log       *slog.Logger
 	id        Identity
 	beats     int64
+	stderr    *ring
+	// Test seams; nil means the real file operations.
+	spoolSync func(*os.File) error
+	writeFile func(dir, name string, body []byte) error
 }
 
 // outcome is what the worker learned about the native process.
 type outcome struct {
-	stopBy    string // requester of an active stop, or ""
-	result    *adapter.Result
-	nativeErr string // class of the last NativeError observation
-	exit      adapter.NativeExit
-	report    adapter.InterruptReport
+	stopBy       string // requester of an active stop, or ""
+	result       *adapter.Result
+	nativeErr    string // class of the last NativeError observation
+	exited       bool   // exit holds the native's observed exit
+	exit         adapter.NativeExit
+	report       adapter.InterruptReport
+	launchFailed bool // no native process was created
+	aborted      bool // the worker stopped the native because it could not record the attempt
 }
 
 func (w *worker) run(ctx context.Context) error {
@@ -351,6 +358,9 @@ func (w *worker) run(ctx context.Context) error {
 		return err
 	}
 	defer func() { _ = sp.close() }()
+	if w.spoolSync != nil {
+		sp.sync = w.spoolSync
+	}
 	start, err := ProcessStartTime(os.Getpid())
 	if err != nil {
 		return fmt.Errorf("reading the worker's start time: %w", err)
@@ -363,27 +373,31 @@ func (w *worker) run(ctx context.Context) error {
 		return err
 	}
 
-	l := &launcher{stderr: &ring{max: stderrRingBytes}, w: w}
+	w.stderr = &ring{max: stderrRingBytes}
+	l := &launcher{w: w}
 	sess, err := w.start(ctx, l)
 	if err != nil {
 		w.log.Error("native launch failed", "err", err)
-		return emitState(sp, "failed_native", "launch_failed")
+		// No native process was created, so there is nothing to stop.
+		return w.conclude(ctx, sp, nil, outcome{launchFailed: true, report: adapter.InterruptReport{Confirmed: true}})
+	}
+	if l.identityErr != nil {
+		return w.abort(ctx, sp, sess, outcome{}, l.identityErr)
 	}
 	if err := sp.emit(evLaunched, map[string]any{
 		"worker_pid": w.id.PID, "worker_start_time": w.id.StartTime,
 		"native_pid": w.id.NativePID, "native_pgid": w.id.NativePGID,
 	}); err != nil {
-		return w.abort(ctx, sess, err)
+		return w.abort(ctx, sp, sess, outcome{}, err)
 	}
 	if err := emitState(sp, "running", ""); err != nil {
-		return w.abort(ctx, sess, err)
+		return w.abort(ctx, sp, sess, outcome{}, err)
 	}
 
 	out, err := w.supervise(ctx, sp, sess)
 	if err != nil {
-		return w.abort(ctx, sess, err)
+		return w.abort(ctx, sp, sess, out, err)
 	}
-	w.saveStderr(l.stderr)
 	return w.conclude(ctx, sp, sess, out)
 }
 
@@ -401,16 +415,28 @@ func (w *worker) start(ctx context.Context, l *launcher) (adapter.Session, error
 	return adapters[w.launch.AdapterID]().Start(ctx, lp, l)
 }
 
-// abort stops the native process when the worker can no longer record what
-// it does; a native that cannot be observed must not keep running.
-func (w *worker) abort(ctx context.Context, sess adapter.Session, cause error) error {
+// abort stops the native process when the worker could not record what it
+// does, since a native that cannot be observed must not keep running. It
+// then records the attempt's end as far as the spool still accepts writes.
+func (w *worker) abort(ctx context.Context, sp *spool, sess adapter.Session, out outcome, cause error) error {
+	w.log.Error("aborting the attempt", "err", cause)
 	// The session reaps the native only after its observations are taken.
 	go func() {
 		for range sess.Observations() {
 		}
 	}()
-	rep := sess.Interrupt(ctx)
-	w.log.Error("aborting the attempt", "err", cause, "signals_sent", rep.Sent, "confirmed", rep.Confirmed)
+	out.aborted, out.stopBy = true, "worker"
+	out.report = sess.Interrupt(ctx)
+	if !out.exited {
+		select {
+		case out.exit = <-sess.Done():
+			out.exited = true
+		case <-time.After(waitDelay):
+		}
+	}
+	if err := w.conclude(ctx, sp, sess, out); err != nil {
+		w.log.Error("recording the aborted attempt", "err", err)
+	}
 	return cause
 }
 
@@ -422,7 +448,6 @@ func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session)
 		prog        progress
 		obs         = sess.Observations()
 		done        = sess.Done()
-		exited      bool
 		interrupted chan adapter.InterruptReport
 	)
 	poll := time.NewTicker(stopPollInterval)
@@ -431,7 +456,7 @@ func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session)
 	defer beat.Stop()
 	w.heartbeat()
 
-	for !exited || interrupted != nil {
+	for !out.exited || interrupted != nil {
 		select {
 		case ob, ok := <-obs:
 			if !ok {
@@ -442,7 +467,9 @@ func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session)
 				return out, err
 			}
 		case exit := <-done:
-			// Observations is closed before Done fires; drain what is queued.
+			out.exit, out.exited, done = exit, true, nil
+			// Observations is closed before Done fires; drain what is queued
+			// (a nil channel means it was already drained).
 			if obs != nil {
 				for ob := range obs {
 					if err := w.observe(sp, ob, &prog, &out); err != nil {
@@ -450,7 +477,7 @@ func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session)
 					}
 				}
 			}
-			obs, done, exited, out.exit = nil, nil, true, exit
+			obs = nil
 		case rep := <-interrupted:
 			out.report, interrupted = rep, nil
 		case <-beat.C:
@@ -459,7 +486,7 @@ func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session)
 			if err := prog.flush(sp, false); err != nil {
 				return out, err
 			}
-			if exited || out.stopBy != "" {
+			if out.exited || out.stopBy != "" {
 				continue
 			}
 			by, ok := readStopRequest(w.dir)
@@ -519,13 +546,14 @@ func (w *worker) observe(sp *spool, ob adapter.Observation, prog *progress, out 
 // conclude confirms the process group is gone, reports known descendants
 // that escaped it, and spools the attempt's terminal state.
 func (w *worker) conclude(ctx context.Context, sp *spool, sess adapter.Session, out outcome) error {
+	w.saveStderr()
 	if out.exit.Err != nil {
 		w.log.Warn("native exit not fully observed", "err", out.exit.Err)
 	}
 	if err := sp.emit(evNativeResult, nativeResult(out)); err != nil {
 		return err
 	}
-	if out.stopBy == "" {
+	if out.stopBy == "" && sess != nil {
 		// The native exited by itself; anything left in its group is still
 		// stopped before the attempt can be frozen. Nothing is sent when
 		// the group is already gone.
@@ -580,6 +608,10 @@ func classify(out outcome, unresolved bool) (state, reason string) {
 		return "interrupted", "stop_unconfirmed"
 	case unresolved:
 		return "interrupted", "unresolved_descendants"
+	case out.launchFailed:
+		return "failed_native", "launch_failed"
+	case out.aborted:
+		return "interrupted", "worker_persistence_failed"
 	case out.stopBy != "":
 		return "stopped", ""
 	case out.nativeErr != "":
@@ -602,9 +634,11 @@ func classify(out outcome, unresolved bool) (state, reason string) {
 // zero (I09).
 func nativeResult(out outcome) map[string]any {
 	var exitCode, signal any
-	if out.exit.Signal != "" {
+	switch {
+	case !out.exited:
+	case out.exit.Signal != "":
 		signal = out.exit.Signal
-	} else {
+	default:
 		exitCode = out.exit.Code
 	}
 	p := map[string]any{
@@ -679,7 +713,11 @@ func (w *worker) writeIdentity() error {
 	if err != nil {
 		return err
 	}
-	if err := writeFileAtomic(w.dir, identityFile, append(body, '\n')); err != nil {
+	write := w.writeFile
+	if write == nil {
+		write = writeFileAtomic
+	}
+	if err := write(w.dir, identityFile, append(body, '\n')); err != nil {
 		return fmt.Errorf("writing %s: %w", identityFile, err)
 	}
 	return nil
@@ -696,8 +734,8 @@ func (w *worker) heartbeat() {
 }
 
 // saveStderr writes the redacted tail of the native's stderr.
-func (w *worker) saveStderr(r *ring) {
-	body, dropped := r.contents()
+func (w *worker) saveStderr() {
+	body, dropped := w.stderr.contents()
 	text := security.Redact(string(body))
 	if dropped > 0 {
 		text = fmt.Sprintf("[%d earlier bytes dropped]\n%s", dropped, text)
@@ -710,9 +748,12 @@ func (w *worker) saveStderr(r *ring) {
 // launcher is the worker's adapter.Launcher: the only way a native process
 // is created, at most once per worker.
 type launcher struct {
-	stderr *ring
-	w      *worker
-	proc   *ownedProc
+	w    *worker
+	proc *ownedProc
+	// identityErr is set when the native started but its PID could not be
+	// recorded. The process is still returned, so the session reaps it and
+	// the worker stops it through the ladder.
+	identityErr error
 }
 
 func (l *launcher) Launch(_ context.Context, spec adapter.ProcSpec) (adapter.OwnedProc, error) {
@@ -730,7 +771,7 @@ func (l *launcher) Launch(_ context.Context, spec adapter.ProcSpec) (adapter.Own
 	cmd := exec.Command(spec.Path, spec.Args...) //nolint:gosec // G204: the admitted argv, no shell
 	// A nil Env would inherit the worker's environment; the child gets
 	// exactly the admitted one.
-	cmd.Dir, cmd.Env, cmd.Stdin, cmd.Stderr = spec.Dir, append([]string{}, spec.Env...), spec.Stdin, l.stderr
+	cmd.Dir, cmd.Env, cmd.Stdin, cmd.Stderr = spec.Dir, append([]string{}, spec.Env...), spec.Stdin, l.w.stderr
 	cmd.SysProcAttr = nativeAttr()
 	cmd.WaitDelay = waitDelay
 	stdout, err := cmd.StdoutPipe()
@@ -744,12 +785,9 @@ func (l *launcher) Launch(_ context.Context, spec adapter.ProcSpec) (adapter.Own
 	l.proc = p
 	pid := cmd.Process.Pid
 	l.w.id.NativePID, l.w.id.NativePGID = &pid, p.pgid
-	if err := l.w.writeIdentity(); err != nil {
-		// A native the supervisor cannot identify must not run.
-		_ = p.Signal(adapter.StopKill)
-		_ = cmd.Wait()
-		return nil, err
-	}
+	// A native the supervisor cannot identify must not run; the worker
+	// aborts it once the session owns it.
+	l.identityErr = l.w.writeIdentity()
 	return p, nil
 }
 

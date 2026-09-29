@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -553,6 +554,100 @@ func TestWorkerRefusesSecondLaunch(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(a.workdir, "demo.txt")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("the native ran (demo.txt: %v); a worker launches at most once per attempt", err)
 	}
+}
+
+func TestLaunchFailureEndsAttempt(t *testing.T) {
+	a := newAttempt(t)
+	l := a.launch(t, "happy")
+	l.Path = filepath.Join(t.TempDir(), "no-such-native")
+	proc := a.spawn(t, l)
+	evs := a.waitDone(t)
+	if st, err := proc.Wait(); err != nil || !st.Success() {
+		t.Fatalf("worker exit = %v, %v (log %q)", st, err, a.workerLog())
+	}
+	want := []string{"attempt.state_changed", "attempt.native_result", "attempt.stopped", "attempt.state_changed"}
+	if got := types(evs); !slices.Equal(got, want) {
+		t.Fatalf("event types = %q, want %q", got, want)
+	}
+	if nr := nativeResultOf(t, evs); string(nr["exit_code"]) != "null" || string(nr["signal"]) != "null" || string(nr["result_observed"]) != "false" {
+		t.Errorf("native_result = %v, want a null exit and no result: no process existed", nr)
+	}
+	if p := stoppedOf(t, evs); !p.Confirmed || len(p.SignalsSent) != 0 {
+		t.Errorf("attempt.stopped = %+v, want confirmed with no signal sent", p)
+	}
+	if st, reason := final(t, evs); st != "failed_native" || reason != "launch_failed" {
+		t.Errorf("final state = %s (%s), want failed_native (launch_failed)", st, reason)
+	}
+}
+
+// runInProcess runs a worker in this process with test seams set.
+func (a attempt) runInProcess(t *testing.T, l Launch, w *worker) error {
+	t.Helper()
+	if err := os.MkdirAll(a.dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	w.dir, w.runID, w.attemptID, w.launch = a.dir, a.runID, a.attemptID, l
+	w.log = slog.New(slog.NewTextHandler(io.Discard, nil))
+	return w.run(context.Background())
+}
+
+// checkAborted checks that an aborted attempt still recorded its end, with
+// the native stopped.
+func checkAborted(t *testing.T, evs []journal.Event) {
+	t.Helper()
+	if p := stoppedOf(t, evs); !p.Confirmed || len(p.SignalsSent) == 0 {
+		t.Errorf("attempt.stopped = %+v, want the native stopped by the ladder and confirmed", p)
+	}
+	if nr := nativeResultOf(t, evs); string(nr["stop_requested"]) != "true" {
+		t.Errorf("native_result.stop_requested = %s, want true", nr["stop_requested"])
+	}
+	if st, reason := final(t, evs); st != "interrupted" || reason != "worker_persistence_failed" {
+		t.Errorf("final state = %s (%s), want interrupted (worker_persistence_failed)", st, reason)
+	}
+}
+
+func TestSpoolFailureStopsNativeAndRecordsEnd(t *testing.T) {
+	a := newAttempt(t)
+	syncs := 0
+	errDisk := errors.New("disk full")
+	w := &worker{spoolSync: func(*os.File) error {
+		// Fail the 4th critical event, attempt.native_session, once.
+		if syncs++; syncs == 4 {
+			return errDisk
+		}
+		return nil
+	}}
+	if err := a.runInProcess(t, a.launch(t, "slow"), w); !errors.Is(err, errDisk) {
+		t.Fatalf("run = %v, want the spool failure", err)
+	}
+	evs := a.events(t)
+	checkAborted(t, evs)
+	if _, err := ProcessStartTime(*w.id.NativePID); !errors.Is(err, ErrNoProcess) {
+		t.Errorf("native %d still exists (%v)", *w.id.NativePID, err)
+	}
+}
+
+func TestIdentityFailureStopsNative(t *testing.T) {
+	a := newAttempt(t)
+	errDisk := errors.New("disk full")
+	w := &worker{writeFile: func(dir, name string, body []byte) error {
+		var id Identity
+		if err := json.Unmarshal(body, &id); err != nil {
+			return err
+		}
+		if id.NativePID != nil {
+			return errDisk
+		}
+		return writeFileAtomic(dir, name, body)
+	}}
+	if err := a.runInProcess(t, a.launch(t, "slow"), w); !errors.Is(err, errDisk) {
+		t.Fatalf("run = %v, want the identity failure", err)
+	}
+	evs := a.events(t)
+	if slices.Contains(types(evs), "attempt.launched") {
+		t.Errorf("attempt.launched spooled for a native whose PID was never recorded: %s", types(evs))
+	}
+	checkAborted(t, evs)
 }
 
 func TestWorkerRejectsInvalidLaunch(t *testing.T) {

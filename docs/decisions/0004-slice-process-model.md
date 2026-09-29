@@ -35,8 +35,10 @@ The dogfood slice has no per-user supervisor daemon and no local IPC (N11), and 
 
 1. Group not confirmed gone: `interrupted` / `stop_unconfirmed`.
 2. A known descendant still runs, or the scan failed: `interrupted` / `unresolved_descendants`.
-3. A stop was requested: `stopped`, whatever the exit code or signal.
-4. Otherwise the native result mapping (AC-5.7): `succeeded_native` only for a successful result frame and exit 0. Anything else is `failed_native` with reason `<native error class>`, `<result subtype>`, `result_unobserved`, `native_exit_<n>` or `native_signal_<name>`.
+3. The native could not be started: `failed_native` / `launch_failed`. No process existed, so `native_result` has a `null` exit and the group counts as confirmed gone.
+4. The worker could not record the attempt, because a spool write or the post-start `worker.json` write failed: `interrupted` / `worker_persistence_failed`. The worker stops the native through the ladder first, because a native that cannot be observed must not keep running. It then records these end events as far as the spool still accepts writes.
+5. A stop was requested: `stopped`, whatever the exit code or signal.
+6. Otherwise the native result mapping (AC-5.7): `succeeded_native` only for a successful result frame and exit 0. Anything else is `failed_native` with reason `<native error class>`, `<result subtype>`, `result_unobserved`, `native_exit_<n>` or `native_signal_<name>`.
 
 **Escaped descendants.** Every native child carries `MYTHHELM_ATTEMPT_ID=<attempt>`. On Linux the worker scans `/proc/*/environ` for it (`descendant_scan: proc-environ`), and on macOS `sysctl kern.procargs2` of each process (`sysctl-procargs2`). The kernel only shows a process's environment to its owner, which covers descendants running as the user. On Windows the scan is `unavailable`, and the worker claims nothing about descendants. The worker reports the PIDs it finds and never signals them.
 
@@ -52,4 +54,4 @@ The dogfood slice has no per-user supervisor daemon and no local IPC (N11), and 
   - Once the leader is reaped and the whole group is gone, the PGID may be reused. The ladder checks the group before each rung, so the window is one grace period.
   - Windows ownership is a single process until Job Objects arrive (N7). `claudecode` is blocked there.
   - Other Unix systems cannot read a process start time yet, so the worker refuses to run there.
-- **Tests that pin this behaviour** (`internal/workers`): `TestWorkerSurvivesParentExit` (Linux, macOS), `TestStopLadderEscalatesToKill`, `TestFakeStopExit130ClassifiedStopped`, `TestStoppedExitEmitsNativeResultWithNulls`, `TestUnresolvedDescendantReported` (Linux, macOS), `TestSpoolSequencesContiguous`, `TestCriticalEventsFsynced`, `TestProcessStartTimeStable`, `TestWindowsFakeStopConfirmed` (Windows), `TestWorkerRefusesSecondLaunch` and `TestWorkerRejectsInvalidLaunch`.
+- **Tests that pin this behaviour** (`internal/workers`): `TestWorkerSurvivesParentExit` (Linux, macOS), `TestStopLadderEscalatesToKill`, `TestFakeStopExit130ClassifiedStopped`, `TestStoppedExitEmitsNativeResultWithNulls`, `TestUnresolvedDescendantReported` (Linux, macOS), `TestSpoolSequencesContiguous`, `TestCriticalEventsFsynced`, `TestProcessStartTimeStable`, `TestWindowsFakeStopConfirmed` (Windows), `TestWorkerRefusesSecondLaunch`, `TestWorkerRejectsInvalidLaunch`, `TestLaunchFailureEndsAttempt`, `TestSpoolFailureStopsNativeAndRecordsEnd` and `TestIdentityFailureStopsNative`.
