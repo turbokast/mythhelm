@@ -31,6 +31,7 @@ Phase 1 of `/spec`, and the phase that decides the spec's quality. It reads; it 
    - Trace each affected flow end to end: CLI command → admission or supervisor → workspace, journal or adapter → back to output and exit code.
    - Find the existing patterns the change must follow or replace (search for similar features), and the tests that cover the area today.
    - For every count or absence the spec will state ("the two callers", "no code writes X"), run the search and record the command and its hits (`.claude/rules/spec-premise-grounding.md`).
+   - Optional dossier (advisory): when the impacted directories hold more than about 30 files, run `/vendor-consult muse dossier` over them. Treat every claim in the answer as a pointer: open it at its `file:line` and confirm it before it enters the findings. An `unavailable` result is recorded and skipped.
 3. **Find the seams.** Which parts could ship independently? What is the smallest first step that is useful alone? Which contract (a type, an interface, a schema) must land before its consumers?
 4. **Research the unknowns.** For an external tool or native harness behaviour, read its current documentation and record the version and the source; what cannot be settled becomes an open question with a conservative default.
 5. **Scan for conflicts** in every lifecycle state: `specs/in-progress/` (highest risk), `specs/unfinalized/`, `specs/todo/`, `specs/refined/`, `specs/unrefined/`; and `specs/done/` for decisions to reuse. Note any spec that edits the same files or packages.

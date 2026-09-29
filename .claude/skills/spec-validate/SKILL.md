@@ -29,6 +29,7 @@ Phase 4 of `/spec`. The author of a spec cannot review it: they read what they m
    ```
 
    Record `dispatched=1` before reading the result; a validator that returns nothing is `failed=1`, and no verdict is reported.
+4. **Optional second reviewer** (advisory): when a vendor is available, run `/vendor-consult` with the `spec-validate` stage on the spec files (`knowledge/vendors.md`). Open each of its findings at its anchor; a confirmed one joins the report tagged `[vendor]`, a rejected one is dropped with its reason. It never changes the verdict on its own and never gates; an `unavailable` result is recorded and skipped.
 
 ## Validator prompt
 
@@ -71,5 +72,6 @@ Verdict: Ready for implementation | Needs revision
 ```text
 dispatched=1 returned=<0|1> failed=<0|1>
 Lint (specs): exit <code>; <findings or "clean">
-<the validator's report, verbatim>
+Vendor (spec-validate): <completed, N confirmed / M rejected | unavailable (<reason>) | not run>
+<the validator's report, verbatim, plus any confirmed [vendor] findings>
 ```

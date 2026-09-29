@@ -33,6 +33,7 @@ Captures an idea as the first document of a spec: `specs/unrefined/<name>/requir
    - Any `REFUTED`: stop. Write nothing. Report the claim, the source that refutes it (`file:line`), and a corrected statement the author can put in the issue.
    - `UNVERIFIABLE`: carry it into Open Questions.
    - Failure not reachable: the spec either binds its criteria to a path that can fail today or sequences behind the blocker; say which under Dependencies.
+   - Optional second reader (advisory): when a vendor is available, run `/vendor-consult` with the `premise-ground` stage on the same claims (`knowledge/vendors.md`). Your verdicts govern; where the vendor disagrees, re-open the source before keeping yours. An `unavailable` result is recorded and skipped.
 5. **Gather engineering context.**
    - `knowledge/invariants.md` and the master-spec sections the change touches (`docs/spec/master-spec.md`).
    - `knowledge/domains.md`: the domains and agents the change will involve.
