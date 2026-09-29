@@ -96,6 +96,13 @@ allow "disarm" "$ARM --disarm"
 check "sentinel removed" [ ! -f "$DATA/main-push-arm-$SID.json" ]
 block "disarmed" 'git push origin main'
 
+echo "== a publish-only disarm keeps the main-push window =="
+fresh_sid
+allow "arm main-push" "$ARM --reason 'keep me'"
+allow "publish-only disarm" "$ARM --publish --disarm"
+check "main-push sentinel survives --publish --disarm" [ -f "$DATA/main-push-arm-$SID.json" ]
+allow "still armed" 'git push origin main'
+
 echo "== arming and pushing in one command, in order =="
 fresh_sid
 allow "arm && push" "$ARM --reason 'release branch' && git push origin main"

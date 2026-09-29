@@ -20,8 +20,8 @@
 #   scripts/harness/arm-main-push.sh --operator "<why>"   arm, audited as an operator override
 #   scripts/harness/arm-main-push.sh --disarm             end the window early
 # Arms and pushes are evaluated in command order, so `arm ... && git push origin main`
-# works in one call. The `--publish` form arms guard-publish.sh, not this guard;
-# `--disarm` without `--publish` disarms both.
+# works in one call. The `--publish` forms arm and disarm guard-publish.sh only;
+# a plain `--disarm` ends both windows.
 #
 # Residuals: a push inside a script file (`bash release.sh`), a git alias that
 # expands to push, a configured remote.<name>.push mapping, and a non-literal
@@ -114,7 +114,7 @@ for seg in ${SEGMENTS[@]+"${SEGMENTS[@]}"}; do
   if hh_arm_parse; then
     case "$HH_ARM_ACTION:$HH_ARM_KIND" in
       arm:main-push) hh_sentinel_arm "$DATA_DIR" "$KIND" "$HH_ARM_REASON" "$HH_ARM_OPERATOR" ;;
-      disarm:*) hh_sentinel_disarm "$DATA_DIR" "$KIND" ;;
+      disarm:main-push) hh_sentinel_disarm "$DATA_DIR" "$KIND" ;;
     esac
     continue
   fi
