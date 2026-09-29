@@ -532,7 +532,13 @@ hh_arm_parse() {
   case "${word##*/}" in
     bash|sh)
       k=$((k + 1))
-      while (( k < n )) && [[ "${HH_WORDS[k]}" == -* ]]; do k=$((k + 1)); done
+      while (( k < n )); do
+        case "${HH_WORDS[k]}" in
+          -o|+o|-O|+O|--rcfile|--init-file) k=$((k + 2)) ;;
+          -*|+*) k=$((k + 1)) ;;
+          *) break ;;
+        esac
+      done
       (( k < n )) || return 1 ;;
   esac
   word="${HH_WORDS[k]}"

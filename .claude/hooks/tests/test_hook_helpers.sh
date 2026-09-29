@@ -119,6 +119,8 @@ check "missing reason" [ "$(arm_of 'scripts/harness/arm-main-push.sh --reason')"
 check "flag as reason" [ "$(arm_of 'scripts/harness/arm-main-push.sh --reason --publish')" = "invalid main-push false --publish" ]
 check "unknown flag" [ "$(arm_of 'scripts/harness/arm-main-push.sh --reason x --force')" = "invalid main-push false x" ]
 check "disarm with reason" [ "$(arm_of 'scripts/harness/arm-main-push.sh --disarm --reason x')" = "invalid main-push false x" ]
+check "via bash -o pipefail" [ "$(arm_of 'bash -o pipefail scripts/harness/arm-main-push.sh --reason x')" = "arm main-push false x" ]
+check "via sh +O extglob --rcfile rc" [ "$(arm_of 'sh +O extglob --rcfile rc scripts/harness/arm-main-push.sh --disarm')" = "disarm main-push false " ]
 check "echo is not an arm" [ "$(arm_of 'echo scripts/harness/arm-main-push.sh --reason x')" = "not-arm" ]
 
 echo "== data dir =="
