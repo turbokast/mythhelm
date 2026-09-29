@@ -131,6 +131,11 @@ fresh_sid
 allow "publish arm" "$ARM --publish --reason 'release v1.0.0 requested by the operator'"
 block "repo delete" 'gh repo delete turbokast/mythhelm --yes'
 expect_err "operator" "repo delete names the operator"
+block "api DELETE of the repository, armed" 'gh api -X DELETE repos/turbokast/mythhelm'
+block "api DELETE of the repository, placeholders" 'gh api --method DELETE repos/{owner}/{repo}/'
+block "api DELETE of the repository, full URL" 'gh api -X DELETE https://api.github.com/repos/o/r'
+block "api DELETE of a variable repository" 'gh api -X DELETE "repos/$REPO"'
+allow "armed api DELETE of a tag ref" 'gh api -X DELETE repos/o/r/git/refs/tags/v0'
 
 echo "== arming =="
 fresh_sid

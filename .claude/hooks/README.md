@@ -85,7 +85,7 @@ The rules:
 - **Arm only on request.** An agent arms only when the operator has asked for the guarded action. Normal work lands through pull requests and needs no arming.
 - **Per session, per kind.** A window authorizes only the session that armed it, and a main-push window does not authorize publishing.
 - **30 minutes, fixed.** A window allows several actions until it expires or is disarmed. The limit cannot be configured; an expired or future-dated sentinel never authorizes, and stale sentinels are swept.
-- **Some actions are never allowed**, armed or not: deleting or force-pushing `main`, and `gh repo delete`. The operator runs those from their own terminal.
+- **Some actions are never allowed**, armed or not: deleting or force-pushing `main`, and deleting the repository (`gh repo delete`, or `gh api -X DELETE repos/<owner>/<repo>`). The operator runs those from their own terminal.
 - **Commands are evaluated in order**, so an arm and the action can share one Bash call, and an action before the arm is still blocked.
 
 State lives in the main checkout's `.claude/data/` (gitignored), shared by its linked worktrees:

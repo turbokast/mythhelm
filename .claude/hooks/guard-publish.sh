@@ -23,7 +23,9 @@
 #   git push       --tags, --follow-tags, --mirror, or a refspec whose source or
 #                  destination is a v* tag (v1.2.3, refs/tags/v1.2.3, :refs/tags/v1),
 #                  or a refspec the guard cannot read literally
-# Blocked even inside an armed window: gh repo delete. The operator runs it.
+# Blocked even inside an armed window: deleting the repository (gh repo delete,
+# gh api DELETE repos/<owner>/<repo>, or a DELETE to an endpoint the guard cannot
+# read). The operator runs it.
 # Read-only gh commands pass.
 #
 # Arming is witnessed here (see hook-helpers.sh, section 5):
@@ -138,6 +140,11 @@ api_verdict() {
     return 0
   fi
   [[ "$method" == GET || "$method" == HEAD ]] && return 0
+  # Deleting the repository itself is never allowed, in any spelling, and neither is
+  # a DELETE whose endpoint the guard cannot read, since it may name the repository.
+  if [[ "$method" == DELETE && ( "$ep" =~ ^repos/[^/]+(/[^/]+)?/?$ || "$ep" == '$'* || -z "$ep" ) ]]; then
+    echo "NEVER:gh api DELETE ${ep:-<no endpoint>} (repository deletion)"; return 0
+  fi
   if [[ "$ep" == *'$'* || "$ep" == *'{'* && "$ep" != repos/\{owner\}/\{repo\}* ]]; then
     echo "GATE:gh api $method $ep (endpoint not literal)"; return 0
   fi
