@@ -1,0 +1,23 @@
+name: Agent adapter request
+description: Ask for support for a native coding agent or terminal host.
+labels: [adapter, needs-triage]
+body:
+  - type: input
+    id: agent
+    attributes:
+      label: Agent or host
+      placeholder: e.g. OpenCode 1.x CLI
+    validations:
+      required: true
+  - type: textarea
+    id: surface
+    attributes:
+      label: Native integration surface
+      description: The documented CLI, SDK or protocol MYTHHELM would drive, with links to vendor docs.
+    validations:
+      required: true
+  - type: textarea
+    id: billing
+    attributes:
+      label: Subscription and billing behaviour
+      description: How does this surface consume the user's included allowance, and when can it cause metered charges?

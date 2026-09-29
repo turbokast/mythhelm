@@ -1,0 +1,41 @@
+name: Bug report
+description: Something MYTHHELM does is wrong.
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: Security issues go to [private reporting](https://github.com/turbokast/mythhelm/security/advisories/new), not here.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you observed, including exact error text.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps. The offline `mythhelm demo` or the fake adapter is ideal if it reproduces there.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Paste `mythhelm doctor` output if available, or give your OS, terminal, MYTHHELM version and the native agent versions involved.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Remove secrets, tokens and private paths first.
+      render: text
