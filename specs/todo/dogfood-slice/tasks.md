@@ -12,7 +12,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Go module, skeleton and CLI dispatcher
+### Task 1 — Go module, skeleton and CLI dispatcher ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -34,6 +34,10 @@
   - The module has no `require` lines yet.
 - **Test plan**: table tests for the dispatcher; run `go run ./cmd/mythhelm version` in CI through the test.
 - **Invariants touched**: G01 (builds without credentials), §15.10.
+- **Status**: ✅ Completed. Adds `go.mod` with no requirements, the stdlib-`flag` dispatcher, `ParseInterspersed`, the §15.10 `ExitCode` constants mapped in `exit.go`, `version` in plain and JSONL form, and `buildinfo` (ldflags, then embedded VCS info); PR #7.
+- **Implementation**: `cli.Main` dispatches through a `commands` map, and later tasks register their verbs there. `ParseInterspersed` separates flag tokens from positional arguments in one pass (`fs.Lookup` and `IsBoolFlag`), then calls `fs.Parse` once. `--` ends the flags, and a lone `-` is positional. A failed write on the help paths exits 1. Commits 9976886 and 828734f.
+- **Spec deviations**: `ExitInternal = 1` is added next to the listed constants, because design §11 requires exit 1 for unexpected errors.
+- **Files modified**: `go.mod`, `cmd/mythhelm/main.go`, `internal/cli/dispatch.go`, `internal/cli/exit.go`, `internal/cli/dispatch_test.go`, `internal/buildinfo/buildinfo.go`, `CONTRIBUTING.md`, `specs/todo/dogfood-slice/tasks.md`.
 
 ### Task 2 — CI quality gates: golangci-lint, govulncheck, CodeQL Go, Dependabot gomod
 

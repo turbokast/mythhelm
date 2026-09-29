@@ -53,7 +53,23 @@ AI review bots may comment on pull requests. Their comments are advisory: act on
 
 ## Development setup
 
-The Go toolchain version is pinned in `go.mod` once the codebase lands. Build, test and lint commands will be documented here alongside the first code.
+MYTHHELM needs Go 1.27 or newer. `go.mod` pins the toolchain (`toolchain go1.27.1`); with the default `GOTOOLCHAIN=auto`, an older `go` command downloads that version the first time it runs. Nothing else is required: no accounts, credentials or network services.
+
+Run these from the repository root. CI runs the same checks on Linux, macOS and Windows, so run them before you push:
+
+```sh
+go run ./cmd/mythhelm version   # build and run the CLI
+gofmt -l .                      # must print nothing; fix with gofmt -w <files>
+go vet ./...
+go test ./...                   # CI adds -race
+go mod tidy -diff               # must print nothing
+```
+
+To stamp a release build, set the version and commit at link time:
+
+```sh
+go build -ldflags "-X github.com/turbokast/mythhelm/internal/buildinfo.Version=v0.1.0 -X github.com/turbokast/mythhelm/internal/buildinfo.Commit=$(git rev-parse HEAD)" ./cmd/mythhelm
+```
 
 ## Licensing of contributions
 
