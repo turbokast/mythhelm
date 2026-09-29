@@ -124,7 +124,92 @@ EOF
 | File | Role |
 |---|---|
 EOF
+  spec_fixture "$d"
 }
+
+# spec_fixture <dir>: a lifecycle tree with one refined idea, one full spec in todo/
+# and an epic plan naming it, all clean.
+spec_fixture() {
+  local d="$1" s
+  for s in unrefined refined todo in-progress unfinalized "done" archived; do
+    mkdir -p "$d/specs/$s"
+  done
+  touch "$d/specs/in-progress/.gitkeep" "$d/specs/unfinalized/.gitkeep" \
+    "$d/specs/done/.gitkeep" "$d/specs/archived/.gitkeep"
+  printf '# Specs\n' > "$d/specs/README.md"
+  mkdir -p "$d/specs/refined/idea" "$d/specs/unrefined/epic-x" "$d/specs/todo/demo"
+  printf '## Idea — Requirements\n' > "$d/specs/refined/idea/requirements.md"
+  cat > "$d/specs/unrefined/epic-x/plan.md" <<'EOF'
+## Epic X — Master Plan
+
+### Work Streams
+
+| # | Spec | Scope | Dependencies |
+|---|---|---|---|
+| 1 | `demo` | the demo | None |
+| 2 | `idea` | the idea | Spec 1 |
+
+### Open Questions
+
+- None.
+EOF
+  printf '## Demo — Requirements\n' > "$d/specs/todo/demo/requirements.md"
+  printf '## Demo — Design\n' > "$d/specs/todo/demo/design.md"
+  cat > "$d/specs/todo/demo/tasks.md" <<'EOF'
+## Demo — Tasks
+
+### Dependencies
+
+- None outside this spec.
+
+## Implementation Tasks
+
+### Task 1 — Types ✅ COMPLETED
+
+- **Domain/agent**: worker
+- **Budget**: standard
+- **Change**: Add the types.
+- **Files**:
+  - `src/types.go`
+- **Acceptance**:
+  - `TestTypes` passes.
+- **Invariants touched**: I02 (unknown blocks).
+- **Status**: ✅ Completed.
+
+### Task 2 — Store
+
+- **Domain/agent**: `worker`
+- **Budget**: complex (the hard one)
+- **Depends on**: Task 1 (types first)
+- **Change**: Add the store.
+- **Files**: `src/store.go`
+- **Acceptance criteria** (each test uses a temp dir): `TestStore` passes.
+- **Invariants touched**: None (no persisted user data).
+
+```markdown
+### Task 9 — An example inside a fence is not a task
+```
+
+### Task 3 — Command
+
+- **Domain/agent**: maintainer (human), assisted by worker
+- **Budget**: standard (wiring only)
+- **Depends on**: Task 1, Task 2
+- **Change**: Wire the command.
+- **Files**:
+  - `src/cmd.go`
+- **Acceptance**:
+  - `TestCommand` passes.
+- **Invariants touched**: I08.
+
+## Open Questions
+
+- None.
+EOF
+}
+
+# set_task_line <old> <new>: replaces a whole line of the fixture's tasks.md.
+set_task_line() { set_line "$F/specs/todo/demo/tasks.md" "$1" "$2"; }
 
 # lint <dir> [args...]: sets RC and OUT.
 lint() {
@@ -168,7 +253,7 @@ echo "== clean fixture =="
 fresh clean
 lint "$F"
 expect_pass "the clean fixture passes every check"
-check "summary names all ten checks" [ "$(grep -cE ' (PASS|FAIL)$' <<< "$OUT")" == 10 ]
+check "summary names all eleven checks" [ "$(grep -cE ' (PASS|FAIL)$' <<< "$OUT")" == 11 ]
 
 echo "== usage =="
 lint "$F" --only no-such-check
@@ -346,5 +431,127 @@ fresh rf-fence
 printf '\n```text\nSee [gone](knowledge/gone.md) and `knowledge/missing.md`.\n```\n' >> "$F/CLAUDE.md"
 lint "$F" --only references
 expect_pass "references inside a code fence are examples"
+
+echo "== specs =="
+fresh sp-required
+rm "$F/specs/todo/demo/design.md"
+lint "$F" --only specs
+expect_fail specs "a spec in todo/ needs design.md" "todo spec without design.md"
+fresh sp-refined-required
+rm "$F/specs/refined/idea/requirements.md" && printf 'x\n' > "$F/specs/refined/idea/notes.md"
+lint "$F" --only specs
+expect_fail specs "a spec in refined/ needs requirements.md" "refined spec without requirements.md"
+fresh sp-state
+mkdir -p "$F/specs/backlog/x" && printf 'x\n' > "$F/specs/backlog/x/requirements.md"
+lint "$F" --only specs
+expect_fail specs "'backlog' is not a lifecycle state" "unknown lifecycle directory"
+fresh sp-stray
+printf 'x\n' > "$F/specs/todo/notes.md"
+lint "$F" --only specs
+expect_fail specs "is not in a spec directory" "file directly under a state directory"
+fresh sp-flat
+printf 'x\n' > "$F/specs/notes.md"
+lint "$F" --only specs
+expect_fail specs "only README.md sits directly under specs/" "file directly under specs/"
+fresh sp-duplicate
+mkdir -p "$F/specs/in-progress/demo" && cp "$F/specs/todo/demo/"*.md "$F/specs/in-progress/demo/"
+lint "$F" --only specs
+expect_fail specs "exists in 2 lifecycle states (in-progress, todo)" "one spec in two states"
+fresh sp-files
+set_task_line '- **Files**: `src/store.go`' ''
+lint "$F" --only specs
+expect_fail specs "Task 2 has no '- **Files**:' field" "task without Files"
+fresh sp-invariants
+set_task_line '- **Invariants touched**: I08.' ''
+lint "$F" --only specs
+expect_fail specs "Task 3 has no '- **Invariants touched**:' field" "task without Invariants touched"
+fresh sp-empty
+set_task_line '- **Acceptance criteria** (each test uses a temp dir): `TestStore` passes.' '- **Acceptance**:'
+lint "$F" --only specs
+expect_fail specs "Task 2: 'Acceptance' is empty" "task with an empty Acceptance"
+fresh sp-depends-missing
+set_task_line '- **Depends on**: Task 1 (types first)' ''
+lint "$F" --only specs
+expect_fail specs "Task 2 has no '- **Depends on**:' field" "a later task without Depends on"
+fresh sp-first-depends
+set_task_line '- **Budget**: standard' $'- **Budget**: standard\n- **Depends on**: None'
+lint "$F" --only specs
+expect_pass "the first task may state Depends on: None"
+fresh sp-dangling
+set_task_line '- **Depends on**: Task 1, Task 2' '- **Depends on**: Task 1, Task 7'
+lint "$F" --only specs
+expect_fail specs "Task 3 depends on Task 7, which does not exist" "dependency on a missing task"
+fresh sp-self
+set_task_line '- **Depends on**: Task 1 (types first)' '- **Depends on**: Task 2'
+lint "$F" --only specs
+expect_fail specs "Task 2 depends on itself" "self dependency"
+fresh sp-cycle
+set_task_line '- **Depends on**: Task 1 (types first)' '- **Depends on**: Task 3'
+lint "$F" --only specs
+expect_fail specs "dependency cycle: Task 2 -> Task 3 -> Task 2" "two-task cycle"
+fresh sp-cycle-first
+set_task_line '- **Budget**: standard' $'- **Budget**: standard\n- **Depends on**: Task 3'
+lint "$F" --only specs
+expect_fail specs "dependency cycle" "cycle through the first task"
+fresh sp-prose
+set_task_line '- **Depends on**: Task 1 (types first)' '- **Depends on**: after the types land'
+lint "$F" --only specs
+expect_fail specs "is not 'None' or a list of 'Task N'" "prose dependency"
+fresh sp-after-note
+set_task_line '- **Depends on**: Task 1, Task 2' '- **Depends on**: Task 1 (types first), Task 7'
+lint "$F" --only specs
+expect_fail specs "Task 3 depends on Task 7, which does not exist" "a reference after a note is still checked"
+fresh sp-nested-note
+set_task_line '- **Depends on**: Task 1, Task 2' '- **Depends on**: Task 1 (types (first)), Task 2'
+lint "$F" --only specs
+expect_fail specs "is not 'None' or a list of 'Task N'" "nested parentheses are unreadable"
+fresh sp-agent
+set_task_line '- **Domain/agent**: `worker`' '- **Domain/agent**: backend-implementer'
+lint "$F" --only specs
+expect_fail specs "Domain/agent 'backend-implementer' is not an agent" "unknown agent"
+fresh sp-budget
+set_task_line '- **Budget**: complex (the hard one)' '- **Budget**: trivial'
+lint "$F" --only specs
+expect_fail specs "Budget 'trivial' is not one of standard/complex" "unknown budget tier"
+fresh sp-twice
+set_task_line '### Task 3 — Command' '### Task 2 — Command'
+lint "$F" --only specs
+expect_fail specs "Task 2 is defined twice" "duplicate task number"
+fresh sp-no-tasks
+printf '## Demo — Tasks\n\nTBD.\n' > "$F/specs/todo/demo/tasks.md"
+lint "$F" --only specs
+expect_fail specs "no '### Task N' blocks" "tasks.md without tasks"
+fresh sp-epic-missing
+set_line "$F/specs/unrefined/epic-x/plan.md" '| 2 | `idea` | the idea | Spec 1 |' '| 2 | `ghost` | the ghost | Spec 1 |'
+lint "$F" --only specs
+expect_fail specs "work stream spec 'ghost' has no directory" "epic naming a missing spec"
+fresh sp-epic-row
+set_line "$F/specs/unrefined/epic-x/plan.md" '| 2 | `idea` | the idea | Spec 1 |' $'| 2 | `idea` | the idea | Spec 1 |\n| 3 | ghost | no backticks | Spec 2 |'
+lint "$F" --only specs
+expect_fail specs "plan.md:9: specs: Work Streams row has no backticked spec name" "an unreadable Work Streams row"
+fresh sp-epic-state
+mv "$F/specs/unrefined/epic-x" "$F/specs/todo/epic-x"
+lint "$F" --only specs
+expect_fail specs "an epic plan never enters todo/" "an epic plan in todo/"
+fresh sp-epic-in-progress
+mv "$F/specs/unrefined/epic-x" "$F/specs/in-progress/epic-x"
+lint "$F" --only specs
+expect_pass "an epic plan in in-progress/ is allowed"
+fresh sp-index-copy
+git -C "$F" add specs/todo/demo
+mv "$F/specs/todo/demo" "$F/specs/in-progress/demo"
+lint "$F" --only specs
+expect_fail specs "exists in 2 lifecycle states (in-progress, todo)" "a copy left in the index by a plain mv"
+OTHER="$TEST_TMP/other-repo"
+new_repo "$OTHER"
+OUT="$(GIT_DIR="$OTHER/.git" GIT_WORK_TREE="$OTHER" GIT_INDEX_FILE="$OTHER/.git/index" "$LINT" --root "$F" --only specs 2>&1)"; RC=$?
+expect_fail specs "exists in 2 lifecycle states" "inherited GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE do not hide the index copy"
+git -C "$F" add -A specs
+lint "$F" --only specs
+expect_pass "the same move staged in the index is one copy"
+fresh sp-epic-section
+set_line "$F/specs/unrefined/epic-x/plan.md" '### Work Streams' '### Streams'
+lint "$F" --only specs
+expect_fail specs "epic plan has no '## Work Streams' section" "epic without a Work Streams section"
 
 finish

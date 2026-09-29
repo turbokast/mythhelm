@@ -69,7 +69,7 @@ CodeRabbit and Sourcery review every pull request. Their comments are advisory, 
 
 - Verify each finding against the code. Fix real ones, with a test where the finding is behavioural; rebut the rest with evidence (`file:line`, a test, a spec section).
 - Reply on the thread saying what you did (REST: `gh api repos/{owner}/{repo}/pulls/<n>/comments/<id>/replies -f body=...`).
-- Resolving a thread is a GraphQL mutation (`resolveReviewThread`), which `guard-publish.sh` gates like any other write through `gh api`. Resolve only when the operator asked you to handle the threads and armed the window; otherwise list the replied threads for the maintainer.
+- Resolve the thread once it is answered: `resolveReviewThread` through `gh api graphql`. `guard-publish.sh` lets exactly the review-thread mutations through (`addPullRequestReviewThreadReply`, `resolveReviewThread`, `unresolveReviewThread`) and gates every other GraphQL write.
 - Repeat until checks are green and no thread is unanswered. Never merge.
 
 ## Boundaries

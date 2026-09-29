@@ -55,7 +55,7 @@ The `zizmor` workflow must pass on the pull request. For changes that reach Go b
 
 ## Review threads
 
-Verify each CodeRabbit or Sourcery finding, fix it or rebut it with evidence, and reply on the thread. Resolving a thread is a GraphQL write that `guard-publish.sh` gates; resolve only when the operator asked and armed the window. Never merge.
+Verify each CodeRabbit or Sourcery finding, fix it or rebut it with evidence, and reply on the thread. Resolve each answered thread with `resolveReviewThread` through `gh api graphql`; `guard-publish.sh` allows the review-thread mutations and gates every other GraphQL write. Never merge.
 
 ## Boundaries
 
