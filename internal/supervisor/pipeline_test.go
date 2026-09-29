@@ -897,3 +897,35 @@ func TestWorkerKilledRunInterruptedExit6(t *testing.T) {
 		t.Fatalf("attempt = %+v, %v; want quarantined", a, err)
 	}
 }
+
+func TestIngestFailureInterruptsRunExit6(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	r := startLive(t, f, f.fakeRun("--format", "jsonl", "--scenario", "slow")...)
+	r.waitStdout(t, "the native session", isType("attempt.native_session"))
+	run := f.onlyRun(t)
+	dir := workers.AttemptDir(f.state, run.RunID, findAttempt(t, f, run.RunID))
+	// A line no worker writes: ingestion refuses it.
+	fh, err := os.OpenFile(filepath.Join(dir, supervisor.SpoolFile), os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // G304: a test temp path
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = fh.WriteString("{}\n")
+	_ = fh.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := r.wait(t)
+	// The worker still owns the native; stop it through the production path.
+	if err := workers.RequestStop(dir, "test-cleanup"); err != nil {
+		t.Fatal(err)
+	}
+	waitSpool(t, filepath.Join(dir, supervisor.SpoolFile), `"type":"attempt.stopped"`)
+
+	if code != 6 || !strings.Contains(stderr, "mythhelm recover "+run.RunID) {
+		t.Fatalf("exit %d, stderr %q; want exit 6 naming mythhelm recover", code, stderr)
+	}
+	if run := f.onlyRun(t); run.State != "interrupted" || run.Reason != "ingest_failed" {
+		t.Fatalf("run projected %s/%s, want interrupted/ingest_failed", run.State, run.Reason)
+	}
+}

@@ -255,9 +255,9 @@ func (p *pipeline) attempt(ctx context.Context) error {
 		p.h.Notice(fmt.Sprintf("worker not accepted: %v", err))
 		return p.lose(ctx)
 	}
-	// A detached run stays stopping; a lost worker's run is already
-	// interrupted.
-	if err := p.watch(ctx, ref, exited); err != nil || p.out.Detached || p.out.AttemptState == AttemptQuarantined {
+	// A detached run stays stopping; a lost worker's run, or one whose
+	// spool could not be ingested, is already interrupted.
+	if err := p.watch(ctx, ref, exited); err != nil || p.out.Detached || p.out.State == RunInterrupted {
 		return err
 	}
 	if err := p.conclude(ctx); err != nil {
@@ -354,7 +354,13 @@ func (p *pipeline) watch(ctx context.Context, ref AttemptRef, exited <-chan stru
 		// ever will.
 		gone := workerGone
 		if _, err := Ingest(ctx, p.j, ref); err != nil {
-			return err
+			// The worker still owns the attempt; only this supervisor's view
+			// of it is broken. The run is left for recover, not active.
+			p.h.Notice(fmt.Sprintf("spool ingestion failed: %v; run 'mythhelm recover %s'", err, p.d.RunID))
+			if terr := p.runTo(ctx, RunInterrupted, "ingest_failed"); terr != nil {
+				return errors.Join(err, terr)
+			}
+			return nil
 		}
 		if err := p.flush(ctx); err != nil {
 			return err

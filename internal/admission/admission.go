@@ -170,12 +170,6 @@ func Decide(ctx context.Context, req Request) (Decision, error) {
 	if d.Probe, err = a.Probe(ctx, adapter.ProbeInput{}); err != nil {
 		return Decision{}, fmt.Errorf("probing adapter %s: %w", d.Adapter.ID, err)
 	}
-	for name, v := range requiredCapabilities(a.Capabilities(d.Probe)) {
-		if v != adapter.Supported {
-			return Decision{}, &BlockedError{Code: "capability_unavailable", Field: fmt.Sprintf("%s=%s", name, v), Capability: true,
-				Action: fmt.Sprintf("adapter %s does not support a capability this run requires", d.Adapter.ID)}
-		}
-	}
 
 	if d.Snapshot, err = chooseSnapshot(ctx, req); err != nil {
 		return Decision{}, err
@@ -201,6 +195,14 @@ func Decide(ctx context.Context, req Request) (Decision, error) {
 	if mode := d.Proposal.Billing.Mode; mode != req.Billing {
 		return Decision{}, &BlockedError{Code: "billing_posture_mismatch", Field: "--billing " + req.Billing,
 			Action: fmt.Sprintf("adapter %s runs under the %s billing posture; pass --billing %s", d.Adapter.ID, mode, mode)}
+	}
+	// Gated on the proposal that is launched and journaled, so admission
+	// checks exactly what admission.decided records.
+	for name, v := range requiredCapabilities(d.Proposal.Capabilities) {
+		if v != adapter.Supported {
+			return Decision{}, &BlockedError{Code: "capability_unavailable", Field: fmt.Sprintf("%s=%s", name, v), Capability: true,
+				Action: fmt.Sprintf("adapter %s does not support a capability this run requires", d.Adapter.ID)}
+		}
 	}
 	return d, nil
 }
