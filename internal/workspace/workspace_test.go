@@ -55,13 +55,15 @@ func write(t *testing.T, repo, name, content string) {
 	}
 }
 
+// readFile returns a file's content with CRLF line endings normalised, since
+// a checkout honours the platform's core.autocrlf.
 func readFile(t *testing.T, repo, name string) string {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(name))) // #nosec G304 -- a test temp dir
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(data)
+	return strings.ReplaceAll(string(data), "\r\n", "\n")
 }
 
 func commit(t *testing.T, repo, msg string) string {
@@ -318,8 +320,10 @@ func TestSnapshotHasNoRemotesAndDetachedAtRev(t *testing.T) {
 	if got := readFile(t, dst, "a.txt"); got != "alpha\n" {
 		t.Errorf("snapshot a.txt = %q, want the first commit's content", got)
 	}
-	if got := run(t, dst, "status", "--porcelain"); got != "" {
-		t.Errorf("snapshot is not clean: %q", got)
+	// The runner sees the same git configuration the checkout used (on
+	// Windows, the system core.autocrlf), so it is the one to ask.
+	if out, err := Git(ctx, dst, false, "status", "--porcelain"); err != nil || len(out) != 0 {
+		t.Errorf("snapshot is not clean: %q, %v", out, err)
 	}
 	if after := fingerprint(t, repo); after != before {
 		t.Error("source fingerprint changed during Snapshot")
