@@ -1,0 +1,37 @@
+{
+  "$comment": "What every vendor entry point prints (one JSON line on stdout) and what .claude/data/vendor-calls.jsonl records (the same object plus ts). outcome is completed or unavailable; unavailable is an advisory skip, never an error to work around.",
+  "type": "object",
+  "required": ["schema_version", "vendor", "kind", "stage", "call_id", "outcome", "reason", "advisory", "spawned", "duration_s", "detail"],
+  "properties": {
+    "ts": {"type": "string"},
+    "schema_version": {"type": "integer", "enum": [1]},
+    "vendor": {"type": "string", "enum": ["codex", "muse", "jev"]},
+    "kind": {"type": "string", "enum": ["consult", "lane", "classify"]},
+    "stage": {"type": "string"},
+    "call_id": {"type": ["string", "null"]},
+    "outcome": {"type": "string", "enum": ["completed", "unavailable"]},
+    "reason": {
+      "type": ["string", "null"],
+      "enum": [null, "disabled", "policy-denied", "policy-unreadable", "cli-missing", "version-too-old",
+               "not-signed-in", "no-api-key", "over-quota", "target-refused", "context-too-large",
+               "timeout", "vendor-error", "unparseable-output", "schema-mismatch", "write-through",
+               "sandbox-unavailable", "task-unreadable", "protected-path", "out-of-scope", "symlink",
+               "no-changes", "patch-too-large", "network", "internal-error"]
+    },
+    "advisory": {"type": "boolean", "enum": [true]},
+    "spawned": {"type": "boolean"},
+    "duration_s": {"type": ["integer", "null"]},
+    "detail": {"type": ["string", "null"]},
+    "spec": {"type": ["string", "null"]},
+    "answer_path": {"type": ["string", "null"]},
+    "snapshot_dir": {"type": ["string", "null"]},
+    "input_tokens": {"type": ["integer", "null"]},
+    "output_tokens": {"type": ["integer", "null"]},
+    "truncated": {"type": "boolean"},
+    "patch_path": {"type": ["string", "null"]},
+    "base": {"type": ["string", "null"]},
+    "files_changed": {"type": "array", "items": {"type": "string"}},
+    "attribution": {"type": ["string", "null"]},
+    "questions": {"type": "integer"}
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "title": "grounding",
+  "description": "Answer shape of premise-ground: one verdict per cited claim.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "verdicts"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "verdicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim",
+          "citation",
+          "verdict",
+          "evidence"
+        ],
+        "properties": {
+          "claim": {
+            "type": "string"
+          },
+          "citation": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "holds",
+              "partial",
+              "refuted",
+              "unverifiable"
+            ]
+          },
+          "evidence": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

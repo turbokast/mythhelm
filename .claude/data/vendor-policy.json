@@ -1,0 +1,77 @@
+{
+  "$comment": "Tracked seed for the optional cross-vendor layer (knowledge/vendors.md). Read by scripts/vendors/vendors.py. Nothing is enabled here: a contributor opts in from their own terminal, which writes the gitignored .claude/data/vendor-policy.local.json that is merged over this file (objects merge key by key, every other value is replaced).",
+  "schema_version": 1,
+  "enabled": [],
+  "lanes_enabled": [],
+  "hard_timeout_s": 3600,
+  "max_answer_bytes": 262144,
+  "vendors": {
+    "codex": {
+      "kind": "cli",
+      "cli": "codex",
+      "min_version": "0.150.0",
+      "status_command": ["login", "status"],
+      "model": null,
+      "daily_call_cap": 30,
+      "attribution": "Vendor-Assisted-By: Codex CLI"
+    },
+    "muse": {
+      "kind": "cli",
+      "cli": "muse",
+      "min_version": "1.4.0",
+      "status_command": ["auth", "status"],
+      "model": null,
+      "daily_call_cap": 10,
+      "attribution": "Vendor-Assisted-By: Muse CLI"
+    },
+    "jev": {
+      "kind": "api",
+      "api_key_env": "TYPESAFE_API_KEY",
+      "model": "jev-1.13.0",
+      "daily_call_cap": 500
+    }
+  },
+  "stages": {
+    "premise-ground": {"vendors": ["codex", "muse"], "schema": "grounding", "effort": "medium", "max_steps": 40, "timeout_s": 900, "daily_cap": 10, "max_context_bytes": 400000},
+    "spec-validate": {"vendors": ["codex", "muse"], "schema": "findings", "effort": "high", "max_steps": 80, "timeout_s": 1800, "daily_cap": 10, "max_context_bytes": 2000000},
+    "task-review": {"vendors": ["codex", "muse"], "schema": "findings", "effort": "medium", "max_steps": 40, "timeout_s": 900, "daily_cap": 20, "max_context_bytes": 400000},
+    "stuck-oracle": {"vendors": ["codex", "muse"], "schema": "oracle", "effort": "high", "max_steps": 40, "timeout_s": 900, "daily_cap": 5, "max_context_bytes": 400000},
+    "change-review": {"vendors": ["codex", "muse"], "schema": "findings", "effort": "high", "max_steps": 40, "timeout_s": 900, "daily_cap": 10, "max_context_bytes": 400000},
+    "dossier": {"vendors": ["muse"], "schema": "dossier", "effort": "high", "max_steps": 80, "timeout_s": 1800, "daily_cap": 3, "max_context_bytes": 2000000}
+  },
+  "classifier_sites": {
+    "triage-findings": {"daily_cap": 100},
+    "private-material": {"daily_cap": 100},
+    "scope-drift": {"daily_cap": 100},
+    "task-class": {"daily_cap": 100}
+  },
+  "lanes": {
+    "daily_cap": 5,
+    "tiers": {
+      "trivial": {"timeout_s": 900, "max_steps": 80, "effort": "medium"},
+      "standard": {"timeout_s": 1800, "max_steps": 200, "effort": "medium"},
+      "complex": {"timeout_s": 3600, "max_steps": 400, "effort": "high"}
+    },
+    "file_ceiling": 8,
+    "max_patch_bytes": 5000000,
+    "protected_paths": [
+      ".github/",
+      ".claude/",
+      "knowledge/",
+      "scripts/ci/",
+      "scripts/vendors/",
+      "scripts/codex/",
+      "scripts/jev/",
+      "specs/",
+      "CLAUDE.md",
+      "AGENTS.md",
+      "LICENSE",
+      "NOTICE",
+      "DCO",
+      ".golangci.yml",
+      "go.mod",
+      "go.sum"
+    ],
+    "allowed_when_listed": ["go.mod", "go.sum"]
+  }
+}

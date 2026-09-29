@@ -15,6 +15,10 @@ Look for [`good first issue`](https://github.com/turbokast/mythhelm/labels/good%
 
 The full contributor test suite and the offline demo run without any agent credentials, because a scripted fake adapter stands in for real agents. If a change needs a live vendor account to verify, say so in the pull request. A maintainer will run the opt-in live canary.
 
+### Optional vendors
+
+The development harness can also consult paid external tools (the Codex and Muse CLIs, and the Jev classifier API) as second reviewers or implementers. You never need them: they are off by default, every step that could use one skips cleanly without it, and the harness tests use offline stand-ins. If you already have a subscription and want to use it, sign in with the vendor's own CLI and opt in from your own terminal, as [knowledge/vendors.md](knowledge/vendors.md) describes; it also lists what leaves your machine, the daily caps, and how to switch it off again. Vendor output is advisory: you review every finding and every line of a vendor-written patch before it goes into a commit, and mention the assistance in the pull request as for any AI assistance.
+
 ## Developer Certificate of Origin (DCO)
 
 We use the [Developer Certificate of Origin](DCO) instead of a CLA, and there is no copyright assignment. Every commit must carry a `Signed-off-by` line whose name and email match the commit author:
