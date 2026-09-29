@@ -118,7 +118,7 @@ The lint is `scripts/ci/lint-agent-harness.sh` (check `specs`); it parses `### T
 
 ### Epic plans
 
-An epic directory holds only `plan.md`: problem summary, current state, a Work Streams table, the dependency graph between sub-specs, the implementation order, open questions and risks. The Work Streams table is machine-read: column 2 holds each sub-spec's directory name in backticks, and the lint fails when one names a spec that has no directory.
+An epic directory holds only `plan.md`: problem summary, current state, a Work Streams table, the dependency graph between sub-specs, the implementation order, open questions and risks. The Work Streams table is machine-read: column 2 holds each sub-spec's directory name in backticks, and the lint fails when a row has no backticked name or names a spec that has no directory. The plan's directory is never in `todo/` or `unfinalized/`.
 
 ```markdown
 ### Work Streams

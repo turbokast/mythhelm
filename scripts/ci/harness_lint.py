@@ -31,8 +31,9 @@ Checks (each reads the tree at DIR, default the repository root):
                   Domain/agent (a known agent), Budget (standard|complex), Change,
                   Files, Depends on (the first task may omit it), Acceptance and
                   Invariants touched; Depends on names existing tasks with no cycle;
-                  an epic plan.md's Work Streams name existing specs; a spec name
-                  lives in one lifecycle state only
+                  an epic plan.md sits only in an epic state and every Work Streams
+                  row names an existing spec; a spec name lives in one lifecycle
+                  state only, counting copies the git index still holds
 
 Findings print as "path:line: check: detail". Exit 0 clean, 1 findings, 2 usage or
 an unreadable tree. Standard library only; no network, no writes.
@@ -546,6 +547,7 @@ SPEC_REQUIRED = {
     "done": ("requirements.md", "design.md", "tasks.md"),
     "archived": ("requirements.md",),
 }
+EPIC_STATES = ("unrefined", "refined", "in-progress", "done", "archived")
 SPEC_BUDGETS = ("standard", "complex")
 # Fields every task block carries. The first task in a file may omit Depends on:
 # tasks are listed in dependency order, so it has nothing earlier to depend on.
@@ -583,8 +585,14 @@ def task_blocks(text):
 
 
 def depends_refs(value):
-    """Task numbers named before any parenthesis, [] for None, or None when unreadable."""
-    head = value.split("(", 1)[0].strip().rstrip(".")
+    """Task numbers named outside parenthesised notes, [] for None, or None when unreadable.
+
+    Every note is removed wherever it sits, so a reference after a note is still
+    checked; nested or unbalanced parentheses make the value unreadable.
+    """
+    head = re.sub(r"\([^()]*\)", "", value).strip().rstrip(".")
+    if "(" in head or ")" in head:
+        return None
     if re.fullmatch(r"(?i)none", head):
         return []
     parts = [p.strip() for p in re.split(r",|\band\b", head) if p.strip()]
@@ -666,18 +674,48 @@ def check_tasks(root, rel, agents):
 
 
 def work_stream_specs(text):
-    """Backticked names in column 2 of the Work Streams table, or None without the section."""
-    names, inside, found = [], False, False
-    for line in text.split("\n"):
+    """(names, unreadable rows) from the Work Streams table, or (None, []) without the section.
+
+    Every data row's Spec cell (column 2) must be one backticked name; a row whose
+    cell is not is returned as unreadable, never skipped.
+    """
+    names, bad, inside, found, header = [], [], False, False, True
+    for i, line in enumerate(text.split("\n"), 1):
         if re.match(r"^#{2,3} ", line):
             inside = bool(re.match(r"^#{2,3} Work Streams\s*$", line))
             found = found or inside
+            header = True
             continue
-        if inside:
-            m = re.match(r"^\|[^|]*\|\s*`([^`]+)`", line)
-            if m:
-                names.append(m.group(1))
-    return names if found else None
+        if not inside or not line.startswith("|"):
+            continue
+        if re.fullmatch(r"\|[\s:|-]+\|?\s*", line):
+            continue
+        if header:
+            header = False
+            continue
+        cells = line.split("|")
+        m = re.fullmatch(r"\s*`([a-z0-9][a-z0-9-]*)`\s*", cells[2]) if len(cells) > 2 else None
+        if m:
+            names.append(m.group(1))
+        else:
+            bad.append(i)
+    return (names, bad) if found else (None, [])
+
+
+def index_spec_dirs(root):
+    """(state, name) for every spec directory the git index holds, including paths
+    deleted from the working tree but not from the index (a plain mv leaves them)."""
+    try:
+        out = subprocess.run(["git", "-C", root, "ls-files", "-z", "--cached", "--", "specs/"],
+                             capture_output=True, check=True, timeout=60).stdout
+    except (OSError, subprocess.SubprocessError) as e:
+        raise TreeError("cannot read the git index in %s: %s" % (root, e)) from e
+    placed = set()
+    for p in (x.decode("utf-8", "replace") for x in out.split(b"\0") if x):
+        parts = p.split("/")
+        if len(parts) >= 4 and parts[1] in SPEC_STATES:
+            placed.add((parts[1], parts[2]))
+    return placed
 
 
 def check_specs(root, files):
@@ -700,7 +738,7 @@ def check_specs(root, files):
             continue
         dirs.setdefault((parts[1], parts[2]), set()).add("/".join(parts[3:]))
     homes = {}
-    for state, name in sorted(dirs):
+    for state, name in sorted(set(dirs) | index_spec_dirs(root)):
         homes.setdefault(name, []).append(state)
     for name, states in sorted(homes.items()):
         if len(states) > 1:
@@ -710,10 +748,15 @@ def check_specs(root, files):
     for (state, name), present in sorted(dirs.items()):
         base = "specs/%s/%s" % (state, name)
         if "plan.md" in present and "requirements.md" not in present:
-            streams = work_stream_specs(read(root, base + "/plan.md"))
+            if state not in EPIC_STATES:
+                finding(base + "/plan.md", 0, "specs", "an epic plan never enters %s/ (epic states: %s)"
+                        % (state, ", ".join(EPIC_STATES)))
+            streams, unreadable = work_stream_specs(read(root, base + "/plan.md"))
+            for line in unreadable:
+                finding(base + "/plan.md", line, "specs", "Work Streams row has no backticked spec name in column 2")
             if streams is None:
                 finding(base + "/plan.md", 0, "specs", "epic plan has no '## Work Streams' section")
-            elif not streams:
+            elif not streams and not unreadable:
                 finding(base + "/plan.md", 0, "specs", "the Work Streams table names no spec in backticks")
             for s in streams or []:
                 if s not in homes:
@@ -765,7 +808,11 @@ def main(argv):
     except TreeError as e:
         sys.stderr.write("harness_lint.py: %s\n" % e)
         return 2
-    CHECKS[check](root, files)
+    try:
+        CHECKS[check](root, files)
+    except TreeError as e:
+        sys.stderr.write("harness_lint.py: %s\n" % e)
+        return 2
     for w in warnings:
         print(w)
     for f in findings:

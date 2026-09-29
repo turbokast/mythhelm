@@ -24,9 +24,12 @@
 #
 # A directory holding plan.md and no requirements.md is an epic plan.
 #
-# Runs in the repository that contains the current directory. Exit 0 on success;
-# 1 when the spec is missing, has more than one copy, or the move is refused (a
-# BLOCK/File/Detail/Fix stanza on stderr); 2 on a usage error.
+# Runs in the repository that contains the current directory; inherited GIT_DIR,
+# GIT_WORK_TREE, GIT_INDEX_FILE and GIT_COMMON_DIR are ignored. Exit 0 on success;
+# 1 when the spec is missing, has more than one copy, the index cannot be read, or
+# the move is refused (a BLOCK/File/Detail/Fix stanza on stderr); 2 on a usage
+# error. After a move, the committing step stages the new path (git add) so that
+# files that were untracked before the move are recorded too.
 #
 # Residual: a copy that exists only in another worktree or on another branch is
 # invisible here.
@@ -45,21 +48,25 @@ refuse() {   # refuse <file> <detail> <fix>
   exit 1
 }
 
-# copies <name>: every specs/<state>/<name> present in the working tree or the index.
-copies() {
-  local s
-  {
-    for s in "${STATES[@]}"; do
-      [[ -d "specs/$s/$1" ]] && echo "specs/$s/$1"
-    done
-    git ls-files -- ":(glob)specs/*/$1/**" | cut -d/ -f1-3
-  } | LC_ALL=C sort -u
+index_unreadable() {   # index_unreadable <file>
+  refuse "$1" "git cannot read the index, so a copy of the spec held there cannot be ruled out." \
+    "Repair the index (git status names the problem), then retry."
 }
 
-# resolve <name>: sets DIR to the one copy, or refuses.
+# resolve <name>: sets DIR to the one specs/<state>/<name> present in the working
+# tree or the index, or refuses.
 resolve() {
+  local idx s
   local -a found=()
-  mapfile -t found < <(copies "$1")
+  idx="$(git ls-files -- ":(glob)specs/*/$1/**")" || index_unreadable "specs/*/$1"
+  mapfile -t found < <(
+    {
+      for s in "${STATES[@]}"; do
+        [[ -d "specs/$s/$1" ]] && echo "specs/$s/$1"
+      done
+      [[ -z "$idx" ]] || cut -d/ -f1-3 <<< "$idx"
+    } | LC_ALL=C sort -u
+  )
   if (( ${#found[@]} == 0 )); then
     refuse "specs/*/$1" "no spec named $1 exists in any lifecycle state (${STATES[*]})." \
       "Check the name with ls specs/*/; create a spec with /create-spec or /spec."
@@ -88,6 +95,8 @@ allowed() {   # allowed <kind> <from> <to>
 cmd="$1"
 name="$2"
 [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "spec-lifecycle: spec names are kebab-case: $name" >&2; exit 2; }
+# Inherited repository selectors would point git at another repository or index.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "spec-lifecycle: not inside a git repository" >&2; exit 2; }
 cd "$root"
 
@@ -107,11 +116,12 @@ case "$cmd" in
     [[ -f "$DIR/plan.md" && ! -f "$DIR/requirements.md" ]] && kind=epic
     allowed "$kind" "$from" "$to" \
       || refuse "$DIR" "moving a $kind spec from $from/ to $to/ is not a lifecycle transition (see specs/README.md)." \
-        "Run the skill that owns the step (/refine-spec, /spec, /run-spec, /finalize-spec, /evaluate-spec), or ask the maintainer."
+        "Run the lifecycle skill that owns the step (specs/README.md), or ask the maintainer."
     dest="specs/$to/$name"
     [[ ! -e "$dest" ]] || refuse "$dest" "the destination already exists." "Resolve the duplicate first; never overwrite a spec."
+    tracked="$(git ls-files -- "$DIR")" || index_unreadable "$DIR"
     mkdir -p "specs/$to"
-    if [[ -n "$(git ls-files -- "$DIR")" ]]; then
+    if [[ -n "$tracked" ]]; then
       git mv -- "$DIR" "$dest"
     else
       mv -- "$DIR" "$dest"

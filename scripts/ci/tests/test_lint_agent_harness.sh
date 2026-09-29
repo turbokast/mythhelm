@@ -497,6 +497,14 @@ fresh sp-prose
 set_task_line '- **Depends on**: Task 1 (types first)' '- **Depends on**: after the types land'
 lint "$F" --only specs
 expect_fail specs "is not 'None' or a list of 'Task N'" "prose dependency"
+fresh sp-after-note
+set_task_line '- **Depends on**: Task 1, Task 2' '- **Depends on**: Task 1 (types first), Task 7'
+lint "$F" --only specs
+expect_fail specs "Task 3 depends on Task 7, which does not exist" "a reference after a note is still checked"
+fresh sp-nested-note
+set_task_line '- **Depends on**: Task 1, Task 2' '- **Depends on**: Task 1 (types (first)), Task 2'
+lint "$F" --only specs
+expect_fail specs "is not 'None' or a list of 'Task N'" "nested parentheses are unreadable"
 fresh sp-agent
 set_task_line '- **Domain/agent**: `worker`' '- **Domain/agent**: backend-implementer'
 lint "$F" --only specs
@@ -517,6 +525,26 @@ fresh sp-epic-missing
 set_line "$F/specs/unrefined/epic-x/plan.md" '| 2 | `idea` | the idea | Spec 1 |' '| 2 | `ghost` | the ghost | Spec 1 |'
 lint "$F" --only specs
 expect_fail specs "work stream spec 'ghost' has no directory" "epic naming a missing spec"
+fresh sp-epic-row
+set_line "$F/specs/unrefined/epic-x/plan.md" '| 2 | `idea` | the idea | Spec 1 |' $'| 2 | `idea` | the idea | Spec 1 |\n| 3 | ghost | no backticks | Spec 2 |'
+lint "$F" --only specs
+expect_fail specs "plan.md:9: specs: Work Streams row has no backticked spec name" "an unreadable Work Streams row"
+fresh sp-epic-state
+mv "$F/specs/unrefined/epic-x" "$F/specs/todo/epic-x"
+lint "$F" --only specs
+expect_fail specs "an epic plan never enters todo/" "an epic plan in todo/"
+fresh sp-epic-in-progress
+mv "$F/specs/unrefined/epic-x" "$F/specs/in-progress/epic-x"
+lint "$F" --only specs
+expect_pass "an epic plan in in-progress/ is allowed"
+fresh sp-index-copy
+git -C "$F" add specs/todo/demo
+mv "$F/specs/todo/demo" "$F/specs/in-progress/demo"
+lint "$F" --only specs
+expect_fail specs "exists in 2 lifecycle states (in-progress, todo)" "a copy left in the index by a plain mv"
+git -C "$F" add -A specs
+lint "$F" --only specs
+expect_pass "the same move staged in the index is one copy"
 fresh sp-epic-section
 set_line "$F/specs/unrefined/epic-x/plan.md" '### Work Streams' '### Streams'
 lint "$F" --only specs

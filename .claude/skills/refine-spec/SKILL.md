@@ -32,18 +32,18 @@ Takes rough requirements (written by `/create-spec` or by a person) through an a
    > D1 objectives are specific and observable; D2 every FR has numbered acceptance criteria in EARS form with concrete values, NFRs are measurable, and the Definition of Done covers every FR; D3 every claim about the code is cited and true (open two or three citations and check them; an absence claim needs structural grounding); D4 scope is bounded, non-goals say what still binds, and the work fits one spec or is flagged as an epic; D5 the requirements respect the invariants and domain boundaries they reach, and are tagged with them; D6 no requirement contradicts another, a non-goal or the Definition of Done; D7 dependencies on and conflicts with other specs under `specs/` are named; D8 a designer could write `design.md` and `tasks.md` from it without guessing.
    > Output: `## Assessment: <name>`, `Verdict: Ready | Needs work | Needs human input`, a table `| Dimension | Score | Issues |`, then `### Auto-fixable` (numbered: issue, location, the fix), `### Human-required` (numbered: the question and why only a person can answer it), `### Missing context`. Zero issues is a valid result; never invent findings. No style-only findings.
 
-   Record the dispatch before reading the result: every round adds one to `dispatched`, and an assessor that returned nothing counts as `failed`, never as "no issues".
+   Record the dispatch before reading the result: every round adds one to `dispatched`. A round counts as `returned` only when its report has a verdict and a PASS, NEEDS_WORK or FAIL score for each of D1 to D8. A report that is empty, or missing the verdict or any dimension's score, counts as `failed`: it is never read as "no issues" or as "no FAIL".
 4. **Fix.**
    - Auto-fixable issues: edit `requirements.md` to make criteria testable, correct stale citations, add missing tags, non-goal bindings, dependencies and Definition-of-Done items. Never change the intent or scope; a fix that would is human-required.
    - Human-required issues (input step): ask, and fold the answers in.
-5. **Re-assess** with a new assessor (step 3) after each round of fixes. Stop when:
+5. **Re-assess** with a new assessor (step 3) after each round of fixes. Only `returned` rounds count toward the exits below; a `failed` round stops the loop as **Blocked**. Stop when:
    - **Ready**: every dimension PASS;
    - **Good enough**: after three rounds, no FAIL remains (the remaining NEEDS_WORK items go into the log for `/spec`);
    - **Blocked**: human-required issues remain unanswered;
    - **Not converging**: after three rounds, a FAIL remains or new issues keep appearing; the requirements need rewriting, not refining.
 6. **Finish.**
-   - Ready or good enough: when the spec is in `unrefined/`, run `scripts/harness/spec-lifecycle.sh move <name> refined`. Write `specs/refined/<name>/refinement-log.md` with the dispatch line, each round's verdict and fixes, and the remaining notes.
-   - Blocked or not converging: leave the spec where it is and report.
+   - Ready or good enough, and every dispatched round returned (`failed=0`): when the spec is in `unrefined/`, run `scripts/harness/spec-lifecycle.sh move <name> refined`. Write `specs/refined/<name>/refinement-log.md` with the dispatch line, each round's verdict and fixes, and the remaining notes.
+   - Blocked (including any failed round) or not converging: leave the spec where it is and report.
 
 ## Output
 

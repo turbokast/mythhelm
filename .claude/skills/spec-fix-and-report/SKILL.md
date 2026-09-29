@@ -30,7 +30,7 @@ Phase 5 of `/spec`. Takes the `/spec-validate` report, fixes what can be fixed w
    - re-derive every changed count at the source, and write the command and its result beside the count.
 4. **Re-check.** Run `scripts/ci/lint-agent-harness.sh --only specs`, then re-run `/spec-validate` on the changed specs. Stop after three validation rounds in all; if blocking findings remain, report them instead of a fourth round.
 5. **Escalate** the remaining findings (escalation step): ask in an interactive session and loop to step 2 with the answers; in a non-interactive run, stop and return them.
-6. **Move** each spec whose verdict is Ready: `scripts/harness/spec-lifecycle.sh move <name> todo`. An epic's `plan.md` stays where it is.
+6. **Move** each spec only when both hold in the same, final round: `scripts/ci/lint-agent-harness.sh --only specs` exited 0, and the validator returned (`returned=1`) with the verdict Ready for implementation. A lint error, a missing or unparseable report, or any other verdict blocks the move. Then run `scripts/harness/spec-lifecycle.sh move <name> todo`. An epic's `plan.md` stays where it is.
 
 ## Output
 

@@ -47,7 +47,13 @@ scripts/harness/spec-lifecycle.sh move <name> <to-state>
 ```
 
 - It resolves the spec first (so duplicates block the move), checks the transition against the table in `specs/README.md`, refuses an existing destination, and renames with `git mv` so the index follows. An untracked spec is renamed with plain `mv`.
-- It stages the rename and nothing else, and commits nothing. The change that completes the lifecycle step commits the move together with the spec's edits, naming its paths: `git commit -s -m "<msg>" -- specs/<old-state>/<name> specs/<new-state>/<name>`.
+- It stages the rename of tracked files and nothing else, and commits nothing. Files that were untracked before the move (a new `scratchpad.md`, or a whole spec that was never added) are still untracked at the new path.
+- The change that completes the lifecycle step stages the new directory, then commits the move with the spec's edits, naming its paths:
+
+  ```bash
+  git add -- specs/<new-state>/<name>
+  git commit -s -m "<msg>" -- specs/<old-state>/<name> specs/<new-state>/<name>
+  ```
 - Never move a spec directory with a bare `mv`, and never copy it.
 
 ## Citing a spec

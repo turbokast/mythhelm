@@ -68,6 +68,21 @@ run resolve demo
 expect 1 "a copy only in the index is refused"
 check "the index-only refusal says so" grep -q 'only in the git index' <<< "$ERR"
 
+echo "== fail closed =="
+repo corrupt-index
+printf 'not an index' > "$R/.git/index"
+run resolve demo
+expect 1 "an unreadable index is refused, not treated as empty"
+check "the refusal names the index" grep -q 'cannot read the index' <<< "$ERR"
+run move demo in-progress
+expect 1 "a move with an unreadable index is refused"
+check "the refused move leaves the spec in place" [ -d "$R/specs/todo/demo" ]
+repo inherited-env
+OTHER="$TEST_TMP/other"
+new_repo "$OTHER"
+OUT="$(cd "$R" && GIT_DIR="$OTHER/.git" GIT_WORK_TREE="$OTHER" GIT_INDEX_FILE="$OTHER/.git/index" "$SL" resolve demo 2>/dev/null)"
+check "inherited GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE are ignored" [ "$OUT" == specs/todo/demo ]
+
 echo "== move =="
 repo move
 run move demo in-progress

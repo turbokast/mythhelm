@@ -71,6 +71,9 @@ allow "unresolveReviewThread" "gh api graphql -f query='mutation { unresolveRevi
 allow "reply with variables" "gh api graphql -F id=PRRT_x -f body='Fixed in abc123.' -f query='mutation(\$id: ID!, \$body: String!) { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: \$id, body: \$body}) { comment { url } } }'"
 allow "reply and resolve in one document, aliased, multi-line" $'gh api graphql -f query=\'mutation {\n  r: addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: "T", body: "done, mergePullRequest not needed"}) { comment { id } }\n  s: resolveReviewThread(input: {threadId: "T"}) @include(if: true) { thread { comments(first: 1) { nodes { id } } } }\n}\''
 allow "attached -f form" "gh api graphql '-fquery=mutation { resolveReviewThread(input: {threadId: \"T\"}) { clientMutationId } }'"
+allow "block string with an escaped delimiter" $'gh api graphql -f query=\'mutation { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: "T", body: """Quoted \\""" inside"""}) { comment { id } } }\''
+block "a blocked field after a block string" $'gh api graphql -f query=\'mutation { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: "T", body: """x \\""" y"""}) { comment { id } } mergePullRequest(input: {pullRequestId: "P"}) { clientMutationId } }\''
+block "unterminated block string" $'gh api graphql -f query=\'mutation { resolveReviewThread(input: {threadId: """T}) { clientMutationId } }\''
 allow "named operation" "gh api graphql --raw-field query='mutation Resolve { resolveReviewThread(input: {threadId: \"T\"}) { clientMutationId } }'"
 block "mergePullRequest" "gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: \"P\"}) { clientMutationId } }'"
 expect_err "mergePullRequest" "the blocked mutation is named"

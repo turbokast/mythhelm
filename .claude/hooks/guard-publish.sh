@@ -116,7 +116,7 @@ gh_verdict() {
 # anything it cannot read: an unterminated string, or a comment (the command
 # tokenizer turns newlines inside quotes into spaces, so a comment's end is lost).
 graphql_tokens() {
-  local s="$1" n=${#1} i=0 j c rest
+  local s="$1" n=${#1} i=0 j c
   while (( i < n )); do
     c="${s:i:1}"
     case "$c" in
@@ -124,10 +124,19 @@ graphql_tokens() {
       '#') echo '?'; return 0 ;;
       '"')
         if [[ "${s:i:3}" == '"""' ]]; then
-          rest="${s:i+3}"
-          [[ "$rest" == *'"""'* ]] || { echo '?'; return 0; }
-          rest="${rest%%\"\"\"*}"
-          i=$((i + 6 + ${#rest}))
+          # A block string ends at the first """ not escaped as \""".
+          j=$((i + 3))
+          while (( j < n )); do
+            if [[ "${s:j:4}" == '\"""' ]]; then
+              j=$((j + 4))
+            elif [[ "${s:j:3}" == '"""' ]]; then
+              break
+            else
+              j=$((j + 1))
+            fi
+          done
+          (( j < n )) || { echo '?'; return 0; }
+          i=$((j + 3))
         else
           j=$((i + 1))
           while (( j < n )); do
