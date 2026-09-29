@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit is an advisory reviewer on the free plan for public repositories.
+# It is never a required check and never blocks a merge. See docs/automation.md.
+language: en-GB
+reviews:
+  # assertive rather than chill: MYTHHELM supervises agents that can spend
+  # money, touch credentials and change code, so a missed nitpick in admission,
+  # billing or process handling costs more than extra review noise.
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  in_progress_fortune: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    # The master specification is a long design reference; review it as prose
+    # in human review, not line by line.
+    - "!docs/spec/master-spec.md"
+  path_instructions:
+    - path: ".github/workflows/**"
+      instructions: |
+        Supply-chain rules for this public repository:
+        - Every `uses:` must be pinned to a full 40-character commit SHA with a `# vX.Y.Z` comment. Flag tags or branches.
+        - Top-level `permissions:` must be `contents: read` or `{}`; grant anything more per job, with a comment saying why.
+        - `actions/checkout` must set `persist-credentials: false`.
+        - Never combine `pull_request_target` (or `workflow_run`) with a checkout or execution of PR head code.
+        - Fork pull requests must never receive secrets or write tokens. No workflow may require a secret or a paid service.
+        - Flag `${{ }}` expressions interpolated into `run:` scripts; pass them through `env:` instead.
+        - Workflows producing required checks must also trigger on `merge_group`.
+    - path: "internal/**"
+      instructions: &invariants |
+        Review against the normative invariants in docs/spec/master-spec.md section 4 (I01-I19). In particular:
+        - Native harness preservation (I01, I16): drive the vendor's own executable or qualified interface; never replace, impersonate or silently swap the harness or model.
+        - Fail-closed admission (I02, I15): unknown identity, workspace, billing posture or capability blocks a task. Unknown is never treated as allowed.
+        - No silent provider, billing-route, remote-environment or sandbox changes (I04), and no spending or permissions granted by repository text, model output or plugin messages (I03, I11).
+        - Never extract or replay native subscription secrets (I19).
+        - Launch processes with argument arrays; never interpolate prompts or user input into a shell command string.
+        - Parse agent output with bounded readers and explicit size limits; treat all agent and plugin output as untrusted.
+        - Keep estimated, reported, observed and unknown values distinct (I09); a requested stop is not a confirmed stop (I06).
+        - One lifecycle owner and one interactive writer per agent (I05, I18); recovery must not replay native tool calls (I12).
+    - path: "adapters/**"
+      instructions: *invariants
+    - path: "hosts/**"
+      instructions: *invariants
+    - path: ".claude/**"
+      instructions: &harness |
+        Development harness code for a public repository:
+        - Hooks and guards must fail closed: an error, timeout or unparseable input blocks rather than allows.
+        - Nothing may leak private data into this public repository: no internal hostnames, tokens, personal paths, customer data or references to private projects.
+        - Scripts must quote variables, avoid `eval` and treat tool output as untrusted input.
+    - path: "scripts/**"
+      instructions: *harness
+  tools:
+    golangci-lint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    actionlint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    markdownlint:
+      enabled: true
+    yamllint:
+      enabled: true
+chat:
+  auto_reply: true
+knowledge_base:
+  learnings:
+    scope: local
+  issues:
+    scope: local
+  pull_requests:
+    scope: local
