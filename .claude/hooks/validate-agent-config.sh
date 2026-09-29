@@ -22,15 +22,24 @@
 # built from the file on disk; an old_string that is not found is left to the Edit
 # tool to report.
 #
-# This is a quality gate, not a safety guard: when python3 is missing it allows
-# the edit and says so on stderr (CI's harness lint is the backstop).
+# It fails closed for harness files: when python3 is missing, the payload does not
+# parse, or the validator itself errors, an edit that names a .claude/ path is
+# blocked. Edits elsewhere are never affected.
 # Exit 0 allows. Exit 2 blocks, with one BLOCK/File/Detail/Fix stanza per finding.
 
 set -euo pipefail
 
+INPUT="$(cat)"
+
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "validate-agent-config: python3 not found, validation skipped" >&2
-  exit 0
+  [[ "$INPUT" == *"/.claude/"* ]] || exit 0
+  {
+    echo "BLOCK: validate-agent-config"
+    echo "File: <harness file in this payload>"
+    echo "Detail: python3 is not installed, so this edit to a .claude/ file cannot be validated. The harness requires python3."
+    echo "Fix: Install python3 (3.10+), then retry."
+  } >&2
+  exit 2
 fi
 
 # shellcheck disable=SC2016  # the Python program is literal text
@@ -52,11 +61,6 @@ def block(path, detail, fix):
     findings.append((path, detail.splitlines()[0] if detail else "invalid", fix))
 
 
-def load_payload():
-    try:
-        return json.load(sys.stdin)
-    except ValueError:
-        return None
 
 
 def proposed_content(payload, path):
@@ -309,11 +313,22 @@ def validate_json(path, content):
         if event not in HOOK_EVENTS:
             block(path, "unknown hook event %r (event names are case-sensitive)" % event,
                   "Use one of: %s." % ", ".join(sorted(HOOK_EVENTS)))
-        for group in groups if isinstance(groups, list) else []:
-            for h in (group.get("hooks") or []) if isinstance(group, dict) else []:
-                cmd = h.get("command") if isinstance(h, dict) else None
+        if not isinstance(groups, list):
+            block(path, "hooks.%s must be a list of matcher groups" % event, "Write it as [{\"hooks\": [...]}].")
+            continue
+        for group in groups:
+            if not isinstance(group, dict) or not isinstance(group.get("hooks", []), list):
+                block(path, "a hooks.%s group must be an object whose hooks is a list" % event,
+                      "Write each group as {\"matcher\": \"...\", \"hooks\": [{\"type\": \"command\", \"command\": \"...\"}]}.")
+                continue
+            for h in group.get("hooks", []):
+                if not isinstance(h, dict):
+                    block(path, "a hooks.%s entry is not an object" % event,
+                          "Write each hook as {\"type\": \"command\", \"command\": \"...\"}.")
+                    continue
+                cmd = h.get("command")
                 if not isinstance(cmd, str) or not cmd.strip():
-                    if isinstance(h, dict) and h.get("type", "command") == "command":
+                    if h.get("type", "command") == "command":
                         block(path, "a %s hook has no command" % event, "Give the hook a command.")
                     continue
                 try:
@@ -337,18 +352,24 @@ def validate_json(path, content):
 def validate_shell(path, content):
     try:
         r = subprocess.run(["bash", "-n"], input=content, capture_output=True, text=True, timeout=10)
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired) as e:
+        block(path, "bash -n could not run: %s" % e, "Make sure bash is installed, then retry.")
         return
     if r.returncode != 0:
         block(path, "bash -n reports a syntax error: %s" % r.stderr.strip(),
               "Repair the shell syntax (bash -n <file> shows the error).")
 
 
-def main():
-    payload = load_payload()
+def main(raw):
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        payload = None
     if not isinstance(payload, dict):
+        if "/.claude/" in raw.replace(os.sep, "/"):
+            raise ValueError("the hook payload is not a JSON object")
         return 0
-    path = (payload.get("tool_input") or {}).get("file_path") or ""
+    path = payload.get("tool_input", {}).get("file_path") or ""
     norm = path.replace(os.sep, "/")
     if "/.claude/" not in norm:
         return 0
@@ -384,5 +405,18 @@ def main():
     return 2
 
 
-sys.exit(main())
-'
+def guarded_main(raw):
+    try:
+        return main(raw)
+    except Exception as e:  # noqa: BLE001 - a crash must block, not allow
+        if "/.claude/" not in raw.replace(os.sep, "/"):
+            return 0
+        sys.stderr.write("BLOCK: validate-agent-config\nFile: <harness file in this payload>\n"
+                         "Detail: the validator failed (%s: %s), so this edit cannot be validated.\n"
+                         "Fix: Check the payload and the file, then retry; report the error if it persists.\n"
+                         % (type(e).__name__, str(e).splitlines()[0] if str(e) else ""))
+        return 2
+
+
+sys.exit(guarded_main(sys.stdin.read()))
+' <<< "$INPUT"

@@ -94,7 +94,21 @@ expect_rc 0 "old_string not found is left to the Edit tool" "$HOOK" "$(edit_payl
 echo "== skipped =="
 expect_rc 0 "file outside .claude" "$HOOK" "$(write_payload "$R/docs/x.md" $'---\nbroken: "\n---\n')"
 expect_rc 0 "no file path" "$HOOK" '{"tool_name":"Write","tool_input":{}}'
-expect_rc 0 "not JSON" "$HOOK" 'not json'
+expect_rc 0 "not JSON, no .claude path" "$HOOK" 'not json'
+
+echo "== fail closed =="
+expect_rc 2 "not JSON, names a .claude path" "$HOOK" '{"tool_input":{"file_path":"/r/.claude/agents/x.md"'
+expect_rc 2 "tool_input is a list" "$HOOK" '{"tool_name":"Write","tool_input":["/r/.claude/agents/x.md"]}'
+expect_rc 2 "hooks entry is a string" "$HOOK" "$(write_payload "$R/.claude/settings.json" '{"hooks":{"Stop":[{"hooks":"x.sh"}]}}')"
+expect_rc 2 "hooks group is a string" "$HOOK" "$(write_payload "$R/.claude/settings.json" '{"hooks":{"Stop":["x.sh"]}}')"
+mkdir -p "$TEST_TMP/nopy"
+for tool in bash jq cat dirname; do ln -sf "$(command -v "$tool")" "$TEST_TMP/nopy/$tool"; done
+CHECKS=$((CHECKS + 1))
+RC=$(write_payload "$AGENT" "$GOOD_AGENT" | PATH="$TEST_TMP/nopy" "$HOOK" 2>/dev/null; echo $?)
+[[ "$RC" == 2 ]] || fail "[python3 missing, .claude path] expected exit 2, got $RC"
+CHECKS=$((CHECKS + 1))
+RC=$(write_payload "$R/docs/x.md" "x" | PATH="$TEST_TMP/nopy" "$HOOK" 2>/dev/null; echo $?)
+[[ "$RC" == 0 ]] || fail "[python3 missing, other path] expected exit 0, got $RC"
 
 echo "== the block teaches =="
 run_hook "$HOOK" "$(write_payload "$AGENT" $'---\nname: go-implementer\n---\n')"
