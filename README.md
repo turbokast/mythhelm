@@ -20,6 +20,10 @@ MYTHHELM orchestrates the coding agents you already use and trust, such as Claud
 - **Safe by default.** Repository text, model output and plugins cannot grant permissions, spend money or publish.
 - **Entirely free.** The complete core, built-in adapters, TUI, headless mode, plugin SDK and local routing are free, with no paid tier, feature gate or required account.
 
+## Design
+
+The [master specification](docs/spec/master-spec.md) is the versioned design reference. It covers the architecture, invariants, adapter and billing contracts, the TUI and the staged roadmap. Concise user and contributor guides will be extracted from it as the software becomes real.
+
 ## Planned stack
 
 Go core with a [Bubble Tea](https://github.com/charmbracelet/bubbletea) TUI, local SQLite state and a versioned process protocol for plugins.
