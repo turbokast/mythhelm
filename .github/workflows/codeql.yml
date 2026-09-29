@@ -16,8 +16,8 @@ jobs:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      security-events: write
+      contents: read # checkout
+      security-events: write # upload CodeQL results to code scanning
     strategy:
       fail-fast: false
       matrix:
