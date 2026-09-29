@@ -12,6 +12,7 @@ R="$TEST_TMP/repo"
 mkdir -p "$R/.claude/agents" "$R/.claude/skills/run-spec" "$R/.claude/rules" "$R/.claude/hooks"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$R/.claude/hooks/ok.sh"
 chmod +x "$R/.claude/hooks/ok.sh"
+cp "$R/.claude/hooks/ok.sh" "$R/.claude/hooks/my hook.sh"
 printf '#!/usr/bin/env bash\n' > "$R/.claude/hooks/not-exec.sh"
 
 write_payload() {   # write_payload <path> <content>
@@ -70,6 +71,8 @@ run_suite() {
   bad "unknown event" "$R/.claude/settings.json" '{"hooks":{"preToolUse":[]}}' "unknown hook event"
   bad "missing hook script" "$R/.claude/settings.json" '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"$CLAUDE_PROJECT_DIR/.claude/hooks/missing.sh"}]}]}}' "not an executable file"
   bad "non-executable hook script" "$R/.claude/settings.local.json" '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":".claude/hooks/not-exec.sh"}]}]}}' "not an executable file"
+  ok  "quoted project dir" "$R/.claude/settings.json" '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/ok.sh --flag"}]}]}}'
+  ok  "quoted path with a space" "$R/.claude/settings.json" '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"\"'"$R"'/.claude/hooks/my hook.sh\""}]}]}}'
   ok  "command without a path is not checked" "$R/.claude/settings.json" '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo done"}]}]}}'
   bad "other .claude JSON" "$R/.claude/config.json" '{"a":' "not valid JSON"
 }

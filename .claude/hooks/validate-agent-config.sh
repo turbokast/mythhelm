@@ -35,7 +35,7 @@ fi
 
 # shellcheck disable=SC2016  # the Python program is literal text
 exec python3 -c '
-import json, os, re, subprocess, sys
+import json, os, re, shlex, subprocess, sys
 
 MODELS = ("opus", "sonnet", "haiku")
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
@@ -316,7 +316,12 @@ def validate_json(path, content):
                     if isinstance(h, dict) and h.get("type", "command") == "command":
                         block(path, "a %s hook has no command" % event, "Give the hook a command.")
                     continue
-                first = cmd.split()[0].strip("\"\x27")
+                try:
+                    first = shlex.split(cmd)[0]
+                except (ValueError, IndexError):
+                    block(path, "hook command does not parse as a shell command: %s" % cmd,
+                          "Balance the quotes in the command.")
+                    continue
                 for prefix in ("$CLAUDE_PROJECT_DIR/", "${CLAUDE_PROJECT_DIR}/"):
                     if first.startswith(prefix):
                         first = os.path.join(root, first[len(prefix):])
