@@ -20,14 +20,17 @@ Every automated check, bot and housekeeping job in this repository, what it does
 
 | Automation | What it does | Trigger | Configured in | Tier |
 |---|---|---|---|---|
-| CI (`CI OK`, required) | actionlint on all workflows; once `go.mod` exists, `gofmt`, `go vet`, `go test -race` and `go mod tidy -diff` on Linux, macOS and Windows. `CI OK` aggregates the jobs. | push to `main`, PR, merge queue | `.github/workflows/ci.yml` | OSS-in-Actions |
+| CI (`CI OK`, required) | actionlint on all workflows; once `go.mod` exists, `gofmt`, `go vet`, `go test -race` and `go mod tidy -diff` on Linux, macOS and Windows, plus the `golangci-lint` and `govulncheck` jobs below. `CI OK` aggregates the jobs. | push to `main`, PR, merge queue | `.github/workflows/ci.yml` | OSS-in-Actions |
 | DCO (`DCO sign-off`, required) | Fails a PR with any commit lacking a matching `Signed-off-by`. | PR, merge queue (skipped) | `.github/workflows/dco.yml` | GitHub-native |
 | Dependency review (`Dependency review`, required) | Blocks PRs adding dependencies with moderate+ advisories or licences outside the allow-list. | PR, merge queue (skipped) | `.github/workflows/dependency-review.yml` | GitHub-native |
-| CodeQL (`Analyze (actions)`, required) | CodeQL `security-extended` analysis of the workflows. | push to `main`, PR, merge queue, weekly | `.github/workflows/codeql.yml` | GitHub-native |
+| CodeQL (`Analyze (actions)`, required; `Analyze (go)`, to be made required) | CodeQL `security-extended` analysis of the workflows and the Go code. | push to `main`, PR, merge queue, weekly | `.github/workflows/codeql.yml` | GitHub-native |
 | OpenSSF Scorecard | Supply-chain posture score, published to the Scorecard API and code scanning. | push to `main`, weekly, manual | `.github/workflows/scorecard.yml` | OSS-in-Actions |
 | zizmor | Security audit of every workflow and `dependabot.yml`. The `zizmor` job fails on findings of low severity or higher; the `zizmor (code scanning)` job uploads SARIF to code scanning. | push to `main`, PR, merge queue (audit only) | `.github/workflows/zizmor.yml` | OSS-in-Actions |
 | PR title lint | Enforces the Conventional Commits title convention in [CONTRIBUTING.md](../CONTRIBUTING.md#pull-request-titles). | PR opened, edited, synchronised, reopened | `.github/workflows/pr-title.yml` | OSS-in-Actions |
 | Dependabot (`github-actions`) | Weekly grouped action updates, with a 7-day cooldown before adopting a new release. | weekly | `.github/dependabot.yml` | GitHub-native |
+| Dependabot (`gomod`) | Weekly grouped Go module updates, with the same 7-day cooldown. | weekly | `.github/dependabot.yml` | GitHub-native |
+| golangci-lint (`golangci-lint` job in CI) | Lint and security static analysis: the standard linters plus `gosec`, `errorlint`, `misspell` (UK), `bodyclose` and `nolintlint`, with `gofmt` and `goimports` as formatters. The version is pinned in the workflow. | push to `main`, PR, merge queue | `.golangci.yml`, `.github/workflows/ci.yml` | OSS-in-Actions |
+| govulncheck (`govulncheck` job in CI) | Reports known vulnerabilities in reachable Go code. Run with `go run` at a pinned version, because `golang/govulncheck-action` is not on the repository's action allow-list. | push to `main`, PR, merge queue | `.github/workflows/ci.yml` | OSS-in-Actions |
 | Labeler | Labels PRs by changed paths (`documentation`, `ci`, `harness`, `adapter`, `tui`, `protocol`, `dependencies`). | PR opened, synchronised, reopened (`pull_request_target`, no checkout) | `.github/workflows/labeler.yml`, `.github/labeler.yml` | GitHub-native |
 | Stale | Marks issues stale after 60 days and closes 14 days later; PRs after 30 and 14. Exempt: `security`, `good first issue`, `help wanted`, `decision`, `needs-triage`. | weekly, manual | `.github/workflows/stale.yml` | GitHub-native |
 | Lock threads | Locks closed issues and PRs after 90 days of inactivity. | weekly, manual | `.github/workflows/lock.yml` | OSS-in-Actions |
@@ -53,10 +56,6 @@ Each deferred item has a trigger that activates it. Add it in the PR that meets 
 
 | Automation | What it will do | Activation trigger | Tier |
 |---|---|---|---|
-| Dependabot `gomod` | Weekly Go module updates with the same cooldown and grouping. | First `go.mod` | GitHub-native |
-| govulncheck | Reports known vulnerabilities in reachable Go code. | First `go.mod` | OSS-in-Actions |
-| golangci-lint (with gosec) | Lint and security static analysis, config in `.golangci.yml`. | First `go.mod` | OSS-in-Actions |
-| CodeQL `go` | Adds `go` to the CodeQL language matrix (new required check `Analyze (go)`). | First `go.mod` | GitHub-native |
 | OSV-Scanner | Scans `go.mod`/`go.sum` against the OSV database, SARIF to code scanning. | First `go.mod` | OSS-in-Actions |
 | go-licenses | Checks dependency licences against the Apache-2.0-compatible allow-list and generates notices. | First `go.mod` | OSS-in-Actions |
 | ClusterFuzzLite | Continuous Go fuzzing of parsers on PRs and a schedule. | First parser or protocol code | OSS-in-Actions |
@@ -76,5 +75,6 @@ Each deferred item has a trigger that activates it. Add it in the PR that meets 
 These need repository-admin action and are not configured by files here:
 
 - Install the CodeRabbit and Sourcery GitHub apps on this repository only.
-- Enable the merge queue in the `main` ruleset. All four required checks already run on `merge_group`.
+- Add `Analyze (go)` to the `main` ruleset's required checks.
+- Enable the merge queue in the `main` ruleset. All the required checks already run on `merge_group`.
 - Optionally make `zizmor` a required check once it has been green on `main` for a while.
