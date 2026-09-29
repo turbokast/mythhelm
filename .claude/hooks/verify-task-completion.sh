@@ -63,12 +63,26 @@ fallback() {
   fi
   cwd="${cwd:-${CLAUDE_PROJECT_DIR:-$PWD}}"
   # Root-relative queries: pathspecs resolve from -C's directory, so a nested cwd
-  # would otherwise miss specs/*/*/tasks.md.
-  if cwd="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)"; then
-    base="$(git -C "$cwd" merge-base HEAD origin/main 2>/dev/null || echo HEAD)"
-    changed="$( { git -C "$cwd" diff --name-only "$base" -- 'specs/*/*/tasks.md' 2>/dev/null
-                  git -C "$cwd" ls-files --others --exclude-standard -- 'specs/*/*/tasks.md' 2>/dev/null; } | head -5)"
+  # would otherwise miss specs/*/*/tasks.md. Only a directory git confirms is
+  # outside any repository is claim-free; any other git failure is unknown.
+  local root err
+  if ! command -v "${HOOK_GIT_PROBE:-git}" >/dev/null 2>&1; then
+    changed="(git is not installed, so tasks.md cannot be inspected)"
+  elif root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)"; then
+    base="$(git -C "$root" merge-base HEAD origin/main 2>/dev/null || echo HEAD)"
+    if ! changed="$( { git -C "$root" diff --name-only "$base" -- 'specs/*/*/tasks.md'
+                       git -C "$root" ls-files --others --exclude-standard -- 'specs/*/*/tasks.md'; } 2>/dev/null)"; then
+      changed="(git could not list the changes in $root)"
+    fi
+  else
+    err="$(LC_ALL=C git -C "$cwd" rev-parse --show-toplevel 2>&1 || true)"
+    if [[ -d "$cwd" && "$err" == *"not a git repository"* ]]; then
+      changed=""
+    else
+      changed="(cannot resolve the checkout at $cwd)"
+    fi
   fi
+  changed="$(printf '%s' "$changed" | head -5)"
   if [[ -z "$changed" ]]; then
     notice "$why; no tasks.md changed, so no completion claim was possible."
     exit 0
@@ -77,7 +91,7 @@ fallback() {
     notice "$why; a completion may be claimed in ${changed//$'\n'/, } but was not verified."
     exit 0
   fi
-  printf 'BLOCK: verify-task-completion\nFile: %s\nDetail: %s, and tasks.md differs from the base, so a completion claim cannot be ruled out. A guard fails closed on what it cannot check.\nFix: repair the checker (install python3 3.10+, or run python3 scripts/harness/gatelib.py stop-hook with the payload to see the error), then stop again; a second stop is allowed with a notice.\n' \
+  printf 'BLOCK: verify-task-completion\nFile: %s\nDetail: %s, and a completion claim cannot be ruled out (changed or uninspectable above). A guard fails closed on what it cannot check.\nFix: repair the checker (install python3 3.10+, or run python3 scripts/harness/gatelib.py stop-hook with the payload to see the error), then stop again; a second stop is allowed with a notice.\n' \
     "${changed//$'\n'/, }" "$why" >&2
   exit 2
 }

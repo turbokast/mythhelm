@@ -198,6 +198,11 @@ check "the block is the stanza naming the tasks.md" grep -q '^File: specs/in-pro
 P_NESTED="$(jq -c --arg d "$R/internal/x" '.cwd = $d' <<<"$P")"
 printf '%s' "$P_NESTED" | HOOK_PYTHON_PROBE=no-such-python "$HOOK" >/dev/null 2>&1; RC=$?
 check "a cwd nested inside the tree still finds the changed tasks.md" [ "$RC" == 2 ]
+printf '%s' "$P" | HOOK_PYTHON_PROBE=no-such-python HOOK_GIT_PROBE=no-such-git "$HOOK" >/dev/null 2>&1; RC=$?
+check "python3 and git both missing blocks: a claim cannot be ruled out" [ "$RC" == 2 ]
+P_GONE="$(jq -c --arg d "$TEST_TMP/no-such-dir" '.cwd = $d' <<<"$P")"
+printf '%s' "$P_GONE" | HOOK_PYTHON_PROBE=no-such-python "$HOOK" >/dev/null 2>&1; RC=$?
+check "a cwd git cannot resolve blocks" [ "$RC" == 2 ]
 payload Stop true
 OUT="$(printf '%s' "$P" | HOOK_PYTHON_PROBE=no-such-python "$HOOK" 2>/dev/null)"; RC=$?
 check "the stop after it is allowed" [ "$RC" == 0 ]
@@ -213,7 +218,9 @@ payload
 OUT="$(printf '%s' "$P" | HOOK_PYTHON_PROBE=no-such-python "$HOOK" 2>/dev/null)"; RC=$?
 check "python3 missing with no tasks.md change allows" [ "$RC" == 0 ]
 check "and tells the user the gate did not run" grep -q 'did not run' <<<"$OUT"
-expect_rc 0 "a payload that is not JSON, with no repository to inspect, is allowed" "$HOOK" "not json"
+expect_rc 0 "a payload that is not JSON, from a directory outside any repository, is allowed" "$HOOK" "not json"
+OUT="$(printf '%s' "$(jq -c --arg d "$TEST_TMP" '.cwd = $d' <<<"$P")" | HOOK_PYTHON_PROBE=no-such-python "$HOOK" 2>/dev/null)"; RC=$?
+check "python3 missing in a directory outside any repository allows" [ "$RC" == 0 ]
 P3="$(jq -c --arg d "$TEST_TMP" '.cwd = $d' <<<"$P")"
 expect_rc 0 "a cwd outside any repository is allowed" "$HOOK" "$P3"
 
