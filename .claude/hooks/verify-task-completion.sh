@@ -70,7 +70,7 @@ fallback() {
     changed="(git is not installed, so tasks.md cannot be inspected)"
   elif root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)"; then
     base="$(git -C "$root" merge-base HEAD origin/main 2>/dev/null || echo HEAD)"
-    if ! changed="$( { git -C "$root" diff --name-only "$base" -- 'specs/*/*/tasks.md'
+    if ! changed="$( { git -C "$root" diff --name-only "$base" -- 'specs/*/*/tasks.md' &&
                        git -C "$root" ls-files --others --exclude-standard -- 'specs/*/*/tasks.md'; } 2>/dev/null)"; then
       changed="(git could not list the changes in $root)"
     fi

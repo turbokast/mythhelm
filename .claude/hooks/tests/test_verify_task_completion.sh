@@ -203,6 +203,10 @@ check "python3 and git both missing blocks: a claim cannot be ruled out" [ "$RC"
 P_GONE="$(jq -c --arg d "$TEST_TMP/no-such-dir" '.cwd = $d' <<<"$P")"
 printf '%s' "$P_GONE" | HOOK_PYTHON_PROBE=no-such-python "$HOOK" >/dev/null 2>&1; RC=$?
 check "a cwd git cannot resolve blocks" [ "$RC" == 2 ]
+UNBORN="$TEST_TMP/unborn"
+git init -q -b main "$UNBORN"
+printf '%s' "$(jq -c --arg d "$UNBORN" '.cwd = $d' <<<"$P")" | HOOK_PYTHON_PROBE=no-such-python "$HOOK" >/dev/null 2>&1; RC=$?
+check "a listing git cannot produce (no commit to diff against) blocks" [ "$RC" == 2 ]
 payload Stop true
 OUT="$(printf '%s' "$P" | HOOK_PYTHON_PROBE=no-such-python "$HOOK" 2>/dev/null)"; RC=$?
 check "the stop after it is allowed" [ "$RC" == 0 ]
