@@ -1,0 +1,35 @@
+name: Welcome
+
+# pull_request_target lets the greeting reach fork PRs. This workflow never
+# checks out or runs PR code; it only posts a fixed comment.
+on:
+  issues:
+    types: [opened]
+  pull_request_target: # zizmor: ignore[dangerous-triggers] no checkout, no PR code executed
+    types: [opened]
+
+permissions: {}
+
+jobs:
+  greet:
+    name: Greet first-time contributors
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write # comment on a first issue
+      pull-requests: write # comment on a first PR
+    steps:
+      - uses: actions/first-interaction@1c4688942c71f71d4f5502a26ea67c331730fa4d # v3.1.0
+        with:
+          issue_message: |
+            Thanks for opening your first issue in MYTHHELM!
+
+            A maintainer will triage it. This is a volunteer project, so it may take a little while.
+            Security vulnerabilities belong in [private reporting](https://github.com/turbokast/mythhelm/security/advisories/new), not public issues.
+          pr_message: |
+            Thanks for your first pull request to MYTHHELM!
+
+            Before review, please check [CONTRIBUTING.md](https://github.com/turbokast/mythhelm/blob/main/CONTRIBUTING.md):
+
+            - every commit needs a `Signed-off-by` line under the [DCO](https://github.com/turbokast/mythhelm/blob/main/DCO) (`git commit -s`);
+            - the PR title follows [Conventional Commits](https://github.com/turbokast/mythhelm/blob/main/CONTRIBUTING.md#pull-request-titles), e.g. `fix(tui): keep focus after resize`;
+            - include tests that fail without your change, and disclose significant AI assistance.

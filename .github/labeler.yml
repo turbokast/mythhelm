@@ -1,0 +1,37 @@
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: ["docs/**", "**/*.md"]
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: [".github/**"]
+
+harness:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".claude/**"
+          - "knowledge/**"
+          - "scripts/**"
+          - "WORKFLOW.md"
+          - "CLAUDE.md"
+          - "AGENTS.md"
+
+adapter:
+  - changed-files:
+      - any-glob-to-any-file: ["adapters/**"]
+
+host:
+  - changed-files:
+      - any-glob-to-any-file: ["hosts/**"]
+
+tui:
+  - changed-files:
+      - any-glob-to-any-file: ["internal/tui/**", "mods/**"]
+
+protocol:
+  - changed-files:
+      - any-glob-to-any-file: ["protocol/**", "sdk/**"]
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file: ["go.mod", "go.sum"]

@@ -1,0 +1,25 @@
+name: Lock threads
+
+on:
+  schedule:
+    - cron: "43 3 * * 3"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: lock-threads
+
+jobs:
+  lock:
+    name: Lock inactive closed threads
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write # lock closed issues
+      pull-requests: write # lock closed PRs
+    steps:
+      - uses: dessant/lock-threads@89ae32b08ed1a541efecbab17912962a5e38981c # v6.0.2
+        with:
+          process-only: issues, prs
+          issue-inactive-days: 90
+          pr-inactive-days: 90

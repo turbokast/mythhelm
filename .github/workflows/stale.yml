@@ -1,0 +1,45 @@
+name: Stale
+
+on:
+  schedule:
+    - cron: "17 3 * * 2"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: stale
+
+jobs:
+  stale:
+    name: Mark and close stale threads
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write # the action caches its processing state between runs
+      issues: write # label, comment on and close issues
+      pull-requests: write # label, comment on and close PRs
+    steps:
+      - uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93 # v11.0.0
+        with:
+          days-before-issue-stale: 60
+          days-before-issue-close: 14
+          days-before-pr-stale: 30
+          days-before-pr-close: 14
+          stale-issue-label: stale
+          stale-pr-label: stale
+          exempt-issue-labels: security,good first issue,help wanted,decision,needs-triage
+          exempt-pr-labels: security,good first issue,help wanted,decision,needs-triage
+          stale-issue-message: >
+            This issue has had no activity for 60 days, so it has been marked stale.
+            If it still matters to you, add a comment and it will stay open.
+            Otherwise it will close in 14 days. Thank you for taking the time to report it.
+          close-issue-message: >
+            Closing after 74 days without activity. This is housekeeping, not a judgement
+            on the issue. If it is still relevant, comment and a maintainer can reopen it.
+          stale-pr-message: >
+            This pull request has had no activity for 30 days, so it has been marked stale.
+            Push a commit or comment to keep it open; otherwise it will close in 14 days.
+            If you are waiting on a review, say so and we will take a look.
+          close-pr-message: >
+            Closing after 44 days without activity. Thank you for the contribution.
+            You are welcome to reopen it or open a fresh pull request at any time.

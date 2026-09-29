@@ -1,0 +1,22 @@
+name: Release drafter
+
+# Push to main only: never runs for pull requests, so fork code never sees the
+# contents: write token.
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: release-drafter
+
+jobs:
+  draft:
+    name: Update draft release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create and update the draft release
+      pull-requests: read # read merged PR titles and labels
+    steps:
+      - uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9 # v7.7.0

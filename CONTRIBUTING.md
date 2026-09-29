@@ -43,6 +43,14 @@ Please mention significant AI assistance in the pull request description. Unrevi
 - Every required CI check must pass. Branches merge by squash or rebase, so history stays linear.
 - Be patient and kind. This is a volunteer project, so reviews take time.
 
+### Pull request titles
+
+PR titles follow [Conventional Commits](https://www.conventionalcommits.org/): `type(optional-scope): summary`, for example `fix(tui): keep focus after resize` or `feat!: drop the v0 protocol`. A `!` marks a breaking change. A CI check enforces this, and the release notes are drafted from these titles.
+
+Allowed types: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert` and `harness` (the development harness: `.claude/`, `knowledge/`, `scripts/`). Scopes are optional and free-form. Edit the title and the check re-runs.
+
+AI review bots may comment on pull requests. Their comments are advisory: act on them or reply saying why not. They are never a required check, but every review thread, a bot's included, must be resolved before merge. See [docs/automation.md](docs/automation.md).
+
 ## Development setup
 
 The Go toolchain version is pinned in `go.mod` once the codebase lands. Build, test and lint commands will be documented here alongside the first code.
