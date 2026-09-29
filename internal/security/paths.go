@@ -74,7 +74,10 @@ func resolvePath(p string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		target, isLink := readLink(next, fi)
+		target, isLink, err := readLink(next, fi)
+		if err != nil {
+			return "", err
+		}
 		if !isLink {
 			resolved = next
 			continue
@@ -95,17 +98,24 @@ func resolvePath(p string) (string, error) {
 }
 
 // readLink returns the target of a symlink, or of a Windows junction or other
-// link-like reparse point, which Lstat reports as irregular.
-func readLink(path string, fi fs.FileInfo) (string, bool) {
+// link-like reparse point, which Lstat reports as irregular. A symlink whose
+// target cannot be read is an error, so the check fails closed; an irregular
+// file that is not a link (Readlink fails) is an ordinary component.
+func readLink(path string, fi fs.FileInfo) (string, bool, error) {
 	mode := fi.Mode()
-	if mode&fs.ModeSymlink == 0 && (runtime.GOOS != "windows" || mode&fs.ModeIrregular == 0) {
-		return "", false
+	irregular := runtime.GOOS == "windows" && mode&fs.ModeIrregular != 0
+	if mode&fs.ModeSymlink == 0 && !irregular {
+		return "", false, nil
 	}
 	target, err := os.Readlink(path)
-	if err != nil {
-		return "", false
+	switch {
+	case err == nil:
+		return target, true, nil
+	case mode&fs.ModeSymlink == 0:
+		return "", false, nil
+	default:
+		return "", false, fmt.Errorf("read link %s: %w", path, err)
 	}
-	return target, true
 }
 
 func splitPath(p string) []string {

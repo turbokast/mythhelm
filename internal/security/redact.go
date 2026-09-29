@@ -14,7 +14,8 @@ import (
 const redacted = "[REDACTED]"
 
 // secretPatterns are the §12.7 shapes. Each replacement keeps any captured
-// label (the "Bearer " or "api_key=" prefix) and replaces only the secret.
+// label (the "Bearer " or "api_key=" prefix) and replaces only the secret. A
+// quoted labelled value is replaced up to its closing quote, spaces included.
 var secretPatterns = []struct {
 	re   *regexp.Regexp
 	repl string
@@ -24,7 +25,9 @@ var secretPatterns = []struct {
 	{regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]+`), redacted},
 	{regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`), redacted},
 	{regexp.MustCompile(`(?i)(\bbearer\s+)[A-Za-z0-9._~+/=-]+`), "${1}" + redacted},
-	{regexp.MustCompile(`(?i)((?:api[_-]?key|token|secret|password)["']?\s*[:=]\s*["']?)[^\s"']+`), "${1}" + redacted},
+	{regexp.MustCompile(`(?i)((?:api[_-]?key|token|secret|password)["']?\s*[:=]\s*")(?:[^"\\]|\\.)*`), "${1}" + redacted},
+	{regexp.MustCompile(`(?i)((?:api[_-]?key|token|secret|password)["']?\s*[:=]\s*')[^']*`), "${1}" + redacted},
+	{regexp.MustCompile(`(?i)((?:api[_-]?key|token|secret|password)["']?\s*[:=]\s*)[^\s"']+`), "${1}" + redacted},
 }
 
 // Redact replaces known secret shapes in s. It is defence in depth, not proof
