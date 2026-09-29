@@ -225,6 +225,18 @@
   - `TestCapabilityRecordUnknownNotOptimistic`: the fake's `billing.entitlement` is `local-scripted`; `hard_monetary_limit` is `unsupported`.
 - **Test plan**: the fake agent runs as a real child via the test binary re-exec.
 - **Invariants touched**: §9.1, §9.2, §9.7, I11, I14.
+- **Status**: ✅ Completed. Adds the `internal/adapter` seam, the bounded `ndjson.Reader` and the `fake` adapter with 13 embedded scenarios, played by `__fake-agent` as a real child; PR #11.
+- **Spec deviations**:
+  - The build-tagged `adapters/fake/escapee_{unix,other}.go` are added, because `Setsid` exists only on Unix and `os/exec` is banned.
+  - `OwnedProc` is defined as `{Stdout, Signal, Wait, GroupGone}`, and `NativeExit` gains `Err`.
+  - The capability record gains a `platform` block (NFR-4): `unknown` on Unix until Task 9's tests, and ownership `unsupported` on Windows.
+  - The fake agent exits 130 on SIGINT and 143 on SIGTERM unless the scenario ignores the signal.
+  - `emit` has four variants: `frame`, `raw`, `raw_base64` and `synth`.
+  - `__fake-agent` is dispatched in `main.go`, not the `commands` map.
+  - `Prepare` requires a scenario.
+  - The oversized-frame bound is measured in bytes, and the object count separately with `AllocsPerRun`.
+  - The `doc.go` note is in the package comment.
+  - `ProbeInput` is empty.
 
 ### Task 9 — Worker ownership: detached worker, process group, spool, stop ladder
 
