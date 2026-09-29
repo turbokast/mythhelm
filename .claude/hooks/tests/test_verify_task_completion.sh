@@ -196,6 +196,10 @@ OUT="$(printf '%s' "$P" | HOOK_PYTHON_PROBE=no-such-python "$HOOK" 2>/dev/null)"
 check "python3 missing: the stop is allowed" [ "$RC" == 0 ]
 check "and the user is told the gate did not run" grep -q 'systemMessage' <<<"$OUT"
 expect_rc 0 "a payload that is not JSON is allowed with a notice" "$HOOK" "not json"
+rm -rf "$R/.claude/data" && mkdir -p "$R/.claude" && : > "$R/.claude/data"
+expect_rc 0 "an internal error (state directory unwritable) never becomes a block" "$HOOK" "$P"
+check "and says the gate did not run" grep -q 'internal error' <<<"$OUT"
+rm -f "$R/.claude/data"
 P3="$(jq -c --arg d "$TEST_TMP" '.cwd = $d' <<<"$P")"
 expect_rc 0 "a cwd outside any repository is allowed" "$HOOK" "$P3"
 

@@ -528,9 +528,10 @@ class GhTests(GhBase):
     def test_leaks_in_body_or_diff_block(self):
         home = "/" + "/".join(("home", "someone", "work"))  # assembled so this file itself stays clean
         self.serve(pr_view={"body": "Run it from %s first." % home})
-        self.assertTrue(any(r.startswith("leak:") for r in self.check_pr()[2]))
+        reasons = self.check_pr()[2]
+        self.assertIn("leak: body: home-path: %s/" % home[:-5], reasons)
         self.serve(pr_diff="+++ b/x\n+token " + "ghp" + "_abcdefghijklmnopqrstuvwxyz0123456789\n")
-        self.assertTrue(any(r.startswith("leak:") for r in self.check_pr()[2]))
+        self.assertTrue(any(r.startswith("leak: diff: token:") for r in self.check_pr()[2]))
 
     def test_lifecycle_pull_request(self):
         files = [{"path": "specs/todo/demo/tasks.md"}, {"path": "specs/in-progress/demo/tasks.md"},

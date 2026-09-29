@@ -525,16 +525,25 @@ def unresolved_threads(slug, pr):
 
 
 def hygiene_findings(texts):
-    """Findings of scripts/ci/check-public-hygiene.sh over the given texts."""
+    """'<label>: <category>: <match>' for each finding of scripts/ci/check-public-hygiene.sh
+    over the given {label: text}."""
     script = os.path.join(HERE, "..", "ci", "check-public-hygiene.sh")
+    labels = list(texts)
     with tempfile.TemporaryDirectory() as d:
-        for i, t in enumerate(texts):
+        for i, label in enumerate(labels):
             with open(os.path.join(d, "part-%d.txt" % i), "w", encoding="utf-8") as fh:
-                fh.write(t)
+                fh.write(texts[label])
         r = subprocess.run(["bash", script, d], capture_output=True, text=True, cwd=d, timeout=120)
     if r.returncode not in (0, 1):
         raise Usage("check-public-hygiene.sh failed: %s" % r.stderr.strip()[:300])
-    return [l for l in r.stdout.split("\n") if l.strip() and r.returncode == 1]
+    out = []
+    for line in (r.stdout + "\n" + r.stderr).split("\n"):
+        m = re.match(r"^part-(\d+)\.txt:\d+: (.*)$", line)
+        if m:
+            out.append("%s: %s" % (labels[int(m.group(1))], m.group(2)))
+    if r.returncode == 1 and not out:
+        raise Usage("check-public-hygiene.sh reported findings this parser cannot read")
+    return out
 
 
 def pr_check(spec, task, pr, repo=None, required=DEFAULT_REQUIRED_CHECKS, accept_scope=()):
@@ -606,8 +615,8 @@ def pr_check(spec, task, pr, repo=None, required=DEFAULT_REQUIRED_CHECKS, accept
     # Leak check: the public body and every added line.
     diff = gh(["pr", "diff", str(pr)], repo=slug)
     added = "\n".join(l[1:] for l in diff.split("\n") if l.startswith("+") and not l.startswith("+++"))
-    for finding in hygiene_findings([view.get("body") or "", view.get("title") or "", added]):
-        reasons.append("leak: %s" % finding.split(": ", 1)[-1])
+    for finding in hygiene_findings({"body": view.get("body") or "", "title": view.get("title") or "", "diff": added}):
+        reasons.append("leak: %s" % finding)
     if reasons:
         return "not-ready", facts, reasons + unknown
     if unknown:

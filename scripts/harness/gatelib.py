@@ -351,13 +351,20 @@ def transcript_touches(path, root, rels):
                     command = inp.get("command") or ""
                     for rel, absolute in wanted.items():
                         tail = "/".join(rel.split("/")[2:])      # <name>/tasks.md
-                        if target and (os.path.realpath(target) == os.path.realpath(absolute) or target.endswith("/" + rel)):
+                        if target and os.path.isabs(target):
+                            if os.path.realpath(target) == os.path.realpath(absolute):
+                                hit.add(rel)
+                        elif target and os.path.normpath(target) == rel:
                             hit.add(rel)
                         elif command and tail in command:
                             hit.add(rel)
     except OSError:
         return None
     return hit
+
+
+def safe_id(sid):
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", sid or "unknown")[:128]
 
 
 def emit_system_message(text):
@@ -370,7 +377,7 @@ def stop_hook(stdin_text, env=os.environ):
     except ValueError:
         emit_system_message("verify-task-completion: the Stop payload is not JSON; the completion gate did not run.")
         return 0
-    sid = payload.get("session_id") or "unknown"
+    sid = safe_id(payload.get("session_id"))
     cwd = payload.get("cwd") or env.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     event = payload.get("hook_event_name") or "Stop"
     try:
@@ -453,6 +460,7 @@ def override(root, sid, reason):
         raise runspec.Usage("--reason must say why the block is wrong (at least 10 characters)")
     data_dir = os.path.join(os.path.dirname(os.path.realpath(
         git(root, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.decode().strip())), ".claude", "data")
+    sid = safe_id(sid)
     row = {"session_id": sid, "tree": root, "fingerprint": fingerprint(root, "all"), "reason": reason.strip(), "at": now()}
     write_json_atomic(os.path.join(data_dir, "stop-gate-override-%s.json" % sid), row)
     audit(data_dir, {"session_id": sid, "tree": root, "event": "override_recorded", "reason": reason.strip()})
@@ -475,9 +483,13 @@ def main(argv=None):
     p = sub.add_parser("override"); p.add_argument("--session", required=True); p.add_argument("--reason", required=True)
     p.add_argument("--root", default=".")
     a = ap.parse_args(sys.argv[1:] if argv is None else argv)
-    try:
-        if a.cmd == "stop-hook":
+    if a.cmd == "stop-hook":
+        try:
             return stop_hook(sys.stdin.read())
+        except Exception as e:  # noqa: BLE001  exit 2 is a block, so no internal error may reach it
+            emit_system_message("verify-task-completion: internal error, the completion gate did not run: %s" % e)
+            return 0
+    try:
         root = toplevel(a.root)
         if a.cmd == "run":
             gates = expand(root, a.gates, a.base)
