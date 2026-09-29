@@ -4,6 +4,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+
+	"github.com/turbokast/mythhelm/internal/journal"
 )
 
 // ExitCode is a process exit status with the §15.10 meaning.
@@ -37,7 +39,7 @@ func exitCode(err error) ExitCode {
 	switch {
 	case err == nil, errors.Is(err, flag.ErrHelp):
 		return ExitOK
-	case errors.As(err, &usage):
+	case errors.As(err, &usage), errors.Is(err, journal.ErrSchemaTooNew):
 		return ExitInvalid
 	default:
 		return ExitInternal
