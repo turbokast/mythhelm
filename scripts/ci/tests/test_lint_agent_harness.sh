@@ -253,7 +253,7 @@ echo "== clean fixture =="
 fresh clean
 lint "$F"
 expect_pass "the clean fixture passes every check"
-check "summary names all eleven checks" [ "$(grep -cE ' (PASS|FAIL)$' <<< "$OUT")" == 11 ]
+check "summary names all twelve checks" [ "$(grep -cE ' (PASS|FAIL)$' <<< "$OUT")" == 12 ]
 
 echo "== usage =="
 lint "$F" --only no-such-check
@@ -553,5 +553,92 @@ fresh sp-epic-section
 set_line "$F/specs/unrefined/epic-x/plan.md" '### Work Streams' '### Streams'
 lint "$F" --only specs
 expect_fail specs "epic plan has no '## Work Streams' section" "epic without a Work Streams section"
+
+echo "== product =="
+# product_fixture: a valid product/ in $F, one card linked to the fixture's demo spec.
+product_fixture() {
+  mkdir -p "$F/product"
+  printf '# Objectives\n\n> Current stage: 1\n' > "$F/product/objectives.md"
+  cat > "$F/product/backlog.md" <<'EOF'
+# Backlog
+
+## Open
+
+### MH-2: Second
+- **Status**: triaged
+- **Stage**: 1
+- **Gates**: G10
+- **Score**: 9.0 = (value 2 + urgency 5 + risk 2) / effort 1
+- **Spec**: (none)
+- **Issue**: [#4](https://github.com/turbokast/mythhelm/issues/4)
+- **Source**: master spec §19.4
+- **Summary**: A badge.
+
+### MH-1: First
+- **Status**: implementing
+- **Stage**: 1
+- **Gates**: G01, G03
+- **Score**: 3.0 = (value 5 + urgency 5 + risk 5) / effort 5
+- **Spec**: `demo`
+- **Issue**: [#3](https://github.com/turbokast/mythhelm/issues/3)
+- **Source**: master spec §20.3
+- **Summary**: The slice.
+
+## Closed
+
+No closed cards.
+EOF
+  cat > "$F/product/decisions.md" <<'EOF'
+# Decisions
+
+## Log
+
+### D-1 — 2026-09-29: Seed the backlog
+- **Type**: backlog-seed
+- **Decision**: Seed it.
+- **Rationale**: The spec.
+- **Cards**: MH-1, MH-2
+EOF
+  printf '# Signals\n\n## Signals\n\nNo signals recorded yet.\n' > "$F/product/signals.md"
+  printf '# Roadmap\n\n- **MH-1** First\n' > "$F/product/roadmap.md"
+}
+fresh pr-none
+lint "$F" --only product
+expect_pass "a tree without product/ has nothing to check"
+fresh pr-clean
+product_fixture
+lint "$F" --only product
+expect_pass "a valid product layer passes"
+check "a stale roadmap is only a warning" bash -c "[[ \"\$1\" == *'product (warning)'*'stale'* ]]" _ "$OUT"
+fresh pr-status
+product_fixture
+set_line "$F/product/backlog.md" '- **Status**: implementing' '- **Status**: wip'
+lint "$F" --only product
+expect_fail product "status 'wip' is not one of" "a status outside the enum"
+fresh pr-dup
+product_fixture
+set_line "$F/product/backlog.md" '### MH-2: Second' '### MH-1: Second'
+lint "$F" --only product
+expect_fail product "MH-1 is defined twice" "a duplicate card id"
+fresh pr-spec
+product_fixture
+set_line "$F/product/backlog.md" '- **Spec**: `demo`' '- **Spec**: `missing-spec`'
+lint "$F" --only product
+expect_fail product "spec 'missing-spec' resolves to 0 spec directories" "a spec link that does not resolve"
+fresh pr-issue
+product_fixture
+set_line "$F/product/backlog.md" '- **Issue**: [#4](https://github.com/turbokast/mythhelm/issues/4)' '- **Issue**: https://github.com/turbokast/mythhelm/issues/4'
+lint "$F" --only product
+expect_fail product "issue must be '(none)' or" "a bare issue URL"
+fresh pr-score
+product_fixture
+set_line "$F/product/backlog.md" '- **Score**: 9.0 = (value 2 + urgency 5 + risk 2) / effort 1' '- **Score**: 8.0 = (value 2 + urgency 5 + risk 2) / effort 1'
+lint "$F" --only product
+expect_fail product "score 8.0 does not equal" "a score that is not the formula"
+fresh pr-order
+product_fixture
+set_line "$F/product/decisions.md" '### D-1 — 2026-09-29: Seed the backlog' '### D-0 — 2026-09-29: Seed the backlog'
+lint "$F" --only product
+expect_fail product "malformed decision heading" "a decision id outside the scheme"
 
 finish

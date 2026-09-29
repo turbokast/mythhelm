@@ -25,3 +25,9 @@ coverage.*
 
 # Python bytecode from the harness scripts
 __pycache__/
+
+# The approval queue for agent writes: local to each maintainer's checkout
+# (scripts/orchestration/approvals.py).
+/orchestration/approvals.jsonl
+/orchestration/approvals.jsonl.lock
+/orchestration/requests/

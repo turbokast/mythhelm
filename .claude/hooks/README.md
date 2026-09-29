@@ -95,6 +95,32 @@ State lives in the main checkout's `.claude/data/` (gitignored), shared by its l
 | `main-push-arm-<session>.json`, `publish-arm-<session>.json` | `session_id`, `kind`, `armed_at`, `armed_at_epoch`, `ttl_seconds`, `reason`, `operator` |
 | `guard-audit.jsonl` | One row per arm, disarm, allow and block: `ts`, `session_id`, `guard`, `kind`, `event`, `command` (first 200 characters), `reason`, `operator` |
 
+## Product approvals
+
+`guard-product-write.sh` enforces the product layer's rule: agents propose, maintainers approve ([`product/README.md`](../../product/README.md)). There is no armed window here. Each change to a file under `product/` needs its own signed approval, bound to the file's current content and to the exact content proposed, and it releases one write.
+
+```bash
+# The agent drafts the change in a scratch file and files it:
+python3 scripts/pm/pm.py set-status MH-3 specced --spec herdr-bridge --out /tmp/backlog.md
+python3 scripts/orchestration/approvals.py request mh-3-specced --path product/backlog.md \
+  --proposed /tmp/backlog.md --summary "MH-3 has a spec"
+
+# The maintainer, in their own terminal (agents are blocked from every approve.sh call):
+scripts/orchestration/approve.sh init-key                # once per machine
+scripts/orchestration/approve.sh show mh-3-specced
+scripts/orchestration/approve.sh approve mh-3-specced --apply
+```
+
+Without `--apply`, the agent writes the approved content with Write or Edit, and the hook releases exactly that content. A request goes stale when its file changes before the write; the agent redrafts and refiles. `approve.sh audit` re-verifies every signed decision and the chain between them.
+
+The queue lives in the main checkout's `orchestration/` (gitignored), shared by its linked worktrees:
+
+| File | Contents |
+|---|---|
+| `orchestration/requests/<id>/` | `request.json` (`id`, `path`, `worktree`, `base_sha256`, `result_sha256`, `diff_sha256`, `summary`, `requested_at`, `session`), `proposed` (the full proposed file) and `diff` |
+| `orchestration/approvals.jsonl` | Decision rows (`approved` or `rejected`, with the request's hashes, `decided_at`, `decided_by`, `prev` and an HMAC-SHA256 `mac`) and `consumed` rows (`consumes` names the spent `mac`) |
+| `${XDG_CONFIG_HOME:-$HOME/.config}/mythhelm/approvals.key` | The maintainer's signing key, mode 0600, outside the repository (`MYTHHELM_APPROVALS_KEY` overrides the path) |
+
 ## Adding a hook
 
 1. Write `.claude/hooks/<name>.sh`: `#!/usr/bin/env bash`, `set -euo pipefail`, and a header comment stating what it blocks or reports, why, and its residuals. A Bash guard sources `hook-helpers.sh` and calls `hh_load_bash_payload <name> <prefilter>`, then walks `hh_command_segments`. Use `hh_block` for the stanza.

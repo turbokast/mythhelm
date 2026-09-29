@@ -34,6 +34,13 @@ Checks (each reads the tree at DIR, default the repository root):
                   an epic plan.md sits only in an epic state and every Work Streams
                   row names an existing spec; a spec name lives in one lifecycle
                   state only, counting copies the git index still holds
+  product         product/ follows its schemas (scripts/pm/pm.py validate): backlog
+                  cards with unique MH ids, statuses in the enum, scores equal to the
+                  formula, spec links that resolve, well-formed issue links and the
+                  canonical score order; decisions and signals appended with
+                  increasing ids and dates; a current stage in objectives.md; a
+                  roadmap naming real cards (stale is a warning). Skipped when the
+                  tree has no product/ directory.
 
 Findings print as "path:line: check: detail". Exit 0 clean, 1 findings, 2 usage or
 an unreadable tree. Standard library only; no network, no writes.
@@ -52,7 +59,7 @@ RULE_BUDGET_BYTES = 16384
 
 HAIKU_EFFORT_WINDOW = 10
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
-HARNESS_PREFIXES = (".claude/", "knowledge/", "scripts/", "docs/harness/")
+HARNESS_PREFIXES = (".claude/", "knowledge/", "scripts/", "docs/harness/", "product/", "orchestration/")
 HARNESS_ROOT_FILES = ("CLAUDE.md", "AGENTS.md", "WORKFLOW.md")
 CONTEXT_LABELS = ("**Slash command**", "**Model-invoked**", "**Non-interactive**")
 
@@ -778,6 +785,22 @@ def check_specs(root, files):
             check_tasks(root, base + "/tasks.md", agents)
 
 
+def check_product(root, files):
+    """The product layer's formats, validated by scripts/pm/pm.py (imported from this
+    repository, whatever tree --root names). A tree without product/ has nothing to
+    check."""
+    if not any(rel.startswith("product/") for rel in files):
+        return
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pm"))
+    try:
+        import pm  # noqa: E402  (a sibling script, not an installed package)
+    finally:
+        sys.path.pop(0)
+    result = pm.validate(root)
+    warnings.extend(result.warnings)
+    findings.extend(result.errors)
+
+
 CHECKS = {
     "frontmatter": check_frontmatter,
     "routing-pins": check_routing_pins,
@@ -790,6 +813,7 @@ CHECKS = {
     "abs-paths": check_abs_paths,
     "references": check_references,
     "specs": check_specs,
+    "product": check_product,
 }
 
 

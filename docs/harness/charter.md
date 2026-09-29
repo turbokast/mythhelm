@@ -62,6 +62,7 @@ The domain map (`knowledge/domains.md`) routes work to agents by path. The map f
 | release | `.github/`, `packaging/`, `Makefile`, `.goreleaser*`, the repository dotfiles (`.golangci.yml`, `.coderabbit.yaml`, `.editorconfig`, `.gitattributes`, `.gitignore`, `.shellcheckrc`), `docs/automation.md` | `release-engineer` (opus) |
 | docs | `docs/` except `docs/harness/` and `docs/automation.md`, `*.md` at root not listed elsewhere | `go-implementer` or the author's agent |
 | harness | `.claude/`, `knowledge/`, `scripts/`, `docs/harness/`, `WORKFLOW.md`, `CLAUDE.md`, `AGENTS.md` | `agent-config-editor` (opus) |
+| product | `product/`, `orchestration/` | the session running the product skills, which drafts and files requests; a maintainer approves every change to `product/` |
 | specs | `specs/` | the session running the lifecycle skills (`specs/README.md`) for `requirements.md`, `design.md` and `tasks.md`; the implementing agent for its own task's completion entry and scratchpad note |
 
 The planner-tier agents are `architect`, `code-reviewer` and `agent-config-editor` (opus). The mechanical-tier agents are `completion-clerk` and `harness-clerk` (haiku; never pass `effort`). `knowledge/agent-routing.md` holds the canonical mapping, and a CI check pins it.
