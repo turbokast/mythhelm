@@ -33,39 +33,44 @@ var commands = map[string]command{
 // Main runs the command named by args[0] and returns the process exit code.
 func Main(args []string, stdio Stdio) int {
 	if len(args) == 0 {
-		printUsage(stdio.Err)
+		_ = printUsage(stdio.Err)
 		return int(ExitInvalid)
 	}
 	name := args[0]
 	switch name {
 	case "help", "-h", "-help", "--help":
-		printUsage(stdio.Out)
+		if err := printUsage(stdio.Out); err != nil {
+			_, _ = fmt.Fprintf(stdio.Err, "mythhelm: %v\n", err)
+			return int(ExitInternal)
+		}
 		return int(ExitOK)
 	}
 	cmd, ok := commands[name]
 	if !ok {
-		fmt.Fprintf(stdio.Err, "mythhelm: unknown command %q\n\n", name)
-		printUsage(stdio.Err)
+		_, _ = fmt.Fprintf(stdio.Err, "mythhelm: unknown command %q\n\n", name)
+		_ = printUsage(stdio.Err)
 		return int(ExitInvalid)
 	}
 	err := cmd.run(args[1:], stdio)
 	code := exitCode(err)
 	if code != ExitOK {
-		fmt.Fprintf(stdio.Err, "mythhelm %s: %v\n", name, err)
+		_, _ = fmt.Fprintf(stdio.Err, "mythhelm %s: %v\n", name, err)
 	}
 	if code == ExitInvalid {
-		fmt.Fprintf(stdio.Err, "run 'mythhelm %s -h' for usage\n", name)
+		_, _ = fmt.Fprintf(stdio.Err, "run 'mythhelm %s -h' for usage\n", name)
 	}
 	return int(code)
 }
 
-func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "usage: mythhelm <command> [flags] [arguments]")
-	fmt.Fprintln(w, "\nCommands:")
+func printUsage(w io.Writer) error {
+	var b strings.Builder
+	b.WriteString("usage: mythhelm <command> [flags] [arguments]\n\nCommands:\n")
 	for _, name := range slices.Sorted(maps.Keys(commands)) {
-		fmt.Fprintf(w, "  %-10s %s\n", name, commands[name].summary)
+		fmt.Fprintf(&b, "  %-10s %s\n", name, commands[name].summary)
 	}
-	fmt.Fprintln(w, "\nRun 'mythhelm <command> -h' for a command's flags.")
+	b.WriteString("\nRun 'mythhelm <command> -h' for a command's flags.\n")
+	_, err := io.WriteString(w, b.String())
+	return err
 }
 
 // ParseInterspersed parses args into fs, allowing flags and positional
@@ -122,9 +127,13 @@ func newFlagSet(name string) *flag.FlagSet {
 func parseFlags(fs *flag.FlagSet, args []string, stdio Stdio) ([]string, error) {
 	positional, err := ParseInterspersed(fs, args)
 	if errors.Is(err, flag.ErrHelp) {
-		fmt.Fprintf(stdio.Out, "usage: mythhelm %s [flags]\n\nFlags:\n", fs.Name())
-		fs.SetOutput(stdio.Out)
+		var b strings.Builder
+		fmt.Fprintf(&b, "usage: mythhelm %s [flags]\n\nFlags:\n", fs.Name())
+		fs.SetOutput(&b)
 		fs.PrintDefaults()
+		if _, werr := io.WriteString(stdio.Out, b.String()); werr != nil {
+			return nil, werr
+		}
 		return nil, err
 	}
 	if err != nil {

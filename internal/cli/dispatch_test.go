@@ -225,3 +225,31 @@ func decodeSingleVersionObject(t *testing.T, stdout string) versionObject {
 	}
 	return got
 }
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("write failed") }
+
+func TestOutputWriteFailureExits1(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "help", args: []string{"help"}},
+		{name: "command help", args: []string{"version", "-h"}},
+		{name: "version plain", args: []string{"version"}},
+		{name: "version jsonl", args: []string{"version", "--format", "jsonl"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			code := Main(tt.args, Stdio{In: strings.NewReader(""), Out: failingWriter{}, Err: &stderr})
+			if code != int(ExitInternal) {
+				t.Errorf("exit code = %d, want %d", code, ExitInternal)
+			}
+			if !strings.Contains(stderr.String(), "write failed") {
+				t.Errorf("stderr = %q, want it to report the write failure", stderr.String())
+			}
+		})
+	}
+}
