@@ -195,6 +195,9 @@ payload
 OUT="$(printf '%s' "$P" | HOOK_PYTHON_PROBE=no-such-python "$HOOK" 2>"$TEST_TMP/err")"; RC=$?
 check "python3 missing with a changed tasks.md blocks" [ "$RC" == 2 ]
 check "the block is the stanza naming the tasks.md" grep -q '^File: specs/in-progress/demo/tasks.md' "$TEST_TMP/err"
+P_NESTED="$(jq -c --arg d "$R/internal/x" '.cwd = $d' <<<"$P")"
+printf '%s' "$P_NESTED" | HOOK_PYTHON_PROBE=no-such-python "$HOOK" >/dev/null 2>&1; RC=$?
+check "a cwd nested inside the tree still finds the changed tasks.md" [ "$RC" == 2 ]
 payload Stop true
 OUT="$(printf '%s' "$P" | HOOK_PYTHON_PROBE=no-such-python "$HOOK" 2>/dev/null)"; RC=$?
 check "the stop after it is allowed" [ "$RC" == 0 ]

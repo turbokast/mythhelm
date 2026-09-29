@@ -62,7 +62,9 @@ fallback() {
     cwd="${BASH_REMATCH[1]}"
   fi
   cwd="${cwd:-${CLAUDE_PROJECT_DIR:-$PWD}}"
-  if git -C "$cwd" rev-parse --show-toplevel >/dev/null 2>&1; then
+  # Root-relative queries: pathspecs resolve from -C's directory, so a nested cwd
+  # would otherwise miss specs/*/*/tasks.md.
+  if cwd="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)"; then
     base="$(git -C "$cwd" merge-base HEAD origin/main 2>/dev/null || echo HEAD)"
     changed="$( { git -C "$cwd" diff --name-only "$base" -- 'specs/*/*/tasks.md' 2>/dev/null
                   git -C "$cwd" ls-files --others --exclude-standard -- 'specs/*/*/tasks.md' 2>/dev/null; } | head -5)"
