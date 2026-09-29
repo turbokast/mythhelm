@@ -133,6 +133,8 @@ jobs:
           git ls-files -z -- '*.sh' | xargs -0 shellcheck
       - name: Hook and script tests
         run: .claude/hooks/tests/run-tests.sh
+      - name: Agent harness lint
+        run: scripts/ci/lint-agent-harness.sh
       - name: Public hygiene
         run: scripts/ci/check-public-hygiene.sh
 

@@ -14,6 +14,10 @@ MYTHHELM is built by AI coding agents directed by human maintainers. [`docs/harn
 
 In Claude Code sessions, guard hooks run on every tool call; other agents get no hook enforcement and must follow the same rules by hand. [`.claude/hooks/README.md`](.claude/hooks/README.md) explains them and the arming recipes, and [`.claude/hooks/INVENTORY.md`](.claude/hooks/INVENTORY.md) lists them. When a hook blocks you, read its Detail and Fix lines and follow the Fix; never work around the guard's intent.
 
+- **Orientation.** Run `/bootstrap` at the start of task work. [`knowledge/`](knowledge/README.md) holds the domain map, the invariants restated from spec §4, and the evidence behind each rule.
+- **Agents and routing.** Route work by path with [`knowledge/domains.md`](knowledge/domains.md): `go-implementer` (core, adapters, protocol, docs), `tui-implementer`, `release-engineer`, `agent-config-editor` (harness); `architect` and `code-reviewer` review. [`knowledge/agent-routing.md`](knowledge/agent-routing.md) pins each agent's model and effort; never pass `effort` to a haiku agent (`completion-clerk`, `harness-clerk`).
+- **Rules.** `.claude/rules/` holds always-on rules (behavioural posture, coding standards, formatter first, skill invocation contexts, prompt refinement, public-repo hygiene) and rules that load with the files they govern (Go, tests, workflows, harness).
+
 ## Conventions
 
 - **Pull requests only.** Work lands on `main` through a pull request with every required check green (`CI OK`), merged by squash or rebase. Never push to `main`.
@@ -29,5 +33,5 @@ Run the formatter before any check: `gofmt -w .` and `go mod tidy` for Go.
 | Area | Commands, from the repository root |
 |---|---|
 | Go | `gofmt -l .` (must print nothing), `go vet ./...`, `go test -race ./...`, `go mod tidy -diff`, `golangci-lint run` (once configured), `govulncheck ./...` |
-| Harness | `.claude/hooks/tests/run-tests.sh`, `shellcheck` on changed shell scripts, `scripts/ci/check-public-hygiene.sh` |
+| Harness | `scripts/ci/lint-agent-harness.sh`, `.claude/hooks/tests/run-tests.sh`, `shellcheck` on changed shell scripts, `scripts/ci/check-public-hygiene.sh` |
 | Workflows | `actionlint` |
