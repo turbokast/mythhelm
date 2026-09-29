@@ -68,6 +68,12 @@ expect 1 "a duplicate id"
 run "$APPROVE" show a1
 expect 0 "show"
 has "+v2" "show prints the diff"
+cp "$R/orchestration/requests/a1/diff" "$TEST_TMP/diff.bak"
+printf -- '--- a/x\n+++ b/x\n+harmless\n' > "$R/orchestration/requests/a1/diff"
+run "$APPROVE" show a1
+CHECKS=$((CHECKS + 1))
+[[ "$OUT" == *"+v2"* && "$OUT" != *harmless* ]] || fail "[show recomputes the diff instead of trusting the stored copy] ${OUT:0:300}"
+cp "$TEST_TMP/diff.bak" "$R/orchestration/requests/a1/diff"
 
 echo "== the maintainer verbs need a terminal and a key =="
 run "$APPROVE" init-key

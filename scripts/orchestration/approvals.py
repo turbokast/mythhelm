@@ -33,7 +33,10 @@ Files, all outside git (see .gitignore):
                                                   signed and chained by `prev`) and
                                                   consumed rows (unsigned; they only
                                                   ever remove a grant)
-  <main checkout>/orchestration/requests/<id>/    request.json, proposed, diff
+  <main checkout>/orchestration/requests/<id>/    request.json, proposed, and diff (a
+                                                  copy for reading; show and approve
+                                                  recompute the diff from the file and
+                                                  the proposed content)
   $MYTHHELM_APPROVALS_KEY, default
   ${XDG_CONFIG_HOME:-$HOME/.config}/mythhelm/approvals.key   the signing key (0600)
 
@@ -225,6 +228,13 @@ class Ledger:
 
 # ---- agent verbs -----------------------------------------------------------
 
+def unified(current, proposed, rel):
+    """The unified diff from the current bytes to the proposed bytes."""
+    return "".join(difflib.unified_diff(current.decode("utf-8", "replace").splitlines(True),
+                                        proposed.decode("utf-8", "replace").splitlines(True),
+                                        "a/" + rel, "b/" + rel))
+
+
 def cmd_request(a):
     if not ID_RE.match(a.id):
         raise Refused("id %r must be lowercase letters, digits and hyphens (at most 64)" % a.id)
@@ -250,9 +260,7 @@ def cmd_request(a):
         current, base = b"", ABSENT
     if base != ABSENT and current == proposed:
         raise Refused("the proposed content is identical to %s; there is nothing to approve" % rel)
-    diff = "".join(difflib.unified_diff(current.decode("utf-8", "replace").splitlines(True),
-                                        proposed.decode("utf-8", "replace").splitlines(True),
-                                        "a/" + rel, "b/" + rel))
+    diff = unified(current, proposed, rel)
     ledger = Ledger(orchestration_dir(root))
     with ledger:
         d = os.path.join(ledger.requests, a.id)
@@ -305,8 +313,21 @@ def cmd_show(a):
     print("path      %s in %s" % (req.get("path"), req.get("worktree")))
     print("summary   %s" % req.get("summary"))
     print("requested %s" % req.get("requested_at"))
-    with open(os.path.join(d, "diff"), encoding="utf-8") as f:
-        sys.stdout.write(f.read())
+    # The diff is recomputed from the file and the proposed content, never read from
+    # the stored copy, which anyone who can write the request directory could edit.
+    try:
+        rel = canon_product_path(req.get("path", ""))
+        with open(os.path.join(d, "proposed"), "rb") as f:
+            proposed = f.read()
+        target = os.path.join(os.path.realpath(req.get("worktree") or "/nonexistent"), rel)
+        try:
+            with open(target, "rb") as f:
+                current = f.read()
+        except FileNotFoundError:
+            current = b""
+    except OSError as e:
+        raise Refused("request %s cannot be read: %s" % (a.id, e.strerror)) from e
+    sys.stdout.write(unified(current, proposed, rel))
 
 
 def cmd_audit(_a):
@@ -377,10 +398,6 @@ def verified_request(ledger, ident):
     if sha256_bytes(proposed) != req.get("result_sha256"):
         raise Refused("request %s was altered after it was filed (the proposed content no longer matches "
                       "its recorded hash); reject it and ask for a new request" % ident)
-    with open(os.path.join(d, "diff"), "rb") as f:
-        if sha256_bytes(f.read()) != req.get("diff_sha256"):
-            raise Refused("request %s was altered after it was filed (the diff no longer matches its "
-                          "recorded hash); reject it and ask for a new request" % ident)
     worktree = os.path.realpath(req.get("worktree") or "/nonexistent")
     top = toplevel_of(worktree)
     if not top or os.path.realpath(top) != worktree:
@@ -391,7 +408,14 @@ def verified_request(ledger, ident):
     if sha256_file(target) != req.get("base_sha256"):
         raise Refused("%s has changed since request %s was filed, so the diff no longer describes what "
                       "would change; reject it and ask for a redraft" % (target, ident))
-    return req, d, rel, target, proposed
+    try:
+        with open(target, "rb") as f:
+            current = f.read()
+    except FileNotFoundError:
+        current = b""
+    # The diff shown and signed is computed here from the file and the proposed
+    # content; the stored copy in the request directory is never trusted.
+    return req, rel, target, proposed, unified(current, proposed, rel)
 
 
 def decide(a, state):
@@ -404,20 +428,21 @@ def decide(a, state):
         if status_of(ledger, a.id) != "open":
             raise Refused("request %s is already %s" % (a.id, status_of(ledger, a.id)))
         if state == "approved":
-            req, d, rel, target, proposed = verified_request(ledger, a.id)
-            with open(os.path.join(d, "diff"), encoding="utf-8") as f:
-                sys.stdout.write(f.read())
+            req, rel, target, proposed, diff = verified_request(ledger, a.id)
+            sys.stdout.write(diff)
         else:
             req, _ = ledger.request(a.id)
-            rel, target, proposed = req.get("path"), None, None
+            rel, target, proposed, diff = req.get("path"), None, None, ""
         worktree = os.path.realpath(req.get("worktree") or "/nonexistent")
         print("\n%s: %s in %s\n  %s" % (a.id, rel, worktree, req.get("summary", "")))
         if not confirm("%s request %s?" % ("Approve" if state == "approved" else "Reject", a.id), a.yes):
             print("nothing recorded")
             return
         row = {"schema_version": 1, "id": a.id, "state": state, "path": rel, "worktree": worktree,
-               "base_sha256": req.get("base_sha256"), "result_sha256": req.get("result_sha256"),
-               "diff_sha256": req.get("diff_sha256"), "decided_at": now(),
+               "base_sha256": req.get("base_sha256"),
+               "result_sha256": sha256_bytes(proposed) if proposed is not None else req.get("result_sha256"),
+               "diff_sha256": sha256_bytes(diff.encode("utf-8")) if proposed is not None else req.get("diff_sha256"),
+               "decided_at": now(),
                "decided_by": "terminal:" + (getpass.getuser() or "maintainer"), "prev": ledger.chain_head()}
         row["mac"] = mac_of(key, row)
         ledger.append(row)
