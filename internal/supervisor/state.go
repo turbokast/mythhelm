@@ -68,11 +68,13 @@ const (
 // attemptTransitions is design §4's attempt chain. An attempt whose worker is
 // lost before its native exit is confirmed becomes interrupted from any
 // non-terminal state (§7.3), including a crash between launch intent and
-// acknowledgement (AC-11.3). A stop request, once recorded, can end only in
-// stopped or interrupted, never in a native success or failure (AC-5.7).
+// acknowledgement (AC-11.3). A native that could not be started fails from
+// launching (reason launch_failed, ADR 0004). A stop request, once recorded,
+// can end only in stopped or interrupted, never in a native success or
+// failure (AC-5.7).
 var attemptTransitions = map[AttemptState][]AttemptState{
 	AttemptLaunchIntentRecorded: {AttemptLaunching, AttemptInterrupted},
-	AttemptLaunching:            {AttemptRunning, AttemptInterrupted},
+	AttemptLaunching:            {AttemptRunning, AttemptFailedNative, AttemptInterrupted},
 	AttemptRunning:              {AttemptSucceededNative, AttemptFailedNative, AttemptStopRequested, AttemptInterrupted},
 	AttemptStopRequested:        {AttemptStopped, AttemptInterrupted},
 	AttemptInterrupted:          {AttemptQuarantined},
@@ -246,15 +248,11 @@ func TransitionAttempt(ctx context.Context, j *journal.Journal, attemptID string
 	}
 	var illegal error
 	err = producer.append(ctx, j, ev, func(tx *sql.Tx) error {
-		from, err := journal.CurrentAttemptState(ctx, tx, attemptID)
-		if err != nil {
-			return err
+		err := setAttemptState(ctx, tx, attemptID, to, reason)
+		if errors.Is(err, ErrIllegalTransition) {
+			illegal = err
 		}
-		if !slices.Contains(attemptTransitions[AttemptState(from)], to) {
-			illegal = fmt.Errorf("%w: attempt %s cannot move from %s to %s", ErrIllegalTransition, attemptID, from, to)
-			return illegal
-		}
-		return journal.SetAttemptState(ctx, tx, attemptID, string(to), reason)
+		return err
 	})
 	if illegal != nil {
 		return illegal
