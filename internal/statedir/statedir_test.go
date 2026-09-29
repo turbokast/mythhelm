@@ -75,12 +75,7 @@ func TestStateDirMode0700(t *testing.T) {
 	assertMode(t, fresh, 0o700)
 
 	existing := filepath.Join(root, "existing")
-	if err := os.Mkdir(existing, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(existing, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	wideDir(t, existing)
 	if err := Ensure(existing); err != nil {
 		t.Fatalf("Ensure(existing 0755 dir): %v", err)
 	}
@@ -100,12 +95,7 @@ func TestEnsureRejectsFile(t *testing.T) {
 func TestEnsureRefusesSymlink(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, "shared")
-	if err := os.Mkdir(target, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(target, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	wideDir(t, target)
 	link := filepath.Join(root, "mythhelm")
 	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("cannot create a symlink here: %v", err)
@@ -115,6 +105,18 @@ func TestEnsureRefusesSymlink(t *testing.T) {
 	}
 	if runtime.GOOS != "windows" {
 		assertMode(t, target, 0o755)
+	}
+}
+
+// wideDir creates a directory with mode 0755, wider than a state directory
+// may be, for Ensure to narrow or to leave alone.
+func wideDir(t *testing.T, path string) {
+	t.Helper()
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o755); err != nil { //nolint:gosec // G302: the fixture must be wider than 0700
+		t.Fatal(err)
 	}
 }
 

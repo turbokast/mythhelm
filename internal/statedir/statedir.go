@@ -70,7 +70,7 @@ func Ensure(dir string) error {
 	}
 	// Change the mode through a handle that is verified to be the directory
 	// just checked, so a swap for a symlink in between cannot redirect it.
-	f, err := os.Open(dir)
+	f, err := os.Open(filepath.Clean(dir))
 	if err != nil {
 		return fmt.Errorf("opening state directory: %w", err)
 	}

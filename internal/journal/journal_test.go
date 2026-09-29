@@ -76,7 +76,7 @@ func rawOpen(t *testing.T, path string) *sql.DB {
 
 func fileSHA256(t *testing.T, path string) [32]byte {
 	t.Helper()
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -576,7 +576,7 @@ func TestMigrationRefusesUnusableBackup(t *testing.T) {
 	if !strings.Contains(err.Error(), backup) {
 		t.Fatalf("error %q does not name the backup path", err)
 	}
-	if got, err := os.ReadFile(backup); err != nil || string(got) != "not a database" {
+	if got, err := os.ReadFile(filepath.Clean(backup)); err != nil || string(got) != "not a database" {
 		t.Fatalf("existing file at the backup path was changed: %q, %v", got, err)
 	}
 	var version int

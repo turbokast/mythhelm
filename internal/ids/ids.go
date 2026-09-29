@@ -21,9 +21,8 @@ func New(prefix string) string {
 
 func newAt(prefix string, t time.Time, entropy io.Reader) string {
 	var b [16]byte
-	ms := uint64(t.UnixMilli())
-	b[0], b[1], b[2] = byte(ms>>40), byte(ms>>32), byte(ms>>24)
-	b[3], b[4], b[5] = byte(ms>>16), byte(ms>>8), byte(ms)
+	// The low 48 bits of the millisecond count, big-endian, fill b[0:6].
+	binary.BigEndian.PutUint64(b[:8], uint64(t.UnixMilli())<<16)
 	if _, err := io.ReadFull(entropy, b[6:]); err != nil {
 		// crypto/rand never fails on supported platforms; a short read here
 		// would silently weaken uniqueness.
