@@ -2,7 +2,7 @@
 
 ### Dependencies
 
-- None outside this spec. The tasks are listed in dependency order. Tasks that share a `Depends on` set and have disjoint `Files` may run in parallel: {2, 3} after 1; {4, 6, 8} after 1; {5, 7} after their prerequisites.
+- None outside this spec. The tasks are listed in dependency order. Tasks that share a `Depends on` set and have disjoint `Files` may run in parallel: 2 after 1, then 3 after 2 (both edit `ci.yml` and `docs/automation.md`); {4, 6, 8} after 1; {5, 7} after their prerequisites.
 - Each task is sized for one agent session. `Domain/agent`: `go-implementer` for core and adapters, `release-engineer` for CI and repository automation, `maintainer` for the human-run dogfood.
 - **Gates for every task.** Run `gofmt -w` on touched files before any check, then `go vet ./...`, `go test -race ./...` and `go mod tidy -diff` (plus `golangci-lint run` once Task 2 lands). A task is not complete because files exist or an agent reported success (§22.2); cite the runner output.
 - **Completion convention.** Append ` ✅ COMPLETED` to the heading, keep every original field, and add `Implementation` (at most 3 lines, plus the commit SHA), `Spec deviations` ("None" or a justification) and `Files modified`.
@@ -61,7 +61,7 @@
 
 - **Domain/agent**: release-engineer
 - **Budget**: standard
-- **Depends on**: Task 1
+- **Depends on**: Task 2 (shares `ci.yml` and `docs/automation.md`; never run in parallel with it)
 - **Change**: Add OSV-Scanner (SARIF upload), a go-licenses check against the dependency-review allowlist, and the `ubuntu-24.04-arm` and `windows-11-arm` Go runners (design §13 bullets 5–6), and update `docs/automation.md`.
 - **Files**:
   - `.github/workflows/osv-scanner.yml`
@@ -246,6 +246,7 @@
 - **Acceptance**:
   - `TestWorkerSurvivesParentExit` (Linux, macOS): kill the spawning test helper; the worker keeps writing heartbeats.
   - `TestStopLadderEscalatesToKill`: the `ignore-term` scenario goes SIGINT → SIGTERM → SIGKILL, and `attempt.stopped{confirmed:true}` is reached.
+  - `TestFakeStopExit130ClassifiedStopped`: a child that exits 130 on the first SIGINT is recorded as `stopped`, not `failed_native`.
   - `TestUnresolvedDescendantReported` (Linux, macOS): the `escapee` scenario reports a PID in `unresolved_pids`.
   - `TestSpoolSequencesContiguous`.
   - `TestCriticalEventsFsynced`: through the injected `syncer` seam.
@@ -344,6 +345,7 @@
   - `TestMissingExecutableUnavailable` (exit 5).
   - `TestNativeSuccessChecksFailExit5`.
   - `TestNativeSuccessChecksPassExit0ReadyForReview`.
+  - `TestNoChecksExit5Unverified`: `--no-checks` gives `ready_for_review`/`unverified` with exit 5, and `apply` without `--accept-unverified` exits 3.
   - `TestEvidenceRedactedAndHashed`.
 - **Test plan**: checks are argv to the test binary's helper modes, so they are portable across OSes.
 - **Invariants touched**: I03, I07, G06, §11.6, §12.4.
@@ -391,6 +393,7 @@
   - `TestApplyRefusesUnacceptedFlags`.
   - `TestApplyReconcilesAfterCrash`: the branch already equals the candidate, so the result is `completed` without a second fetch.
   - `TestApplyRefusesInvalidRefName`.
+  - `TestApplyDoesNotRunUserHooks`: a `reference-transaction` hook in the user repo, which would touch a marker file, does not run.
 - **Test plan**: temp user repos; simulate a crash by journaling the intent and then running apply again.
 - **Invariants touched**: I08, G03, §11.7, §7.5.
 
@@ -452,6 +455,9 @@
   - `TestResolvedVersionedBinaryLaunched`.
   - `TestWindowsClaudecodeExit7`.
   - `TestProjectHooksRequireNativeTrust`.
+  - `TestUserScopeMCPRequiresNativeTrust`: an MCP server defined in the `~/.claude.json` fixture, at user scope and per project, blocks without a grant.
+  - `TestClaudeJSONAccountDataNeverDecoded`: the planted session and account fields in `~/.claude.json` are absent from the decode struct (it has no such fields), and the planted values never appear in the manifest or under the state dir.
+  - `TestDeclarationBoundToIdentity`: after an account switch (a different `orgId`), the old declaration is rejected with `declaration_identity_mismatch`.
 - **Test plan**: fakeclaude helper mode (design §12) serves `--version` and `auth status` fixtures; settings fixtures live in temp homes.
 - **Invariants touched**: I01, I02, I03, I04, I15 (honest non-satisfaction), I16, I19, §9.3, §13.10, G05 (recorded not-passed).
 

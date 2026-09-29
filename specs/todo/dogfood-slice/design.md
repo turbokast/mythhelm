@@ -52,7 +52,7 @@ native agent (claude -p ... | mythhelm __fake-agent ...)
 - **Single SQLite writer per run.** The worker never opens SQLite; it owns only its attempt directory. Whichever process holds `owner.lock` ingests the spool into the journal (flock via `golang.org/x/sys/unix`, `LockFileEx` on Windows). The OS releases the lock when that process dies, so a lock can't go stale while its holder lives, and a live holder is never pre-empted (§18.4 stale-lease row). This is the slice's substitute for the per-user daemon (N11). Writes from different runs are serialised by SQLite transactions with `busy_timeout`.
 - **Identity** (§7.3). The supervisor accepts a worker only if all three of these match: `worker.json.launch_token` equals the journaled token, the PID is alive, and the PID's start time equals `worker.json.start_time`. Start time comes from `/proc/<pid>/stat` field 22 on Linux, `sysctl kern.proc.pid` (`unix.SysctlKinfoProc`) on macOS, and `GetProcessTimes` on Windows. A PID that is alive but has a different start time is a reused PID (AC-10.3).
 - **Native launch window.** The worker writes `native_launch_intent` before `exec.Cmd.Start` and the PID and PGID after it. If it crashes between those writes, recovery reports `ownership_unresolved`. On Linux it also scans `/proc/*/environ` for the marker `MYTHHELM_ATTEMPT_ID=<id>`, which is set in the child environment, and lists matching PIDs without signalling them. macOS prints the marker for manual inspection. Where ownership cannot be proven, the slice says so (§7.4).
-- **Stop ladder.** The adapter supplies it; the worker executes it on the process group. `claudecode` sends SIGTERM (documented: exit 143, turn left unfinished), waits 10 s, then sends SIGKILL. `fake` sends SIGINT, waits 3 s, sends SIGTERM, waits 3 s, then sends SIGKILL, so the whole ladder is exercised. A stop is confirmed only when `kill(-pgid, 0)` returns `ESRCH`. Descendants that leave the group, for example through `setsid`, are not tracked; if any are known, the worker reports `unresolved_descendants` with their PIDs (AC-5.6). On Windows, the fake child is a single process stopped with `Process.Kill` and confirmed by `Wait`. `claudecode` is blocked on Windows (N7).
+- **Stop ladder.** The adapter supplies it; the worker executes it on the process group. `claudecode` sends SIGTERM (documented: exit 143, turn left unfinished), waits 10 s, then sends SIGKILL. `fake` sends SIGINT, waits 3 s, sends SIGTERM, waits 3 s, then sends SIGKILL, so the whole ladder is exercised. While a stop request is active, any native exit, whatever its code or signal (130 after SIGINT, 143 after SIGTERM, SIGKILL), is classified as `stopped`, never `failed_native`. A stop is confirmed only when `kill(-pgid, 0)` returns `ESRCH`. Descendants that leave the group, for example through `setsid`, are not tracked; if any are known, the worker reports `unresolved_descendants` with their PIDs (AC-5.6). On Windows, the fake child is a single process stopped with `Process.Kill` and confirmed by `Wait`. `claudecode` is blocked on Windows (N7).
 - **Foreground Ctrl-C** (AC-5.5). The first SIGINT writes `stop.request` and prints `stop requested — waiting for worker confirmation`; the command exits 130 after `attempt.stopped`. A second SIGINT detaches, exiting 6 with `stop not yet confirmed; run 'mythhelm recover <id>'`. Terminal hangup and SIGKILL of the CLI leave the worker running. `runs list` then shows `executing (worker alive, unattached)` and `recover` reattaches.
 
 ### 4. State machines (§7.2 subset)
@@ -64,7 +64,7 @@ Run states and transitions. Any other transition is rejected by `supervisor.Tran
 | `created` | `admission` |
 | `admission` | `executing`, `blocked` (`billing_*`, `trust_required`, `dirty_checkout`, `active_run_exists`, `persistence_unavailable`), `failed` (`preflight_*`) |
 | `executing` | `verifying`, `failed` (`native_failed`, `protocol_error`), `blocked` (`billing_route_mismatch`, `native_auth_or_billing`), `stopping`, `interrupted` |
-| `verifying` | `ready_for_review`, `failed` (`verification_failed`, `verification_unavailable`) |
+| `verifying` | `ready_for_review` (reason empty when all checks passed, `unverified` under `--no-checks`), `failed` (`verification_failed`, `verification_unavailable`) |
 | `ready_for_review` | `applying` |
 | `applying` | `completed`, `blocked` (`branch_exists`, `base_missing`, `flags_unaccepted`) |
 | `stopping` | `cancelled`, `interrupted` (`stop_unconfirmed`) |
@@ -134,6 +134,7 @@ CREATE TABLE trust_grants (
 CREATE TABLE declarations (
   adapter_id TEXT NOT NULL, plan_class TEXT NOT NULL,
   extra_usage TEXT NOT NULL CHECK (extra_usage = 'disabled'),
+  identity_ref TEXT NOT NULL,  -- sha256(orgId || configDirectory) from auth status
   declared_at TEXT NOT NULL, superseded_at TEXT
 ) STRICT;
 CREATE TABLE applies (
@@ -188,7 +189,7 @@ Event types are listed below. A leading `*` means the event is durable and criti
 | `*verification.started`, `*check.completed`, `*verification.completed` | ids, status, exit code, evidence sha256 |
 | `*receipt.written` | `{path, sha256}` |
 | `*apply.intent_recorded`, `*apply.completed` | `{branch, target_repo, candidate_commit}` |
-| `run.result` (stdout only, final line) | `{state, reason, exit_code, error_category}` |
+| `run.result` (stdout only, final line of `run` and `recover`) | `{state, reason, exit_code, error_category}` |
 
 ### 6. Claude Code adapter (§9.3, §13.10) — tested against `claude` 2.1.284
 
@@ -204,11 +205,11 @@ Event types are listed below. A leading `*` means the event is durable and criti
 These steps run in order, and any block stops admission.
 
 1. **Environment overrides.** Look for `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_FOUNDRY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` and `CLAUDE_CODE_OAUTH_TOKEN`. These are the documented precedence sources above subscription OAuth. `ANTHROPIC_API_KEY` "is always used when present" in `-p`. If any are found, exit 3, naming them. `--strip-credential-env` instead removes them from the child environment only, and records that as an override.
-2. **Settings inventory.** Read `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`), the managed settings for the OS, and the snapshot's `.claude/settings.json`, `.claude/settings.local.json` and `.mcp.json`. The settings `env` block overrides shell variables, so any of these blocks admission with exit 3 and a "fix it in native settings" action: `apiKeyHelper`, `forceLoginMethod` set to anything other than `claudeai`, or any variable from step 1 inside an `env` block. MYTHHELM never edits these files.
+2. **Settings inventory.** Read `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`), the managed settings for the OS (`managed-settings.json`, `managed-settings.d/`, `managed-mcp.json`), and the snapshot's `.claude/settings.json`, `.claude/settings.local.json` and `.mcp.json`. Also read `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`), which holds user-scope and per-project MCP servers. From that file, decode only the `mcpServers` object and `projects[<workspace path>].mcpServers`, into a struct that has no other fields, so the sign-in session and account data in it are never read into memory as values or persisted (AC-4.6). Every active hook and MCP definition, in every scope, goes into the `native_config` digest and needs a matching trust grant. A source that exists but cannot be parsed blocks admission (exit 3, `native_config_unreadable`). The settings `env` block overrides shell variables, so any of these blocks admission with exit 3 and a "fix it in native settings" action: `apiKeyHelper`, `forceLoginMethod` set to anything other than `claudeai`, or any variable from step 1 inside an `env` block. MYTHHELM never edits these files.
 3. **Native status.** Run `<resolved> auth status`, with the exact child environment and the workspace as cwd, and a 20 s timeout. Parse only `loggedIn`, `authMethod`, `apiProvider`, `subscriptionType` and `configDirectory`. Keep `orgId` only as a SHA-256 identity reference, and never persist `email` or `orgName`. It must report `loggedIn=true`, `authMethod="claude.ai"` and `apiProvider="firstParty"`. Anything else exits 3 with `needs-native-setup: run 'claude' and /login with your subscription`. These values were observed locally. Other enum values are unverified and treated as a mismatch.
 4. **Posture.**
    - `--billing subscription-only` exits 3 with `entitlement_qualification_unavailable` (AC-4.1).
-   - `--billing subscription-declared` needs a current `declarations` row, written by `--declare-entitlement plan=<pro|max|team|enterprise>,extra-usage=disabled`. The recorded posture is `{mode: subscription-declared, credential_provenance: native-login, entitlement_class: included-plan, entitlement_source: user_declared+native_status(subscriptionType=<v>), paid_continuation: unknown, paid_continuation_user_declaration: disabled, qualified: false, g05: not-passed}`.
+   - `--billing subscription-declared` needs a current `declarations` row, written by `--declare-entitlement plan=<pro|max|team|enterprise>,extra-usage=disabled`. The row is bound to `identity_ref`, the SHA-256 of `orgId` and `configDirectory` from step 3. A declaration whose `identity_ref` differs from the current auth evidence, for example after an account switch, does not count, and admission exits 3 with `declaration_identity_mismatch`. The recorded posture is `{mode: subscription-declared, credential_provenance: native-login, entitlement_class: included-plan, entitlement_source: user_declared+native_status(subscriptionType=<v>), paid_continuation: unknown, paid_continuation_user_declaration: disabled, qualified: false, g05: not-passed}`.
    - There is no default posture: omitting `--billing` exits 2.
 5. **In-flight check** (AC-4.4). `system/init.apiKeySource` must be `"none"`. Any other value, such as `ANTHROPIC_API_KEY`, `apiKeyHelper` or `/login managed key`, makes the worker run the stop ladder, and the run ends `blocked`/`billing_route_mismatch`. `"none"` is necessary but not sufficient, because it also covers bearer-token and cloud routes. That is why steps 1–3 exist. Whether any inference request precedes the init event is unverified, and the receipt says so.
 
@@ -266,11 +267,11 @@ The attempt fails safely with reason `protocol_error` if the init or result fram
 |---|---|
 | `apiKeySource != "none"` at init | worker stops the attempt → `stopped`; run `blocked`/`billing_route_mismatch`, exit 3 |
 | `NativeError` class `authentication_failed`, `oauth_org_not_allowed`, `account_on_hold` or `billing_error` | `failed_native`; run `blocked`/`native_auth_or_billing`, exit 3 |
-| exit 143 or SIGKILL after a MYTHHELM stop request | `stopped`; run `cancelled`, exit 130, or 6 if unconfirmed |
+| any exit (code or signal, e.g. 130, 143, SIGKILL) while a MYTHHELM stop request is active | `stopped` once the process group is confirmed gone; run `cancelled`, exit 130, or 6 if unconfirmed |
 | result `success`, `is_error=false`, exit 0 | `succeeded_native` → freeze and verify |
 | `NativeError` class `rate_limit` | `failed_native`/`provider_limit`, exit 4. Retry time is `unknown` unless reported; no countdown is invented |
 | result subtype `error_*`, or `is_error=true` | `failed_native`/`<subtype>`, exit 4, partial candidate frozen |
-| no result frame | `failed_native`/`result_unobserved` (exit 0) or `native_exit_<n>`, exit 4 |
+| no result frame | `failed_native`, reason `result_unobserved` (native exit 0) or `native_exit_<n>`; exit 4 either way, and the final `run.result` carries the reason |
 
 ### 7. Adapter seam (§9.1) — `internal/adapter`
 
@@ -363,7 +364,7 @@ argv = ["go", "test", "./..."]
 timeout = "15m"
 ```
 
-The file is read from the **admitted snapshot**. Its SHA-256 is the `project_config` trust digest. Admission shows the checks, allowed tools and passthrough names, and asks for approval, or accepts `--trust-project-config sha256:<hex>`. The grant is stored per `(repo_identity = realpath of the source repo, digest)` (AC-7.1, AC-7.2, I03). If there is no `mythhelm.toml`, admission exits 3 (`no_checks_configured`) unless `--no-checks` is given. With `--no-checks` the run ends `ready_for_review`, but the receipt says `verification: not configured`, and `apply` then requires `--accept-unverified`.
+The file is read from the **admitted snapshot**. Its SHA-256 is the `project_config` trust digest. Admission shows the checks, allowed tools and passthrough names, and asks for approval, or accepts `--trust-project-config sha256:<hex>`. The grant is stored per `(repo_identity = realpath of the source repo, digest)` (AC-7.1, AC-7.2, I03). If there is no `mythhelm.toml`, admission exits 3 (`no_checks_configured`) unless `--no-checks` is given. With `--no-checks`, the run ends `ready_for_review` with reason `unverified` so the candidate can be reviewed, but it exits **5** (`verification_unavailable`, §15.10 "required verification remained unavailable"), never 0. The receipt and summary say `verification: NOT RUN (waived by --no-checks)`, and `apply` requires `--accept-unverified`.
 
 **Check runner** (FR-7). Each check runs in `git worktree add --detach runs/<id>/verify/<ver> <candidate>` (the linked worktree belongs to MYTHHELM's clone, not the user's), in sequence, with argv and no shell. It gets the allowlisted environment, its timeout (a process-group kill, as §3), and stdout plus stderr merged into a ring of at most 1 MiB, redacted, and written to `evidence/<ver>/<name>.log` with its SHA-256. Status is one of these:
 
@@ -380,7 +381,7 @@ Baseline checks on the base revision do not run in this slice; the receipt says 
 1. Reconcile first: if `refs/heads/<b>` exists and equals the candidate, record `completed`; if it exists elsewhere, block.
 2. Otherwise, preflight: the run is `ready_for_review`, `check-ref-format --branch <b>` passes, `<b>` does not exist, `cat-file -e <base_rev>^{commit}` succeeds in the user's repository, and the flags were accepted.
 3. Journal `apply.intent_recorded`.
-4. `git -C <user repo> -c gc.auto=0 -c fetch.writeCommitGraph=false fetch --no-write-fetch-head --no-tags <workspace> refs/mythhelm/candidates/<att>:refs/heads/<b>`. There is no `+`, so this never forces.
+4. `git -C <user repo> -c core.hooksPath=<empty MYTHHELM hooks dir> -c core.fsmonitor=false -c gc.auto=0 -c maintenance.auto=false -c fetch.writeCommitGraph=false fetch --no-write-fetch-head --no-tags <workspace> refs/mythhelm/candidates/<att>:refs/heads/<b>`. There is no `+`, so this never forces.
 5. Verify with `rev-parse` that `<b>` equals the candidate, then journal `apply.completed`.
 
 The user's working tree, index and `HEAD` are never touched; only objects and the one new ref are written.
@@ -432,7 +433,7 @@ Flags are parsed by stdlib `flag`, with an interspersed-argument loop so that `a
 | 2 | `invalid_arguments` | flag/config errors, unknown `mythhelm.toml` keys, newer DB schema |
 | 3 | `admission_blocked` | billing, trust, dirty checkout, active run, native auth/billing, route mismatch, persistence unavailable at admission |
 | 4 | `native_failed` | `failed_native` outcomes (§6.4) |
-| 5 | `verification_failed` | a check failed, timed out or was unavailable |
+| 5 | `verification_failed` / `verification_unavailable` | a check failed, timed out or was unavailable; or `--no-checks` (`ready_for_review`/`unverified`) |
 | 6 | `ownership_unresolved` | detach before stop confirmation, `interrupted`, owner lock held, journal failure mid-run |
 | 7 | `capability_unavailable` | Windows + claudecode, restricted/inspect, unsupported repo feature, untested native version, `--host herdr`, git < 2.30 |
 | 130 | `cancelled` | foreground stop confirmed |
