@@ -139,7 +139,7 @@
   - `statedir.Ensure` refuses a symlinked state directory.
 - **Files modified**: `.github/workflows/dependency-review.yml`, `go.mod`, `go.sum`, `internal/statedir/statedir.go`, `internal/statedir/statedir_test.go`, `internal/ids/ids.go`, `internal/ids/ids_test.go`, `internal/journal/journal.go`, `internal/journal/journal_test.go`, `internal/journal/migrations/0001_init.sql`, `docs/decisions/0003-local-state-sqlite.md`, `specs/todo/dogfood-slice/tasks.md`.
 
-### Task 5 — State machines, projections and `runs list`
+### Task 5 — State machines, projections and `runs list` ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -163,6 +163,18 @@
   - `BenchmarkRunsList100`: reported, advisory (NFR-5).
 - **Test plan**: seeded journals; golden plain output.
 - **Invariants touched**: §7.2, AC-9.3, I06 (state names stay truthful).
+- **Status**: ✅ Completed — the design §4 run and attempt transition tables, with each transition's event and projection committed in one transaction; projection helpers and a read-only journal handle; `runs list` in plain and JSONL (`run_row`); `ErrSchemaTooNew` exits 2; PR #16.
+- **Implementation**: The project callback reads the current state, checks it against the table and updates the projection inside `Append`'s `BEGIN IMMEDIATE` transaction, so an illegal transition or a failed projection journals nothing and concurrent transitions serialise. `Producer` spends a sequence number only on commit. `OpenReadOnly` is a `mode=ro`, `query_only` handle. `BenchmarkRunsList100` measures about 4 ms/op locally. Commit 4b98849.
+- **Spec deviations**:
+  - `TransitionRun` and `TransitionAttempt` take `*Producer`.
+  - `TransitionAttempt` takes `attemptID` in place of `runID`.
+  - `ListRuns` is a method on a `*journal.Journal` opened with the new `OpenReadOnly`.
+  - The extra exported API is `CreateRun`, `RecordLaunchIntent`, `NewProducer`, `ErrIllegalTransition`, the projection helpers, `(*Journal).Attempt`, `ErrNotFound` and `ErrNoDatabase`.
+  - An attempt can become `interrupted` from any non-terminal state (§7.3, AC-11.3).
+  - `blocked`, `failed`, `interrupted` and `failed_native` require a reason, and `ready_for_review` accepts only an empty reason or `unverified`.
+  - `internal/cli/dispatch.go` registers `runs` and prints the usage hint only for usage errors.
+  - `runs list` does not yet show worker liveness (Tasks 9 and 15).
+- **Files modified**: `internal/supervisor/state.go`, `internal/supervisor/state_test.go`, `internal/journal/projections.go`, `internal/cli/runs.go`, `internal/cli/runs_test.go`, `internal/cli/dispatch.go`, `internal/cli/exit.go`, `specs/todo/dogfood-slice/tasks.md`.
 
 ### Task 6 — Security primitives
 
@@ -265,7 +277,7 @@
   - The `doc.go` note is in the package comment.
   - `ProbeInput` is empty.
 
-### Task 9 — Worker ownership: detached worker, process group, spool, stop ladder
+### Task 9 — Worker ownership: detached worker, process group, spool, stop ladder ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (this is the hardest task; the ceiling may be exceeded)
@@ -298,6 +310,14 @@
   - `TestWindowsFakeStopConfirmed`: Windows CI; `Process.Kill` then `Wait`.
 - **Test plan**: the test binary re-exec plays both the worker and the fake agent. Platform-specific tests use build tags and `t.Skip` with a reason elsewhere.
 - **Invariants touched**: I06, I12, I18, §7.3, §7.4, G04 (Linux and macOS only).
+- **Status**: ✅ Completed. Adds `internal/workers`: the detached `__worker`, which writes the `worker.json` identity, spools with contiguous sequences and fsyncs critical events, heartbeats, polls `stop.request`, runs the ladder on the process group and reports escaped descendants. Also adds ADR 0004, and the fake's platform facts are now `supported` on Linux and macOS; PR #17.
+- **Spec deviations**:
+  - `attempt.stopped` ends every attempt, because `unresolved_pids` must also be reported for a self-exiting escapee. The attempt state is `stopped` only after a stop request.
+  - `attempt.stopped` adds `signals_sent` and `descendant_scan`, and `attempt.protocol_counters` adds `progress_dropped`.
+  - The worker receives `workers.Launch` as JSON on its stdin, never on disk. `Spawn` and `AttemptDir` are added.
+  - Extra files: `worker.log`, `proc_other.go` and `worker_unix_test.go`.
+  - New reason codes: `launch_failed`, `worker_persistence_failed`, `native_signal_<name>`, and the native error class.
+  - Files touched outside the list: `adapters/fake/fake.go` and `fake_test.go`, `cmd/mythhelm/main.go` and `go.mod`.
 
 ### Task 10 — Supervisor run pipeline, first against the fake adapter
 

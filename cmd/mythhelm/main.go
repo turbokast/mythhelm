@@ -6,12 +6,17 @@ import (
 
 	"github.com/turbokast/mythhelm/adapters/fake"
 	"github.com/turbokast/mythhelm/internal/cli"
+	"github.com/turbokast/mythhelm/internal/workers"
 )
 
 func main() {
-	// Hidden: the fake adapter's scripted agent, run as mythhelm's own child.
-	if len(os.Args) > 1 && os.Args[1] == fake.AgentCommand {
-		os.Exit(fake.AgentMain(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case fake.AgentCommand: // hidden: the fake adapter's scripted agent, run as mythhelm's own child
+			os.Exit(fake.AgentMain(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+		case workers.Command: // hidden: an attempt's detached worker (design §3)
+			os.Exit(workers.Main(os.Args[2:]))
+		}
 	}
 	os.Exit(cli.Main(os.Args[1:], cli.Stdio{In: os.Stdin, Out: os.Stdout, Err: os.Stderr}))
 }

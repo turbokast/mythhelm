@@ -76,11 +76,16 @@ func (fakeAdapter) Probe(_ context.Context, _ adapter.ProbeInput) (adapter.Probe
 }
 
 // Capabilities never claims billing or containment safety. Worker
-// detachment and process-group ownership stay unknown until the worker's
-// platform tests establish them (I14); Windows has no group ownership.
+// detachment and process-group ownership are supported only where the
+// worker's platform tests establish them, Linux and macOS (internal/workers,
+// ADR 0004); they stay unknown elsewhere (I14), and Windows has no group
+// ownership.
 func (fakeAdapter) Capabilities(p adapter.Probe) adapter.CapabilityRecord {
 	platform := adapter.Platform{OS: p.OS, WorkerDetachment: adapter.Unknown, ProcessTreeOwnership: adapter.Unknown}
-	if p.OS == "windows" {
+	switch p.OS {
+	case "linux", "darwin":
+		platform.WorkerDetachment, platform.ProcessTreeOwnership = adapter.Supported, adapter.Supported
+	case "windows":
 		platform.ProcessTreeOwnership = adapter.Unsupported
 	}
 	return adapter.CapabilityRecord{
