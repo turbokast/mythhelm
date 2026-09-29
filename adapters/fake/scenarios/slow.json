@@ -1,0 +1,8 @@
+{
+  "steps": [
+    {"op": "emit", "frame": {"type": "fake.init", "session_id": "fake-slow", "model": "none (scripted)", "native_version": "fake", "permission_mode": "scripted", "api_key_source": "none"}},
+    {"op": "emit", "frame": {"type": "fake.progress", "turn": 1, "tool": "Write"}},
+    {"op": "sleep", "ms": 600000},
+    {"op": "exit", "code": 0}
+  ]
+}
