@@ -168,6 +168,8 @@
   - `TestResolvesOutsideSymlinkEscape`.
 - **Test plan**: table tests; fuzz `TermSafe` (`FuzzTermSafe`, seed corpus only in CI).
 - **Invariants touched**: I19, §12.5, §12.7.
+- **Status**: ✅ Completed — `internal/security` with `Redact` + `RedactingHandler`, `TermSafe` (C0/C1/ESC sequences, OSC 8), `BuildEnv` allowlist with the denylist winning (`ErrDeniedPassthrough`) and `ResolvesOutside` (component-wise symlink resolution, dangling links included); PR #9
+- **Spec deviations**: key/value redaction also matches quoted JSON keys and values (superset); credential-named attributes are dropped by suffix (`…TOKEN`, `…APIKEY`, `…SECRET`, …) so `apiKeySource` and `input_tokens` survive; `BuildEnv` always denies `CLAUDE_CODE_OAUTH_TOKEN` (the AC-4.7 opt-in is the adapter's to apply after `BuildEnv`) and also checks `set` names; control strings end at a newline; `ErrDeniedPassthrough` → exit 2 mapping in `internal/cli/exit.go` is left to the task that wires `[environment] passthrough`.
 
 ### Task 7 — Workspace: safe git runner, preflight and snapshot
 
