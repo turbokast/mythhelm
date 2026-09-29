@@ -85,14 +85,6 @@ def sha256_bytes(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def sha256_file(path):
-    try:
-        with open(path, "rb") as f:
-            return sha256_bytes(f.read())
-    except FileNotFoundError:
-        return ABSENT
-
-
 def git_out(cwd, *args):
     env = {k: v for k, v in os.environ.items() if k not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")}
     try:
@@ -229,10 +221,14 @@ class Ledger:
 # ---- agent verbs -----------------------------------------------------------
 
 def unified(current, proposed, rel):
-    """The unified diff from the current bytes to the proposed bytes."""
-    return "".join(difflib.unified_diff(current.decode("utf-8", "replace").splitlines(True),
-                                        proposed.decode("utf-8", "replace").splitlines(True),
-                                        "a/" + rel, "b/" + rel))
+    """The unified diff from the current bytes to the proposed bytes. Both must be
+    valid UTF-8: replacement decoding could make different bytes show no change."""
+    try:
+        old, new = current.decode("utf-8"), proposed.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise Refused("%s or its proposed content is not valid UTF-8, so its diff cannot be shown "
+                      "faithfully" % rel) from e
+    return "".join(difflib.unified_diff(old.splitlines(True), new.splitlines(True), "a/" + rel, "b/" + rel))
 
 
 def cmd_request(a):
@@ -405,17 +401,18 @@ def verified_request(ledger, ident):
     if os.path.realpath(orchestration_dir(worktree)) != os.path.realpath(ledger.orch):
         raise Refused("request %s names a worktree of another repository (%s)" % (ident, worktree))
     target = os.path.join(worktree, rel)
-    if sha256_file(target) != req.get("base_sha256"):
-        raise Refused("%s has changed since request %s was filed, so the diff no longer describes what "
-                      "would change; reject it and ask for a redraft" % (target, ident))
+    # One read of the file: the base checked, the diff shown and the hashes signed
+    # all come from the same bytes. The stored diff is never trusted.
     try:
         with open(target, "rb") as f:
             current = f.read()
+        base = sha256_bytes(current)
     except FileNotFoundError:
-        current = b""
-    # The diff shown and signed is computed here from the file and the proposed
-    # content; the stored copy in the request directory is never trusted.
-    return req, rel, target, proposed, unified(current, proposed, rel)
+        current, base = b"", ABSENT
+    if base != req.get("base_sha256"):
+        raise Refused("%s has changed since request %s was filed, so the diff no longer describes what "
+                      "would change; reject it and ask for a redraft" % (target, ident))
+    return req, rel, target, proposed, unified(current, proposed, rel), base
 
 
 def decide(a, state):
@@ -428,18 +425,18 @@ def decide(a, state):
         if status_of(ledger, a.id) != "open":
             raise Refused("request %s is already %s" % (a.id, status_of(ledger, a.id)))
         if state == "approved":
-            req, rel, target, proposed, diff = verified_request(ledger, a.id)
+            req, rel, target, proposed, diff, base = verified_request(ledger, a.id)
             sys.stdout.write(diff)
         else:
             req, _ = ledger.request(a.id)
-            rel, target, proposed, diff = req.get("path"), None, None, ""
+            rel, target, proposed, diff, base = req.get("path"), None, None, "", req.get("base_sha256")
         worktree = os.path.realpath(req.get("worktree") or "/nonexistent")
         print("\n%s: %s in %s\n  %s" % (a.id, rel, worktree, req.get("summary", "")))
         if not confirm("%s request %s?" % ("Approve" if state == "approved" else "Reject", a.id), a.yes):
             print("nothing recorded")
             return
         row = {"schema_version": 1, "id": a.id, "state": state, "path": rel, "worktree": worktree,
-               "base_sha256": req.get("base_sha256"),
+               "base_sha256": base,
                "result_sha256": sha256_bytes(proposed) if proposed is not None else req.get("result_sha256"),
                "diff_sha256": sha256_bytes(diff.encode("utf-8")) if proposed is not None else req.get("diff_sha256"),
                "decided_at": now(),
@@ -478,7 +475,10 @@ def proposed_content(tool, ti, current, target):
         return c.encode("utf-8") if isinstance(c, str) else None
     if current is None:
         return None
-    text = current.decode("utf-8", "replace")
+    try:
+        text = current.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
     edits = ti.get("edits") if tool == "MultiEdit" else [ti]
     if not isinstance(edits, list):
         return None
