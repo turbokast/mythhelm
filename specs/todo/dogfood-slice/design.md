@@ -237,6 +237,7 @@ These flags are deliberately not used. `--bare` and `--safe-mode` would strip na
 
 - **All platforms:** `PATH HOME USER LOGNAME SHELL LANG LC_ALL LC_CTYPE TZ TMPDIR TERM XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME XDG_STATE_HOME XDG_RUNTIME_DIR CLAUDE_CONFIG_DIR HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy SSL_CERT_FILE SSL_CERT_DIR NODE_EXTRA_CA_CERTS`.
 - **Windows only** (used by the fake adapter and checks): `USERPROFILE APPDATA LOCALAPPDATA SystemRoot SystemDrive ComSpec PATHEXT TEMP TMP`.
+- **Opt-in credential (AC-4.7):** `CLAUDE_CODE_OAUTH_TOKEN`, only when the trusted user-level config sets `[adapters.claudecode] credential = "oauth-token"`. The allowlist copies it from the parent environment into the child environment unexamined. Tests cover both paths: `TestChildEnvOAuthTokenOptIn` (present in the child) and `TestChildEnvOAuthTokenDefaultBlocked` (admission exits 3, or the token is stripped with `--strip-credential-env`).
 - **Project passthrough:** names listed under `[environment] passthrough` in the trusted `mythhelm.toml`, for example `GOPATH GOCACHE GOMODCACHE GOTOOLCHAIN GOFLAGS`.
 
 A denylist (`ANTHROPIC_*`, `CLAUDE_CODE_USE_*`, `CLAUDE_CODE_OAUTH_TOKEN` (unless the AC-4.7 user-level opt-in applies), `AWS_*`, `GOOGLE_*`, `AZURE_*`, `OPENAI_*`) always wins. A passthrough entry that names a denied variable exits 2.
