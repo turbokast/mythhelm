@@ -27,6 +27,7 @@ type command struct {
 }
 
 var commands = map[string]command{
+	"runs":    {summary: "list runs from the local state (runs list)", run: runRuns},
 	"version": {summary: "print the version, commit and Go version", run: runVersion},
 }
 
@@ -56,7 +57,7 @@ func Main(args []string, stdio Stdio) int {
 	if code != ExitOK {
 		_, _ = fmt.Fprintf(stdio.Err, "mythhelm %s: %v\n", name, err)
 	}
-	if code == ExitInvalid {
+	if errors.As(err, new(usageError)) {
 		_, _ = fmt.Fprintf(stdio.Err, "run 'mythhelm %s -h' for usage\n", name)
 	}
 	return int(code)

@@ -139,7 +139,7 @@
   - `statedir.Ensure` refuses a symlinked state directory.
 - **Files modified**: `.github/workflows/dependency-review.yml`, `go.mod`, `go.sum`, `internal/statedir/statedir.go`, `internal/statedir/statedir_test.go`, `internal/ids/ids.go`, `internal/ids/ids_test.go`, `internal/journal/journal.go`, `internal/journal/journal_test.go`, `internal/journal/migrations/0001_init.sql`, `docs/decisions/0003-local-state-sqlite.md`, `specs/todo/dogfood-slice/tasks.md`.
 
-### Task 5 — State machines, projections and `runs list`
+### Task 5 — State machines, projections and `runs list` ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -163,6 +163,18 @@
   - `BenchmarkRunsList100`: reported, advisory (NFR-5).
 - **Test plan**: seeded journals; golden plain output.
 - **Invariants touched**: §7.2, AC-9.3, I06 (state names stay truthful).
+- **Status**: ✅ Completed — the design §4 run and attempt transition tables, with each transition's event and projection committed in one transaction; projection helpers and a read-only journal handle; `runs list` in plain and JSONL (`run_row`); `ErrSchemaTooNew` exits 2; PR #16.
+- **Implementation**: The project callback reads the current state, checks it against the table and updates the projection inside `Append`'s `BEGIN IMMEDIATE` transaction, so an illegal transition or a failed projection journals nothing and concurrent transitions serialise. `Producer` spends a sequence number only on commit. `OpenReadOnly` is a `mode=ro`, `query_only` handle. `BenchmarkRunsList100` measures about 4 ms/op locally. Commit 4b98849.
+- **Spec deviations**:
+  - `TransitionRun` and `TransitionAttempt` take `*Producer`.
+  - `TransitionAttempt` takes `attemptID` in place of `runID`.
+  - `ListRuns` is a method on a `*journal.Journal` opened with the new `OpenReadOnly`.
+  - The extra exported API is `CreateRun`, `RecordLaunchIntent`, `NewProducer`, `ErrIllegalTransition`, the projection helpers, `(*Journal).Attempt`, `ErrNotFound` and `ErrNoDatabase`.
+  - An attempt can become `interrupted` from any non-terminal state (§7.3, AC-11.3).
+  - `blocked`, `failed`, `interrupted` and `failed_native` require a reason, and `ready_for_review` accepts only an empty reason or `unverified`.
+  - `internal/cli/dispatch.go` registers `runs` and prints the usage hint only for usage errors.
+  - `runs list` does not yet show worker liveness (Tasks 9 and 15).
+- **Files modified**: `internal/supervisor/state.go`, `internal/supervisor/state_test.go`, `internal/journal/projections.go`, `internal/cli/runs.go`, `internal/cli/runs_test.go`, `internal/cli/dispatch.go`, `internal/cli/exit.go`, `specs/todo/dogfood-slice/tasks.md`.
 
 ### Task 6 — Security primitives
 
@@ -220,6 +232,8 @@
   - `TestAgentPlantedHookNotRun`: a `post-checkout` hook written into the clone does not run during the runner's `worktree add`.
 - **Test plan**: temp repos built with the git CLI; skip with a clear message if `git` is missing.
 - **Invariants touched**: I08, G03, §11.2.
+- **Status**: ✅ Completed — `internal/workspace` with the safe `Git` runner (fixed `-c` flags, empty hooks path, `GIT_*` scrub, `GIT_OPTIONAL_LOCKS=0` for the user repo), `Preflight` (git ≥ 2.30 via `ErrGitTooOld`, top/branch/HEAD, dirty, shallow/submodules/lfs/sparse-checkout), `Snapshot` (no hardlinks, detached, all remotes removed) and `SourceFingerprint`; PR #15
+- **Spec deviations**: result type is `PreflightResult` (Go cannot name a func and a type `Preflight` in one package); empty hooks path is `os.DevNull` on Unix and a per-process empty temp dir on Windows; the runner drops inherited `GIT_*` variables and sets `GIT_TERMINAL_PROMPT=0` (Task 11 must set its temporary `GIT_INDEX_FILE` explicitly); submodules detected from HEAD-tree gitlinks plus `.gitmodules`, LFS from committed `.gitattributes`, instead of `submodule status`; `Snapshot` resolves `rev` to a full OID first and removes every remote, not only `origin`; the fingerprint covers every working-tree entry (untracked and ignored included) and file permissions, and follows linked-worktree `.git` files.
 
 ### Task 8 — Adapter seam, NDJSON framing and the fake adapter
 
