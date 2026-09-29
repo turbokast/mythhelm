@@ -220,6 +220,8 @@
   - `TestAgentPlantedHookNotRun`: a `post-checkout` hook written into the clone does not run during the runner's `worktree add`.
 - **Test plan**: temp repos built with the git CLI; skip with a clear message if `git` is missing.
 - **Invariants touched**: I08, G03, §11.2.
+- **Status**: ✅ Completed — `internal/workspace` with the safe `Git` runner (fixed `-c` flags, empty hooks path, `GIT_*` scrub, `GIT_OPTIONAL_LOCKS=0` for the user repo), `Preflight` (git ≥ 2.30 via `ErrGitTooOld`, top/branch/HEAD, dirty, shallow/submodules/lfs/sparse-checkout), `Snapshot` (no hardlinks, detached, all remotes removed) and `SourceFingerprint`; PR #15
+- **Spec deviations**: result type is `PreflightResult` (Go cannot name a func and a type `Preflight` in one package); empty hooks path is `os.DevNull` on Unix and a per-process empty temp dir on Windows; the runner drops inherited `GIT_*` variables and sets `GIT_TERMINAL_PROMPT=0` (Task 11 must set its temporary `GIT_INDEX_FILE` explicitly); submodules detected from HEAD-tree gitlinks plus `.gitmodules`, LFS from committed `.gitattributes`, instead of `submodule status`; `Snapshot` resolves `rev` to a full OID first and removes every remote, not only `origin`; the fingerprint covers every working-tree entry (untracked and ignored included) and file permissions, and follows linked-worktree `.git` files.
 
 ### Task 8 — Adapter seam, NDJSON framing and the fake adapter
 
