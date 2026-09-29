@@ -18,7 +18,11 @@ harness:
 
 adapter:
   - changed-files:
-      - any-glob-to-any-file: ["adapters/**", "hosts/**"]
+      - any-glob-to-any-file: ["adapters/**"]
+
+host:
+  - changed-files:
+      - any-glob-to-any-file: ["hosts/**"]
 
 tui:
   - changed-files:
