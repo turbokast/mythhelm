@@ -186,7 +186,7 @@ graphql_mutation_fields() {
       '{') depth=$((depth + 1)); continue ;;
       '}') depth=$((depth - 1)); (( depth == 0 )) && op=""; continue ;;
     esac
-    (( depth == 1 )) && [[ "$op" == mutation ]] || continue
+    if (( depth != 1 )) || [[ "$op" != mutation ]]; then continue; fi
     if [[ "$t" == '...' ]]; then
       echo '?'
     elif [[ "$t" =~ ^[_A-Za-z] && "${T[k-1]:-}" != '@' && "${T[k+1]:-}" != ':' ]]; then
