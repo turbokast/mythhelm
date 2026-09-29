@@ -9,3 +9,15 @@ coverage.*
 .DS_Store
 .env
 .env.*
+
+# Claude Code harness: runtime state stays local. Only schemas and seed files
+# under .claude/data/ are tracked.
+.claude/data/*
+!.claude/data/*.schema.json
+!.claude/data/*.seed.*
+!.claude/data/.gitkeep
+.claude/settings.local.json
+.claude/worktrees/
+.claude/handoffs/
+.claude/plans/
+.claude/scratch/
