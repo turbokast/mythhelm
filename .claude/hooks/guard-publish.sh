@@ -170,11 +170,12 @@ graphql_tokens() {
 
 # graphql_mutation_fields <document>: prints "@mutation" for each mutation
 # operation, then the top-level field names of its selection set (the name after
-# an alias). Prints "?" for anything that hides a field: a fragment spread or
+# an alias). The operation type is the first word of a definition only, so an
+# operation named "query" is still a mutation. Prints "?" for anything that hides a field: a fragment spread or
 # inline fragment among the mutation fields, or unbalanced braces or parentheses.
 graphql_mutation_fields() {
   local -a T=()
-  local t op="" depth=0 paren=0 k
+  local t op="" depth=0 paren=0 k newdef=1
   mapfile -t T < <(graphql_tokens "$1")
   for (( k = 0; k < ${#T[@]}; k++ )); do
     t="${T[k]}"
@@ -185,15 +186,20 @@ graphql_mutation_fields() {
     esac
     (( paren > 0 )) && continue
     if (( depth == 0 )); then
-      case "$t" in
-        mutation|query|subscription|fragment) op="$t"; [[ "$t" == mutation ]] && echo '@mutation' ;;
-        '{') depth=1; [[ -n "$op" ]] || op=query ;;
-      esac
+      if [[ "$t" == '{' ]]; then
+        depth=1
+        (( newdef == 1 )) && op=query
+        newdef=0
+      elif (( newdef == 1 )) && [[ "$t" =~ ^[_A-Za-z] ]]; then
+        op="$t"
+        newdef=0
+        [[ "$op" == mutation ]] && echo '@mutation'
+      fi
       continue
     fi
     case "$t" in
       '{') depth=$((depth + 1)); continue ;;
-      '}') depth=$((depth - 1)); (( depth == 0 )) && op=""; continue ;;
+      '}') depth=$((depth - 1)); (( depth == 0 )) && { op=""; newdef=1; }; continue ;;
     esac
     if (( depth != 1 )) || [[ "$op" != mutation ]]; then continue; fi
     if [[ "$t" == '...' ]]; then

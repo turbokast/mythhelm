@@ -84,6 +84,9 @@ block "blocked field behind an alias" "gh api graphql -f query='mutation { resol
 block "allowed operation plus a blocked operation" "gh api graphql -f query='mutation A { resolveReviewThread(input: {threadId: \"T\"}) { clientMutationId } } mutation B { updateRepository(input: {repositoryId: \"R\"}) { clientMutationId } }'"
 block "allowed name only inside a string" "gh api graphql -f query='mutation { deleteRef(input: {refId: \"resolveReviewThread\"}) { clientMutationId } }'"
 block "allowed name only in a nested selection" "gh api graphql -f query='mutation { updateRepository(input: {repositoryId: \"R\"}) { resolveReviewThread } }'"
+block "a mutation operation named query" "gh api graphql -f operationName=query -f query='mutation A { resolveReviewThread(input: {threadId: \"T\"}) { clientMutationId } } mutation query { mergePullRequest(input: {pullRequestId: \"P\"}) { clientMutationId } }'"
+block "a mutation operation named query, alone" "gh api graphql -f query='mutation query { mergePullRequest(input: {pullRequestId: \"P\"}) { clientMutationId } }'"
+allow "a mutation operation named mutation" "gh api graphql -f query='mutation mutation { resolveReviewThread(input: {threadId: \"T\"}) { clientMutationId } }'"
 block "fragment spread among the mutation fields" "gh api graphql -f query='mutation { ...F } fragment F on Mutation { mergePullRequest(input: {pullRequestId: \"P\"}) { clientMutationId } }'"
 block "inline fragment among the mutation fields" "gh api graphql -f query='mutation { ... on Mutation { mergePullRequest(input: {pullRequestId: \"P\"}) { clientMutationId } } }'"
 block "a comment in a mutation document" $'gh api graphql -f query=\'mutation { resolveReviewThread(input: {threadId: "T"}) { clientMutationId } } # hides the rest\nmutation { mergePullRequest(input: {pullRequestId: "P"}) { clientMutationId } }\''

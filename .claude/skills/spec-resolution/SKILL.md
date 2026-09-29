@@ -25,7 +25,7 @@ scripts/harness/spec-lifecycle.sh resolve <name>
 ```
 
 - It prints `specs/<state>/<name>`. States are searched in the order `in-progress`, `unfinalized`, `todo`, `refined`, `unrefined`, `done`, `archived`: active work first, the record last.
-- Before printing, it asserts that exactly one copy exists across the working tree **and** the git index. A copy left in the index by a plain `mv` comes back on the next checkout, and a later lookup then returns the wrong one.
+- Before printing, it asserts that exactly one copy exists across the working tree **and** the git index. A copy left in the index by a plain `mv` comes back on the next checkout; while it exists, every lookup refuses (next bullet) instead of choosing one.
 - Exit 1 with a `BLOCK:` stanza when the spec is missing, has two or more copies, or exists only in the index. Two copies are an **escalation**: stop and report both paths. Never pick one by guessing, and never delete one to make the check pass without knowing which copy is live.
 - A directory holding `plan.md` and no `requirements.md` is an epic plan; any other is a single spec.
 
