@@ -2,6 +2,7 @@ name: Dependency review
 
 on:
   pull_request:
+  merge_group:
 
 permissions:
   contents: read
@@ -9,6 +10,8 @@ permissions:
 jobs:
   dependency-review:
     name: Dependency review
+    # Required check: in the merge queue it reports skipped, which counts as passing.
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
