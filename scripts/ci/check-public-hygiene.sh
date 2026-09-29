@@ -13,8 +13,9 @@
 #   ipv4          IPv4 literals outside documentation (RFC 5737), loopback,
 #                 private (RFC 1918), link-local and unspecified ranges
 #
-# Scans tracked files plus untracked files that are not ignored, skipping .git,
-# LICENSE and binary files. Matched secrets are shown redacted.
+# Scans tracked files plus untracked files that are not ignored, skipping .git and
+# LICENSE. Binary files (with a NUL byte) are scanned for private keys and tokens
+# only. Matched secrets are shown redacted.
 #
 #   scripts/ci/check-public-hygiene.sh [<root>]    default: the repository root
 #
@@ -59,6 +60,7 @@ PATTERNS = [
         r"|xox[abprs]-[A-Za-z0-9-]{10,})")),
     ("host", re.compile(r"\b[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.(?:fly\.dev|internal)\b")),
 ]
+CREDENTIALS = ("private-key", "token")
 EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b")
 IPV4 = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.]*\d)")
 
@@ -94,14 +96,18 @@ for path in sorted(paths):
             raw = f.read()
     except OSError:
         continue
-    if b"\0" in raw:
-        continue
+    # A binary file (one with a NUL byte) is still scanned for credentials; only the
+    # checks that false-positive on binary noise are skipped for it.
+    binary = b"\0" in raw
     for lineno, line in enumerate(raw.decode("utf-8", "replace").splitlines(), 1):
         hits = []
         for category, rx in PATTERNS:
+            if binary and category not in CREDENTIALS:
+                continue
             hits += [(category, m.group(0)) for m in rx.finditer(line)]
-        hits += [("email", m.group(0)) for m in EMAIL.finditer(line) if not email_allowed(m.group(0))]
-        hits += [("ipv4", m.group(0)) for m in IPV4.finditer(line) if not ip_allowed(m.group(0))]
+        if not binary:
+            hits += [("email", m.group(0)) for m in EMAIL.finditer(line) if not email_allowed(m.group(0))]
+            hits += [("ipv4", m.group(0)) for m in IPV4.finditer(line) if not ip_allowed(m.group(0))]
         for category, text in hits:
             print("%s:%d: %s: %s" % (path, lineno, category, redact(category, text)))
             findings += 1

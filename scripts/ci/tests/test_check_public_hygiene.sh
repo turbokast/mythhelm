@@ -76,7 +76,14 @@ run_check
 check "LICENSE is skipped" [ "$RC" == 0 ]
 printf 'x\0alice@corp''mail.io\n' > "$R/blob.bin"
 run_check
-check "binary files are skipped" [ "$RC" == 0 ]
+check "binary files are not scanned for emails" [ "$RC" == 0 ]
+printf 'x\0token=%s\n' "gh""p_$A36" > "$R/blob.bin"
+run_check
+check "binary files are still scanned for tokens" grep -q '^blob.bin:1: token:' <<< "$OUT"
+printf 'x\0%s\n' "-----BEGIN EC PRIV""ATE KEY-----" > "$R/blob.bin"
+run_check
+check "binary files are still scanned for private keys" grep -q '^blob.bin:1: private-key:' <<< "$OUT"
+rm -f "$R/blob.bin"
 printf 'secret.txt\n' > "$R/.gitignore"
 printf 'alice@corp''mail.io\n' > "$R/secret.txt"
 run_check
