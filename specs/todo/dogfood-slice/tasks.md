@@ -319,7 +319,7 @@
   - New reason codes: `launch_failed`, `worker_persistence_failed`, `native_signal_<name>`, and the native error class.
   - Files touched outside the list: `adapters/fake/fake.go` and `fake_test.go`, `cmd/mythhelm/main.go` and `go.mod`.
 
-### Task 10 — Supervisor run pipeline, first against the fake adapter
+### Task 10 — Supervisor run pipeline, first against the fake adapter ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -357,6 +357,15 @@
   - `TestJSONLStdoutOnlyEnvelopes`: every stdout line parses as an `Event`, and the last line is `run.result`.
 - **Test plan**: signal tests send SIGINT to a child `mythhelm run` (Unix); Windows uses `GenerateConsoleCtrlEvent` or skips with a reason.
 - **Invariants touched**: I02, I04, I05, I06, I08, §5.6, §15.10.
+- **Status**: ✅ Completed. Adds `mythhelm run`, admission (`internal/admission`), and the supervisor pipeline under the run's owner lock: admission decided, snapshot, launch intent, worker spawn and identity check, spool ingestion from the stored offset, Ctrl-C stop (exit 130) and detach (exit 6), and plain and JSONL renderers. Also adds ADR 0005; PR #20.
+- **Spec deviations**:
+  - A native success ends `verifying` → `failed`/`verification_unavailable` with exit 5, not 0. No frozen or verified candidate exists yet (I07), and a run left in `verifying` would block every later run. Tasks 11–12 replace this.
+  - `--adapter claudecode` exits 7 (`adapter_unavailable`) until Tasks 16–17.
+  - `run.result` adds `attempt_reason`, the native reason design §6.4 says it carries, such as `result_unobserved`.
+  - A worker that has already exited and been reaped is accepted on its PID and token when its start time can no longer be read (ADR 0005).
+  - `launching → failed_native` is added to the attempt table, for the worker's `launch_failed` path.
+  - Flags for later tasks are refused (exit 2), not ignored. `Ingest` takes `AttemptRef`.
+  - Files touched outside the list: `internal/journal/projections.go`, `internal/supervisor/state.go` and `state_test.go`, `internal/cli/dispatch.go` and `exit.go`, `ownerlock_unix.go`, `ownerlock_windows.go`, and `docs/decisions/0005-run-owner-lock-and-ingestion.md`.
 
 ### Task 11 — Candidate freeze and validation flags
 
