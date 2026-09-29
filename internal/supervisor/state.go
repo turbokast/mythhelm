@@ -111,7 +111,10 @@ type Producer struct {
 	last int64
 }
 
-// NewProducer returns a producer whose first event has sequence 1.
+// NewProducer returns a producer whose first event has sequence 1, so id
+// must be fresh: each supervising process takes a new ids.New("sup"). A
+// producer ID that already has journaled events would fail every append
+// with journal.ErrSequenceGap.
 func NewProducer(id string, generation int64) *Producer {
 	return &Producer{id: id, generation: generation}
 }
