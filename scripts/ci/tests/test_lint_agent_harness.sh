@@ -542,6 +542,10 @@ git -C "$F" add specs/todo/demo
 mv "$F/specs/todo/demo" "$F/specs/in-progress/demo"
 lint "$F" --only specs
 expect_fail specs "exists in 2 lifecycle states (in-progress, todo)" "a copy left in the index by a plain mv"
+OTHER="$TEST_TMP/other-repo"
+new_repo "$OTHER"
+OUT="$(GIT_DIR="$OTHER/.git" GIT_WORK_TREE="$OTHER" GIT_INDEX_FILE="$OTHER/.git/index" "$LINT" --root "$F" --only specs 2>&1)"; RC=$?
+expect_fail specs "exists in 2 lifecycle states" "inherited GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE do not hide the index copy"
 git -C "$F" add -A specs
 lint "$F" --only specs
 expect_pass "the same move staged in the index is one copy"

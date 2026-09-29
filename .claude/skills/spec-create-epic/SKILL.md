@@ -54,7 +54,7 @@ Phase 3b of `/spec`, when `/spec-scope` decided the work needs several specs. It
 
    The Work Streams table is machine-read: column 2 holds each sub-spec's exact directory name in backticks, and `scripts/ci/lint-agent-harness.sh` (check `specs`) fails when a name has no directory. Every sub-spec depends only on earlier rows, and each one ships something usable on its own.
 3. **Present the plan** (advisory step) and revise it on feedback before writing any sub-spec.
-4. **Write each sub-spec** in `specs/unrefined/<sub-spec>/` by running `/spec-create-single` in mode C for its work stream, plus:
+4. **Write each sub-spec** in `specs/unrefined/<sub-spec>/`. First confirm its name is free: `scripts/harness/spec-lifecycle.sh resolve <sub-spec>` must report no spec, in the working tree or the index. A taken name is replaced by a free one in the plan and the Work Streams table before anything is written. Then write it by running `/spec-create-single` in mode C for its work stream, plus:
    - `design.md` ends with Cross-Spec References: the plan (`specs/*/<epic-name>/plan.md`), the specs it depends on, and the specs that depend on it;
    - `tasks.md`'s Dependencies section names the prerequisite specs and what each provides, and the epic it belongs to;
    - its own `scratchpad.md`.

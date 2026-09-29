@@ -74,6 +74,15 @@ class TreeError(Exception):
     """The tree cannot be listed or read safely; the check exits 2."""
 
 
+def git_env():
+    """The environment minus the variables that point git at another repository or
+    index, so every git call reads the tree named by its -C argument."""
+    env = dict(os.environ)
+    for k in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"):
+        env.pop(k, None)
+    return env
+
+
 def tree_files(root):
     """Tracked plus untracked, non-ignored files, as repository-relative paths.
 
@@ -84,7 +93,7 @@ def tree_files(root):
     try:
         out = subprocess.run(
             ["git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-            capture_output=True, check=True, timeout=60).stdout
+            capture_output=True, check=True, timeout=60, env=git_env()).stdout
     except (OSError, subprocess.SubprocessError) as e:
         raise TreeError("cannot list files with git ls-files in %s: %s" % (root, e)) from e
     real_root = os.path.realpath(root)
@@ -707,7 +716,7 @@ def index_spec_dirs(root):
     deleted from the working tree but not from the index (a plain mv leaves them)."""
     try:
         out = subprocess.run(["git", "-C", root, "ls-files", "-z", "--cached", "--", "specs/"],
-                             capture_output=True, check=True, timeout=60).stdout
+                             capture_output=True, check=True, timeout=60, env=git_env()).stdout
     except (OSError, subprocess.SubprocessError) as e:
         raise TreeError("cannot read the git index in %s: %s" % (root, e)) from e
     placed = set()
