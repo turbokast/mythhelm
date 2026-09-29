@@ -1,0 +1,6 @@
+{
+  "summary": "One finding.",
+  "findings": [
+    {"severity": "important", "category": "correctness", "file": "main.go", "line": 3, "claim": "Returns before closing the file.", "evidence": "return nil"}
+  ]
+}

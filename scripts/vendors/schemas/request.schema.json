@@ -1,0 +1,22 @@
+{
+  "$comment": "The record of what one consult or lane sent, written to .claude/data/vendor-calls/<call_id>/request.json beside the exact redacted prompt (prompt.md). It is the audit snapshot of the context a vendor received.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "vendor", "kind", "stage", "call_id", "target", "target_head", "context_files", "prompt_bytes", "prompt_sha256", "redactions", "timeout_s", "effort", "model"],
+  "properties": {
+    "schema_version": {"type": "integer", "enum": [1]},
+    "vendor": {"type": "string", "enum": ["codex", "muse"]},
+    "kind": {"type": "string", "enum": ["consult", "lane"]},
+    "stage": {"type": "string"},
+    "call_id": {"type": "string"},
+    "target": {"type": "string"},
+    "target_head": {"type": ["string", "null"]},
+    "context_files": {"type": "array", "items": {"type": "string"}},
+    "prompt_bytes": {"type": "integer"},
+    "prompt_sha256": {"type": "string"},
+    "redactions": {"type": "integer"},
+    "timeout_s": {"type": "integer"},
+    "effort": {"type": ["string", "null"]},
+    "model": {"type": ["string", "null"]}
+  }
+}
