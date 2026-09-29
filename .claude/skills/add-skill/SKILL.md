@@ -59,7 +59,7 @@ Scaffold a skill that follows `.claude/rules/agent-config-conventions.md` and be
    <What it returns or writes.>
    ```
 
-5. **Check the body.** No unescaped dollar-zero: write `\$0` or `${0}`, because skill text is argument-interpolated when loaded. Every referenced file exists now. Never set `disable-model-invocation`.
+5. **Check the body.** No unescaped dollar-zero: write `\$0` or `${0}` because skill text is argument-interpolated when loaded. Every referenced file exists now. Never set `disable-model-invocation`.
 6. **Write** (write gate): show the draft and write on confirmation.
 7. **Verify.** Run `scripts/ci/lint-agent-harness.sh`: `frontmatter`, `skill-contexts`, `dollar-zero`, `haiku-effort` and `references` must pass.
 

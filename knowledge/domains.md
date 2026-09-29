@@ -14,12 +14,12 @@ The first matching row wins, top to bottom.
 | core | `cmd/`, `internal/` (all but `internal/tui/`), `tests/`, `evals/`, `go.mod`, `go.sum` | `go-implementer` |
 | adapters | `adapters/`, `hosts/` | `go-implementer` |
 | protocol | `protocol/`, `sdk/`, `examples/` | `go-implementer` |
-| release | `.github/`, `packaging/`, `Makefile`, `.goreleaser*`, `.golangci.yml`, `.coderabbit.yaml`, `.editorconfig`, `.gitattributes`, `.gitignore`, `.shellcheckrc` | `release-engineer` |
+| release | `.github/`, `packaging/`, `Makefile`, `.goreleaser*`, `.golangci.yml`, `.coderabbit.yaml`, `.editorconfig`, `.gitattributes`, `.gitignore`, `.shellcheckrc`, `docs/automation.md` | `release-engineer` |
 | harness | `.claude/`, `knowledge/`, `scripts/`, `docs/harness/`, `WORKFLOW.md`, `CLAUDE.md`, `AGENTS.md` | `agent-config-editor` |
-| docs | `docs/` (all but `docs/harness/`), `*.md` at the root not listed above | `go-implementer`, or the agent whose change the docs describe |
+| docs | `docs/` (all but `docs/harness/` and `docs/automation.md`), `*.md` at the root not listed above | `go-implementer`, or the agent whose change the docs describe |
 | specs | `specs/` | the spec's author for `requirements.md`, `design.md` and `tasks.md`; the implementing agent for its own task's completion entry and scratchpad note |
 
-The rows the charter table does not list (`tests/`, `evals/`, `go.sum`, the repository dotfiles, `docs/harness/`, `AGENTS.md`, `specs/`) are placed by the domain of the code they configure or describe.
+The rows the charter table does not list (`tests/`, `evals/`, `go.sum`, the repository dotfiles, `docs/automation.md`, `docs/harness/`, `AGENTS.md`, `specs/`) are placed by the domain of the code they configure or describe.
 
 ---
 

@@ -43,6 +43,8 @@ Scaffold a rule that follows `.claude/rules/agent-config-conventions.md` and `.c
    Evidence: `knowledge/rule-evidence/<name>.md`.
    ```
 
+   For an always-on rule, omit the whole frontmatter block. It then loads in every session, not only when matching files are open, so state in the pull request why it cannot be path-conditional.
+
    No hedging words, no dates, no ticket IDs, no history. A glob for a path that does not exist yet goes under a `# future: <reason>` comment line.
 5. **Draft the evidence file** at `knowledge/rule-evidence/<name>.md` from the template in `knowledge/rule-evidence/README.md`: hazard, mechanism, instances (usually "None recorded"), loosening criteria.
 6. **Write** (write gate): show both drafts and write on confirmation.

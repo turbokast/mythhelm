@@ -47,7 +47,13 @@ done
 python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' \
   || { echo "lint-agent-harness: python3 3.10+ is required" >&2; exit 2; }
 
-mapfile -t ALL < <(python3 "$LINT" --list)
+list_out="$(python3 "$LINT" --list)" \
+  || { echo "lint-agent-harness: harness_lint.py --list failed" >&2; exit 2; }
+mapfile -t ALL <<< "$list_out"
+if [[ -z "${ALL[0]:-}" ]]; then
+  echo "lint-agent-harness: harness_lint.py --list returned no checks" >&2
+  exit 2
+fi
 if [[ -n "$ONLY" ]]; then
   IFS=',' read -r -a CHECKS <<< "$ONLY"
   for c in "${CHECKS[@]}"; do

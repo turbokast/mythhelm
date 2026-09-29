@@ -176,6 +176,28 @@ check "unknown check is a usage error" [ "$RC" == 2 ]
 lint "$F" --only routing-pins,abs-paths
 check "--only runs just the named checks" [ "$RC" == 0 ] && check "--only prints two rows" [ "$(grep -cE ' PASS$' <<< "$OUT")" == 2 ]
 
+echo "== fail closed =="
+BIN="$TEST_TMP/bin"
+mkdir -p "$BIN"
+cp "$LINT" "$BIN/lint-agent-harness.sh"
+printf 'import sys\nsys.exit(1)\n' > "$BIN/harness_lint.py"
+OUT="$("$BIN/lint-agent-harness.sh" --root "$TEST_TMP/clean" 2>&1)"; RC=$?
+check "a failing check list is an error, not a pass" [ "$RC" == 2 ]
+printf 'pass\n' > "$BIN/harness_lint.py"
+OUT="$("$BIN/lint-agent-harness.sh" --root "$TEST_TMP/clean" 2>&1)"; RC=$?
+check "an empty check list is an error, not a pass" [ "$RC" == 2 ]
+check "an empty check list is named" grep -q "returned no checks" <<< "$OUT"
+NOGIT="$TEST_TMP/nogit"
+mkdir -p "$NOGIT/.claude"
+lint "$NOGIT" --only abs-paths
+check "a tree git cannot list is an error, not a pass" [ "$RC" == 1 ] && check "the tree error is reported" grep -q "cannot list files" <<< "$OUT"
+check "the check shows as an error" grep -qE "abs-paths +ERROR\(2\)" <<< "$OUT"
+fresh symlink
+ln -s /etc/hostname "$F/knowledge/outside.md"
+lint "$F" --only abs-paths
+expect_pass "a symlink out of the tree is skipped, not read"
+check "the skipped symlink is reported" grep -q "symlink resolves outside the tree" <<< "$OUT"
+
 echo "== frontmatter =="
 fresh fm-name
 set_line "$F/.claude/agents/worker.md" "name: worker" "name: wrong"

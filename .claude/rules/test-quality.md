@@ -37,6 +37,6 @@ When a change to a fixture, golden file, fake or test setup (not the code under 
 
 "The suite is green now" is not an answer. If you cannot give one, you found a production defect: stop and report it.
 
-**Invariant brackets.** When a test asserts a condition before and after an event, the two assertions must differ in subject, expected value, or a monotonic counter. The same predicate on both sides cannot fail.
+**Invariant brackets.** When a test asserts the same predicate before and after an event, it can fail only if the event can change the subject. Show that it can: keep a case where the event does change it, and watch the after-assertion go red (`teeth-discipline.md`). Otherwise make the two assertions differ in subject, expected value or a monotonic counter.
 
 Evidence: `knowledge/rule-evidence/test-quality.md`.

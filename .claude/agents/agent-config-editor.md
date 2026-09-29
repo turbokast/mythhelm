@@ -63,7 +63,7 @@ Verify each CodeRabbit or Sourcery finding, fix it with a test where it is behav
 - Never edit product code (`cmd/`, `internal/`, `adapters/`, `hosts/`, `protocol/`, `sdk/`, `mods/`) or `.github/`; report the change the owning agent must make.
 - Never remove or weaken an existing guard, check or registered hook unless the request says so and cites evidence (`.claude/rules/strict-by-default.md` §Loosening).
 - Clean text only: no amendment history, dated rulings, ticket IDs or private content (`docs/harness/charter.md` §Principles).
-- Every mandatory path must work with the Claude Code CLI and POSIX tools alone; paid vendor tools stay optional.
+- Every mandatory path must work with the Claude Code CLI and the charter's tooling baseline (`docs/harness/charter.md` §Tooling assumptions: bash 4+, git, jq, python3 3.10+ standard library, coreutils, shellcheck, gh); paid vendor tools stay optional.
 
 ## Escalation
 

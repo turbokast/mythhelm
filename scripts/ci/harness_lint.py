@@ -62,20 +62,34 @@ def warn(path, line, check, detail):
 
 # ---- tree ------------------------------------------------------------------
 
+class TreeError(Exception):
+    """The tree cannot be listed or read safely; the check exits 2."""
+
+
 def tree_files(root):
-    """Tracked plus untracked, non-ignored files, as repository-relative paths."""
+    """Tracked plus untracked, non-ignored files, as repository-relative paths.
+
+    Fails closed: the tree must be a git work tree, since only git knows which
+    files are ignored. Symlinks are listed only when they resolve inside the tree,
+    so no check reads outside it.
+    """
     try:
         out = subprocess.run(
             ["git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-            capture_output=True, check=True).stdout
-        files = [p.decode("utf-8", "replace") for p in out.split(b"\0") if p]
-    except (OSError, subprocess.CalledProcessError):
-        files = []
-        for d, dirs, names in os.walk(root):
-            dirs[:] = [x for x in dirs if x != ".git"]
-            for n in names:
-                files.append(os.path.relpath(os.path.join(d, n), root).replace(os.sep, "/"))
-    return sorted(p for p in files if os.path.lexists(os.path.join(root, p)))
+            capture_output=True, check=True, timeout=60).stdout
+    except (OSError, subprocess.SubprocessError) as e:
+        raise TreeError("cannot list files with git ls-files in %s: %s" % (root, e)) from e
+    real_root = os.path.realpath(root)
+    files = []
+    for p in (x.decode("utf-8", "replace") for x in out.split(b"\0") if x):
+        path = os.path.join(root, p)
+        if not os.path.lexists(path):
+            continue
+        if os.path.islink(path) and os.path.commonpath([real_root, os.path.realpath(path)]) != real_root:
+            sys.stderr.write("harness_lint.py: skipping %s: symlink resolves outside the tree\n" % p)
+            continue
+        files.append(p)
+    return sorted(files)
 
 
 def read(root, rel):
@@ -173,7 +187,11 @@ def check_frontmatter(root, files):
         path = os.path.join(os.path.abspath(root), rel)
         payload = json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Write",
                               "tool_input": {"file_path": path, "content": read(root, rel)}})
-        r = subprocess.run(["bash", hook], input=payload, capture_output=True, text=True, timeout=60)
+        try:
+            r = subprocess.run(["bash", hook], input=payload, capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            finding(rel, 1, "frontmatter", "validator failed to run: %s" % e)
+            continue
         if r.returncode != 0:
             details = [l[len("Detail: "):] for l in r.stderr.splitlines() if l.startswith("Detail: ")]
             for d in details or [r.stderr.strip() or "validator exited %d" % r.returncode]:
@@ -544,7 +562,12 @@ def main(argv):
     if not os.path.isdir(os.path.join(root, ".claude")):
         sys.stderr.write("harness_lint.py: %s has no .claude/ directory\n" % root)
         return 2
-    CHECKS[check](root, tree_files(root))
+    try:
+        files = tree_files(root)
+    except TreeError as e:
+        sys.stderr.write("harness_lint.py: %s\n" % e)
+        return 2
+    CHECKS[check](root, files)
     for w in warnings:
         print(w)
     for f in findings:

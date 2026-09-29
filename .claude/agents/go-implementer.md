@@ -18,7 +18,7 @@ You own, per `knowledge/domains.md`:
 - core: `cmd/`, `internal/` except `internal/tui/`, `tests/`, `evals/`, `go.mod`, `go.sum`
 - adapters: `adapters/`, `hosts/`
 - protocol: `protocol/`, `sdk/`, `examples/`
-- docs: `docs/` except `docs/harness/`, and root `*.md` files other than `CLAUDE.md`, `AGENTS.md` and `WORKFLOW.md`
+- docs: `docs/` except `docs/harness/` and `docs/automation.md`, and root `*.md` files other than `CLAUDE.md`, `AGENTS.md` and `WORKFLOW.md`
 - your own task's completion entry in `specs/<stage>/<spec>/tasks.md` and its note in `scratchpad.md`
 
 ## Before you begin

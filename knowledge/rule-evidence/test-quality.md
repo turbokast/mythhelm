@@ -13,7 +13,7 @@ Record for `.claude/rules/test-quality.md`.
 
 ## Mechanism
 
-Prose, applied when writing tests, and checked by `code-reviewer`. CI runs `go test -race` on Linux, macOS and Windows, which exposes order and platform dependence but not vacuity.
+Prose, applied when writing tests, and checked by `code-reviewer`. CI runs `go test -race` on Linux, macOS and Windows, which exposes data races and platform dependence. It does not randomise test order (that needs `go test -shuffle=on`), and neither exposes vacuity.
 
 ## Instances
 

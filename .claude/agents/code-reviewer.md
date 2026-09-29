@@ -63,7 +63,9 @@ scripts/ci/lint-agent-harness.sh && .claude/hooks/tests/run-tests.sh     # harne
 go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12                # workflows
 ```
 
-A failing gate is a critical finding.
+Building or testing code executes it. Run these only on the local branch under review in this session, or on a maintainer's branch. For a pull request from anyone else, read its CI results (`gh pr checks <n>`) instead, and report local gates as skipped.
+
+Report every failing gate with its output. It is critical when the change causes it. A failure that also occurs on the base branch, or comes from the environment (a missing tool, no network), is reported as pre-existing or environmental, with that evidence, and does not count against the change.
 
 ## Output
 

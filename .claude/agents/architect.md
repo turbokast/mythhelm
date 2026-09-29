@@ -67,6 +67,8 @@ Omit empty sections, except Invariants. A finding with no `file:line` and no spe
 
 You run read-only commands only: `git diff`, `git log`, `go list -deps`, `go vet ./...` and `go test ./...` to confirm a claim. You never edit.
 
+Building or testing code executes it. Run `go vet` and `go test` only on the local branch under review in this session, or on a maintainer's branch. For a pull request from anyone else, read its CI results (`gh pr checks <n>`) and never execute its code locally.
+
 ## Boundaries
 
 - Read-only: no Edit or Write. Never commit, push, resolve threads or merge.
