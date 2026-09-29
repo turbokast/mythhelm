@@ -230,8 +230,10 @@ hh_strip_heredocs() {
     }
     # shellish(): the heredoc on this line feeds a shell, so its body is commands.
     function shellish(   cnt, arr, k) {
-      if (DETECT ~ /(^|[[:space:]|])([^[:space:]]*\/)?(bash|sh|zsh|dash|ksh|ash|mksh|busybox|fish|csh|tcsh)([[:space:]]|$)/) return 1
-      if (DETECT ~ /(^|[[:space:]|])(eval|source|\.)([[:space:]]|$)/) return 1
+      # A shell name is a word bounded by space, a separator, a redirection or a
+      # parenthesis: `bash<<EOF` and `tee >(bash) <<EOF` both run the body.
+      if (DETECT ~ /(^|[[:space:]|;&()<>])([^[:space:]|;&()<>]*\/)?(bash|sh|zsh|dash|ksh|ash|mksh|busybox|fish|csh|tcsh)([[:space:]|;&()<>]|$)/) return 1
+      if (DETECT ~ /(^|[[:space:]|;&()<>])(eval|source|\.)([[:space:]|;&()<>]|$)/) return 1
       cnt = split(DETECT, arr, /[[:space:]]+/)
       for (k = 1; k <= cnt; k++) {
         if (arr[k] == "" || arr[k] ~ /^[A-Za-z_][A-Za-z0-9_]*=/) continue
@@ -426,7 +428,11 @@ hh_inner_payload() {
           (( k + 1 < n )) && HH_PAYLOAD="${HH_WORDS[k+1]}"
           return 0
         fi
-        [[ "$w" == -* ]] || return 0
+        case "$w" in
+          -o|+o|-O|+O|--rcfile|--init-file) k=$((k + 1)) ;;
+          -*|+*) ;;
+          *) return 0 ;;
+        esac
       done ;;
     eval)
       (( HH_CI + 1 < n )) && HH_PAYLOAD="${HH_WORDS[*]:HH_CI+1}" ;;
