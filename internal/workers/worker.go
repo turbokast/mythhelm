@@ -427,12 +427,15 @@ func (w *worker) abort(ctx context.Context, sp *spool, sess adapter.Session, out
 		}
 	}()
 	out.aborted = true
-	switch {
-	case out.pending != nil:
+	if out.pending != nil {
 		// Join the ladder already running; never run two at once.
 		out.report, out.pending = <-out.pending, nil
-	case out.stopBy == "":
-		out.stopBy = "worker"
+	} else {
+		// No ladder is running. One that already finished confirms again
+		// without sending anything; a recorded requester is kept.
+		if out.stopBy == "" {
+			out.stopBy = "worker"
+		}
 		out.report = sess.Interrupt(ctx)
 	}
 	if !out.exited {

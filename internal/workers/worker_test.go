@@ -622,8 +622,12 @@ func TestSpoolFailureStopsNativeAndRecordsEnd(t *testing.T) {
 	}
 	evs := a.events(t)
 	checkAborted(t, evs)
-	if _, err := ProcessStartTime(*w.id.NativePID); !errors.Is(err, ErrNoProcess) {
-		t.Errorf("native %d still exists (%v)", *w.id.NativePID, err)
+	// Windows reuses PIDs at once and may keep a waited process's object,
+	// so only Unix can check the PID; attempt.stopped covers both.
+	if runtime.GOOS != "windows" {
+		if _, err := ProcessStartTime(*w.id.NativePID); !errors.Is(err, ErrNoProcess) {
+			t.Errorf("native %d still exists (%v)", *w.id.NativePID, err)
+		}
 	}
 }
 
@@ -699,6 +703,23 @@ func TestAbortJoinsInFlightLadder(t *testing.T) {
 	evs := attempt{dir: w.dir}.events(t)
 	if p := stoppedOf(t, evs); !p.Confirmed || !slices.Equal(p.SignalsSent, []adapter.StopSignal{adapter.StopInterrupt}) {
 		t.Errorf("attempt.stopped = %+v, want the in-flight ladder's report", p)
+	}
+}
+
+func TestAbortStopsNativeWhenStopRequestUnrecorded(t *testing.T) {
+	w, sp := stubWorker(t)
+	sess := &stubSession{}
+	// The stop request was read, but spooling it failed before its ladder
+	// started.
+	out := outcome{stopBy: "user"}
+	if err := w.abort(context.Background(), sp, sess, out, errors.New("spool failed")); err == nil {
+		t.Fatal("abort returned nil")
+	}
+	if sess.interrupts != 1 {
+		t.Errorf("abort ran %d stop ladders, want 1: no ladder had started", sess.interrupts)
+	}
+	if p := stoppedOf(t, attempt{dir: w.dir}.events(t)); !p.Confirmed {
+		t.Errorf("attempt.stopped = %+v, want confirmed", p)
 	}
 }
 
