@@ -68,4 +68,5 @@ jobs:
     needs: [workflows, detect, go]
     runs-on: ubuntu-latest
     steps:
-      - run: '[[ "${{ contains(needs.*.result, ''failure'') || contains(needs.*.result, ''cancelled'') }}" == "false" ]]'
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
