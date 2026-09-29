@@ -229,6 +229,9 @@ func backup(ctx context.Context, db *sql.DB, path string, version int) error {
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		if _, err := db.ExecContext(ctx, "VACUUM INTO ?", dst); err != nil {
+			// Under the write lock nothing else creates dst, so a file there now
+			// is this call's partial output; leaving it would block every retry.
+			_ = os.Remove(dst)
 			return fmt.Errorf("backing up schema v%d to %s before migrating: %w", version, dst, err)
 		}
 		return nil
