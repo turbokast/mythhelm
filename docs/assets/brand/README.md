@@ -5,9 +5,9 @@ The mark is the **M crest**. The M's two peaks are the fleet of agents, the vall
 | File | Use |
 |---|---|
 | `mark-on-dark.svg` / `mark-on-light.svg` | The mark alone, for dark or light backgrounds |
-| `app-icon.svg` / `app-icon-512.png` | Rounded-square icon: favicon, org/social avatar |
+| `app-icon.svg` / `app-icon-512.png` | Canonical rounded-square icon: favicon (use the SVG), org and social avatar |
 | `lockup-on-dark.png` / `lockup-on-light.png` | Mark + wordmark + tagline (README header) |
-| `social-card.png` | 1280×640 repository social preview |
+| `social-card.png` | 1280×640 repository social preview. GitHub doesn't pick it up automatically: upload it under Settings → General → Social preview |
 
 ## Colours
 
