@@ -12,7 +12,7 @@ Status: pre-alpha, design stage. [`docs/spec/master-spec.md`](docs/spec/master-s
 
 MYTHHELM is built by AI coding agents directed by human maintainers. [`docs/harness/charter.md`](docs/harness/charter.md) fixes the harness conventions and is binding. `WORKFLOW.md` will describe the agent workflow once it lands; it then takes precedence over the charter.
 
-Guard hooks run on every agent tool call. [`.claude/hooks/README.md`](.claude/hooks/README.md) explains them and the arming recipes, and [`.claude/hooks/INVENTORY.md`](.claude/hooks/INVENTORY.md) lists them. When a hook blocks you, read its Detail and Fix lines and follow the Fix; never work around the guard's intent.
+In Claude Code sessions, guard hooks run on every tool call; other agents get no hook enforcement and must follow the same rules by hand. [`.claude/hooks/README.md`](.claude/hooks/README.md) explains them and the arming recipes, and [`.claude/hooks/INVENTORY.md`](.claude/hooks/INVENTORY.md) lists them. When a hook blocks you, read its Detail and Fix lines and follow the Fix; never work around the guard's intent.
 
 ## Conventions
 
@@ -20,7 +20,7 @@ Guard hooks run on every agent tool call. [`.claude/hooks/README.md`](.claude/ho
 - **DCO sign-off.** Every commit carries `Signed-off-by:`: use `git commit -s`.
 - **Commit your own files.** Name the paths you commit (`git commit -s -m "<msg>" -- <file>...`). In the main checkout never use `git add -A`, `git add .` or `git commit -a`, since other sessions may share its index. Never use `git stash`; use a branch or a linked worktree (`git worktree add`).
 - **Publishing is the operator's.** Releases, `v*` tags, workflow runs, secrets, variables and repository settings are changed only when the operator asks, through the armed window described in the hooks README.
-- **Public by default.** Never commit secrets, personal emails, `/home/<user>` paths, hostnames, IP addresses or session transcripts. Fixtures use `example.com`, RFC 5737 addresses (`192.0.2.x`) and `$HOME`-relative or `/tmp` paths.
+- **Public by default.** Never commit secrets, personal emails, `/home/<user>` paths, hostnames, public IP addresses or session transcripts. Fixtures use `example.com`, RFC 5737 addresses (`192.0.2.x`) and `$HOME`-relative or `/tmp` paths.
 
 ## Quality gates
 
