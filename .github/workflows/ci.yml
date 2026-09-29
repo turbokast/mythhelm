@@ -46,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest, windows-11-arm]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -59,7 +59,11 @@ jobs:
         if: runner.os == 'Linux'
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
       - run: go vet ./...
-      - run: go test -race ./...
+      - if: matrix.os != 'windows-11-arm'
+        run: go test -race ./...
+      # The race detector does not support windows/arm64.
+      - if: matrix.os == 'windows-11-arm'
+        run: go test ./...
       - run: go mod tidy -diff
 
   lint:
@@ -92,6 +96,28 @@ jobs:
           go-version-file: go.mod
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
+  licenses:
+    name: go-licenses
+    needs: detect
+    if: needs.detect.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Check licences against the dependency-review allow-list
+        run: |
+          allowed="$(sed -n 's/^ *allow-licenses: *//p' .github/workflows/dependency-review.yml | tr -d ' ')"
+          if [ -z "$allowed" ] || [ "$(printf '%s\n' "$allowed" | wc -l)" -ne 1 ]; then
+            echo "::error::expected exactly one allow-licenses line in dependency-review.yml"
+            exit 1
+          fi
+          echo "Allowed: $allowed"
+          go run github.com/google/go-licenses/v2@v2.0.1 check ./... --include_tests --allowed_licenses="$allowed"
+
   harness:
     name: Harness
     runs-on: ubuntu-latest
@@ -113,7 +139,7 @@ jobs:
   ci-ok:
     name: CI OK
     if: always()
-    needs: [workflows, detect, go, lint, govulncheck, harness]
+    needs: [workflows, detect, go, lint, govulncheck, licenses, harness]
     runs-on: ubuntu-latest
     steps:
       - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
