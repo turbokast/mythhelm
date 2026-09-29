@@ -97,3 +97,11 @@ Each question has a conservative default, which the spec already assumes (§21: 
 ### Task N — YYYY-MM-DD HH:MM
 - Discovery / gotcha / pointer
 -->
+
+### Task 8 — 2026-09-29
+- **Launcher contract.** The worker's `adapter.Launcher` returns an `OwnedProc`. The session reads `Stdout()` to EOF and only then calls `Wait()` once. Never give a descendant the stdout pipe, or EOF never arrives; the fake's escapee uses `/dev/null`.
+- **Stop confirmation.** `GroupGone()` is the stop-confirmation predicate: `kill(-pgid,0)` returning ESRCH on Unix, and "waited" on Windows. `Session.Interrupt` climbs the ladder until the predicate holds.
+- **Escapee lookup.** The escapee inherits `MYTHHELM_ATTEMPT_ID`, so on Linux it can be found through `/proc/*/environ`, as `TestEscapeeLeavesTheSession` shows.
+- **Platform facts.** `worker_detachment` and `process_tree_ownership` in the fake's capability record are `unknown` on Linux and macOS. Task 9 should set them to `supported` once its tests prove them.
+- **Race tests.** Tests that re-exec a `-race` test binary should put `GORACE=atexit_sleep_ms=0` in the child environment; otherwise each clean child exit sleeps 1 s.
+- **Demo check.** The fake's `happy` scenario writes `demo.txt` = `ok`, and `check-fails` writes `fail`. The Task 18 demo check can key on that file.
