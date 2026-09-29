@@ -20,4 +20,8 @@ jobs:
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: moderate
-          allow-licenses: Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, Unlicense, 0BSD, CC0-1.0, Zlib, BSL-1.0
+          # LicenseRef-scancode-google-patent-license-golang is the Go project's
+          # additional patent grant (the PATENTS file shipped with golang.org/x
+          # modules next to BSD-3-Clause). It only adds rights, so it stays
+          # compatible with Apache-2.0.
+          allow-licenses: Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, Unlicense, 0BSD, CC0-1.0, Zlib, BSL-1.0, LicenseRef-scancode-google-patent-license-golang

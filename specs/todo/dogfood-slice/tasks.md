@@ -88,7 +88,7 @@
 - **Spec deviations**: OSV-Scanner and go-licenses run through `go run`, because their actions are not on the action allow-list. `windows-11-arm` has no `-race`, because the race detector does not support windows/arm64. go-licenses notice generation and a macOS x64 runner stay deferred until the first release.
 - **Files modified**: `.github/workflows/osv-scanner.yml`, `.github/workflows/ci.yml`, `docs/automation.md`, `specs/todo/dogfood-slice/tasks.md`.
 
-### Task 4 — State directory, IDs and the SQLite journal
+### Task 4 — State directory, IDs and the SQLite journal ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -125,6 +125,19 @@
   - A build with `CGO_ENABLED=0` passes in CI.
 - **Test plan**: temp-dir databases; a second connection for trigger checks.
 - **Invariants touched**: §6.4, §7.5, §7.6, I09 (payload fields are typed and labelled).
+- **Status**: ✅ Completed. Adds `statedir` (per-OS resolution, `MYTHHELM_HOME`, 0700), `ids` (prefixed ULID-format IDs) and `journal` (modernc.org/sqlite v1.59.0, pragmas, schema v1, an append-only journal with dedup, sequence and generation checks, read-only downgrade refusal and a `VACUUM INTO` backup before upgrades), plus ADR 0003; PR #10.
+- **Implementation**: `Append` runs dedup, generation, sequence, `run_sequence` assignment, the projection and the commit in one `BEGIN IMMEDIATE` transaction. `Open` probes `user_version` over a read-only connection with no pragmas before the WAL connection pool touches the file. `TestBuildWithoutCgo` builds the module with `CGO_ENABLED=0` inside `go test`. Commit 81baaac.
+- **Spec deviations**:
+  - `internal/statedir/statedir_test.go` is added to hold `TestStateDirMode0700`.
+  - The extra exported API is `ErrStaleGeneration`, `ErrInvalidEvent`, `DBName`, `SchemaVersion`, `EnvelopeVersion` and `Close`.
+  - The `CGO_ENABLED=0` build is a test, not a `ci.yml` step, because `ci.yml` belongs to Tasks 2 and 3.
+  - `ids.New("run")` adds the `_` itself.
+  - The payload must be a JSON object (I09).
+  - The exit-2 mapping for `ErrSchemaTooNew` in `internal/cli/exit.go` is left to the first command that opens the journal (Task 5).
+  - `Open` does not create the directory.
+  - `.github/workflows/dependency-review.yml` allows `LicenseRef-scancode-google-patent-license-golang`, the Go patent grant on `golang.org/x/sys`, which the required dependency review otherwise rejects.
+  - `statedir.Ensure` refuses a symlinked state directory.
+- **Files modified**: `.github/workflows/dependency-review.yml`, `go.mod`, `go.sum`, `internal/statedir/statedir.go`, `internal/statedir/statedir_test.go`, `internal/ids/ids.go`, `internal/ids/ids_test.go`, `internal/journal/journal.go`, `internal/journal/journal_test.go`, `internal/journal/migrations/0001_init.sql`, `docs/decisions/0003-local-state-sqlite.md`, `specs/todo/dogfood-slice/tasks.md`.
 
 ### Task 5 — State machines, projections and `runs list`
 
