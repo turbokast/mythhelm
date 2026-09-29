@@ -558,8 +558,6 @@ func TestCapabilityRecordUnknownNotOptimistic(t *testing.T) {
 			"included_only_supported": rec.Billing.IncludedOnlySupported,
 			"paid_overage_prevention": rec.Billing.PaidOveragePrevention,
 			"sandbox.status":          rec.Sandbox.Status,
-			"worker_detachment":       rec.Platform.WorkerDetachment,
-			"process_tree_ownership":  rec.Platform.ProcessTreeOwnership,
 		} {
 			if v == adapter.Supported {
 				t.Errorf("%s: %s = supported; nothing yet proves it", goos, name)
@@ -582,8 +580,17 @@ func TestCapabilityRecordUnknownNotOptimistic(t *testing.T) {
 		}
 		checkTri(t, reflect.ValueOf(rec), "record")
 	}
-	if got := a.Capabilities(adapter.Probe{OS: "windows"}).Platform.ProcessTreeOwnership; got != adapter.Unsupported {
-		t.Errorf("windows process_tree_ownership = %q, want unsupported", got)
+	// Platform facts are supported only where the worker's tests prove them
+	// (internal/workers: TestWorkerSurvivesParentExit, TestStopLadderEscalatesToKill).
+	for goos, want := range map[string]adapter.Platform{
+		"linux":   {OS: "linux", WorkerDetachment: adapter.Supported, ProcessTreeOwnership: adapter.Supported},
+		"darwin":  {OS: "darwin", WorkerDetachment: adapter.Supported, ProcessTreeOwnership: adapter.Supported},
+		"windows": {OS: "windows", WorkerDetachment: adapter.Unknown, ProcessTreeOwnership: adapter.Unsupported},
+		"freebsd": {OS: "freebsd", WorkerDetachment: adapter.Unknown, ProcessTreeOwnership: adapter.Unknown},
+	} {
+		if got := a.Capabilities(adapter.Probe{OS: goos}).Platform; got != want {
+			t.Errorf("%s platform = %+v, want %+v", goos, got, want)
+		}
 	}
 }
 
