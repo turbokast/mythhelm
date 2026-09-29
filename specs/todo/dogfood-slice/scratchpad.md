@@ -105,3 +105,11 @@ Each question has a conservative default, which the spec already assumes (§21: 
 - **Platform facts.** `worker_detachment` and `process_tree_ownership` in the fake's capability record are `unknown` on Linux and macOS. Task 9 should set them to `supported` once its tests prove them.
 - **Race tests.** Tests that re-exec a `-race` test binary should put `GORACE=atexit_sleep_ms=0` in the child environment; otherwise each clean child exit sleeps 1 s.
 - **Demo check.** The fake's `happy` scenario writes `demo.txt` = `ok`, and `check-fails` writes `fail`. The Task 18 demo check can key on that file.
+
+### Task 9 — 2026-09-29
+- **Worker hand-off.** `workers.Spawn(exe, stateDir, runID, attemptID, workers.Launch{…})` passes the admitted launch as JSON on the worker's stdin. It never touches the disk, because the env may carry the AC-4.7 token. `Spawn` returns the worker's `*os.Process`, which the caller must `Wait` or `Release`.
+- **Identity.** Accept a worker only if `ReadIdentity(attemptDir)` matches: the token's SHA-256 equals the journaled `launch_token_sha256`, and `ProcessStartTime(pid)` equals `StartTime`. `ErrNoProcess` means the worker is gone.
+- **Spool end.** Every attempt ends with `attempt.native_result`, then `attempt.stopped{confirmed, unresolved_pids, signals_sent, descendant_scan}`, then the terminal `attempt.state_changed`. Freeze only when that state is `stopped` or `succeeded_native`/`failed_native` and `unresolved_pids` is empty.
+- **Adapter registry.** `workers.adapters` maps descriptor IDs to constructors. Task 17 adds `builtin/claudecode` there, along with the AC-4.4 `apiKeySource` stop.
+- **Marker scan.** The Linux `/proc` marker scan is `markedPIDs` in `proc_linux.go`, and Task 15's orphan scan can reuse it.
+

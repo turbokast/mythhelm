@@ -263,7 +263,7 @@
   - The `doc.go` note is in the package comment.
   - `ProbeInput` is empty.
 
-### Task 9 — Worker ownership: detached worker, process group, spool, stop ladder
+### Task 9 — Worker ownership: detached worker, process group, spool, stop ladder ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (this is the hardest task; the ceiling may be exceeded)
@@ -296,6 +296,14 @@
   - `TestWindowsFakeStopConfirmed`: Windows CI; `Process.Kill` then `Wait`.
 - **Test plan**: the test binary re-exec plays both the worker and the fake agent. Platform-specific tests use build tags and `t.Skip` with a reason elsewhere.
 - **Invariants touched**: I06, I12, I18, §7.3, §7.4, G04 (Linux and macOS only).
+- **Status**: ✅ Completed. Adds `internal/workers`: the detached `__worker`, which writes the `worker.json` identity, spools with contiguous sequences and fsyncs critical events, heartbeats, polls `stop.request`, runs the ladder on the process group and reports escaped descendants. Also adds ADR 0004, and the fake's platform facts are now `supported` on Linux and macOS; PR #17.
+- **Spec deviations**:
+  - `attempt.stopped` ends every attempt, because `unresolved_pids` must also be reported for a self-exiting escapee. The attempt state is `stopped` only after a stop request.
+  - `attempt.stopped` adds `signals_sent` and `descendant_scan`, and `attempt.protocol_counters` adds `progress_dropped`.
+  - The worker receives `workers.Launch` as JSON on its stdin, never on disk. `Spawn` and `AttemptDir` are added.
+  - Extra files: `worker.log`, `proc_other.go` and `worker_unix_test.go`.
+  - New reason codes: `launch_failed`, `native_signal_<name>`, and the native error class.
+  - Files touched outside the list: `adapters/fake/fake.go` and `fake_test.go`, `cmd/mythhelm/main.go` and `go.mod`.
 
 ### Task 10 — Supervisor run pipeline, first against the fake adapter
 
