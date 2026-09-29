@@ -241,6 +241,8 @@ api_verdict() {
       fi
       skip=""; continue
     fi
+    # gh also accepts a shorthand flag joined by "=": -F=key=value, -X=POST.
+    [[ "$w" == -[XfF]=* ]] && w="${w:0:2}${w:3}"
     case "$w" in
       -X|--method) skip=method ;;
       --method=*) method="${w#--method=}" ;;

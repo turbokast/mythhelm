@@ -91,6 +91,10 @@ block "unterminated string" "gh api graphql -f query='mutation { resolveReviewTh
 block "unbalanced braces" "gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: \"T\"}) { clientMutationId }'"
 block "empty mutation" "gh api graphql -f query='mutation { }'"
 block "query read from a file" 'gh api graphql -F query=@resolve.graphql'
+block "query read from a file, -F= form" 'gh api graphql -F=query=@resolve.graphql'
+block "blocked mutation, -f= form" "gh api graphql '-f=query=mutation { mergePullRequest(input: {pullRequestId: \"P\"}) { clientMutationId } }'"
+allow "review-thread mutation, -f= form" "gh api graphql '-f=query=mutation { resolveReviewThread(input: {threadId: \"T\"}) { clientMutationId } }'"
+block "api -X=PATCH" 'gh api -X=PATCH repos/o/r -f private=false'
 block "mutation word outside the query field" "gh api graphql -f q='mutation { resolveReviewThread(input: {threadId: \"T\"}) { clientMutationId } }'"
 block "attached -F form with a blocked mutation" "gh api graphql '-Fquery=mutation { mergePullRequest(input: {pullRequestId: \"P\"}) { clientMutationId } }'"
 allow "graphql query naming a mutation-shaped field is a query" "gh api graphql -f query='query { repository(owner: \"o\", name: \"r\") { pullRequest(number: 1) { reviewThreads(first: 10) { nodes { id isResolved } } } } }'"
