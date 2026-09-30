@@ -59,5 +59,5 @@ Residuals, stated in the hook's header: the key is a file the same user can read
 ## Deliberately absent
 
 - No personas, business plans or revenue data: this is an open-source project with no sales funnel. Commitments come from spec §3.
-- No lifecycle-sync exemption: even mechanical status flips go through an approval, because the ledger is only meaningful if every product write is in it. The rule's evidence file names what would justify a pre-approved class.
+- No standing lifecycle-sync exemption: mechanical status flips go through an approval like any change, because the ledger is only meaningful if every product write is in it. The one pre-approved class is time-boxed and explicit: while the maintainer's autonomy grant carries `--allow-pm-sync`, the granted session's specced → implementing → shipped moves of granted cards, their `lifecycle-sync` entries and the regenerated roadmap are released without a signature and recorded as `preapproved` rows (`knowledge/autonomy.md`).
 - No GitHub milestones or projects. The card is the plan of record and its issue is the public discussion; a second planning surface would drift from both.

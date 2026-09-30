@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/turbokast/mythhelm/.claude/data/task-report.schema.json",
+  "title": "task-report",
+  "description": "The one-line JSON body of the fenced task-report block that ends an implementing agent's final message (.claude/skills/task-completion/SKILL.md). scripts/harness/runspec.py report parses and validates it; the orchestrator verifies every claim against GitHub and the tree before acting on it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["task", "status", "pr", "branch", "first_pass", "deviations", "files_modified", "gates", "budget_overrun", "notes"],
+  "properties": {
+    "task": {"type": "integer", "minimum": 1, "description": "The task number in tasks.md."},
+    "status": {"enum": ["pr_open", "blocked"], "description": "pr_open: implemented, gates recorded, entry written, pull request open. blocked: stopped; notes names the blocker."},
+    "pr": {"type": ["integer", "null"], "description": "The pull request number; required for pr_open."},
+    "branch": {"type": "string", "description": "The pull request's head branch, <type>/<alias>-t<N>."},
+    "first_pass": {"type": "boolean", "description": "false when any gate failed during the task."},
+    "deviations": {"type": "string", "description": "\"None\", or a one-line summary of the Spec deviations field."},
+    "files_modified": {"type": "array", "items": {"type": "string"}, "description": "Repository-relative paths the pull request changes."},
+    "gates": {"type": "object", "additionalProperties": {"enum": ["pass", "fail", "skipped"]}, "description": "Gate name to outcome, for the gates scripts/harness/gate.sh ran and recorded."},
+    "budget_overrun": {"type": "boolean", "description": "true when the task went past its Budget tier."},
+    "notes": {"type": "string", "description": "At most two lines: a blocker, or what the orchestrator must know that the hand-off does not carry."}
+  }
+}

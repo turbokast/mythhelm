@@ -25,7 +25,8 @@ Checks (each reads the tree at DIR, default the repository root):
                   argument-interpolated when it loads)
   abs-paths       no harness file names an absolute home directory
   references      markdown links in harness files resolve, and backticked file paths
-                  under .claude/, knowledge/, scripts/, docs/ and specs/ exist
+                  under .claude/, knowledge/, scripts/, docs/ and specs/ exist, unless
+                  followed by " (new file)"
   specs           every spec directory under specs/<state>/ has the files its
                   lifecycle state requires; each tasks.md task block carries
                   Domain/agent (a known agent), Budget (standard|complex), Change,
@@ -34,6 +35,24 @@ Checks (each reads the tree at DIR, default the repository root):
                   an epic plan.md sits only in an epic state and every Work Streams
                   row names an existing spec; a spec name lives in one lifecycle
                   state only, counting copies the git index still holds
+  finalize        every spec in specs/done/ has every task complete (heading marker
+                  and a Status starting with a check mark) and a retrospective.md
+                  with the sections RETRO_SECTIONS, a Review Summary whose Open
+                  critical is 0, and no flake verdict without a Mechanism:; every
+                  epic plan in done/ names only done or archived specs; CHANGELOG.md,
+                  when present, is Keep a Changelog shaped (scripts/harness/finalize.py)
+  proposals       every entry of .claude/proposals/pending.md is a '## P-<spec>-<n>'
+                  heading, unique, with the fields PROPOSAL_FIELDS, a type in
+                  PROPOSAL_TYPES, a source spec that exists (or a research-<yyyymmdd>
+                  source citing an https:// source), a target that exists (or is
+                  marked "(new file)") and a non-empty Proposed change; every entry of
+                  applied.md carries a decision, date, pull request, rationale and, for
+                  an approved rule, skill or hook, an existing eval case or a waiver,
+                  and is not also pending; auto-apply.json allows only knowledge/ globs
+  required-checks .claude/data/required-checks.json lists exactly the checks
+                  docs/automation.md marks required or to be made required
+  evals           every case in .claude/evals/cases/ is well-formed and passes
+                  (.claude/evals/run_evals.py)
   product         product/ follows its schemas (scripts/pm/pm.py validate): backlog
                   cards with unique MH ids, statuses in the enum, scores equal to the
                   formula, spec links that resolve, well-formed issue links and the
@@ -544,6 +563,8 @@ def check_references(root, files):
                 if target and not os.path.exists(os.path.normpath(os.path.join(base, target.lstrip("/")))):
                     finding(rel, i, "references", "link target %r does not exist" % m.group(1))
             for m in code.finditer(line):
+                if line[m.end():].startswith(" (new file)"):
+                    continue
                 token = re.sub(r":\d+(?:-\d+)?$", "", m.group(1))
                 if not token.startswith(path_prefix) or token.startswith(".claude/data/"):
                     continue
@@ -785,6 +806,235 @@ def check_specs(root, files):
             check_tasks(root, base + "/tasks.md", agents)
 
 
+# Sections every retrospective.md of a finalized spec carries, in any order.
+RETRO_SECTIONS = ("Review Summary", "Acceptance", "Deviations", "CI history", "Effort", "Lessons", "Proposals")
+REVIEW_FIELDS = ("Range", "Reviewer", "Findings", "Open critical", "Vendor review")
+
+
+def load_finalize():
+    """scripts/harness/finalize.py from this repository, whatever tree --root names."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "harness"))
+    try:
+        import finalize  # noqa: E402  (a sibling script, not an installed package)
+    finally:
+        sys.path.pop(0)
+    return finalize
+
+
+def check_retrospective(root, rel):
+    text = read(root, rel)
+    heads = {}
+    for i, line in enumerate(text.split("\n"), 1):
+        m = re.match(r"^## (.+?)\s*$", line)
+        if m:
+            heads.setdefault(m.group(1), i)
+    for name in RETRO_SECTIONS:
+        if name not in heads:
+            finding(rel, 0, "finalize", "no '## %s' section" % name)
+    review = section(text, "Review Summary")
+    for name in REVIEW_FIELDS if "Review Summary" in heads else ():
+        m = next((re.match(r"^- \*\*%s\*\*:\s*(.*)$" % re.escape(name), l) for l in review
+                  if re.match(r"^- \*\*%s\*\*:" % re.escape(name), l)), None)
+        if m is None or not m.group(1).strip():
+            finding(rel, heads["Review Summary"], "finalize", "Review Summary has no '- **%s**:' value" % name)
+        elif name == "Open critical" and not re.match(r"^0\b", m.group(1).strip()):
+            finding(rel, heads["Review Summary"], "finalize",
+                    "Review Summary lists open critical findings (%s); a spec ships with none" % m.group(1).strip())
+    for i, line in enumerate(text.split("\n"), 1):
+        if re.search(r"(?i)\bflak(e|es|y|iness)\b", line) and "Mechanism:" not in line:
+            finding(rel, i, "finalize", "a flake verdict needs 'Mechanism:' on its line: the mechanism, "
+                    "the failing and the passing value (agent-behavioral-posture.md section 7)")
+
+
+def check_finalize(root, files):
+    present = set(files)
+    for rel in files:
+        parts = rel.split("/")
+        if len(parts) != 4 or parts[:2] != ["specs", "done"]:
+            continue
+        base = "/".join(parts[:3])
+        if parts[3] == "plan.md" and base + "/requirements.md" not in present:
+            streams, _ = work_stream_specs(read(root, rel))
+            homes = {}
+            for f in files:
+                q = f.split("/")
+                if len(q) >= 4 and q[0] == "specs":
+                    homes.setdefault(q[2], set()).add(q[1])
+            for s in streams or []:
+                if not homes.get(s) or not homes[s] <= {"done", "archived"}:
+                    finding(rel, 0, "finalize", "epic in done/ names work stream %r, which is not done or archived" % s)
+            continue
+        if parts[3] != "requirements.md":
+            continue
+        if base + "/retrospective.md" not in present:
+            finding(base, 0, "finalize", "a spec in done/ needs retrospective.md (/finalize-spec-retrospective)")
+        else:
+            check_retrospective(root, base + "/retrospective.md")
+        if base + "/tasks.md" in present:
+            text = read(root, base + "/tasks.md")
+            for n, line, fields in task_blocks(text):
+                heading = text.split("\n")[line - 1]
+                status = fields.get("Status", (line, "", False))[1]
+                if "\u2705 COMPLETED" not in heading or not status.startswith("\u2705"):
+                    finding(base + "/tasks.md", line, "finalize",
+                            "Task %d is not complete (heading marker and a Status starting with \u2705)" % n)
+    if "CHANGELOG.md" in present:
+        for line, detail in load_finalize().changelog_problems(read(root, "CHANGELOG.md")):
+            finding("CHANGELOG.md", line, "finalize", detail)
+
+
+PROPOSAL_TYPES = ("rule", "skill", "hook", "knowledge", "product")
+PROPOSAL_FIELDS = ("Source spec", "Type", "Target", "Rationale", "Evidence")
+RESEARCH_SOURCE = re.compile(r"^research-\d{8}$")
+
+
+def load_proposals():
+    """scripts/harness/proposals.py from this repository, whatever tree --root names."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "harness"))
+    try:
+        import proposals  # noqa: E402  (a sibling script, not an installed package)
+    finally:
+        sys.path.pop(0)
+    return proposals
+
+
+def check_proposals(root, files):
+    check_decided(root, files)
+    rel = ".claude/proposals/pending.md"
+    if rel not in files:
+        return
+    homes = {f.split("/")[2] for f in files if f.startswith("specs/") and len(f.split("/")) >= 4}
+    lines = read(root, rel).split("\n")
+    entries, cur, fence = [], None, False
+    for i, line in enumerate(lines, 1):
+        if line.lstrip().startswith("```"):
+            fence = not fence
+        if fence:
+            if cur:
+                cur["body"].append(line)
+            continue
+        if line.startswith("## "):
+            cur = {"line": i, "heading": line, "fields": {}, "body": []}
+            entries.append(cur)
+            continue
+        if cur is None:
+            continue
+        m = re.match(r"^- \*\*([^*]+?)\*\*:\s*(.*)$", line)
+        if m and m.group(1) in PROPOSAL_FIELDS:
+            cur["fields"].setdefault(m.group(1), m.group(2).strip())
+        cur["body"].append(line)
+    seen = {}
+    for e in entries:
+        i = e["line"]
+        m = re.match(r"^## (P-([a-z0-9][a-z0-9-]*)-(\d+))(?: — .+)?$", e["heading"])
+        if not m:
+            finding(rel, i, "proposals", "heading %r is not '## P-<spec>-<n> — <title>'" % e["heading"])
+            continue
+        pid, spec = m.group(1), m.group(2)
+        if pid in seen:
+            finding(rel, i, "proposals", "%s is defined twice (first at line %d)" % (pid, seen[pid]))
+        seen.setdefault(pid, i)
+        f = e["fields"]
+        for name in PROPOSAL_FIELDS:
+            if not f.get(name):
+                finding(rel, i, "proposals", "%s has no '- **%s**:' value" % (pid, name))
+        src = re.sub(r"[`\s]", "", f.get("Source spec", ""))
+        if src and src != spec:
+            finding(rel, i, "proposals", "%s: Source spec %r does not match the id's spec %r" % (pid, src, spec))
+        if src and RESEARCH_SOURCE.match(src):
+            if "https://" not in f.get("Evidence", ""):
+                finding(rel, i, "proposals", "%s: a research proposal cites an https:// source in Evidence" % pid)
+        elif src and src not in homes:
+            finding(rel, i, "proposals", "%s: Source spec %r has no directory under specs/<state>/" % (pid, src))
+        typ = f.get("Type", "").strip("` ")
+        if typ and typ not in PROPOSAL_TYPES:
+            finding(rel, i, "proposals", "%s: Type %r is not one of %s" % (pid, typ, "/".join(PROPOSAL_TYPES)))
+        target = f.get("Target", "")
+        tm = re.match(r"^`([^`\s]+)`(\s+\(new file\))?", target)
+        if target and not tm:
+            finding(rel, i, "proposals", "%s: Target is not one backticked repository path" % pid)
+        elif tm and (tm.group(1).startswith("/") or ".." in tm.group(1).split("/")):
+            finding(rel, i, "proposals", "%s: Target %r is not repository-relative" % (pid, tm.group(1)))
+        elif tm and not tm.group(2) and not os.path.exists(os.path.join(root, tm.group(1))):
+            finding(rel, i, "proposals", "%s: Target %r does not exist; mark a new file '(new file)'" % (pid, tm.group(1)))
+        body = e["body"]
+        at = next((k for k, l in enumerate(body) if l.strip() == "**Proposed change:**"), None)
+        if at is None or not any(l.strip() for l in body[at + 1:]):
+            finding(rel, i, "proposals", "%s has no '**Proposed change:**' block with content" % pid)
+
+
+
+def check_decided(root, files):
+    """applied.md and the lane-0 configuration, through proposals.py's parser."""
+    props = load_proposals()
+    pending = set()
+    if props.PENDING in files:
+        pending = {s["id"] for s in props.sections(read(root, props.PENDING))[1] if s["id"]}
+    if props.APPLIED in files:
+        cases = {f[len(props.CASES):-5] for f in files if f.startswith(props.CASES) and f.endswith(".json")}
+        for line, detail in props.applied_problems(read(root, props.APPLIED), pending, cases):
+            finding(props.APPLIED, line, "proposals", detail)
+    if props.AUTO_APPLY in files:
+        _, problems = props.load_auto_apply(read(root, props.AUTO_APPLY))
+        for detail in problems:
+            finding(props.AUTO_APPLY, 0, "proposals", detail)
+
+REQUIRED_CHECKS_DATA = ".claude/data/required-checks.json"
+AUTOMATION_DOC = "docs/automation.md"
+DOC_REQUIRED = re.compile(r"`([^`]+)`, (?:required|to be made required)\b")
+
+
+def check_required_checks(root, files):
+    have = [f for f in (REQUIRED_CHECKS_DATA, AUTOMATION_DOC) if f in files]
+    if not have:
+        return
+    if len(have) == 1:
+        finding(have[0], 0, "required-checks", "%s and %s go together; one is missing"
+                % (REQUIRED_CHECKS_DATA, AUTOMATION_DOC))
+        return
+    try:
+        data = json.loads(read(root, REQUIRED_CHECKS_DATA))
+        listed = data["required"]
+        assert isinstance(listed, list) and listed and all(isinstance(c, str) and c for c in listed)
+    except (ValueError, KeyError, TypeError, AssertionError):
+        finding(REQUIRED_CHECKS_DATA, 0, "required-checks", "not a JSON object with a non-empty 'required' list")
+        return
+    dupes = sorted({c for c in listed if listed.count(c) > 1})
+    if dupes:
+        finding(REQUIRED_CHECKS_DATA, 0, "required-checks", "listed twice: %s" % ", ".join(dupes))
+    documented = set(DOC_REQUIRED.findall(read(root, AUTOMATION_DOC)))
+    for c in sorted(documented - set(listed)):
+        finding(REQUIRED_CHECKS_DATA, 0, "required-checks",
+                "%s marks %r as required; add it here, since finalize and health compare the ruleset with this list"
+                % (AUTOMATION_DOC, c))
+    for c in sorted(set(listed) - documented):
+        finding(REQUIRED_CHECKS_DATA, 0, "required-checks",
+                "%r is not marked \"`%s`, required\" in %s; document it or remove it" % (c, c, AUTOMATION_DOC))
+
+
+def load_evals():
+    """.claude/evals/run_evals.py from this repository, whatever tree --root names."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".claude", "evals"))
+    try:
+        import run_evals  # noqa: E402  (the eval runner, not an installed package)
+    finally:
+        sys.path.pop(0)
+    return run_evals
+
+
+def check_evals(root, files):
+    cases = [f for f in files if re.fullmatch(r"\.claude/evals/cases/[^/]+", f)]
+    if not cases:
+        return
+    ev = load_evals()
+    for rel in cases:
+        if not rel.endswith(".json"):
+            finding(rel, 0, "evals", "a case file is <id>.json")
+            continue
+        res = ev.run_all(root, [os.path.join(root, rel)])[0]
+        print("%s  %s" % ("PASS" if res["passed"] else "FAIL", res["id"]))
+        if not res["passed"]:
+            finding(rel, 0, "evals", res["detail"])
 def check_product(root, files):
     """The product layer's formats, validated by scripts/pm/pm.py (imported from this
     repository, whatever tree --root names). A tree without product/ has nothing to
@@ -813,6 +1063,10 @@ CHECKS = {
     "abs-paths": check_abs_paths,
     "references": check_references,
     "specs": check_specs,
+    "finalize": check_finalize,
+    "proposals": check_proposals,
+    "required-checks": check_required_checks,
+    "evals": check_evals,
     "product": check_product,
 }
 

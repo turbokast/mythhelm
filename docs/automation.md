@@ -44,6 +44,8 @@ Every automated check, bot and housekeeping job in this repository, what it does
 
 Tools run with `go run <module>@<version>` (actionlint, govulncheck, go-licenses, OSV-Scanner) are pinned in the workflow files, and Dependabot does not update those pins. Bump them by hand, keeping the 7-day cooldown.
 
+The checks marked required above (including those to be made required) are listed in `.claude/data/required-checks.json`. The harness compares the live ruleset with that file to notice a weakened gate, and its lint fails when the two lists differ, so change both together.
+
 The repository ruleset requires review threads to be resolved before merge, and that includes threads opened by AI reviewers. Resolve a bot thread once you have acted on it or replied with a reason.
 
 ### Sourcery dashboard settings

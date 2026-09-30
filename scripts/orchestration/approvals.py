@@ -492,6 +492,31 @@ def proposed_content(tool, ti, current, target):
     return text.encode("utf-8")
 
 
+def pm_sync_preapproval(top, rel, current, proposed, session):
+    """None when the maintainer's live autonomy grant pre-approves this write as a
+    lifecycle sync (autonomy.py pm_sync_problem: a granted card moving specced ->
+    implementing -> shipped, its lifecycle-sync decision entries, the regenerated
+    roadmap), else the reason it does not. Any failure to decide is a refusal."""
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        try:
+            import autonomy  # noqa: E402  (a sibling script, not an installed package)
+        finally:
+            sys.path.pop(0)
+        grant = autonomy.load(top)
+        if grant is None:
+            return "no autonomy grant"
+        why = autonomy.covers(grant, session, top)
+        if why is None:
+            why = autonomy.pm_sync_problem(grant, rel, (current or b"").decode("utf-8"),
+                                           proposed.decode("utf-8"), top)
+        autonomy.audit(top, "pm-sync-preapproved" if why is None else "pm-sync-refused", grant,
+                       path=rel, reason=why or "", via="guard-product-write")
+        return why
+    except Exception as e:  # noqa: BLE001 - deciding nothing must block, never allow
+        return "the autonomy grant could not be checked (%s)" % e.__class__.__name__
+
+
 def cmd_check_write(_a):
     try:
         payload = json.load(sys.stdin)
@@ -565,6 +590,13 @@ def cmd_check_write(_a):
                            "path": rel, "at": now(), "by": "hook:%s" % tool,
                            "session": payload.get("session_id", "")})
             return 0
+        why_not = pm_sync_preapproval(top, rel, current, result_bytes, payload.get("session_id", ""))
+        if why_not is None:
+            ledger.append({"schema_version": 1, "id": "pm-sync", "state": "preapproved", "path": rel,
+                           "worktree": os.path.realpath(top), "base_sha256": base, "result_sha256": result,
+                           "at": now(), "by": "hook:%s" % tool, "session": payload.get("session_id", "")})
+            return 0
+        reasons.append("no pm-sync pre-approval: %s" % why_not)
     detail = "product/ changes need a maintainer's signed approval of this exact change, and none matches"
     detail += (": " + "; ".join(reasons) + ".") if reasons else "."
     block(target, detail, FIX_REQUEST)

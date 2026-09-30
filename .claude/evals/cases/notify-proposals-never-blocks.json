@@ -1,0 +1,13 @@
+{
+  "id": "notify-proposals-never-blocks",
+  "hazard": "The pending-proposals notice turns into a gate and blocks session start.",
+  "source": "learning loop: notify-proposals",
+  "targets": [
+    ".claude/hooks/notify-proposals.sh"
+  ],
+  "grader": {
+    "type": "must-not-match",
+    "pattern": "\\bexit +[1-9]",
+    "violation": "exit 2"
+  }
+}

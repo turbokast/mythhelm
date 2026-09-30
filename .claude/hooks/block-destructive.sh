@@ -6,8 +6,11 @@
 #     session and worktree of a repository, so a stash in a shared checkout can
 #     sweep up, and a pop or drop can destroy, a concurrent session's uncommitted
 #     work. Commit on a branch or use a worktree instead.
-#   * git reset --hard; git clean -f; git branch -D; checkout/restore/switch forms
-#     that discard the working tree (-f, --discard-changes, a whole-tree pathspec).
+#   * git reset --hard; git clean -f; git branch -D; git update-ref -d of a branch;
+#     git worktree remove --force; checkout/restore/switch forms that discard the
+#     working tree (-f, --discard-changes, a whole-tree pathspec). Merged local
+#     branches and their clean worktrees are removed through
+#     scripts/harness/prune-merged.sh, which verifies the merge first.
 #   * force pushes: --force, -f in any short-flag cluster, a +refspec, --mirror.
 #     --force-with-lease stays allowed for non-main branches.
 #   * recursive rm, and find -delete, aimed at /, a top-level directory, $HOME, the
@@ -256,6 +259,28 @@ check_git() {
       (( del == 1 && force == 1 )) && hh_block "git branch -D force-deletes a branch that may hold unmerged work." \
         "Use git branch -d, which refuses to delete an unmerged branch."
       ;;
+    update-ref)
+      local del=0 ref="" skip=0
+      for w in ${A[@]+"${A[@]}"}; do
+        if (( skip == 1 )); then skip=0; continue; fi
+        case "$w" in
+          -m) skip=1 ;;
+          -d|--delete) del=1 ;;
+          -*) ;;
+          *) [[ -z "$ref" ]] && ref="$w" ;;
+        esac
+      done
+      if (( del == 1 )) && [[ "$ref" == refs/heads/* || "$ref" != refs/* ]]; then
+        hh_block "git update-ref -d deletes a branch without checking that its work is merged anywhere." \
+          "Use scripts/harness/prune-merged.sh, which deletes a local branch only after GitHub reports its pull request merged and the branch tip is part of what merged, or git branch -d."
+      fi ;;
+    worktree)
+      if [[ "${A[0]:-}" == remove ]]; then
+        for w in ${A[@]+"${A[@]:1}"}; do
+          [[ "$w" == --force || "$w" =~ ^-[a-z]*f ]] && hh_block "git worktree remove --force discards the worktree's uncommitted and untracked work." \
+            "Commit or push the work first; git worktree remove without --force refuses a dirty worktree. scripts/harness/prune-merged.sh removes merged, clean worktrees."
+        done
+      fi ;;
     checkout|restore|switch) check_discard "$HH_GIT_SUB" ${A[@]+"${A[@]}"} ;;
     clean)
       for w in ${A[@]+"${A[@]}"}; do

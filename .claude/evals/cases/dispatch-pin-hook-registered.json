@@ -1,0 +1,18 @@
+{
+  "id": "dispatch-pin-hook-registered",
+  "hazard": "The dispatch-pin guard is unregistered, so an unpinned dispatch during run-spec or finalize goes through.",
+  "source": "execution: guard-dispatch-pin",
+  "targets": [
+    ".claude/settings.json",
+    ".claude/hooks/guard-dispatch-pin.sh"
+  ],
+  "grader": {
+    "type": "script",
+    "argv": [
+      "python3",
+      "-c",
+      "import json,sys\ns=json.load(open('.claude/settings.json'))\nok=any(e.get('matcher')=='Agent|Task' and any(h['command'].endswith('/.claude/hooks/guard-dispatch-pin.sh') for h in e['hooks']) for e in s['hooks'].get('PreToolUse',[]))\nsys.exit(0 if ok else 1)"
+    ],
+    "exit": 0
+  }
+}

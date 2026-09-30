@@ -9,7 +9,12 @@
 #     (the file's current SHA-256) and result (the SHA-256 of the content this call
 #     would leave, computed from the payload) all match. The release is recorded as
 #     a consumed row, so an approval releases one write. The path is resolved
-#     through symlinks first. NotebookEdit is never released.
+#     through symlinks first. NotebookEdit is never released. Without a matching
+#     approval, a write the maintainer's live autonomy grant pre-approves as a
+#     lifecycle sync (--allow-pm-sync: the granted session moving a granted card
+#     specced -> implementing -> shipped, its lifecycle-sync decision entries, the
+#     regenerated roadmap; scripts/orchestration/autonomy.py) is released and
+#     recorded as a preapproved row.
 #   * Writes to the approval ledger and to the maintainer's key are blocked.
 #
 # Bash (command position only; quoted text and heredoc bodies are data):

@@ -149,6 +149,49 @@ maintainer "$PROJ" approve x1 --yes
 expect_rc 2 "an approval for the main checkout does not release a worktree write" "$HOOK" "$(write_payload Write "$WT/product/backlog.md" "cross" "$WT")"
 expect_err "signed for the worktree" "the worktree mismatch is named"
 
+echo "== an autonomy grant with pm-sync pre-approves lifecycle syncs only =="
+PM="$TEST_TMP/pm"
+new_repo "$PM"
+mkdir -p "$PM/product" "$PM/.claude/data"
+card() {  # card <id> <status> [score]
+  printf '### %s: Card %s\n- **Status**: %s\n- **Stage**: 1\n- **Gates**: none\n- **Score**: %s\n- **Spec**: `spec-%s`\n- **Issue**: (none)\n- **Source**: §1\n- **Summary**: S.\n' \
+    "$1" "$1" "$2" "${3:-3.0 = (value 5 + urgency 5 + risk 5) / effort 5}" "$1"
+}
+backlog() {  # backlog <MH-1 status> <MH-2 status> [MH-1 score]
+  printf '# Backlog\n\n## Open\n\n%s\n\n%s\n\n## Closed\n\nNo closed cards.\n' "$(card MH-1 "$1" "${3:-}")" "$(card MH-2 "$2")"
+}
+backlog specced specced > "$PM/product/backlog.md"
+printf '# Decisions\n\n## Log\n\nNo decisions recorded yet.\n' > "$PM/product/decisions.md"
+grant() {  # grant <allow_pm_sync true|false>
+  jq -nc --argjson now "$(date +%s)" --argjson pm "$1" \
+    '{schema_version:1,id:"g1",session_id:"sess-1",issued_epoch:($now-60),until_epoch:($now+3600),until:"x",
+      granted_at:"x",scope:{cards:["MH-1"],specs:[]},allow_pm_sync:$pm,spec_checkpoint:true,max_continues:5,
+      reason:"r",granted_by:"terminal:t",renewals:0}' > "$PM/.claude/data/autonomy-grant.json"
+}
+# pm_write <path> <content> [session]
+pm_write() {
+  jq -nc --arg p "$PM/$1" --arg c "$2" --arg w "$PM" --arg s "${3:-sess-1}" \
+    '{hook_event_name:"PreToolUse",tool_name:"Write",session_id:$s,cwd:$w,tool_input:{file_path:$p,content:$c}}'
+}
+SYNCED="$(backlog implementing specced)"$'\n'
+grant true
+expect_rc 0 "a granted card moving specced -> implementing" "$HOOK" "$(pm_write product/backlog.md "$SYNCED")"
+check "the pre-approval is recorded in the ledger" grep -q '"state": "preapproved"' "$PM/orchestration/approvals.jsonl"
+check "and in the autonomy audit" grep -q 'pm-sync-preapproved' "$PM/.claude/data/autonomy-audit.jsonl"
+expect_rc 2 "another session than the granted one" "$HOOK" "$(pm_write product/backlog.md "$SYNCED" sess-2)"
+expect_err "no pm-sync pre-approval" "the grant's refusal is named"
+expect_rc 2 "a card outside the grant's scope" "$HOOK" "$(pm_write product/backlog.md "$(backlog specced implementing)"$'\n')"
+expect_rc 2 "a step that is not pre-approved" "$HOOK" "$(pm_write product/backlog.md "$(backlog triaged specced)"$'\n')"
+expect_rc 2 "a score change riding along" "$HOOK" "$(pm_write product/backlog.md "$(backlog implementing specced '9.0 = (value 2 + urgency 5 + risk 2) / effort 1')"$'\n')"
+DEC=$'# Decisions\n\n## Log\n\n### D-1 — 2026-09-30: MH-1 → implementing (spec-MH-1)\n- **Type**: lifecycle-sync\n- **Decision**: d\n- **Rationale**: r\n- **Cards**: MH-1\n'
+expect_rc 0 "its lifecycle-sync decision entry" "$HOOK" "$(pm_write product/decisions.md "$DEC")"
+expect_rc 2 "a decision of another type" "$HOOK" "$(pm_write product/decisions.md "${DEC/lifecycle-sync/card-add}")"
+grant false
+expect_rc 2 "a grant without --allow-pm-sync" "$HOOK" "$(pm_write product/backlog.md "$SYNCED")"
+expect_err "does not pre-approve pm-sync" "the missing flag is named"
+rm "$PM/.claude/data/autonomy-grant.json"
+expect_rc 2 "no grant at all" "$HOOK" "$(pm_write product/backlog.md "$SYNCED")"
+
 echo "== what is never released =="
 nb="$(jq -nc --arg p "$PROJ/product/x.ipynb" '{tool_name:"NotebookEdit",cwd:"/",tool_input:{notebook_path:$p,new_source:"x"}}')"
 expect_rc 2 "NotebookEdit under product/" "$HOOK" "$nb"

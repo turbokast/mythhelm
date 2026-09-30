@@ -17,7 +17,8 @@ The first matching row wins, top to bottom.
 | release | `.github/`, `packaging/`, `Makefile`, `.goreleaser*`, `.golangci.yml`, `.coderabbit.yaml`, `.editorconfig`, `.gitattributes`, `.gitignore`, `.shellcheckrc`, `docs/automation.md` | `release-engineer` |
 | harness | `.claude/`, `knowledge/`, `scripts/`, `docs/harness/`, `WORKFLOW.md`, `CLAUDE.md`, `AGENTS.md` | `agent-config-editor` |
 | docs | `docs/` (all but `docs/harness/` and `docs/automation.md`), `*.md` at the root not listed above | `go-implementer`, or the agent whose change the docs describe |
-| product | `product/`, `orchestration/` | the session running the product skills ([`product/README.md`](../product/README.md)), which drafts and files requests; a maintainer approves every change to `product/` |
+| product | `product/` | the session running the product skills ([`product/README.md`](../product/README.md)), which drafts and files requests; a maintainer approves every change to `product/` |
+| orchestration | `orchestration/` | no agent edits it: its local state files are written only by their scripts (`scripts/orchestration/delivery.py` for the delivery run, `approvals.py` for the approval queue); the tracked [`README.md`](../orchestration/README.md) belongs to `agent-config-editor` |
 | specs | `specs/` | the session running the lifecycle skills ([`specs/README.md`](../specs/README.md)) for `requirements.md`, `design.md` and `tasks.md`; the implementing agent for its own task's completion entry and scratchpad note |
 
 The charter's table lists the same rows; a change to either updates both.
@@ -42,7 +43,7 @@ Always-on rules load in every session. These load when a matching file is read o
 |---|---|
 | core, adapters, protocol, tui | `go-conventions.md`; for `*_test.go` also `test-quality.md`, `red-first.md`, `teeth-discipline.md` |
 | release | `github-workflows.md` |
-| harness | `strict-by-default.md`, `agent-config-conventions.md`, `knowledge-conventions.md`, `harness-scripts.md`, `teeth-discipline.md` |
+| harness | `strict-by-default.md`, `agent-config-conventions.md`, `knowledge-conventions.md`, `harness-scripts.md`, `teeth-discipline.md`; for the delivery scripts, skills and hooks and `orchestration/`, also `autonomous-delivery.md` |
 | specs | `spec-authoring.md`, `spec-premise-grounding.md`, `teeth-discipline.md` |
 | product | `product-management.md` |
 

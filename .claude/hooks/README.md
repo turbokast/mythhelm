@@ -95,6 +95,49 @@ State lives in the main checkout's `.claude/data/` (gitignored), shared by its l
 | `main-push-arm-<session>.json`, `publish-arm-<session>.json` | `session_id`, `kind`, `armed_at`, `armed_at_epoch`, `ttl_seconds`, `reason`, `operator` |
 | `guard-audit.jsonl` | One row per arm, disarm, allow and block: `ts`, `session_id`, `guard`, `kind`, `event`, `command` (first 200 characters), `reason`, `operator` |
 
+## The task-completion Stop hook
+
+`verify-task-completion.sh` runs on `Stop` and `SubagentStop`. It does nothing unless this session marked a spec task complete in its working tree; then it keeps the session working until the entry is well-formed and every gate the change set needs has a fresh marker from `scripts/harness/gate.sh`. Its block names the exact `gate.sh` commands. [`WORKFLOW.md`](../../WORKFLOW.md) explains the markers, and [`knowledge/execution.md`](../../knowledge/execution.md) why each part exists.
+
+When the block is wrong, record why and stop; the override covers only this session, this tree and its current bytes:
+
+```bash
+python3 scripts/harness/gatelib.py override --session <session id from the block> --reason "<why the block is wrong>"
+```
+
+| File in the main checkout's `.claude/data/` | Contents |
+|---|---|
+| `stop-gate-<session>.json` | Consecutive blocks per tree and fingerprint; three on an unchanged tree release the next `stop_hook_active` stop |
+| `stop-gate-override-<session>.json` | `session_id`, `tree`, `fingerprint`, `reason`, `at` |
+| `stop-gate-audit.jsonl` | One row per block, release and override (`.claude/data/stop-gate-audit.schema.json`) |
+
+## The autonomy grant
+
+The maintainer's autonomy grant lets one session run `/deliver-backlog` unattended for at most 24 hours over the cards and specs it names ([`knowledge/autonomy.md`](../../knowledge/autonomy.md)). Unlike an armed window, it is never armed by an agent: `scripts/orchestration/autonomy.sh grant` and `renew` refuse without a terminal, and `guard-autonomy.sh` blocks every agent call of them. The maintainer runs them with the `!` prefix inside the session to be granted (which binds that session), or from another terminal with `--session <id>`. Commands the maintainer types with `!` never reach the hooks.
+
+Three hooks read the grant, and each applies it only to the session it names:
+
+- `continue-run.sh` (Stop) turns an idle stop into the next action while `scripts/orchestration/delivery.py actionable` lists work, within the grant's continue budget, three chained continues and one continue a minute. A final line `AWAITING MAINTAINER: <reason>` always releases the session. It fails open.
+- `guard-blocking-ask.sh` blocks AskUserQuestion, and also in any session started with `MYTHHELM_NONINTERACTIVE=1` (the heartbeat sets it). It fails open.
+- `guard-autonomy.sh` blocks the arming script in the granted session, and every `gh pr merge` there except `gh pr merge <n> --squash --match-head-commit <sha>` after `autonomy.py merge-check` recorded a ready verdict at that head within 15 minutes. A grant file that is unreadable or out of bounds blocks merging and arming in every session until the maintainer revokes it. In every session it blocks writes to the grant, its audit log and the run's `INTENT.md`, `RUN-LOG.md` and `QUESTIONS.md` other than through `delivery.py`, and enabling the heartbeat timer. It fails closed.
+
+| File in the main checkout | Contents |
+|---|---|
+| `.claude/data/autonomy-grant.json` | `schema_version`, `id`, `session_id`, `granted_at`, `issued_epoch`, `until_epoch`, `until`, `scope` (`cards`, `specs`), `allow_pm_sync`, `spec_checkpoint`, `max_continues`, `reason`, `granted_by`, `renewals` |
+| `.claude/data/autonomy-audit.jsonl` | One row per grant, renew, revoke, merge verdict (`merge-ready`, with `pr`, `head`, `spec`, `at_epoch`), allowed merge, continue and heartbeat decision |
+| `.claude/data/autonomy-continue.json` | `continue-run.sh`'s counters, keyed by grant id |
+
+## Pruning merged branches
+
+`block-destructive.sh` blocks `git branch -D`, `git update-ref -d` of a branch and `git worktree remove --force`: each deletes work without checking that it is merged anywhere, and after a squash merge `git branch -d` cannot tell either. `scripts/harness/prune-merged.sh` is the sanctioned path, and it is safe because it verifies before it deletes:
+
+- the branch is not `main`, the default branch or a checked-out branch of the main checkout or the current worktree;
+- `gh pr view <branch>` reports its pull request `MERGED` with a merge time;
+- the local tip equals the pull request's head or is an ancestor of it, so no local commit is lost;
+- a linked worktree holding it is clean, and is removed without `--force`;
+- the delete is `git update-ref -d refs/heads/<branch> <tip>`, a compare-and-swap that fails if the branch moved after the check.
+
+It is a dry run unless given `--apply`, deletes only local branches and worktrees, and never touches the remote. The hook cannot see commands inside a script, which is why the script, and only the script, carries the checks; `test_block_destructive.sh` pins that the unverified spellings stay blocked.
 ## Product approvals
 
 `guard-product-write.sh` enforces the product layer's rule: agents propose, maintainers approve ([`product/README.md`](../../product/README.md)). There is no armed window here. Each change to a file under `product/` needs its own signed approval, bound to the file's current content and to the exact content proposed, and it releases one write.
@@ -111,14 +154,14 @@ scripts/orchestration/approve.sh show mh-3-specced
 scripts/orchestration/approve.sh approve mh-3-specced --apply
 ```
 
-Without `--apply`, the agent writes the approved content with Write or Edit, and the hook releases exactly that content. A request goes stale when its file changes before the write; the agent redrafts and refiles. `approve.sh audit` re-verifies every signed decision and the chain between them.
+Without `--apply`, the agent writes the approved content with Write or Edit, and the hook releases exactly that content. Under a live autonomy grant with `--allow-pm-sync`, the hook also releases, unsigned, the lifecycle syncs `autonomy.py pm-sync-check` pre-approves, and records each as a `preapproved` row. A request goes stale when its file changes before the write; the agent redrafts and refiles. `approve.sh audit` re-verifies every signed decision and the chain between them.
 
 The queue lives in the main checkout's `orchestration/` (gitignored), shared by its linked worktrees:
 
 | File | Contents |
 |---|---|
 | `orchestration/requests/<id>/` | `request.json` (`id`, `path`, `worktree`, `base_sha256`, `result_sha256`, `diff_sha256`, `summary`, `requested_at`, `session`), `proposed` (the full proposed file) and `diff` |
-| `orchestration/approvals.jsonl` | Decision rows (`approved` or `rejected`, with the request's hashes, `decided_at`, `decided_by`, `prev` and an HMAC-SHA256 `mac`) and `consumed` rows (`consumes` names the spent `mac`) |
+| `orchestration/approvals.jsonl` | Decision rows (`approved` or `rejected`, with the request's hashes, `decided_at`, `decided_by`, `prev` and an HMAC-SHA256 `mac`), `consumed` rows (`consumes` names the spent `mac`) and `preapproved` rows (a grant-released lifecycle sync: `path`, `worktree`, both hashes, `session`) |
 | `${XDG_CONFIG_HOME:-$HOME/.config}/mythhelm/approvals.key` | The maintainer's signing key, mode 0600, outside the repository (`MYTHHELM_APPROVALS_KEY` overrides the path) |
 
 ## Adding a hook

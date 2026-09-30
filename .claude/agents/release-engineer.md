@@ -51,7 +51,7 @@ The `zizmor` workflow must pass on the pull request. For changes that reach Go b
 - [ ] actionlint and zizmor clean; every `uses:` pinned with a version comment.
 - [ ] Each new gate shown red on a broken input (run URL recorded) and green on the pull request.
 - [ ] `docs/automation.md` updated; any new required check named in the pull request for the ruleset.
-- [ ] `tasks.md` completion fields added; commits signed off; `CI OK` green.
+- [ ] The completion entry and `handoff.md` section written per `.claude/skills/task-completion/SKILL.md`; `scripts/harness/gate.sh all` recorded after them; commits signed off; `CI OK` green.
 
 ## Review threads
 

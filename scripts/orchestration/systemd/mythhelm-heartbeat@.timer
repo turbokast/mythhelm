@@ -1,0 +1,25 @@
+# mythhelm-heartbeat@.timer: OPTIONAL, opt-in. Ticks the delivery heartbeat for one
+# checkout every 30 minutes after the previous tick finished. Installing it is the
+# maintainer's decision, from their own terminal (guard-autonomy.sh blocks agents):
+#
+#   scripts/orchestration/heartbeat.sh --print-install    prints these commands:
+#   mkdir -p ~/.config/systemd/user
+#   cp scripts/orchestration/systemd/mythhelm-heartbeat@.{service,timer} ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now "mythhelm-heartbeat@$(systemd-escape --path "$PWD").timer"
+#
+# Stop it with `systemctl --user disable --now "mythhelm-heartbeat@<instance>.timer"`.
+# Without a live autonomy grant every tick refuses, so revoking the grant is enough to
+# idle it.
+
+[Unit]
+Description=Tick the MYTHHELM delivery heartbeat for %f
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=30min
+AccuracySec=1min
+Persistent=false
+
+[Install]
+WantedBy=timers.target

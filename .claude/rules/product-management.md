@@ -15,7 +15,7 @@ paths:
 
 ## Agents propose; maintainers approve
 
-- Change a product file only by drafting the whole new file with `scripts/pm/pm.py` and filing it with `python3 scripts/orchestration/approvals.py request` (`.claude/skills/pm-sync-core/SKILL.md` §File a change). Write it only after a maintainer has signed that request, and write exactly its proposed content.
+- Change a product file only by drafting the whole new file with `scripts/pm/pm.py` and filing it with `python3 scripts/orchestration/approvals.py request` (`.claude/skills/pm-sync-core/SKILL.md` §File a change). Write it only after a maintainer has signed that request, and write exactly its proposed content. The one exception is a lifecycle sync that `autonomy.py pm-sync-check` reports pre-approved under the maintainer's live grant.
 - A person's "yes" in the conversation is not an approval. The approval is the signature they make from their own terminal with `scripts/orchestration/approve.sh`. Never run `approve.sh`, never run the maintainer verbs of `approvals.py`, never write `orchestration/approvals.jsonl`, and never read or write the approval key.
 - Never write product files through Bash: no redirects, `cp`, `sed -i`, interpreters or scripts, even when a command would get past `guard-product-write.sh`. A blocked product write is filed as a request, never retried in another spelling.
 - Build every draft from the current file through `pm.py stage`, never from an older copy. When an approval is reported stale, restage and refile; never patch the old draft by hand.
