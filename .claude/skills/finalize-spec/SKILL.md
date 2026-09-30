@@ -44,7 +44,13 @@ git fetch origin
 git worktree add -b docs/<alias>-finalize ../<repo>-<alias>-finalize origin/main
 ```
 
-Every later step reads and writes in this worktree (`<wt>`). When the branch already exists, this is a resumed run: reuse its worktree, and if its pull request is open go straight to `/finalize-spec-publish` step 7. Record the start: `python3 scripts/harness/runspec.py event --spec <spec> --kind lifecycle --detail "finalize start"`.
+Every later step reads and writes in this worktree (`<wt>`). Before creating it, find out whether this is a resumed run, from GitHub rather than from memory: `gh pr list --state all --head docs/<alias>-finalize --json number,state,mergeCommit`.
+
+- **Open** finalize pull request: reuse its worktree (or recreate it from the branch) and go straight to `/finalize-spec-publish` step 7.
+- **Merged** finalize pull request, the spec in `specs/done/` on origin/main: the record has landed. Go straight to Step 5 with its merge commit, then Steps 6–8; `finalize-spec-verify` would rightly refuse a spec already in `done/`.
+- **None**, or only closed unmerged ones: a fresh run from Step 1.
+
+Record the start: `python3 scripts/harness/runspec.py event --spec <spec> --kind lifecycle --detail "finalize start"`.
 
 ## Steps
 
