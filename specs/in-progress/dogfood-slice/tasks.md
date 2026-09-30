@@ -529,7 +529,7 @@
 - **Test plan**: harness helpers from design §12 (forge identity, hold lock, hold an exclusive transaction).
 - **Invariants touched**: I06, I12, §7.7, §17.5, §18.4, G04.
 - **Status**: In progress — stop/recovery core and all named fault tests pass; apply receipt crash repair awaits Task 14's merged API.
-- **Spec deviations**: Supporting CLI dispatch/exit mapping, pipeline continuation and receipt repair, worker descendant identity recording, Linux zombie recognition, portable orphan marker helpers, fake launch-count fixture and ADR 0007 are required for the task's ownership and fault acceptance. A recovered quarantined partial candidate ends failed/recovered_partial (exit 4); it is never verified success. An unfinished check without a durable verification result remains ownership unresolved instead of repeating external effects.
+- **Spec deviations**: Supporting CLI dispatch/exit mapping, pipeline continuation and receipt repair, worker descendant identity recording and panic boundary tests, spool terminal-write tracking, Linux zombie recognition, portable orphan marker helpers, fake launch-count fixture and ADR 0007 are required for the task's ownership and fault acceptance. A recovered quarantined partial candidate ends failed/recovered_partial (exit 4); it is never verified success. An unfinished check without a durable verification result remains ownership unresolved instead of repeating external effects. A panic after a terminal spool line is written preserves that potentially ingested state and logs worker_panic instead of appending an illegal second terminal transition (design §11 boundary clarification).
 
 ### Task 16 — Claude Code probe, auth evidence and billing admission
 

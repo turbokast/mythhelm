@@ -17,6 +17,8 @@ An unfinished verification whose result was not durably recorded remains ownersh
 
 The worker records PID and start time for known escaped descendants. Recovery only observes those identities and the Linux attempt-marker scan; it never signals them. A partial candidate may be frozen once the confirmed native group and all known descendants are gone. That run ends `failed/recovered_partial` (exit 4), preserving the quarantined attempt and never labelling it verified success. Legacy records without enough identity evidence stay unresolved. Linux zombie entries count as gone: they cannot execute or write even if PID 1 has not reaped them.
 
+The worker catches panics at its top-level boundary, discards raw panic values and stacks, joins an existing stop ladder and reaps owned execution. Observed native exits survive cleanup; a consumed Done channel never becomes an invented zero exit. A panic before a terminal state is written records interrupted/worker_panic. If a terminal line was already written before its sync panicked, that line may already have been ingested: cleanup preserves it rather than appending an illegal second terminal transition, and records the panic classification in the worker log. This narrows design §11 at the terminal-write boundary without changing the terminal native observation.
+
 ## Consequences
 
 - Native execution is never relaunched by recovery; the fake's append-only launch counter tests this through repeated recovery.

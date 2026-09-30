@@ -336,8 +336,10 @@ type worker struct {
 	beats     int64
 	stderr    *ring
 	// Test seams; nil means the real file operations.
-	spoolSync func(*os.File) error
-	writeFile func(dir, name string, body []byte) error
+	spoolSync   func(*os.File) error
+	writeFile   func(dir, name string, body []byte) error
+	pendingStop <-chan adapter.InterruptReport // owned ladder joined on panic
+	observed    outcome                        // facts retained across a panic boundary
 }
 
 // outcome is what the worker learned about the native process.
@@ -351,14 +353,55 @@ type outcome struct {
 	pending      <-chan adapter.InterruptReport // an in-flight stop ladder's report
 	launchFailed bool                           // no native process was created
 	aborted      bool                           // the worker stopped the native because it could not record the attempt
+	panicked     bool                           // raw panic values are never persisted
 }
 
-func (w *worker) run(ctx context.Context) error {
+func (w *worker) run(ctx context.Context) (retErr error) {
 	sp, err := createSpool(filepath.Join(w.dir, spoolFile), w.runID, w.launch.TaskID, w.attemptID)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = sp.close() }()
+	var sess adapter.Session
+	l := &launcher{w: w}
+	defer func() {
+		if recover() == nil {
+			return
+		}
+		// The panic may contain credentials or native content. Persist only
+		// its classification, never its value or a raw stack trace.
+		cause := errors.New("worker_panic")
+		w.log.Error("worker panic; stopping owned execution")
+		if w.stderr == nil {
+			w.stderr = &ring{max: stderrRingBytes}
+		}
+		if sess != nil {
+			out := w.observed
+			out.panicked, out.pending = true, w.pendingStop
+			retErr = w.abort(ctx, sp, sess, out, cause)
+			return
+		}
+		out := outcome{panicked: true, report: adapter.InterruptReport{Confirmed: true}}
+		if l.proc != nil {
+			// Start panicked after creating the process but before returning
+			// a session. This process is owned; stop it and reap it once.
+			out.report.Confirmed = false
+			if err := l.proc.Signal(adapter.StopKill); err == nil {
+				out.report.Sent = []adapter.StopSignal{adapter.StopKill}
+			} else {
+				retErr = errors.Join(cause, err, w.conclude(ctx, sp, nil, out))
+				return
+			}
+			// An escaped descendant can retain stdout indefinitely. Closing
+			// our pipe lets Wait's bounded cleanup handle the owned process.
+			if closer, ok := l.proc.Stdout().(io.Closer); ok {
+				_ = closer.Close()
+			}
+			out.exit, out.exited = l.proc.Wait(), true
+			out.report.Confirmed = l.proc.GroupGone()
+		}
+		retErr = errors.Join(cause, w.conclude(ctx, sp, nil, out))
+	}()
 	if w.spoolSync != nil {
 		sp.sync = w.spoolSync
 	}
@@ -375,8 +418,7 @@ func (w *worker) run(ctx context.Context) error {
 	}
 
 	w.stderr = &ring{max: stderrRingBytes}
-	l := &launcher{w: w}
-	sess, err := w.start(ctx, l)
+	sess, err = w.start(ctx, l)
 	if err != nil {
 		w.log.Error("native launch failed", "err", err)
 		// No native process was created, so there is nothing to stop.
@@ -420,6 +462,7 @@ func (w *worker) start(ctx context.Context, l *launcher) (adapter.Session, error
 // does, since a native that cannot be observed must not keep running. It
 // then records the attempt's end as far as the spool still accepts writes.
 func (w *worker) abort(ctx context.Context, sp *spool, sess adapter.Session, out outcome, cause error) error {
+	defer func() { w.observed = out }()
 	w.log.Error("aborting the attempt", "err", cause)
 	// The session reaps the native only after its observations are taken.
 	go func() {
@@ -430,6 +473,7 @@ func (w *worker) abort(ctx context.Context, sp *spool, sess adapter.Session, out
 	if out.pending != nil {
 		// Join the ladder already running; never run two at once.
 		out.report, out.pending = <-out.pending, nil
+		w.pendingStop = nil
 	} else {
 		// No ladder is running. One that already finished confirms again
 		// without sending anything; a recorded requester is kept.
@@ -440,8 +484,10 @@ func (w *worker) abort(ctx context.Context, sp *spool, sess adapter.Session, out
 	}
 	if !out.exited {
 		select {
-		case out.exit = <-sess.Done():
-			out.exited = true
+		case exit, ok := <-sess.Done():
+			if ok {
+				out.exit, out.exited = exit, true
+			}
 		case <-time.After(waitDelay):
 		}
 	}
@@ -453,9 +499,9 @@ func (w *worker) abort(ctx context.Context, sp *spool, sess adapter.Session, out
 
 // supervise spools observations, heartbeats and polls for a stop request
 // until the native process has exited and any stop ladder has finished.
-func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session) (outcome, error) {
+func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session) (out outcome, err error) {
+	defer func() { w.observed = out }()
 	var (
-		out  outcome
 		prog progress
 		obs  = sess.Observations()
 		done = sess.Done()
@@ -490,6 +536,7 @@ func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session)
 			obs = nil
 		case rep := <-out.pending:
 			out.report, out.pending = rep, nil
+			w.pendingStop = nil
 		case <-beat.C:
 			w.heartbeat()
 		case <-poll.C:
@@ -513,6 +560,7 @@ func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session)
 			w.log.Info("stop requested", "requested_by", by)
 			pending := make(chan adapter.InterruptReport, 1)
 			out.pending = pending
+			w.pendingStop = pending
 			go func() { pending <- sess.Interrupt(ctx) }()
 		}
 	}
@@ -557,6 +605,12 @@ func (w *worker) observe(sp *spool, ob adapter.Observation, prog *progress, out 
 // conclude confirms the process group is gone, reports known descendants
 // that escaped it, and spools the attempt's terminal state.
 func (w *worker) conclude(ctx context.Context, sp *spool, sess adapter.Session, out outcome) error {
+	// A terminal line can become visible before its sync returns or panics.
+	// It may already be ingested: never append a second terminal transition.
+	// Panic cleanup still joins the stop ladder before reaching this point.
+	if sp.terminalWritten {
+		return nil
+	}
 	if out.stopBy == "" && sess != nil {
 		// The native exited by itself; anything left in its group is
 		// stopped before anything else, even if the spool then fails.
@@ -621,6 +675,8 @@ func (w *worker) unresolvedDescendants() ([]int, string) {
 func classify(out outcome, unresolved bool) (state, reason string) {
 	res, exit := out.result, out.exit
 	switch {
+	case out.panicked:
+		return "interrupted", "worker_panic"
 	case !out.report.Confirmed:
 		return "interrupted", "stop_unconfirmed"
 	case unresolved:
