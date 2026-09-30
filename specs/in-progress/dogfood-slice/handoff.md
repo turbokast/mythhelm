@@ -90,7 +90,13 @@
 
 ## Task 15 — Stop, recover, and the §18.4 fault-injection subset
 
-<!-- pending -->
+- **In progress:** the stop/recovery core is gated and committed; this section is not a completion claim. Task 14 apply receipt crash repair is still pending integration after PR #52 merges.
+- `supervisor.Recover` / `RecoverWithHooks` acquire the run owner lock and re-read run state. They verify the recorded worker identity, resume ingestion from the committed spool offset, continue after terminal native events, or quarantine lost ownership. Native execution is never relaunched.
+- `stop` uses the verified worker's atomic request file without pre-empting a live supervisor. It reports stop_requested until journaled confirmation; failed descendant scans cannot be reported as fully stopped.
+- Recovery reconstructs check commands from the admitted Git blob and configuration digest, and uses the captured Git identity. It does not repeat unfinished check effects whose outcome was never committed. A committed verification result can finish its state transition.
+- Known escaped descendants carry recorded PID/start-time identities; recovery observes them and the Linux marker scan without signalling. It freezes a partial candidate only after ownership is resolved and ends failed/recovered_partial, preserving the quarantined attempt. Linux zombies cannot write and are treated as gone.
+- All ten named acceptance tests plus failed scan, admitted checks/identity, oversized task, descendant resolution, native launch-window diagnostics and terminal receipt repair pass. The fake count-launches scenario appends one launch marker; repeated recovery must leave the count at one.
+- ADR 0007 records the ownership and persistence choices. **For Task 19:** add packaged-command acceptance around these seams, including recovery during stopping and each stdout result envelope. Pre-launch runs without an attempt and unfinished verification remain active/ownership unresolved for manual reconciliation.
 
 ## Task 16 — Claude Code probe, auth evidence and billing admission
 
