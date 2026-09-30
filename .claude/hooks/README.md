@@ -111,6 +111,34 @@ python3 scripts/harness/gatelib.py override --session <session id from the block
 | `stop-gate-override-<session>.json` | `session_id`, `tree`, `fingerprint`, `reason`, `at` |
 | `stop-gate-audit.jsonl` | One row per block, release and override (`.claude/data/stop-gate-audit.schema.json`) |
 
+## The autonomy grant
+
+The maintainer's autonomy grant lets one session run `/deliver-backlog` unattended for at most 24 hours over the cards and specs it names ([`knowledge/autonomy.md`](../../knowledge/autonomy.md)). Unlike an armed window, it is never armed by an agent: `scripts/orchestration/autonomy.sh grant` and `renew` refuse without a terminal, and `guard-autonomy.sh` blocks every agent call of them. The maintainer runs them with the `!` prefix inside the session to be granted (which binds that session), or from another terminal with `--session <id>`. Commands the maintainer types with `!` never reach the hooks.
+
+Three hooks read the grant, and each applies it only to the session it names:
+
+- `continue-run.sh` (Stop) turns an idle stop into the next action while `scripts/orchestration/delivery.py actionable` lists work, within the grant's continue budget, three chained continues and one continue a minute. A final line `AWAITING MAINTAINER: <reason>` always releases the session. It fails open.
+- `guard-blocking-ask.sh` blocks AskUserQuestion, and also in any session started with `MYTHHELM_NONINTERACTIVE=1` (the heartbeat sets it). It fails open.
+- `guard-autonomy.sh` blocks the arming script in the granted session, and every `gh pr merge` there except `gh pr merge <n> --squash --match-head-commit <sha>` after `autonomy.py merge-check` recorded a ready verdict at that head within 15 minutes. In every session it blocks writes to the grant, its audit log and the run's `INTENT.md`, `RUN-LOG.md` and `QUESTIONS.md` other than through `delivery.py`, and enabling the heartbeat timer. It fails closed.
+
+| File in the main checkout | Contents |
+|---|---|
+| `.claude/data/autonomy-grant.json` | `schema_version`, `id`, `session_id`, `granted_at`, `issued_epoch`, `until_epoch`, `until`, `scope` (`cards`, `specs`), `allow_pm_sync`, `spec_checkpoint`, `max_continues`, `reason`, `granted_by`, `renewals` |
+| `.claude/data/autonomy-audit.jsonl` | One row per grant, renew, revoke, merge verdict (`merge-ready`, with `pr`, `head`, `spec`, `at_epoch`), allowed merge, continue and heartbeat decision |
+| `.claude/data/autonomy-continue.json` | `continue-run.sh`'s counters, keyed by grant id |
+
+## Pruning merged branches
+
+`block-destructive.sh` blocks `git branch -D`, `git update-ref -d` of a branch and `git worktree remove --force`: each deletes work without checking that it is merged anywhere, and after a squash merge `git branch -d` cannot tell either. `scripts/harness/prune-merged.sh` is the sanctioned path, and it is safe because it verifies before it deletes:
+
+- the branch is not `main`, the default branch or a checked-out branch of the main checkout or the current worktree;
+- `gh pr view <branch>` reports its pull request `MERGED` with a merge time;
+- the local tip equals the pull request's head or is an ancestor of it, so no local commit is lost;
+- a linked worktree holding it is clean, and is removed without `--force`;
+- the delete is `git update-ref -d refs/heads/<branch> <tip>`, a compare-and-swap that fails if the branch moved after the check.
+
+It is a dry run unless given `--apply`, deletes only local branches and worktrees, and never touches the remote. The hook cannot see commands inside a script, which is why the script, and only the script, carries the checks; `test_block_destructive.sh` pins that the unverified spellings stay blocked.
+
 ## Adding a hook
 
 1. Write `.claude/hooks/<name>.sh`: `#!/usr/bin/env bash`, `set -euo pipefail`, and a header comment stating what it blocks or reports, why, and its residuals. A Bash guard sources `hook-helpers.sh` and calls `hh_load_bash_payload <name> <prefilter>`, then walks `hh_command_segments`. Use `hh_block` for the stanza.

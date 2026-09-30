@@ -46,6 +46,8 @@ Every task's work reaches `main` through its own pull request, merged by the orc
    python3 scripts/harness/runspec.py event --spec <spec> --kind merge --task <N> --pr <pr> --result ok
    ```
 
+   Under an autonomy grant (`scripts/orchestration/autonomy.sh status` reports it live), `.claude/hooks/guard-autonomy.sh` refuses that merge line: record the verdict under the grant with `python3 scripts/orchestration/autonomy.py merge-check --pr <pr> --spec <spec> --task <N>` (`--lifecycle` for a lifecycle pull request), and merge with the `gh pr merge <pr> --squash --match-head-commit <sha>` it prints (add `--delete-branch`).
+
    `verify-merged` fetches origin and requires the pull request merged, its merge commit on origin/main, and the task's entry there naming the pull request. Anything else is not a merge: record `--result fail` and stop the run. A dirty worktree at the first command means the pushed branch is not the whole work: resume the worker to commit or discard it, then start again at step 1.
 4. **Report** `[<done>/<total>] Task N — <name>: MERGED (PR #<pr>)`, then `git fetch origin` so the next batch's workers start from the new tip.
 

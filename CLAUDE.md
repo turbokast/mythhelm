@@ -18,7 +18,8 @@ In Claude Code sessions, guard hooks run on every tool call; other agents get no
 - **Agents and routing.** Route work by path with [`knowledge/domains.md`](knowledge/domains.md): `go-implementer` (core, adapters, protocol, docs), `tui-implementer`, `release-engineer`, `agent-config-editor` (harness); `architect` and `code-reviewer` review. [`knowledge/agent-routing.md`](knowledge/agent-routing.md) pins each agent's model and effort; never pass `effort` to a haiku agent (`completion-clerk`, `harness-clerk`).
 - **Spec lifecycle.** Work moves through `specs/<state>/<name>/` via `/create-spec`, `/refine-spec`, `/spec` and `/evaluate-spec`: [`specs/README.md`](specs/README.md), [`knowledge/spec-authoring.md`](knowledge/spec-authoring.md).
 - **Execution.** `/run-spec <spec>` runs a spec's tasks: one pinned agent, worktree and pull request per task, merged when green with no open thread. `/implement` takes one task; its entry follows `/task-completion`, and the Stop hook blocks a claim without fresh gate markers. `/finalize-spec` closes a spec after its last merge.
-- **Rules.** `.claude/rules/` holds always-on rules (behavioural posture, coding standards, formatter first, skill invocation contexts, prompt refinement, public-repo hygiene) and rules that load with the files they govern (Go, tests, workflows, harness, vendors).
+- **Autonomy.** `/deliver-backlog` runs unattended only inside the maintainer's grant: [`knowledge/autonomy.md`](knowledge/autonomy.md).
+- **Rules.** `.claude/rules/` holds always-on rules and rules that load with the files they govern ([`knowledge/domains.md`](knowledge/domains.md)).
 - **Optional vendors.** Codex, Muse and Jev are opt-in and advisory, never gates. Reach them only through their wrappers ([`knowledge/vendors.md`](knowledge/vendors.md)); never opt a contributor in.
 
 ## Conventions

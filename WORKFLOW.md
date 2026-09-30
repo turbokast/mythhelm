@@ -53,6 +53,28 @@ Tasks whose `Domain/agent` is `maintainer` are yours. The run hands them over wh
 
 The finalizer stops and reports when verification fails for a reason no fix can remove, a critical finding cannot be fixed, three review rounds leave the finalize pull request not ready, or `main` stays red. Re-running `/finalize-spec <name>` resumes. [`knowledge/finalize.md`](knowledge/finalize.md) explains the reason for each mechanism.
 
+## Autonomous delivery
+
+`/deliver-backlog` takes a set of backlog cards and specs through the whole lifecycle, from `/create-spec` to `/finalize-spec`, in dependency order: specifying runs ahead, building waits until what it depends on is done. It orchestrates the skills above and never implements. Its state lives in the main checkout's `orchestration/` ([`orchestration/README.md`](orchestration/README.md)), so a new session resumes where the last one stopped.
+
+With you present, it asks you at each spec checkpoint and when it is stuck. To let it run while you are away, grant it autonomy from your own terminal:
+
+```bash
+! scripts/orchestration/autonomy.sh grant --hours 8 --scope MH-3,MH-5 --reason "overnight run"   # in the session to grant
+scripts/orchestration/autonomy.sh status        # also: renew --hours 8, revoke
+```
+
+The grant binds that one session and its workers for at most 24 hours (renewable), over the cards and specs you name. Agents cannot grant or renew it. While it is live:
+
+- the session keeps working instead of stopping after each step, within a continue budget, until nothing is left that an agent can do; it then ends with `AWAITING MAINTAINER: <reason>`;
+- it never asks you directly: questions go to `orchestration/QUESTIONS.md`, only the affected items wait, and you answer with `python3 scripts/orchestration/delivery.py answer Q-<n> --text "..."` or in the file;
+- it merges a pull request only when it is green, has no unresolved thread, passes the leak check, stays inside its task's scope and belongs to a granted spec, pinned to the exact head it checked;
+- each new spec still waits for your approval (`/deliver-backlog approve-spec <spec>`) unless you granted with `--no-spec-checkpoint`;
+- backlog changes still need your signed approval, except the specced → implementing → shipped moves of granted cards when you granted with `--allow-pm-sync`;
+- it never pushes to `main`, tags, releases or runs workflows.
+
+`scripts/orchestration/status.sh` shows the grant, the run, the lanes, the open pull requests with their unresolved threads, and `main`'s CI on one screen. An optional systemd user timer (`scripts/orchestration/heartbeat.sh --print-install`) resumes the granted session when it stopped with work left; nothing installs it for you. `/handoff` writes a continuation package when a session must end mid-work, and `scripts/harness/prune-merged.sh` removes the local branches and worktrees of merged pull requests. [`knowledge/autonomy.md`](knowledge/autonomy.md) explains each mechanism.
+
 ## Gates, markers and the completion check
 
 - **Gate markers.** `scripts/harness/gate.sh <gate|go|harness|all>` runs a gate's fixed command and, only when it exits 0 over an unchanged tree, writes `.claude/data/gate-marker-<gate>.json` with a fingerprint of the files it checked. Editing a file afterwards makes the marker stale. `python3 scripts/harness/gatelib.py status` shows what the current change set needs and whether each marker is fresh.
@@ -72,3 +94,6 @@ The finalizer stops and reports when verification fails for a reason no fix can 
 | User-facing changes | `CHANGELOG.md` |
 | Attempts, retries, review rounds | `.claude/data/run-events.jsonl` (local, gitignored) |
 | Gate evidence | `.claude/data/gate-marker-*.json` in each worktree (local) |
+| A delivery run: items, stages, log, questions | `orchestration/` in the main checkout (local) |
+| The autonomy grant and its audit log | `.claude/data/autonomy-grant.json`, `autonomy-audit.jsonl` (local) |
+| Continuation packages | `.claude/handoffs/` (local) |
