@@ -57,7 +57,9 @@
 
 ## Task 10 — Supervisor run pipeline, first against the fake adapter
 
-<!-- pending -->
+- `admission.Decide(ctx, Request)` returns a fully resolved `Decision` or blocks before writing state. `supervisor.Run(ctx, Decision, Hooks)` creates the run, journals admission and snapshot, records launch intent, spawns and verifies one worker, then ingests its spool under `owner.lock`. `Hooks.Event` receives journal events in run-sequence order; JSONL adds `run.result` outside the journal. `internal/cli/run.go` owns flags, signals and exit mapping (ADR 0005).
+- **For Tasks 11–12:** Extend `pipeline.attempt` after `watch` has ingested the worker's terminal state and before `conclude` reports the result. A confirmed native success currently moves `executing → verifying → failed` with `verification_unavailable` (exit 5); Task 11 freezes the candidate, and Task 12 replaces that temporary verification fallback. Never freeze while `out.Detached`, `RunInterrupted`, or the worker's stop is unconfirmed. The admitted snapshot is `Decision.Workdir`; the source checkout is never an execution workspace.
+- **For Tasks 15–17:** The owner lock and spool offset live in `internal/supervisor/ownerlock.go` and `ingest.go`; recovery must reconcile them rather than replay a native call. A queued Ctrl-C before `workers.Spawn` cancels without launching; once spawned and accepted, `watch` requests a stop and reports cancellation only after confirmation. An unaccepted worker is marked lost without a stop request, because its identity is unverified. An interrupted attempt with `cancelled_before_spawn` has a launch intent but no worker to recover. Registering another adapter also requires its worker-side entry in `internal/workers`.
 
 ## Task 11 — Candidate freeze and validation flags
 
