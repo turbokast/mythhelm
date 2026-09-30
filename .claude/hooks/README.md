@@ -113,7 +113,7 @@ python3 scripts/harness/gatelib.py override --session <session id from the block
 
 ## The autonomy grant
 
-The maintainer's autonomy grant lets one session run `/deliver-backlog` unattended for at most 24 hours over the cards and specs it names ([`knowledge/autonomy.md`](../../knowledge/autonomy.md)). Unlike an armed window, it is never armed by an agent: `scripts/orchestration/autonomy.sh grant` and `renew` refuse without a terminal, and `guard-autonomy.sh` blocks every agent call of them. The maintainer runs them with the `!` prefix inside the session to be granted (which binds that session), or from another terminal with `--session <id>`. Commands the maintainer types with `!` never reach the hooks.
+The maintainer's autonomy grant binds one session for at most 24 hours over the cards and specs it names ([`knowledge/autonomy.md`](../../knowledge/autonomy.md)). Unlike an armed window, it is never armed by an agent: `scripts/orchestration/autonomy.sh grant` and `renew` refuse without a terminal, and `guard-autonomy.sh` blocks Claude agent calls of them. In Claude Code the maintainer uses the `!` prefix inside the session to be granted. For Codex they grant from an interactive terminal with `--session <Codex session id>`, then renew with `renew --hours N`, which keeps the same session and scope. Codex tool calls are noninteractive. The automatic Stop continuation and heartbeat currently support Claude Code only.
 
 Three hooks read the grant, and each applies it only to the session it names:
 

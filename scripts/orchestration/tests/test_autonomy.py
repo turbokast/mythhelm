@@ -81,7 +81,8 @@ class Base(unittest.TestCase):
         git("init", "-q", "-b", "main", cwd=self.repo)
         self.write("product/backlog.md", BACKLOG)
         self.write("product/decisions.md", DECISIONS)
-        self.env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_CODE_SESSION_ID", "GIT_DIR")}
+        self.env = {k: v for k, v in os.environ.items()
+                    if k not in ("CLAUDE_CODE_SESSION_ID", "CODEX_SESSION_ID", "CODEX_THREAD_ID", "GIT_DIR")}
         self.env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
 
     def write(self, rel, text):
@@ -158,6 +159,23 @@ class GrantTest(Base):
         self.assertEqual(rc, 0, out)
         self.assertEqual(self.grant()["session_id"], "env-session")
 
+    def test_codex_session_from_the_environment(self):
+        for variable in ("CODEX_SESSION_ID", "CODEX_THREAD_ID"):
+            with self.subTest(variable=variable):
+                self.env[variable] = "codex-session"
+                rc, out = self.run_cmd("grant", "--hours", "1", "--scope", "spec:gamma",
+                                       "--reason", "r", tty=True)
+                self.assertEqual(rc, 0, out)
+                self.assertEqual(self.grant()["session_id"], "codex-session")
+                del self.env[variable]
+
+    def test_codex_agent_call_still_needs_a_terminal(self):
+        self.env["CODEX_SESSION_ID"] = "codex-session"
+        rc, out = self.run_cmd("grant", "--hours", "1", "--scope", "MH-1", "--reason", "r")
+        self.assertEqual(rc, 2)
+        self.assertIn("interactive terminal", out)
+        self.assertFalse(os.path.exists(self.grant_path))
+
     def test_bounds_and_inputs_refused_before_anything_is_written(self):
         cases = [
             (["--hours", "0", "--scope", "MH-1"], "--hours"),
@@ -182,6 +200,8 @@ class GrantTest(Base):
         g = self.grant_now()
         rc, out = self.run_cmd("renew", "--hours", "2")
         self.assertEqual(rc, 2)
+        self.assertIn("same session and scope", out)
+        self.assertNotIn("--session", out)
         self.assertEqual(self.grant(), g)
         rc, out = self.run_cmd("renew", "--hours", "24", tty=True)
         self.assertEqual(rc, 0, out)

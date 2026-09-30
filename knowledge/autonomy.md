@@ -34,10 +34,13 @@ The grant's spec checkpoint is on by default: each spec waits at `approval` afte
 ## Arming, renewing, revoking
 
 ```bash
-# In the session to be granted (the ! prefix runs it in your own shell, with a terminal):
+# In Claude Code (the ! prefix runs it in your own shell, with a terminal):
 ! scripts/orchestration/autonomy.sh grant --hours 8 --scope MH-3,MH-5,spec:status-json \
     --reason "overnight delivery of the status work" --allow-pm-sync
-# Or from another terminal, naming the session:
+# For Codex, get the ID from the session's environment, then use a real terminal:
+#   printenv CODEX_SESSION_ID
+# The Codex shell-command tool is noninteractive and cannot issue a grant.
+# In a terminal, name that session explicitly:
 scripts/orchestration/autonomy.sh grant --hours 8 --scope MH-3 --reason "..." --session <session id>
 
 scripts/orchestration/autonomy.sh status
@@ -46,6 +49,10 @@ scripts/orchestration/autonomy.sh revoke               # anyone, any time
 ```
 
 Every grant, renewal, revocation, merge verdict, allowed merge, continue and heartbeat decision is a row in `.claude/data/autonomy-audit.jsonl`.
+When invoked in a terminal that carries the session environment, `grant` also reads
+`CLAUDE_CODE_SESSION_ID`, `CODEX_SESSION_ID` or `CODEX_THREAD_ID`; `--session` takes precedence.
+Codex grants bind by session ID, but the automatic Stop continuation and optional heartbeat
+currently use Claude Code hooks and CLI. A Codex run must be continued by its operator.
 
 ## Why each piece exists
 
