@@ -902,30 +902,51 @@ func TestIngestFailureInterruptsRunExit6(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	r := startLive(t, f, f.fakeRun("--format", "jsonl", "--scenario", "slow")...)
-	r.waitStdout(t, "the native session", isType("attempt.native_session"))
+	// After its progress, the slow scenario's worker spools nothing until
+	// it is stopped, so the lines below follow its last one.
+	r.waitStdout(t, "the attempt's progress", isType("attempt.progress"))
 	run := f.onlyRun(t)
-	dir := workers.AttemptDir(f.state, run.RunID, findAttempt(t, f, run.RunID))
-	// A line no worker writes: ingestion refuses it.
-	fh, err := os.OpenFile(filepath.Join(dir, supervisor.SpoolFile), os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // G304: a test temp path
+	attemptID := findAttempt(t, f, run.RunID)
+	dir := workers.AttemptDir(f.state, run.RunID, attemptID)
+	spool := filepath.Join(dir, supervisor.SpoolFile)
+	b, err := os.ReadFile(spool) //nolint:gosec // G304: a test temp path
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = fh.WriteString("{}\n")
+	// A valid worker state change, journaled in the same ingest as the line
+	// no worker writes that follows it.
+	evs := f.events(t, run.RunID)
+	taskID := evs[typeIndex(evs, "attempt.launch_intent_recorded")].TaskID
+	forged, err := json.Marshal(journal.Event{SchemaVersion: 1, EventID: ids.New("evt"), RunID: run.RunID, TaskID: taskID,
+		AttemptID: attemptID, ProducerID: "wrk_" + attemptID, ProducerSequence: int64(bytes.Count(b, []byte("\n"))) + 1, Generation: 1,
+		ObservedAt: time.Now().UTC(), Type: "attempt.state_changed", Payload: json.RawMessage(`{"state":"failed_native","reason":"forged_reason"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fh, err := os.OpenFile(spool, os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // G304: a test temp path
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = fh.WriteString(string(forged) + "\n{}\n")
 	_ = fh.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, _, stderr := r.wait(t)
+	code, stdout, stderr := r.wait(t)
 	// The worker still owns the native; stop it through the production path.
 	if err := workers.RequestStop(dir, "test-cleanup"); err != nil {
 		t.Fatal(err)
 	}
-	waitSpool(t, filepath.Join(dir, supervisor.SpoolFile), `"type":"attempt.stopped"`)
+	waitSpool(t, spool, `"type":"attempt.stopped"`)
 
 	if code != 6 || !strings.Contains(stderr, "mythhelm recover "+run.RunID) {
 		t.Fatalf("exit %d, stderr %q; want exit 6 naming mythhelm recover", code, stderr)
 	}
 	if run := f.onlyRun(t); run.State != "interrupted" || run.Reason != "ingest_failed" {
 		t.Fatalf("run projected %s/%s, want interrupted/ingest_failed", run.State, run.Reason)
+	}
+	// run.result reports the attempt as journaled, not as last seen.
+	if res := lastResult(t, strings.Join(stdout, "\n")+"\n"); res["attempt_reason"] != "forged_reason" {
+		t.Fatalf("run.result = %v, want attempt_reason forged_reason", res)
 	}
 }

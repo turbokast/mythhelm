@@ -357,6 +357,13 @@ func (p *pipeline) watch(ctx context.Context, ref AttemptRef, exited <-chan stru
 			// The worker still owns the attempt; only this supervisor's view
 			// of it is broken. The run is left for recover, not active.
 			p.h.Notice(fmt.Sprintf("spool ingestion failed: %v; run 'mythhelm recover %s'", err, p.d.RunID))
+			// Lines before the failing one were journaled; report the attempt
+			// as recorded.
+			a, aerr := p.j.Attempt(ctx, ref.AttemptID)
+			if aerr != nil {
+				return errors.Join(err, aerr)
+			}
+			p.out.AttemptState, p.out.AttemptReason = AttemptState(a.State), a.Reason
 			if terr := p.runTo(ctx, RunInterrupted, "ingest_failed"); terr != nil {
 				return errors.Join(err, terr)
 			}
