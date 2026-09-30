@@ -37,18 +37,15 @@ Every verdict here comes from `scripts/harness/finalize.py`, which reads git and
 
 ## Step 0 — Worktree
 
-Finalizing never happens in the shared checkout: other sessions use its index and working tree, and a commit there can sweep their work into yours.
+Finalizing never happens in the shared checkout: other sessions use its index and working tree, and a commit there can sweep their work into yours. Every later step reads and writes in the finalize worktree (`<wt>`).
 
-```bash
-git fetch origin
-git worktree add -b docs/<alias>-finalize ../<repo>-<alias>-finalize origin/main
-```
+First decide from GitHub, not from memory, whether this is a resumed run: `git fetch origin`, then `gh pr list --state all --head docs/<alias>-finalize --json number,state,mergeCommit`.
 
-Every later step reads and writes in this worktree (`<wt>`). Before creating it, find out whether this is a resumed run, from GitHub rather than from memory: `gh pr list --state all --head docs/<alias>-finalize --json number,state,mergeCommit`.
-
-- **Open** finalize pull request: reuse its worktree (or recreate it from the branch) and go straight to `/finalize-spec-publish` step 7.
-- **Merged** finalize pull request, the spec in `specs/done/` on origin/main: the record has landed. Go straight to Step 5 with its merge commit, then Steps 6–8; `finalize-spec-verify` would rightly refuse a spec already in `done/`.
-- **None**, or only closed unmerged ones: a fresh run from Step 1.
+- **Merged** finalize pull request (the spec is in `specs/done/` on origin/main): the record has landed. Go straight to Step 5 with its merge commit, then Steps 6–8. `finalize-spec-verify` would rightly refuse a spec already in `done/`.
+- **Open** finalize pull request: use its worktree, or recreate one from the branch (`git worktree add ../<repo>-<alias>-finalize docs/<alias>-finalize`), and go straight to `/finalize-spec-publish` step 7.
+- **None**, or only closed unmerged ones: a fresh run from Step 1, in a worktree that holds only this run's work:
+  - No branch `docs/<alias>-finalize` and no worktree at the path: `git worktree add -b docs/<alias>-finalize ../<repo>-<alias>-finalize origin/main`.
+  - A stopped earlier run left them: reuse that worktree. Bring it current with `git -C <wt> merge origin/main`; the steps rewrite everything they own (the Review Summary is replaced, the retrospective's sections rewritten). A branch without a worktree is recreated with `git worktree add ../<repo>-<alias>-finalize docs/<alias>-finalize`. Never force-remove either one: a worktree holding changes this skill does not write is an escalation.
 
 Record the start: `python3 scripts/harness/runspec.py event --spec <spec> --kind lifecycle --detail "finalize start"`.
 
