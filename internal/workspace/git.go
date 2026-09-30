@@ -59,7 +59,7 @@ func GitWithIndex(ctx context.Context, dir, index string, args ...string) ([]byt
 // GitPatchSHA256 streams a binary patch into SHA-256 without the normal
 // captured-output limit. The patch can be larger than the Git stdout cap.
 func GitPatchSHA256(ctx context.Context, dir, base, commit string, dst io.Writer) error {
-	_, err := git(ctx, dir, false, "", dst, "diff", "--binary", "--no-ext-diff", base, commit)
+	_, err := git(ctx, dir, false, "", dst, "diff", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", base, commit) //nolint:misspell // Git's flag is --no-color.
 	return err
 }
 

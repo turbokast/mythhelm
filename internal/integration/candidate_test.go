@@ -80,6 +80,7 @@ func TestFreezeIncludesUncommittedAndUntracked(t *testing.T) {
 	f.write(t, "README.md", "modified\n")
 	f.write(t, "new.txt", "untracked\n")
 	f.write(t, "ignored/output.log", "ignored\n")
+	f.git(t, "config", "core.abbrev", "7")
 	if err := os.Remove(filepath.Join(f.dir, "delete.txt")); err != nil {
 		t.Fatal(err)
 	}
@@ -150,6 +151,18 @@ func TestFreezeAutocrlfDoesNotChangeCleanSnapshot(t *testing.T) {
 	c := f.freeze(t)
 	if len(c.Changed) != 0 || c.Tree != f.git(t, "rev-parse", f.base+"^{tree}") {
 		t.Fatalf("clean checkout changed by line endings: %+v", c.Changed)
+	}
+}
+
+func TestFreezePatchHashIgnoresGitColor(t *testing.T) {
+	f := fixture(t)
+	f.git(t, "config", "color.ui", "always")
+	f.write(t, "new.txt", "new content\n")
+	c := f.freeze(t)
+	patch := f.gitRaw(t, "-c", "color.ui=never", "diff", "--binary", f.base, c.Commit)
+	sum := sha256.Sum256(patch)
+	if c.PatchSHA256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("Git colour setting changed patch hash: got %s, want %x", c.PatchSHA256, sum)
 	}
 }
 

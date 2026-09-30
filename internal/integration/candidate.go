@@ -104,7 +104,7 @@ func Freeze(ctx context.Context, workdir, baseRev string, meta CommitMeta) (Cand
 		return c, fmt.Errorf("commit candidate tree: %w", err)
 	}
 	c.Commit = strings.TrimSpace(string(commit))
-	changed, err := workspace.Git(ctx, workdir, false, "diff-tree", "-r", "--no-renames", "--raw", "-z", c.BaseRev, c.Commit)
+	changed, err := workspace.Git(ctx, workdir, false, "diff-tree", "-r", "--no-renames", "--no-abbrev", "--raw", "-z", c.BaseRev, c.Commit)
 	if err != nil {
 		return c, fmt.Errorf("list candidate changes: %w", err)
 	}
