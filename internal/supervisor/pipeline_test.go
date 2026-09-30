@@ -66,6 +66,8 @@ func newFixture(t *testing.T) fixture {
 		t.Fatal(err)
 	}
 	f.git(t, "init", "--quiet", "--initial-branch=main")
+	f.git(t, "config", "user.name", "Test")
+	f.git(t, "config", "user.email", "test@example.com")
 	if err := os.WriteFile(filepath.Join(f.repo, "README.md"), []byte("demo\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -845,6 +847,71 @@ func TestCtrlCOnceStopsAndExits130(t *testing.T) {
 	}
 	if run := f.onlyRun(t); run.State != "cancelled" {
 		t.Fatalf("run projected %s, want cancelled", run.State)
+	}
+}
+
+func TestFreezeWaitsForStopConfirmation(t *testing.T) {
+	for _, tc := range []struct {
+		scenario string
+		partial  bool
+	}{
+		{"happy", false}, {"native-fails", true},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			f := newFixture(t)
+			_, _, stderr := f.run(t, f.fakeRun("--scenario", tc.scenario, "--format", "jsonl")...)
+			if stderr != "" {
+				t.Logf("run stderr: %s", stderr)
+			}
+			run := f.onlyRun(t)
+			evs := f.events(t, run.RunID)
+			stop, frozen := typeIndex(evs, "attempt.stopped"), typeIndex(evs, "candidate.frozen")
+			if stop < 0 || frozen <= stop || payloadOf(t, evs[stop])["confirmed"] != true {
+				t.Fatalf("stop=%d frozen=%d: candidate must follow confirmed stop", stop, frozen)
+			}
+			c, err := f.journal(t).Candidate(t.Context(), findAttempt(t, f, run.RunID))
+			if err != nil || c.Partial != tc.partial {
+				t.Fatalf("candidate = %+v, %v; want partial=%t", c, err, tc.partial)
+			}
+		})
+	}
+}
+
+func TestFreezeRefusedWithUnresolvedDescendants(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("escapee process scan exists on Linux and macOS")
+	}
+	f := newFixture(t)
+	code, _, stderr := f.run(t, f.fakeRun("--scenario", "escapee", "--format", "jsonl")...)
+	if code != 6 {
+		t.Fatalf("exit = %d, stderr = %q; want 6", code, stderr)
+	}
+	run := f.onlyRun(t)
+	if run.State != "interrupted" || run.Reason != "unresolved_descendants" {
+		t.Fatalf("run = %s/%s; want interrupted/unresolved_descendants", run.State, run.Reason)
+	}
+	evs := f.events(t, run.RunID)
+	if typeIndex(evs, "candidate.frozen") >= 0 {
+		t.Fatal("unresolved attempt froze a candidate")
+	}
+	if stop := typeIndex(evs, "attempt.stopped"); stop >= 0 {
+		if pids, ok := payloadOf(t, evs[stop])["unresolved_pids"].([]any); ok {
+			for _, raw := range pids {
+				pid := int(raw.(float64))
+				if proc, err := os.FindProcess(pid); err == nil {
+					_ = proc.Kill()
+				}
+			}
+		}
+	}
+	if _, err := f.journal(t).Candidate(t.Context(), findAttempt(t, f, run.RunID)); !errors.Is(err, journal.ErrNotFound) {
+		t.Fatalf("candidate row exists or read failed: %v", err)
+	}
+	// apply is introduced in Task 14. Until then the CLI refuses it and
+	// cannot create a branch from an unresolved attempt.
+	applyCode, _, _ := f.run(t, "apply", run.RunID, "--to-branch", "unsafe")
+	if applyCode == 0 || f.git(t, "branch", "--list", "unsafe") != "" {
+		t.Fatal("apply accepted an unresolved attempt")
 	}
 }
 

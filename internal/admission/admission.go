@@ -127,6 +127,8 @@ type Decision struct {
 	Workdir   string // RunDir/workspace, the snapshot clone the native works in
 	Host      string
 	Scenario  string
+	GitName   string // user's Git identity captured before the native starts
+	GitEmail  string
 
 	Task     Task
 	Snapshot Snapshot
@@ -174,6 +176,13 @@ func Decide(ctx context.Context, req Request) (Decision, error) {
 	if d.Snapshot, err = chooseSnapshot(ctx, req); err != nil {
 		return Decision{}, err
 	}
+	name, nameErr := workspace.Git(ctx, d.Snapshot.SourceRepo, true, "config", "--get", "user.name")
+	email, emailErr := workspace.Git(ctx, d.Snapshot.SourceRepo, true, "config", "--get", "user.email")
+	if nameErr != nil || emailErr != nil || strings.TrimSpace(string(name)) == "" || strings.TrimSpace(string(email)) == "" {
+		return Decision{}, &BlockedError{Code: "git_identity_unavailable", Field: d.Snapshot.SourceRepo,
+			Action: "configure Git user.name and user.email before admitting a run"}
+	}
+	d.GitName, d.GitEmail = strings.TrimSpace(string(name)), strings.TrimSpace(string(email))
 
 	d.RunID, d.TaskID, d.AttemptID = ids.New("run"), ids.New("task"), ids.New("att")
 	d.RunDir = filepath.Join(req.StateDir, "runs", d.RunID)
@@ -393,6 +402,14 @@ type Record struct {
 	ConfigManifest       adapter.ConfigManifest   `json:"config_manifest"`
 	Host                 string                   `json:"host"`
 	Scenario             string                   `json:"scenario,omitempty"`
+	GitIdentity          GitIdentity              `json:"git_identity"`
+}
+
+// GitIdentity is the commit identity captured from the source repository at
+// admission. Recovery can use it without consulting mutable Git config.
+type GitIdentity struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
 }
 
 // TaskRecord identifies the task without its content.
@@ -421,6 +438,7 @@ func (d Decision) Record() Record {
 		ConfigManifest:       d.Proposal.Manifest,
 		Host:                 d.Host,
 		Scenario:             d.Scenario,
+		GitIdentity:          GitIdentity{Name: d.GitName, Email: d.GitEmail},
 	}
 }
 
