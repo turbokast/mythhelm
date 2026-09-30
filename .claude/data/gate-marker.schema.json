@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/turbokast/mythhelm/.claude/data/gate-marker.schema.json",
+  "title": "gate-marker",
+  "description": "<tree>/.claude/data/gate-marker-<gate>.json: one verified pass of one gate over one exact tree state, written only by scripts/harness/gate.sh (scripts/harness/gatelib.py) after the gate exited 0 with the scope's fingerprint unchanged. Fresh while fingerprint equals the scope's current fingerprint in the same tree.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "gate", "scope", "tree", "fingerprint", "head", "command", "exit_code", "started_at", "finished_at", "duration_s"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "gate": {"enum": ["go-fmt", "go-vet", "go-test", "go-mod-tidy", "golangci-lint", "govulncheck", "harness-lint", "harness-tests", "shellcheck", "hygiene"]},
+    "scope": {"enum": ["go", "harness", "all"]},
+    "tree": {"type": "string", "description": "The canonical root of the working tree the gate ran in."},
+    "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 over the scope's tracked and untracked, non-ignored files."},
+    "head": {"type": "string", "description": "HEAD when the gate ran; informational."},
+    "command": {"type": "array", "items": {"type": "string"}},
+    "exit_code": {"const": 0},
+    "started_at": {"type": "string", "format": "date-time"},
+    "finished_at": {"type": "string", "format": "date-time"},
+    "duration_s": {"type": "number", "minimum": 0}
+  }
+}

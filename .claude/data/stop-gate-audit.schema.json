@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/turbokast/mythhelm/.claude/data/stop-gate-audit.schema.json",
+  "title": "stop-gate-audit",
+  "description": "One row of <main checkout>/.claude/data/stop-gate-audit.jsonl, appended by the task-completion Stop hook (.claude/hooks/verify-task-completion.sh through scripts/harness/gatelib.py) for every block, release and override.",
+  "type": "object",
+  "required": ["schema_version", "ts", "session_id", "tree", "event"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "ts": {"type": "string", "format": "date-time"},
+    "session_id": {"type": "string"},
+    "tree": {"type": "string"},
+    "event": {"enum": ["block", "released_after_repeats", "override_recorded", "override_honored"]},
+    "claims": {"type": "array", "items": {"type": "string", "description": "<spec>#<task>"}},
+    "problems": {"type": "array", "items": {"type": "string"}},
+    "reason": {"type": "string"}
+  }
+}

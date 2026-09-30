@@ -1,0 +1,12 @@
+{
+  "id": "lane0-auto-apply-off-by-default",
+  "hazard": "Proposals start applying themselves without a maintainer having enabled lane 0 and named the files it may append to.",
+  "source": "learning loop: lane 0",
+  "targets": [
+    ".claude/proposals/auto-apply.json"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "^  \"enabled\": false,$"
+  }
+}

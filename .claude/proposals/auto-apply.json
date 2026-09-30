@@ -1,0 +1,5 @@
+{
+  "description": "Lane 0 of the learning loop (knowledge/learning-loop.md). When enabled is true, a pending proposal of type knowledge whose target is an existing markdown file matching one of the allow globs (all under knowledge/) may be applied without a per-item decision: its proposed change is appended to the target in its own pull request, merged when green, and vetoed by reverting that pull request. Off by default; enabling it is a maintainer's change to this file and to the eval case lane0-auto-apply-off-by-default.",
+  "enabled": false,
+  "allow": []
+}

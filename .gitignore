@@ -11,13 +11,18 @@ coverage.*
 .env.*
 
 # Claude Code harness: runtime state stays local. Only schemas and seed files
-# under .claude/data/ are tracked.
+# under .claude/data/ are tracked, the vendor policy seed among them.
 .claude/data/*
 !.claude/data/*.schema.json
 !.claude/data/*.seed.*
 !.claude/data/.gitkeep
+!.claude/data/vendor-policy.json
+!.claude/data/required-checks.json
 .claude/settings.local.json
 .claude/worktrees/
 .claude/handoffs/
 .claude/plans/
 .claude/scratch/
+
+# Python bytecode from the harness scripts
+__pycache__/

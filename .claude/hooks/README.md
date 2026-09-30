@@ -95,6 +95,22 @@ State lives in the main checkout's `.claude/data/` (gitignored), shared by its l
 | `main-push-arm-<session>.json`, `publish-arm-<session>.json` | `session_id`, `kind`, `armed_at`, `armed_at_epoch`, `ttl_seconds`, `reason`, `operator` |
 | `guard-audit.jsonl` | One row per arm, disarm, allow and block: `ts`, `session_id`, `guard`, `kind`, `event`, `command` (first 200 characters), `reason`, `operator` |
 
+## The task-completion Stop hook
+
+`verify-task-completion.sh` runs on `Stop` and `SubagentStop`. It does nothing unless this session marked a spec task complete in its working tree; then it keeps the session working until the entry is well-formed and every gate the change set needs has a fresh marker from `scripts/harness/gate.sh`. Its block names the exact `gate.sh` commands. [`WORKFLOW.md`](../../WORKFLOW.md) explains the markers, and [`knowledge/execution.md`](../../knowledge/execution.md) why each part exists.
+
+When the block is wrong, record why and stop; the override covers only this session, this tree and its current bytes:
+
+```bash
+python3 scripts/harness/gatelib.py override --session <session id from the block> --reason "<why the block is wrong>"
+```
+
+| File in the main checkout's `.claude/data/` | Contents |
+|---|---|
+| `stop-gate-<session>.json` | Consecutive blocks per tree and fingerprint; three on an unchanged tree release the next `stop_hook_active` stop |
+| `stop-gate-override-<session>.json` | `session_id`, `tree`, `fingerprint`, `reason`, `at` |
+| `stop-gate-audit.jsonl` | One row per block, release and override (`.claude/data/stop-gate-audit.schema.json`) |
+
 ## Adding a hook
 
 1. Write `.claude/hooks/<name>.sh`: `#!/usr/bin/env bash`, `set -euo pipefail`, and a header comment stating what it blocks or reports, why, and its residuals. A Bash guard sources `hook-helpers.sh` and calls `hh_load_bash_payload <name> <prefilter>`, then walks `hh_command_segments`. Use `hh_block` for the stanza.

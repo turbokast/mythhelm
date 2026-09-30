@@ -1,0 +1,18 @@
+{
+  "id": "completion-stop-hook-registered",
+  "hazard": "The task-completion check stops running on Stop or SubagentStop, so a task can be claimed complete without fresh gate markers.",
+  "source": "execution: verify-task-completion",
+  "targets": [
+    ".claude/settings.json",
+    ".claude/hooks/verify-task-completion.sh"
+  ],
+  "grader": {
+    "type": "script",
+    "argv": [
+      "python3",
+      "-c",
+      "import json,sys\ns=json.load(open('.claude/settings.json'))['hooks']\nok=all(any(h['command'].endswith('/.claude/hooks/verify-task-completion.sh') for e in s.get(ev,[]) for h in e['hooks']) for ev in ('Stop','SubagentStop'))\nsys.exit(0 if ok else 1)"
+    ],
+    "exit": 0
+  }
+}

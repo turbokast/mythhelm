@@ -1,0 +1,13 @@
+{
+  "id": "rules-state-current-policy-only",
+  "hazard": "A rule accumulates amendment history, dates or ticket ids, which cost context and read as policy.",
+  "source": "rules: strict-by-default",
+  "targets": [
+    ".claude/rules/*.md"
+  ],
+  "grader": {
+    "type": "must-not-match",
+    "pattern": "(?i)(?<!\\\")\\b(previously|formerly)\\b|\\b(?:BL|R|Q)-\\d+\\b|\\b20\\d\\d-\\d\\d-\\d\\d\\b",
+    "violation": "Previously this rule allowed direct pushes."
+  }
+}

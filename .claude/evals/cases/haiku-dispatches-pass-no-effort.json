@@ -1,0 +1,17 @@
+{
+  "id": "haiku-dispatches-pass-no-effort",
+  "hazard": "A skill or rule dispatches a haiku agent with an effort parameter.",
+  "source": "harness lint: haiku-effort",
+  "targets": [
+    ".claude/skills/*/SKILL.md"
+  ],
+  "grader": {
+    "type": "script",
+    "argv": [
+      "python3",
+      "scripts/ci/harness_lint.py",
+      "haiku-effort"
+    ],
+    "exit": 0
+  }
+}

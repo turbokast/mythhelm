@@ -17,9 +17,9 @@ The first matching row wins, top to bottom.
 | release | `.github/`, `packaging/`, `Makefile`, `.goreleaser*`, `.golangci.yml`, `.coderabbit.yaml`, `.editorconfig`, `.gitattributes`, `.gitignore`, `.shellcheckrc`, `docs/automation.md` | `release-engineer` |
 | harness | `.claude/`, `knowledge/`, `scripts/`, `docs/harness/`, `WORKFLOW.md`, `CLAUDE.md`, `AGENTS.md` | `agent-config-editor` |
 | docs | `docs/` (all but `docs/harness/` and `docs/automation.md`), `*.md` at the root not listed above | `go-implementer`, or the agent whose change the docs describe |
-| specs | `specs/` | the spec's author for `requirements.md`, `design.md` and `tasks.md`; the implementing agent for its own task's completion entry and scratchpad note |
+| specs | `specs/` | the session running the lifecycle skills ([`specs/README.md`](../specs/README.md)) for `requirements.md`, `design.md` and `tasks.md`; the implementing agent for its own task's completion entry and scratchpad note |
 
-The rows the charter table does not list (`tests/`, `evals/`, `go.sum`, the repository dotfiles, `docs/automation.md`, `docs/harness/`, `AGENTS.md`, `specs/`) are placed by the domain of the code they configure or describe.
+The charter's table lists the same rows; a change to either updates both.
 
 ---
 
@@ -42,6 +42,7 @@ Always-on rules load in every session. These load when a matching file is read o
 | core, adapters, protocol, tui | `go-conventions.md`; for `*_test.go` also `test-quality.md`, `red-first.md`, `teeth-discipline.md` |
 | release | `github-workflows.md` |
 | harness | `strict-by-default.md`, `agent-config-conventions.md`, `knowledge-conventions.md`, `harness-scripts.md`, `teeth-discipline.md` |
+| specs | `spec-authoring.md`, `spec-premise-grounding.md`, `teeth-discipline.md` |
 
 ## Package layout
 

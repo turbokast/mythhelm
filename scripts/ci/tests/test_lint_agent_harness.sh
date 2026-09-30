@@ -124,7 +124,239 @@ EOF
 | File | Role |
 |---|---|
 EOF
+  spec_fixture "$d"
+  finalize_fixture "$d"
 }
+
+# finalize_fixture <dir>: a finalized spec with its retrospective, a changelog and two
+# pending proposals, all clean.
+finalize_fixture() {
+  local d="$1" s="$1/specs/done/shipped"
+  mkdir -p "$s" "$d/.claude/proposals"
+  printf '## Shipped — Requirements\n' > "$s/requirements.md"
+  printf '## Shipped — Design\n' > "$s/design.md"
+  cat > "$s/tasks.md" <<'EOF'
+## Shipped — Tasks
+
+### Task 1 — Everything ✅ COMPLETED
+
+- **Domain/agent**: worker
+- **Budget**: standard
+- **Change**: Ship it.
+- **Files**: `src/main.go`
+- **Acceptance**: `TestMain` passes.
+- **Invariants touched**: None.
+- **Status**: ✅ Completed — shipped; PR #5.
+EOF
+  cat > "$s/retrospective.md" <<'EOF'
+# Shipped — Retrospective
+
+## Review Summary
+
+- **Range**: abc1234..def5678 (PRs #5)
+- **Reviewer**: code-reviewer
+- **Findings**: critical 0, important 1, suggestion 0
+- **Open critical**: 0
+- **Vendor review**: skipped (no vendor enabled)
+
+## Acceptance
+
+All met.
+
+## Deviations
+
+None.
+
+## CI history
+
+One nondeterministic failure: TestClock flaky under load. Mechanism: a 10 ms bound below the 15 ms timer tick; failing value 16 ms, passing value 4 ms.
+
+## Effort
+
+dispatched=1 returned=1 failed=0
+
+## Lessons
+
+- What worked: the fake adapter.
+
+## Proposals
+
+- P-shipped-1
+EOF
+  cat > "$d/CHANGELOG.md" <<'EOF'
+# Changelog
+
+## [Unreleased]
+
+### Added
+
+- The shipped feature (#5)
+
+## [0.1.0] - 2026-01-02
+
+### Fixed
+
+- A bug (#1)
+EOF
+  cat > "$d/.claude/proposals/pending.md" <<'EOF'
+# Pending proposals
+
+Intro prose.
+
+## P-shipped-1 — Tighten the tick bound
+
+- **Source spec**: `shipped`
+- **Type**: rule
+- **Target**: `src/main.go`
+- **Rationale**: a bound below the timer tick fails by construction.
+- **Evidence**: the retrospective's CI history.
+
+**Proposed change:**
+
+State the tick in every timing test.
+
+## P-shipped-2 — A new knowledge page
+
+- **Source spec**: `shipped`
+- **Type**: knowledge
+- **Target**: `knowledge/timing.md` (new file)
+- **Rationale**: nobody knew the tick.
+- **Evidence**: P-shipped-1.
+
+**Proposed change:**
+
+```markdown
+## Not a proposal heading inside a fence
+```
+EOF
+  learning_fixture "$d"
+}
+
+# learning_fixture <dir>: a decided proposal, the lane-0 switch, the required-checks
+# list with its documentation, and one passing eval case, all clean.
+learning_fixture() {
+  local d="$1"
+  cat > "$d/.claude/proposals/applied.md" <<'EOF'
+# Applied proposals
+
+## P-shipped-3 — Pin the guard
+
+- **Decision**: approved
+- **Date**: 2026-01-03
+- **Pull request**: #7
+- **Eval**: `main-package`
+- **Rationale**: the maintainer agreed.
+- **Source spec**: `shipped`
+- **Type**: rule
+- **Target**: `src/main.go`
+
+**Proposed change:**
+
+Keep it.
+
+## P-shipped-4 — Not needed
+
+- **Decision**: rejected
+- **Date**: 2026-01-04
+- **Pull request**: #8
+- **Eval**: n/a
+- **Rationale**: already covered.
+- **Source spec**: `shipped`
+- **Type**: knowledge
+EOF
+  printf '{"enabled": false, "allow": []}\n' > "$d/.claude/proposals/auto-apply.json"
+  mkdir -p "$d/.claude/data" "$d/docs" "$d/.claude/evals/cases"
+  printf '{"required": ["CI OK", "DCO sign-off"]}\n' > "$d/.claude/data/required-checks.json"
+  printf '| Automation |\n|---|\n| CI (`CI OK`, required) |\n| DCO (`DCO sign-off`, to be made required) |\n' > "$d/docs/automation.md"
+  cat > "$d/.claude/evals/cases/main-package.json" <<'EOF'
+{"id": "main-package", "hazard": "the entry point loses its package clause", "source": "P-shipped-3",
+ "targets": ["src/*.go"], "grader": {"type": "must-match", "pattern": "^package main$"}}
+EOF
+}
+
+# spec_fixture <dir>: a lifecycle tree with one refined idea, one full spec in todo/
+# and an epic plan naming it, all clean.
+spec_fixture() {
+  local d="$1" s
+  for s in unrefined refined todo in-progress unfinalized "done" archived; do
+    mkdir -p "$d/specs/$s"
+  done
+  touch "$d/specs/in-progress/.gitkeep" "$d/specs/unfinalized/.gitkeep" \
+    "$d/specs/done/.gitkeep" "$d/specs/archived/.gitkeep"
+  printf '# Specs\n' > "$d/specs/README.md"
+  mkdir -p "$d/specs/refined/idea" "$d/specs/unrefined/epic-x" "$d/specs/todo/demo"
+  printf '## Idea — Requirements\n' > "$d/specs/refined/idea/requirements.md"
+  cat > "$d/specs/unrefined/epic-x/plan.md" <<'EOF'
+## Epic X — Master Plan
+
+### Work Streams
+
+| # | Spec | Scope | Dependencies |
+|---|---|---|---|
+| 1 | `demo` | the demo | None |
+| 2 | `idea` | the idea | Spec 1 |
+
+### Open Questions
+
+- None.
+EOF
+  printf '## Demo — Requirements\n' > "$d/specs/todo/demo/requirements.md"
+  printf '## Demo — Design\n' > "$d/specs/todo/demo/design.md"
+  cat > "$d/specs/todo/demo/tasks.md" <<'EOF'
+## Demo — Tasks
+
+### Dependencies
+
+- None outside this spec.
+
+## Implementation Tasks
+
+### Task 1 — Types ✅ COMPLETED
+
+- **Domain/agent**: worker
+- **Budget**: standard
+- **Change**: Add the types.
+- **Files**:
+  - `src/types.go`
+- **Acceptance**:
+  - `TestTypes` passes.
+- **Invariants touched**: I02 (unknown blocks).
+- **Status**: ✅ Completed.
+
+### Task 2 — Store
+
+- **Domain/agent**: `worker`
+- **Budget**: complex (the hard one)
+- **Depends on**: Task 1 (types first)
+- **Change**: Add the store.
+- **Files**: `src/store.go`
+- **Acceptance criteria** (each test uses a temp dir): `TestStore` passes.
+- **Invariants touched**: None (no persisted user data).
+
+```markdown
+### Task 9 — An example inside a fence is not a task
+```
+
+### Task 3 — Command
+
+- **Domain/agent**: maintainer (human), assisted by worker
+- **Budget**: standard (wiring only)
+- **Depends on**: Task 1, Task 2
+- **Change**: Wire the command.
+- **Files**:
+  - `src/cmd.go`
+- **Acceptance**:
+  - `TestCommand` passes.
+- **Invariants touched**: I08.
+
+## Open Questions
+
+- None.
+EOF
+}
+
+# set_task_line <old> <new>: replaces a whole line of the fixture's tasks.md.
+set_task_line() { set_line "$F/specs/todo/demo/tasks.md" "$1" "$2"; }
 
 # lint <dir> [args...]: sets RC and OUT.
 lint() {
@@ -168,7 +400,7 @@ echo "== clean fixture =="
 fresh clean
 lint "$F"
 expect_pass "the clean fixture passes every check"
-check "summary names all ten checks" [ "$(grep -cE ' (PASS|FAIL)$' <<< "$OUT")" == 10 ]
+check "summary names all fifteen checks" [ "$(grep -cE ' (PASS|FAIL)$' <<< "$OUT")" == 15 ]
 
 echo "== usage =="
 lint "$F" --only no-such-check
@@ -346,5 +578,312 @@ fresh rf-fence
 printf '\n```text\nSee [gone](knowledge/gone.md) and `knowledge/missing.md`.\n```\n' >> "$F/CLAUDE.md"
 lint "$F" --only references
 expect_pass "references inside a code fence are examples"
+
+echo "== specs =="
+fresh sp-required
+rm "$F/specs/todo/demo/design.md"
+lint "$F" --only specs
+expect_fail specs "a spec in todo/ needs design.md" "todo spec without design.md"
+fresh sp-refined-required
+rm "$F/specs/refined/idea/requirements.md" && printf 'x\n' > "$F/specs/refined/idea/notes.md"
+lint "$F" --only specs
+expect_fail specs "a spec in refined/ needs requirements.md" "refined spec without requirements.md"
+fresh sp-state
+mkdir -p "$F/specs/backlog/x" && printf 'x\n' > "$F/specs/backlog/x/requirements.md"
+lint "$F" --only specs
+expect_fail specs "'backlog' is not a lifecycle state" "unknown lifecycle directory"
+fresh sp-stray
+printf 'x\n' > "$F/specs/todo/notes.md"
+lint "$F" --only specs
+expect_fail specs "is not in a spec directory" "file directly under a state directory"
+fresh sp-flat
+printf 'x\n' > "$F/specs/notes.md"
+lint "$F" --only specs
+expect_fail specs "only README.md sits directly under specs/" "file directly under specs/"
+fresh sp-duplicate
+mkdir -p "$F/specs/in-progress/demo" && cp "$F/specs/todo/demo/"*.md "$F/specs/in-progress/demo/"
+lint "$F" --only specs
+expect_fail specs "exists in 2 lifecycle states (in-progress, todo)" "one spec in two states"
+fresh sp-files
+set_task_line '- **Files**: `src/store.go`' ''
+lint "$F" --only specs
+expect_fail specs "Task 2 has no '- **Files**:' field" "task without Files"
+fresh sp-invariants
+set_task_line '- **Invariants touched**: I08.' ''
+lint "$F" --only specs
+expect_fail specs "Task 3 has no '- **Invariants touched**:' field" "task without Invariants touched"
+fresh sp-empty
+set_task_line '- **Acceptance criteria** (each test uses a temp dir): `TestStore` passes.' '- **Acceptance**:'
+lint "$F" --only specs
+expect_fail specs "Task 2: 'Acceptance' is empty" "task with an empty Acceptance"
+fresh sp-depends-missing
+set_task_line '- **Depends on**: Task 1 (types first)' ''
+lint "$F" --only specs
+expect_fail specs "Task 2 has no '- **Depends on**:' field" "a later task without Depends on"
+fresh sp-first-depends
+set_task_line '- **Budget**: standard' $'- **Budget**: standard\n- **Depends on**: None'
+lint "$F" --only specs
+expect_pass "the first task may state Depends on: None"
+fresh sp-dangling
+set_task_line '- **Depends on**: Task 1, Task 2' '- **Depends on**: Task 1, Task 7'
+lint "$F" --only specs
+expect_fail specs "Task 3 depends on Task 7, which does not exist" "dependency on a missing task"
+fresh sp-self
+set_task_line '- **Depends on**: Task 1 (types first)' '- **Depends on**: Task 2'
+lint "$F" --only specs
+expect_fail specs "Task 2 depends on itself" "self dependency"
+fresh sp-cycle
+set_task_line '- **Depends on**: Task 1 (types first)' '- **Depends on**: Task 3'
+lint "$F" --only specs
+expect_fail specs "dependency cycle: Task 2 -> Task 3 -> Task 2" "two-task cycle"
+fresh sp-cycle-first
+set_task_line '- **Budget**: standard' $'- **Budget**: standard\n- **Depends on**: Task 3'
+lint "$F" --only specs
+expect_fail specs "dependency cycle" "cycle through the first task"
+fresh sp-prose
+set_task_line '- **Depends on**: Task 1 (types first)' '- **Depends on**: after the types land'
+lint "$F" --only specs
+expect_fail specs "is not 'None' or a list of 'Task N'" "prose dependency"
+fresh sp-after-note
+set_task_line '- **Depends on**: Task 1, Task 2' '- **Depends on**: Task 1 (types first), Task 7'
+lint "$F" --only specs
+expect_fail specs "Task 3 depends on Task 7, which does not exist" "a reference after a note is still checked"
+fresh sp-nested-note
+set_task_line '- **Depends on**: Task 1, Task 2' '- **Depends on**: Task 1 (types (first)), Task 2'
+lint "$F" --only specs
+expect_fail specs "is not 'None' or a list of 'Task N'" "nested parentheses are unreadable"
+fresh sp-agent
+set_task_line '- **Domain/agent**: `worker`' '- **Domain/agent**: backend-implementer'
+lint "$F" --only specs
+expect_fail specs "Domain/agent 'backend-implementer' is not an agent" "unknown agent"
+fresh sp-budget
+set_task_line '- **Budget**: complex (the hard one)' '- **Budget**: trivial'
+lint "$F" --only specs
+expect_fail specs "Budget 'trivial' is not one of standard/complex" "unknown budget tier"
+fresh sp-twice
+set_task_line '### Task 3 — Command' '### Task 2 — Command'
+lint "$F" --only specs
+expect_fail specs "Task 2 is defined twice" "duplicate task number"
+fresh sp-no-tasks
+printf '## Demo — Tasks\n\nTBD.\n' > "$F/specs/todo/demo/tasks.md"
+lint "$F" --only specs
+expect_fail specs "no '### Task N' blocks" "tasks.md without tasks"
+fresh sp-epic-missing
+set_line "$F/specs/unrefined/epic-x/plan.md" '| 2 | `idea` | the idea | Spec 1 |' '| 2 | `ghost` | the ghost | Spec 1 |'
+lint "$F" --only specs
+expect_fail specs "work stream spec 'ghost' has no directory" "epic naming a missing spec"
+fresh sp-epic-row
+set_line "$F/specs/unrefined/epic-x/plan.md" '| 2 | `idea` | the idea | Spec 1 |' $'| 2 | `idea` | the idea | Spec 1 |\n| 3 | ghost | no backticks | Spec 2 |'
+lint "$F" --only specs
+expect_fail specs "plan.md:9: specs: Work Streams row has no backticked spec name" "an unreadable Work Streams row"
+fresh sp-epic-state
+mv "$F/specs/unrefined/epic-x" "$F/specs/todo/epic-x"
+lint "$F" --only specs
+expect_fail specs "an epic plan never enters todo/" "an epic plan in todo/"
+fresh sp-epic-in-progress
+mv "$F/specs/unrefined/epic-x" "$F/specs/in-progress/epic-x"
+lint "$F" --only specs
+expect_pass "an epic plan in in-progress/ is allowed"
+fresh sp-index-copy
+git -C "$F" add specs/todo/demo
+mv "$F/specs/todo/demo" "$F/specs/in-progress/demo"
+lint "$F" --only specs
+expect_fail specs "exists in 2 lifecycle states (in-progress, todo)" "a copy left in the index by a plain mv"
+OTHER="$TEST_TMP/other-repo"
+new_repo "$OTHER"
+OUT="$(GIT_DIR="$OTHER/.git" GIT_WORK_TREE="$OTHER" GIT_INDEX_FILE="$OTHER/.git/index" "$LINT" --root "$F" --only specs 2>&1)"; RC=$?
+expect_fail specs "exists in 2 lifecycle states" "inherited GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE do not hide the index copy"
+git -C "$F" add -A specs
+lint "$F" --only specs
+expect_pass "the same move staged in the index is one copy"
+fresh sp-epic-section
+set_line "$F/specs/unrefined/epic-x/plan.md" '### Work Streams' '### Streams'
+lint "$F" --only specs
+expect_fail specs "epic plan has no '## Work Streams' section" "epic without a Work Streams section"
+
+echo "== finalize =="
+RETRO=specs/done/shipped/retrospective.md
+fresh fin-no-retro
+rm "$F/$RETRO"
+lint "$F" --only finalize
+expect_fail finalize "a spec in done/ needs retrospective.md" "done spec without a retrospective"
+fresh fin-section
+set_line "$F/$RETRO" '## Effort' '## Cost'
+lint "$F" --only finalize
+expect_fail finalize "no '## Effort' section" "retrospective without an Effort section"
+fresh fin-open-critical
+set_line "$F/$RETRO" '- **Open critical**: 0' '- **Open critical**: 1 (the race in the store)'
+lint "$F" --only finalize
+expect_fail finalize "lists open critical findings" "a spec shipped with an open critical finding"
+fresh fin-review-field
+set_line "$F/$RETRO" '- **Vendor review**: skipped (no vendor enabled)' ''
+lint "$F" --only finalize
+expect_fail finalize "Review Summary has no '- **Vendor review**:' value" "review summary without the vendor line"
+fresh fin-flake
+printf '\nTestNet was flaky; retried green.\n' >> "$F/$RETRO"
+lint "$F" --only finalize
+expect_fail finalize "finalize: a flake verdict needs 'Mechanism:'" "a flake label without a mechanism"
+fresh fin-task
+set_line "$F/specs/done/shipped/tasks.md" '### Task 1 — Everything ✅ COMPLETED' '### Task 1 — Everything'
+lint "$F" --only finalize
+expect_fail finalize "Task 1 is not complete" "a done spec with an unmarked task"
+fresh fin-status
+set_line "$F/specs/done/shipped/tasks.md" '- **Status**: ✅ Completed — shipped; PR #5.' '- **Status**: in review'
+lint "$F" --only finalize
+expect_fail finalize "Task 1 is not complete" "a done spec whose Status is not complete"
+fresh fin-epic
+mkdir -p "$F/specs/done/epic-y"
+printf '## Epic Y\n\n### Work Streams\n\n| # | Spec | Scope |\n|---|---|---|\n| 1 | `shipped` | x |\n| 2 | `demo` | y |\n' > "$F/specs/done/epic-y/plan.md"
+lint "$F" --only finalize
+expect_fail finalize "names work stream 'demo', which is not done or archived" "an epic in done/ with an unfinished stream"
+fresh fin-changelog
+set_line "$F/CHANGELOG.md" '### Fixed' '### Bugfixes'
+lint "$F" --only finalize
+expect_fail finalize "CHANGELOG.md:11: finalize: section '### Bugfixes' is not one of" "a changelog section outside Keep a Changelog"
+fresh fin-changelog-heading
+set_line "$F/CHANGELOG.md" '## [0.1.0] - 2026-01-02' '## [Unreleased] - 2026-01-02'
+lint "$F" --only finalize
+expect_fail finalize "is not '## [Unreleased]' or" "a malformed release heading"
+fresh fin-no-changelog
+rm "$F/CHANGELOG.md"
+lint "$F" --only finalize
+expect_pass "a tree without CHANGELOG.md passes"
+
+echo "== proposals =="
+PEND=.claude/proposals/pending.md
+fresh pr-dup
+set_line "$F/$PEND" '## P-shipped-2 — A new knowledge page' '## P-shipped-1 — A new knowledge page'
+lint "$F" --only proposals
+expect_fail proposals "P-shipped-1 is defined twice" "a duplicate proposal id"
+fresh pr-heading
+set_line "$F/$PEND" '## P-shipped-2 — A new knowledge page' '## A new knowledge page'
+lint "$F" --only proposals
+expect_fail proposals "is not '## P-<spec>-<n> — <title>'" "a proposal without an id"
+fresh pr-type
+set_line "$F/$PEND" '- **Type**: rule' '- **Type**: agent'
+lint "$F" --only proposals
+expect_fail proposals "Type 'agent' is not one of" "an unknown proposal type"
+fresh pr-field
+set_line "$F/$PEND" "- **Evidence**: the retrospective's CI history." ''
+lint "$F" --only proposals
+expect_fail proposals "P-shipped-1 has no '- **Evidence**:' value" "a proposal without evidence"
+fresh pr-target
+set_line "$F/$PEND" '- **Target**: `src/main.go`' '- **Target**: `src/gone.go`'
+lint "$F" --only proposals
+expect_fail proposals "Target 'src/gone.go' does not exist" "a proposal aimed at a missing file"
+fresh pr-target-abs
+set_line "$F/$PEND" '- **Target**: `src/main.go`' '- **Target**: `/etc/passwd`'
+lint "$F" --only proposals
+expect_fail proposals "is not repository-relative" "a proposal aimed outside the repository"
+fresh pr-source
+set_line "$F/$PEND" '- **Source spec**: `shipped`' '- **Source spec**: `demo`'
+lint "$F" --only proposals
+expect_fail proposals "Source spec 'demo' does not match the id's spec 'shipped'" "a proposal whose source disagrees with its id"
+fresh pr-ghost
+set_line "$F/$PEND" '## P-shipped-2 — A new knowledge page' '## P-ghost-1 — A new knowledge page'
+lint "$F" --only proposals
+expect_fail proposals "P-ghost-1: Source spec 'shipped' does not match" "an id naming another spec"
+fresh pr-ghost-source
+python3 - "$F/$PEND" <<'EOF'
+import sys
+p = sys.argv[1]
+s = open(p).read().replace("## P-shipped-2 — A new", "## P-ghost-1 — A new").replace(
+    "- **Source spec**: `shipped`\n- **Type**: knowledge", "- **Source spec**: `ghost`\n- **Type**: knowledge")
+open(p, "w").write(s)
+EOF
+lint "$F" --only proposals
+expect_fail proposals "P-ghost-1: Source spec 'ghost' has no directory" "a proposal from a spec that does not exist"
+fresh pr-change
+set_line "$F/$PEND" 'State the tick in every timing test.' ''
+lint "$F" --only proposals
+expect_fail proposals "P-shipped-1 has no '**Proposed change:**' block with content" "a proposal with an empty change"
+fresh pr-none
+rm "$F/$PEND"
+lint "$F" --only proposals
+expect_pass "a tree without pending.md passes"
+
+echo "== decided proposals and lane 0 =="
+APPL=.claude/proposals/applied.md
+fresh ap-decision
+set_line "$F/$APPL" '- **Decision**: rejected' '- **Decision**: maybe'
+lint "$F" --only proposals
+expect_fail proposals "P-shipped-4: Decision 'maybe' is not one of" "an unknown decision"
+fresh ap-eval
+set_line "$F/$APPL" '- **Eval**: `main-package`' '- **Eval**: n/a'
+lint "$F" --only proposals
+expect_fail proposals "P-shipped-3: an approved rule proposal records an eval case or a waiver" "an approved rule without an eval"
+fresh ap-eval-missing
+set_line "$F/$APPL" '- **Eval**: `main-package`' '- **Eval**: `gone`'
+lint "$F" --only proposals
+expect_fail proposals "eval case gone has no file" "an eval case that does not exist"
+fresh ap-waiver
+set_line "$F/$APPL" '- **Eval**: `main-package`' '- **Eval**: waived — prose only, nothing to pin'
+lint "$F" --only proposals
+expect_pass "a maintainer's waiver passes"
+fresh ap-both
+set_line "$F/$APPL" '## P-shipped-4 — Not needed' '## P-shipped-1 — Not needed'
+lint "$F" --only proposals
+expect_fail proposals "P-shipped-1 is both pending and recorded" "an id both pending and decided"
+fresh ap-pr
+set_line "$F/$APPL" '- **Pull request**: #7' '- **Pull request**: 7'
+lint "$F" --only proposals
+expect_fail proposals "P-shipped-3: Pull request is not '#<n>'" "a decision without its pull request"
+fresh ap-lane0
+printf '{"enabled": true, "allow": [".claude/rules/*.md"]}\n' > "$F/.claude/proposals/auto-apply.json"
+lint "$F" --only proposals
+expect_fail proposals "allow entry '.claude/rules/*.md' is not under knowledge/" "lane 0 aimed outside knowledge/"
+fresh ap-lane0-json
+printf '{"enabled": "yes", "allow": []}\n' > "$F/.claude/proposals/auto-apply.json"
+lint "$F" --only proposals
+expect_fail proposals "'enabled' is not true or false" "a lane-0 switch that is not a boolean"
+fresh pr-research
+python3 - "$F/$PEND" <<'EOF'
+import sys
+p = sys.argv[1]
+s = open(p).read().replace("## P-shipped-2 — A new", "## P-research-20260101-1 — A new").replace(
+    "- **Source spec**: `shipped`\n- **Type**: knowledge", "- **Source spec**: `research-20260101`\n- **Type**: knowledge")
+open(p, "w").write(s)
+EOF
+lint "$F" --only proposals
+expect_fail proposals "P-research-20260101-1: a research proposal cites an https:// source" "a research proposal without a source"
+set_line "$F/$PEND" '- **Evidence**: P-shipped-1.' '- **Evidence**: https://example.com/practice'
+lint "$F" --only proposals
+expect_pass "a cited research proposal passes"
+
+echo "== required-checks =="
+fresh rc-extra
+printf '{"required": ["CI OK", "DCO sign-off", "Lint"]}\n' > "$F/.claude/data/required-checks.json"
+lint "$F" --only required-checks
+expect_fail required-checks "'Lint' is not marked" "a required check the documentation does not list"
+fresh rc-missing
+printf '{"required": ["CI OK"]}\n' > "$F/.claude/data/required-checks.json"
+lint "$F" --only required-checks
+expect_fail required-checks "marks 'DCO sign-off' as required; add it here" "a documented check missing from the list"
+fresh rc-lonely
+rm "$F/docs/automation.md"
+lint "$F" --only required-checks
+expect_fail required-checks "go together; one is missing" "the list without its documentation"
+fresh rc-malformed
+printf '{"required": []}\n' > "$F/.claude/data/required-checks.json"
+lint "$F" --only required-checks
+expect_fail required-checks "non-empty 'required' list" "an empty list"
+
+echo "== evals =="
+fresh ev-red
+printf 'package other\n' > "$F/src/main.go"
+lint "$F" --only evals
+expect_fail evals "pattern missing from src/main.go" "a case whose behaviour is gone"
+fresh ev-malformed
+printf '{"id": "main-package"}\n' > "$F/.claude/evals/cases/main-package.json"
+lint "$F" --only evals
+expect_fail evals "malformed: " "a malformed case"
+fresh ev-name
+printf 'x\n' > "$F/.claude/evals/cases/notes.txt"
+lint "$F" --only evals
+expect_fail evals "a case file is <id>.json" "a stray file among the cases"
+fresh ev-none
+rm -r "$F/.claude/evals"
+lint "$F" --only evals
+expect_pass "a tree without eval cases passes"
 
 finish

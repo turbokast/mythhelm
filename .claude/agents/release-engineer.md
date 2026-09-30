@@ -51,11 +51,11 @@ The `zizmor` workflow must pass on the pull request. For changes that reach Go b
 - [ ] actionlint and zizmor clean; every `uses:` pinned with a version comment.
 - [ ] Each new gate shown red on a broken input (run URL recorded) and green on the pull request.
 - [ ] `docs/automation.md` updated; any new required check named in the pull request for the ruleset.
-- [ ] `tasks.md` completion fields added; commits signed off; `CI OK` green.
+- [ ] The completion entry and `handoff.md` section written per `.claude/skills/task-completion/SKILL.md`; `scripts/harness/gate.sh all` recorded after them; commits signed off; `CI OK` green.
 
 ## Review threads
 
-Verify each CodeRabbit or Sourcery finding, fix it or rebut it with evidence, and reply on the thread. Resolving a thread is a GraphQL write that `guard-publish.sh` gates; resolve only when the operator asked and armed the window. Never merge.
+Verify each CodeRabbit or Sourcery finding, fix it or rebut it with evidence, and reply on the thread. Resolve each answered thread with `resolveReviewThread` through `gh api graphql`; `guard-publish.sh` allows the review-thread mutations and gates every other GraphQL write. Never merge.
 
 ## Boundaries
 

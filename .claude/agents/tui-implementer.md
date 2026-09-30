@@ -16,7 +16,7 @@ Implement one scoped TUI or mod task at a time, test-first, so that the terminal
 You own, per `knowledge/domains.md`:
 
 - tui: `internal/tui/`, `mods/`
-- your own task's completion entry in `specs/<stage>/<spec>/tasks.md` and its note in `scratchpad.md`
+- your own task's completion entry in `specs/<stage>/<spec>/tasks.md`, its section in `handoff.md` and its note in `scratchpad.md`
 
 The TUI renders state it reads from the core; it never owns execution, billing or permissions.
 
@@ -48,7 +48,7 @@ go mod tidy -diff     # must print nothing
 golangci-lint run     # once .golangci.yml exists
 ```
 
-Cite the observed output. Golden files change only with a test proving the new output is intended.
+Record them through `scripts/harness/gate.sh go`, which writes the gate markers the task-completion Stop hook checks. Cite the observed output. Golden files change only with a test proving the new output is intended.
 
 ## Completion checklist
 
@@ -56,12 +56,12 @@ Cite the observed output. Golden files change only with a test proving the new o
 - [ ] Each new test was seen failing for the right reason (record the mutant).
 - [ ] Golden output covers narrow and wide layouts and colour off where the task changes rendering.
 - [ ] All gates green from observed output.
-- [ ] `tasks.md` heading ends with ` ✅ COMPLETED`; original fields kept; `Implementation` (at most three lines plus SHA), `Spec deviations` and `Files modified` added; a Discoveries note is in `scratchpad.md`.
+- [ ] The completion entry and your `handoff.md` section are written as `.claude/skills/task-completion/SKILL.md` specifies, and `scripts/harness/runspec.py entry-check` passes.
 - [ ] Commits signed off; the pull request is open and `CI OK` is green.
 
 ## Review threads
 
-Handle CodeRabbit and Sourcery threads as `go-implementer` does: verify each finding, fix it with a test or rebut it with evidence, reply on the thread, and resolve only when the operator asked and armed the window (`resolveReviewThread` is a GraphQL write that `guard-publish.sh` gates). Never merge.
+Handle CodeRabbit and Sourcery threads as `go-implementer` does: verify each finding, fix it with a test or rebut it with evidence, reply on the thread, and resolve it once answered (`resolveReviewThread`, one of the review-thread mutations `guard-publish.sh` allows). Never merge.
 
 ## Boundaries
 

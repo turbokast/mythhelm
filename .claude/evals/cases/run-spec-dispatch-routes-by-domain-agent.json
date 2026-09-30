@@ -1,0 +1,12 @@
+{
+  "id": "run-spec-dispatch-routes-by-domain-agent",
+  "hazard": "The run-spec dispatch template stops routing each task to the agent its Domain/agent field names.",
+  "source": "execution: run-spec dispatch",
+  "targets": [
+    ".claude/skills/run-spec-dispatch/SKILL.md"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "^  subagent_type=\"<Domain/agent>\",$"
+  }
+}

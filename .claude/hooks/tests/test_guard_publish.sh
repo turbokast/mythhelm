@@ -65,6 +65,43 @@ block "api non-literal endpoint" 'gh api -X DELETE "$EP"'
 block "api graphql mutation" "gh api graphql -f query='mutation { deleteRef(input: {refId: \"x\"}) { clientMutationId } }'"
 block "api graphql --input" 'gh api graphql --input q.json'
 
+echo "== gh api graphql: review-thread mutations pass, every other mutation blocks =="
+allow "resolveReviewThread" "gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: \"PRRT_x\"}) { thread { isResolved } } }'"
+allow "unresolveReviewThread" "gh api graphql -f query='mutation { unresolveReviewThread(input: {threadId: \"PRRT_x\"}) { thread { id } } }'"
+allow "reply with variables" "gh api graphql -F id=PRRT_x -f body='Fixed in abc123.' -f query='mutation(\$id: ID!, \$body: String!) { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: \$id, body: \$body}) { comment { url } } }'"
+allow "reply and resolve in one document, aliased, multi-line" $'gh api graphql -f query=\'mutation {\n  r: addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: "T", body: "done, mergePullRequest not needed"}) { comment { id } }\n  s: resolveReviewThread(input: {threadId: "T"}) @include(if: true) { thread { comments(first: 1) { nodes { id } } } }\n}\''
+allow "attached -f form" "gh api graphql '-fquery=mutation { resolveReviewThread(input: {threadId: \"T\"}) { clientMutationId } }'"
+allow "block string with an escaped delimiter" $'gh api graphql -f query=\'mutation { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: "T", body: """Quoted \\""" inside"""}) { comment { id } } }\''
+block "a blocked field after a block string" $'gh api graphql -f query=\'mutation { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: "T", body: """x \\""" y"""}) { comment { id } } mergePullRequest(input: {pullRequestId: "P"}) { clientMutationId } }\''
+block "unterminated block string" $'gh api graphql -f query=\'mutation { resolveReviewThread(input: {threadId: """T}) { clientMutationId } }\''
+allow "named operation" "gh api graphql --raw-field query='mutation Resolve { resolveReviewThread(input: {threadId: \"T\"}) { clientMutationId } }'"
+block "mergePullRequest" "gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: \"P\"}) { clientMutationId } }'"
+expect_err "mergePullRequest" "the blocked mutation is named"
+block "updateRepository" "gh api graphql -f query='mutation { updateRepository(input: {repositoryId: \"R\", hasWikiEnabled: false}) { clientMutationId } }'"
+block "allowed plus blocked in one document" "gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: \"T\"}) { clientMutationId } mergePullRequest(input: {pullRequestId: \"P\"}) { clientMutationId } }'"
+expect_err "mergePullRequest" "the blocked field of a mixed document is named"
+block "blocked field behind an alias" "gh api graphql -f query='mutation { resolveReviewThread: mergePullRequest(input: {pullRequestId: \"P\"}) { clientMutationId } }'"
+block "allowed operation plus a blocked operation" "gh api graphql -f query='mutation A { resolveReviewThread(input: {threadId: \"T\"}) { clientMutationId } } mutation B { updateRepository(input: {repositoryId: \"R\"}) { clientMutationId } }'"
+block "allowed name only inside a string" "gh api graphql -f query='mutation { deleteRef(input: {refId: \"resolveReviewThread\"}) { clientMutationId } }'"
+block "allowed name only in a nested selection" "gh api graphql -f query='mutation { updateRepository(input: {repositoryId: \"R\"}) { resolveReviewThread } }'"
+block "a mutation operation named query" "gh api graphql -f operationName=query -f query='mutation A { resolveReviewThread(input: {threadId: \"T\"}) { clientMutationId } } mutation query { mergePullRequest(input: {pullRequestId: \"P\"}) { clientMutationId } }'"
+block "a mutation operation named query, alone" "gh api graphql -f query='mutation query { mergePullRequest(input: {pullRequestId: \"P\"}) { clientMutationId } }'"
+allow "a mutation operation named mutation" "gh api graphql -f query='mutation mutation { resolveReviewThread(input: {threadId: \"T\"}) { clientMutationId } }'"
+block "fragment spread among the mutation fields" "gh api graphql -f query='mutation { ...F } fragment F on Mutation { mergePullRequest(input: {pullRequestId: \"P\"}) { clientMutationId } }'"
+block "inline fragment among the mutation fields" "gh api graphql -f query='mutation { ... on Mutation { mergePullRequest(input: {pullRequestId: \"P\"}) { clientMutationId } } }'"
+block "a comment in a mutation document" $'gh api graphql -f query=\'mutation { resolveReviewThread(input: {threadId: "T"}) { clientMutationId } } # hides the rest\nmutation { mergePullRequest(input: {pullRequestId: "P"}) { clientMutationId } }\''
+block "unterminated string" "gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: \"T}) { clientMutationId } }'"
+block "unbalanced braces" "gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: \"T\"}) { clientMutationId }'"
+block "empty mutation" "gh api graphql -f query='mutation { }'"
+block "query read from a file" 'gh api graphql -F query=@resolve.graphql'
+block "query read from a file, -F= form" 'gh api graphql -F=query=@resolve.graphql'
+block "blocked mutation, -f= form" "gh api graphql '-f=query=mutation { mergePullRequest(input: {pullRequestId: \"P\"}) { clientMutationId } }'"
+allow "review-thread mutation, -f= form" "gh api graphql '-f=query=mutation { resolveReviewThread(input: {threadId: \"T\"}) { clientMutationId } }'"
+block "api -X=PATCH" 'gh api -X=PATCH repos/o/r -f private=false'
+block "mutation word outside the query field" "gh api graphql -f q='mutation { resolveReviewThread(input: {threadId: \"T\"}) { clientMutationId } }'"
+block "attached -F form with a blocked mutation" "gh api graphql '-Fquery=mutation { mergePullRequest(input: {pullRequestId: \"P\"}) { clientMutationId } }'"
+allow "graphql query naming a mutation-shaped field is a query" "gh api graphql -f query='query { repository(owner: \"o\", name: \"r\") { pullRequest(number: 1) { reviewThreads(first: 10) { nodes { id isResolved } } } } }'"
+
 echo "== gh: bypass spellings =="
 block "bash -c" "bash -c 'gh release create v1'"
 block "eval" 'eval gh release create v1'
