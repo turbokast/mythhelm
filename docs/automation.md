@@ -24,7 +24,7 @@ Every automated check, bot and housekeeping job in this repository, what it does
 | OS/arch runner matrix (`Go (<runner>)` jobs in CI) | Runs the Go job on `ubuntu-latest` (x64), `ubuntu-24.04-arm`, `macos-latest` (arm64), `windows-latest` (x64) and `windows-11-arm`, per the platform-specific testing in spec §19.4. `windows-11-arm` runs `go test` without `-race`, because the race detector does not support windows/arm64. | push to `main`, PR, merge queue | `.github/workflows/ci.yml` | GitHub-native |
 | DCO (`DCO sign-off`, required) | Fails a PR with any commit lacking a matching `Signed-off-by`. | PR, merge queue (skipped) | `.github/workflows/dco.yml` | GitHub-native |
 | Dependency review (`Dependency review`, required) | Blocks PRs adding dependencies with moderate+ advisories or licences outside the allow-list. | PR, merge queue (skipped) | `.github/workflows/dependency-review.yml` | GitHub-native |
-| CodeQL (`Analyze (actions)`, required; `Analyze (go)`, to be made required) | CodeQL `security-extended` analysis of the workflows and the Go code. | push to `main`, PR, merge queue, weekly | `.github/workflows/codeql.yml` | GitHub-native |
+| CodeQL (`Analyze (actions)` and `Analyze (go)`, both required) | CodeQL `security-extended` analysis of the workflows and the Go code. | push to `main`, PR, merge queue, weekly | `.github/workflows/codeql.yml` | GitHub-native |
 | OpenSSF Scorecard | Supply-chain posture score, published to the Scorecard API and code scanning. | push to `main`, weekly, manual | `.github/workflows/scorecard.yml` | OSS-in-Actions |
 | zizmor | Security audit of every workflow and `dependabot.yml`. The `zizmor` job fails on findings of low severity or higher; the `zizmor (code scanning)` job uploads SARIF to code scanning. | push to `main`, PR, merge queue (audit only) | `.github/workflows/zizmor.yml` | OSS-in-Actions |
 | PR title lint | Enforces the Conventional Commits title convention in [CONTRIBUTING.md](../CONTRIBUTING.md#pull-request-titles). | PR opened, edited, synchronised, reopened | `.github/workflows/pr-title.yml` | OSS-in-Actions |
@@ -78,9 +78,7 @@ Each deferred item has a trigger that activates it. Add it in the PR that meets 
 
 ## Maintainer set-up outside the repository
 
-These need repository-admin action and are not configured by files here:
+These need repository-admin action and are not configured by files here. Already done: the CodeRabbit and Sourcery apps are installed on this repository only, and `Analyze (go)` is a required check.
 
-- Install the CodeRabbit and Sourcery GitHub apps on this repository only.
-- Add `Analyze (go)` to the `main` ruleset's required checks.
 - Enable the merge queue in the `main` ruleset. All the required checks already run on `merge_group`.
 - Optionally make `zizmor` a required check once it has been green on `main` for a while.
