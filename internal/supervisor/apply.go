@@ -110,9 +110,12 @@ func ApplyRun(ctx context.Context, j *journal.Journal, runID, branch string, acc
 	}
 	current, err := workspace.BranchCommit(ctx, run.SourceRepo, branch)
 	if err != nil {
+		if errors.Is(err, workspace.ErrBranchExists) && run.State == string(RunApplying) {
+			err = errors.Join(err, blockApply(ctx, j, runID, "branch_exists"))
+		}
 		return nil, err
 	}
-	if current != "" && current != candidate.Commit {
+	if current != "" && (current != candidate.Commit || intent == nil) {
 		err := fmt.Errorf("%w: %s", workspace.ErrBranchExists, branch)
 		if run.State == string(RunApplying) {
 			err = errors.Join(err, blockApply(ctx, j, runID, "branch_exists"))

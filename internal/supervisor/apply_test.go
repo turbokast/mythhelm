@@ -260,3 +260,58 @@ func TestApplyReconcilesAfterCrash(t *testing.T) {
 		t.Fatalf("reconciled apply exit %d: %s", code, stderr)
 	}
 }
+
+func TestApplyRetryBlocksSymbolicBranch(t *testing.T) {
+	f, runID := readyApplyFixture(t)
+	j := f.journal(t)
+	attempt, err := j.LatestAttempt(t.Context(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := j.Candidate(t.Context(), attempt.AttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch := "review/symbolic-conflict"
+	recordApplyIntent(t, f, runID, branch, c.Commit)
+	f.git(t, "symbolic-ref", "refs/heads/"+branch, "refs/heads/untouched")
+	before := f.fingerprint(t)
+	code, _, stderr := f.run(t, "apply", runID, "--to-branch", branch)
+	if code != 3 {
+		t.Fatalf("symbolic retry %d: %s", code, stderr)
+	}
+	run := f.onlyRun(t)
+	if run.State != "blocked" || run.Reason != "branch_exists" {
+		t.Fatalf("symbolic retry still active: %s/%s", run.State, run.Reason)
+	}
+	if f.fingerprint(t) != before {
+		t.Fatal("symbolic destination changed")
+	}
+}
+
+func TestApplyRefusesExistingMatchingBranchWithoutIntent(t *testing.T) {
+	f, runID := readyApplyFixture(t)
+	j := f.journal(t)
+	attempt, err := j.LatestAttempt(t.Context(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := j.Candidate(t.Context(), attempt.AttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.git(t, "fetch", "--no-write-fetch-head", attempt.WorkspacePath, "refs/mythhelm/candidates/"+attempt.AttemptID)
+	f.git(t, "update-ref", "refs/heads/already-present", c.Commit)
+	before := f.fingerprint(t)
+	if code, _, stderr := f.run(t, "apply", runID, "--to-branch", "already-present"); code != 3 {
+		t.Fatalf("existing matching branch %d: %s", code, stderr)
+	}
+	if f.onlyRun(t).State != "ready_for_review" || f.fingerprint(t) != before {
+		t.Fatal("initial refusal changed run or source")
+	}
+	for _, ev := range f.events(t, runID) {
+		if ev.Type == "apply.intent_recorded" {
+			t.Fatal("initial refusal recorded apply intent")
+		}
+	}
+}
