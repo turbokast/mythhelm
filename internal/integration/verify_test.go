@@ -44,8 +44,15 @@ func TestMain(m *testing.M) {
 			if err := child.Start(); err != nil {
 				os.Exit(2)
 			}
+		case "linger_failed_parent":
+			child := exec.Command(os.Args[0], "__verify_helper", "delayed", os.Args[3]) // #nosec G702 -- test binary re-exec with test-owned path
+			child.Stdout, child.Stderr = os.Stdout, os.Stderr
+			if err := child.Start(); err != nil {
+				os.Exit(2)
+			}
+			os.Exit(1)
 		case "linger_child":
-			time.Sleep(10 * time.Second)
+			time.Sleep(3 * time.Second)
 		}
 		os.Exit(0)
 	}
@@ -143,8 +150,19 @@ func TestCheckWaitDelayBounded(t *testing.T) {
 	cfg.Checks[0] = admission.CheckConfig{Name: "linger", Argv: []string{os.Args[0], "__verify_helper", "linger_parent"}, Timeout: "8s"}
 	start := time.Now()
 	v, err := integration.RunChecks(t.Context(), c, cfg, os.Environ())
-	if err != nil || v.Checks[0].Status != "timed_out" || time.Since(start) > 5*time.Second {
+	if err != nil || v.Checks[0].Status != "passed" || time.Since(start) < 3*time.Second || time.Since(start) > 6*time.Second {
 		t.Fatalf("verification = %+v, duration = %s, err = %v", v, time.Since(start), err)
+	}
+	c, cfg = verifyFixture(t)
+	marker := filepath.Join(t.TempDir(), "failed-child-survived")
+	cfg.Checks[0] = admission.CheckConfig{Name: "failed_linger", Argv: []string{os.Args[0], "__verify_helper", "linger_failed_parent", marker}, Timeout: "200ms"}
+	v, err = integration.RunChecks(t.Context(), c, cfg, os.Environ())
+	if err != nil || v.Checks[0].Status != "timed_out" {
+		t.Fatalf("failed leader = %+v, err = %v", v, err)
+	}
+	time.Sleep(1200 * time.Millisecond)
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("failed leader's child survived: %v", err)
 	}
 }
 

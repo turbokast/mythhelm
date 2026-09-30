@@ -70,7 +70,11 @@ func LoadProjectConfig(snapshotDir string) (ProjectConfig, string, error) {
 	if err != nil || outside {
 		return zero, "", fmt.Errorf("%w: config path is not safely inside the snapshot", ErrProjectConfig)
 	}
-	if _, err := os.Lstat(filepath.Join(snapshotDir, ".git")); err == nil {
+	_, gitErr := os.Lstat(filepath.Join(snapshotDir, ".git"))
+	if gitErr != nil && !errors.Is(gitErr, os.ErrNotExist) {
+		return zero, "", fmt.Errorf("%w: inspect snapshot Git directory: %w", ErrProjectConfig, gitErr)
+	}
+	if gitErr == nil {
 		entry, err := workspace.Git(context.Background(), snapshotDir, false, "ls-tree", "HEAD", "--", ProjectConfigFile)
 		if err != nil {
 			return zero, "", fmt.Errorf("%w: locate snapshot config: %w", ErrProjectConfig, err)

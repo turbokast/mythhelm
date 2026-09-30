@@ -108,37 +108,64 @@ func runCheck(ctx context.Context, dir, evidenceDir string, check admission.Chec
 	defer cancel()
 	cmd := exec.Command(check.Argv[0], check.Argv[1:]...) // #nosec G204 -- reviewed, digest-bound project config, argv only
 	cmd.Dir, cmd.Env = dir, env
-	cmd.WaitDelay = 2 * time.Second // bound pipe drain if a descendant inherited stdout/stderr
 	var output tailBuffer
-	cmd.Stdout, cmd.Stderr = &output, &output
+	// Give exec an *os.File so Wait reaps only the leader. We drain the pipe
+	// ourselves until EOF or the configured deadline, including descendants
+	// that inherited stdout after their leader exited.
+	pipeRead, pipeWrite, err := os.Pipe()
+	if err != nil {
+		return r, err
+	}
+	cmd.Stdout, cmd.Stderr = pipeWrite, pipeWrite
 	setProcessGroup(cmd)
-	err := cmd.Start()
+	err = cmd.Start()
+	_ = pipeWrite.Close()
 	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
+		_ = pipeRead.Close()
 		r.Status = "unavailable"
 	} else if err != nil {
+		_ = pipeRead.Close()
 		return r, fmt.Errorf("start check %s: %w", check.Name, err)
 	} else {
-		done := make(chan error, 1)
-		go func() { done <- cmd.Wait() }()
-		select {
-		case err = <-done:
-		case <-checkCtx.Done():
-			killProcessGroup(cmd)
-			err = <-done
-			r.Status = "timed_out"
+		waitDone, pipeDone := make(chan error, 1), make(chan error, 1)
+		go func() { waitDone <- cmd.Wait() }()
+		go func() { _, readErr := io.Copy(&output, pipeRead); pipeDone <- readErr }()
+		var waitErr, pipeErr error
+		leaderDone, streamDone := false, false
+		for !leaderDone || !streamDone {
+			select {
+			case waitErr = <-waitDone:
+				leaderDone = true
+			case pipeErr = <-pipeDone:
+				streamDone = true
+			case <-checkCtx.Done():
+				killProcessGroup(cmd)
+				if !leaderDone {
+					_ = cmd.Process.Kill()
+				}
+				_ = pipeRead.Close() // force a breakaway pipe holder to release the reader
+				if !leaderDone {
+					waitErr = <-waitDone
+				}
+				if !streamDone {
+					pipeErr = <-pipeDone
+				}
+				leaderDone, streamDone = true, true
+				r.Status = "timed_out"
+			}
 		}
+		_ = pipeRead.Close()
 		if r.Status == "" {
 			var exit *exec.ExitError
 			switch {
-			case err == nil:
+			case pipeErr != nil:
+				return r, fmt.Errorf("read check %s output: %w", check.Name, pipeErr)
+			case waitErr == nil:
 				r.Status = "passed"
-			case errors.As(err, &exit):
+			case errors.As(waitErr, &exit):
 				r.Status = "failed"
-			case errors.Is(err, exec.ErrWaitDelay):
-				killProcessGroup(cmd)
-				r.Status = "timed_out"
 			default:
-				return r, fmt.Errorf("wait check %s: %w", check.Name, err)
+				return r, fmt.Errorf("wait check %s: %w", check.Name, waitErr)
 			}
 		}
 		if cmd.ProcessState != nil {
