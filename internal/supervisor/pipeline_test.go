@@ -448,7 +448,6 @@ func decodeEnvelopes(stdout string) ([]journal.Event, error) {
 }
 
 func TestJSONLStdoutOnlyEnvelopes(t *testing.T) {
-	t.Parallel()
 	f := newFixture(t)
 	code, stdout, stderr := f.run(t, f.fakeRun("--format", "jsonl", "--scenario", "denied")...)
 	evs, err := decodeEnvelopes(stdout)
@@ -766,10 +765,8 @@ func requireSignals(t *testing.T) {
 }
 
 func TestInterruptBeforeWorkerSpawnNeverLaunchesNative(t *testing.T) {
-	t.Parallel()
 	for _, stage := range []string{"executing", "launch_intent_recorded"} {
 		t.Run(stage, func(t *testing.T) {
-			t.Parallel()
 			f := newFixture(t)
 			d, err := admission.Decide(t.Context(), admission.Request{
 				StateDir: f.state, Repo: f.repo, TaskFile: f.task,
