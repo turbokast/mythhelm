@@ -27,6 +27,7 @@ type command struct {
 }
 
 var commands = map[string]command{
+	"run":     {summary: "run a task through one native agent attempt", run: runRun},
 	"runs":    {summary: "list runs from the local state (runs list)", run: runRuns},
 	"version": {summary: "print the version, commit and Go version", run: runVersion},
 }

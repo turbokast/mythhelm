@@ -5,7 +5,10 @@ import (
 	"flag"
 	"fmt"
 
+	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/journal"
+	"github.com/turbokast/mythhelm/internal/supervisor"
+	"github.com/turbokast/mythhelm/internal/workspace"
 )
 
 // ExitCode is a process exit status with the §15.10 meaning.
@@ -33,15 +36,90 @@ func usageErrorf(format string, args ...any) error {
 	return usageError{fmt.Errorf(format, args...)}
 }
 
+// outcomeError is a command outcome that carries its own exit code and JSON
+// error category, such as a run that ended without its deliverable.
+type outcomeError struct {
+	code     ExitCode
+	category string
+	err      error
+}
+
+func (e *outcomeError) Error() string { return e.err.Error() }
+func (e *outcomeError) Unwrap() error { return e.err }
+
 // exitCode is the single place that maps a command's error to its exit code.
 func exitCode(err error) ExitCode {
 	var usage usageError
+	var outcome *outcomeError
+	var blocked *admission.BlockedError
 	switch {
 	case err == nil, errors.Is(err, flag.ErrHelp):
 		return ExitOK
-	case errors.As(err, &usage), errors.Is(err, journal.ErrSchemaTooNew):
+	case errors.As(err, &outcome):
+		return outcome.code
+	case errors.As(err, &usage), errors.Is(err, journal.ErrSchemaTooNew), errors.Is(err, admission.ErrInvalid):
 		return ExitInvalid
+	case errors.As(err, &blocked) && blocked.Capability, errors.Is(err, workspace.ErrGitTooOld):
+		return ExitCapability
+	case errors.As(err, &blocked):
+		return ExitBlocked
+	case errors.Is(err, supervisor.ErrOwnerHeld):
+		return ExitOwnership
 	default:
 		return ExitInternal
 	}
+}
+
+// errorCategory is the JSON error category of err (§15.10, design §10).
+func errorCategory(err error) string {
+	var outcome *outcomeError
+	if errors.As(err, &outcome) {
+		return outcome.category
+	}
+	return categories[exitCode(err)]
+}
+
+var categories = map[ExitCode]string{
+	ExitOK:         "",
+	ExitInternal:   "internal",
+	ExitInvalid:    "invalid_arguments",
+	ExitBlocked:    "admission_blocked",
+	ExitNative:     "native_failed",
+	ExitVerify:     "verification_failed",
+	ExitOwnership:  "ownership_unresolved",
+	ExitCapability: "capability_unavailable",
+	ExitCancelled:  "cancelled",
+}
+
+// runExit maps where a run stopped to its exit code and error category
+// (design §10).
+func runExit(o supervisor.Outcome) (ExitCode, string) {
+	if o.Detached {
+		return ExitOwnership, categories[ExitOwnership]
+	}
+	switch o.State {
+	case supervisor.RunCompleted:
+		return ExitOK, ""
+	case supervisor.RunReadyForReview:
+		if o.Reason == "unverified" {
+			return ExitVerify, "verification_unavailable"
+		}
+		return ExitOK, ""
+	case supervisor.RunBlocked:
+		return ExitBlocked, categories[ExitBlocked]
+	case supervisor.RunCancelled:
+		return ExitCancelled, categories[ExitCancelled]
+	case supervisor.RunInterrupted, supervisor.RunStopping:
+		return ExitOwnership, categories[ExitOwnership]
+	case supervisor.RunFailed:
+		switch o.Reason {
+		case "native_failed", "protocol_error":
+			return ExitNative, categories[ExitNative]
+		case "verification_failed":
+			return ExitVerify, "verification_failed"
+		case "verification_unavailable":
+			return ExitVerify, "verification_unavailable"
+		}
+	}
+	return ExitInternal, categories[ExitInternal]
 }

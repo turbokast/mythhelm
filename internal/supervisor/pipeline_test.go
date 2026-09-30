@@ -1,0 +1,1002 @@
+package supervisor_test
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/turbokast/mythhelm/adapters/fake"
+	"github.com/turbokast/mythhelm/internal/admission"
+	"github.com/turbokast/mythhelm/internal/cli"
+	"github.com/turbokast/mythhelm/internal/ids"
+	"github.com/turbokast/mythhelm/internal/journal"
+	"github.com/turbokast/mythhelm/internal/supervisor"
+	"github.com/turbokast/mythhelm/internal/workers"
+	"github.com/turbokast/mythhelm/internal/workspace"
+)
+
+// cliEnv switches the test binary into `mythhelm` itself, so a test runs the
+// real command line as a child process that it can signal.
+const cliEnv = "MYTHHELM_TEST_CLI"
+
+// TestMain lets the test binary play every process of a run: the CLI, the
+// worker (__worker) and the fake agent (__fake-agent).
+func TestMain(m *testing.M) {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case workers.Command:
+			os.Exit(workers.Main(os.Args[2:]))
+		case fake.AgentCommand:
+			os.Exit(fake.AgentMain(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+		}
+	}
+	if os.Getenv(cliEnv) == "1" {
+		os.Exit(cli.Main(os.Args[1:], cli.Stdio{In: os.Stdin, Out: os.Stdout, Err: os.Stderr}))
+	}
+	// Every re-executed -race child otherwise sleeps a second before exiting.
+	if err := os.Setenv("GORACE", "atexit_sleep_ms=0"); err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}
+
+// fixture is a user repository, a task file and an empty state directory.
+type fixture struct {
+	state, repo, task, home string
+}
+
+func newFixture(t *testing.T) fixture {
+	t.Helper()
+	f := fixture{state: t.TempDir(), repo: t.TempDir(), home: t.TempDir()}
+	f.task = filepath.Join(t.TempDir(), "task.md")
+	if err := os.WriteFile(f.task, []byte("# Demo task\n\nWrite demo.txt.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.git(t, "init", "--quiet", "--initial-branch=main")
+	if err := os.WriteFile(filepath.Join(f.repo, "README.md"), []byte("demo\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.git(t, "add", "README.md")
+	f.git(t, "commit", "--quiet", "-m", "initial")
+	return f
+}
+
+func (f fixture) git(t *testing.T, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = f.repo
+	cmd.Env = append(os.Environ(), "HOME="+f.home, "XDG_CONFIG_HOME="+f.home, "GIT_CONFIG_NOSYSTEM=1",
+		"GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@example.com",
+		"GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@example.com")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// command builds `mythhelm args...` run in the repository against the
+// fixture's state directory.
+func (f fixture) command(ctx context.Context, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, os.Args[0], args...) //nolint:gosec // G702: the test binary itself, with the test's own argv
+	cmd.Dir = f.repo
+	env := slices.DeleteFunc(os.Environ(), func(kv string) bool {
+		return strings.HasPrefix(kv, "MYTHHELM_HOME=") || strings.HasPrefix(kv, "HOME=") || strings.HasPrefix(kv, "XDG_CONFIG_HOME=")
+	})
+	cmd.Env = append(env, cliEnv+"=1", "MYTHHELM_HOME="+f.state, "HOME="+f.home, "XDG_CONFIG_HOME="+f.home)
+	cmd.WaitDelay = 10 * time.Second
+	return cmd
+}
+
+// run runs `mythhelm args...` to completion with empty stdin.
+func (f fixture) run(t *testing.T, args ...string) (code int, stdout, stderr string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	cmd := f.command(ctx, args...)
+	var out, errOut bytes.Buffer
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = strings.NewReader(""), &out, &errOut
+	err := cmd.Run()
+	var exitErr *exec.ExitError
+	switch {
+	case err == nil:
+	case errors.As(err, &exitErr):
+		code = exitErr.ExitCode()
+	default:
+		t.Fatalf("mythhelm %s: %v", strings.Join(args, " "), err)
+	}
+	return code, out.String(), errOut.String()
+}
+
+// fakeRun is a complete fake-adapter command line; extra flags are appended.
+func (f fixture) fakeRun(extra ...string) []string {
+	return append([]string{"run", "--task-file", f.task, "--adapter", "fake", "--billing", "local-scripted",
+		"--execution-profile", "trusted-host", "--non-interactive"}, extra...)
+}
+
+func (f fixture) journal(t *testing.T) *journal.Journal {
+	t.Helper()
+	j, err := journal.Open(t.Context(), f.state)
+	if err != nil {
+		t.Fatalf("journal.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = j.Close() })
+	return j
+}
+
+// runs lists the recorded runs, or none when no database exists.
+func (f fixture) runs(t *testing.T) []journal.RunRow {
+	t.Helper()
+	j, err := journal.OpenReadOnly(t.Context(), f.state)
+	if errors.Is(err, journal.ErrNoDatabase) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = j.Close() }()
+	rows, err := j.ListRuns(t.Context(), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rows
+}
+
+func (f fixture) onlyRun(t *testing.T) journal.RunRow {
+	t.Helper()
+	rows := f.runs(t)
+	if len(rows) != 1 {
+		t.Fatalf("recorded runs = %d, want 1", len(rows))
+	}
+	return rows[0]
+}
+
+func (f fixture) events(t *testing.T, runID string) []journal.Event {
+	t.Helper()
+	evs, err := f.journal(t).Events(t.Context(), runID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return evs
+}
+
+func (f fixture) fingerprint(t *testing.T) string {
+	t.Helper()
+	fp, err := workspace.SourceFingerprint(f.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fp
+}
+
+func typeIndex(evs []journal.Event, typ string) int {
+	return slices.IndexFunc(evs, func(ev journal.Event) bool { return ev.Type == typ })
+}
+
+func payloadOf(t *testing.T, ev journal.Event) map[string]any {
+	t.Helper()
+	var p map[string]any
+	if err := json.Unmarshal(ev.Payload, &p); err != nil {
+		t.Fatalf("%s payload: %v", ev.Type, err)
+	}
+	return p
+}
+
+func TestRunNoAdapterFlagExits2(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	base := []string{"run", "--task-file", f.task, "--billing", "local-scripted", "--execution-profile", "trusted-host", "--non-interactive"}
+	for _, tt := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing adapter", args: base, want: "--adapter is required"},
+		{name: "unknown adapter is not a fallback", args: append(slices.Clone(base), "--adapter", "codex"), want: `--adapter must be claudecode or fake, got "codex"`},
+		{name: "missing billing", args: []string{"run", "--task-file", f.task, "--adapter", "fake", "--non-interactive"}, want: "--billing is required"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			code, _, stderr := f.run(t, tt.args...)
+			if code != 2 || !strings.Contains(stderr, tt.want) {
+				t.Fatalf("exit %d, stderr %q; want exit 2 naming %q", code, stderr, tt.want)
+			}
+		})
+	}
+	if rows := f.runs(t); len(rows) != 0 {
+		t.Fatalf("an invalid command line recorded %d runs", len(rows))
+	}
+}
+
+func TestRestrictedProfileExit7(t *testing.T) {
+	t.Parallel()
+	for _, profile := range []string{"restricted", "inspect"} {
+		t.Run(profile, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t)
+			args := slices.DeleteFunc(f.fakeRun(), func(a string) bool { return a == "trusted-host" || a == "--execution-profile" })
+			code, _, stderr := f.run(t, append(args, "--execution-profile", profile)...)
+			if code != 7 || !strings.Contains(stderr, "execution_profile_unavailable") {
+				t.Fatalf("exit %d, stderr %q; want exit 7 execution_profile_unavailable", code, stderr)
+			}
+			if rows := f.runs(t); len(rows) != 0 {
+				t.Fatalf("a refused profile recorded %d runs", len(rows))
+			}
+		})
+	}
+}
+
+func TestMissingProfileConsentNonInteractiveExit3(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	args := slices.DeleteFunc(f.fakeRun(), func(a string) bool { return a == "trusted-host" || a == "--execution-profile" })
+	code, _, stderr := f.run(t, args...)
+	if code != 3 || !strings.Contains(stderr, "consent_required") || !strings.Contains(stderr, "--execution-profile trusted-host") {
+		t.Fatalf("exit %d, stderr %q; want exit 3 naming --execution-profile trusted-host", code, stderr)
+	}
+}
+
+func TestHostHerdrExit7(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	code, _, stderr := f.run(t, f.fakeRun("--host", "herdr")...)
+	if code != 7 || !strings.Contains(stderr, "host_unavailable") {
+		t.Fatalf("exit %d, stderr %q; want exit 7 host_unavailable", code, stderr)
+	}
+	if rows := f.runs(t); len(rows) != 0 {
+		t.Fatalf("--host herdr recorded %d runs", len(rows))
+	}
+}
+
+func TestDirtyCheckoutNonInteractiveBlocked(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	if err := os.WriteFile(filepath.Join(f.repo, "scratch.txt"), []byte("uncommitted\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	head := f.git(t, "rev-parse", "HEAD")
+	before := f.fingerprint(t)
+
+	code, _, stderr := f.run(t, f.fakeRun()...)
+	if code != 3 || !strings.Contains(stderr, "dirty_checkout") || !strings.Contains(stderr, "--use-committed") {
+		t.Fatalf("non-interactive: exit %d, stderr %q; want exit 3 naming --use-committed", code, stderr)
+	}
+	interactive := slices.DeleteFunc(f.fakeRun(), func(a string) bool { return a == "--non-interactive" })
+	code, _, stderr = f.run(t, interactive...) // stdin is empty: the prompt reads no
+	if code != 3 || !strings.Contains(stderr, "Run on the committed revision") {
+		t.Fatalf("declined prompt: exit %d, stderr %q; want the prompt and exit 3", code, stderr)
+	}
+	if rows := f.runs(t); len(rows) != 0 {
+		t.Fatalf("a blocked dirty checkout recorded %d runs", len(rows))
+	}
+
+	code, _, stderr = f.run(t, f.fakeRun("--use-committed")...)
+	if code != 5 {
+		t.Fatalf("--use-committed: exit %d, stderr %q; want the run to proceed to exit 5 (verification unavailable)", code, stderr)
+	}
+	run := f.onlyRun(t)
+	if run.BaseRev != head {
+		t.Fatalf("base_rev = %s, want HEAD %s", run.BaseRev, head)
+	}
+	clone := filepath.Join(f.state, "runs", run.RunID, "workspace")
+	if _, err := os.Stat(filepath.Join(clone, "scratch.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the uncommitted file reached the snapshot: stat err %v", err)
+	}
+	if after := f.fingerprint(t); after != before {
+		t.Fatalf("the source checkout changed: fingerprint %s -> %s", before, after)
+	}
+}
+
+func TestRunSecondActiveRunBlocked(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	j := f.journal(t)
+	p := supervisor.NewProducer(ids.New("sup"), 1)
+	active := ids.New("run")
+	if err := supervisor.CreateRun(t.Context(), j, journal.RunRow{RunID: active, AdapterID: "builtin/fake", SourceRepo: f.repo,
+		TaskSHA256: strings.Repeat("a", 64), BillingPosture: "local-scripted", ExecutionProfile: "trusted-host"}, p); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []supervisor.RunState{supervisor.RunAdmission, supervisor.RunExecuting} {
+		if err := supervisor.TransitionRun(t.Context(), j, active, s, "", p); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	code, _, stderr := f.run(t, f.fakeRun()...)
+	if code != 3 || !strings.Contains(stderr, "active_run_exists") || !strings.Contains(stderr, active) {
+		t.Fatalf("exit %d, stderr %q; want exit 3 naming active run %s", code, stderr, active)
+	}
+	var blocked journal.RunRow
+	for _, r := range f.runs(t) {
+		if r.RunID != active {
+			blocked = r
+		}
+	}
+	if blocked.State != "blocked" || blocked.Reason != "active_run_exists" {
+		t.Fatalf("second run projected %s/%s, want blocked/active_run_exists", blocked.State, blocked.Reason)
+	}
+	if evs := f.events(t, blocked.RunID); typeIndex(evs, "admission.decided") >= 0 || typeIndex(evs, "attempt.launch_intent_recorded") >= 0 {
+		t.Fatalf("the blocked run went on to admission or launch: %v", evs)
+	}
+
+	// Once the first run is no longer active, the same command is admitted.
+	if err := supervisor.TransitionRun(t.Context(), j, active, supervisor.RunFailed, "native_failed", p); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, stderr := f.run(t, f.fakeRun()...); code != 5 {
+		t.Fatalf("after the active run ended: exit %d, stderr %q; want the run to proceed to exit 5", code, stderr)
+	}
+}
+
+func TestAdmissionDecidedBeforeWorkerSpawn(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	before := f.fingerprint(t)
+	code, stdout, stderr := f.run(t, f.fakeRun("--scenario", "happy")...)
+	if code != 5 {
+		t.Fatalf("exit %d, stdout %q, stderr %q; want 5", code, stdout, stderr)
+	}
+	run := f.onlyRun(t)
+	evs := f.events(t, run.RunID)
+	decided, intent, launched := typeIndex(evs, "admission.decided"), typeIndex(evs, "attempt.launch_intent_recorded"), typeIndex(evs, "attempt.launched")
+	if decided < 0 || intent <= decided || launched <= intent {
+		t.Fatalf("journal order admission.decided=%d launch_intent_recorded=%d launched=%d, want strictly increasing and present", decided, intent, launched)
+	}
+	adm := payloadOf(t, evs[decided])
+	if adm["snapshot"].(map[string]any)["base_rev"] != f.git(t, "rev-parse", "HEAD") || adm["billing"].(map[string]any)["mode"] != "local-scripted" {
+		t.Fatalf("admission.decided does not resolve the snapshot and billing posture: %s", evs[decided].Payload)
+	}
+	if !strings.Contains(stdout, "SCRIPTED: fake adapter, no real agent") || !strings.Contains(stdout, "not contained") {
+		t.Fatalf("plain output does not disclose the scripted adapter and the uncontained profile:\n%s", stdout)
+	}
+	// The agent's edit lands in the snapshot clone, never in the checkout (I08).
+	if b, err := os.ReadFile(filepath.Join(f.state, "runs", run.RunID, "workspace", "demo.txt")); err != nil || string(b) != "ok\n" {
+		t.Fatalf("demo.txt in the clone = %q, %v; want the agent's edit", b, err)
+	}
+	if after := f.fingerprint(t); after != before {
+		t.Fatalf("the source checkout changed: fingerprint %s -> %s", before, after)
+	}
+}
+
+func TestRunOutcomeExitCodes(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		scenario            string
+		code                int
+		state, reason       string
+		attempt, attemptWhy string
+		category            string
+	}{
+		{scenario: "happy", code: 5, state: "failed", reason: "verification_unavailable", attempt: "succeeded_native", category: "verification_unavailable"},
+		{scenario: "native-fails", code: 4, state: "failed", reason: "native_failed", attempt: "failed_native", attemptWhy: "error_during_execution", category: "native_failed"},
+		{scenario: "exit-before-result", code: 4, state: "failed", reason: "native_failed", attempt: "failed_native", attemptWhy: "result_unobserved", category: "native_failed"},
+	} {
+		t.Run(tt.scenario, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t)
+			code, stdout, stderr := f.run(t, f.fakeRun("--scenario", tt.scenario, "--format", "jsonl")...)
+			if code != tt.code {
+				t.Fatalf("exit %d, stderr %q; want %d", code, stderr, tt.code)
+			}
+			run := f.onlyRun(t)
+			if run.State != tt.state || run.Reason != tt.reason {
+				t.Fatalf("run projected %s/%s, want %s/%s", run.State, run.Reason, tt.state, tt.reason)
+			}
+			res := lastResult(t, stdout)
+			if res["exit_code"] != float64(tt.code) || res["error_category"] != tt.category || res["state"] != tt.state {
+				t.Fatalf("run.result = %v, want exit %d %s state %s", res, tt.code, tt.category, tt.state)
+			}
+			var why any
+			if tt.attemptWhy != "" {
+				why = tt.attemptWhy
+			}
+			if res["attempt_reason"] != why {
+				t.Fatalf("run.result attempt_reason = %v, want %v", res["attempt_reason"], why)
+			}
+		})
+	}
+}
+
+func lastResult(t *testing.T, stdout string) map[string]any {
+	t.Helper()
+	lines := strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
+	var ev journal.Event
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &ev); err != nil || ev.Type != "run.result" {
+		t.Fatalf("last stdout line %q is not run.result (%v)", lines[len(lines)-1], err)
+	}
+	return payloadOf(t, ev)
+}
+
+// documentedEvents is design §5's event set, which is all run may print.
+var documentedEvents = []string{
+	"run.created", "run.state_changed", "admission.decided", "workspace.snapshot_created",
+	"attempt.launch_intent_recorded", "attempt.launched", "attempt.native_session", "attempt.progress",
+	"attempt.permission_denied", "attempt.native_result", "attempt.stop_requested", "attempt.stopped",
+	"attempt.state_changed", "attempt.protocol_counters", "candidate.frozen", "verification.started",
+	"check.completed", "verification.completed", "receipt.written", "apply.intent_recorded", "apply.completed", "run.result",
+}
+
+// decodeEnvelopes parses every stdout line strictly as an Event.
+func decodeEnvelopes(stdout string) ([]journal.Event, error) {
+	var out []journal.Event
+	for i, line := range strings.Split(strings.TrimSuffix(stdout, "\n"), "\n") {
+		dec := json.NewDecoder(strings.NewReader(line))
+		dec.DisallowUnknownFields()
+		var ev journal.Event
+		if err := dec.Decode(&ev); err != nil {
+			return nil, fmt.Errorf("line %d %q: %w", i+1, line, err)
+		}
+		if ev.SchemaVersion != journal.EnvelopeVersion || ev.EventID == "" || ev.ProducerID == "" || !slices.Contains(documentedEvents, ev.Type) {
+			return nil, fmt.Errorf("line %d is not a documented envelope event: %q", i+1, line)
+		}
+		out = append(out, ev)
+	}
+	return out, nil
+}
+
+func TestJSONLStdoutOnlyEnvelopes(t *testing.T) {
+	f := newFixture(t)
+	code, stdout, stderr := f.run(t, f.fakeRun("--format", "jsonl", "--scenario", "denied")...)
+	evs, err := decodeEnvelopes(stdout)
+	if err != nil {
+		t.Fatalf("%v\nstderr: %s", err, stderr)
+	}
+	last := evs[len(evs)-1]
+	if last.Type != "run.result" {
+		t.Fatalf("last line is %s, want run.result", last.Type)
+	}
+	if p := payloadOf(t, last); p["exit_code"] != float64(code) {
+		t.Fatalf("run.result exit_code = %v, process exited %d", p["exit_code"], code)
+	}
+	// Everything before run.result is the run's journal, in order.
+	run := f.onlyRun(t)
+	journaled := f.events(t, run.RunID)
+	var got, want []string
+	for _, ev := range evs[:len(evs)-1] {
+		got = append(got, ev.EventID)
+	}
+	for _, ev := range journaled {
+		want = append(want, ev.EventID)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("stdout events %v, journal %v", got, want)
+	}
+	if typeIndex(journaled, "attempt.permission_denied") < 0 {
+		t.Fatalf("the denied scenario's permission denial was not journaled")
+	}
+
+	// Plain output is not JSONL, so the check above can fail.
+	_, plain, _ := f.run(t, f.fakeRun("--scenario", "denied")...)
+	if strings.TrimSpace(plain) == "" {
+		t.Fatal("plain run printed nothing to stdout")
+	}
+	if _, err := decodeEnvelopes(plain); err == nil {
+		t.Fatalf("decodeEnvelopes accepted plain output %q", plain)
+	}
+}
+
+func TestIngestResumesFromOffsetWithoutDuplicates(t *testing.T) {
+	t.Parallel()
+	state := t.TempDir()
+	j, err := journal.Open(t.Context(), state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = j.Close() })
+	p := supervisor.NewProducer(ids.New("sup"), 1)
+	ref := supervisor.AttemptRef{StateDir: state, RunID: ids.New("run"), AttemptID: ids.New("att")}
+	if err := supervisor.CreateRun(t.Context(), j, journal.RunRow{RunID: ref.RunID, AdapterID: "builtin/fake", SourceRepo: "/tmp/repo",
+		TaskSHA256: strings.Repeat("a", 64), BillingPosture: "local-scripted", ExecutionProfile: "trusted-host"}, p); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.RecordLaunchIntent(t.Context(), j, journal.AttemptRow{AttemptID: ref.AttemptID, RunID: ref.RunID, TaskID: "task_1",
+		AttemptNumber: 1, LaunchTokenSHA256: strings.Repeat("b", 64), WorkspacePath: "/tmp/ws"}, p); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(ref.Dir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	spool := filepath.Join(ref.Dir(), supervisor.SpoolFile)
+	line := func(seq int64, typ, payload string) string {
+		b, err := json.Marshal(journal.Event{SchemaVersion: 1, EventID: fmt.Sprintf("evt_%s_%d", ref.AttemptID, seq), RunID: ref.RunID,
+			TaskID: "task_1", AttemptID: ref.AttemptID, ProducerID: "wrk_" + ref.AttemptID, ProducerSequence: seq, Generation: 1,
+			ObservedAt: time.Now().UTC(), Type: typ, Payload: json.RawMessage(payload)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b) + "\n"
+	}
+	lines := []string{
+		line(1, "attempt.state_changed", `{"state":"launching","reason":null}`),
+		line(2, "attempt.launched", `{"worker_pid":10,"worker_start_time":"2026-09-29T00:00:00Z","native_pid":11,"native_pgid":11}`),
+		line(3, "attempt.state_changed", `{"state":"running","reason":null}`),
+		line(4, "attempt.progress", `{"assistant_turns":1,"tool_uses":{},"retries":0}`),
+		line(5, "attempt.state_changed", `{"state":"failed_native","reason":"result_unobserved"}`),
+	}
+	appendSpool := func(s string) {
+		fh, err := os.OpenFile(spool, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600) //nolint:gosec // G304: a test temp path
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = fh.Close() }()
+		if _, err := fh.WriteString(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	workerEvents := func() []string {
+		evs, err := j.Events(t.Context(), ref.RunID, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, ev := range evs {
+			if ev.ProducerID == "wrk_"+ref.AttemptID {
+				got = append(got, ev.EventID)
+			}
+		}
+		return got
+	}
+	ingest := func(wantSeq int64, wantEvents int, wantState string) {
+		t.Helper()
+		seq, err := supervisor.Ingest(t.Context(), j, ref)
+		if err != nil {
+			t.Fatalf("Ingest: %v", err)
+		}
+		a, err := j.Attempt(t.Context(), ref.AttemptID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := workerEvents()
+		if seq != wantSeq || len(got) != wantEvents || a.State != wantState {
+			t.Fatalf("Ingest = seq %d, %d worker events, attempt %s; want seq %d, %d events, %s", seq, len(got), a.State, wantSeq, wantEvents, wantState)
+		}
+		if len(slices.Compact(slices.Sorted(slices.Values(got)))) != len(got) {
+			t.Fatalf("duplicate events journaled: %v", got)
+		}
+	}
+
+	// Three whole lines and a torn fourth: the torn line waits.
+	torn := lines[3][:len(lines[3])/2]
+	appendSpool(lines[0] + lines[1] + lines[2] + torn)
+	ingest(3, 3, "running")
+	a, _ := j.Attempt(t.Context(), ref.AttemptID)
+	if want := int64(len(lines[0] + lines[1] + lines[2])); a.SpoolOffset != want {
+		t.Fatalf("spool_offset = %d, want %d", a.SpoolOffset, want)
+	}
+	// The worker finishes the line and writes one more.
+	appendSpool(lines[3][len(torn):] + lines[4])
+	ingest(5, 5, "failed_native")
+	// Nothing new: nothing added.
+	ingest(5, 5, "failed_native")
+
+	// A stored offset behind the journal (a database restored from a
+	// backup, say) replays the spool, and every replayed event is ignored
+	// by its event_id.
+	db := rawDB(t, state)
+	if _, err := db.ExecContext(t.Context(), `UPDATE attempts SET spool_offset = 0 WHERE attempt_id = ?`, ref.AttemptID); err != nil {
+		t.Fatal(err)
+	}
+	ingest(5, 5, "failed_native")
+
+	// Ingestion resumes at the stored offset: bytes before it are never
+	// read again, so damage there goes unseen.
+	fh, err := os.OpenFile(spool, os.O_WRONLY, 0o600) //nolint:gosec // G304: a test temp path
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fh.WriteAt([]byte("#"), 0); err != nil {
+		t.Fatal(err)
+	}
+	_ = fh.Close()
+	ingest(5, 5, "failed_native")
+
+	// A line from another producer is refused and not journaled.
+	other := strings.Replace(line(6, "attempt.progress", `{"assistant_turns":2,"tool_uses":{},"retries":0}`), `"wrk_`, `"sup_`, 1)
+	appendSpool(other)
+	if _, err := supervisor.Ingest(t.Context(), j, ref); !errors.Is(err, supervisor.ErrCorruptSpool) {
+		t.Fatalf("Ingest of a foreign producer's line: err = %v, want ErrCorruptSpool", err)
+	}
+	if got := workerEvents(); len(got) != 5 {
+		t.Fatalf("worker events after a corrupt line = %d, want 5", len(got))
+	}
+}
+
+func rawDB(t *testing.T, state string) *sql.DB {
+	t.Helper()
+	p := filepath.ToSlash(filepath.Join(state, journal.DBName))
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	u := url.URL{Scheme: "file", Path: p, RawQuery: "_pragma=busy_timeout(5000)"}
+	db, err := sql.Open("sqlite", u.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
+func TestOwnerLockExclusive(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	release, err := supervisor.AcquireOwner(dir)
+	if err != nil {
+		t.Fatalf("first AcquireOwner: %v", err)
+	}
+	if _, err := supervisor.AcquireOwner(dir); !errors.Is(err, supervisor.ErrOwnerHeld) {
+		t.Fatalf("second AcquireOwner while held: err = %v, want ErrOwnerHeld", err)
+	}
+	release()
+	release() // idempotent
+	again, err := supervisor.AcquireOwner(dir)
+	if err != nil {
+		t.Fatalf("AcquireOwner after release: %v", err)
+	}
+	again()
+}
+
+// liveRun is a `mythhelm run --format jsonl` child whose stdout and stderr
+// are read line by line while it runs.
+type liveRun struct {
+	cmd    *exec.Cmd
+	stdout chan string
+	stderr chan string
+	done   chan struct{}
+	out    []string // every stdout line seen so far
+}
+
+func startLive(t *testing.T, f fixture, args ...string) *liveRun {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	t.Cleanup(cancel)
+	cmd := f.command(ctx, args...)
+	cmd.Stdin = strings.NewReader("")
+	so, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	se, err := cmd.StderrPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	r := &liveRun{cmd: cmd, stdout: make(chan string, 1024), stderr: make(chan string, 1024), done: make(chan struct{})}
+	pump := func(src *bufio.Scanner, dst chan string, closeDone bool) {
+		for src.Scan() {
+			dst <- src.Text()
+		}
+		close(dst)
+		if closeDone {
+			close(r.done)
+		}
+	}
+	go pump(bufio.NewScanner(so), r.stdout, true)
+	go pump(bufio.NewScanner(se), r.stderr, false)
+	return r
+}
+
+// waitStdout reads stdout until a line satisfies match.
+func (r *liveRun) waitStdout(t *testing.T, what string, match func(journal.Event) bool) {
+	t.Helper()
+	timeout := time.After(time.Minute)
+	for {
+		select {
+		case line, ok := <-r.stdout:
+			if !ok {
+				t.Fatalf("stdout closed before %s; saw %q", what, r.out)
+			}
+			r.out = append(r.out, line)
+			var ev journal.Event
+			if json.Unmarshal([]byte(line), &ev) == nil && match(ev) {
+				return
+			}
+		case <-timeout:
+			t.Fatalf("timed out waiting for %s; saw %q", what, r.out)
+		}
+	}
+}
+
+// waitStderr reads stderr until a line contains want.
+func (r *liveRun) waitStderr(t *testing.T, want string) {
+	t.Helper()
+	timeout := time.After(time.Minute)
+	for {
+		select {
+		case line, ok := <-r.stderr:
+			if !ok {
+				t.Fatalf("stderr closed before %q", want)
+			}
+			if strings.Contains(line, want) {
+				return
+			}
+		case <-timeout:
+			t.Fatalf("timed out waiting for %q on stderr", want)
+		}
+	}
+}
+
+// wait collects the remaining output and the exit code.
+func (r *liveRun) wait(t *testing.T) (int, []string, string) {
+	t.Helper()
+	for line := range r.stdout {
+		r.out = append(r.out, line)
+	}
+	var stderr []string
+	for line := range r.stderr {
+		stderr = append(stderr, line)
+	}
+	<-r.done
+	err := r.cmd.Wait()
+	var exitErr *exec.ExitError
+	switch {
+	case err == nil:
+		return 0, r.out, strings.Join(stderr, "\n")
+	case errors.As(err, &exitErr):
+		return exitErr.ExitCode(), r.out, strings.Join(stderr, "\n")
+	}
+	t.Fatalf("waiting for mythhelm run: %v", err)
+	return 0, nil, ""
+}
+
+func isType(typ string) func(journal.Event) bool {
+	return func(ev journal.Event) bool { return ev.Type == typ }
+}
+
+func requireSignals(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Ctrl-C is delivered as SIGINT to the CLI; Windows console control events are not driven by this test")
+	}
+}
+
+func TestInterruptBeforeWorkerSpawnNeverLaunchesNative(t *testing.T) {
+	for _, stage := range []string{"executing", "launch_intent_recorded"} {
+		t.Run(stage, func(t *testing.T) {
+			f := newFixture(t)
+			d, err := admission.Decide(t.Context(), admission.Request{
+				StateDir: f.state, Repo: f.repo, TaskFile: f.task,
+				Adapter: admission.AdapterFake, Billing: admission.BillingLocalScripted,
+				ExecutionProfile: admission.ProfileTrustedHost, Env: os.Environ(),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			interrupts := make(chan os.Signal, 1)
+			sent := false
+			out, err := supervisor.Run(t.Context(), d, supervisor.Hooks{
+				Interrupt: interrupts,
+				Event: func(ev journal.Event) {
+					if sent {
+						return
+					}
+					if stage == "executing" && ev.Type == "run.state_changed" && payloadOf(t, ev)["state"] == "executing" ||
+						stage == "launch_intent_recorded" && ev.Type == "attempt.launch_intent_recorded" {
+						sent = true
+						interrupts <- os.Interrupt
+					}
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !sent || out.State != supervisor.RunCancelled {
+				t.Fatalf("interrupt sent=%t, run state=%s; want cancelled", sent, out.State)
+			}
+			if run := f.onlyRun(t); run.State != string(supervisor.RunCancelled) {
+				t.Fatalf("projected run state=%s, want cancelled", run.State)
+			}
+			evs := f.events(t, d.RunID)
+			if typeIndex(evs, "attempt.launched") >= 0 {
+				t.Fatal("an interrupt before spawn still launched the native")
+			}
+			if _, err := os.Stat(filepath.Join(workers.AttemptDir(f.state, d.RunID, d.AttemptID), "worker.json")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("worker identity exists after cancellation: %v", err)
+			}
+		})
+	}
+}
+
+func TestCtrlCOnceStopsAndExits130(t *testing.T) {
+	t.Parallel()
+	requireSignals(t)
+	f := newFixture(t)
+	r := startLive(t, f, f.fakeRun("--format", "jsonl", "--scenario", "slow")...)
+	r.waitStdout(t, "the native session", isType("attempt.native_session"))
+	if err := r.cmd.Process.Signal(os.Interrupt); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := r.wait(t)
+	if code != 130 {
+		t.Fatalf("exit %d, stderr %q; want 130", code, stderr)
+	}
+	if !strings.Contains(stderr, supervisor.StopRequestedNotice) {
+		t.Fatalf("stderr %q does not say the stop was requested", stderr)
+	}
+	evs, err := decodeEnvelopes(strings.Join(stdout, "\n") + "\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	requested, stopped, cancelled := typeIndex(evs, "attempt.stop_requested"), typeIndex(evs, "attempt.stopped"), -1
+	for i, ev := range evs {
+		if ev.Type == "run.state_changed" && payloadOf(t, ev)["state"] == "cancelled" {
+			cancelled = i
+		}
+	}
+	if requested < 0 || stopped <= requested || cancelled <= stopped {
+		t.Fatalf("order stop_requested=%d stopped=%d cancelled=%d, want the confirmed stop before cancelled", requested, stopped, cancelled)
+	}
+	if p := payloadOf(t, evs[stopped]); p["confirmed"] != true {
+		t.Fatalf("attempt.stopped = %v, want confirmed", p)
+	}
+	if run := f.onlyRun(t); run.State != "cancelled" {
+		t.Fatalf("run projected %s, want cancelled", run.State)
+	}
+}
+
+func TestCtrlCTwiceDetachesExit6(t *testing.T) {
+	t.Parallel()
+	requireSignals(t)
+	f := newFixture(t)
+	// ignore-sigint holds out through the first rung (3 s), so the stop is
+	// still unconfirmed when the second interrupt arrives.
+	r := startLive(t, f, f.fakeRun("--format", "jsonl", "--scenario", "ignore-sigint")...)
+	r.waitStdout(t, "the native session", isType("attempt.native_session"))
+	if err := r.cmd.Process.Signal(os.Interrupt); err != nil {
+		t.Fatal(err)
+	}
+	r.waitStderr(t, supervisor.StopRequestedNotice)
+	if err := r.cmd.Process.Signal(os.Interrupt); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := r.wait(t)
+	if code != 6 {
+		t.Fatalf("exit %d, stderr %q; want 6", code, stderr)
+	}
+	if !strings.Contains(stderr, "stop not yet confirmed") {
+		t.Fatalf("stderr %q does not say the stop is unconfirmed", stderr)
+	}
+	evs, err := decodeEnvelopes(strings.Join(stdout, "\n") + "\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if typeIndex(evs, "attempt.stopped") >= 0 {
+		t.Fatalf("the CLI printed attempt.stopped before detaching, so the stop was already confirmed")
+	}
+	if res := payloadOf(t, evs[len(evs)-1]); res["exit_code"] != float64(6) || res["state"] != "stopping" {
+		t.Fatalf("run.result = %v, want exit 6 in state stopping", res)
+	}
+	run := f.onlyRun(t)
+	if run.State != "stopping" {
+		t.Fatalf("run projected %s after detaching, want stopping", run.State)
+	}
+
+	// The worker still owns the attempt and confirms the stop on its own.
+	a := findAttempt(t, f, run.RunID)
+	waitSpool(t, filepath.Join(workers.AttemptDir(f.state, run.RunID, a), supervisor.SpoolFile), `"type":"attempt.stopped","payload":{"confirmed":true`)
+}
+
+func findAttempt(t *testing.T, f fixture, runID string) string {
+	t.Helper()
+	i := typeIndex(f.events(t, runID), "attempt.launch_intent_recorded")
+	if i < 0 {
+		t.Fatalf("run %s has no attempt", runID)
+	}
+	return f.events(t, runID)[i].AttemptID
+}
+
+// waitSpool polls a spool until it contains want.
+func waitSpool(t *testing.T, path, want string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Minute)
+	for {
+		b, _ := os.ReadFile(path) //nolint:gosec // G304: a test temp path
+		if bytes.Contains(b, []byte(want)) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("spool %s never contained %s:\n%s", path, want, b)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestWorkerKilledRunInterruptedExit6(t *testing.T) {
+	t.Parallel()
+	requireSignals(t)
+	f := newFixture(t)
+	r := startLive(t, f, f.fakeRun("--format", "jsonl", "--scenario", "slow")...)
+	r.waitStdout(t, "the native session", isType("attempt.native_session"))
+	run := f.onlyRun(t)
+	id, err := workers.ReadIdentity(workers.AttemptDir(f.state, run.RunID, findAttempt(t, f, run.RunID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pid := range []int{id.PID, *id.NativePID} {
+		proc, err := os.FindProcess(pid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := proc.Kill(); err != nil {
+			t.Fatalf("killing pid %d: %v", pid, err)
+		}
+	}
+	code, _, stderr := r.wait(t)
+	if code != 6 {
+		t.Fatalf("exit %d, stderr %q; want 6", code, stderr)
+	}
+	if run := f.onlyRun(t); run.State != "interrupted" || run.Reason != "worker_lost" {
+		t.Fatalf("run projected %s/%s, want interrupted/worker_lost", run.State, run.Reason)
+	}
+	a, err := f.journal(t).Attempt(t.Context(), findAttempt(t, f, run.RunID))
+	if err != nil || a.State != "quarantined" {
+		t.Fatalf("attempt = %+v, %v; want quarantined", a, err)
+	}
+}
+
+func TestIngestFailureInterruptsRunExit6(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	r := startLive(t, f, f.fakeRun("--format", "jsonl", "--scenario", "slow")...)
+	// After its progress, the slow scenario's worker spools nothing until
+	// it is stopped, so the lines below follow its last one.
+	r.waitStdout(t, "the attempt's progress", isType("attempt.progress"))
+	run := f.onlyRun(t)
+	attemptID := findAttempt(t, f, run.RunID)
+	dir := workers.AttemptDir(f.state, run.RunID, attemptID)
+	spool := filepath.Join(dir, supervisor.SpoolFile)
+	b, err := os.ReadFile(spool) //nolint:gosec // G304: a test temp path
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A valid worker state change, journaled in the same ingest as the line
+	// no worker writes that follows it.
+	evs := f.events(t, run.RunID)
+	taskID := evs[typeIndex(evs, "attempt.launch_intent_recorded")].TaskID
+	forged, err := json.Marshal(journal.Event{SchemaVersion: 1, EventID: ids.New("evt"), RunID: run.RunID, TaskID: taskID,
+		AttemptID: attemptID, ProducerID: "wrk_" + attemptID, ProducerSequence: int64(bytes.Count(b, []byte("\n"))) + 1, Generation: 1,
+		ObservedAt: time.Now().UTC(), Type: "attempt.state_changed", Payload: json.RawMessage(`{"state":"failed_native","reason":"forged_reason"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fh, err := os.OpenFile(spool, os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // G304: a test temp path
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = fh.WriteString(string(forged) + "\n{}\n")
+	_ = fh.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := r.wait(t)
+	// The worker still owns the native; stop it through the production path.
+	if err := workers.RequestStop(dir, "test-cleanup"); err != nil {
+		t.Fatal(err)
+	}
+	waitSpool(t, spool, `"type":"attempt.stopped"`)
+
+	if code != 6 || !strings.Contains(stderr, "mythhelm recover "+run.RunID) {
+		t.Fatalf("exit %d, stderr %q; want exit 6 naming mythhelm recover", code, stderr)
+	}
+	if run := f.onlyRun(t); run.State != "interrupted" || run.Reason != "ingest_failed" {
+		t.Fatalf("run projected %s/%s, want interrupted/ingest_failed", run.State, run.Reason)
+	}
+	// run.result reports the attempt as journaled, not as last seen.
+	if res := lastResult(t, strings.Join(stdout, "\n")+"\n"); res["attempt_reason"] != "forged_reason" {
+		t.Fatalf("run.result = %v, want attempt_reason forged_reason", res)
+	}
+}

@@ -360,7 +360,7 @@ func TestConcurrentTransitionsSerialise(t *testing.T) {
 
 var legalAttempt = map[AttemptState][]AttemptState{
 	AttemptLaunchIntentRecorded: {AttemptLaunching, AttemptInterrupted},
-	AttemptLaunching:            {AttemptRunning, AttemptInterrupted},
+	AttemptLaunching:            {AttemptRunning, AttemptFailedNative, AttemptInterrupted},
 	AttemptRunning:              {AttemptSucceededNative, AttemptFailedNative, AttemptStopRequested, AttemptInterrupted},
 	AttemptStopRequested:        {AttemptStopped, AttemptInterrupted},
 	AttemptInterrupted:          {AttemptQuarantined},

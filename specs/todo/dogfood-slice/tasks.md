@@ -327,7 +327,7 @@
   - Files touched outside the list: `adapters/fake/fake.go` and `fake_test.go`, `cmd/mythhelm/main.go` and `go.mod`.
 - **Files modified**: `adapters/fake/fake.go`, `adapters/fake/fake_test.go`, `cmd/mythhelm/main.go`, `docs/decisions/0004-slice-process-model.md`, `go.mod`, `internal/workers/proc_darwin.go`, `internal/workers/proc_linux.go`, `internal/workers/proc_other.go`, `internal/workers/proc_unix.go`, `internal/workers/proc_windows.go`, `internal/workers/spool.go`, `internal/workers/worker.go`, `internal/workers/worker_test.go`, `internal/workers/worker_unix_test.go`, `specs/todo/dogfood-slice/scratchpad.md`, `specs/todo/dogfood-slice/tasks.md`.
 
-### Task 10 — Supervisor run pipeline, first against the fake adapter
+### Task 10 — Supervisor run pipeline, first against the fake adapter ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -365,6 +365,20 @@
   - `TestJSONLStdoutOnlyEnvelopes`: every stdout line parses as an `Event`, and the last line is `run.result`.
 - **Test plan**: signal tests send SIGINT to a child `mythhelm run` (Unix); Windows uses `GenerateConsoleCtrlEvent` or skips with a reason.
 - **Invariants touched**: I02, I04, I05, I06, I08, §5.6, §15.10.
+- **Status**: ✅ Completed — `mythhelm run` admits a task and supervises its one fake-adapter attempt under the run's owner lock: admission decided, snapshot, launch intent, worker spawn and identity check, spool ingestion from the stored offset, Ctrl-C stop (exit 130) and detach (exit 6), and plain and JSONL renderers; PR #20.
+- **Implementation**: `admission.Decide` refuses on flags, capability, consent, preflight and the dirty checkout before anything is written. `supervisor.Run` records the run, checks for other active runs after that (race-free), then snapshots, spawns and ingests until the attempt ends, mapping the outcome to exit 3, 4, 5, 6 or 130 in `internal/cli/exit.go`. An ingestion failure leaves the run `interrupted`/`ingest_failed`. ADR 0005 records the owner lock and ingestion. Commits 2706e9b, 8c386e2, efceef2.
+- **Spec deviations**:
+  - A native success ends `verifying` → `failed`/`verification_unavailable` with exit 5, not 0. No frozen or verified candidate exists yet (I07), and a run left in `verifying` would block every later run as active. Tasks 11–12 replace this.
+  - `--adapter claudecode` exits 7 (`adapter_unavailable`) until Tasks 16–17.
+  - `run.result` adds `attempt_reason`, the native reason design §6.4 says it carries, such as `result_unobserved`.
+  - A worker that has already exited and been reaped is accepted on its PID and token when its start time can no longer be read (ADR 0005).
+  - Flags for later tasks are refused (exit 2), not ignored. `Ingest` takes `AttemptRef{StateDir, RunID, AttemptID}`.
+  - `internal/journal/projections.go`: the supervisor cannot query the database except through the journal package. It adds the spool offset (read, set, advance), process IDs, session ID, `RunsInStates` and `ProducerSequence`.
+  - `internal/supervisor/state.go` and `state_test.go`: adds `launching → failed_native`, the worker's `launch_failed` path in ADR 0004, which the table lacked. `TransitionAttempt` now shares `setAttemptState` with ingest.
+  - `internal/cli/dispatch.go` and `internal/cli/exit.go`: they register `run`, and all exit-code mapping lives in one place.
+  - `internal/supervisor/ownerlock_unix.go` and `ownerlock_windows.go`: the lock calls differ per platform.
+  - `docs/decisions/0005-run-owner-lock-and-ingestion.md`: the process-ownership decision record required in the same PR.
+- **Files modified**: `docs/decisions/0005-run-owner-lock-and-ingestion.md`, `internal/admission/admission.go`, `internal/cli/dispatch.go`, `internal/cli/exit.go`, `internal/cli/render.go`, `internal/cli/run.go`, `internal/journal/projections.go`, `internal/supervisor/ingest.go`, `internal/supervisor/ownerlock.go`, `internal/supervisor/ownerlock_unix.go`, `internal/supervisor/ownerlock_windows.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/pipeline_test.go`, `internal/supervisor/state.go`, `internal/supervisor/state_test.go`, `specs/todo/dogfood-slice/tasks.md`.
 
 ### Task 11 — Candidate freeze and validation flags
 

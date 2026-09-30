@@ -3,6 +3,7 @@ package journal
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -42,7 +43,7 @@ type RunRow struct {
 }
 
 // AttemptRow is the part of an attempt's projection known when its launch
-// intent is recorded.
+// intent is recorded, plus how far its spool has been ingested.
 type AttemptRow struct {
 	AttemptID         string
 	RunID             string
@@ -52,6 +53,7 @@ type AttemptRow struct {
 	Reason            string
 	LaunchTokenSHA256 string
 	WorkspacePath     string
+	SpoolOffset       int64 // bytes of spool.jsonl already journaled; set only by SetSpoolOffset
 }
 
 func formatTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
@@ -145,13 +147,81 @@ func requireOneRow(res sql.Result, kind, id string) error {
 	return nil
 }
 
+// SetSpoolOffset records inside tx that attemptID's spool has been journaled
+// up to offset bytes, so the offset commits with the event it follows.
+func SetSpoolOffset(ctx context.Context, tx *sql.Tx, attemptID string, offset int64) error {
+	res, err := tx.ExecContext(ctx, `UPDATE attempts SET spool_offset = ? WHERE attempt_id = ?`, offset, attemptID)
+	if err != nil {
+		return fmt.Errorf("journal: updating attempt %s spool offset: %w", attemptID, err)
+	}
+	return requireOneRow(res, "attempt", attemptID)
+}
+
+// AdvanceSpoolOffset moves attemptID's spool offset forward to offset, never
+// back. It is for spool lines whose events were already journaled, where
+// Append does not run the projection that would move it.
+func (j *Journal) AdvanceSpoolOffset(ctx context.Context, attemptID string, offset int64) error {
+	res, err := j.db.ExecContext(ctx, `UPDATE attempts SET spool_offset = MAX(spool_offset, ?) WHERE attempt_id = ?`,
+		offset, attemptID)
+	if err != nil {
+		return fmt.Errorf("journal: advancing attempt %s spool offset: %w", attemptID, err)
+	}
+	return requireOneRow(res, "attempt", attemptID)
+}
+
+// LaunchedProcesses is the process identity an attempt.launched event reports.
+// NativePID and NativePGID are nil when the native was not started or the
+// platform has no owned process group.
+type LaunchedProcesses struct {
+	WorkerPID       int
+	WorkerStartTime time.Time
+	NativePID       *int
+	NativePGID      *int
+}
+
+// SetAttemptProcesses records attemptID's worker and native process identity
+// inside tx.
+func SetAttemptProcesses(ctx context.Context, tx *sql.Tx, attemptID string, p LaunchedProcesses) error {
+	res, err := tx.ExecContext(ctx, `UPDATE attempts SET worker_pid = ?, worker_start_time = ?, native_pid = ?,
+		native_pgid = ? WHERE attempt_id = ?`, p.WorkerPID, formatTime(p.WorkerStartTime), p.NativePID, p.NativePGID, attemptID)
+	if err != nil {
+		return fmt.Errorf("journal: updating attempt %s processes: %w", attemptID, err)
+	}
+	return requireOneRow(res, "attempt", attemptID)
+}
+
+// SetNativeSession records attemptID's native session ID inside tx.
+func SetNativeSession(ctx context.Context, tx *sql.Tx, attemptID, sessionID string) error {
+	res, err := tx.ExecContext(ctx, `UPDATE attempts SET native_session_id = ? WHERE attempt_id = ?`,
+		nullable(sessionID), attemptID)
+	if err != nil {
+		return fmt.Errorf("journal: updating attempt %s session: %w", attemptID, err)
+	}
+	return requireOneRow(res, "attempt", attemptID)
+}
+
+// ProducerSequence returns the last journaled producer_sequence of
+// producerID, or 0 when it has journaled nothing.
+func (j *Journal) ProducerSequence(ctx context.Context, producerID string) (int64, error) {
+	var seq int64
+	err := j.db.QueryRowContext(ctx, `SELECT last_sequence FROM producers WHERE producer_id = ?`, producerID).Scan(&seq)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("journal: reading producer %s: %w", producerID, err)
+	}
+	return seq, nil
+}
+
 // Attempt returns attemptID's projection.
 func (j *Journal) Attempt(ctx context.Context, attemptID string) (AttemptRow, error) {
 	var a AttemptRow
 	var reason sql.NullString
 	err := j.db.QueryRowContext(ctx, `SELECT attempt_id, run_id, task_id, attempt_number, state, reason,
-		launch_token_sha256, workspace_path FROM attempts WHERE attempt_id = ?`, attemptID).Scan(
-		&a.AttemptID, &a.RunID, &a.TaskID, &a.AttemptNumber, &a.State, &reason, &a.LaunchTokenSHA256, &a.WorkspacePath)
+		launch_token_sha256, workspace_path, spool_offset FROM attempts WHERE attempt_id = ?`, attemptID).Scan(
+		&a.AttemptID, &a.RunID, &a.TaskID, &a.AttemptNumber, &a.State, &reason, &a.LaunchTokenSHA256, &a.WorkspacePath,
+		&a.SpoolOffset)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AttemptRow{}, fmt.Errorf("journal: attempt %s: %w", attemptID, ErrNotFound)
 	}
@@ -199,15 +269,31 @@ func OpenReadOnly(ctx context.Context, dir string) (*Journal, error) {
 	return &Journal{db: db}, nil
 }
 
+// RunsInStates returns every run projection whose state is one of states,
+// newest first.
+func (j *Journal) RunsInStates(ctx context.Context, states ...string) ([]RunRow, error) {
+	set, err := json.Marshal(states)
+	if err != nil {
+		return nil, err
+	}
+	return j.queryRuns(ctx, runSelect+`WHERE state IN (SELECT value FROM json_each(?)) ORDER BY run_id DESC`, string(set))
+}
+
 // ListRuns returns up to limit run projections, newest first. Run IDs sort
 // by creation time, so the order is by run_id.
 func (j *Journal) ListRuns(ctx context.Context, limit int) ([]RunRow, error) {
 	if limit < 1 {
 		return nil, fmt.Errorf("journal: list limit must be at least 1, got %d", limit)
 	}
-	rows, err := j.db.QueryContext(ctx, `SELECT run_id, state, reason, adapter_id, source_repo, source_branch,
-		base_rev, task_sha256, billing_posture, execution_profile, created_at, updated_at
-		FROM runs ORDER BY run_id DESC LIMIT ?`, limit)
+	return j.queryRuns(ctx, runSelect+`ORDER BY run_id DESC LIMIT ?`, limit)
+}
+
+const runSelect = `SELECT run_id, state, reason, adapter_id, source_repo, source_branch,
+	base_rev, task_sha256, billing_posture, execution_profile, created_at, updated_at FROM runs `
+
+// queryRuns reads the run projections query selects with runSelect.
+func (j *Journal) queryRuns(ctx context.Context, query string, args ...any) ([]RunRow, error) {
+	rows, err := j.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("journal: listing runs: %w", err)
 	}
