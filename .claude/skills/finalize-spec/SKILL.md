@@ -41,7 +41,7 @@ Finalizing never happens in the shared checkout: other sessions use its index an
 
 First decide from GitHub, not from memory, whether this is a resumed run: `git fetch origin`, then `gh pr list --state all --head docs/<alias>-finalize --json number,state,mergeCommit`.
 
-- **Merged** finalize pull request (the spec is in `specs/done/` on origin/main): the record has landed. Go straight to Step 5 with its merge commit, then Steps 6–8. `finalize-spec-verify` would rightly refuse a spec already in `done/`.
+- **Merged** finalize pull request (the spec is in `specs/done/` on origin/main): the record has landed. When the run-events log already holds this spec's `lifecycle` row `unfinalized -> done` with `result: ok` (`grep` it in the main checkout's `.claude/data/run-events.jsonl`), the finalize is complete: report that and stop. Otherwise go straight to Step 5 with its merge commit, then Steps 6–8; `finalize-spec-verify` would rightly refuse a spec already in `done/`. The log is local, so another machine re-runs Steps 5–6, which is safe: a green verdict re-verified is still green, and `pm-sync-core` skips a card already `shipped`.
 - **Open** finalize pull request: use its worktree, or recreate one from the branch (`git worktree add ../<repo>-<alias>-finalize docs/<alias>-finalize`), and go straight to `/finalize-spec-publish` step 7.
 - **None**, or only closed unmerged ones: a fresh run from Step 1, in a worktree that holds only this run's work:
   - No branch `docs/<alias>-finalize` and no worktree at the path: `git worktree add -b docs/<alias>-finalize ../<repo>-<alias>-finalize origin/main`.
@@ -58,7 +58,7 @@ Record the start: `python3 scripts/harness/runspec.py event --spec <spec> --kind
 5. **Verify CI** — `/finalize-spec-verify-ci <spec> --sha <finalize merge commit> --alias <alias>`.
 6. **Backlog** — `/finalize-spec-pm <spec>`. It runs after CI is green, because a card is `shipped` only when the code is merged and main is green.
 7. **Release** — with `--release` only: `/finalize-spec-tag <spec> [--publish]`. Without it, report `Release: not requested`.
-8. **Clean up and report.** `git -C <wt> status --porcelain` prints nothing, then `git worktree remove <wt>` and `git branch -d docs/<alias>-finalize`. Record `runspec.py event --spec <spec> --kind lifecycle --detail "unfinalized -> done" --result ok`, then print the report.
+8. **Clean up and report.** When the finalize worktree still exists: `git -C <wt> status --porcelain` prints nothing, then `git worktree remove <wt>`; when the local branch still exists, `git branch -d docs/<alias>-finalize`. After a squash merge `-d` refuses, because the branch's own commits never reached `main`: leave the branch and name it in the report for the maintainer, never force-delete it. Record `runspec.py event --spec <spec> --kind lifecycle --detail "unfinalized -> done" --result ok`, then print the report.
 
 ## Fix pull requests
 
