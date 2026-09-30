@@ -35,6 +35,11 @@
             "type": "command",
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-vendors.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-autonomy.sh",
+            "timeout": 10
           }
         ]
       },
@@ -50,6 +55,11 @@
             "type": "command",
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-vendors.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-autonomy.sh",
+            "timeout": 10
           }
         ]
       },
@@ -62,6 +72,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-blocking-ask.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "Stop": [
@@ -71,6 +91,11 @@
             "type": "command",
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-task-completion.sh",
             "timeout": 60
+          },
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/continue-run.sh",
+            "timeout": 30
           }
         ]
       }

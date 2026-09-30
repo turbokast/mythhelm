@@ -19,6 +19,7 @@ In Claude Code sessions, guard hooks run on every tool call ([`.claude/hooks/INV
 - **Specs.** `/create-spec`, `/refine-spec`, `/spec`, then `/run-spec` (one pinned agent, worktree and pull request per task) and `/finalize-spec`: [`specs/README.md`](specs/README.md).
 - **Completion.** A task entry follows `/task-completion`; the Stop hook blocks a claim without fresh gate markers.
 - **Learning loop.** `/apply-proposals` decides harness proposals one by one, each applied as its own pull request with an eval case; `/health-check` reports drift ([`knowledge/learning-loop.md`](knowledge/learning-loop.md)).
+- **Autonomy.** `/deliver-backlog` runs unattended only inside the maintainer's grant: [`knowledge/autonomy.md`](knowledge/autonomy.md).
 - **Optional vendors.** Codex, Muse and Jev are opt-in and advisory, never gates; reach them only through their wrappers ([`knowledge/vendors.md`](knowledge/vendors.md)).
 
 ## Conventions

@@ -26,3 +26,8 @@ coverage.*
 
 # Python bytecode from the harness scripts
 __pycache__/
+
+# Autonomous delivery: the run's state stays on the maintainer's machine, in the
+# main checkout (scripts/orchestration/delivery.py). Only the README is tracked.
+/orchestration/*
+!/orchestration/README.md

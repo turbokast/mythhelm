@@ -41,7 +41,7 @@ Always-on rules load in every session. These load when a matching file is read o
 |---|---|
 | core, adapters, protocol, tui | `go-conventions.md`; for `*_test.go` also `test-quality.md`, `red-first.md`, `teeth-discipline.md` |
 | release | `github-workflows.md` |
-| harness | `strict-by-default.md`, `agent-config-conventions.md`, `knowledge-conventions.md`, `harness-scripts.md`, `teeth-discipline.md` |
+| harness | `strict-by-default.md`, `agent-config-conventions.md`, `knowledge-conventions.md`, `harness-scripts.md`, `teeth-discipline.md`; for the delivery scripts, skills and hooks and `orchestration/`, also `autonomous-delivery.md` |
 | specs | `spec-authoring.md`, `spec-premise-grounding.md`, `teeth-discipline.md` |
 
 ## Package layout

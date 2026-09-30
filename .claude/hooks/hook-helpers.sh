@@ -14,6 +14,7 @@
 #                                  hh_inner_payload, hh_basename
 #   4. git and cd                  hh_git_parse, hh_track_cd
 #   5. Arming sentinels            hh_arm_parse, hh_sentinel_*, hh_audit
+#   6. Autonomy grant              hh_grant_state
 #
 # The tokenizer is the load-bearing piece. Guards match COMMAND POSITION only,
 # never substrings of the raw text: a quoted argument or heredoc body is data
@@ -639,5 +640,40 @@ hh_sentinel_status() {
   fi
   HH_ARM_STATUS=expired
   rm -f "$file" 2>/dev/null || true
+  return 1
+}
+
+# -----------------------------------------------------------------------------
+# 6. Autonomy grant
+# -----------------------------------------------------------------------------
+#
+# The maintainer's autonomy grant (scripts/orchestration/autonomy.py documents it)
+# binds one session until a deadline at most 24 hours after it was issued. This is the
+# same validity rule autonomy.py applies, read with jq so a hook needs no python.
+
+# hh_grant_state <data-dir> <session>: sets HH_GRANT_STATE to
+#   none      no grant file
+#   invalid   a grant file that is unreadable or out of bounds (it grants nothing)
+#   other     a valid grant bound to another session
+#   live      a valid, unexpired grant bound to <session>
+#   expired   a valid, expired grant bound to <session>
+# and HH_GRANT_ID, HH_GRANT_UNTIL (ISO) and HH_GRANT_MAXC for a valid grant.
+# Returns 0 only for live. Needs jq; without it the state is invalid.
+hh_grant_state() {
+  local file="$1/autonomy-grant.json" sid="${2:-}" row schema gsid until issued now
+  HH_GRANT_STATE=none HH_GRANT_ID="" HH_GRANT_UNTIL="" HH_GRANT_MAXC=0
+  [[ -e "$file" ]] || return 1
+  HH_GRANT_STATE=invalid
+  row="$(jq -r '[(.schema_version|tostring), (.session_id // ""), (.until_epoch|tostring),
+                 (.issued_epoch|tostring), (.id // ""), (.until // ""), (.max_continues // 0 | tostring)]
+                | @tsv' "$file" 2>/dev/null)" || return 1
+  IFS=$'\t' read -r schema gsid until issued HH_GRANT_ID HH_GRANT_UNTIL HH_GRANT_MAXC <<< "$row"
+  [[ "$schema" == 1 && "$gsid" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || return 1
+  [[ "$until" =~ ^[0-9]{1,12}$ && "$issued" =~ ^[0-9]{1,12}$ && "$HH_GRANT_MAXC" =~ ^[0-9]{1,4}$ ]] || return 1
+  (( until > issued && until - issued <= 86400 )) || return 1
+  if [[ "$gsid" != "$sid" ]]; then HH_GRANT_STATE=other; return 1; fi
+  now="$(date +%s)"
+  if (( now < until )); then HH_GRANT_STATE=live; return 0; fi
+  HH_GRANT_STATE=expired
   return 1
 }

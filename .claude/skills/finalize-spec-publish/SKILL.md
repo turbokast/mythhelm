@@ -72,7 +72,7 @@ Run it in the finalize worktree `/finalize-spec` Step 0 created (`<wt>`), after 
    git ls-tree -r --name-only origin/main -- specs/ | grep "/<spec>/"   # every path under specs/done/<spec>/
    ```
 
-   Anything else is not a merge: escalate.
+   Anything else is not a merge: escalate. Under an autonomy grant, merge only after `python3 scripts/orchestration/autonomy.py merge-check --pr <n> --spec <spec> --finalize` (`--fix` for a fix pull request) prints `verdict=ready`, with the `--match-head-commit <sha>` it names; `.claude/hooks/guard-autonomy.sh` refuses any other merge in a granted session.
 
 ## Output
 

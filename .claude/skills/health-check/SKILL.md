@@ -40,7 +40,7 @@ One report on whether the harness is in a state to trust. It changes nothing: ev
    | `required-checks` | a maintainer restores the ruleset, or updates `.claude/data/required-checks.json` and `docs/automation.md` together |
    | `main-ci` | `real`: a fix pull request; `infra` or `unknown`: the maintainer decides on a re-run |
    | `open-prs` | answer and resolve the threads on each pull request |
-   | `merged-branches` | the maintainer removes the branch (`git branch -d <branch>`) and its worktree (`git worktree remove <path>`) |
+   | `merged-branches` | `scripts/harness/prune-merged.sh` lists what it would remove; with `--apply` it deletes each branch and its clean worktree after verifying the merge (a squash merge leaves `git branch -d` unable to tell) |
 
    Never delete a branch or worktree, re-run a job, merge or edit anything from this skill.
 

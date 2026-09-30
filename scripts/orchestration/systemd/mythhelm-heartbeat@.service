@@ -1,0 +1,21 @@
+# mythhelm-heartbeat@.service: OPTIONAL, opt-in. One tick of the delivery heartbeat
+# for the checkout named by the instance (the checkout's path, escaped with
+# `systemd-escape --path`). Nothing in the repository installs or enables it; the
+# maintainer does, with the commands `scripts/orchestration/heartbeat.sh
+# --print-install` prints (also in knowledge/autonomy.md).
+#
+# Type=oneshot: the unit is done when the resumed session's process exits, so the
+# timer's OnUnitActiveSec counts from that exit and two ticks never overlap. A tick
+# that refuses (no grant, nothing to do, a session already live) exits 0.
+
+[Unit]
+Description=MYTHHELM delivery heartbeat for %f
+Documentation=file:%f/scripts/orchestration/heartbeat.sh
+
+[Service]
+Type=oneshot
+WorkingDirectory=%f
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%f/scripts/orchestration/heartbeat.sh
+TimeoutStartSec=2h
+Nice=5
