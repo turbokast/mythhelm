@@ -113,3 +113,8 @@ Each question has a conservative default, which the spec already assumes (§21: 
 - **Adapter registry.** `workers.adapters` maps descriptor IDs to constructors. Task 17 adds `builtin/claudecode` there, along with the AC-4.4 `apiKeySource` stop.
 - **Marker scan.** The Linux `/proc` marker scan is `markedPIDs` in `proc_linux.go`, and Task 15's orphan scan can reuse it.
 
+
+### Task 16 — 2026-10-01
+- **Probe evidence / Q5.** Read-only native --version observed 2.1.285. The connect-only auth-status trace returned no JSON and exit 1 under the sandbox; its empty connect trace does not prove offline behavior. Q5 stays unknown and auth status is treated as possibly networked. Raw auth output was not printed or retained; no inference/canary ran.
+- **Native configuration scope.** Current [managed settings documentation](https://code.claude.com/docs/en/managed-settings) describes remote cached policy and macOS MDM beyond the design's file inventory. Task 16 inventories the specified files and refuses unsupported policyHelper; it does not certify those additional effective sources. Architect/maintainer resolution is required before Task 20.
+- **Trust and identity.** Hash every selected lexical/canonical per-project MCP mapping using stable scope labels, so altered definitions invalidate trust and unchanged user MCP can reuse a grant across generated workspace paths. Native account identity uses a length-prefixed orgId/configDirectory pair; durable auth JSON includes only identity_ref and safe status enums, never raw config-directory text.
