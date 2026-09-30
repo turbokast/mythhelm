@@ -380,7 +380,7 @@
   - `docs/decisions/0005-run-owner-lock-and-ingestion.md`: the process-ownership decision record required in the same PR.
 - **Files modified**: `docs/decisions/0005-run-owner-lock-and-ingestion.md`, `internal/admission/admission.go`, `internal/cli/dispatch.go`, `internal/cli/exit.go`, `internal/cli/render.go`, `internal/cli/run.go`, `internal/journal/projections.go`, `internal/supervisor/ingest.go`, `internal/supervisor/ownerlock.go`, `internal/supervisor/ownerlock_unix.go`, `internal/supervisor/ownerlock_windows.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/pipeline_test.go`, `internal/supervisor/state.go`, `internal/supervisor/state_test.go`, `specs/todo/dogfood-slice/tasks.md`.
 
-### Task 11 — Candidate freeze and validation flags
+### Task 11 — Candidate freeze and validation flags ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -403,6 +403,14 @@
   - `TestCandidateHasNoSignedOffBy`.
 - **Test plan**: fixture workspaces; secret fixtures use obviously fake values.
 - **Invariants touched**: I07, §11.5, §11.6, §12.7.
+- **Status**: ✅ Completed — a confirmed worker stop freezes the complete workspace into a candidate commit on the admitted base; failed and cancelled attempts get partial candidates, while unresolved ownership gets none; PR #49.
+- **Implementation**: `integration.Freeze` uses a private Git index, streams the binary patch hash and blob scans, sets `refs/mythhelm/candidates/<attempt>`, and returns changed blob IDs plus path-only validation flags. The supervisor journals `candidate.frozen` and inserts its candidate projection atomically after `attempt.stopped`. Admission captures the source Git identity before launch. Named acceptance tests cover working-tree capture, moved HEAD, stop ordering, unresolved escapees, flags, no DCO trailer, and CRLF normalization.
+- **Spec deviations**:
+  - Verification still ends `failed`/`verification_unavailable` on native success until Task 12; freezing alone is not verification.
+  - `apply` remains unavailable until Task 14, so the unresolved-descendant acceptance test confirms the current CLI refuses it and creates no branch; Task 14 must retain that refusal after implementing `apply`.
+  - A missing Git user.name or user.email blocks admission with `git_identity_unavailable`, so a candidate never falls back to an inferred machine identity.
+  - `internal/admission/admission.go` captures and journals that identity; `internal/journal/projections.go` adds the candidate row API; `internal/security/redact.go` exposes names for the existing secret patterns; `internal/workspace/git.go` adds safe temporary-index and streaming Git calls; `internal/supervisor/pipeline_test.go` exercises stop ordering, partial results and escapees. These supporting files are required for the listed freeze API and pipeline change.
+- **Files modified**: `internal/admission/admission.go`, `internal/integration/candidate.go`, `internal/integration/flags.go`, `internal/integration/candidate_test.go`, `internal/journal/projections.go`, `internal/security/redact.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/pipeline_test.go`, `internal/workspace/git.go`, `specs/in-progress/dogfood-slice/tasks.md`, `specs/in-progress/dogfood-slice/handoff.md`.
 
 ### Task 12 — Project config, trust grants and the check runner
 

@@ -17,17 +17,30 @@ const redacted = "[REDACTED]"
 // label (the "Bearer " or "api_key=" prefix) and replaces only the secret. A
 // quoted labelled value is replaced up to its closing quote, spaces included.
 var secretPatterns = []struct {
+	name string
 	re   *regexp.Regexp
 	repl string
 }{
-	{regexp.MustCompile(`sk-ant-[A-Za-z0-9_-]+`), redacted},
-	{regexp.MustCompile(`\bgithub_pat_[A-Za-z0-9_]+`), redacted},
-	{regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]+`), redacted},
-	{regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`), redacted},
-	{regexp.MustCompile(`(?i)(\bbearer\s+)[A-Za-z0-9._~+/=-]+`), "${1}" + redacted},
-	{regexp.MustCompile(`(?i)((?:api[_-]?key|token|secret|password)["']?\s*[:=]\s*")(?:[^"\\]|\\.)*`), "${1}" + redacted},
-	{regexp.MustCompile(`(?i)((?:api[_-]?key|token|secret|password)["']?\s*[:=]\s*')[^']*`), "${1}" + redacted},
-	{regexp.MustCompile(`(?i)((?:api[_-]?key|token|secret|password)["']?\s*[:=]\s*)[^\s"']+`), "${1}" + redacted},
+	{"anthropic_key", regexp.MustCompile(`sk-ant-[A-Za-z0-9_-]+`), redacted},
+	{"github_fine_grained_token", regexp.MustCompile(`\bgithub_pat_[A-Za-z0-9_]+`), redacted},
+	{"github_token", regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]+`), redacted},
+	{"aws_access_key", regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`), redacted},
+	{"bearer_token", regexp.MustCompile(`(?i)(\bbearer\s+)[A-Za-z0-9._~+/=-]+`), "${1}" + redacted},
+	{"quoted_assignment_double", regexp.MustCompile(`(?i)((?:api[_-]?key|token|secret|password)["']?\s*[:=]\s*")(?:[^"\\]|\\.)*`), "${1}" + redacted},
+	{"quoted_assignment_single", regexp.MustCompile(`(?i)((?:api[_-]?key|token|secret|password)["']?\s*[:=]\s*')[^']*`), "${1}" + redacted},
+	{"assignment", regexp.MustCompile(`(?i)((?:api[_-]?key|token|secret|password)["']?\s*[:=]\s*)[^\s"']+`), "${1}" + redacted},
+}
+
+// SecretPatternNames returns names of known secret shapes present in content.
+// It never returns the matched values, so callers can record validation flags.
+func SecretPatternNames(content []byte) []string {
+	var names []string
+	for _, p := range secretPatterns {
+		if p.re.Match(content) {
+			names = append(names, p.name)
+		}
+	}
+	return names
 }
 
 // Redact replaces known secret shapes in s. It is defence in depth, not proof

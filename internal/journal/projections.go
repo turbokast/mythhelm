@@ -56,6 +56,48 @@ type AttemptRow struct {
 	SpoolOffset       int64 // bytes of spool.jsonl already journaled; set only by SetSpoolOffset
 }
 
+// CandidateRow is the frozen revision and validation summary for an attempt.
+type CandidateRow struct {
+	AttemptID, BaseRev, Commit, Tree, PatchSHA256 string
+	ChangedPaths, Flags                           json.RawMessage
+	Partial                                       bool
+}
+
+// InsertCandidate projects candidate.frozen in the same transaction as its
+// event, so readers never see a candidate without its journal entry.
+func InsertCandidate(ctx context.Context, tx *sql.Tx, c CandidateRow) error {
+	partial := 0
+	if c.Partial {
+		partial = 1
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO candidates
+		(attempt_id, base_rev, candidate_commit, tree_id, patch_sha256, changed_paths, flags, partial)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, c.AttemptID, c.BaseRev, c.Commit, c.Tree,
+		c.PatchSHA256, string(c.ChangedPaths), string(c.Flags), partial)
+	if err != nil {
+		return fmt.Errorf("journal: inserting candidate for %s: %w", c.AttemptID, err)
+	}
+	return nil
+}
+
+// Candidate returns the projected candidate for attemptID.
+func (j *Journal) Candidate(ctx context.Context, attemptID string) (CandidateRow, error) {
+	var c CandidateRow
+	var changed, flags string
+	var partial int
+	err := j.db.QueryRowContext(ctx, `SELECT attempt_id, base_rev, candidate_commit, tree_id,
+		patch_sha256, changed_paths, flags, partial FROM candidates WHERE attempt_id = ?`, attemptID).Scan(
+		&c.AttemptID, &c.BaseRev, &c.Commit, &c.Tree, &c.PatchSHA256, &changed, &flags, &partial)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CandidateRow{}, fmt.Errorf("journal: candidate for %s: %w", attemptID, ErrNotFound)
+	}
+	if err != nil {
+		return CandidateRow{}, fmt.Errorf("journal: reading candidate for %s: %w", attemptID, err)
+	}
+	c.ChangedPaths, c.Flags, c.Partial = json.RawMessage(changed), json.RawMessage(flags), partial != 0
+	return c, nil
+}
+
 func formatTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
 
 // InsertRun adds r's projection row inside tx.

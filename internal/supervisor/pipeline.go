@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/ids"
+	"github.com/turbokast/mythhelm/internal/integration"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/statedir"
 	"github.com/turbokast/mythhelm/internal/workers"
@@ -266,6 +269,12 @@ func (p *pipeline) attempt(ctx context.Context) error {
 	if err := p.watch(ctx, ref, exited); err != nil || p.out.Detached || p.out.State == RunInterrupted {
 		return err
 	}
+	if err := p.freezeAfterStop(ctx); err != nil {
+		return err
+	}
+	if p.out.State == RunInterrupted || p.out.State == RunFailed {
+		return nil
+	}
 	if err := p.conclude(ctx); err != nil {
 		return err
 	}
@@ -275,6 +284,79 @@ func (p *pipeline) attempt(ctx context.Context) error {
 		p.h.Notice(fmt.Sprintf("worker pid %d has not exited %s after its attempt ended", proc.Pid, reapTimeout))
 	}
 	return nil
+}
+
+// freezeAfterStop trusts the worker's confirmed stop event, never just its
+// terminal state. An unresolved descendant remains owned and cannot yield a
+// candidate. Failed and cancelled native attempts produce partial candidates.
+func (p *pipeline) freezeAfterStop(ctx context.Context) error {
+	if p.out.Detached || p.out.State == RunInterrupted || p.out.AttemptState == AttemptInterrupted ||
+		p.out.AttemptState == AttemptQuarantined {
+		return nil
+	}
+	events, err := p.j.Events(ctx, p.d.RunID, 0)
+	if err != nil {
+		return err
+	}
+	confirmed := false
+	unresolved := false
+	for _, ev := range events {
+		if ev.Type != "attempt.stopped" || ev.AttemptID != p.d.AttemptID {
+			continue
+		}
+		var stop struct {
+			Confirmed      bool  `json:"confirmed"`
+			UnresolvedPIDs []int `json:"unresolved_pids"`
+		}
+		if err := json.Unmarshal(ev.Payload, &stop); err != nil {
+			return err
+		}
+		confirmed, unresolved = stop.Confirmed, len(stop.UnresolvedPIDs) > 0
+	}
+	if !confirmed || unresolved {
+		reason := "stop_unconfirmed"
+		if unresolved {
+			reason = "unresolved_descendants"
+		}
+		return p.runTo(ctx, RunInterrupted, reason)
+	}
+	c, err := integration.Freeze(ctx, p.d.Workdir, p.d.Snapshot.BaseRev, integration.CommitMeta{
+		RunID: p.d.RunID, AttemptID: p.d.AttemptID, Title: p.d.Task.Title,
+		Name: p.d.GitName, Email: p.d.GitEmail,
+		Partial: p.out.AttemptState != AttemptSucceededNative || p.out.State == RunStopping,
+	})
+	if err != nil {
+		p.h.Notice(fmt.Sprintf("candidate freeze failed: %v", err))
+		if p.out.State == RunStopping {
+			return p.runTo(ctx, RunInterrupted, "freeze_failed")
+		}
+		return p.runTo(ctx, RunFailed, "freeze_failed")
+	}
+	changed, err := json.Marshal(c.Changed)
+	if err != nil {
+		return err
+	}
+	flags, err := json.Marshal(c.Flags)
+	if err != nil {
+		return err
+	}
+	payload := map[string]any{
+		"base_rev": c.BaseRev, "candidate_commit": c.Commit, "tree_id": c.Tree,
+		"patch_sha256": c.PatchSHA256, "changed_count": len(c.Changed), "flags": c.Flags, "partial": c.Partial,
+	}
+	ev, err := newEvent(p.d.RunID, p.d.TaskID, p.d.AttemptID, "candidate.frozen", payload, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	if err := p.prod.append(ctx, p.j, ev, func(tx *sql.Tx) error {
+		return journal.InsertCandidate(ctx, tx, journal.CandidateRow{
+			AttemptID: p.d.AttemptID, BaseRev: c.BaseRev, Commit: c.Commit, Tree: c.Tree,
+			PatchSHA256: c.PatchSHA256, ChangedPaths: changed, Flags: flags, Partial: c.Partial,
+		})
+	}); err != nil {
+		return err
+	}
+	return p.flush(ctx)
 }
 
 // stopBeforeSpawn consumes a pending interrupt at each side of the launch
@@ -469,8 +551,8 @@ func (p *pipeline) conclude(ctx context.Context) error {
 		if p.out.AttemptState == AttemptFailedNative {
 			return p.runTo(ctx, RunFailed, "native_failed")
 		}
-		// Freeze (Task 11) and verification (Task 12) are not in this
-		// build: a native success is never reported as verified.
+		// Verification (Task 12) is not in this build: a native success
+		// with a frozen candidate is never reported as verified.
 		if err := p.runTo(ctx, RunVerifying, ""); err != nil {
 			return err
 		}

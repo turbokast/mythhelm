@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -46,6 +47,29 @@ func (e *GitError) Error() string {
 // GIT_OPTIONAL_LOCKS=0, so read commands such as status never rewrite the
 // user's index (I08).
 func Git(ctx context.Context, dir string, userRepo bool, args ...string) ([]byte, error) {
+	return git(ctx, dir, userRepo, "", nil, args...)
+}
+
+// GitWithIndex runs git against an explicit temporary index. The index path
+// is set only after inherited GIT_* variables have been removed.
+func GitWithIndex(ctx context.Context, dir, index string, args ...string) ([]byte, error) {
+	return git(ctx, dir, false, index, nil, args...)
+}
+
+// GitPatchSHA256 streams a binary patch into SHA-256 without the normal
+// captured-output limit. The patch can be larger than the Git stdout cap.
+func GitPatchSHA256(ctx context.Context, dir, base, commit string, dst io.Writer) error {
+	_, err := git(ctx, dir, false, "", dst, "diff", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", base, commit) //nolint:misspell // Git's flag is --no-color.
+	return err
+}
+
+// GitBlob streams one object for bounded-memory validation scanning.
+func GitBlob(ctx context.Context, dir, oid string, dst io.Writer) error {
+	_, err := git(ctx, dir, false, "", dst, "cat-file", "blob", oid)
+	return err
+}
+
+func git(ctx context.Context, dir string, userRepo bool, index string, stream io.Writer, args ...string) ([]byte, error) {
 	hooks, err := emptyHooksDir()
 	if err != nil {
 		return nil, err
@@ -59,9 +83,16 @@ func Git(ctx context.Context, dir string, userRepo bool, args ...string) ([]byte
 	cmd := exec.CommandContext(ctx, "git", argv...) // #nosec G204 -- fixed binary, argv array, no shell
 	cmd.Dir = dir
 	cmd.Env = gitEnv(os.Environ(), userRepo)
+	if index != "" {
+		cmd.Env = append(cmd.Env, "GIT_INDEX_FILE="+index)
+	}
 	stdout := &cappedBuffer{max: maxStdout}
 	stderr := &cappedBuffer{max: maxStderr}
-	cmd.Stdout = stdout
+	if stream != nil {
+		cmd.Stdout = stream
+	} else {
+		cmd.Stdout = stdout
+	}
 	cmd.Stderr = stderr
 	err = cmd.Run()
 	var exitErr *exec.ExitError

@@ -63,7 +63,10 @@
 
 ## Task 11 — Candidate freeze and validation flags
 
-<!-- pending -->
+- `integration.Freeze(ctx, workdir, baseRev, CommitMeta)` snapshots tracked and untracked, non-ignored content through an explicit temporary `GIT_INDEX_FILE`. It parents the commit on the admitted base, regardless of workspace HEAD, sets `refs/mythhelm/candidates/<attempt>`, and returns `Candidate{BaseRev, Commit, Tree, PatchSHA256, Changed, Flags, Partial}`. The private index never touches the source checkout. `workspace.GitWithIndex`, `GitPatchSHA256` and `GitBlob` retain the Git runner's sanitized environment and stream large output.
+- `journal.Candidate(ctx, attemptID)` reads the projection inserted atomically with `candidate.frozen`. Its `ChangedPaths` and `Flags` are JSON; `CandidateRow.Partial` distinguishes failed/cancelled attempts. The event fires only after `attempt.stopped` confirmed an empty unresolved PID set. The worker already classifies escapees as interrupted; the supervisor never freezes those attempts.
+- Admission captures Git user.name/user.email in `Decision` and the `admission.decided` event. Task 15 recovery must read that recorded identity, never current mutable config, before calling `Freeze` after an ownership resolution. Missing identity blocks admission.
+- Task 12 can verify the candidate commit from the projected row. Native success still ends `verification_unavailable` until the check runner exists. Task 14 must refuse `apply` for interrupted/unresolved runs, even if a stale candidate ref exists; this task's current CLI acceptance can only assert refusal because `apply` is introduced in Task 14. Candidate commits intentionally have no Signed-off-by; the maintainer adds that after review.
 
 ## Task 12 — Project config, trust grants and the check runner
 
