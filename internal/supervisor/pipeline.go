@@ -419,7 +419,7 @@ func acceptWorker(ctx context.Context, dir string, pid int, tokenSHA256 [32]byte
 		switch {
 		case err == nil:
 			return verifyIdentity(id, pid, tokenSHA256)
-		case !errors.Is(err, os.ErrNotExist):
+		case !errors.Is(err, os.ErrNotExist) && !retryIdentityRead(err):
 			return fmt.Errorf("%w: %w", errWorkerUnverified, err)
 		case gone:
 			return fmt.Errorf("%w: the worker exited without writing its identity", errWorkerUnverified)
@@ -671,7 +671,23 @@ func (p *pipeline) runTo(ctx context.Context, to RunState, reason string) error 
 		return err
 	}
 	p.out.State, p.out.Reason = to, reason
-	return p.flush(ctx)
+	if err := p.flush(ctx); err != nil {
+		return err
+	}
+	if to == RunReadyForReview || to == RunBlocked || to == RunFailed || to == RunCancelled {
+		r, err := BuildReceipt(ctx, p.j, p.d.RunID)
+		if err != nil {
+			return fmt.Errorf("building receipt: %w", err)
+		}
+		sha, err := WriteReceipt(p.d.RunDir, r)
+		if err != nil {
+			return fmt.Errorf("writing receipt: %w", err)
+		}
+		if err := p.append(ctx, "receipt.written", map[string]any{"schema_version": 1, "sha256": sha, "path": "receipt.json"}); err != nil {
+			return fmt.Errorf("journaling receipt: %w", err)
+		}
+	}
+	return nil
 }
 
 func (p *pipeline) attemptTo(ctx context.Context, to AttemptState, reason string) error {

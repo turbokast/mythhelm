@@ -335,11 +335,11 @@ func readTask(path string) (Task, error) {
 		return Task{}, fmt.Errorf("%w: --task-file is empty", ErrInvalid)
 	}
 	sum := sha256.Sum256(b)
-	return Task{Content: b, SHA256: hex.EncodeToString(sum[:]), Title: title(b)}, nil
+	return Task{Content: b, SHA256: hex.EncodeToString(sum[:]), Title: TaskTitle(b)}, nil
 }
 
-// title is the first Markdown heading, or the first non-empty line.
-func title(b []byte) string {
+// TaskTitle is the first Markdown heading, or the first non-empty line.
+func TaskTitle(b []byte) string {
 	first := ""
 	for line := range strings.Lines(string(b)) {
 		line = strings.TrimSpace(line)
