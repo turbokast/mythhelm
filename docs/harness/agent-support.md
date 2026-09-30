@@ -22,7 +22,7 @@ Shared checks are `scripts/ci/lint-agent-harness.sh`, `scripts/ci/check-public-h
 
 ## Unattended delivery
 
-Claude Code currently has the session-bound Stop and guard hooks and optional heartbeat described in [`knowledge/autonomy.md`](../../knowledge/autonomy.md). Other clients can do interactive delivery and resume from `orchestration/` state. They must not use an autonomy grant for unattended merging or product pre-approval unless an adapter supplies a stable session identity, enforces the same grant and merge checks on every relevant action, and is tested. A grant file or an environment variable by itself does not supply that enforcement. A maintainer checkpoint stays a checkpoint in every client.
+Claude Code currently has the session-bound Stop and guard hooks and optional heartbeat described in [`knowledge/autonomy.md`](../../knowledge/autonomy.md). `autonomy.py` also recognizes `CODEX_SESSION_ID` and `CODEX_THREAD_ID`, so an operator can bind a scoped grant to a Codex session from their terminal. Codex still needs operator continuation and checkpoints: its tool calls have no MYTHHELM grant guard. Other clients can do interactive delivery and resume from `orchestration/` state. No client without a tested guard adapter may use a grant for unattended merging or product pre-approval. A grant file or environment variable alone does not supply that enforcement.
 
 ## Adding an agent client
 
