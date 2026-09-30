@@ -86,7 +86,10 @@
 
 ## Task 14 — Guarded apply
 
-<!-- pending -->
+- `workspace.ApplyBranch(ctx, userRepo, workspace, candidateRef, branch, candidateCommit)` validates the exact frozen ref, refuses a branch at a different commit, and reconciles a branch already at the candidate without fetching. It disables hooks, fsmonitor, automatic maintenance, commit-graph writes and submodule recursion; fetch does not force or write `FETCH_HEAD`. The fetch imports objects without a destination ref, then `update-ref` atomically creates the branch only if absent. This avoids the design's destination-refspec race, which could fast-forward a concurrently created branch. `workspace.BranchCommit` and `CheckBranch` support preflight. `ErrBranchExists` maps to exit 3 and `ErrInvalidBranch` to exit 2.
+- `supervisor.ApplyRun` is called under `AcquireOwner` by the CLI. It requires ready_for_review (or a journaled in-flight intent), accepted candidate flags, `--accept-unverified` for unverified runs, a source base commit, and a digest-verified v1 receipt. It journals `apply.intent_recorded`, transitions through `applying`, applies/reconciles the branch, journals `apply.completed`, transitions to `completed`, and writes and journals receipt v2. It preserves the exact verified v1 bytes in `receipt.v1.json`. `ReadReceipt` now centralizes the journal SHA-256 verification for both `review` and `apply`.
+- **For Task 15:** a crash after replacing `receipt.json` with v2 but before journaling its SHA-256 leaves a v2 file whose latest journaled digest is v1. Recovery should use the preserved `receipt.v1.json` only after checking it against the v1 journal digest, then finish or repair the v2 receipt under the owner lock. The same repair path should cover the pre-existing Task 13 terminal receipt-write failure.
+- The fake-adapter acceptance tests are in `internal/supervisor/apply_test.go`; the Git effect and hook tests are in `internal/workspace/apply_test.go`.
 
 ## Task 15 — Stop, recover, and the §18.4 fault-injection subset
 

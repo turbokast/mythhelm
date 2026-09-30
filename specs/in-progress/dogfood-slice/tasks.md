@@ -479,7 +479,7 @@
 - **Spec deviations**: `internal/admission/admission.go` exports the task-title parser so the receipt can read the digest-checked `task.md` without journaling task text; `internal/journal/journal.go` exposes the opened state directory. `internal/journal/projections.go`, `internal/supervisor/pipeline.go` and `internal/cli/dispatch.go` add the read projections, terminal receipt step and command registration. `internal/supervisor/identity_error_windows.go`, `internal/supervisor/identity_error_other.go` and `internal/supervisor/identity_error_windows_test.go` restrict the Windows worker identity retry to transient sharing violations during atomic replacement (CI exposed an existing race). Fields the current adapters cannot establish remain `"unknown"` (including hooks and allowed tools).
 - **Files modified**: `internal/admission/admission.go`, `internal/cli/dispatch.go`, `internal/cli/review.go`, `internal/cli/review_test.go`, `internal/journal/journal.go`, `internal/journal/projections.go`, `internal/supervisor/identity_error_other.go`, `internal/supervisor/identity_error_windows.go`, `internal/supervisor/identity_error_windows_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/receipt.go`, `internal/supervisor/receipt_test.go`, `specs/in-progress/dogfood-slice/tasks.md`, `specs/in-progress/dogfood-slice/handoff.md`.
 
-### Task 14 — Guarded apply
+### Task 14 — Guarded apply ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -501,6 +501,10 @@
   - `TestApplyDoesNotRunUserHooks`: a `reference-transaction` hook in the user repo, which would touch a marker file, does not run.
 - **Test plan**: temp user repos; simulate a crash by journaling the intent and then running apply again.
 - **Invariants touched**: I08, G03, §11.7, §7.5.
+- **Status**: ✅ Completed — guarded branch creation, crash reconciliation and version 2 receipt; PR #52.
+- **Implementation**: `apply` requires a ready candidate, a valid new branch, an existing admitted base commit, and explicit acceptance of validation flags or unverified checks. It journals intent before object import and atomic branch creation; a matching branch completes without another fetch. It preserves the journal-verified version 1 receipt and atomically writes and journals version 2 with the branch effect. Tests cover source fingerprint, existing/concurrent branches, run state, flags, unverified acceptance, crash reconciliation, invalid names and user hooks. Commit f1b40c9.
+- **Spec deviations**: `internal/workspace/apply.go` imports objects with a source-only, no-force fetch and creates the branch with `update-ref` expecting an absent old ref. The design's destination fetch refspec can fast-forward a branch created concurrently after preflight; the atomic creation closes that race. `internal/workspace/apply_test.go` tests the competing write. `docs/decisions/0006-guarded-branch-apply.md` records this security and persistence decision. `internal/supervisor/apply.go` owns apply orchestration and journal events under the run owner lock; `internal/supervisor/apply_test.go` exercises the real fake-adapter CLI and crash path. `internal/cli/dispatch.go` registers the command. `internal/cli/review.go` uses the shared receipt digest verifier introduced in `internal/supervisor/receipt.go`.
+- **Files modified**: `docs/decisions/0006-guarded-branch-apply.md`, `internal/workspace/apply.go`, `internal/workspace/apply_test.go`, `internal/cli/apply.go`, `internal/cli/dispatch.go`, `internal/cli/review.go`, `internal/supervisor/apply.go`, `internal/supervisor/apply_test.go`, `internal/supervisor/receipt.go`, `specs/in-progress/dogfood-slice/tasks.md`, `specs/in-progress/dogfood-slice/handoff.md`.
 
 ### Task 15 — Stop, recover, and the §18.4 fault-injection subset
 
