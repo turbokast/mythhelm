@@ -1,6 +1,8 @@
 package integration_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,14 +25,19 @@ func fixture(t *testing.T) repoFixture {
 	f.git(t, "config", "user.name", "Test User")
 	f.git(t, "config", "user.email", "test@example.com")
 	f.write(t, "README.md", "base\n")
+	f.write(t, "delete.txt", "delete me\n")
 	f.write(t, ".gitignore", "ignored/\n")
-	f.git(t, "add", "README.md", ".gitignore")
+	f.git(t, "add", "README.md", "delete.txt", ".gitignore")
 	f.git(t, "commit", "--quiet", "-m", "base")
 	f.base = f.git(t, "rev-parse", "HEAD")
 	return f
 }
 
 func (f repoFixture) git(t *testing.T, args ...string) string {
+	return strings.TrimSpace(string(f.gitRaw(t, args...)))
+}
+
+func (f repoFixture) gitRaw(t *testing.T, args ...string) []byte {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = f.dir
@@ -38,7 +45,7 @@ func (f repoFixture) git(t *testing.T, args ...string) string {
 	if err != nil {
 		t.Fatalf("git %v: %v: %s", args, err, out)
 	}
-	return strings.TrimSpace(string(out))
+	return out
 }
 
 func (f repoFixture) write(t *testing.T, name, data string) {
@@ -73,7 +80,11 @@ func TestFreezeIncludesUncommittedAndUntracked(t *testing.T) {
 	f.write(t, "README.md", "modified\n")
 	f.write(t, "new.txt", "untracked\n")
 	f.write(t, "ignored/output.log", "ignored\n")
+	if err := os.Remove(filepath.Join(f.dir, "delete.txt")); err != nil {
+		t.Fatal(err)
+	}
 	head := f.git(t, "rev-parse", "HEAD")
+	index := f.git(t, "ls-files", "--stage")
 	c := f.freeze(t)
 	if c.BaseRev != f.base || c.Commit == "" || c.Tree == "" || len(c.PatchSHA256) != 64 {
 		t.Fatalf("incomplete candidate: %+v", c)
@@ -81,11 +92,29 @@ func TestFreezeIncludesUncommittedAndUntracked(t *testing.T) {
 	if f.git(t, "rev-parse", "HEAD") != head || f.git(t, "rev-parse", "HEAD^{tree}") == c.Tree {
 		t.Fatal("freeze changed HEAD or failed to capture the working tree")
 	}
+	if f.git(t, "ls-files", "--stage") != index {
+		t.Fatal("freeze changed the workspace index")
+	}
 	if got := f.git(t, "show", c.Commit+":README.md"); got != "modified" {
 		t.Fatalf("tracked content = %q", got)
 	}
 	if got := f.git(t, "show", c.Commit+":new.txt"); got != "untracked" {
 		t.Fatalf("untracked content = %q", got)
+	}
+	if !slices.ContainsFunc(c.Changed, func(p integration.ChangedPath) bool {
+		return p.Path == "delete.txt" && p.Status == "D" && p.BlobID == ""
+	}) {
+		t.Fatalf("deleted path missing from candidate metadata: %+v", c.Changed)
+	}
+	if !slices.ContainsFunc(c.Changed, func(p integration.ChangedPath) bool {
+		return p.Path == "new.txt" && p.Status == "A" && p.BlobID == f.git(t, "rev-parse", c.Commit+":new.txt")
+	}) {
+		t.Fatalf("new path blob ID missing from candidate metadata: %+v", c.Changed)
+	}
+	patch := f.gitRaw(t, "diff", "--binary", f.base, c.Commit)
+	sum := sha256.Sum256(patch)
+	if c.PatchSHA256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("patch SHA-256 = %s; want %x", c.PatchSHA256, sum)
 	}
 	if !flagExists(c, "ignored_outputs") {
 		t.Fatalf("missing ignored_outputs: %+v", c.Flags)
