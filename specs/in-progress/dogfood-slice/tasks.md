@@ -451,7 +451,7 @@
   - `internal/admission/admission.go`, `internal/cli/run.go`, `internal/cli/exit.go`, `internal/cli/render.go`, `internal/integration/candidate.go`, `internal/integration/process_unix.go`, `internal/integration/process_windows.go`, `internal/journal/projections.go`, `internal/supervisor/pipeline_test.go` and `docs/decisions/0005-run-owner-lock-and-ingestion.md` are supporting edits needed to carry the admitted config, expose CLI flags, label `NOT RUN`, execute checks, project results, update the decision record and test end-to-end outcomes.
 - **Files modified**: `go.mod`, `go.sum`, `docs/decisions/0005-run-owner-lock-and-ingestion.md`, `internal/admission/admission.go`, `internal/admission/projectconfig.go`, `internal/admission/projectconfig_test.go`, `internal/admission/trust.go`, `internal/cli/exit.go`, `internal/cli/render.go`, `internal/cli/run.go`, `internal/integration/candidate.go`, `internal/integration/process_unix.go`, `internal/integration/process_windows.go`, `internal/integration/verify.go`, `internal/integration/verify_test.go`, `internal/journal/projections.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/pipeline_test.go`, `mythhelm.toml`, `specs/in-progress/dogfood-slice/tasks.md`, `specs/in-progress/dogfood-slice/handoff.md`.
 
-### Task 13 — Receipt and `mythhelm review`
+### Task 13 — Receipt and `mythhelm review` ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -474,6 +474,10 @@
   - `TestReviewJSONLSingleObject`.
 - **Test plan**: golden files; fake-adapter pipeline runs.
 - **Invariants touched**: I09, I19, §17.1, §12.7.
+- **Status**: ✅ Completed — version 1 receipt, journaled SHA-256 and read-only review command; PR #51.
+- **Implementation**: Terminal runs build a receipt from journal events and projected candidate/check records, write it atomically, and journal its hash. `review` verifies that hash, renders flags, evidence and a TermSafe candidate diff, or emits one JSONL object. Acceptance tests cover unknown measurements, cost labelling, credential non-persistence, malicious filenames, JSONL shape and a real fake-adapter diff. Commit ee82dc0.
+- **Spec deviations**: `internal/admission/admission.go` journals the task title for `requested_outcome` without task content; `internal/journal/projections.go`, `internal/supervisor/pipeline.go` and `internal/cli/dispatch.go` add the read projections, terminal receipt step and command registration. Fields the current adapters cannot establish remain `"unknown"` (including hooks and allowed tools).
+- **Files modified**: `internal/admission/admission.go`, `internal/cli/dispatch.go`, `internal/cli/review.go`, `internal/cli/review_test.go`, `internal/journal/projections.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/receipt.go`, `internal/supervisor/receipt_test.go`, `specs/in-progress/dogfood-slice/tasks.md`, `specs/in-progress/dogfood-slice/handoff.md`.
 
 ### Task 14 — Guarded apply
 
