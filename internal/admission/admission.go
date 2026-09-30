@@ -432,6 +432,7 @@ type GitIdentity struct {
 type TaskRecord struct {
 	SHA256 string `json:"sha256"`
 	Bytes  int    `json:"bytes"`
+	Title  string `json:"title"`
 }
 
 // Record returns what admission.decided journals.
@@ -444,7 +445,7 @@ func (d Decision) Record() Record {
 		Adapter:              d.Adapter,
 		Native:               d.Probe,
 		Snapshot:             d.Snapshot,
-		Task:                 TaskRecord{SHA256: d.Task.SHA256, Bytes: len(d.Task.Content)},
+		Task:                 TaskRecord{SHA256: d.Task.SHA256, Bytes: len(d.Task.Content), Title: d.Task.Title},
 		DataDestinations:     dataDestinations(d.Adapter.ID),
 		ExecutionProfile:     d.Profile,
 		Billing:              d.Proposal.Billing,

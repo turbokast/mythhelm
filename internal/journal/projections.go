@@ -393,6 +393,73 @@ func (j *Journal) ListRuns(ctx context.Context, limit int) ([]RunRow, error) {
 	return j.queryRuns(ctx, runSelect+`ORDER BY run_id DESC LIMIT ?`, limit)
 }
 
+// Run returns one run projection, or ErrNotFound.
+func (j *Journal) Run(ctx context.Context, runID string) (RunRow, error) {
+	rows, err := j.queryRuns(ctx, runSelect+`WHERE run_id = ?`, runID)
+	if err != nil {
+		return RunRow{}, err
+	}
+	if len(rows) == 0 {
+		return RunRow{}, fmt.Errorf("journal: run %s: %w", runID, ErrNotFound)
+	}
+	return rows[0], nil
+}
+
+// LatestAttempt returns the most recent attempt for a run.
+func (j *Journal) LatestAttempt(ctx context.Context, runID string) (AttemptRow, error) {
+	var id string
+	err := j.db.QueryRowContext(ctx, `SELECT attempt_id FROM attempts WHERE run_id = ? ORDER BY attempt_number DESC LIMIT 1`, runID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AttemptRow{}, ErrNotFound
+	}
+	if err != nil {
+		return AttemptRow{}, fmt.Errorf("journal: reading latest attempt: %w", err)
+	}
+	return j.Attempt(ctx, id)
+}
+
+// LatestVerification returns the last projected verification and its checks.
+func (j *Journal) LatestVerification(ctx context.Context, runID string) (VerificationRow, error) {
+	var v VerificationRow
+	var start, finish string
+	err := j.db.QueryRowContext(ctx, `SELECT verification_id, run_id, candidate_commit, config_sha256, result, started_at, finished_at
+		FROM verifications WHERE run_id = ? ORDER BY finished_at DESC, verification_id DESC LIMIT 1`, runID).Scan(
+		&v.ID, &v.RunID, &v.CandidateCommit, &v.ConfigSHA256, &v.Result, &start, &finish)
+	if errors.Is(err, sql.ErrNoRows) {
+		return VerificationRow{}, ErrNotFound
+	}
+	if err != nil {
+		return VerificationRow{}, fmt.Errorf("journal: reading verification: %w", err)
+	}
+	if v.StartedAt, err = time.Parse(time.RFC3339Nano, start); err != nil {
+		return VerificationRow{}, err
+	}
+	if v.FinishedAt, err = time.Parse(time.RFC3339Nano, finish); err != nil {
+		return VerificationRow{}, err
+	}
+	rows, err := j.db.QueryContext(ctx, `SELECT name, status, exit_code, evidence_path, evidence_sha256
+		FROM check_results WHERE verification_id = ? ORDER BY rowid`, v.ID)
+	if err != nil {
+		return VerificationRow{}, fmt.Errorf("journal: reading checks: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var c CheckRow
+		var code sql.NullInt64
+		var path, sha sql.NullString
+		if err := rows.Scan(&c.Name, &c.Status, &code, &path, &sha); err != nil {
+			return VerificationRow{}, err
+		}
+		if code.Valid {
+			n := int(code.Int64)
+			c.ExitCode = &n
+		}
+		c.EvidencePath, c.EvidenceSHA256 = path.String, sha.String
+		v.Checks = append(v.Checks, c)
+	}
+	return v, rows.Err()
+}
+
 const runSelect = `SELECT run_id, state, reason, adapter_id, source_repo, source_branch,
 	base_rev, task_sha256, billing_posture, execution_profile, created_at, updated_at FROM runs `
 
