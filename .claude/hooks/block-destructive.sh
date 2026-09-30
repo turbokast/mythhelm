@@ -260,9 +260,11 @@ check_git() {
         "Use git branch -d, which refuses to delete an unmerged branch."
       ;;
     update-ref)
-      local del=0 ref=""
+      local del=0 ref="" skip=0
       for w in ${A[@]+"${A[@]}"}; do
+        if (( skip == 1 )); then skip=0; continue; fi
         case "$w" in
+          -m) skip=1 ;;
           -d|--delete) del=1 ;;
           -*) ;;
           *) [[ -z "$ref" ]] && ref="$w" ;;

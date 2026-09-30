@@ -47,6 +47,8 @@ echo "== unverified branch and worktree deletion =="
 block "update-ref -d a branch" 'git update-ref -d refs/heads/feature'
 block "update-ref --delete with an old value" 'git update-ref --delete refs/heads/feature 0123456789abcdef0123456789abcdef01234567'
 block "update-ref -d a short name" 'git update-ref -d feature'
+block "update-ref -d with a reflog message first" 'git update-ref -m refs/remotes/log -d refs/heads/feature'
+block "update-ref with the message after -d" 'git update-ref -d -m "cleanup" refs/heads/feature'
 block "update-ref -d through git -C" 'git -C ../other update-ref -d refs/heads/feature'
 block "update-ref -d through bash -c" "bash -c 'git update-ref -d refs/heads/feature'"
 block "update-ref -d in a chain" 'git fetch && git update-ref -d refs/heads/feature'

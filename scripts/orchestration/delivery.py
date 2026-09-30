@@ -263,6 +263,10 @@ def cmd_answer(a, root):
     with orchlib.locked(files(root)["INTENT"]):
         path = files(root)["QUESTIONS"]
         text = read(path) or ""
+        q = next((q for q in parse_questions(text) if q["id"] == a.qid), None)
+        if q and q["fields"].get("Status") != "open":
+            raise Refused("%s is already %s; file a new question to change the answer"
+                          % (a.qid, q["fields"].get("Status", "closed")))
         lines, out, target, done = text.split("\n"), [], None, False
         for line in lines:
             m = QHEAD.match(line)

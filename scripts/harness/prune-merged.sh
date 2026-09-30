@@ -17,9 +17,9 @@
 #      for `git branch -d` to see, which is why this compares against the pull
 #      request's head instead. When the head commit is not local it is fetched from
 #      the pull request's ref (read-only);
-#   4. a linked worktree holding the branch has no uncommitted or untracked change,
-#      and is removed with `git worktree remove` (never --force, which refuses a dirty
-#      tree anyway).
+#   4. a linked worktree holding the branch has no uncommitted change and no
+#      untracked or ignored file (harness state under .claude/data/ and Python
+#      bytecode excepted), and is removed with `git worktree remove`, never --force.
 # The branch is then deleted with `git update-ref -d refs/heads/<b> <tip>`: the old
 # value makes it a compare-and-swap, so a branch that moved after the check survives.
 # block-destructive.sh refuses a bare `git update-ref -d` of a branch, and
@@ -39,6 +39,9 @@ while (( $# )); do
     *) sed -n '5,8p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
   esac
 done
+# Inherited repository-selection variables would override `git -C` and point every
+# check at another checkout.
+unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_PREFIX
 for tool in git gh jq; do
   command -v "$tool" >/dev/null 2>&1 || { echo "prune-merged.sh: $tool is required" >&2; exit 2; }
 done
@@ -47,6 +50,9 @@ repo_args=()
 [[ -n "$repo" ]] && repo_args=(--repo "$repo")
 
 # Branches checked out anywhere, and where. The first worktree listed is the main one.
+# A failed or empty listing aborts before anything is deleted: a branch missing from
+# it would skip the checked-out and cleanliness checks below.
+listing="$(git -C "$top" worktree list --porcelain)" || { echo "prune-merged.sh: git worktree list failed; nothing pruned" >&2; exit 2; }
 declare -A wt_of=()
 main_wt="" path=""
 while IFS= read -r line; do
@@ -54,7 +60,8 @@ while IFS= read -r line; do
     "worktree "*) path="${line#worktree }"; [[ -n "$main_wt" ]] || main_wt="$path" ;;
     "branch refs/heads/"*) wt_of["${line#branch refs/heads/}"]="$path" ;;
   esac
-done < <(git -C "$top" worktree list --porcelain)
+done <<< "$listing"
+[[ -n "$main_wt" ]] || { echo "prune-merged.sh: git worktree list named no worktree; nothing pruned" >&2; exit 2; }
 
 default="$(git -C "$top" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
 default="${default#origin/}"
@@ -93,8 +100,13 @@ for b in "${branches[@]}"; do
     skip "$b" "local tip ${tip:0:12} holds commits pull request #$num did not merge (head ${head:0:12})"; continue
   fi
   if [[ -n "$wt" ]]; then
-    if [[ -n "$(git -C "$wt" status --porcelain 2>/dev/null || echo unreadable)" ]]; then
-      skip "$b" "its worktree $wt has uncommitted or untracked changes"; continue
+    # Every untracked file whatever status.showUntrackedFiles says, and ignored files
+    # too (a local .env is ignored, and `git worktree remove` deletes ignored files
+    # silently), except the harness state that regenerates.
+    dirt="$(git -C "$wt" status --porcelain --untracked-files=all --ignored=matching 2>/dev/null || echo unreadable)"
+    dirt="$(printf '%s\n' "$dirt" | grep -vE '^!! (.*/)?(\.claude/data/|__pycache__/)' | grep -v '^$' || true)"
+    if [[ -n "$dirt" ]]; then
+      skip "$b" "its worktree $wt has uncommitted, untracked or ignored files"; continue
     fi
   fi
   if (( apply )); then

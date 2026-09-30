@@ -86,6 +86,11 @@ RC=$?
 expect 0 "the maintainer answers from a terminal"
 check "status answered" grep -q -- "- \*\*Status\*\*: answered" "$O/QUESTIONS.md"
 check "answer recorded" grep -q -- "- \*\*Answer\*\*: the first" "$O/QUESTIONS.md"
+OUT="$(cd "$R" && python3 -c 'import pty, sys; sys.exit(pty.spawn(sys.argv[1:]) >> 8)' python3 "$DV" answer Q-1 --text "the second" 2>&1 </dev/null)"
+RC=$?
+expect 1 "an answered question is not answered again"
+has "already answered" "says why"
+check "one answer only" test "$(grep -c -- '- \*\*Answer\*\*:' "$O/QUESTIONS.md")" = 1
 run "$R" show --json
 check "Q-2 still open" bash -c "jq -e '.open_questions == [\"Q-2\"]' <<< '$OUT' >/dev/null"
 

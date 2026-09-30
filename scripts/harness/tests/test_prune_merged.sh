@@ -23,6 +23,9 @@ export PATH="$TEST_TMP/bin:$PATH" GH_FIXTURES="$TEST_TMP/fixtures"
 
 R="$TEST_TMP/repo"
 new_repo "$R"
+printf '.env\n.claude/data/*\n' > "$R/.gitignore"
+git -C "$R" add .gitignore
+git -C "$R" commit -q -m ignore -- .gitignore
 commit_on() {  # commit_on <branch> <file>: a new commit on <branch>; prints its sha
   git -C "$R" switch -q "$1" 2>/dev/null || git -C "$R" switch -q -c "$1"
   printf '%s\n' "$2" > "$R/$2"
@@ -56,6 +59,17 @@ dirty_head="$(commit_on wtdirty i.txt)";     pr wtdirty 7 MERGED "$dirty_head"
 git -C "$R" worktree add -q "$TEST_TMP/wt-dirty" wtdirty
 printf 'scratch\n' > "$TEST_TMP/wt-dirty/untracked.txt"
 pr main 8 MERGED "$(git -C "$R" rev-parse main)"
+env_head="$(commit_on wtenv j.txt)";         pr wtenv 9 MERGED "$env_head"
+git -C "$R" worktree add -q "$TEST_TMP/wt-env" wtenv
+printf 'SECRET=local\n' > "$TEST_TMP/wt-env/.env"
+state_head="$(commit_on wtstate k.txt)";     pr wtstate 10 MERGED "$state_head"
+git -C "$R" worktree add -q "$TEST_TMP/wt-state" wtstate
+mkdir -p "$TEST_TMP/wt-state/.claude/data"
+printf '{}\n' > "$TEST_TMP/wt-state/.claude/data/gate-marker-go.json"
+hidden_head="$(commit_on wthidden l.txt)";   pr wthidden 11 MERGED "$hidden_head"
+git -C "$R" worktree add -q "$TEST_TMP/wt-hidden" wthidden
+git -C "$TEST_TMP/wt-hidden" config status.showUntrackedFiles no
+printf 'draft\n' > "$TEST_TMP/wt-hidden/notes.txt"
 
 run() { OUT="$(cd "$R" && "$PM" "$@" 2>&1)"; RC=$?; }
 has() { CHECKS=$((CHECKS + 1)); [[ "$OUT" == *"$1"* ]] || fail "[$2] output lacks '$1': $OUT"; }
@@ -88,7 +102,21 @@ check "wtdirty kept" ref wtdirty
 check "dirty worktree kept" test -f "$TEST_TMP/wt-dirty/untracked.txt"
 has "skip wtdirty: its worktree" "a dirty worktree keeps the branch"
 check "main kept" ref main
+check "an ignored local file keeps the worktree" test -f "$TEST_TMP/wt-env/.env"
+has "skip wtenv: its worktree" "ignored files count as work"
+check "harness state alone does not" test ! -d "$TEST_TMP/wt-state"
+check "wtstate deleted" bash -c "! git -C '$R' rev-parse --verify --quiet refs/heads/wtstate"
+check "untracked files hidden by config still count" test -f "$TEST_TMP/wt-hidden/notes.txt"
+has "skip wthidden: its worktree" "showUntrackedFiles=no does not hide work"
+
 has "skip main" "main is never pruned"
+
+echo "== an inherited GIT_DIR does not redirect the checks =="
+cur_head="$(commit_on wtcur m.txt)";         pr wtcur 12 MERGED "$cur_head"
+git -C "$R" worktree add -q "$TEST_TMP/wt-cur" wtcur
+OUT="$(cd "$TEST_TMP/wt-cur" && GIT_DIR="$R/.git" GIT_WORK_TREE="$R" "$PM" --apply --branch wtcur 2>&1)"
+has "skip wtcur: main, default or current branch" "the invoking worktree's branch is protected"
+check "wtcur kept" ref wtcur
 
 echo "== --branch limits the run; bad usage exits 2 =="
 run --apply --branch diverged
