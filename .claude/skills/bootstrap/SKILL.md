@@ -20,7 +20,7 @@ A short orientation before task work, so the session starts from the project's a
 
 ## Steps
 
-1. **Project and conventions.** Read `CLAUDE.md` if it is not already in context, then `knowledge/README.md`.
+1. **Project and conventions.** Read `AGENTS.md` and `CLAUDE.md` if they are not already in context, then `knowledge/README.md`. The shared entrypoint is `.agents/skills/mythhelm-bootstrap/SKILL.md`.
 2. **Domains.** Read `knowledge/domains.md` and map the task's paths to domains and owning agents.
 3. **Invariants.** Read `knowledge/invariants.md`. Note which invariants the task can reach.
 4. **Active spec.** Find the spec:

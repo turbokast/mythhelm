@@ -1,6 +1,6 @@
-# Optional vendors
+# Optional consult vendors
 
-The harness can consult three paid external tools. All three are optional: nothing a contributor needs depends on them, every entry point degrades to an advisory `unavailable` result when a vendor is absent, and the offline test suite runs against stubs. The rule for using them is `.claude/rules/vendor-usage.md`.
+The harness can consult three paid external tools. This page describes the optional **consult and patch lanes**, not which coding agent drives MYTHHELM work. Codex, Muse Code, Claude Code, Grok Build, Kimi Code and OpenCode may each be a primary session; none is the default. Consult entry points degrade to an advisory `unavailable` result when a vendor is absent, and the offline test suite runs against stubs. The rule for using consults is `.claude/rules/vendor-usage.md`.
 
 | Vendor | What it is | Used for |
 |---|---|---|
@@ -36,7 +36,7 @@ Questions and thresholds live only in `scripts/jev/questions.py`. `jev.py adjudi
 
 ## Implementer lanes
 
-`scripts/vendors/codex-implement.sh` and `scripts/vendors/muse-implement.sh` let a vendor implement one task in a fresh worktree under `.claude/worktrees/`, confined by bubblewrap: the home directory, `/tmp` and sibling checkouts are hidden, only the worktree is writable, and the git metadata is read-only. The result is a patch under `.claude/data/vendor-calls/<id>/`. A task that lists a protected path (`.github/`, `.claude/`, `knowledge/`, `scripts/`, `specs/`, licence files, and `go.mod`/`go.sum` unless listed) never goes to a lane, and a patch that touches anything outside the task's Files is refused. `route_lane.py` suggests a lane per task; Claude is the default.
+`scripts/vendors/codex-implement.sh` and `scripts/vendors/muse-implement.sh` let an optional vendor implement one task in a fresh worktree under `.claude/worktrees/`, confined by bubblewrap: the home directory, `/tmp` and sibling checkouts are hidden, only the worktree is writable, and the git metadata is read-only. The result is a patch under `.claude/data/vendor-calls/<id>/`. A task that lists a protected path (`.github/`, `.claude/`, `knowledge/`, `scripts/`, `specs/`, licence files, and `go.mod`/`go.sum` unless listed) never goes to a lane, and a patch that touches anything outside the task's Files is refused. `route_lane.py` suggests an optional patch lane; the primary session may be any supported coding agent.
 
 The committing agent reviews the patch, runs every gate, and commits under its own identity with the trailer the lane reports (`Vendor-Assisted-By: Codex CLI` or `Vendor-Assisted-By: Muse CLI`), plus the usual `Signed-off-by:`. The vendor never commits or pushes.
 

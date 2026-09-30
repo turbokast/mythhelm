@@ -6,6 +6,8 @@ argument-hint: "[status | start <MH-n,spec:name,...> | approve-spec <spec> | max
 
 # Deliver Backlog
 
+This is the Claude Code adapter for `.agents/skills/mythhelm-deliver-backlog/SKILL.md`. `AGENTS.md` and `WORKFLOW.md` are shared policy; the Claude hooks and slash commands below are client-specific mechanics.
+
 Takes a set of backlog cards (and specs without a card) from wherever each one stands to merged, finalized code, through the project's own lifecycle: `/create-spec` → `/refine-spec` → `/spec` → `/run-spec` → `/finalize-spec`. This skill orchestrates; it never implements. The lifecycle skills and the agents they dispatch write the specs, the code, the reviews and the product requests. The orchestrator writes run state only through `scripts/orchestration/delivery.py`.
 
 **Resume-safe.** The run lives on disk in the main checkout's `orchestration/` (`INTENT.md`, `RUN-LOG.md`, `QUESTIONS.md`; formats in [`orchestration/README.md`](../../../orchestration/README.md)). Every invocation starts at Step 0, which reconciles that state with ground truth: spec directories and `tasks.md` on origin/main, pull requests on GitHub. Where they disagree, ground truth wins and the recorded stage is corrected. Re-invoking after a crash, a cleared context or a finished session continues the run; it never restarts it or repeats a completed stage.

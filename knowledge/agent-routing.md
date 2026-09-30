@@ -1,6 +1,6 @@
 # Agent routing
 
-The canonical mapping from agent to model tier and thinking effort. Every file in `.claude/agents/` conforms to it, and `scripts/ci/lint-agent-harness.sh` (check `routing-pins`) fails when an agent file and this page disagree.
+The Claude Code mapping from agent to model tier and thinking effort. Every file in `.claude/agents/` conforms to it, and `scripts/ci/lint-agent-harness.sh` (check `routing-pins`) fails when an agent file and this page disagree. Other clients use equivalent roles and their own model settings; these pins do not make Claude Code the default executor.
 
 ---
 

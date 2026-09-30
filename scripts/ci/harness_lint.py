@@ -12,7 +12,8 @@ Checks (each reads the tree at DIR, default the repository root):
                   haiku agents carry no effort: and no Agent tool
   haiku-effort    no dispatch of a haiku agent in .claude/ or CLAUDE.md has an
                   effort parameter within WINDOW lines
-  rule-budget     CLAUDE.md plus every rule without paths: fits RULE_BUDGET_BYTES
+  rule-budget     shared and combined Claude instructions plus always-on rules fit RULE_BUDGET_BYTES
+  portable-skills shared .agents skills and .grok adapters have valid discovery metadata
   paths-globs     every rule paths: glob matches a file in the tree, unless the line
                   above it is a "# future" comment (a marked glob that now matches is
                   reported as a warning)
@@ -71,14 +72,15 @@ import re
 import subprocess
 import sys
 
-# The always-loaded byte budget: CLAUDE.md plus every rule without paths:. Raise it
+# The always-loaded byte budget: the shared entrypoint, and Claude's entrypoint
+# including shared instructions, plus every rule without paths:. Raise it
 # only in the change that adds the bytes, after trying paths: frontmatter and moving
 # evidence to knowledge/rule-evidence/, and say in the pull request why.
 RULE_BUDGET_BYTES = 16384
 
 HAIKU_EFFORT_WINDOW = 10
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
-HARNESS_PREFIXES = (".claude/", "knowledge/", "scripts/", "docs/harness/", "product/", "orchestration/")
+HARNESS_PREFIXES = (".agents/", ".grok/", ".claude/", "knowledge/", "scripts/", "docs/harness/", "product/", "orchestration/")
 HARNESS_ROOT_FILES = ("CLAUDE.md", "AGENTS.md", "WORKFLOW.md")
 CONTEXT_LABELS = ("**Slash command**", "**Model-invoked**", "**Non-interactive**")
 
@@ -359,22 +361,52 @@ def always_on_rules(root):
 
 
 def check_rule_budget(root, files):
-    rows = []
-    for rel in ["CLAUDE.md"] + always_on_rules(root):
-        try:
-            rows.append((os.path.getsize(os.path.join(root, rel)), rel))
-        except OSError:
-            finding(rel, 0, "rule-budget", "not found")
-    total = sum(n for n, _ in rows)
-    print("Always-on context (CLAUDE.md + rules without paths:):")
-    for n, rel in sorted(rows, reverse=True):
-        print("%8d  %s" % (n, rel))
-    print("%8d  TOTAL (budget %d)" % (total, RULE_BUDGET_BYTES))
-    if total > RULE_BUDGET_BYTES:
-        finding("CLAUDE.md", 0, "rule-budget",
-                "always-on bytes %d exceed the budget %d by %d; add paths: to a rule, move evidence to "
-                "knowledge/rule-evidence/, or raise RULE_BUDGET_BYTES in scripts/ci/harness_lint.py with a reason"
-                % (total, RULE_BUDGET_BYTES, total - RULE_BUDGET_BYTES))
+    for entry, total in always_on_contexts(root).items():
+        print("Always-on context (%s): %d of %d bytes" % (entry, total, RULE_BUDGET_BYTES))
+        if total > RULE_BUDGET_BYTES:
+            finding(entry, 0, "rule-budget",
+                    "always-on bytes %d exceed the budget %d by %d; add paths: to a rule, move evidence to "
+                    "knowledge/rule-evidence/, or raise RULE_BUDGET_BYTES in scripts/ci/harness_lint.py with a reason"
+                    % (total, RULE_BUDGET_BYTES, total - RULE_BUDGET_BYTES))
+
+
+def always_on_contexts(root):
+    """Count AGENTS.md alone and Claude's CLAUDE.md plus its required AGENTS.md."""
+    rules = sum(os.path.getsize(os.path.join(root, rel)) for rel in always_on_rules(root))
+    shared = os.path.join(root, "AGENTS.md")
+    claude = os.path.join(root, "CLAUDE.md")
+    shared_bytes = os.path.getsize(shared) if os.path.isfile(shared) else 0
+    contexts = {}
+    if os.path.isfile(shared):
+        contexts["AGENTS.md"] = shared_bytes + rules
+    if os.path.isfile(claude):
+        contexts["CLAUDE.md + AGENTS.md"] = os.path.getsize(claude) + shared_bytes + rules
+    return contexts
+
+
+def check_portable_skills(root, files):
+    shared = {}
+    for rel in files:
+        m = re.fullmatch(r"\.(agents|grok)/skills/([^/]+)/SKILL\.md", rel)
+        if not m:
+            continue
+        client, folder = m.groups()
+        content = read(root, rel)
+        fm, end = frontmatter(content)
+        name = fm_scalar(fm, "name")
+        desc = fm_scalar(fm, "description")
+        if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name or "") or name != folder:
+            finding(rel, 1, "portable-skills", "name must match the lowercase skill directory")
+        if not desc or not 1 <= len(desc) <= 1024:
+            finding(rel, 1, "portable-skills", "description must be 1 to 1024 characters")
+        if end < 0 or not "\n".join(content.split("\n")[end + 1:]).strip():
+            finding(rel, 1, "portable-skills", "skill body is empty")
+        if client == "agents":
+            shared[folder] = rel
+    for rel in files:
+        m = re.fullmatch(r"\.grok/skills/([^/]+)/SKILL\.md", rel)
+        if m and m.group(1) not in shared:
+            finding(rel, 1, "portable-skills", "Grok adapter has no shared .agents skill")
 
 
 def glob_regex(glob):
@@ -1056,6 +1088,7 @@ CHECKS = {
     "routing-pins": check_routing_pins,
     "haiku-effort": check_haiku_effort,
     "rule-budget": check_rule_budget,
+    "portable-skills": check_portable_skills,
     "paths-globs": check_paths_globs,
     "hook-inventory": check_hook_inventory,
     "skill-contexts": check_skill_contexts,

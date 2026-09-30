@@ -78,6 +78,13 @@ class LocalChecks(Base):
         with mock.patch.object(health.harness_lint, "RULE_BUDGET_BYTES", 100):
             self.assertEqual(self.offline()["budget"]["status"], "fail")
 
+    def test_budget_combines_claude_and_shared_instructions(self):
+        write(self.p("AGENTS.md"), "a" * 200)
+        with mock.patch.object(health.harness_lint, "RULE_BUDGET_BYTES", 250):
+            r = self.offline()["budget"]
+        self.assertEqual(r["status"], "fail")
+        self.assertIn("always-on 304 of 250 bytes, headroom -54", r["summary"])
+
     def test_evals(self):
         self.assertEqual(self.offline()["evals"]["status"], "warn", "no cases")
         write(self.p(".claude/evals/cases/red.json"), json.dumps({

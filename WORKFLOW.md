@@ -1,6 +1,6 @@
 # Agent workflow
 
-How work moves from an idea to merged code in MYTHHELM, for the maintainers who direct the agents. Where this guide and [`docs/harness/charter.md`](docs/harness/charter.md) disagree, this guide wins. Agents find the procedures in the skills it names; the reasons behind them are in [`knowledge/`](knowledge/README.md).
+How work moves from an idea to merged code in MYTHHELM, for the maintainers who direct the agents. Where this guide and [`docs/harness/charter.md`](docs/harness/charter.md) disagree, this guide wins. [`AGENTS.md`](AGENTS.md) is the shared agent entrypoint; [agent support](docs/harness/agent-support.md) explains discovery in each client. Slash commands below are Claude Code spellings of procedures, not a required choice of agent. Other clients load the shared `.agents/skills/` entrypoints and the named stage procedure documents, then use their native tools and the same scripts and gates. The reasons behind the procedures are in [`knowledge/`](knowledge/README.md).
 
 ## Product management
 
@@ -97,9 +97,9 @@ The harness learns from its own runs. A finalize retrospective turns lessons tha
 
 ## Autonomous delivery
 
-`/deliver-backlog` takes a set of backlog cards and specs through the whole lifecycle, from `/create-spec` to `/finalize-spec`, in dependency order: specifying runs ahead, building waits until what it depends on is done. It orchestrates the skills above and never implements. Its state lives in the main checkout's `orchestration/` ([`orchestration/README.md`](orchestration/README.md)), so a new session resumes where the last one stopped.
+The delivery procedure (Claude Code: `/deliver-backlog`; other clients: `mythhelm-deliver-backlog`) takes a set of backlog cards and specs through the whole lifecycle, from create-spec to finalize-spec, in dependency order: specifying runs ahead, building waits until what it depends on is done. It orchestrates the stages above and never implements. Its state lives in the main checkout's `orchestration/` ([`orchestration/README.md`](orchestration/README.md)), so a new session resumes where the last one stopped.
 
-With you present, it asks you at each spec checkpoint and when it is stuck. To let it run while you are away, grant it autonomy from your own terminal:
+With you present, it asks you at each spec checkpoint and when it is stuck. The unattended grant and automatic continuation described below currently bind Claude Code sessions through Claude hooks. Other clients use interactive delivery until a tested adapter supplies equivalent enforcement. To let a Claude Code session run while you are away, grant it autonomy from your own terminal:
 
 ```bash
 ! scripts/orchestration/autonomy.sh grant --hours 8 --scope MH-3,MH-5 --reason "overnight run"   # in Claude Code

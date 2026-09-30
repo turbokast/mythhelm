@@ -105,6 +105,11 @@ repo req-sh
 printf '#!/usr/bin/env bash\n' > "$R/scripts/harness/new.sh"
 lib required
 check "a new harness script needs the harness gates and shellcheck" [ "$OUT" == "harness-lint harness-tests shellcheck hygiene" ]
+repo req-portable
+mkdir -p "$R/.agents/skills/demo"
+printf '%s\n' '---' 'name: demo' 'description: Demo.' '---' '# Demo' > "$R/.agents/skills/demo/SKILL.md"
+lib required
+check "a shared skill needs the harness gates" [ "$OUT" == "harness-lint harness-tests hygiene" ]
 
 echo "== a pass records a fresh marker =="
 repo pass
