@@ -1,0 +1,13 @@
+{
+  "id": "required-checks-single-source",
+  "hazard": "The finalize verifier and the health report each keep their own list of required checks, and one drifts from the ruleset.",
+  "source": "learning loop: required checks",
+  "targets": [
+    "scripts/harness/finalize.py",
+    "scripts/harness/health.py"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "\\bexpected_required_checks\\("
+  }
+}

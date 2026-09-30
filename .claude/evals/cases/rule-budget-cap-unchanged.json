@@ -1,0 +1,12 @@
+{
+  "id": "rule-budget-cap-unchanged",
+  "hazard": "The always-on byte budget is raised quietly instead of moving text to path-conditional rules or knowledge/.",
+  "source": "harness lint: rule-budget",
+  "targets": [
+    "scripts/ci/harness_lint.py"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "^RULE_BUDGET_BYTES = 16384$"
+  }
+}

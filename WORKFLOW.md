@@ -53,6 +53,18 @@ Tasks whose `Domain/agent` is `maintainer` are yours. The run hands them over wh
 
 The finalizer stops and reports when verification fails for a reason no fix can remove, a critical finding cannot be fixed, three review rounds leave the finalize pull request not ready, or `main` stays red. Re-running `/finalize-spec <name>` resumes. [`knowledge/finalize.md`](knowledge/finalize.md) explains the reason for each mechanism.
 
+## Learning loop
+
+The harness learns from its own runs. A finalize retrospective turns lessons that point at the harness into **proposals** in `.claude/proposals/pending.md`; `/research-practices` can add cited proposals from other projects' practice. Nothing in a proposal changes the harness until you decide it.
+
+1. **Notice.** When proposals are pending, each Claude Code session starts with one line: how many, and how old the oldest is.
+2. **Decide.** `/apply-proposals` shows each proposal and asks you to approve, reject or defer it, with your reason. It asks one proposal at a time; "approve all" decides nothing, and in a headless run it only returns the queue.
+3. **Apply.** Each decision becomes its own pull request from `origin/main`. An approved change touches only the proposal's target, and a rule, skill or hook change comes with an eval case that fails without the change and passes with it (you can waive the case, with a reason). The decision moves from `pending.md` to the end of `applied.md`, which is append-only. The pull request goes through the normal checks and review, and merges when you pass `--merge` or merge it yourself.
+4. **Lane 0 (off by default).** If you enable it in `.claude/proposals/auto-apply.json` and allow some files under `knowledge/`, a knowledge proposal that only appends to one of those files is applied and merged without asking you. To veto one, revert its pull request.
+5. **Stay honest.** The eval cases in `.claude/evals/cases/` pin behaviours of the harness itself (guards still block, templates still route, the always-on budget still holds) and run in CI with the harness lint. `/health-check` prints a read-only report: budget headroom, evals, pending proposals, specs stuck in flight, stale gate markers, vendor opt-in, required checks, `main`'s CI, pull requests with unresolved threads, and local branches whose pull request merged.
+
+[`knowledge/learning-loop.md`](knowledge/learning-loop.md) explains the reason for each mechanism.
+
 ## Gates, markers and the completion check
 
 - **Gate markers.** `scripts/harness/gate.sh <gate|go|harness|all>` runs a gate's fixed command and, only when it exits 0 over an unchanged tree, writes `.claude/data/gate-marker-<gate>.json` with a fingerprint of the files it checked. Editing a file afterwards makes the marker stale. `python3 scripts/harness/gatelib.py status` shows what the current change set needs and whether each marker is fresh.
@@ -69,6 +81,8 @@ The finalizer stops and reports when verification fails for a reason no fix can 
 | Open questions and research | `specs/<state>/<name>/scratchpad.md` |
 | How a finished spec went | `specs/done/<name>/retrospective.md` |
 | Proposed harness improvements | `.claude/proposals/pending.md` |
+| Decided proposals | `.claude/proposals/applied.md` |
+| Config regression cases | `.claude/evals/cases/` |
 | User-facing changes | `CHANGELOG.md` |
 | Attempts, retries, review rounds | `.claude/data/run-events.jsonl` (local, gitignored) |
 | Gate evidence | `.claude/data/gate-marker-*.json` in each worktree (local) |

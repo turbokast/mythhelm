@@ -1,0 +1,12 @@
+{
+  "id": "harness-job-runs-lint-and-hygiene",
+  "hazard": "The harness CI job stops running the agent-harness lint (and with it these evals) or the public-hygiene scan.",
+  "source": "CI: harness job",
+  "targets": [
+    ".github/workflows/ci.yml"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "(?s)(?=.*^\\s+run: scripts/ci/lint-agent-harness\\.sh$)(?=.*^\\s+run: scripts/ci/check-public-hygiene\\.sh$)"
+  }
+}
