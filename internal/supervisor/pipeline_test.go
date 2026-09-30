@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +38,17 @@ const cliEnv = "MYTHHELM_TEST_CLI"
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "__check":
+			switch os.Args[2] {
+			case "pass":
+				os.Exit(0)
+			case "fail":
+				os.Exit(1)
+			case "output":
+				fmt.Print("not formatted\n")
+				os.Exit(0)
+			}
+			os.Exit(2)
 		case workers.Command:
 			os.Exit(workers.Main(os.Args[2:]))
 		case fake.AgentCommand:
@@ -126,7 +138,137 @@ func (f fixture) run(t *testing.T, args ...string) (code int, stdout, stderr str
 // fakeRun is a complete fake-adapter command line; extra flags are appended.
 func (f fixture) fakeRun(extra ...string) []string {
 	return append([]string{"run", "--task-file", f.task, "--adapter", "fake", "--billing", "local-scripted",
-		"--execution-profile", "trusted-host", "--non-interactive"}, extra...)
+		"--execution-profile", "trusted-host", "--non-interactive", "--no-checks"}, extra...)
+}
+
+func (f fixture) config(t *testing.T, mode string) string {
+	t.Helper()
+	contents := "schema_version = 1\n[[checks]]\nname = \"test\"\nargv = [" + strconv.Quote(os.Args[0]) + ", \"__check\", " + strconv.Quote(mode) + "]\ntimeout = \"5s\"\n"
+	if err := os.WriteFile(filepath.Join(f.repo, "mythhelm.toml"), []byte(contents), 0o600); err != nil { // #nosec G703 -- fixture repo is t.TempDir
+		t.Fatal(err)
+	}
+	f.git(t, "add", "mythhelm.toml")
+	f.git(t, "commit", "--quiet", "-m", "add checks")
+	_, digest, err := admission.ParseProjectConfig([]byte(contents))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return digest
+}
+
+func (f fixture) checkedRun(digest string, extra ...string) []string {
+	args := slices.DeleteFunc(f.fakeRun(), func(s string) bool { return s == "--no-checks" })
+	return append(args, append([]string{"--trust-project-config", "sha256:" + digest}, extra...)...)
+}
+
+func TestUnknownTOMLKeyExits2(t *testing.T) {
+	f := newFixture(t)
+	if err := os.WriteFile(filepath.Join(f.repo, "mythhelm.toml"), []byte("schema_version = 1\nunknown = true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.git(t, "add", "mythhelm.toml")
+	f.git(t, "commit", "--quiet", "-m", "bad config")
+	args := slices.DeleteFunc(f.fakeRun(), func(s string) bool { return s == "--no-checks" })
+	code, _, stderr := f.run(t, args...)
+	if code != 2 || !strings.Contains(stderr, "unknown key") {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+}
+
+func TestUntrustedChecksNonInteractiveBlocked(t *testing.T) {
+	f := newFixture(t)
+	digest := f.config(t, "pass")
+	args := slices.DeleteFunc(f.fakeRun(), func(s string) bool { return s == "--no-checks" })
+	code, _, stderr := f.run(t, args...)
+	if code != 3 || !strings.Contains(stderr, "untrusted_project_config") || !strings.Contains(stderr, digest) {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+}
+
+func TestProjectConfigTrustBoundToDigest(t *testing.T) {
+	f := newFixture(t)
+	digest := f.config(t, "pass")
+	if code, _, stderr := f.run(t, f.checkedRun(digest)...); code != 0 {
+		t.Fatalf("first exit %d: %s", code, stderr)
+	}
+	args := slices.DeleteFunc(f.fakeRun(), func(s string) bool { return s == "--no-checks" })
+	if code, _, stderr := f.run(t, args...); code != 0 {
+		t.Fatalf("stored grant exit %d: %s", code, stderr)
+	}
+	if err := os.WriteFile(filepath.Join(f.repo, "mythhelm.toml"), []byte("schema_version = 1\n[[checks]]\nname = \"new\"\nargv = [\"go\", \"version\"]\ntimeout = \"1s\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.git(t, "add", "mythhelm.toml")
+	f.git(t, "commit", "--quiet", "-m", "change checks")
+	if code, _, stderr := f.run(t, args...); code != 3 || !strings.Contains(stderr, "untrusted_project_config") {
+		t.Fatalf("changed digest exit %d: %s", code, stderr)
+	}
+}
+
+func TestNativeSuccessChecksPassExit0ReadyForReview(t *testing.T) {
+	f := newFixture(t)
+	digest := f.config(t, "pass")
+	code, _, stderr := f.run(t, f.checkedRun(digest)...)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr)
+	}
+	run := f.onlyRun(t)
+	if run.State != "ready_for_review" || run.Reason != "" {
+		t.Fatalf("run %s/%s", run.State, run.Reason)
+	}
+	if typeIndex(f.events(t, run.RunID), "verification.completed") < 0 {
+		t.Fatal("no verification result event")
+	}
+}
+
+func TestNativeSuccessChecksFailExit5(t *testing.T) {
+	f := newFixture(t)
+	digest := f.config(t, "fail")
+	code, _, stderr := f.run(t, f.checkedRun(digest)...)
+	if code != 5 {
+		t.Fatalf("exit %d: %s", code, stderr)
+	}
+	run := f.onlyRun(t)
+	if run.State != "failed" || run.Reason != "verification_failed" {
+		t.Fatalf("run %s/%s", run.State, run.Reason)
+	}
+}
+
+func TestMissingExecutableUnavailableExit5(t *testing.T) {
+	f := newFixture(t)
+	contents := "schema_version = 1\n[[checks]]\nname = \"missing\"\nargv = [\"mythhelm-nonexistent-check-executable\"]\ntimeout = \"1s\"\n"
+	if err := os.WriteFile(filepath.Join(f.repo, "mythhelm.toml"), []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.git(t, "add", "mythhelm.toml")
+	f.git(t, "commit", "--quiet", "-m", "missing check")
+	_, digest, err := admission.ParseProjectConfig([]byte(contents))
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := f.run(t, f.checkedRun(digest)...)
+	if code != 5 {
+		t.Fatalf("exit %d: %s", code, stderr)
+	}
+	run := f.onlyRun(t)
+	if run.State != "failed" || run.Reason != "verification_failed" {
+		t.Fatalf("run %s/%s", run.State, run.Reason)
+	}
+}
+
+func TestNoChecksExit5Unverified(t *testing.T) {
+	f := newFixture(t)
+	code, stdout, stderr := f.run(t, f.fakeRun()...)
+	if code != 5 {
+		t.Fatalf("exit %d: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "verification: NOT RUN (waived by --no-checks)") {
+		t.Fatalf("plain output lacks NOT RUN: %s", stdout)
+	}
+	run := f.onlyRun(t)
+	if run.State != "ready_for_review" || run.Reason != "unverified" {
+		t.Fatalf("run %s/%s", run.State, run.Reason)
+	}
 }
 
 func (f fixture) journal(t *testing.T) *journal.Journal {
@@ -382,7 +524,7 @@ func TestRunOutcomeExitCodes(t *testing.T) {
 		attempt, attemptWhy string
 		category            string
 	}{
-		{scenario: "happy", code: 5, state: "failed", reason: "verification_unavailable", attempt: "succeeded_native", category: "verification_unavailable"},
+		{scenario: "happy", code: 5, state: "ready_for_review", reason: "unverified", attempt: "succeeded_native", category: "verification_unavailable"},
 		{scenario: "native-fails", code: 4, state: "failed", reason: "native_failed", attempt: "failed_native", attemptWhy: "error_during_execution", category: "native_failed"},
 		{scenario: "exit-before-result", code: 4, state: "failed", reason: "native_failed", attempt: "failed_native", attemptWhy: "result_unobserved", category: "native_failed"},
 	} {
@@ -774,6 +916,7 @@ func TestInterruptBeforeWorkerSpawnNeverLaunchesNative(t *testing.T) {
 				StateDir: f.state, Repo: f.repo, TaskFile: f.task,
 				Adapter: admission.AdapterFake, Billing: admission.BillingLocalScripted,
 				ExecutionProfile: admission.ProfileTrustedHost, Env: os.Environ(),
+				NoChecks: true,
 			})
 			if err != nil {
 				t.Fatal(err)

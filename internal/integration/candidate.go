@@ -49,6 +49,7 @@ type Candidate struct {
 	Changed                            []ChangedPath
 	Flags                              []Flag
 	Partial                            bool
+	Workspace                          string `json:"-"` // managed clone containing Commit
 }
 
 var refPart = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -68,6 +69,7 @@ func Freeze(ctx context.Context, workdir, baseRev string, meta CommitMeta) (Cand
 		return c, fmt.Errorf("resolve admitted base: %w", err)
 	}
 	c.BaseRev = strings.TrimSpace(string(base))
+	c.Workspace = workdir
 	c.Partial = meta.Partial
 
 	f, err := os.CreateTemp("", "mythhelm-freeze-index-*")

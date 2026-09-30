@@ -84,11 +84,8 @@ type Outcome struct {
 	Detached bool
 }
 
-// Run records the admitted decision d and carries its one attempt through
-// the stages that exist: snapshot, launch intent, worker spawn and identity
-// check, and spool ingestion under the run's owner lock until the attempt
-// ends or the caller detaches. Verification is not implemented yet, so a
-// native success ends failed/verification_unavailable.
+// Run records the admitted decision and carries its attempt through snapshot,
+// native execution, candidate freeze, and verification under one owner lock.
 //
 // A run that could not be recorded at all returns a *admission.BlockedError
 // (persistence_unavailable) or journal.ErrSchemaTooNew. Otherwise the
@@ -197,9 +194,30 @@ func (p *pipeline) snapshot(ctx context.Context) error {
 	if err := workspace.Snapshot(ctx, d.Snapshot.SourceRepo, d.Snapshot.BaseRev, d.Workdir); err != nil {
 		return fmt.Errorf("snapshotting %s: %w", d.Snapshot.BaseRev, err)
 	}
-	return p.append(ctx, "workspace.snapshot_created", map[string]any{
+	if !d.NoChecks {
+		_, digest, err := admission.LoadProjectConfig(d.Workdir)
+		if err != nil || digest != d.ConfigDigest {
+			return fmt.Errorf("snapshot project config does not match admitted digest %s: %w", d.ConfigDigest, errors.Join(err, admission.ErrProjectConfig))
+		}
+	}
+	at := time.Now().UTC()
+	ev, err := newEvent(d.RunID, d.TaskID, "", "workspace.snapshot_created", map[string]any{
 		"base_rev": d.Snapshot.BaseRev, "branch": nullIfEmpty(d.Snapshot.Branch), "clone_path": d.Workdir,
-	})
+		"project_config_trust_granted": d.RecordTrust,
+	}, at)
+	if err != nil {
+		return err
+	}
+	var project func(*sql.Tx) error
+	if d.RecordTrust {
+		project = func(tx *sql.Tx) error {
+			return journal.InsertTrustGrant(ctx, tx, admission.ProjectConfigTrustKind, d.RepoIdentity, d.ConfigDigest, at)
+		}
+	}
+	if err := p.prod.append(ctx, p.j, ev, project); err != nil {
+		return err
+	}
+	return p.flush(ctx)
 }
 
 // attempt records the launch intent, spawns and identifies the worker, and
@@ -551,12 +569,85 @@ func (p *pipeline) conclude(ctx context.Context) error {
 		if p.out.AttemptState == AttemptFailedNative {
 			return p.runTo(ctx, RunFailed, "native_failed")
 		}
-		// Verification (Task 12) is not in this build: a native success
-		// with a frozen candidate is never reported as verified.
 		if err := p.runTo(ctx, RunVerifying, ""); err != nil {
 			return err
 		}
-		return p.runTo(ctx, RunFailed, "verification_unavailable")
+		if err := p.append(ctx, "verification.started", map[string]any{
+			"candidate_attempt_id": p.d.AttemptID, "config_sha256": p.d.ConfigDigest,
+			"no_checks": p.d.NoChecks,
+		}); err != nil {
+			return err
+		}
+		if p.d.NoChecks {
+			candidate, err := p.j.Candidate(ctx, p.d.AttemptID)
+			if err != nil {
+				return errors.Join(err, p.runTo(ctx, RunFailed, "verification_unavailable"))
+			}
+			at, id := time.Now().UTC(), ids.New("ver")
+			ev, err := newEvent(p.d.RunID, p.d.TaskID, p.d.AttemptID, "verification.completed", map[string]any{
+				"verification_id": id, "candidate_commit": candidate.Commit, "result": "NOT RUN",
+				"reason": "waived by --no-checks", "baseline": "not-run",
+			}, at)
+			if err != nil {
+				return err
+			}
+			if err := p.prod.append(ctx, p.j, ev, func(tx *sql.Tx) error {
+				return journal.InsertVerification(ctx, tx, journal.VerificationRow{
+					ID: id, RunID: p.d.RunID, CandidateCommit: candidate.Commit,
+					Result: "not_run", StartedAt: at, FinishedAt: at,
+				})
+			}); err != nil {
+				return err
+			}
+			if err := p.flush(ctx); err != nil {
+				return err
+			}
+			return p.runTo(ctx, RunReadyForReview, "unverified")
+		}
+		candidate, err := p.j.Candidate(ctx, p.d.AttemptID)
+		if err != nil {
+			return errors.Join(err, p.runTo(ctx, RunFailed, "verification_unavailable"))
+		}
+		v, err := integration.RunChecksWithOptions(ctx, integration.Candidate{
+			Commit: candidate.Commit, Workspace: p.d.Workdir,
+		}, p.d.ProjectConfig, p.d.Proposal.Spec.Env, p.d.KeepGoing)
+		if err != nil {
+			p.h.Notice(fmt.Sprintf("verification could not complete: %v", err))
+			return p.runTo(ctx, RunFailed, "verification_unavailable")
+		}
+		v.ConfigSHA256 = p.d.ConfigDigest
+		for _, check := range v.Checks {
+			if err := p.append(ctx, "check.completed", check); err != nil {
+				return err
+			}
+		}
+		id := ids.New("ver")
+		ev, err := newEvent(p.d.RunID, p.d.TaskID, p.d.AttemptID, "verification.completed",
+			map[string]any{"verification_id": id, "candidate_commit": v.CandidateCommit,
+				"config_sha256": v.ConfigSHA256, "result": v.Result,
+				"checks": v.Checks, "baseline": "not-run"}, v.FinishedAt)
+		if err != nil {
+			return err
+		}
+		if err := p.prod.append(ctx, p.j, ev, func(tx *sql.Tx) error {
+			row := journal.VerificationRow{ID: id, RunID: p.d.RunID, CandidateCommit: v.CandidateCommit,
+				ConfigSHA256: v.ConfigSHA256, Result: v.Result, StartedAt: v.StartedAt, FinishedAt: v.FinishedAt}
+			for _, c := range v.Checks {
+				row.Checks = append(row.Checks, journal.CheckRow{Name: c.Name, Argv: c.Argv, Status: c.Status,
+					ExitCode: c.ExitCode, DurationMS: c.DurationMS, EvidencePath: c.EvidencePath,
+					EvidenceSHA256: c.EvidenceSHA256})
+			}
+			return journal.InsertVerification(ctx, tx, row)
+		}); err != nil {
+			return err
+		}
+		if err := p.flush(ctx); err != nil {
+			return err
+		}
+		if v.Result != "passed" {
+			return p.runTo(ctx, RunFailed, "verification_failed")
+		}
+		return p.runTo(ctx, RunReadyForReview, "")
 	}
 	return fmt.Errorf("attempt %s ended in unexpected state %s", p.d.AttemptID, p.out.AttemptState)
 }
