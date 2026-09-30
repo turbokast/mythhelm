@@ -9,7 +9,7 @@ The dogfood slice applies a frozen candidate by creating one branch in the admit
 
 ## Decision
 
-Import the candidate objects with a source-only fetch, an empty refmap, no tags, no submodule recursion and no FETCH_HEAD write. Then create `refs/heads/<branch>` with `git update-ref` using the all-zero expected old object ID. This compare-and-swap fails if any branch already occupies the destination, including a fast-forward ancestor. Every Git call uses the safe runner's disabled hooks, fsmonitor, automatic GC and maintenance; fetch also disables commit-graph writes.
+Import the candidate objects with a source-only fetch, an empty refmap, no tags, no submodule recursion and no FETCH_HEAD write. Then create `refs/heads/<branch>` in a prepared `git update-ref --stdin` transaction with `option no-deref`. Preparing locks the exact destination; check for a symbolic destination while that lock is held, then commit the create-only update. This refuses both existing commits and dangling symbolic refs, including refs created during fetch. Git's zero expected object ID alone accepts dangling symbolic refs, so the locked identity check is necessary. See [Git transaction documentation](https://git-scm.com/docs/git-update-ref/2.43.0). Every Git call uses the safe runner's disabled hooks, fsmonitor, automatic GC and maintenance; fetch also disables commit-graph writes.
 
 The supervisor holds the run owner lock, verifies the version 1 receipt against its journaled digest, preserves its exact bytes, and journals apply intent before importing objects. A branch already at the frozen candidate is reconciled without fetching. A branch elsewhere is refused. Intent binds retries to the source repository, branch and frozen commit. The supervisor journals the result, transitions to completed and atomically writes and journals receipt version 2 with the observed branch effect.
 
@@ -17,6 +17,6 @@ The supervisor holds the run owner lock, verifies the version 1 receipt against 
 
 - A competing writer's branch is never advanced, even when the candidate would be a fast-forward. A failed compare-and-swap can leave imported objects, but changes no existing ref or checkout state.
 - A policy conflict after intent makes the run terminal `blocked` and refreshes its journaled receipt. A preflight refusal leaves the run ready for another branch choice.
-- The implementation uses two Git commands instead of the design's destination-refspec fetch. The branch creation is the externally visible effect and is atomic.
+- The implementation imports objects and uses a Git ref transaction instead of the design's destination-refspec fetch. The branch creation is the externally visible effect and is atomic.
 - A crash after branch creation is reconciled on retry without another fetch. A crash after receipt replacement but before its digest is journaled requires Task 15 recovery using the preserved version 1 bytes and their journaled digest.
-- Acceptance tests cover source fingerprints, user hook suppression, policy refusals, a competing branch created during fetch and retry with the managed clone unavailable.
+- Acceptance tests cover source fingerprints, user hook suppression, policy refusals, competing ordinary and symbolic refs created during fetch, reflog shorthand rejection, and retry with the managed clone unavailable.

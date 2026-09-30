@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +28,45 @@ func TestApplyRefusesBranchCreatedDuringFetch(t *testing.T) {
 	}
 	if got := applyGit(t, repo, "rev-parse", "refs/heads/competing"); got != base {
 		t.Fatalf("concurrent branch overwritten: %s -> %s", base, got)
+	}
+}
+
+func TestApplyRefusesReflogShorthand(t *testing.T) {
+	repo, clone, ref, candidate := applyFixture(t)
+	applyGit(t, repo, "checkout", "-qb", "other")
+	applyGit(t, repo, "checkout", "-q", "main")
+	if err := CheckBranch(t.Context(), repo, "@{-1}"); !errors.Is(err, ErrInvalidBranch) {
+		t.Fatalf("shorthand accepted: %v", err)
+	}
+	if err := ApplyBranch(t.Context(), repo, clone, ref, "@{-1}", candidate); !errors.Is(err, ErrInvalidBranch) {
+		t.Fatalf("apply shorthand: %v", err)
+	}
+}
+
+func TestApplyRefusesSymbolicDestination(t *testing.T) {
+	for _, concurrent := range []bool{false, true} {
+		t.Run(fmt.Sprint(concurrent), func(t *testing.T) {
+			repo, clone, ref, candidate := applyFixture(t)
+			plant := func() { applyGit(t, repo, "symbolic-ref", "refs/heads/destination", "refs/heads/untouched") }
+			if !concurrent {
+				plant()
+			}
+			fetch := func(ctx context.Context, dir string, userRepo bool, args ...string) ([]byte, error) {
+				if concurrent {
+					plant()
+				}
+				return Git(ctx, dir, userRepo, args...)
+			}
+			if err := applyBranch(t.Context(), repo, clone, ref, "destination", candidate, fetch); !errors.Is(err, ErrBranchExists) {
+				t.Fatalf("symbolic destination accepted: %v", err)
+			}
+			if got := applyGit(t, repo, "symbolic-ref", "refs/heads/destination"); got != "refs/heads/untouched" {
+				t.Fatalf("symbolic ref replaced: %s", got)
+			}
+			if got, err := BranchCommit(t.Context(), repo, "untouched"); err != nil || got != "" {
+				t.Fatalf("symbolic target changed: %q %v", got, err)
+			}
+		})
 	}
 }
 
