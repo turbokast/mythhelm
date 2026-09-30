@@ -42,6 +42,9 @@ func receiptRun(t *testing.T) (fixture, supervisor.Receipt, string) {
 		t.Fatal(err)
 	}
 	for _, ev := range events {
+		if ev.Type == "admission.decided" && strings.Contains(string(ev.Payload), "Demo task") {
+			t.Fatal("task title leaked into admission journal")
+		}
 		if ev.Type != "receipt.written" {
 			continue
 		}

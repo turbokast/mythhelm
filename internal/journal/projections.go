@@ -371,7 +371,7 @@ func OpenReadOnly(ctx context.Context, dir string) (*Journal, error) {
 		return nil, fmt.Errorf("%s has schema version %d, older than %d; a mythhelm command that records state migrates it",
 			path, version, SchemaVersion)
 	}
-	return &Journal{db: db}, nil
+	return &Journal{db: db, dir: dir}, nil
 }
 
 // RunsInStates returns every run projection whose state is one of states,

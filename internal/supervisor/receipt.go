@@ -132,9 +132,20 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 	if v := nativeSession["mcp"]; v != nil {
 		mcp = v
 	}
+	taskTitle := unknown
+	taskPath := filepath.Join(j.StateDir(), "runs", runID, taskFile)
+	if b, err := os.ReadFile(taskPath); err == nil { // #nosec G304 -- state directory and generated run ID
+		sum := sha256.Sum256(b)
+		if hex.EncodeToString(sum[:]) != run.TaskSHA256 {
+			return nil, fmt.Errorf("receipt: admitted task digest mismatch for %s", runID)
+		}
+		taskTitle = known(admission.TaskTitle(b))
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("receipt: reading admitted task: %w", err)
+	}
 	r := Receipt{
 		"schema_version": 1, "run_id": run.RunID, "state": run.State, "exit_code": exit,
-		"requested_outcome": map[string]any{"task_file_sha256": known(run.TaskSHA256), "title": known(adm.Task.Title), "deliverable": "review-candidate"},
+		"requested_outcome": map[string]any{"task_file_sha256": known(run.TaskSHA256), "title": taskTitle, "deliverable": "review-candidate"},
 		"admitted_snapshot": map[string]any{"source_repo": known(run.SourceRepo), "branch": known(run.SourceBranch), "base_rev": known(run.BaseRev), "dirty_at_admission": dirty},
 		"execution_bundle": map[string]any{"harness": known(adm.Adapter.Harness), "adapter": known(run.AdapterID), "surface": known(adm.Adapter.Surface),
 			"native_version": known(adm.Native.Version), "native_sha256": known(adm.Native.SHA256), "model": eventValue(nativeSession, "model"),

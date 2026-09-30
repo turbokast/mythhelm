@@ -95,8 +95,12 @@ type Event struct {
 
 // Journal is an open state database.
 type Journal struct {
-	db *sql.DB
+	db  *sql.DB
+	dir string
 }
+
+// StateDir is the directory this journal was opened from.
+func (j *Journal) StateDir() string { return j.dir }
 
 // Open opens dir/mythhelm.db, creating it if needed, and migrates it to
 // SchemaVersion. dir must already exist (see statedir.Ensure). A database
@@ -120,7 +124,7 @@ func open(ctx context.Context, dir string, migs []string) (*Journal, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	return &Journal{db: db}, nil
+	return &Journal{db: db, dir: dir}, nil
 }
 
 // Close closes the database.

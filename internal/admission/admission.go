@@ -335,11 +335,11 @@ func readTask(path string) (Task, error) {
 		return Task{}, fmt.Errorf("%w: --task-file is empty", ErrInvalid)
 	}
 	sum := sha256.Sum256(b)
-	return Task{Content: b, SHA256: hex.EncodeToString(sum[:]), Title: title(b)}, nil
+	return Task{Content: b, SHA256: hex.EncodeToString(sum[:]), Title: TaskTitle(b)}, nil
 }
 
-// title is the first Markdown heading, or the first non-empty line.
-func title(b []byte) string {
+// TaskTitle is the first Markdown heading, or the first non-empty line.
+func TaskTitle(b []byte) string {
 	first := ""
 	for line := range strings.Lines(string(b)) {
 		line = strings.TrimSpace(line)
@@ -432,7 +432,6 @@ type GitIdentity struct {
 type TaskRecord struct {
 	SHA256 string `json:"sha256"`
 	Bytes  int    `json:"bytes"`
-	Title  string `json:"title"`
 }
 
 // Record returns what admission.decided journals.
@@ -445,7 +444,7 @@ func (d Decision) Record() Record {
 		Adapter:              d.Adapter,
 		Native:               d.Probe,
 		Snapshot:             d.Snapshot,
-		Task:                 TaskRecord{SHA256: d.Task.SHA256, Bytes: len(d.Task.Content), Title: d.Task.Title},
+		Task:                 TaskRecord{SHA256: d.Task.SHA256, Bytes: len(d.Task.Content)},
 		DataDestinations:     dataDestinations(d.Adapter.ID),
 		ExecutionProfile:     d.Profile,
 		Billing:              d.Proposal.Billing,
