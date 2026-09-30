@@ -1,0 +1,48 @@
+{
+  "steps": [
+    {
+      "op": "append",
+      "path": "launch-count.txt",
+      "content": "launch\n"
+    },
+    {
+      "op": "emit",
+      "frame": {
+        "type": "fake.init",
+        "session_id": "fake-happy",
+        "model": "none (scripted)",
+        "native_version": "fake",
+        "permission_mode": "scripted",
+        "api_key_source": "none"
+      }
+    },
+    {
+      "op": "write",
+      "path": "demo.txt",
+      "content": "ok\n"
+    },
+    {
+      "op": "emit",
+      "frame": {
+        "type": "fake.progress",
+        "turn": 1,
+        "tool": "Write"
+      }
+    },
+    {
+      "op": "emit",
+      "frame": {
+        "type": "fake.result",
+        "subtype": "success",
+        "is_error": false,
+        "num_turns": 1,
+        "stop_reason": "end_turn",
+        "permission_denials": []
+      }
+    },
+    {
+      "op": "exit",
+      "code": 0
+    }
+  ]
+}

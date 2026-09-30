@@ -38,6 +38,12 @@ func ProcessStartTime(pid int) (time.Time, error) {
 	if len(fields) < 20 {
 		return time.Time{}, fmt.Errorf("pid %d: short /proc stat", pid)
 	}
+	if fields[0] == "Z" {
+		// An unreaped orphan cannot run or write. PID 1 may retain its
+		// zombie entry indefinitely; recovery must not mistake that for
+		// a live worker or escaped writer.
+		return time.Time{}, fmt.Errorf("%w: pid %d is a zombie", ErrNoProcess, pid)
+	}
 	ticks, err := strconv.ParseInt(fields[19], 10, 64)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("pid %d: starttime: %w", pid, err)

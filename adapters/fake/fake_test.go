@@ -516,7 +516,7 @@ func sessionID(t *testing.T, pid int) int {
 }
 
 func TestScenariosEmbedded(t *testing.T) {
-	want := []string{"bad-utf8", "check-fails", "deep", "denied", "escapee", "exit-before-result", "happy", "ignore-sigint", "ignore-term", "malformed", "native-fails", "oversized", "slow"}
+	want := []string{"bad-utf8", "check-fails", "count-launches", "deep", "denied", "escapee", "exit-before-result", "happy", "ignore-sigint", "ignore-term", "malformed", "native-fails", "oversized", "slow"}
 	if got := Scenarios(); !slices.Equal(got, want) {
 		t.Errorf("Scenarios() = %q, want %q", got, want)
 	}

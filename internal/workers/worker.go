@@ -571,6 +571,11 @@ func (w *worker) conclude(ctx context.Context, sp *spool, sess adapter.Session, 
 		return err
 	}
 	unresolved, scan := w.unresolvedDescendants()
+	identities, identityErr := processIdentities(unresolved)
+	if identityErr != nil {
+		w.log.Error("descendant identities unavailable", "err", identityErr)
+		scan = scanFailed
+	}
 	sent := out.report.Sent
 	if sent == nil {
 		sent = []adapter.StopSignal{}
@@ -578,6 +583,7 @@ func (w *worker) conclude(ctx context.Context, sp *spool, sess adapter.Session, 
 	if err := sp.emit(evStopped, map[string]any{
 		"confirmed": out.report.Confirmed, "unresolved_pids": unresolved,
 		"signals_sent": sent, "descendant_scan": scan,
+		"unresolved_identities": identities,
 	}); err != nil {
 		return err
 	}
