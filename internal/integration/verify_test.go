@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +38,14 @@ func TestMain(m *testing.M) {
 		case "delayed":
 			time.Sleep(time.Second)
 			_ = os.WriteFile(os.Args[3], []byte("survived"), 0o600) // #nosec G703 -- marker path is a test-owned temporary file
+		case "linger_parent":
+			child := exec.Command(os.Args[0], "__verify_helper", "linger_child") // #nosec G702 -- test binary re-exec
+			child.Stdout, child.Stderr = os.Stdout, os.Stderr
+			if err := child.Start(); err != nil {
+				os.Exit(2)
+			}
+		case "linger_child":
+			time.Sleep(10 * time.Second)
 		}
 		os.Exit(0)
 	}
@@ -91,7 +100,7 @@ func TestGofmtFailOnOutput(t *testing.T) {
 func TestMissingExecutableUnavailable(t *testing.T) {
 	c, cfg := verifyFixture(t)
 	cfg.Checks = []admission.CheckConfig{
-		{Name: "missing", Argv: []string{"mythhelm-tool-that-does-not-exist"}, Timeout: "1s"},
+		{Name: "missing", Argv: []string{filepath.Join(t.TempDir(), "missing-check")}, Timeout: "1s"},
 		{Name: "later", Argv: []string{os.Args[0], "__verify_helper", "pass"}, Timeout: "5s"},
 	}
 	v, err := integration.RunChecks(t.Context(), c, cfg, os.Environ())
@@ -123,6 +132,19 @@ func TestCheckTimeoutKillsGroup(t *testing.T) {
 	time.Sleep(1200 * time.Millisecond)
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatalf("check child survived process-group kill: %v", err)
+	}
+}
+
+func TestCheckWaitDelayBounded(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows cannot signal a process group after its leader exits")
+	}
+	c, cfg := verifyFixture(t)
+	cfg.Checks[0] = admission.CheckConfig{Name: "linger", Argv: []string{os.Args[0], "__verify_helper", "linger_parent"}, Timeout: "8s"}
+	start := time.Now()
+	v, err := integration.RunChecks(t.Context(), c, cfg, os.Environ())
+	if err != nil || v.Checks[0].Status != "timed_out" || time.Since(start) > 5*time.Second {
+		t.Fatalf("verification = %+v, duration = %s, err = %v", v, time.Since(start), err)
 	}
 }
 

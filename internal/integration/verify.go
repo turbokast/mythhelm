@@ -108,11 +108,12 @@ func runCheck(ctx context.Context, dir, evidenceDir string, check admission.Chec
 	defer cancel()
 	cmd := exec.Command(check.Argv[0], check.Argv[1:]...) // #nosec G204 -- reviewed, digest-bound project config, argv only
 	cmd.Dir, cmd.Env = dir, env
+	cmd.WaitDelay = 2 * time.Second // bound pipe drain if a descendant inherited stdout/stderr
 	var output tailBuffer
 	cmd.Stdout, cmd.Stderr = &output, &output
 	setProcessGroup(cmd)
 	err := cmd.Start()
-	if errors.Is(err, exec.ErrNotFound) {
+	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
 		r.Status = "unavailable"
 	} else if err != nil {
 		return r, fmt.Errorf("start check %s: %w", check.Name, err)
@@ -133,6 +134,9 @@ func runCheck(ctx context.Context, dir, evidenceDir string, check admission.Chec
 				r.Status = "passed"
 			case errors.As(err, &exit):
 				r.Status = "failed"
+			case errors.Is(err, exec.ErrWaitDelay):
+				killProcessGroup(cmd)
+				r.Status = "timed_out"
 			default:
 				return r, fmt.Errorf("wait check %s: %w", check.Name, err)
 			}
