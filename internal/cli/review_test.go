@@ -18,7 +18,13 @@ func reviewFixture(t *testing.T, malicious string) (string, string) {
 	dir := stateHome(t)
 	j := openJournal(t, dir)
 	defer func() { _ = j.Close() }()
-	runID := createRun(t, j, supervisor.NewProducer(ids.New("sup"), 1), "/tmp/repo")
+	producer := supervisor.NewProducer(ids.New("sup"), 1)
+	runID := createRun(t, j, producer, "/tmp/repo")
+	for _, state := range []supervisor.RunState{supervisor.RunAdmission, supervisor.RunExecuting, supervisor.RunVerifying, supervisor.RunReadyForReview} {
+		if err := supervisor.TransitionRun(t.Context(), j, runID, state, "", producer); err != nil {
+			t.Fatal(err)
+		}
+	}
 	runDir := filepath.Join(dir, "runs", runID)
 	if err := os.MkdirAll(runDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -89,5 +95,20 @@ func TestReviewRejectsTamperedReceipt(t *testing.T) {
 	code, _, stderr := runMain("review", runID, "--format", "jsonl")
 	if code == 0 || !strings.Contains(stderr, "does not match") {
 		t.Fatalf("tampered receipt exit %d: %s", code, stderr)
+	}
+}
+
+func TestReviewRejectsStaleReceiptState(t *testing.T) {
+	dir, runID := reviewFixture(t, "safe.txt")
+	db := rawDB(t, dir)
+	if _, err := db.ExecContext(t.Context(), `UPDATE runs SET state = 'completed' WHERE run_id = ?`, runID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := runMain("review", runID, "--format", "jsonl")
+	if code == 0 || !strings.Contains(stderr, "does not match its run projection") {
+		t.Fatalf("stale receipt exit %d: %s", code, stderr)
 	}
 }

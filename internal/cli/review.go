@@ -86,6 +86,9 @@ func runReview(args []string, stdio Stdio) error {
 	if err := json.Unmarshal(b, &r); err != nil {
 		return err
 	}
+	if r["run_id"] != run.RunID || r["state"] != run.State {
+		return fmt.Errorf("receipt for %s does not match its run projection", run.RunID)
+	}
 	if *format == "jsonl" {
 		return json.NewEncoder(stdio.Out).Encode(r)
 	}
