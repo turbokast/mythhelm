@@ -59,6 +59,7 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 - **EARS forms:** ubiquitous ("The system shall …"), event-driven ("When …"), state-driven ("While …"), unwanted behaviour ("If …, then …"). Each names concrete values: an exit code, a field name, a state.
 - **Non-goals defer, they do not waive.** The "still binding" column is what keeps a narrow slice honest.
 - **An issue-derived spec** starts with a `## Context` section (the issue link and its load-bearing claims with their grounding verdicts) and ends with `## Open Questions`.
+- **A card-derived spec** also carries `- **Backlog card**: MH-<n>` in its `## Context`, one line per card it delivers. The lifecycle sync (`.claude/skills/pm-sync-core/SKILL.md`) finds the cards to move through these lines ([`product-management.md`](product-management.md)).
 
 ---
 

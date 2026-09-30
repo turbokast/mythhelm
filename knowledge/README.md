@@ -16,6 +16,7 @@ Nothing here ships in a release, and nothing here overrides [`docs/spec/master-s
 | [`finalize.md`](finalize.md) | Before finalizing a spec or changing `/finalize-spec`, its sub-skills or `scripts/harness/finalize.py`: what "ready to finalize" and "done" mean, the failure mode behind each mechanism, where the record lives. |
 | [`autonomy.md`](autonomy.md) | Before running `/deliver-backlog`, arming or relying on an autonomy grant, or changing the delivery scripts, lanes, the heartbeat or the autonomy hooks: what a grant permits, the failure mode behind each mechanism, where the run's state lives. |
 | [`learning-loop.md`](learning-loop.md) | Before deciding or applying a proposal, writing an eval case, or changing `/apply-proposals`, `/health-check` or `scripts/harness/proposals.py`: the decision model, lane 0, the eval format, the health checks. |
+| [`product-management.md`](product-management.md) | Before using or changing the product layer: how cards, scores, statuses and the approval queue work, and why. |
 | [`vendors.md`](vendors.md) | Before using or changing the optional Codex, Muse or Jev layer: stages, sites, lanes, opt-in, caps, what leaves the machine. |
 | [`rule-evidence/`](rule-evidence/README.md) | When auditing a rule, proposing to loosen one, or asking why it exists. Never needed to follow a rule. |
 

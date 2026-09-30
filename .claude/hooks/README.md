@@ -138,6 +138,31 @@ Three hooks read the grant, and each applies it only to the session it names:
 - the delete is `git update-ref -d refs/heads/<branch> <tip>`, a compare-and-swap that fails if the branch moved after the check.
 
 It is a dry run unless given `--apply`, deletes only local branches and worktrees, and never touches the remote. The hook cannot see commands inside a script, which is why the script, and only the script, carries the checks; `test_block_destructive.sh` pins that the unverified spellings stay blocked.
+## Product approvals
+
+`guard-product-write.sh` enforces the product layer's rule: agents propose, maintainers approve ([`product/README.md`](../../product/README.md)). There is no armed window here. Each change to a file under `product/` needs its own signed approval, bound to the file's current content and to the exact content proposed, and it releases one write.
+
+```bash
+# The agent drafts the change in a scratch file and files it:
+python3 scripts/pm/pm.py set-status MH-3 specced --spec herdr-bridge --out /tmp/backlog.md
+python3 scripts/orchestration/approvals.py request mh-3-specced --path product/backlog.md \
+  --proposed /tmp/backlog.md --summary "MH-3 has a spec"
+
+# The maintainer, in their own terminal (agents are blocked from every approve.sh call):
+scripts/orchestration/approve.sh init-key                # once per machine
+scripts/orchestration/approve.sh show mh-3-specced
+scripts/orchestration/approve.sh approve mh-3-specced --apply
+```
+
+Without `--apply`, the agent writes the approved content with Write or Edit, and the hook releases exactly that content. Under a live autonomy grant with `--allow-pm-sync`, the hook also releases, unsigned, the lifecycle syncs `autonomy.py pm-sync-check` pre-approves, and records each as a `preapproved` row. A request goes stale when its file changes before the write; the agent redrafts and refiles. `approve.sh audit` re-verifies every signed decision and the chain between them.
+
+The queue lives in the main checkout's `orchestration/` (gitignored), shared by its linked worktrees:
+
+| File | Contents |
+|---|---|
+| `orchestration/requests/<id>/` | `request.json` (`id`, `path`, `worktree`, `base_sha256`, `result_sha256`, `diff_sha256`, `summary`, `requested_at`, `session`), `proposed` (the full proposed file) and `diff` |
+| `orchestration/approvals.jsonl` | Decision rows (`approved` or `rejected`, with the request's hashes, `decided_at`, `decided_by`, `prev` and an HMAC-SHA256 `mac`), `consumed` rows (`consumes` names the spent `mac`) and `preapproved` rows (a grant-released lifecycle sync: `path`, `worktree`, both hashes, `session`) |
+| `${XDG_CONFIG_HOME:-$HOME/.config}/mythhelm/approvals.key` | The maintainer's signing key, mode 0600, outside the repository (`MYTHHELM_APPROVALS_KEY` overrides the path) |
 
 ## Adding a hook
 

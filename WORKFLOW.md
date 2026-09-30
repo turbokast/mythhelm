@@ -2,6 +2,36 @@
 
 How work moves from an idea to merged code in MYTHHELM, for the maintainers who direct the agents. Where this guide and [`docs/harness/charter.md`](docs/harness/charter.md) disagree, this guide wins. Agents find the procedures in the skills it names; the reasons behind them are in [`knowledge/`](knowledge/README.md).
 
+## Product management
+
+The product layer decides what to build next and records why ([`product/README.md`](product/README.md); the reasons are in [`knowledge/product-management.md`](knowledge/product-management.md)).
+
+```text
+GitHub issues, discussions ──/synthesize-signals──▶ signals.md (themes)
+idea or #issue ──/triage──▶ assessment ──/backlog add──▶ backlog.md card MH-<n> + GitHub issue
+/backlog next ──▶ /create-spec MH-<n> (card: specced) ──▶ /refine-spec ──▶ /spec
+  ──▶ /run-spec (card: implementing) ──▶ /finalize-spec (card: shipped)
+  ──▶ /impact-review (CI, evaluations, reports) ──▶ decisions.md
+/quarterly-review ──▶ adjustments ──▶ /backlog rescore, add, drop
+```
+
+`/roadmap` redrafts the now, next and later view whenever cards move, and every change to `product/` records why in `decisions.md`.
+
+**Agents** read, score, draft and file. A draft is a complete proposed file built by `scripts/pm/pm.py`; filing it creates a request under the main checkout's `orchestration/requests/` and changes nothing in `product/`. **You** decide, from your own terminal:
+
+```bash
+scripts/orchestration/approve.sh init-key          # once per machine: your signing key
+scripts/orchestration/approve.sh list              # requests and their state
+scripts/orchestration/approve.sh show <id>         # summary and the diff, recomputed from the files
+scripts/orchestration/approve.sh approve <id> --apply
+scripts/orchestration/approve.sh reject <id>
+scripts/orchestration/approve.sh audit             # re-verify every signed decision
+```
+
+An approval covers one file's exact change against its exact current content, in one worktree, and releases one write. If the file changes first, the approval goes stale and the agent refiles; nothing is silently overwritten. Without `--apply`, the agent writes exactly the approved content and `guard-product-write.sh` checks it. The change then reaches `main` through a pull request, where the `product` lint check runs. Your own edits in an editor are not hooked; the lint and review bind everyone.
+
+Scoring: `score = (value + urgency + risk) / effort`, each 1 to 5. Urgency is derived from the card's stage (5 for the current stage or earlier, 3 for the next, 2 for the one after, 1 beyond), so the spec's gated stages, not dates, set time pressure. Cadence: the lifecycle sync (`/pm-sync-core`) moves cards with their specs; run `/synthesize-signals` and `/impact-review` monthly or before a release, and `/quarterly-review` each quarter, which also checks whether the current stage's exit gate has passed.
+
 ## From idea to spec
 
 A change larger than a single fix becomes a spec: a directory under `specs/<state>/<name>/` that moves through lifecycle states. [`specs/README.md`](specs/README.md) has the states and who moves a spec between them.
@@ -82,7 +112,7 @@ The grant binds that one session and its workers for at most 24 hours (renewable
 - it never asks you directly: questions go to `orchestration/QUESTIONS.md`, only the affected items wait, and you answer with `python3 scripts/orchestration/delivery.py answer Q-<n> --text "..."` or in the file;
 - it merges a pull request only when it is green, has no unresolved thread, passes the leak check, stays inside its task's scope and belongs to a granted spec, pinned to the exact head it checked;
 - each new spec still waits for your approval (`/deliver-backlog approve-spec <spec>`) unless you granted with `--no-spec-checkpoint`;
-- backlog changes still need your signed approval. `--allow-pm-sync` marks the specced → implementing → shipped moves of granted cards as pre-approved (`autonomy.py pm-sync-check`), but the approval queue does not consult it yet, so until it does those moves are filed as ordinary requests for you to sign;
+- backlog changes still need your signed approval, except with `--allow-pm-sync`: then `guard-product-write.sh` releases, without a signature, the specced → implementing → shipped moves of granted cards in the granted session, their `lifecycle-sync` decision entries and the regenerated roadmap (`autonomy.py pm-sync-check` answers the same question in advance). Each such release is recorded in the approval ledger and the autonomy audit;
 - it never pushes to `main`, tags, releases or runs workflows.
 
 `scripts/orchestration/status.sh` shows the grant, the run, the lanes, the open pull requests with their unresolved threads, and `main`'s CI on one screen. An optional systemd user timer (`scripts/orchestration/heartbeat.sh --print-install`) resumes the granted session when it stopped with work left; nothing installs it for you. `/handoff` writes a continuation package when a session must end mid-work, and `scripts/harness/prune-merged.sh` removes the local branches and worktrees of merged pull requests. [`knowledge/autonomy.md`](knowledge/autonomy.md) explains each mechanism.
@@ -108,6 +138,8 @@ The grant binds that one session and its workers for at most 24 hours (renewable
 | User-facing changes | `CHANGELOG.md` |
 | Attempts, retries, review rounds | `.claude/data/run-events.jsonl` (local, gitignored) |
 | Gate evidence | `.claude/data/gate-marker-*.json` in each worktree (local) |
+| Backlog, decisions, objectives, roadmap, signals | `product/` |
+| Product change requests and signed approvals | `orchestration/requests/`, `orchestration/approvals.jsonl` in the main checkout (local) |
 | A delivery run: items, stages, log, questions | `orchestration/` in the main checkout (local) |
 | The autonomy grant and its audit log | `.claude/data/autonomy-grant.json`, `autonomy-audit.jsonl` (local) |
 | Continuation packages | `.claude/handoffs/` (local) |

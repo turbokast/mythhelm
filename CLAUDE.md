@@ -17,6 +17,7 @@ In Claude Code sessions, guard hooks run on every tool call ([`.claude/hooks/INV
 - **Orientation.** Run `/bootstrap` at the start of task work. [`knowledge/`](knowledge/README.md) holds the domain map, the invariants and the evidence behind each rule.
 - **Routing.** Route work by path with [`knowledge/domains.md`](knowledge/domains.md); [`knowledge/agent-routing.md`](knowledge/agent-routing.md) pins each agent's model and effort. Never pass `effort` to a haiku agent (`completion-clerk`, `harness-clerk`).
 - **Specs.** `/create-spec`, `/refine-spec`, `/spec`, then `/run-spec` (one pinned agent, worktree and pull request per task) and `/finalize-spec`: [`specs/README.md`](specs/README.md).
+- **Product.** Agents propose `product/` changes; maintainers approve: [`product/README.md`](product/README.md).
 - **Completion.** A task entry follows `/task-completion`; the Stop hook blocks a claim without fresh gate markers.
 - **Learning loop.** `/apply-proposals` decides harness proposals one by one, each applied as its own pull request with an eval case; `/health-check` reports drift ([`knowledge/learning-loop.md`](knowledge/learning-loop.md)).
 - **Autonomy.** `/deliver-backlog` runs unattended only inside the maintainer's grant: [`knowledge/autonomy.md`](knowledge/autonomy.md).

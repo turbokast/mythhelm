@@ -6,9 +6,11 @@ Local state for agent-driven delivery. Everything in this directory except this 
 |---|---|---|
 | `INTENT.md` | The delivery run: its status, its scope, and one row per item with its lifecycle stage | `scripts/orchestration/delivery.py` only |
 | `RUN-LOG.md` | Append-only, one timestamped line per event | `delivery.py` only |
+| `approvals.jsonl` | The approval ledger: signed maintainer decisions on requested changes, and a `consumed` row for each write an approval released. Append-only. | `scripts/orchestration/approvals.py` only |
+| `requests/<id>/` | One request per proposed change: `request.json`, the full `proposed` file and its `diff`. | Agents, through `approvals.py request` |
 | `QUESTIONS.md` | Questions for the maintainer, and their answers | `delivery.py question` files; the maintainer answers |
 
-Agents never edit these files directly: `.claude/hooks/guard-autonomy.sh` blocks Edit, Write and shell writes to them, so every entry carries the clock's time at the moment it was written, the log only grows, and answers stay the maintainer's.
+Agents never edit these files directly: `.claude/hooks/guard-autonomy.sh` blocks Edit, Write and shell writes to the run's three files, and `guard-product-write.sh` does the same for the approval ledger (the product approval flow is in [`.claude/hooks/README.md`](../.claude/hooks/README.md) §Product approvals). So every entry carries the clock's time at the moment it was written, the log only grows, and answers stay the maintainer's.
 
 ## INTENT.md
 

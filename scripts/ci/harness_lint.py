@@ -53,6 +53,13 @@ Checks (each reads the tree at DIR, default the repository root):
                   docs/automation.md marks required or to be made required
   evals           every case in .claude/evals/cases/ is well-formed and passes
                   (.claude/evals/run_evals.py)
+  product         product/ follows its schemas (scripts/pm/pm.py validate): backlog
+                  cards with unique MH ids, statuses in the enum, scores equal to the
+                  formula, spec links that resolve, well-formed issue links and the
+                  canonical score order; decisions and signals appended with
+                  increasing ids and dates; a current stage in objectives.md; a
+                  roadmap naming real cards (stale is a warning). Skipped when the
+                  tree has no product/ directory.
 
 Findings print as "path:line: check: detail". Exit 0 clean, 1 findings, 2 usage or
 an unreadable tree. Standard library only; no network, no writes.
@@ -71,7 +78,7 @@ RULE_BUDGET_BYTES = 16384
 
 HAIKU_EFFORT_WINDOW = 10
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
-HARNESS_PREFIXES = (".claude/", "knowledge/", "scripts/", "docs/harness/")
+HARNESS_PREFIXES = (".claude/", "knowledge/", "scripts/", "docs/harness/", "product/", "orchestration/")
 HARNESS_ROOT_FILES = ("CLAUDE.md", "AGENTS.md", "WORKFLOW.md")
 CONTEXT_LABELS = ("**Slash command**", "**Model-invoked**", "**Non-interactive**")
 
@@ -1028,6 +1035,20 @@ def check_evals(root, files):
         print("%s  %s" % ("PASS" if res["passed"] else "FAIL", res["id"]))
         if not res["passed"]:
             finding(rel, 0, "evals", res["detail"])
+def check_product(root, files):
+    """The product layer's formats, validated by scripts/pm/pm.py (imported from this
+    repository, whatever tree --root names). A tree without product/ has nothing to
+    check."""
+    if not any(rel.startswith("product/") for rel in files):
+        return
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pm"))
+    try:
+        import pm  # noqa: E402  (a sibling script, not an installed package)
+    finally:
+        sys.path.pop(0)
+    result = pm.validate(root)
+    warnings.extend(result.warnings)
+    findings.extend(result.errors)
 
 
 CHECKS = {
@@ -1046,6 +1067,7 @@ CHECKS = {
     "proposals": check_proposals,
     "required-checks": check_required_checks,
     "evals": check_evals,
+    "product": check_product,
 }
 
 
