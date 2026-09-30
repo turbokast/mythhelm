@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """autonomy.py: the autonomy grant, the maintainer's time-boxed, scope-limited
-permission for one Claude Code session to run the delivery loop unattended.
+permission for one agent session to run the delivery loop unattended.
 
     autonomy.py grant  --hours N --scope MH-3,spec:<name>,... --reason TEXT
                        [--session ID] [--allow-pm-sync] [--no-spec-checkpoint]
@@ -114,8 +114,15 @@ def state_of(grant, now=None):
 def require_terminal(verb):
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         raise Refused("%s needs an interactive terminal: only the maintainer grants or renews autonomy, "
-                      "from their own terminal (inside Claude Code: `! scripts/orchestration/autonomy.sh %s ...`)."
+                      "from their own terminal. In Claude Code use `! scripts/orchestration/autonomy.sh %s ...`; "
+                      "for Codex, run it in a terminal with --session <Codex session id>."
                       % (verb, verb))
+
+
+def session_from_environment():
+    """Use the native session ID when a maintainer invokes the command in its shell."""
+    return (os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("CODEX_SESSION_ID")
+            or os.environ.get("CODEX_THREAD_ID") or "")
 
 
 def parse_hours(value):
@@ -226,10 +233,10 @@ def cmd_grant(a, root):
     mc = a.max_continues if a.max_continues is not None else DEFAULT_MAX_CONTINUES
     if not 0 <= mc <= MAX_CONTINUES_CEILING:
         raise Refused("--max-continues must be 0 to %d. Nothing was written." % MAX_CONTINUES_CEILING)
-    session = a.session or os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    session = a.session or session_from_environment()
     if not SESSION_RE.match(session or ""):
-        raise Refused("no session to bind: pass --session <id> (the session's id), or run this with `!` inside "
-                      "the Claude Code session to be granted. A grant with no session applies to none.")
+        raise Refused("no session to bind: pass --session <id> (the session's id), or run this "
+                      "from the Claude Code or Codex session to be granted. A grant with no session applies to none.")
     require_terminal("grant")
     now = orchlib.utc_now()
     grant = {
@@ -318,7 +325,7 @@ def run_check(cmd):
 
 def cmd_merge_check(a, root):
     grant = load(root)
-    session = a.session or os.environ.get("CLAUDE_CODE_SESSION_ID", "") or (grant or {}).get("session_id", "")
+    session = a.session or session_from_environment() or (grant or {}).get("session_id", "")
     why = covers(grant, session, root, spec=a.spec)
     if why:
         print("reason=%s" % why)

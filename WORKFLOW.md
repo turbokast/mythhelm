@@ -102,9 +102,14 @@ The harness learns from its own runs. A finalize retrospective turns lessons tha
 With you present, it asks you at each spec checkpoint and when it is stuck. To let it run while you are away, grant it autonomy from your own terminal:
 
 ```bash
-! scripts/orchestration/autonomy.sh grant --hours 8 --scope MH-3,MH-5 --reason "overnight run"   # in the session to grant
+! scripts/orchestration/autonomy.sh grant --hours 8 --scope MH-3,MH-5 --reason "overnight run"   # in Claude Code
 scripts/orchestration/autonomy.sh status        # also: renew --hours 8, revoke
 ```
+
+For a Codex session, read its `CODEX_SESSION_ID`, then run `autonomy.sh grant ... --session <id>`
+in your own interactive terminal. Codex shell-command tool calls have no interactive terminal
+and cannot issue a grant. The Stop continuation and optional heartbeat currently work only
+with Claude Code; a Codex session needs the operator to continue it.
 
 The grant binds that one session and its workers for at most 24 hours (renewable), over the cards and specs you name. Agents cannot grant or renew it. While it is live:
 
