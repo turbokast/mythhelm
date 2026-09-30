@@ -57,7 +57,7 @@ import runspec  # noqa: E402  (sibling module)
 
 GOLANGCI = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2"
 GOVULNCHECK = "golang.org/x/vuln/cmd/govulncheck@v1.8.0"
-HARNESS_PREFIXES = (".claude/", "scripts/", "knowledge/", "docs/harness/")
+HARNESS_PREFIXES = (".agents/", ".grok/", ".claude/", "scripts/", "knowledge/", "docs/harness/")
 HARNESS_FILES = ("CLAUDE.md", "AGENTS.md", "WORKFLOW.md")
 GO_FILES = ("go.mod", "go.sum", ".golangci.yml")
 MAX_BLOCKS = 3

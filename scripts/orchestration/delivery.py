@@ -259,7 +259,7 @@ def cmd_question(a, root):
 def cmd_answer(a, root):
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         raise Refused("answers are the maintainer's: run `delivery.py answer` from your own terminal "
-                      "(inside Claude Code, with the `!` prefix), or edit QUESTIONS.md yourself")
+                      "(inside Claude Code, `!` opens your shell), or edit QUESTIONS.md yourself")
     with orchlib.locked(files(root)["INTENT"]):
         path = files(root)["QUESTIONS"]
         text = read(path) or ""

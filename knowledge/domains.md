@@ -1,6 +1,6 @@
 # Domains
 
-Every path in the repository belongs to one domain, and every domain has one implementing agent. The map follows the repository structure in spec §19.1 and the table in [`docs/harness/charter.md`](../docs/harness/charter.md) §Domains and agents, which also fixes the harness row.
+Every path in the repository belongs to one domain. The named agents are Claude Code role labels in specs; another client can use an equivalent role or perform a bounded task directly. The map follows the repository structure in spec §19.1 and the table in [`docs/harness/charter.md`](../docs/harness/charter.md) §Domains and agents, which also fixes the harness row.
 
 ---
 
@@ -15,7 +15,7 @@ The first matching row wins, top to bottom.
 | adapters | `adapters/`, `hosts/` | `go-implementer` |
 | protocol | `protocol/`, `sdk/`, `examples/` | `go-implementer` |
 | release | `.github/`, `packaging/`, `Makefile`, `.goreleaser*`, `.golangci.yml`, `.coderabbit.yaml`, `.editorconfig`, `.gitattributes`, `.gitignore`, `.shellcheckrc`, `docs/automation.md` | `release-engineer` |
-| harness | `.claude/`, `knowledge/`, `scripts/`, `docs/harness/`, `WORKFLOW.md`, `CLAUDE.md`, `AGENTS.md` | `agent-config-editor` |
+| harness | `.agents/`, `.grok/`, `.claude/`, `knowledge/`, `scripts/`, `docs/harness/`, `WORKFLOW.md`, `CLAUDE.md`, `AGENTS.md` | `agent-config-editor` in Claude Code; equivalent harness editor in other clients |
 | docs | `docs/` (all but `docs/harness/` and `docs/automation.md`), `*.md` at the root not listed above | `go-implementer`, or the agent whose change the docs describe |
 | product | `product/` | the session running the product skills ([`product/README.md`](../product/README.md)), which drafts and files requests; a maintainer approves every change to `product/` |
 | orchestration | `orchestration/` | no agent edits it: its local state files are written only by their scripts (`scripts/orchestration/delivery.py` for the delivery run, `approvals.py` for the approval queue); the tracked [`README.md`](../orchestration/README.md) belongs to `agent-config-editor` |

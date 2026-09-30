@@ -69,11 +69,8 @@ def git(root, *args):
 # ---- local checks --------------------------------------------------------------
 
 def check_budget(root):
-    total = 0
-    for rel in ["CLAUDE.md"] + harness_lint.always_on_rules(root):
-        path = os.path.join(root, rel)
-        if os.path.isfile(path):
-            total += os.path.getsize(path)
+    contexts = harness_lint.always_on_contexts(root)
+    total = max(contexts.values(), default=0)
     budget = harness_lint.RULE_BUDGET_BYTES
     head = budget - total
     summary = "always-on %d of %d bytes, headroom %d" % (total, budget, head)

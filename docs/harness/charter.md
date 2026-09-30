@@ -17,7 +17,7 @@ This charter fixes the conventions the harness follows. It holds while the harne
 
 1. **Mechanism over narrative.** A rule that matters has teeth: a hook, a CI check or a gate. Prose alone is advice.
 2. **Fail closed on writes, fail open on advice.** Guards that protect shared state, the public repo or releases block. Advisory machinery never blocks a merge: vendor consults, classifiers and nags.
-3. **Free for contributors.** Every mandatory path works with the Claude Code CLI plus standard POSIX tools. Paid third-party vendors (Codex, Muse, Jev) are strictly opt-in. They degrade to a no-op when the CLI, credential or subscription is absent, and the offline test suite never calls them.
+3. **Agent neutral.** Every mandatory path is documented in `AGENTS.md`, `WORKFLOW.md` and shared scripts, and can be driven by a shell-capable coding agent. Client hooks and skills are adapters. Optional external consults (including Codex, Muse and Jev) remain opt-in and degrade to an advisory `unavailable` result; using Codex or Muse as the primary agent does not turn that consult layer on.
 4. **Clean text.** Rules and skills state current policy only. No amendment history, dated rulings, ticket IDs or "previously this said…" trails. Record the evidence for a rule in `knowledge/rule-evidence/`, not in the rule.
 5. **Public by default.** Everything committed is world-readable. Runtime telemetry and session state are gitignored, and only schemas and empty seeds are tracked.
 6. **Tested.** Every hook and script has tests under `.claude/hooks/tests/` or `scripts/**/tests/`. CI runs them all on every PR.
@@ -25,9 +25,11 @@ This charter fixes the conventions the harness follows. It holds while the harne
 ## Repository layout
 
 ```text
-CLAUDE.md                 Agent entry point (Claude Code)
-AGENTS.md                 Pointer for other native agents -> CLAUDE.md
+AGENTS.md                 Shared agent instructions
+CLAUDE.md                 Claude Code integration adapter
 WORKFLOW.md               The human-facing guide to the agent workflow
+.agents/skills/           Shared bootstrap and delivery entrypoints
+.grok/skills/             Grok Build discovery adapters
 .claude/
   settings.json           Hook registrations and permissions (tracked)
   agents/                 Agent definitions (frontmatter model pins)
@@ -61,12 +63,12 @@ The domain map (`knowledge/domains.md`) routes work to agents by path. The map f
 | tui | `internal/tui/`, `mods/` | `tui-implementer` (sonnet) |
 | release | `.github/`, `packaging/`, `Makefile`, `.goreleaser*`, the repository dotfiles (`.golangci.yml`, `.coderabbit.yaml`, `.editorconfig`, `.gitattributes`, `.gitignore`, `.shellcheckrc`), `docs/automation.md` | `release-engineer` (opus) |
 | docs | `docs/` except `docs/harness/` and `docs/automation.md`, `*.md` at root not listed elsewhere | `go-implementer` or the author's agent |
-| harness | `.claude/`, `knowledge/`, `scripts/`, `docs/harness/`, `WORKFLOW.md`, `CLAUDE.md`, `AGENTS.md` | `agent-config-editor` (opus) |
+| harness | `.agents/`, `.grok/`, `.claude/`, `knowledge/`, `scripts/`, `docs/harness/`, `WORKFLOW.md`, `CLAUDE.md`, `AGENTS.md` | agent with harness configuration responsibility (`agent-config-editor` in Claude Code) |
 | product | `product/` | the session running the product skills, which drafts and files requests; a maintainer approves every change to `product/` |
 | orchestration | `orchestration/` | no agent edits it: its local state files are written only by their scripts (`delivery.py` for the delivery run, `approvals.py` for the approval queue); the tracked `README.md` belongs to `agent-config-editor` |
 | specs | `specs/` | the session running the lifecycle skills (`specs/README.md`) for `requirements.md`, `design.md` and `tasks.md`; the implementing agent for its own task's completion entry and scratchpad note |
 
-The planner-tier agents are `architect`, `code-reviewer` and `agent-config-editor` (opus). The mechanical-tier agents are `completion-clerk` and `harness-clerk` (haiku; never pass `effort`). `knowledge/agent-routing.md` holds the canonical mapping, and a CI check pins it.
+Claude's planner-tier agents are `architect`, `code-reviewer` and `agent-config-editor` (opus). Its mechanical-tier agents are `completion-clerk` and `harness-clerk` (haiku; never pass `effort`). `knowledge/agent-routing.md` pins the Claude mapping; another client may use its native roles and models.
 
 ## Quality gates
 
@@ -99,7 +101,7 @@ The harness requires bash 4+, git (with worktrees), jq, python3 (3.10+, stdlib; 
 
 Optional components need extra tools: `bwrap` (vendor-lane sandbox on Linux), `codex`, `muse`, a Jev API key, and systemd user timers (autonomous heartbeat).
 
-Hooks read the payload's `cwd` and `session_id`, resolve the repository with `git rev-parse` rather than a hardcoded path, and use `$CLAUDE_PROJECT_DIR` when it is set. There are no absolute home paths anywhere. Unit files and scripts use `%h`, `$HOME` or repository-relative paths, discovered at runtime.
+Claude hooks read the payload's `cwd` and `session_id`, resolve the repository with `git rev-parse` rather than a hardcoded path, and use `$CLAUDE_PROJECT_DIR` when it is set. There are no absolute home paths anywhere. Unit files and scripts use `%h`, `$HOME` or repository-relative paths, discovered at runtime.
 
 ## Leak policy (public repo)
 

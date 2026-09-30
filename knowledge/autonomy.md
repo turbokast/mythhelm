@@ -1,6 +1,8 @@
 # Autonomous delivery
 
-How a delivery run proceeds without a maintainer watching, what bounds it, and why each mechanism is shaped the way it is. The procedure is `/deliver-backlog`; the rules agents follow are in `.claude/rules/autonomous-delivery.md`; the state files are described in [`orchestration/README.md`](../orchestration/README.md). The execution and finalize machinery it drives is in [`execution.md`](execution.md) and [`finalize.md`](finalize.md).
+How a delivery run proceeds without a maintainer watching, what bounds it, and why each mechanism is shaped the way it is. The portable entrypoint is `.agents/skills/mythhelm-deliver-backlog/SKILL.md`; Claude Code's detailed adapter is `/deliver-backlog` and its rules are in `.claude/rules/autonomous-delivery.md`. The state files are described in [`orchestration/README.md`](../orchestration/README.md). The execution and finalize machinery it drives is in [`execution.md`](execution.md) and [`finalize.md`](finalize.md).
+
+The unattended enforcement on this page is implemented by Claude Code hooks. A client without a tested equivalent uses interactive delivery and maintainer checkpoints. Merely passing a session id to `autonomy.py` does not make its tool calls guarded.
 
 ---
 

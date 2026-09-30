@@ -400,7 +400,7 @@ echo "== clean fixture =="
 fresh clean
 lint "$F"
 expect_pass "the clean fixture passes every check"
-check "summary names all sixteen checks" [ "$(grep -cE ' (PASS|FAIL)$' <<< "$OUT")" == 16 ]
+check "summary names all seventeen checks" [ "$(grep -cE ' (PASS|FAIL)$' <<< "$OUT")" == 17 ]
 
 echo "== usage =="
 lint "$F" --only no-such-check
@@ -439,6 +439,24 @@ fresh fm-rule
 printf -- '---\npaths: ["src/[a"]\n---\n# Bad\n' > "$F/.claude/rules/bad.md"
 lint "$F" --only frontmatter
 expect_fail frontmatter "unterminated [ character class" "rule glob does not compile"
+
+echo "== portable skills =="
+fresh portable-clean
+mkdir -p "$F/.agents/skills/mythhelm-demo" "$F/.grok/skills/mythhelm-demo"
+printf '%s\n' '---' 'name: mythhelm-demo' 'description: Shared workflow.' '---' '# Demo' > "$F/.agents/skills/mythhelm-demo/SKILL.md"
+printf '%s\n' '---' 'name: mythhelm-demo' 'description: Grok adapter.' '---' 'Read `.agents/skills/mythhelm-demo/SKILL.md`.' > "$F/.grok/skills/mythhelm-demo/SKILL.md"
+lint "$F" --only portable-skills
+expect_pass "shared skill with Grok adapter is discoverable"
+fresh portable-name
+mkdir -p "$F/.agents/skills/mythhelm-demo"
+printf '%s\n' '---' 'name: wrong-name' 'description: Shared workflow.' '---' '# Demo' > "$F/.agents/skills/mythhelm-demo/SKILL.md"
+lint "$F" --only portable-skills
+expect_fail portable-skills "name must match" "portable skill has wrong name"
+fresh portable-orphan
+mkdir -p "$F/.grok/skills/mythhelm-demo"
+printf '%s\n' '---' 'name: mythhelm-demo' 'description: Grok adapter.' '---' '# Demo' > "$F/.grok/skills/mythhelm-demo/SKILL.md"
+lint "$F" --only portable-skills
+expect_fail portable-skills "no shared .agents skill" "Grok adapter has no shared procedure"
 
 echo "== routing-pins =="
 fresh rp-mismatch
