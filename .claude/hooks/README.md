@@ -119,7 +119,7 @@ Three hooks read the grant, and each applies it only to the session it names:
 
 - `continue-run.sh` (Stop) turns an idle stop into the next action while `scripts/orchestration/delivery.py actionable` lists work, within the grant's continue budget, three chained continues and one continue a minute. A final line `AWAITING MAINTAINER: <reason>` always releases the session. It fails open.
 - `guard-blocking-ask.sh` blocks AskUserQuestion, and also in any session started with `MYTHHELM_NONINTERACTIVE=1` (the heartbeat sets it). It fails open.
-- `guard-autonomy.sh` blocks the arming script in the granted session, and every `gh pr merge` there except `gh pr merge <n> --squash --match-head-commit <sha>` after `autonomy.py merge-check` recorded a ready verdict at that head within 15 minutes. In every session it blocks writes to the grant, its audit log and the run's `INTENT.md`, `RUN-LOG.md` and `QUESTIONS.md` other than through `delivery.py`, and enabling the heartbeat timer. It fails closed.
+- `guard-autonomy.sh` blocks the arming script in the granted session, and every `gh pr merge` there except `gh pr merge <n> --squash --match-head-commit <sha>` after `autonomy.py merge-check` recorded a ready verdict at that head within 15 minutes. A grant file that is unreadable or out of bounds blocks merging and arming in every session until the maintainer revokes it. In every session it blocks writes to the grant, its audit log and the run's `INTENT.md`, `RUN-LOG.md` and `QUESTIONS.md` other than through `delivery.py`, and enabling the heartbeat timer. It fails closed.
 
 | File in the main checkout | Contents |
 |---|---|

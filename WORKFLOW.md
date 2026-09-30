@@ -82,7 +82,7 @@ The grant binds that one session and its workers for at most 24 hours (renewable
 - it never asks you directly: questions go to `orchestration/QUESTIONS.md`, only the affected items wait, and you answer with `python3 scripts/orchestration/delivery.py answer Q-<n> --text "..."` or in the file;
 - it merges a pull request only when it is green, has no unresolved thread, passes the leak check, stays inside its task's scope and belongs to a granted spec, pinned to the exact head it checked;
 - each new spec still waits for your approval (`/deliver-backlog approve-spec <spec>`) unless you granted with `--no-spec-checkpoint`;
-- backlog changes still need your signed approval, except the specced → implementing → shipped moves of granted cards when you granted with `--allow-pm-sync`;
+- backlog changes still need your signed approval. `--allow-pm-sync` marks the specced → implementing → shipped moves of granted cards as pre-approved (`autonomy.py pm-sync-check`), but the approval queue does not consult it yet, so until it does those moves are filed as ordinary requests for you to sign;
 - it never pushes to `main`, tags, releases or runs workflows.
 
 `scripts/orchestration/status.sh` shows the grant, the run, the lanes, the open pull requests with their unresolved threads, and `main`'s CI on one screen. An optional systemd user timer (`scripts/orchestration/heartbeat.sh --print-install`) resumes the granted session when it stopped with work left; nothing installs it for you. `/handoff` writes a continuation package when a session must end mid-work, and `scripts/harness/prune-merged.sh` removes the local branches and worktrees of merged pull requests. [`knowledge/autonomy.md`](knowledge/autonomy.md) explains each mechanism.

@@ -125,9 +125,19 @@ grant "$SID" -7200 -60
 block "merge after expiry" "gh pr merge 12 --squash --match-head-commit $HEAD"
 block "arming after expiry" 'scripts/harness/arm-main-push.sh --reason x'
 
-echo "== a forged, over-long grant is invalid and binds nothing =="
+echo "== an invalid grant file blocks merges and arming everywhere until revoked =="
 grant "$SID" -60 $((30 * 3600))
-allow "an invalid grant grants no autonomy" 'gh pr merge 12 --squash'
+block "an over-long grant blocks a merge" 'gh pr merge 12 --squash'
+block "in another session too" 'gh pr merge 12 --squash' other-session
+block "arming" 'scripts/harness/arm-main-push.sh --reason x' other-session
+printf 'not json' > "$DATA/autonomy-grant.json"
+block "an unreadable grant blocks a merge" "gh pr merge 12 --squash --match-head-commit $HEAD"
+run_hook "$HOOK" "$(bash_payload 'gh pr merge 12 --squash' "$PROJ" other-session)"
+expect_err "autonomy.sh revoke" "the fix is the maintainer's revoke"
+allow "revoking is still allowed" 'scripts/orchestration/autonomy.sh revoke'
+allow "other gh commands pass" 'gh pr view 12'
+rm -f "$DATA/autonomy-grant.json"
+allow "after the revoke, merges are ordinary again" 'gh pr merge 12 --squash' other-session
 
 echo "== fail closed without jq =="
 HOOK_JQ_PROBE=jq-missing-probe expect_rc 2 "no jq, guarded payload" "$HOOK" \

@@ -26,6 +26,8 @@
 #       verdict for that pull request at that exact head under this grant in the last
 #       15 minutes. --auto, --admin, --merge and --rebase are refused. When the grant
 #       has expired, every merge is refused until the maintainer renews or revokes it.
+#   A grant file that is unreadable or out of bounds binds no session it can name, so
+#   (d) and (e) then block in every session until the maintainer revokes it.
 #
 # Residuals: a command inside a script file, an alias, a non-literal command word, a
 # pseudo-terminal wrapped around the grant command, and a `gh api` merge call (which
@@ -139,6 +141,11 @@ check_merge() {
     >> "$DATA_DIR/autonomy-audit.jsonl" 2>/dev/null || true
 }
 
+invalid_block() {
+  hh_block "the autonomy grant file is unreadable or out of bounds, so it cannot say which session it binds; until the maintainer revokes it, no session merges or arms a push." \
+    "Ask the maintainer to run scripts/orchestration/autonomy.sh revoke (and grant again if they want the run to continue)."
+}
+
 while IFS= read -r seg; do
   hh_split_words "$seg"
   (( ${#HH_WORDS[@]} > 0 )) || continue
@@ -185,10 +192,11 @@ while IFS= read -r seg; do
     fi
   fi
 
-  [[ "$HH_GRANT_STATE" == live || "$HH_GRANT_STATE" == expired ]] || continue
+  [[ "$HH_GRANT_STATE" =~ ^(live|expired|invalid)$ ]] || continue
 
   # (d) a granted session never arms a push to main or a publish.
   if (( $(script_word arm-main-push.sh) >= 0 )); then
+    [[ "$HH_GRANT_STATE" == invalid ]] && invalid_block
     hh_block "this session runs under an autonomy grant, which never pushes main, publishes, tags or releases." \
       "Leave the push or release for the maintainer: file it with python3 scripts/orchestration/delivery.py question, and continue with other work."
   fi
@@ -208,6 +216,7 @@ while IFS= read -r seg; do
     done
     if [[ "${GH_ARGS[0]:-}" == pr && "${GH_ARGS[1]:-}" == merge ]]; then
       GH_ARGS=("${GH_ARGS[@]:1}")
+      [[ "$HH_GRANT_STATE" == invalid ]] && invalid_block
       if [[ "$HH_GRANT_STATE" == expired ]]; then
         hh_block "this session's autonomy grant has expired, so it may not merge." \
           "Stop and report; the maintainer renews the grant (autonomy.sh renew) or revokes it before merging resumes."
