@@ -409,6 +409,7 @@
   - Verification still ends `failed`/`verification_unavailable` on native success until Task 12; freezing alone is not verification.
   - `apply` remains unavailable until Task 14, so the unresolved-descendant acceptance test confirms the current CLI refuses it and creates no branch; Task 14 must retain that refusal after implementing `apply`.
   - A missing Git user.name or user.email blocks admission with `git_identity_unavailable`, so a candidate never falls back to an inferred machine identity.
+  - `internal/admission/admission.go` captures and journals that identity; `internal/journal/projections.go` adds the candidate row API; `internal/security/redact.go` exposes names for the existing secret patterns; `internal/workspace/git.go` adds safe temporary-index and streaming Git calls; `internal/supervisor/pipeline_test.go` exercises stop ordering, partial results and escapees. These supporting files are required for the listed freeze API and pipeline change.
 - **Files modified**: `internal/admission/admission.go`, `internal/integration/candidate.go`, `internal/integration/flags.go`, `internal/integration/candidate_test.go`, `internal/journal/projections.go`, `internal/security/redact.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/pipeline_test.go`, `internal/workspace/git.go`, `specs/in-progress/dogfood-slice/tasks.md`, `specs/in-progress/dogfood-slice/handoff.md`.
 
 ### Task 12 — Project config, trust grants and the check runner
