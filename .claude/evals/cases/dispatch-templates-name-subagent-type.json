@@ -1,0 +1,14 @@
+{
+  "id": "dispatch-templates-name-subagent-type",
+  "hazard": "A dispatch template omits subagent_type, so the worker runs on the orchestrator's model and no agent pin applies.",
+  "source": "execution: dispatch pins",
+  "targets": [
+    ".claude/skills/*/SKILL.md",
+    ".claude/agents/*.md"
+  ],
+  "grader": {
+    "type": "must-not-match",
+    "pattern": "\\bAgent\\((?![^)]*subagent_type)",
+    "violation": "Agent(description: \"Review\", prompt: \"Check the change.\")"
+  }
+}

@@ -5,8 +5,9 @@ from parsed facts and GitHub state, never from an agent's prose.
     finalize.py verify        --spec S [--alias A] [--repo O/R] [--no-fetch] [--expect-check NAME]...
                               every task complete with a merged pull request on origin/main,
                               main's CI green at its tip (which holds every merge of the
-                              spec), the required checks unchanged, the CI OK job's needs
-                              not shrunk, no open thread or follow-up PR
+                              spec), the required checks equal to .claude/data/required-checks.json,
+                              the CI OK job's needs not shrunk, no open thread or
+                              follow-up PR
     finalize.py range         --spec S [--extra-pr P]... [--repo O/R] [--no-fetch]
                               the review range (JSON): base, head, the merge commits of the
                               spec's task pull requests (and of --extra-pr fix pull requests),
@@ -57,7 +58,7 @@ sys.path.insert(0, HERE)
 import runspec  # noqa: E402  (a sibling script, not an installed package)
 from runspec import Usage, gh, run  # noqa: E402
 
-REQUIRED_CHECKS = ("CI OK", "DCO sign-off", "Dependency review", "Analyze (actions)", "Analyze (go)")
+REQUIRED_CHECKS_FILE = os.path.join(HERE, "..", "..", ".claude", "data", "required-checks.json")
 PR_REVIEW_CHECKS = ("CI OK", "CodeRabbit")
 SPEC_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 CHANGELOG_SECTIONS = ("Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
@@ -224,6 +225,19 @@ def ci_ok_needs(ref):
     return None
 
 
+def expected_required_checks(path=REQUIRED_CHECKS_FILE):
+    """The checks main's ruleset is expected to require, from the tracked data file."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError) as e:
+        raise Usage("cannot read the expected required checks from %s: %s" % (path, e)) from e
+    checks = data.get("required") if isinstance(data, dict) else None
+    if not isinstance(checks, list) or not checks or not all(isinstance(c, str) and c for c in checks):
+        raise Usage("%s has no non-empty 'required' list of check names" % path)
+    return tuple(checks)
+
+
 def required_checks(slug):
     rules = json.loads(gh(["api", "repos/%s/rules/branches/main" % slug]))
     out = set()
@@ -234,7 +248,8 @@ def required_checks(slug):
     return out
 
 
-def verify(spec, alias=None, repo=None, fetch=True, expect=REQUIRED_CHECKS):
+def verify(spec, alias=None, repo=None, fetch=True, expect=None):
+    expect = tuple(expect) if expect else expected_required_checks()
     slug = runspec.repo_slug(repo)
     alias = alias or spec
     if fetch:
@@ -299,7 +314,7 @@ def verify(spec, alias=None, repo=None, fetch=True, expect=REQUIRED_CHECKS):
         reasons.append("required-checks: main no longer requires %s" % ", ".join(missing))
     extra = sorted(have - set(expect))
     if extra:
-        notes.append("required-checks: main also requires %s; update the expected list" % ", ".join(extra))
+        notes.append("required-checks: main also requires %s; add it to .claude/data/required-checks.json and docs/automation.md" % ", ".join(extra))
     for n in notes:
         print("note=%s" % n)
     return verdict(facts, reasons, unknown, "ready")
@@ -344,12 +359,13 @@ def review_range(spec, repo=None, fetch=True, extra=()):
 
 # ---- publish-check -------------------------------------------------------------
 
-def publish_check(spec, pr, repo=None, epics=(), required=PR_REVIEW_CHECKS, changelog=True, fix=False):
-    slug = runspec.repo_slug(repo)
+def pr_gate(slug, pr, required=PR_REVIEW_CHECKS):
+    """(view, reasons, unknown) for what every pull request needs before it merges: open,
+    not a draft, mergeable, its checks green, no unresolved thread, and nothing that must
+    not be published in its title, body or added lines."""
     view = json.loads(gh(["pr", "view", str(pr), "--json",
-                          "state,isDraft,mergeable,mergeStateStatus,headRefOid,title,body,files,statusCheckRollup"],
+                          "state,isDraft,mergeable,mergeStateStatus,baseRefOid,headRefOid,title,body,files,statusCheckRollup"],
                          repo=slug))
-    facts = [("pr", pr), ("head", view.get("headRefOid", ""))]
     reasons, unknown = [], []
     if view.get("state") != "OPEN":
         reasons.append("state:%s" % view.get("state"))
@@ -375,6 +391,18 @@ def publish_check(spec, pr, repo=None, epics=(), required=PR_REVIEW_CHECKS, chan
             unknown.append("check-missing:%s" % name)
     for url in runspec.unresolved_threads(slug, pr):
         reasons.append("thread-unresolved:%s" % url)
+    diff = gh(["pr", "diff", str(pr)], repo=slug)
+    added = "\n".join(l[1:] for l in diff.split("\n") if l.startswith("+") and not l.startswith("+++"))
+    for finding in runspec.hygiene_findings({"body": view.get("body") or "", "title": view.get("title") or "",
+                                             "diff": added}):
+        reasons.append("leak: %s" % finding)
+    return view, reasons, unknown
+
+
+def publish_check(spec, pr, repo=None, epics=(), required=PR_REVIEW_CHECKS, changelog=True, fix=False):
+    slug = runspec.repo_slug(repo)
+    view, reasons, unknown = pr_gate(slug, pr, required)
+    facts = [("pr", pr), ("head", view.get("headRefOid", ""))]
     files = [] if fix else [f["path"] for f in view.get("files") or []]
     own = re.compile(r"^specs/[^/]+/(%s)/" % "|".join(re.escape(x) for x in (spec,) + tuple(epics)))
     for f in files:
@@ -384,11 +412,6 @@ def publish_check(spec, pr, repo=None, epics=(), required=PR_REVIEW_CHECKS, chan
         reasons.append("content: the pull request does not add specs/done/%s/retrospective.md" % spec)
     if not fix and changelog and "CHANGELOG.md" not in files:
         reasons.append("content: the pull request does not change CHANGELOG.md")
-    diff = gh(["pr", "diff", str(pr)], repo=slug)
-    added = "\n".join(l[1:] for l in diff.split("\n") if l.startswith("+") and not l.startswith("+++"))
-    for finding in runspec.hygiene_findings({"body": view.get("body") or "", "title": view.get("title") or "",
-                                             "diff": added}):
-        reasons.append("leak: %s" % finding)
     return verdict(facts, reasons, unknown, "ready")
 
 
@@ -631,7 +654,7 @@ def cmd_main(argv):
     if getattr(a, "spec", None) is not None:
         check_name(a.spec)
     if a.cmd == "verify":
-        return verify(a.spec, a.alias, a.repo, fetch=not a.no_fetch, expect=tuple(a.expect_check or REQUIRED_CHECKS))
+        return verify(a.spec, a.alias, a.repo, fetch=not a.no_fetch, expect=tuple(a.expect_check or ()))
     if a.cmd == "range":
         print(json.dumps(review_range(a.spec, a.repo, fetch=not a.no_fetch, extra=tuple(a.extra_pr)), indent=1))
     elif a.cmd == "ci":

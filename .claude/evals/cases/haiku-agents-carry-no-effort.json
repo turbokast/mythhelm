@@ -1,0 +1,14 @@
+{
+  "id": "haiku-agents-carry-no-effort",
+  "hazard": "A mechanical-tier (haiku) agent gets an effort pin, which that tier does not accept.",
+  "source": "agent routing: haiku authoring",
+  "targets": [
+    ".claude/agents/completion-clerk.md",
+    ".claude/agents/harness-clerk.md"
+  ],
+  "grader": {
+    "type": "must-not-match",
+    "pattern": "^effort:",
+    "violation": "effort: high"
+  }
+}

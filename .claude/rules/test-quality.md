@@ -26,6 +26,8 @@ Fast, deterministic tests that assert behaviour. `code-reviewer` checks the same
 - **Helpers call `t.Helper()`**; use `t.Fatalf` when later lines depend on the result, `t.Errorf` otherwise.
 - **Deterministic.** Seed or inject randomness and time. A test that depends on wall-clock order or map iteration order is broken.
 - **Cross-platform.** Build paths with `filepath`, compare with `filepath.ToSlash` where output is normalised, and gate OS-specific tests with build tags or `runtime.GOOS` skips that say why.
+- **Sanitised recordings.** A recorded native stream committed as a fixture carries no account IDs, emails, org names, paths or prompts (`public-repo-hygiene.md`).
+- **External behaviour through the binary.** CLI output and exit codes, JSONL contracts and files written are tested through the built binary or `cli.Main`, not only through internal functions.
 - **Tags are gates too.** Tests behind a build tag (`live`, `e2e`) do not run under the default `go test ./...`. A change that can break them runs them explicitly, and a green default run is never evidence about them.
 
 ## A test change that turns red green justifies production

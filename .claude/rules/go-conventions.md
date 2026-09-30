@@ -10,6 +10,13 @@ paths:
 
 MYTHHELM supervises processes that spend money and change code, so these are correctness rules, not style. The spec section for each is authoritative.
 
+## Basics
+
+- `context.Context` is the first parameter of any function that blocks, does I/O or starts work; never store one in a struct.
+- No `panic` in library code; return an error. Only `main` and a worker's top-level recovery may handle a panic.
+- No mutable package-level state. Pass dependencies explicitly, so tests can run in parallel.
+- Compare errors with `errors.Is` and `errors.As`, never with strings.
+
 ## Layout (spec §19.1)
 
 - `cmd/mythhelm` holds only `main`, which calls `internal/cli`. All logic lives in packages.
