@@ -182,6 +182,56 @@ func TestApplyRefusesInvalidRefName(t *testing.T) {
 	}
 }
 
+func recordApplyIntent(t *testing.T, f fixture, runID, branch, commit string) {
+	t.Helper()
+	j := f.journal(t)
+	payload, err := json.Marshal(map[string]string{"branch": branch, "target_repo": f.onlyRun(t).SourceRepo, "candidate_commit": commit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Append(t.Context(), journal.Event{SchemaVersion: journal.EnvelopeVersion, EventID: ids.New("evt"),
+		RunID: runID, ProducerID: ids.New("sup"), ProducerSequence: 1, Generation: 1,
+		ObservedAt: time.Now().UTC(), Type: "apply.intent_recorded", Payload: payload}, nil); err != nil {
+		t.Fatal(err)
+	}
+	p := supervisor.NewProducer(ids.New("sup"), 1)
+	if err := supervisor.TransitionRun(t.Context(), j, runID, supervisor.RunApplying, "", p); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestApplyRetryBlocksConflictingBranch(t *testing.T) {
+	f, runID := readyApplyFixture(t)
+	j := f.journal(t)
+	attempt, err := j.LatestAttempt(t.Context(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := j.Candidate(t.Context(), attempt.AttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch := "review/conflict"
+	recordApplyIntent(t, f, runID, branch, c.Commit)
+	f.git(t, "branch", branch)
+	before := f.fingerprint(t)
+	code, _, stderr := f.run(t, "apply", runID, "--to-branch", branch)
+	if code != 3 {
+		t.Fatalf("conflicting retry exit %d: %s", code, stderr)
+	}
+	run := f.onlyRun(t)
+	if run.State != string(supervisor.RunBlocked) || run.Reason != "branch_exists" {
+		t.Fatalf("conflicting retry left run %s/%s active", run.State, run.Reason)
+	}
+	if f.fingerprint(t) != before {
+		t.Fatal("conflicting retry changed source")
+	}
+	r, _, err := supervisor.ReadReceipt(t.Context(), j, runID)
+	if err != nil || r["state"] != string(supervisor.RunBlocked) {
+		t.Fatalf("blocked receipt = %v: %v", r, err)
+	}
+}
+
 func TestApplyReconcilesAfterCrash(t *testing.T) {
 	f, runID := readyApplyFixture(t)
 	j := f.journal(t)
@@ -194,16 +244,7 @@ func TestApplyReconcilesAfterCrash(t *testing.T) {
 		t.Fatal(err)
 	}
 	branch := "review/recovered"
-	payload, _ := json.Marshal(map[string]string{"branch": branch, "target_repo": f.onlyRun(t).SourceRepo, "candidate_commit": c.Commit})
-	if err := j.Append(t.Context(), journal.Event{SchemaVersion: journal.EnvelopeVersion, EventID: ids.New("evt"),
-		RunID: runID, ProducerID: ids.New("sup"), ProducerSequence: 1, Generation: 1,
-		ObservedAt: time.Now().UTC(), Type: "apply.intent_recorded", Payload: payload}, nil); err != nil {
-		t.Fatal(err)
-	}
-	p := supervisor.NewProducer(ids.New("sup"), 1)
-	if err := supervisor.TransitionRun(t.Context(), j, runID, supervisor.RunApplying, "", p); err != nil {
-		t.Fatal(err)
-	}
+	recordApplyIntent(t, f, runID, branch, c.Commit)
 	if err := workspace.ApplyBranch(t.Context(), f.repo, attempt.WorkspacePath,
 		"refs/mythhelm/candidates/"+attempt.AttemptID, branch, c.Commit); err != nil {
 		t.Fatal(err)

@@ -16,6 +16,7 @@ The supervisor holds the run owner lock, verifies the version 1 receipt against 
 ## Consequences
 
 - A competing writer's branch is never advanced, even when the candidate would be a fast-forward. A failed compare-and-swap can leave imported objects, but changes no existing ref or checkout state.
+- A policy conflict after intent makes the run terminal `blocked` and refreshes its journaled receipt. A preflight refusal leaves the run ready for another branch choice.
 - The implementation uses two Git commands instead of the design's destination-refspec fetch. The branch creation is the externally visible effect and is atomic.
 - A crash after branch creation is reconciled on retry without another fetch. A crash after receipt replacement but before its digest is journaled requires Task 15 recovery using the preserved version 1 bytes and their journaled digest.
 - Acceptance tests cover source fingerprints, user hook suppression, policy refusals, a competing branch created during fetch and retry with the managed clone unavailable.

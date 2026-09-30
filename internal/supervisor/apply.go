@@ -13,8 +13,8 @@ import (
 	"github.com/turbokast/mythhelm/internal/workspace"
 )
 
-// ErrApplyBlocked is a policy refusal that leaves the run and user repository
-// available for a later, correctly authorized apply.
+// ErrApplyBlocked is a policy refusal. Preflight refusals leave a ready run
+// available for another apply; policy failures after intent become blocked.
 var ErrApplyBlocked = errors.New("apply blocked")
 
 type applyRecord struct {
@@ -29,6 +29,32 @@ func applyEvent(ctx context.Context, j *journal.Journal, p *Producer, runID, typ
 		return err
 	}
 	return p.append(ctx, j, ev, nil)
+}
+
+func writeApplyReceipt(ctx context.Context, j *journal.Journal, p *Producer, runID string, r Receipt) error {
+	sha, err := WriteReceipt(filepath.Join(j.StateDir(), "runs", runID), r)
+	if err != nil {
+		return err
+	}
+	ev, err := newEvent(runID, "", "", "receipt.written", map[string]any{
+		"schema_version": r["schema_version"], "sha256": sha, "path": "receipt.json",
+	}, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	return p.append(ctx, j, ev, nil)
+}
+
+func blockApply(ctx context.Context, j *journal.Journal, runID, reason string) error {
+	p := NewProducer(ids.New("sup"), 1)
+	if err := TransitionRun(ctx, j, runID, RunBlocked, reason, p); err != nil {
+		return err
+	}
+	r, err := BuildReceipt(ctx, j, runID)
+	if err != nil {
+		return err
+	}
+	return writeApplyReceipt(ctx, j, p, runID, r)
 }
 
 // ApplyRun journals the irreversible branch creation intent, reconciles a
@@ -87,7 +113,11 @@ func ApplyRun(ctx context.Context, j *journal.Journal, runID, branch string, acc
 		return nil, err
 	}
 	if current != "" && current != candidate.Commit {
-		return nil, fmt.Errorf("%w: %s", workspace.ErrBranchExists, branch)
+		err := fmt.Errorf("%w: %s", workspace.ErrBranchExists, branch)
+		if run.State == string(RunApplying) {
+			err = errors.Join(err, blockApply(ctx, j, runID, "branch_exists"))
+		}
+		return nil, err
 	}
 	if run.State == string(RunCompleted) {
 		if current != candidate.Commit {
@@ -111,7 +141,11 @@ func ApplyRun(ctx context.Context, j *journal.Journal, runID, branch string, acc
 		return nil, fmt.Errorf("%w: unverified candidate requires --accept-unverified", ErrApplyBlocked)
 	}
 	if _, err := workspace.Git(ctx, run.SourceRepo, true, "cat-file", "-e", run.BaseRev+"^{commit}"); err != nil {
-		return nil, fmt.Errorf("%w: admitted base commit is unavailable in source repository: %w", ErrApplyBlocked, err)
+		blocked := fmt.Errorf("%w: admitted base commit is unavailable in source repository: %w", ErrApplyBlocked, err)
+		if run.State == string(RunApplying) {
+			blocked = errors.Join(blocked, blockApply(ctx, j, runID, "base_missing"))
+		}
+		return nil, blocked
 	}
 	if current == "" && run.State == string(RunCompleted) {
 		return nil, fmt.Errorf("%w: completed branch is absent", ErrApplyBlocked)
@@ -140,6 +174,9 @@ func ApplyRun(ctx context.Context, j *journal.Journal, runID, branch string, acc
 	}
 	ref := "refs/mythhelm/candidates/" + attempt.AttemptID
 	if err := workspace.ApplyBranch(ctx, run.SourceRepo, attempt.WorkspacePath, ref, branch, candidate.Commit); err != nil {
+		if errors.Is(err, workspace.ErrBranchExists) {
+			err = errors.Join(err, blockApply(ctx, j, runID, "branch_exists"))
+		}
 		return nil, err
 	}
 	if completed == nil {
@@ -160,15 +197,7 @@ func ApplyRun(ctx context.Context, j *journal.Journal, runID, branch string, acc
 	r["external_effects"] = []any{map[string]any{"type": effect, "target_repo": run.SourceRepo,
 		"branch": branch, "commit": candidate.Commit}}
 	r["remaining_human_action"] = []string{"review the branch", "sign off (DCO) after review"}
-	sha, err := WriteReceipt(runDir, r)
-	if err != nil {
-		return nil, err
-	}
-	ev, err := newEvent(runID, "", "", "receipt.written", map[string]any{"schema_version": 2, "sha256": sha, "path": "receipt.json"}, time.Now().UTC())
-	if err != nil {
-		return nil, err
-	}
-	if err := p.append(ctx, j, ev, nil); err != nil {
+	if err := writeApplyReceipt(ctx, j, p, runID, r); err != nil {
 		return nil, err
 	}
 	return r, nil

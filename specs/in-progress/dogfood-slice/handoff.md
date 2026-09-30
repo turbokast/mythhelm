@@ -91,6 +91,7 @@
 - **For Task 15:** a crash after replacing `receipt.json` with v2 but before journaling its SHA-256 leaves a v2 file whose latest journaled digest is v1. Recovery should use the preserved `receipt.v1.json` only after checking it against the v1 journal digest, then finish or repair the v2 receipt under the owner lock. The same repair path should cover the pre-existing Task 13 terminal receipt-write failure.
 - The fake-adapter acceptance tests are in `internal/supervisor/apply_test.go`; the Git effect and hook tests are in `internal/workspace/apply_test.go`.
 - `apply --format jsonl` emits one `apply.result` object with the process exit code and error category for success and refusal (AC-1.3). The success also names the completed state and candidate commit; it does not dump the receipt.
+- A conflicting destination or missing source base after a recorded intent ends the in-flight run as `blocked` with a fresh journaled v1 receipt. A refusal before intent leaves the run ready for a different branch. This prevents a failed apply from keeping the active-run gate occupied indefinitely.
 
 ## Task 15 — Stop, recover, and the §18.4 fault-injection subset
 
