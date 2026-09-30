@@ -113,10 +113,12 @@ def state_of(grant, now=None):
 
 def require_terminal(verb):
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        codex = ("For Codex, grant from an interactive terminal with --session <id>."
+                 if verb == "grant" else
+                 "For Codex, run renew --hours N in an interactive terminal; it keeps the same session and scope.")
         raise Refused("%s needs an interactive terminal: only the maintainer grants or renews autonomy, "
-                      "from their own terminal. In Claude Code use `! scripts/orchestration/autonomy.sh %s ...`; "
-                      "for Codex, run it in a terminal with --session <Codex session id>."
-                      % (verb, verb))
+                      "from their own terminal. In Claude Code use `! scripts/orchestration/autonomy.sh %s ...`. %s"
+                      % (verb, verb, codex))
 
 
 def session_from_environment():

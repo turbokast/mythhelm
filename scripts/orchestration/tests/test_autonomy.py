@@ -200,6 +200,8 @@ class GrantTest(Base):
         g = self.grant_now()
         rc, out = self.run_cmd("renew", "--hours", "2")
         self.assertEqual(rc, 2)
+        self.assertIn("same session and scope", out)
+        self.assertNotIn("--session", out)
         self.assertEqual(self.grant(), g)
         rc, out = self.run_cmd("renew", "--hours", "24", tty=True)
         self.assertEqual(rc, 0, out)

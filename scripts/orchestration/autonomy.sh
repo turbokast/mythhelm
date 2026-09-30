@@ -13,8 +13,9 @@
 #
 # grant and renew are the maintainer's: they refuse without an interactive terminal,
 # and guard-autonomy.sh blocks Claude agent calls of them. In Claude Code, the
-# maintainer uses the `!` prefix. In Codex, the maintainer runs the command in a
-# real terminal with --session <Codex session id>; an agent tool call (including a
+# maintainer uses the `!` prefix. In Codex, the maintainer grants from a real
+# terminal with --session <Codex session id>, then renews with renew --hours N;
+# renewal keeps that session and scope. An agent tool call (including a
 # noninteractive shell command) cannot grant or renew. CLAUDE_CODE_SESSION_ID,
 # CODEX_SESSION_ID and CODEX_THREAD_ID are accepted when present. Hours run from
 # 1 to 24; renew starts a new window and keeps the scope and session. Anyone may revoke.
