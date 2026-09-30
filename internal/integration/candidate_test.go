@@ -21,7 +21,7 @@ func fixture(t *testing.T) repoFixture {
 	f := repoFixture{dir: t.TempDir()}
 	f.git(t, "init", "--quiet", "--initial-branch=main")
 	f.git(t, "config", "user.name", "Test User")
-	f.git(t, "config", "user.email", "test@example.invalid")
+	f.git(t, "config", "user.email", "test@example.com")
 	f.write(t, "README.md", "base\n")
 	f.write(t, ".gitignore", "ignored/\n")
 	f.git(t, "add", "README.md", ".gitignore")
@@ -56,7 +56,7 @@ func (f repoFixture) freeze(t *testing.T) integration.Candidate {
 	t.Helper()
 	c, err := integration.Freeze(t.Context(), f.dir, f.base, integration.CommitMeta{
 		RunID: "run_test", AttemptID: "att_test", Title: "# Demo task",
-		Name: "Test User", Email: "test@example.invalid",
+		Name: "Test User", Email: "test@example.com",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +162,7 @@ func TestCandidateHasNoSignedOffBy(t *testing.T) {
 	if strings.Contains(message, "Signed-off-by:") || !strings.Contains(message, "MYTHHELM-Run: run_test") {
 		t.Fatalf("candidate message = %q", message)
 	}
-	if got := f.git(t, "log", "-1", "--format=%an <%ae>", c.Commit); got != "Test User <test@example.invalid>" {
+	if got := f.git(t, "log", "-1", "--format=%an <%ae>", c.Commit); got != "Test User <test@example.com>" {
 		t.Fatalf("candidate author = %q", got)
 	}
 }

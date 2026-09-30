@@ -848,6 +848,11 @@ func TestCtrlCOnceStopsAndExits130(t *testing.T) {
 	if run := f.onlyRun(t); run.State != "cancelled" {
 		t.Fatalf("run projected %s, want cancelled", run.State)
 	}
+	run := f.onlyRun(t)
+	c, err := f.journal(t).Candidate(t.Context(), findAttempt(t, f, run.RunID))
+	if err != nil || !c.Partial {
+		t.Fatalf("cancelled attempt candidate = %+v, %v; want partial", c, err)
+	}
 }
 
 func TestFreezeWaitsForStopConfirmation(t *testing.T) {
