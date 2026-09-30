@@ -2,7 +2,7 @@
 
 How a delivery run proceeds without a maintainer watching, what bounds it, and why each mechanism is shaped the way it is. The portable entrypoint is `.agents/skills/mythhelm-deliver-backlog/SKILL.md`; Claude Code's detailed adapter is `/deliver-backlog` and its rules are in `.claude/rules/autonomous-delivery.md`. The state files are described in [`orchestration/README.md`](../orchestration/README.md). The execution and finalize machinery it drives is in [`execution.md`](execution.md) and [`finalize.md`](finalize.md).
 
-The unattended enforcement on this page is implemented by Claude Code hooks. A client without a tested equivalent uses interactive delivery and maintainer checkpoints. Merely passing a session id to `autonomy.py` does not make its tool calls guarded.
+The unattended enforcement on this page is implemented by Claude Code hooks. `autonomy.py` recognizes Codex session IDs for scoped checks, but that alone does not guard Codex tool calls or continue its session. Codex and other clients without a tested hook adapter use interactive delivery and maintainer checkpoints; their grants do not authorize unattended merges or product pre-approval.
 
 ---
 
@@ -12,7 +12,7 @@ The unattended enforcement on this page is implemented by Claude Code hooks. A c
 |---|---|---|
 | Grant | The maintainer's time-boxed (1 to 24 hours, renewable), scope-limited (cards and specs) permission for one session to run unattended | `scripts/orchestration/autonomy.py` |
 | Who arms it | Only the maintainer, from a terminal. Agents are blocked from `grant` and `renew` and from writing the grant file; anyone may `revoke` | `autonomy.py`, `.claude/hooks/guard-autonomy.sh` |
-| Who it binds | The session named in it, and that session's subagents (whose hooks carry the parent's session id). Every other session behaves as if there were no grant | `hh_grant_state` in `.claude/hooks/hook-helpers.sh` |
+| Who it binds | The named session; Claude subagents carry the parent's session id into the hooks. Codex IDs are recognized by `autonomy.py` but have no MYTHHELM tool-call guard | `autonomy.py`, `hh_grant_state` in `.claude/hooks/hook-helpers.sh` |
 | Run state | `INTENT.md`, `RUN-LOG.md`, `QUESTIONS.md` in the main checkout's `orchestration/`, written only by `delivery.py` | `scripts/orchestration/delivery.py` |
 | Actionable | An item an agent can advance now; building waits for dependencies, specifying does not | `delivery.py actionable` |
 | Keeping going | The Stop hook continues the granted session while work is actionable, within the grant's continue budget | `.claude/hooks/continue-run.sh` |
@@ -23,7 +23,7 @@ The unattended enforcement on this page is implemented by Claude Code hooks. A c
 
 ## What a grant permits
 
-A live grant bound to the session permits exactly this:
+A live grant enforced by Claude Code hooks permits exactly this:
 
 - **Continuing unattended** over the cards and specs in its scope. `continue-run.sh` turns an idle stop into the next action while `delivery.py actionable` lists work, at most `max_continues` times per grant (default 30), at most three chained continues in a row, and not twice within a minute. A final line `AWAITING MAINTAINER: <reason>` always releases the session.
 - **Merging pull requests** that are green, have no unresolved review thread, pass the public-hygiene check, change only files inside their task's scope, and belong to a spec in the grant's scope. `autonomy.py merge-check` decides it with `scripts/harness/runspec.py pr-check` (task and lifecycle pull requests) or `scripts/harness/finalize.py publish-check` (finalize and fix pull requests), records the verdict with the head commit, and the merge must be `gh pr merge <n> --squash --match-head-commit <sha>`. A pull request that needs an accepted scope exception is not mergeable under a grant; it goes to the maintainer.

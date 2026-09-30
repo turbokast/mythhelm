@@ -99,7 +99,7 @@ The harness learns from its own runs. A finalize retrospective turns lessons tha
 
 The delivery procedure (Claude Code: `/deliver-backlog`; other clients: `mythhelm-deliver-backlog`) takes a set of backlog cards and specs through the whole lifecycle, from create-spec to finalize-spec, in dependency order: specifying runs ahead, building waits until what it depends on is done. It orchestrates the stages above and never implements. Its state lives in the main checkout's `orchestration/` ([`orchestration/README.md`](orchestration/README.md)), so a new session resumes where the last one stopped.
 
-With you present, it asks you at each spec checkpoint and when it is stuck. The unattended grant and automatic continuation described below currently bind Claude Code sessions through Claude hooks. Other clients use interactive delivery until a tested adapter supplies equivalent enforcement. To let a Claude Code session run while you are away, grant it autonomy from your own terminal:
+With you present, it asks you at each spec checkpoint and when it is stuck. The grant service recognizes Claude Code and Codex session IDs, but only Claude Code has the hook enforcement and automatic continuation described below. Other clients use interactive delivery until a tested adapter supplies equivalent enforcement. To let a Claude Code session run while you are away, grant it autonomy from your own terminal:
 
 ```bash
 ! scripts/orchestration/autonomy.sh grant --hours 8 --scope MH-3,MH-5 --reason "overnight run"   # in Claude Code
@@ -108,10 +108,11 @@ scripts/orchestration/autonomy.sh status        # also: renew --hours 8, revoke
 
 For a Codex session, read its `CODEX_SESSION_ID`, then run `autonomy.sh grant ... --session <id>`
 in your own interactive terminal. Codex shell-command tool calls have no interactive terminal
-and cannot issue a grant. The Stop continuation and optional heartbeat currently work only
-with Claude Code; a Codex session needs the operator to continue it.
+and cannot issue a grant. The grant can bind scoped checks to that session, but Codex has no
+MYTHHELM tool-call guards or Stop continuation. Its operator continues the run and approves
+merges and product writes at the checkpoints; a grant alone does not authorize unattended actions.
 
-The grant binds that one session and its workers for at most 24 hours (renewable), over the cards and specs you name. Agents cannot grant or renew it. While it is live:
+For Claude Code, the grant binds one session and its workers for at most 24 hours (renewable), over the cards and specs you name. Agents cannot grant or renew it. While it is live:
 
 - the session keeps working instead of stopping after each step, within a continue budget, until nothing is left that an agent can do; it then ends with `AWAITING MAINTAINER: <reason>`;
 - it never asks you directly: questions go to `orchestration/QUESTIONS.md`, only the affected items wait, and you answer with `python3 scripts/orchestration/delivery.py answer Q-<n> --text "..."` or in the file;
