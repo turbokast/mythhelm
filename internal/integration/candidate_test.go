@@ -130,7 +130,16 @@ func TestFreezeIgnoresAgentMovedHEAD(t *testing.T) {
 	f.write(t, "discard.txt", "discarded\n")
 	f.git(t, "add", "discard.txt")
 	f.git(t, "commit", "--quiet", "-m", "agent commit")
-	f.git(t, "reset", "--hard", f.base)
+	f.write(t, "throwaway.txt", "reset away\n")
+	f.git(t, "add", "throwaway.txt")
+	f.git(t, "commit", "--quiet", "-m", "agent second commit")
+	f.git(t, "reset", "--hard", "HEAD^")
+	if f.git(t, "rev-parse", "HEAD") == f.base {
+		t.Fatal("the test must freeze while HEAD differs from the admitted base")
+	}
+	if err := os.Remove(filepath.Join(f.dir, "discard.txt")); err != nil {
+		t.Fatal(err)
+	}
 	f.write(t, "final.txt", "kept\n")
 	c := f.freeze(t)
 	if got := f.git(t, "rev-parse", c.Commit+"^"); got != f.base {
@@ -141,6 +150,9 @@ func TestFreezeIgnoresAgentMovedHEAD(t *testing.T) {
 	}
 	if slices.ContainsFunc(c.Changed, func(p integration.ChangedPath) bool { return p.Path == "discard.txt" }) {
 		t.Fatalf("discarded agent commit leaked into candidate: %+v", c.Changed)
+	}
+	if slices.ContainsFunc(c.Changed, func(p integration.ChangedPath) bool { return p.Path == "throwaway.txt" }) {
+		t.Fatalf("reset agent commit leaked into candidate: %+v", c.Changed)
 	}
 }
 
