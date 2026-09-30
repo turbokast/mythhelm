@@ -12,7 +12,7 @@ Checks (each reads the tree at DIR, default the repository root):
                   haiku agents carry no effort: and no Agent tool
   haiku-effort    no dispatch of a haiku agent in .claude/ or CLAUDE.md has an
                   effort parameter within WINDOW lines
-  rule-budget     each agent entrypoint plus always-on Claude rules fits RULE_BUDGET_BYTES
+  rule-budget     shared and combined Claude instructions plus always-on rules fit RULE_BUDGET_BYTES
   portable-skills shared .agents skills and .grok adapters have valid discovery metadata
   paths-globs     every rule paths: glob matches a file in the tree, unless the line
                   above it is a "# future" comment (a marked glob that now matches is
@@ -72,7 +72,8 @@ import re
 import subprocess
 import sys
 
-# The always-loaded byte budget: each entrypoint plus every rule without paths:. Raise it
+# The always-loaded byte budget: the shared entrypoint, and Claude's entrypoint
+# including shared instructions, plus every rule without paths:. Raise it
 # only in the change that adds the bytes, after trying paths: frontmatter and moving
 # evidence to knowledge/rule-evidence/, and say in the pull request why.
 RULE_BUDGET_BYTES = 16384
@@ -361,8 +362,7 @@ def always_on_rules(root):
 
 def check_rule_budget(root, files):
     for entry, total in always_on_contexts(root).items():
-        print("Always-on context (%s + Claude rules without paths:): %d of %d bytes" %
-              (entry, total, RULE_BUDGET_BYTES))
+        print("Always-on context (%s): %d of %d bytes" % (entry, total, RULE_BUDGET_BYTES))
         if total > RULE_BUDGET_BYTES:
             finding(entry, 0, "rule-budget",
                     "always-on bytes %d exceed the budget %d by %d; add paths: to a rule, move evidence to "
@@ -371,9 +371,17 @@ def check_rule_budget(root, files):
 
 
 def always_on_contexts(root):
+    """Count AGENTS.md alone and Claude's CLAUDE.md plus its required AGENTS.md."""
     rules = sum(os.path.getsize(os.path.join(root, rel)) for rel in always_on_rules(root))
-    return {rel: os.path.getsize(os.path.join(root, rel)) + rules
-            for rel in ("CLAUDE.md", "AGENTS.md") if os.path.isfile(os.path.join(root, rel))}
+    shared = os.path.join(root, "AGENTS.md")
+    claude = os.path.join(root, "CLAUDE.md")
+    shared_bytes = os.path.getsize(shared) if os.path.isfile(shared) else 0
+    contexts = {}
+    if os.path.isfile(shared):
+        contexts["AGENTS.md"] = shared_bytes + rules
+    if os.path.isfile(claude):
+        contexts["CLAUDE.md + AGENTS.md"] = os.path.getsize(claude) + shared_bytes + rules
+    return contexts
 
 
 def check_portable_skills(root, files):

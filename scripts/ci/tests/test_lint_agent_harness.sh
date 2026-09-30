@@ -523,6 +523,15 @@ expect_fail rule-budget "exceed the budget" "oversized always-on rule"
 printf -- '---\npaths:\n  - "src/**"\n---\n' | cat - "$F/.claude/rules/big.md" > "$F/big.tmp" && mv "$F/big.tmp" "$F/.claude/rules/big.md"
 lint "$F" --only rule-budget
 expect_pass "the same rule made path-conditional does not count"
+fresh rb-combined
+python3 - "$F" <<'EOF'
+import pathlib, sys
+root = pathlib.Path(sys.argv[1])
+(root / "AGENTS.md").write_text("a" * 9000)
+(root / "CLAUDE.md").write_text("c" * 9000)
+EOF
+lint "$F" --only rule-budget
+expect_fail rule-budget "CLAUDE.md + AGENTS.md" "Claude budget includes both instruction files"
 
 echo "== paths-globs =="
 fresh pg-dead
