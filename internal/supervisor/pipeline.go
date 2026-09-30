@@ -419,7 +419,7 @@ func acceptWorker(ctx context.Context, dir string, pid int, tokenSHA256 [32]byte
 		switch {
 		case err == nil:
 			return verifyIdentity(id, pid, tokenSHA256)
-		case !errors.Is(err, os.ErrNotExist):
+		case !errors.Is(err, os.ErrNotExist) && !retryIdentityRead(err):
 			return fmt.Errorf("%w: %w", errWorkerUnverified, err)
 		case gone:
 			return fmt.Errorf("%w: the worker exited without writing its identity", errWorkerUnverified)
