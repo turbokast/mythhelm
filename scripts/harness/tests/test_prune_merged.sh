@@ -66,6 +66,9 @@ state_head="$(commit_on wtstate k.txt)";     pr wtstate 10 MERGED "$state_head"
 git -C "$R" worktree add -q "$TEST_TMP/wt-state" wtstate
 mkdir -p "$TEST_TMP/wt-state/.claude/data"
 printf '{}\n' > "$TEST_TMP/wt-state/.claude/data/gate-marker-go.json"
+broken_head="$(commit_on wtbroken n.txt)";   pr wtbroken 13 MERGED "$broken_head"
+git -C "$R" worktree add -q "$TEST_TMP/wt-broken" wtbroken
+printf 'gitdir: %s\n' "$TEST_TMP/nowhere" > "$TEST_TMP/wt-broken/.git"
 hidden_head="$(commit_on wthidden l.txt)";   pr wthidden 11 MERGED "$hidden_head"
 git -C "$R" worktree add -q "$TEST_TMP/wt-hidden" wthidden
 git -C "$TEST_TMP/wt-hidden" config status.showUntrackedFiles no
@@ -108,6 +111,9 @@ check "harness state alone does not" test ! -d "$TEST_TMP/wt-state"
 check "wtstate deleted" bash -c "! git -C '$R' rev-parse --verify --quiet refs/heads/wtstate"
 check "untracked files hidden by config still count" test -f "$TEST_TMP/wt-hidden/notes.txt"
 has "skip wthidden: its worktree" "showUntrackedFiles=no does not hide work"
+check "a worktree whose status cannot be read is kept" test -d "$TEST_TMP/wt-broken"
+check "wtbroken kept" ref wtbroken
+has "skip wtbroken: its worktree $TEST_TMP/wt-broken has uncommitted" "an unreadable status is dirt, decided before any removal"
 
 has "skip main" "main is never pruned"
 

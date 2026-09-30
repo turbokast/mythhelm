@@ -103,9 +103,15 @@ for b in "${branches[@]}"; do
     # Every untracked file whatever status.showUntrackedFiles says, and ignored files
     # too (a local .env is ignored, and `git worktree remove` deletes ignored files
     # silently), except the harness state that regenerates.
-    dirt="$(git -C "$wt" status --porcelain --untracked-files=all --ignored=matching 2>/dev/null || echo unreadable)"
-    dirt="$(printf '%s\n' "$dirt" | grep -vE '^!! (.*/)?(\.claude/data/|__pycache__/)' | grep -v '^$' || true)"
-    if [[ -n "$dirt" ]]; then
+    # The filter is a shell loop, so no filter process can fail and pass for "clean";
+    # a status that cannot be read counts as dirt.
+    status_out="$(git -C "$wt" status --porcelain --untracked-files=all --ignored=matching 2>/dev/null)" \
+      || status_out="unreadable"
+    dirt=0
+    while IFS= read -r entry; do
+      [[ -z "$entry" || "$entry" =~ ^'!! '(.*/)?(\.claude/data/|__pycache__/) ]] || dirt=$((dirt + 1))
+    done <<< "$status_out"
+    if (( dirt > 0 )); then
       skip "$b" "its worktree $wt has uncommitted, untracked or ignored files"; continue
     fi
   fi
