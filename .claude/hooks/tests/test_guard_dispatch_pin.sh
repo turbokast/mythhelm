@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_guard_dispatch_pin.sh: in a session running /run-spec or /implement, an
+# test_guard_dispatch_pin.sh: in a session running /run-spec, /implement or /finalize-spec, an
 # Agent dispatch must name a project agent (or Explore/Plan); every other session
 # and an unreadable input fails closed on the dispatches it guards.
 
@@ -39,6 +39,15 @@ expect_rc 0 "Explore passes" "$HOOK" "$(agent "$RUN" Explore)"
 expect_rc 0 "Plan passes" "$HOOK" "$(agent "$RUN" Plan)"
 expect_rc 2 "the older tool name Task is guarded too" "$HOOK" "$(agent "$RUN" general-purpose Task)"
 expect_rc 2 "a slash-command /implement puts the session in scope" "$HOOK" "$(agent "$SLASH" general-purpose)"
+for s in finalize-spec finalize-spec-review finalize-spec-verify-ci; do
+  jq -nc --arg s "$s" '{type:"assistant",message:{content:[{type:"tool_use",name:"Skill",input:{skill:$s,args:"demo"}}]}}' > "$TEST_TMP/fin.jsonl"
+  expect_rc 2 "/$s puts the session in scope" "$HOOK" "$(agent "$TEST_TMP/fin.jsonl" general-purpose)"
+  expect_rc 0 "/$s allows a project agent" "$HOOK" "$(agent "$TEST_TMP/fin.jsonl" go-implementer)"
+done
+jq -nc '{type:"user",message:{content:"<command-name>/finalize-spec</command-name> demo"}}' > "$TEST_TMP/fin-slash.jsonl"
+expect_rc 2 "a slash-command /finalize-spec puts the session in scope" "$HOOK" "$(agent "$TEST_TMP/fin-slash.jsonl" general-purpose)"
+jq -nc '{type:"assistant",message:{content:[{type:"tool_use",name:"Skill",input:{skill:"finalize-spec-pm",args:"demo"}}]}}' > "$TEST_TMP/fin-pm.jsonl"
+expect_rc 0 "a finalize step that dispatches nothing is out of scope" "$HOOK" "$(agent "$TEST_TMP/fin-pm.jsonl" general-purpose)"
 
 echo "== outside a run, and on unreadable input =="
 expect_rc 0 "an ordinary session may dispatch general-purpose" "$HOOK" "$(agent "$PLAIN" general-purpose)"

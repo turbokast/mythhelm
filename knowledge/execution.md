@@ -33,7 +33,7 @@ Each row is a failure mode seen when agents run a spec, and the mechanism that r
 | A worker read a stale duplicate of the spec | A plain `mv` left a second copy in the git index | `spec-lifecycle.sh resolve` refuses two copies; lifecycle moves are their own pull requests |
 | Work reported done was not done | Summaries were trusted; empty or garbled tool output was filled in | Every claim is re-derived: report parsed, pull request read from GitHub, markers checked, acceptance re-run by the orchestrator |
 | A subagent idled "waiting" for a background command | A subagent is not notified when its own background command ends | Foreground-only gates in every dispatch; stalled workers are resumed with evidence |
-| Implementation ran on the orchestrator's model | A dispatch without `subagent_type` falls back to the session model | `.claude/hooks/guard-dispatch-pin.sh` blocks it while an implementation skill runs |
+| Implementation ran on the orchestrator's model | A dispatch without `subagent_type` falls back to the session model | `.claude/hooks/guard-dispatch-pin.sh` blocks it while an implementation or finalize skill runs |
 | Bookkeeping rows collided between concurrent runs | Per-task files were keyed by task number only | One append-only `run-events.jsonl` in the main checkout, every row stamped with its spec |
 | An absence criterion failed on the agent's own test | Negative tests and comments carried the banned token | Dispatch rule, and the orchestrator re-runs the acceptance greps itself |
 | Parallel pull requests conflicted in the spec files | Every task appended to the same place | Each task writes only its own `tasks.md` block and its own seeded `handoff.md` section (`scripts/harness/tests/test_runspec.py`, the two-branch merge) |

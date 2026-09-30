@@ -10,8 +10,9 @@
 # to the most expensive tier, and the reviewer-differs-from-implementer split in
 # the routing table no longer holds.
 #
-# Scope: a session whose transcript shows /run-spec or /implement (a Skill tool
-# call or a slash command). Other sessions are untouched; a person dispatching a
+# Scope: a session whose transcript shows /run-spec, /implement, /finalize-spec,
+# /finalize-spec-review or /finalize-spec-verify-ci (a Skill tool call or a slash
+# command): the skills that dispatch implementers, reviewers and fixers. Other sessions are untouched; a person dispatching a
 # general-purpose researcher in an ordinary session chooses that on purpose.
 #
 # In scope, a dispatch passes when subagent_type names a file in .claude/agents/
@@ -57,7 +58,7 @@ IFS=$'\x1f' read -r tool agent transcript cwd <<<"$fields"
 
 # In scope when the transcript shows an implementation skill, or cannot be read.
 if [[ -n "$transcript" && -r "$transcript" ]]; then
-  grep -Eq '"skill" *: *"(run-spec|implement)"|command-name>/?(run-spec|implement)<' "$transcript" 2>/dev/null || exit 0
+  grep -Eq '"skill" *: *"(run-spec|implement|finalize-spec(-review|-verify-ci)?)"|command-name>/?(run-spec|implement|finalize-spec(-review|-verify-ci)?)<' "$transcript" 2>/dev/null || exit 0
 fi
 
 project="${CLAUDE_PROJECT_DIR:-}"
@@ -79,5 +80,5 @@ case "$agent" in
 esac
 
 HH_COMMAND="$tool(subagent_type=$agent)"
-hh_block "this session is running /run-spec or /implement, and a dispatch without a project agent runs on the session's own model: the agent's model and effort pins never engage (knowledge/agent-routing.md)." \
+hh_block "this session is running /run-spec, /implement or /finalize-spec, and a dispatch without a project agent runs on the session's own model: the agent's model and effort pins never engage (knowledge/agent-routing.md)." \
   "Name the agent the task's Domain/agent line gives, e.g. subagent_type=\"go-implementer\" (agents: .claude/agents/), and pass no model. Read-only research may use Explore or Plan."
