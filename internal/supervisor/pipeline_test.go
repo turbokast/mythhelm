@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/adapters/fake"
+	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/cli"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
@@ -479,7 +480,10 @@ func TestJSONLStdoutOnlyEnvelopes(t *testing.T) {
 	}
 
 	// Plain output is not JSONL, so the check above can fail.
-	_, plain, _ := f.run(t, "run", "--task-file", f.task, "--adapter", "fake", "--non-interactive")
+	_, plain, _ := f.run(t, f.fakeRun("--scenario", "denied")...)
+	if strings.TrimSpace(plain) == "" {
+		t.Fatal("plain run printed nothing to stdout")
+	}
 	if _, err := decodeEnvelopes(plain); err == nil {
 		t.Fatalf("decodeEnvelopes accepted plain output %q", plain)
 	}
@@ -758,6 +762,55 @@ func requireSignals(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("Ctrl-C is delivered as SIGINT to the CLI; Windows console control events are not driven by this test")
+	}
+}
+
+func TestInterruptBeforeWorkerSpawnNeverLaunchesNative(t *testing.T) {
+	t.Parallel()
+	for _, stage := range []string{"executing", "launch_intent_recorded"} {
+		t.Run(stage, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t)
+			d, err := admission.Decide(t.Context(), admission.Request{
+				StateDir: f.state, Repo: f.repo, TaskFile: f.task,
+				Adapter: admission.AdapterFake, Billing: admission.BillingLocalScripted,
+				ExecutionProfile: admission.ProfileTrustedHost, Env: os.Environ(),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			interrupts := make(chan os.Signal, 1)
+			sent := false
+			out, err := supervisor.Run(t.Context(), d, supervisor.Hooks{
+				Interrupt: interrupts,
+				Event: func(ev journal.Event) {
+					if sent {
+						return
+					}
+					if stage == "executing" && ev.Type == "run.state_changed" && payloadOf(t, ev)["state"] == "executing" ||
+						stage == "launch_intent_recorded" && ev.Type == "attempt.launch_intent_recorded" {
+						sent = true
+						interrupts <- os.Interrupt
+					}
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !sent || out.State != supervisor.RunCancelled {
+				t.Fatalf("interrupt sent=%t, run state=%s; want cancelled", sent, out.State)
+			}
+			if run := f.onlyRun(t); run.State != string(supervisor.RunCancelled) {
+				t.Fatalf("projected run state=%s, want cancelled", run.State)
+			}
+			evs := f.events(t, d.RunID)
+			if typeIndex(evs, "attempt.launched") >= 0 {
+				t.Fatal("an interrupt before spawn still launched the native")
+			}
+			if _, err := os.Stat(filepath.Join(workers.AttemptDir(f.state, d.RunID, d.AttemptID), "worker.json")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("worker identity exists after cancellation: %v", err)
+			}
+		})
 	}
 }
 

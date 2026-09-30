@@ -203,6 +203,9 @@ func (p *pipeline) snapshot(ctx context.Context) error {
 // ingests its spool until the attempt ends.
 func (p *pipeline) attempt(ctx context.Context) error {
 	d := p.d
+	if stopped, err := p.stopBeforeSpawn(ctx); stopped || err != nil {
+		return err
+	}
 	token, err := launchToken()
 	if err != nil {
 		return err
@@ -220,6 +223,9 @@ func (p *pipeline) attempt(ctx context.Context) error {
 	}
 	p.out.AttemptState = AttemptLaunchIntentRecorded
 	if err := p.flush(ctx); err != nil {
+		return err
+	}
+	if stopped, err := p.stopBeforeSpawn(ctx); stopped || err != nil {
 		return err
 	}
 
@@ -269,6 +275,26 @@ func (p *pipeline) attempt(ctx context.Context) error {
 		p.h.Notice(fmt.Sprintf("worker pid %d has not exited %s after its attempt ended", proc.Pid, reapTimeout))
 	}
 	return nil
+}
+
+// stopBeforeSpawn consumes a pending interrupt at each side of the launch
+// intent. Once a worker exists, watch owns the stop and its confirmation.
+func (p *pipeline) stopBeforeSpawn(ctx context.Context) (bool, error) {
+	select {
+	case <-p.h.Interrupt:
+		p.h.Notice("stop requested before worker launch; no native started")
+		if p.out.AttemptState == AttemptLaunchIntentRecorded {
+			if err := p.attemptTo(ctx, AttemptInterrupted, "cancelled_before_spawn"); err != nil {
+				return true, err
+			}
+		}
+		if err := p.runTo(ctx, RunStopping, ""); err != nil {
+			return true, err
+		}
+		return true, p.runTo(ctx, RunCancelled, "")
+	default:
+		return false, nil
+	}
 }
 
 func launchToken() (string, error) {
