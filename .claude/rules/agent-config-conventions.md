@@ -21,7 +21,7 @@ paths:
 ## Skills: `.claude/skills/<name>/SKILL.md`
 
 - Frontmatter: `name` (equals the directory), `description` (what it does and when to use it), optional `argument-hint`, `allowed-tools`, `model`. Every skill stays model-invocable: never set `disable-model-invocation`.
-- Body: `## Input`, `## Invocation contexts` (the **Slash command**, **Model-invoked** and **Non-interactive** behaviours, per `skill-invocation-contexts.md`), `## Steps`, `## Output`. State each interactive step's class at the step. `scripts/ci/lint-agent-harness.sh` (check `skill-contexts`) fails a skill without the three behaviours.
+- Body: `## Input`, `## Invocation contexts` (the **Slash command**, **Model-invoked** and **Non-interactive** behaviours, per `skill-invocation-contexts.md`), `## Steps`, `## Output`. State each interactive step's class at the step. `scripts/ci/lint-agent-harness.sh` (check `skill-contexts`) fails a skill that lacks the section or any of the three labels; it does not judge the behaviour statements.
 - Never write a bare `$0` in a skill body: skill text is argument-interpolated when loaded, so `$0` becomes the arguments. Write `\$0` or `${0}`.
 - Never pass `effort` when a skill dispatches a haiku agent.
 - Reference only files that exist. Never point at a skill, script or knowledge file that a later change will add.

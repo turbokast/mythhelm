@@ -36,6 +36,7 @@ Standard library only.
 
 import argparse
 import base64
+import binascii
 import datetime
 import json
 import os
@@ -241,9 +242,10 @@ def load_auto_apply(text):
 FROM_TREE = object()
 
 
-def lane0_decision(root, sec, config_text=FROM_TREE):
+def lane0_decision(root, sec, config_text=FROM_TREE, exists=None):
     """('ELIGIBLE', glob) or ('NOT', reason). config_text, when given, replaces the tree's
-    configuration file (None: the file is absent, so lane 0 is off)."""
+    configuration file (None: the file is absent, so lane 0 is off); exists, when given,
+    replaces the check that the target is a file in root."""
     if config_text is FROM_TREE:
         config_text = read_optional(os.path.join(root, AUTO_APPLY))
     config, problems = load_auto_apply(config_text)
@@ -258,7 +260,7 @@ def lane0_decision(root, sec, config_text=FROM_TREE):
         return "NOT", "the target is not one existing file"
     if not path.startswith("knowledge/") or not path.endswith(".md"):
         return "NOT", "target %s is not a markdown file under knowledge/" % path
-    if not os.path.isfile(os.path.join(root, path)):
+    if not (exists(path) if exists else os.path.isfile(os.path.join(root, path))):
         return "NOT", "target %s does not exist" % path
     body = proposed_change(sec)
     if not body:
@@ -515,11 +517,15 @@ def apply_check(root, pid, base="origin/main"):
 # ---- pr-check ------------------------------------------------------------------
 
 def file_at(slug, ref, rel):
+    """The file's text at ref, or None when GitHub has no such file."""
     try:
         raw = gh(["api", "repos/%s/contents/%s?ref=%s" % (slug, rel, ref)])
     except Usage:
         return None
-    return base64.b64decode(json.loads(raw)["content"]).decode("utf-8")
+    try:
+        return base64.b64decode(json.loads(raw)["content"]).decode("utf-8")
+    except (ValueError, KeyError, TypeError, binascii.Error) as e:
+        raise Usage("unreadable contents response for %s at %s: %s" % (rel, ref, e)) from e
 
 
 def pr_check(pid, pr, repo=None, required=finalize.PR_REVIEW_CHECKS):
@@ -534,12 +540,23 @@ def pr_check(pid, pr, repo=None, required=finalize.PR_REVIEW_CHECKS):
         return finalize.verdict(facts, reasons, unknown, "ready")
     decision = entry["fields"].get("Decision", "")
     facts.append(("decision", decision))
+    base = view.get("baseRefOid", "")
+    sec = find(sections(file_at(slug, base, PENDING) or "")[1], pid) if base else None
+    if sec is None:
+        reasons.append("entry: %s is not pending at the base %s; the scope comes from the base's proposal"
+                       % (pid, base[:12] or "(unknown)"))
+        return finalize.verdict(facts, reasons, unknown, "ready")
+    if decision == "auto-applied":
+        verdict, why = lane0_decision(None, sec, config_text=file_at(slug, base, AUTO_APPLY),
+                                      exists=lambda p: file_at(slug, base, p) is not None)
+        if verdict != "ELIGIBLE":
+            reasons.append("lane0: %s at the base: %s" % (pid, why))
     if entry["fields"].get("Pull request") != "#%d" % pr:
         reasons.append("entry: %s records pull request %s, not #%d (proposals.py record %s --pr %d)"
                        % (pid, entry["fields"].get("Pull request"), pr, pid, pr))
     if find(sections(file_at(slug, head, PENDING) or "")[1], pid) is not None:
         reasons.append("entry: %s is still in %s at the head" % (pid, PENDING))
-    ok = allowed_files(entry, decision)
+    ok = allowed_files(sec, decision)
     for f in (x["path"] for x in view.get("files") or []):
         if not ok(f):
             reasons.append("scope: %s is outside %s's target, its eval case and the proposal files" % (f, pid))

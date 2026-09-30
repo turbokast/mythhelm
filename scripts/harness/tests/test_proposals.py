@@ -392,9 +392,9 @@ class PrCheckTests(GhBase):
                "- **Type**: rule\n- **Target**: `.claude/rules/demo.md`\n")
     FILES = [".claude/rules/demo.md", ".claude/evals/cases/demo-guard.json", proposals.PENDING, proposals.APPLIED]
 
-    def serve_pr(self, files=None, applied=None, pending=PENDING_HEAD, **over):
+    def serve_pr(self, files=None, applied=None, pending=PENDING_HEAD, base_pending=None, auto=None, **over):
         view = {"state": "OPEN", "isDraft": False, "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
-                "headRefOid": "0123abc", "title": "harness: apply P-demo-1", "body": "Apply P-demo-1.",
+                "baseRefOid": "base999", "headRefOid": "0123abc", "title": "harness: apply P-demo-1", "body": "Apply P-demo-1.",
                 "files": [{"path": p} for p in (self.FILES if files is None else files)],
                 "statusCheckRollup": [check("CI OK"), check("CodeRabbit")]}
         view.update(over.pop("view", {}))
@@ -403,7 +403,12 @@ class PrCheckTests(GhBase):
             return {"content": base64.b64encode(text.encode()).decode()}
         fx = {"pr view 50": view, "api graphql 50": threads(), "pr diff 50": "+++ b/x\n+- Never do the thing.\n",
               "api repos/acme/demo/contents/%s?ref=0123abc" % proposals.APPLIED: content(applied or self.APPLIED),
-              "api repos/acme/demo/contents/%s?ref=0123abc" % proposals.PENDING: content(pending)}
+              "api repos/acme/demo/contents/%s?ref=0123abc" % proposals.PENDING: content(pending),
+              "api repos/acme/demo/contents/%s?ref=base999" % proposals.PENDING:
+                  content(base_pending if base_pending is not None else PENDING_HEAD + proposal("P-demo-1"))}
+        if auto is not None:
+            fx["api repos/acme/demo/contents/%s?ref=base999" % proposals.AUTO_APPLY] = content(json.dumps(auto))
+            fx["api repos/acme/demo/contents/knowledge/notes.md?ref=base999"] = content("# Notes\n")
         fx.update(over)
         self.serve(**{k.replace(" ", "_"): v for k, v in fx.items()})
 
@@ -422,6 +427,11 @@ class PrCheckTests(GhBase):
             ("is still in .claude/proposals/pending.md", {"pending": PENDING_HEAD + proposal("P-demo-1")}),
             ("is not recorded in .claude/proposals/applied.md", {"applied": "# Applied\n"}),
             ("thread-unresolved:", {"api graphql 50": threads(resolved=False)}),
+            ("is not pending at the base base999", {"base_pending": PENDING_HEAD}),
+            # The head's entry claims a wider target; the scope still comes from the base's proposal.
+            ("scope: internal/x.go is outside", {"files": self.FILES + ["internal/x.go"],
+                                                 "applied": self.APPLIED.replace(".claude/rules/demo.md",
+                                                                                 "internal/x.go")}),
         ]
         for needle, over in cases:
             with self.subTest(needle):
@@ -429,6 +439,25 @@ class PrCheckTests(GhBase):
                 rc, out, _ = self.pc()
                 self.assertEqual(rc, 1, out)
                 self.assertIn(needle, out)
+
+    def test_lane0_is_judged_at_the_base(self):
+        knowledge = PENDING_HEAD + proposal("P-demo-1", "knowledge", "knowledge/notes.md", "Second fact.")
+        applied = (self.APPLIED.replace("approved", "auto-applied").replace("`demo-guard`", "n/a")
+                   .replace("rule", "knowledge").replace(".claude/rules/demo.md", "knowledge/notes.md"))
+        files = ["knowledge/notes.md", proposals.PENDING, proposals.APPLIED]
+        self.serve_pr(files, applied, base_pending=knowledge, auto={"enabled": True, "allow": ["knowledge/*.md"]})
+        rc, out, _ = self.pc()
+        self.assertEqual(rc, 0, out)
+        self.serve_pr(files, applied, base_pending=knowledge, auto={"enabled": False, "allow": []})
+        rc, out, _ = self.pc()
+        self.assertEqual(rc, 1)
+        self.assertIn("lane0: P-demo-1 at the base: lane 0 is off", out)
+
+    def test_a_malformed_contents_response_is_a_usage_error(self):
+        self.serve_pr(**{"api repos/acme/demo/contents/%s?ref=0123abc" % proposals.APPLIED: {"sha": "x"}})
+        rc, _, err = self.pc()
+        self.assertEqual(rc, 2)
+        self.assertIn("unreadable contents response", err)
 
 
 if __name__ == "__main__":

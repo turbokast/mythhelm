@@ -364,7 +364,7 @@ def pr_gate(slug, pr, required=PR_REVIEW_CHECKS):
     not a draft, mergeable, its checks green, no unresolved thread, and nothing that must
     not be published in its title, body or added lines."""
     view = json.loads(gh(["pr", "view", str(pr), "--json",
-                          "state,isDraft,mergeable,mergeStateStatus,headRefOid,title,body,files,statusCheckRollup"],
+                          "state,isDraft,mergeable,mergeStateStatus,baseRefOid,headRefOid,title,body,files,statusCheckRollup"],
                          repo=slug))
     reasons, unknown = [], []
     if view.get("state") != "OPEN":

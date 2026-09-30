@@ -21,7 +21,7 @@ Worked forms of the mandates, kept here so the rule stays short:
 - **Trace (2).** What fails the trace: drive-by refactors, style fixes in adjacent code, rewritten passing tests, tidied config, added or removed comments.
 - **Verifiable goals (3).** "Add validation" becomes "tests for each invalid input, then make them pass". "Improve performance" becomes "measure a baseline, set a target, measure again". "Refactor X" becomes "the tests pass before and after, and the diff is smaller".
 - **Simplicity (4).** Signs of overcomplication: an abstraction with one caller, error handling for inputs that cannot arrive, configuration for values that never change, an interface with one implementation, 200 lines that could be 50.
-- **Flakes (7).** An identical failing value across runs points to a structural quantum (a buffer size, a fixed timeout, a tick), not to contention, which scatters. A threshold finer than the mechanism's granularity fails by construction at some rate on all hardware.
+- **Flakes (7).** An identical failing value across runs points away from contention, which scatters, and to a deterministic cause, often a structural quantum (a buffer size, a fixed timeout, a tick); it does not identify the cause. Verify the mechanism and compare its granularity with the threshold: a threshold finer than that granularity fails by construction at some rate on all hardware.
 
 ## Mechanism
 
