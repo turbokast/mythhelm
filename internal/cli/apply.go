@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -14,13 +15,30 @@ import (
 	"github.com/turbokast/mythhelm/internal/workspace"
 )
 
-func runApply(args []string, stdio Stdio) error {
+func runApply(args []string, stdio Stdio) (retErr error) {
 	fs := newFlagSet("apply")
 	branch := fs.String("to-branch", "", "new local branch in the admitted source repository")
 	acceptFlags := fs.Bool("accept-flags", false, "accept candidate validation flags")
 	acceptUnverified := fs.Bool("accept-unverified", false, "accept a candidate without checks")
 	format := fs.String("format", "plain", "output format: plain or jsonl")
 	positional, err := parseFlags(fs, args, stdio)
+	if errors.Is(err, flag.ErrHelp) {
+		return err
+	}
+	runID := ""
+	if len(positional) == 1 {
+		runID = positional[0]
+	}
+	result := map[string]any{"type": "apply.result", "run_id": runID, "branch": *branch}
+	defer func() {
+		if *format != "jsonl" {
+			return
+		}
+		result["exit_code"], result["error_category"] = exitCode(retErr), errorCategory(retErr)
+		if err := json.NewEncoder(stdio.Out).Encode(result); err != nil && retErr == nil {
+			retErr = err
+		}
+	}()
 	if err != nil {
 		return err
 	}
@@ -30,7 +48,6 @@ func runApply(args []string, stdio Stdio) error {
 	if *format != "plain" && *format != "jsonl" {
 		return usageErrorf("--format must be plain or jsonl, got %q", *format)
 	}
-	runID := positional[0]
 	if !strings.HasPrefix(runID, "run_") || strings.ContainsAny(runID, `/\\.`) {
 		return usageErrorf("invalid run ID %q", runID)
 	}
@@ -58,12 +75,14 @@ func runApply(args []string, stdio Stdio) error {
 			return usageError{err}
 		}
 		if errors.Is(err, supervisor.ErrApplyBlocked) || errors.Is(err, workspace.ErrBranchExists) {
-			return &outcomeError{code: ExitBlocked, category: "apply_blocked", err: err}
+			return &outcomeError{code: ExitBlocked, category: categories[ExitBlocked], err: err}
 		}
 		return err
 	}
 	if *format == "jsonl" {
-		return json.NewEncoder(stdio.Out).Encode(r)
+		result["state"] = r["state"]
+		result["candidate_commit"] = reviewMap(r["candidate"])["commit"]
+		return nil
 	}
 	_, err = fmt.Fprintf(stdio.Out, "Applied run %s to branch %s at %s\n", cell(runID), cell(*branch),
 		cell(reviewString(reviewMap(r["candidate"]), "commit")))

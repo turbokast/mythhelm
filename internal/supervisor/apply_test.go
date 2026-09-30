@@ -18,7 +18,11 @@ import (
 
 func applyDB(t *testing.T, state string) *sql.DB {
 	t.Helper()
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(filepath.Join(state, journal.DBName))}
+	path := filepath.ToSlash(filepath.Join(state, journal.DBName))
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	u := url.URL{Scheme: "file", Path: path}
 	db, err := sql.Open("sqlite", u.String())
 	if err != nil {
 		t.Fatal(err)
@@ -37,6 +41,27 @@ func readyApplyFixture(t *testing.T) (fixture, string) {
 	return f, f.onlyRun(t).RunID
 }
 
+func checkApplyJSONL(t *testing.T, out, runID string, code int) {
+	t.Helper()
+	if strings.Count(out, "\n") != 1 {
+		t.Fatalf("apply JSONL must contain one result: %q", out)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["type"] != "apply.result" || result["run_id"] != runID || result["exit_code"] != float64(code) {
+		t.Fatalf("unexpected apply result: %v", result)
+	}
+	wantCategory := ""
+	if code == 3 {
+		wantCategory = "admission_blocked"
+	}
+	if result["error_category"] != wantCategory {
+		t.Fatalf("apply category = %v, want %q", result["error_category"], wantCategory)
+	}
+}
+
 func TestApplyCreatesOnlyTheBranch(t *testing.T) {
 	f, runID := readyApplyFixture(t)
 	before := f.fingerprint(t)
@@ -45,10 +70,11 @@ func TestApplyCreatesOnlyTheBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, _, stderr := f.run(t, "apply", runID, "--to-branch", "review/demo", "--format", "jsonl")
+	code, out, stderr := f.run(t, "apply", runID, "--to-branch", "review/demo", "--format", "jsonl")
 	if code != 0 {
 		t.Fatalf("apply exit %d: %s", code, stderr)
 	}
+	checkApplyJSONL(t, out, runID, code)
 	if f.onlyRun(t).State != string(supervisor.RunCompleted) {
 		t.Fatal("run did not complete")
 	}
@@ -79,10 +105,11 @@ func TestApplyCreatesOnlyTheBranch(t *testing.T) {
 func TestApplyRefusesExistingBranch(t *testing.T) {
 	f, runID := readyApplyFixture(t)
 	before := f.fingerprint(t)
-	code, _, stderr := f.run(t, "apply", runID, "--to-branch", "main")
+	code, out, stderr := f.run(t, "apply", runID, "--to-branch", "main", "--format", "jsonl")
 	if code != 3 || !strings.Contains(stderr, "already exists") {
 		t.Fatalf("apply exit %d: %s", code, stderr)
 	}
+	checkApplyJSONL(t, out, runID, code)
 	if f.fingerprint(t) != before || f.onlyRun(t).State != string(supervisor.RunReadyForReview) {
 		t.Fatal("refusal mutated source or run")
 	}
@@ -167,7 +194,7 @@ func TestApplyReconcilesAfterCrash(t *testing.T) {
 		t.Fatal(err)
 	}
 	branch := "review/recovered"
-	payload, _ := json.Marshal(map[string]string{"branch": branch, "target_repo": f.repo, "candidate_commit": c.Commit})
+	payload, _ := json.Marshal(map[string]string{"branch": branch, "target_repo": f.onlyRun(t).SourceRepo, "candidate_commit": c.Commit})
 	if err := j.Append(t.Context(), journal.Event{SchemaVersion: journal.EnvelopeVersion, EventID: ids.New("evt"),
 		RunID: runID, ProducerID: ids.New("sup"), ProducerSequence: 1, Generation: 1,
 		ObservedAt: time.Now().UTC(), Type: "apply.intent_recorded", Payload: payload}, nil); err != nil {
