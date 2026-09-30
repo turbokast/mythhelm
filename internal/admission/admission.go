@@ -76,17 +76,20 @@ func (e *BlockedError) Error() string {
 
 // Request is what the user asked for.
 type Request struct {
-	StateDir         string   // absolute state directory
-	Repo             string   // a directory inside the user's repository
-	TaskFile         string   // the task, delivered to the native on stdin
-	Adapter          string   // "claudecode" or "fake"; no default (AC-2.2)
-	Billing          string   // no default (AC-4.1)
-	ExecutionProfile string   // empty when not given; consent is then asked for
-	UseCommitted     bool     // run on the committed HEAD of a dirty checkout
-	Rev              string   // run on this committed revision instead of HEAD
-	Host             string   // empty or "standalone"; "herdr" is unavailable
-	Scenario         string   // fake adapter only; default "happy"
-	Env              []string // the parent environment the child's is built from
+	StateDir           string   // absolute state directory
+	Repo               string   // a directory inside the user's repository
+	TaskFile           string   // the task, delivered to the native on stdin
+	Adapter            string   // "claudecode" or "fake"; no default (AC-2.2)
+	Billing            string   // no default (AC-4.1)
+	ExecutionProfile   string   // empty when not given; consent is then asked for
+	UseCommitted       bool     // run on the committed HEAD of a dirty checkout
+	Rev                string   // run on this committed revision instead of HEAD
+	Host               string   // empty or "standalone"; "herdr" is unavailable
+	Scenario           string   // fake adapter only; default "happy"
+	Env                []string // the parent environment the child's is built from
+	TrustProjectConfig string   // sha256:<digest> of the admitted config
+	NoChecks           bool
+	KeepGoing          bool
 	// Confirm asks the user a yes/no question. It is nil under
 	// --non-interactive, and then every question blocks instead (AC-1.4).
 	Confirm func(question string) (bool, error)
@@ -119,16 +122,22 @@ type Profile struct {
 // Decision is an admitted run: everything the supervisor needs to record it
 // and launch its one attempt, resolved before anything is written.
 type Decision struct {
-	StateDir  string
-	RunID     string
-	TaskID    string
-	AttemptID string
-	RunDir    string // StateDir/runs/<run_id>
-	Workdir   string // RunDir/workspace, the snapshot clone the native works in
-	Host      string
-	Scenario  string
-	GitName   string // user's Git identity captured before the native starts
-	GitEmail  string
+	StateDir      string
+	RunID         string
+	TaskID        string
+	AttemptID     string
+	RunDir        string // StateDir/runs/<run_id>
+	Workdir       string // RunDir/workspace, the snapshot clone the native works in
+	Host          string
+	Scenario      string
+	GitName       string // user's Git identity captured before the native starts
+	GitEmail      string
+	ProjectConfig ProjectConfig
+	ConfigDigest  string
+	RepoIdentity  string
+	RecordTrust   bool
+	NoChecks      bool
+	KeepGoing     bool
 
 	Task     Task
 	Snapshot Snapshot
@@ -150,7 +159,8 @@ func Decide(ctx context.Context, req Request) (Decision, error) {
 	if err := validate(&req); err != nil {
 		return Decision{}, err
 	}
-	d := Decision{StateDir: req.StateDir, Host: req.Host, Scenario: req.Scenario}
+	d := Decision{StateDir: req.StateDir, Host: req.Host, Scenario: req.Scenario,
+		NoChecks: req.NoChecks, KeepGoing: req.KeepGoing}
 	task, err := readTask(req.TaskFile)
 	if err != nil {
 		return Decision{}, err
@@ -183,11 +193,14 @@ func Decide(ctx context.Context, req Request) (Decision, error) {
 			Action: "configure Git user.name and user.email before admitting a run"}
 	}
 	d.GitName, d.GitEmail = strings.TrimSpace(string(name)), strings.TrimSpace(string(email))
+	if err := d.admitProjectConfig(ctx, req); err != nil {
+		return Decision{}, err
+	}
 
 	d.RunID, d.TaskID, d.AttemptID = ids.New("run"), ids.New("task"), ids.New("att")
 	d.RunDir = filepath.Join(req.StateDir, "runs", d.RunID)
 	d.Workdir = filepath.Join(d.RunDir, "workspace")
-	env, err := security.BuildEnv(req.Env, nil, nil)
+	env, err := security.BuildEnv(req.Env, d.ProjectConfig.Environment.Passthrough, nil)
 	if err != nil {
 		return Decision{}, fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
@@ -403,6 +416,9 @@ type Record struct {
 	Host                 string                   `json:"host"`
 	Scenario             string                   `json:"scenario,omitempty"`
 	GitIdentity          GitIdentity              `json:"git_identity"`
+	ProjectConfigDigest  string                   `json:"project_config_digest,omitempty"`
+	NoChecks             bool                     `json:"no_checks"`
+	KeepGoing            bool                     `json:"keep_going"`
 }
 
 // GitIdentity is the commit identity captured from the source repository at
@@ -439,6 +455,9 @@ func (d Decision) Record() Record {
 		Host:                 d.Host,
 		Scenario:             d.Scenario,
 		GitIdentity:          GitIdentity{Name: d.GitName, Email: d.GitEmail},
+		ProjectConfigDigest:  d.ConfigDigest,
+		NoChecks:             d.NoChecks,
+		KeepGoing:            d.KeepGoing,
 	}
 }
 

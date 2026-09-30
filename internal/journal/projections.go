@@ -63,6 +63,44 @@ type CandidateRow struct {
 	Partial                                       bool
 }
 
+type VerificationRow struct {
+	ID, RunID, CandidateCommit, ConfigSHA256, Result string
+	StartedAt, FinishedAt                            time.Time
+	Checks                                           []CheckRow
+}
+
+type CheckRow struct {
+	Name, Status, EvidencePath, EvidenceSHA256 string
+	Argv                                       []string
+	ExitCode                                   *int
+	DurationMS                                 int64
+}
+
+// InsertVerification projects a completed check sequence with its event.
+func InsertVerification(ctx context.Context, tx *sql.Tx, v VerificationRow) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO verifications
+		(verification_id, run_id, candidate_commit, config_sha256, result, started_at, finished_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, v.ID, v.RunID, v.CandidateCommit, v.ConfigSHA256,
+		v.Result, formatTime(v.StartedAt), formatTime(v.FinishedAt))
+	if err != nil {
+		return fmt.Errorf("journal: inserting verification: %w", err)
+	}
+	for _, c := range v.Checks {
+		argv, err := json.Marshal(c.Argv)
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO check_results
+			(verification_id, name, argv, status, exit_code, duration_ms, evidence_path, evidence_sha256)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, v.ID, c.Name, string(argv), c.Status,
+			c.ExitCode, c.DurationMS, nullable(c.EvidencePath), nullable(c.EvidenceSHA256))
+		if err != nil {
+			return fmt.Errorf("journal: inserting check %s: %w", c.Name, err)
+		}
+	}
+	return nil
+}
+
 // InsertCandidate projects candidate.frozen in the same transaction as its
 // event, so readers never see a candidate without its journal entry.
 func InsertCandidate(ctx context.Context, tx *sql.Tx, c CandidateRow) error {
@@ -96,6 +134,31 @@ func (j *Journal) Candidate(ctx context.Context, attemptID string) (CandidateRow
 	}
 	c.ChangedPaths, c.Flags, c.Partial = json.RawMessage(changed), json.RawMessage(flags), partial != 0
 	return c, nil
+}
+
+// TrustGrantExists checks the durable project/native configuration trust key.
+func (j *Journal) TrustGrantExists(ctx context.Context, kind, repoID, digest string) (bool, error) {
+	var one int
+	err := j.db.QueryRowContext(ctx, `SELECT 1 FROM trust_grants WHERE kind = ? AND repo_identity = ? AND digest = ?`,
+		kind, repoID, digest).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("journal: checking trust grant: %w", err)
+	}
+	return true, nil
+}
+
+// InsertTrustGrant projects a trust decision inside the journal event's
+// transaction. An already recorded identical grant is harmless.
+func InsertTrustGrant(ctx context.Context, tx *sql.Tx, kind, repoID, digest string, at time.Time) error {
+	_, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO trust_grants (kind, repo_identity, digest, granted_at)
+		VALUES (?, ?, ?, ?)`, kind, repoID, digest, formatTime(at))
+	if err != nil {
+		return fmt.Errorf("journal: recording trust grant: %w", err)
+	}
+	return nil
 }
 
 func formatTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }

@@ -1,0 +1,23 @@
+schema_version = 1
+
+[environment]
+passthrough = ["GOPATH", "GOCACHE", "GOMODCACHE", "GOTOOLCHAIN", "GOFLAGS"]
+
+[adapters.claudecode]
+allowed_tools = ["Bash(go build *)", "Bash(go test *)", "Bash(go vet *)", "Bash(gofmt *)", "Bash(git status)", "Bash(git diff *)"]
+
+[[checks]]
+name = "gofmt"
+argv = ["gofmt", "-l", "."]
+fail_on_output = true
+timeout = "2m"
+
+[[checks]]
+name = "vet"
+argv = ["go", "vet", "./..."]
+timeout = "5m"
+
+[[checks]]
+name = "test"
+argv = ["go", "test", "./..."]
+timeout = "15m"

@@ -70,7 +70,10 @@
 
 ## Task 12 — Project config, trust grants and the check runner
 
-<!-- pending -->
+- `admission.Decide` reads only the selected committed `mythhelm.toml` blob, rejects unknown TOML keys and validates a SHA-256 trust grant bound to the source repository realpath. It never takes checks from the mutable source checkout. After cloning, `pipeline.snapshot` loads the snapshot's committed config blob and compares the digest before worker launch; Git checkout line-ending conversion on Windows cannot change that identity. A newly approved grant is projected atomically with `workspace.snapshot_created`; existing grants are read from the local journal.
+- `integration.RunChecks` uses the frozen candidate commit in a detached managed worktree. The runner executes the admitted argv without a shell, in order, with per-check timeouts, output policy, redacted evidence and SHA-256. `unavailable` skips later checks unless `--keep-going`; other failed statuses do not skip later checks. `Verification` and check rows are projected with `verification.completed`.
+- Native success plus all checks passing ends `ready_for_review`/exit 0; check failure or unavailable ends `failed/verification_failed`/exit 5. `--no-checks` ends `ready_for_review/unverified`/exit 5 and journals `NOT RUN`. Native failure still ends exit 4 with its partial candidate. Task 13 should use the projected verification and candidate records for the receipt/review command. Task 14 must require `--accept-unverified` for unverified apply.
+- The root `mythhelm.toml` supplies gofmt, vet and test checks for Task 20. Its digest changes with any config edit, so a new trust grant is required. `internal/cli/exit.go` maps invalid config and denied passthrough to exit 2.
 
 ## Task 13 — Receipt and `mythhelm review`
 

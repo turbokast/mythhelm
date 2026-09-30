@@ -7,6 +7,7 @@ import (
 
 	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/journal"
+	"github.com/turbokast/mythhelm/internal/security"
 	"github.com/turbokast/mythhelm/internal/supervisor"
 	"github.com/turbokast/mythhelm/internal/workspace"
 )
@@ -57,7 +58,8 @@ func exitCode(err error) ExitCode {
 		return ExitOK
 	case errors.As(err, &outcome):
 		return outcome.code
-	case errors.As(err, &usage), errors.Is(err, journal.ErrSchemaTooNew), errors.Is(err, admission.ErrInvalid):
+	case errors.As(err, &usage), errors.Is(err, journal.ErrSchemaTooNew), errors.Is(err, admission.ErrInvalid),
+		errors.Is(err, admission.ErrProjectConfig), errors.Is(err, security.ErrDeniedPassthrough):
 		return ExitInvalid
 	case errors.As(err, &blocked) && blocked.Capability, errors.Is(err, workspace.ErrGitTooOld):
 		return ExitCapability

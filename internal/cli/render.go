@@ -218,6 +218,15 @@ func plainEvent(ev journal.Event) string {
 	case "attempt.protocol_counters":
 		return fmt.Sprintf("protocol counters: malformed %s, oversized %s, invalid utf-8 %s, depth exceeded %s",
 			p.text("malformed"), p.text("oversized"), p.text("invalid_utf8"), p.text("depth_exceeded"))
+	case "verification.started":
+		return "verification: started"
+	case "check.completed":
+		return fmt.Sprintf("check %s: %s", p.text("name"), p.text("status"))
+	case "verification.completed":
+		if p.get("result") == "NOT RUN" {
+			return "verification: NOT RUN (waived by --no-checks)"
+		}
+		return "verification: " + p.text("result")
 	}
 	return cell(ev.Type)
 }
