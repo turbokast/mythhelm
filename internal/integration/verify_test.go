@@ -146,3 +146,14 @@ func TestEvidenceRedactedAndHashed(t *testing.T) {
 		t.Fatalf("evidence hash %s != %x", r.EvidenceSHA256, sum)
 	}
 }
+
+func TestEvidenceDirectorySymlinkRejected(t *testing.T) {
+	c, cfg := verifyFixture(t)
+	runDir := filepath.Dir(c.Workspace)
+	if err := os.Symlink(t.TempDir(), filepath.Join(runDir, "evidence")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if _, err := integration.RunChecks(t.Context(), c, cfg, os.Environ()); err == nil {
+		t.Fatal("verification followed an agent-planted evidence symlink")
+	}
+}

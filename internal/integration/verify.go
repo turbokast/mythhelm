@@ -57,10 +57,13 @@ func RunChecksWithOptions(ctx context.Context, cand Candidate, cfg admission.Pro
 	verID := cand.Commit[:12]
 	v.Workdir = filepath.Join(runDir, "verify", verID)
 	v.EvidenceDir = filepath.Join(runDir, "evidence", verID)
-	if err := os.MkdirAll(filepath.Dir(v.Workdir), 0o700); err != nil {
+	if err := ensureRealDir(filepath.Dir(v.Workdir)); err != nil {
 		return v, err
 	}
-	if err := os.MkdirAll(v.EvidenceDir, 0o700); err != nil {
+	if err := ensureRealDir(filepath.Dir(v.EvidenceDir)); err != nil {
+		return v, err
+	}
+	if err := os.Mkdir(v.EvidenceDir, 0o700); err != nil {
 		return v, err
 	}
 	if _, err := workspace.Git(ctx, cand.Workspace, false, "worktree", "add", "--detach", v.Workdir, cand.Commit); err != nil {
@@ -156,7 +159,18 @@ func runCheck(ctx context.Context, dir, evidenceDir string, check admission.Chec
 		redacted = redacted[len(redacted)-maxEvidence:]
 	}
 	evidence := filepath.Join(evidenceDir, check.Name+".log")
-	if err := os.WriteFile(evidence, redacted, 0o600); err != nil {
+	if err := ensureRealDir(evidenceDir); err != nil {
+		return r, err
+	}
+	f, err := os.OpenFile(evidence, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // Exclusive create in a checked managed evidence dir.
+	if err != nil {
+		return r, err
+	}
+	if _, err := f.Write(redacted); err != nil {
+		_ = f.Close()
+		return r, err
+	}
+	if err := f.Close(); err != nil {
 		return r, err
 	}
 	sum := sha256.Sum256(redacted)
@@ -198,4 +212,22 @@ func redactedArgv(argv []string) []string {
 		out[i] = security.Redact(arg)
 	}
 	return out
+}
+
+func ensureRealDir(path string) error {
+	err := os.Mkdir(path, 0o700)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, os.ErrExist) {
+		return err
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("managed directory %s is not a real directory", path)
+	}
+	return nil
 }
