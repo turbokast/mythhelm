@@ -1,6 +1,7 @@
 package admission
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/turbokast/mythhelm/internal/security"
+	"github.com/turbokast/mythhelm/internal/workspace"
 )
 
 const (
@@ -58,13 +60,32 @@ func (c CheckConfig) Duration() time.Duration {
 	return d
 }
 
-// LoadProjectConfig reads only the snapshot file, rejects symlink escapes and
-// unknown keys, and returns its content SHA-256 for the trust grant.
+// LoadProjectConfig reads the snapshot's committed blob when the directory is
+// a Git clone. Git checkout may change line endings on Windows, but trust is
+// bound to the committed bytes. Non-Git directories are accepted for direct
+// config validation. In both cases symlink escapes and unknown keys fail.
 func LoadProjectConfig(snapshotDir string) (ProjectConfig, string, error) {
 	var zero ProjectConfig
 	outside, err := security.ResolvesOutside(snapshotDir, ProjectConfigFile)
 	if err != nil || outside {
 		return zero, "", fmt.Errorf("%w: config path is not safely inside the snapshot", ErrProjectConfig)
+	}
+	if _, err := os.Lstat(filepath.Join(snapshotDir, ".git")); err == nil {
+		entry, err := workspace.Git(context.Background(), snapshotDir, false, "ls-tree", "HEAD", "--", ProjectConfigFile)
+		if err != nil {
+			return zero, "", fmt.Errorf("%w: locate snapshot config: %w", ErrProjectConfig, err)
+		}
+		if len(entry) == 0 {
+			return zero, "", ErrNoProjectConfig
+		}
+		if !strings.HasPrefix(string(entry), "100644 blob ") && !strings.HasPrefix(string(entry), "100755 blob ") {
+			return zero, "", fmt.Errorf("%w: config must be a regular committed file", ErrProjectConfig)
+		}
+		raw, err := workspace.Git(context.Background(), snapshotDir, false, "show", "HEAD:"+ProjectConfigFile)
+		if err != nil {
+			return zero, "", fmt.Errorf("%w: read snapshot config: %w", ErrProjectConfig, err)
+		}
+		return ParseProjectConfig(raw)
 	}
 	f, err := os.Open(filepath.Join(snapshotDir, ProjectConfigFile)) //nolint:gosec // The path was checked against the snapshot root.
 	if errors.Is(err, os.ErrNotExist) {

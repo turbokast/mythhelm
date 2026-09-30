@@ -1,14 +1,49 @@
 package admission_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/turbokast/mythhelm/internal/admission"
 )
+
+func TestLoadProjectConfigUsesCommittedBytes(t *testing.T) {
+	dir := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...) // #nosec G204 -- fixed test argv only
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	git("init", "--quiet", "--initial-branch=main")
+	git("config", "user.name", "Test")
+	git("config", "user.email", "test@example.com")
+	raw := []byte("schema_version = 1\n[[checks]]\nname = \"test\"\nargv = [\"true\"]\ntimeout = \"1s\"\n")
+	path := filepath.Join(dir, "mythhelm.toml")
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "mythhelm.toml")
+	git("commit", "--quiet", "-m", "config")
+	// Git checkout on Windows may produce CRLF. A candidate may also edit the
+	// working file; neither changes the admitted committed bytes.
+	if err := os.WriteFile(path, []byte(strings.ReplaceAll(string(raw), "\n", "\r\n")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, digest, err := admission.LoadProjectConfig(dir)
+	sum := sha256.Sum256(raw)
+	if err != nil || digest != hex.EncodeToString(sum[:]) {
+		t.Fatalf("committed digest = %s, want %x; err = %v", digest, sum, err)
+	}
+}
 
 func TestLoadProjectConfigStrictAndDigest(t *testing.T) {
 	dir := t.TempDir()

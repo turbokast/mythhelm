@@ -197,7 +197,7 @@ func (p *pipeline) snapshot(ctx context.Context) error {
 	if !d.NoChecks {
 		_, digest, err := admission.LoadProjectConfig(d.Workdir)
 		if err != nil || digest != d.ConfigDigest {
-			return fmt.Errorf("snapshot project config does not match admitted digest %s: %w", d.ConfigDigest, errors.Join(err, admission.ErrProjectConfig))
+			return fmt.Errorf("snapshot project config digest %s does not match admitted digest %s: %w", digest, d.ConfigDigest, errors.Join(err, admission.ErrProjectConfig))
 		}
 	}
 	at := time.Now().UTC()
