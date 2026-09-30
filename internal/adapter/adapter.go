@@ -41,7 +41,13 @@ type Descriptor struct {
 
 // ProbeInput carries what probing needs from the caller. The fake adapter
 // needs nothing; native adapters add fields as they need them.
-type ProbeInput struct{}
+type ProbeInput struct {
+	// ExecutableOverride is rejected outside tests. Production resolves claude on PATH.
+	ExecutableOverride         string
+	Env                        []string
+	Workdir                    string
+	AllowUntestedNativeVersion bool
+}
 
 // Probe is the resolved identity of a native executable.
 type Probe struct {

@@ -143,6 +143,12 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("receipt: reading admitted task: %w", err)
 	}
+	nativeAuth := any(unknown)
+	if adm.NativeAuth != nil {
+		nativeAuth = map[string]any{"logged_in": adm.NativeAuth.LoggedIn, "auth_method": known(adm.NativeAuth.AuthMethod),
+			"api_provider": known(adm.NativeAuth.APIProvider), "subscription_type": known(adm.NativeAuth.SubscriptionType),
+			"identity_ref": known(adm.NativeAuth.IdentityRef)}
+	}
 	r := Receipt{
 		"schema_version": 1, "run_id": run.RunID, "state": run.State, "exit_code": exit,
 		"requested_outcome": map[string]any{"task_file_sha256": known(run.TaskSHA256), "title": taskTitle, "deliverable": "review-candidate"},
@@ -156,7 +162,7 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 			"credential_provenance": known(adm.Billing.CredentialProvenance), "entitlement_class": known(adm.Billing.EntitlementClass),
 			"entitlement_source": known(adm.Billing.EntitlementSource), "paid_continuation": known(adm.Billing.PaidContinuation),
 			"paid_continuation_user_declaration": known(adm.Billing.PaidContinuationUserDeclaration), "init_api_key_source": eventValue(nativeSession, "auth_source"),
-			"retail_equivalent_estimate_usd": price, "tokens": tokens},
+			"retail_equivalent_estimate_usd": price, "tokens": tokens, "native_auth": nativeAuth},
 		"routing": map[string]any{"decision": "pinned by --adapter; no routing in this slice"},
 		"native_result": map[string]any{"attempt_state": unknown, "subtype": eventValue(native, "subtype"), "num_turns": eventValue(native, "num_turns"),
 			"duration_ms": eventValue(native, "duration_ms"), "session_id": known(session), "permission_denials": denials},
