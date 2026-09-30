@@ -176,7 +176,7 @@
   - `runs list` does not yet show worker liveness (Tasks 9 and 15).
 - **Files modified**: `internal/supervisor/state.go`, `internal/supervisor/state_test.go`, `internal/journal/projections.go`, `internal/cli/runs.go`, `internal/cli/runs_test.go`, `internal/cli/dispatch.go`, `internal/cli/exit.go`, `specs/todo/dogfood-slice/tasks.md`.
 
-### Task 6 — Security primitives
+### Task 6 — Security primitives ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -204,9 +204,11 @@
 - **Test plan**: table tests; fuzz `TermSafe` (`FuzzTermSafe`, seed corpus only in CI).
 - **Invariants touched**: I19, §12.5, §12.7.
 - **Status**: ✅ Completed — `internal/security` with `Redact` + `RedactingHandler`, `TermSafe` (C0/C1/ESC sequences, OSC 8), `BuildEnv` allowlist with the denylist winning (`ErrDeniedPassthrough`) and `ResolvesOutside` (component-wise symlink resolution, dangling links included); PR #9
+- **Implementation**: Backfilled after merge; the design decisions are in PR #9 and the spec deviations below. Squash-merge commit a58bde2.
 - **Spec deviations**: key/value redaction also matches quoted keys and masks a quoted value to its closing quote (superset); `ResolvesOutside` errors on an unreadable symlink (fail closed); credential-named attributes are dropped by suffix (`…TOKEN`, `…APIKEY`, `…SECRET`, …) so `apiKeySource` and `input_tokens` survive; `BuildEnv` always denies `CLAUDE_CODE_OAUTH_TOKEN` (the AC-4.7 opt-in is the adapter's to apply after `BuildEnv`) and also checks `set` names; control strings end at a newline; `ErrDeniedPassthrough` → exit 2 mapping in `internal/cli/exit.go` is left to the task that wires `[environment] passthrough`.
+- **Files modified**: `internal/security/env.go`, `internal/security/paths.go`, `internal/security/redact.go`, `internal/security/security_test.go`, `internal/security/termsafe.go`, `specs/todo/dogfood-slice/tasks.md`.
 
-### Task 7 — Workspace: safe git runner, preflight and snapshot
+### Task 7 — Workspace: safe git runner, preflight and snapshot ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -233,9 +235,11 @@
 - **Test plan**: temp repos built with the git CLI; skip with a clear message if `git` is missing.
 - **Invariants touched**: I08, G03, §11.2.
 - **Status**: ✅ Completed — `internal/workspace` with the safe `Git` runner (fixed `-c` flags, empty hooks path, `GIT_*` scrub, `GIT_OPTIONAL_LOCKS=0` for the user repo), `Preflight` (git ≥ 2.30 via `ErrGitTooOld`, top/branch/HEAD, dirty, shallow/submodules/lfs/sparse-checkout), `Snapshot` (no hardlinks, detached, all remotes removed) and `SourceFingerprint`; PR #15
+- **Implementation**: Backfilled after merge; the design decisions are in PR #15 and the spec deviations below. Squash-merge commit 8f514d4.
 - **Spec deviations**: result type is `PreflightResult` (Go cannot name a func and a type `Preflight` in one package); empty hooks path is `os.DevNull` on Unix and a per-process empty temp dir on Windows; the runner drops inherited `GIT_*` variables and sets `GIT_TERMINAL_PROMPT=0` (Task 11 must set its temporary `GIT_INDEX_FILE` explicitly); submodules detected from HEAD-tree gitlinks plus `.gitmodules`, LFS from committed `.gitattributes`, instead of `submodule status`; `Snapshot` resolves `rev` to a full OID first and removes every remote, not only `origin`; the fingerprint covers every working-tree entry (untracked and ignored included) and file permissions, and follows linked-worktree `.git` files.
+- **Files modified**: `internal/workspace/fingerprint.go`, `internal/workspace/git.go`, `internal/workspace/preflight.go`, `internal/workspace/snapshot.go`, `internal/workspace/workspace_test.go`, `specs/todo/dogfood-slice/tasks.md`.
 
-### Task 8 — Adapter seam, NDJSON framing and the fake adapter
+### Task 8 — Adapter seam, NDJSON framing and the fake adapter ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -265,6 +269,7 @@
 - **Test plan**: the fake agent runs as a real child via the test binary re-exec.
 - **Invariants touched**: §9.1, §9.2, §9.7, I11, I14.
 - **Status**: ✅ Completed. Adds the `internal/adapter` seam, the bounded `ndjson.Reader` and the `fake` adapter with 13 embedded scenarios, played by `__fake-agent` as a real child; PR #11.
+- **Implementation**: Backfilled after merge; the design decisions are in PR #11 and the spec deviations below. Squash-merge commit d1e03a5.
 - **Spec deviations**:
   - The build-tagged `adapters/fake/escapee_{unix,other}.go` are added, because `Setsid` exists only on Unix and `os/exec` is banned.
   - `OwnedProc` is defined as `{Stdout, Signal, Wait, GroupGone}`, and `NativeExit` gains `Err`.
@@ -276,6 +281,7 @@
   - The oversized-frame bound is measured in bytes, and the object count separately with `AllocsPerRun`.
   - The `doc.go` note is in the package comment.
   - `ProbeInput` is empty.
+- **Files modified**: `adapters/fake/agent.go`, `adapters/fake/escapee_other.go`, `adapters/fake/escapee_unix.go`, `adapters/fake/fake.go`, `adapters/fake/fake_test.go`, `adapters/fake/scenarios/bad-utf8.json`, `adapters/fake/scenarios/check-fails.json`, `adapters/fake/scenarios/deep.json`, `adapters/fake/scenarios/denied.json`, `adapters/fake/scenarios/escapee.json`, `adapters/fake/scenarios/exit-before-result.json`, `adapters/fake/scenarios/happy.json`, `adapters/fake/scenarios/ignore-sigint.json`, `adapters/fake/scenarios/ignore-term.json`, `adapters/fake/scenarios/malformed.json`, `adapters/fake/scenarios/native-fails.json`, `adapters/fake/scenarios/oversized.json`, `adapters/fake/scenarios/slow.json`, `cmd/mythhelm/main.go`, `internal/adapter/adapter.go`, `internal/adapter/ndjson/reader.go`, `internal/adapter/ndjson/reader_test.go`, `specs/todo/dogfood-slice/scratchpad.md`, `specs/todo/dogfood-slice/tasks.md`.
 
 ### Task 9 — Worker ownership: detached worker, process group, spool, stop ladder ✅ COMPLETED
 
@@ -311,6 +317,7 @@
 - **Test plan**: the test binary re-exec plays both the worker and the fake agent. Platform-specific tests use build tags and `t.Skip` with a reason elsewhere.
 - **Invariants touched**: I06, I12, I18, §7.3, §7.4, G04 (Linux and macOS only).
 - **Status**: ✅ Completed. Adds `internal/workers`: the detached `__worker`, which writes the `worker.json` identity, spools with contiguous sequences and fsyncs critical events, heartbeats, polls `stop.request`, runs the ladder on the process group and reports escaped descendants. Also adds ADR 0004, and the fake's platform facts are now `supported` on Linux and macOS; PR #17.
+- **Implementation**: Backfilled after merge; the design decisions are in PR #17 and the spec deviations below. Squash-merge commit adaf2ce.
 - **Spec deviations**:
   - `attempt.stopped` ends every attempt, because `unresolved_pids` must also be reported for a self-exiting escapee. The attempt state is `stopped` only after a stop request.
   - `attempt.stopped` adds `signals_sent` and `descendant_scan`, and `attempt.protocol_counters` adds `progress_dropped`.
@@ -318,6 +325,7 @@
   - Extra files: `worker.log`, `proc_other.go` and `worker_unix_test.go`.
   - New reason codes: `launch_failed`, `worker_persistence_failed`, `native_signal_<name>`, and the native error class.
   - Files touched outside the list: `adapters/fake/fake.go` and `fake_test.go`, `cmd/mythhelm/main.go` and `go.mod`.
+- **Files modified**: `adapters/fake/fake.go`, `adapters/fake/fake_test.go`, `cmd/mythhelm/main.go`, `docs/decisions/0004-slice-process-model.md`, `go.mod`, `internal/workers/proc_darwin.go`, `internal/workers/proc_linux.go`, `internal/workers/proc_other.go`, `internal/workers/proc_unix.go`, `internal/workers/proc_windows.go`, `internal/workers/spool.go`, `internal/workers/worker.go`, `internal/workers/worker_test.go`, `internal/workers/worker_unix_test.go`, `specs/todo/dogfood-slice/scratchpad.md`, `specs/todo/dogfood-slice/tasks.md`.
 
 ### Task 10 — Supervisor run pipeline, first against the fake adapter
 
