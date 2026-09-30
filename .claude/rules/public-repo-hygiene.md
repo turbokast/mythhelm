@@ -10,8 +10,8 @@ Never write:
 - material from customers, prospects, employers or other private projects, including their names, incidents and internal identifiers;
 - business metrics, raw session transcripts, telemetry, or native agent output copied from a real run.
 
-Use instead: `example.com` addresses, RFC 5737 IPs (`192.0.2.x`), `$HOME`-relative or `/tmp/...` paths, and synthetic fixtures marked as synthetic. A recorded native stream is sanitised before it is committed (no account IDs, emails, org names, paths or prompts).
+Use instead: `example.com` addresses, RFC 5737 IPs (`192.0.2.x`), `$HOME`-relative or `/tmp/...` paths, and synthetic fixtures marked as synthetic.
 
 Runtime state stays out of git: `.claude/data/` is ignored except schemas and seeds. Never force-add an ignored file.
 
-`scripts/ci/check-public-hygiene.sh` runs in CI and fails on the mechanical cases. It cannot recognise a private project's name or an incident description, so the rule binds beyond what it catches. If something private was committed, stop and tell a maintainer; do not try to rewrite history yourself.
+`scripts/ci/check-public-hygiene.sh` catches only the mechanical cases in CI; the rule binds beyond it. If something private was committed, stop and tell a maintainer; do not try to rewrite history yourself.

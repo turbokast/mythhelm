@@ -1,0 +1,18 @@
+{
+  "id": "always-on-context-within-budget",
+  "hazard": "Always-on rules and CLAUDE.md grow past the byte budget and every turn of every session pays for it.",
+  "source": "harness lint: rule-budget",
+  "targets": [
+    "CLAUDE.md",
+    ".claude/rules/*.md"
+  ],
+  "grader": {
+    "type": "script",
+    "argv": [
+      "python3",
+      "scripts/ci/harness_lint.py",
+      "rule-budget"
+    ],
+    "exit": 0
+  }
+}

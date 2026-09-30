@@ -31,7 +31,7 @@ Optional `$ARGUMENTS`: the changed paths or a domain (`go`, `harness`, `workflow
 | `*.go`, `go.mod`, `go.sum` | `gofmt -l .` (must print nothing) · `go vet ./...` · `go test -race ./...` · `go mod tidy -diff` (must print nothing) · `golangci-lint run` once `.golangci.yml` exists |
 | `go.mod`, `go.sum` | also `govulncheck ./...` and `CGO_ENABLED=0 go build ./...` |
 | OS-specific files (`*_windows.go`, `*_unix.go`, build tags) | also `GOOS=windows go vet ./...` and `GOOS=darwin go vet ./...` |
-| `.claude/`, `knowledge/`, `scripts/`, `CLAUDE.md`, `AGENTS.md` | `scripts/ci/lint-agent-harness.sh` · `.claude/hooks/tests/run-tests.sh` · `shellcheck <changed .sh>` |
+| `.claude/`, `knowledge/`, `scripts/`, `CLAUDE.md`, `AGENTS.md` | `scripts/ci/lint-agent-harness.sh` (its `evals` check runs the config-regression cases) · `.claude/hooks/tests/run-tests.sh` · `shellcheck <changed .sh>` |
 | `.github/workflows/` | `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12`; `zizmor` runs in CI |
 | any change | `scripts/ci/check-public-hygiene.sh` |
 

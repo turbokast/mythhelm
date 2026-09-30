@@ -39,7 +39,7 @@ Step 1 of `/finalize-spec`, and runnable on its own to ask "can this spec be fin
    | The `CI OK` job still needs every job it needed before the spec's first merge | `gate-weakened:` |
    | main's ruleset still requires `CI OK`, `DCO sign-off`, `Dependency review`, `Analyze (actions)` and `Analyze (go)` | `required-checks:` |
 
-   `note=history:` lines name failed or unfinished runs on the spec's merge commits below the tip. They do not block, because the tip's green run covers the same code and more, but they are the retrospective's CI history. `note=required-checks:` names a required check the expected list lacks; update the list in `scripts/harness/finalize.py` in its own pull request.
+   `note=history:` lines name failed or unfinished runs on the spec's merge commits below the tip. They do not block, because the tip's green run covers the same code and more, but they are the retrospective's CI history. `note=required-checks:` names a required check the expected list lacks; add it to `.claude/data/required-checks.json` and `docs/automation.md` together, in their own pull request (the `required-checks` lint keeps the two equal).
 
 2. Read the exit status:
    - 0, `verdict=ready`: finalize may proceed.

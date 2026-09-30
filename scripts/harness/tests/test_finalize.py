@@ -181,6 +181,21 @@ class ProposalIdTests(Tmp):
         self.assertEqual(call(["proposal-id", "--spec", "Bad Name", "--root", self.tmp])[0], 2)
 
 
+class RequiredChecksTests(Tmp):
+    def test_the_expected_list_comes_from_the_data_file(self):
+        self.assertIn("CI OK", finalize.expected_required_checks())
+        path = os.path.join(self.tmp, "required-checks.json")
+        write(path, json.dumps({"required": ["A", "B"]}))
+        self.assertEqual(finalize.expected_required_checks(path), ("A", "B"))
+        for bad in ("{", json.dumps({"required": []}), json.dumps({"required": ["A", 3]}), json.dumps(["A"])):
+            with self.subTest(bad):
+                write(path, bad)
+                with self.assertRaises(finalize.Usage):
+                    finalize.expected_required_checks(path)
+        with self.assertRaises(finalize.Usage):
+            finalize.expected_required_checks(os.path.join(self.tmp, "absent.json"))
+
+
 # ---- epic rollup ---------------------------------------------------------------
 
 PLAN = """## Epic — Master Plan
@@ -320,7 +335,7 @@ DONE_TASKS = textwrap.dedent("""\
 
 CI_YML = "jobs:\n  go:\n    runs-on: x\n  ci-ok:\n    name: CI OK\n    needs: [%s]\n    runs-on: x\n"
 RULES = [{"type": "pull_request"}, {"type": "required_status_checks", "parameters": {"required_status_checks": [
-    {"context": c} for c in finalize.REQUIRED_CHECKS]}}]
+    {"context": c} for c in finalize.expected_required_checks()]}}]
 
 
 def gh_run(wf="CI", status="completed", conclusion="success", rid=1):
@@ -466,7 +481,7 @@ class VerifyTests(RepoBase):
             "main-tip: job-failed:CI/Go": {"run list " + self.b: [gh_run("CI", conclusion="failure", rid=7)]},
             "main no longer requires Analyze (go)": {"api repos/acme/demo/rules/branches/main": [
                 {"type": "required_status_checks", "parameters": {"required_status_checks": [
-                    {"context": c} for c in finalize.REQUIRED_CHECKS[:-1]]}}]},
+                    {"context": c} for c in finalize.expected_required_checks()[:-1]]}}]},
         }
         for needle, over in cases.items():
             with self.subTest(needle):

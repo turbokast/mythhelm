@@ -17,6 +17,7 @@ coverage.*
 !.claude/data/*.seed.*
 !.claude/data/.gitkeep
 !.claude/data/vendor-policy.json
+!.claude/data/required-checks.json
 .claude/settings.local.json
 .claude/worktrees/
 .claude/handoffs/

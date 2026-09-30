@@ -1,0 +1,17 @@
+{
+  "id": "vendors-off-by-default",
+  "hazard": "The tracked vendor policy opts every contributor in to a paid vendor.",
+  "source": "vendors: opt-in policy",
+  "targets": [
+    ".claude/data/vendor-policy.json"
+  ],
+  "grader": {
+    "type": "script",
+    "argv": [
+      "python3",
+      "-c",
+      "import json,sys\np=json.load(open('.claude/data/vendor-policy.json'))\nsys.exit(0 if p.get('enabled')==[] and p.get('lanes_enabled')==[] else 1)"
+    ],
+    "exit": 0
+  }
+}

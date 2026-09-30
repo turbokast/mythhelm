@@ -1,0 +1,11 @@
+{
+  "description": "The status checks the main branch ruleset is expected to require. finalize.py verify and health.py compare the live ruleset with this list; the agent-harness lint (check required-checks) keeps it equal to the checks docs/automation.md marks as required. Change all three together.",
+  "branch": "main",
+  "required": [
+    "CI OK",
+    "DCO sign-off",
+    "Dependency review",
+    "Analyze (actions)",
+    "Analyze (go)"
+  ]
+}

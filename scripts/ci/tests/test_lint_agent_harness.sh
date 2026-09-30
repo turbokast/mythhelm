@@ -229,6 +229,49 @@ State the tick in every timing test.
 ## Not a proposal heading inside a fence
 ```
 EOF
+  learning_fixture "$d"
+}
+
+# learning_fixture <dir>: a decided proposal, the lane-0 switch, the required-checks
+# list with its documentation, and one passing eval case, all clean.
+learning_fixture() {
+  local d="$1"
+  cat > "$d/.claude/proposals/applied.md" <<'EOF'
+# Applied proposals
+
+## P-shipped-3 — Pin the guard
+
+- **Decision**: approved
+- **Date**: 2026-01-03
+- **Pull request**: #7
+- **Eval**: `main-package`
+- **Rationale**: the maintainer agreed.
+- **Source spec**: `shipped`
+- **Type**: rule
+- **Target**: `src/main.go`
+
+**Proposed change:**
+
+Keep it.
+
+## P-shipped-4 — Not needed
+
+- **Decision**: rejected
+- **Date**: 2026-01-04
+- **Pull request**: #8
+- **Eval**: n/a
+- **Rationale**: already covered.
+- **Source spec**: `shipped`
+- **Type**: knowledge
+EOF
+  printf '{"enabled": false, "allow": []}\n' > "$d/.claude/proposals/auto-apply.json"
+  mkdir -p "$d/.claude/data" "$d/docs" "$d/.claude/evals/cases"
+  printf '{"required": ["CI OK", "DCO sign-off"]}\n' > "$d/.claude/data/required-checks.json"
+  printf '| Automation |\n|---|\n| CI (`CI OK`, required) |\n| DCO (`DCO sign-off`, to be made required) |\n' > "$d/docs/automation.md"
+  cat > "$d/.claude/evals/cases/main-package.json" <<'EOF'
+{"id": "main-package", "hazard": "the entry point loses its package clause", "source": "P-shipped-3",
+ "targets": ["src/*.go"], "grader": {"type": "must-match", "pattern": "^package main$"}}
+EOF
 }
 
 # spec_fixture <dir>: a lifecycle tree with one refined idea, one full spec in todo/
@@ -357,7 +400,7 @@ echo "== clean fixture =="
 fresh clean
 lint "$F"
 expect_pass "the clean fixture passes every check"
-check "summary names all thirteen checks" [ "$(grep -cE ' (PASS|FAIL)$' <<< "$OUT")" == 13 ]
+check "summary names all fifteen checks" [ "$(grep -cE ' (PASS|FAIL)$' <<< "$OUT")" == 15 ]
 
 echo "== usage =="
 lint "$F" --only no-such-check
@@ -758,5 +801,89 @@ fresh pr-none
 rm "$F/$PEND"
 lint "$F" --only proposals
 expect_pass "a tree without pending.md passes"
+
+echo "== decided proposals and lane 0 =="
+APPL=.claude/proposals/applied.md
+fresh ap-decision
+set_line "$F/$APPL" '- **Decision**: rejected' '- **Decision**: maybe'
+lint "$F" --only proposals
+expect_fail proposals "P-shipped-4: Decision 'maybe' is not one of" "an unknown decision"
+fresh ap-eval
+set_line "$F/$APPL" '- **Eval**: `main-package`' '- **Eval**: n/a'
+lint "$F" --only proposals
+expect_fail proposals "P-shipped-3: an approved rule proposal records an eval case or a waiver" "an approved rule without an eval"
+fresh ap-eval-missing
+set_line "$F/$APPL" '- **Eval**: `main-package`' '- **Eval**: `gone`'
+lint "$F" --only proposals
+expect_fail proposals "eval case gone has no file" "an eval case that does not exist"
+fresh ap-waiver
+set_line "$F/$APPL" '- **Eval**: `main-package`' '- **Eval**: waived — prose only, nothing to pin'
+lint "$F" --only proposals
+expect_pass "a maintainer's waiver passes"
+fresh ap-both
+set_line "$F/$APPL" '## P-shipped-4 — Not needed' '## P-shipped-1 — Not needed'
+lint "$F" --only proposals
+expect_fail proposals "P-shipped-1 is both pending and recorded" "an id both pending and decided"
+fresh ap-pr
+set_line "$F/$APPL" '- **Pull request**: #7' '- **Pull request**: 7'
+lint "$F" --only proposals
+expect_fail proposals "P-shipped-3: Pull request is not '#<n>'" "a decision without its pull request"
+fresh ap-lane0
+printf '{"enabled": true, "allow": [".claude/rules/*.md"]}\n' > "$F/.claude/proposals/auto-apply.json"
+lint "$F" --only proposals
+expect_fail proposals "allow entry '.claude/rules/*.md' is not under knowledge/" "lane 0 aimed outside knowledge/"
+fresh ap-lane0-json
+printf '{"enabled": "yes", "allow": []}\n' > "$F/.claude/proposals/auto-apply.json"
+lint "$F" --only proposals
+expect_fail proposals "'enabled' is not true or false" "a lane-0 switch that is not a boolean"
+fresh pr-research
+python3 - "$F/$PEND" <<'EOF'
+import sys
+p = sys.argv[1]
+s = open(p).read().replace("## P-shipped-2 — A new", "## P-research-20260101-1 — A new").replace(
+    "- **Source spec**: `shipped`\n- **Type**: knowledge", "- **Source spec**: `research-20260101`\n- **Type**: knowledge")
+open(p, "w").write(s)
+EOF
+lint "$F" --only proposals
+expect_fail proposals "P-research-20260101-1: a research proposal cites an https:// source" "a research proposal without a source"
+set_line "$F/$PEND" '- **Evidence**: P-shipped-1.' '- **Evidence**: https://example.com/practice'
+lint "$F" --only proposals
+expect_pass "a cited research proposal passes"
+
+echo "== required-checks =="
+fresh rc-extra
+printf '{"required": ["CI OK", "DCO sign-off", "Lint"]}\n' > "$F/.claude/data/required-checks.json"
+lint "$F" --only required-checks
+expect_fail required-checks "'Lint' is not marked" "a required check the documentation does not list"
+fresh rc-missing
+printf '{"required": ["CI OK"]}\n' > "$F/.claude/data/required-checks.json"
+lint "$F" --only required-checks
+expect_fail required-checks "marks 'DCO sign-off' as required; add it here" "a documented check missing from the list"
+fresh rc-lonely
+rm "$F/docs/automation.md"
+lint "$F" --only required-checks
+expect_fail required-checks "go together; one is missing" "the list without its documentation"
+fresh rc-malformed
+printf '{"required": []}\n' > "$F/.claude/data/required-checks.json"
+lint "$F" --only required-checks
+expect_fail required-checks "non-empty 'required' list" "an empty list"
+
+echo "== evals =="
+fresh ev-red
+printf 'package other\n' > "$F/src/main.go"
+lint "$F" --only evals
+expect_fail evals "pattern missing from src/main.go" "a case whose behaviour is gone"
+fresh ev-malformed
+printf '{"id": "main-package"}\n' > "$F/.claude/evals/cases/main-package.json"
+lint "$F" --only evals
+expect_fail evals "malformed: " "a malformed case"
+fresh ev-name
+printf 'x\n' > "$F/.claude/evals/cases/notes.txt"
+lint "$F" --only evals
+expect_fail evals "a case file is <id>.json" "a stray file among the cases"
+fresh ev-none
+rm -r "$F/.claude/evals"
+lint "$F" --only evals
+expect_pass "a tree without eval cases passes"
 
 finish

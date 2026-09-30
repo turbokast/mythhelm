@@ -1,0 +1,12 @@
+{
+  "id": "ci-ok-needs-harness-job",
+  "hazard": "The harness job is dropped from the aggregate required check, so harness tests, lint and evals stop gating merges.",
+  "source": "CI: harness job",
+  "targets": [
+    ".github/workflows/ci.yml"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "^    needs: \\[[^\\]]*\\bharness\\b[^\\]]*\\]$"
+  }
+}

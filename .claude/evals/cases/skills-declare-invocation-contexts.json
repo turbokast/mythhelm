@@ -1,0 +1,12 @@
+{
+  "id": "skills-declare-invocation-contexts",
+  "hazard": "A skill does not say how it behaves when no one can answer, and a headless run guesses or self-approves a write.",
+  "source": "rules: skill-invocation-contexts",
+  "targets": [
+    ".claude/skills/*/SKILL.md"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "^## Invocation contexts$"
+  }
+}

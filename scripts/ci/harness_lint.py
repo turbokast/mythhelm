@@ -43,8 +43,16 @@ Checks (each reads the tree at DIR, default the repository root):
                   when present, is Keep a Changelog shaped (scripts/harness/finalize.py)
   proposals       every entry of .claude/proposals/pending.md is a '## P-<spec>-<n>'
                   heading, unique, with the fields PROPOSAL_FIELDS, a type in
-                  PROPOSAL_TYPES, a source spec that exists, a target that exists (or
-                  is marked "(new file)") and a non-empty Proposed change
+                  PROPOSAL_TYPES, a source spec that exists (or a research-<yyyymmdd>
+                  source citing an https:// source), a target that exists (or is
+                  marked "(new file)") and a non-empty Proposed change; every entry of
+                  applied.md carries a decision, date, pull request, rationale and, for
+                  an approved rule, skill or hook, an existing eval case or a waiver,
+                  and is not also pending; auto-apply.json allows only knowledge/ globs
+  required-checks .claude/data/required-checks.json lists exactly the checks
+                  docs/automation.md marks required or to be made required
+  evals           every case in .claude/evals/cases/ is well-formed and passes
+                  (.claude/evals/run_evals.py)
 
 Findings print as "path:line: check: detail". Exit 0 clean, 1 findings, 2 usage or
 an unreadable tree. Standard library only; no network, no writes.
@@ -870,9 +878,21 @@ def check_finalize(root, files):
 
 PROPOSAL_TYPES = ("rule", "skill", "hook", "knowledge", "product")
 PROPOSAL_FIELDS = ("Source spec", "Type", "Target", "Rationale", "Evidence")
+RESEARCH_SOURCE = re.compile(r"^research-\d{8}$")
+
+
+def load_proposals():
+    """scripts/harness/proposals.py from this repository, whatever tree --root names."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "harness"))
+    try:
+        import proposals  # noqa: E402  (a sibling script, not an installed package)
+    finally:
+        sys.path.pop(0)
+    return proposals
 
 
 def check_proposals(root, files):
+    check_decided(root, files)
     rel = ".claude/proposals/pending.md"
     if rel not in files:
         return
@@ -914,7 +934,10 @@ def check_proposals(root, files):
         src = re.sub(r"[`\s]", "", f.get("Source spec", ""))
         if src and src != spec:
             finding(rel, i, "proposals", "%s: Source spec %r does not match the id's spec %r" % (pid, src, spec))
-        if src and src not in homes:
+        if src and RESEARCH_SOURCE.match(src):
+            if "https://" not in f.get("Evidence", ""):
+                finding(rel, i, "proposals", "%s: a research proposal cites an https:// source in Evidence" % pid)
+        elif src and src not in homes:
             finding(rel, i, "proposals", "%s: Source spec %r has no directory under specs/<state>/" % (pid, src))
         typ = f.get("Type", "").strip("` ")
         if typ and typ not in PROPOSAL_TYPES:
@@ -933,6 +956,80 @@ def check_proposals(root, files):
             finding(rel, i, "proposals", "%s has no '**Proposed change:**' block with content" % pid)
 
 
+
+def check_decided(root, files):
+    """applied.md and the lane-0 configuration, through proposals.py's parser."""
+    props = load_proposals()
+    pending = set()
+    if props.PENDING in files:
+        pending = {s["id"] for s in props.sections(read(root, props.PENDING))[1] if s["id"]}
+    if props.APPLIED in files:
+        cases = {f[len(props.CASES):-5] for f in files if f.startswith(props.CASES) and f.endswith(".json")}
+        for line, detail in props.applied_problems(read(root, props.APPLIED), pending, cases):
+            finding(props.APPLIED, line, "proposals", detail)
+    if props.AUTO_APPLY in files:
+        _, problems = props.load_auto_apply(read(root, props.AUTO_APPLY))
+        for detail in problems:
+            finding(props.AUTO_APPLY, 0, "proposals", detail)
+
+REQUIRED_CHECKS_DATA = ".claude/data/required-checks.json"
+AUTOMATION_DOC = "docs/automation.md"
+DOC_REQUIRED = re.compile(r"`([^`]+)`, (?:required|to be made required)\b")
+
+
+def check_required_checks(root, files):
+    have = [f for f in (REQUIRED_CHECKS_DATA, AUTOMATION_DOC) if f in files]
+    if not have:
+        return
+    if len(have) == 1:
+        finding(have[0], 0, "required-checks", "%s and %s go together; one is missing"
+                % (REQUIRED_CHECKS_DATA, AUTOMATION_DOC))
+        return
+    try:
+        data = json.loads(read(root, REQUIRED_CHECKS_DATA))
+        listed = data["required"]
+        assert isinstance(listed, list) and listed and all(isinstance(c, str) and c for c in listed)
+    except (ValueError, KeyError, TypeError, AssertionError):
+        finding(REQUIRED_CHECKS_DATA, 0, "required-checks", "not a JSON object with a non-empty 'required' list")
+        return
+    dupes = sorted({c for c in listed if listed.count(c) > 1})
+    if dupes:
+        finding(REQUIRED_CHECKS_DATA, 0, "required-checks", "listed twice: %s" % ", ".join(dupes))
+    documented = set(DOC_REQUIRED.findall(read(root, AUTOMATION_DOC)))
+    for c in sorted(documented - set(listed)):
+        finding(REQUIRED_CHECKS_DATA, 0, "required-checks",
+                "%s marks %r as required; add it here, since finalize and health compare the ruleset with this list"
+                % (AUTOMATION_DOC, c))
+    for c in sorted(set(listed) - documented):
+        finding(REQUIRED_CHECKS_DATA, 0, "required-checks",
+                "%r is not marked \"`%s`, required\" in %s; document it or remove it" % (c, c, AUTOMATION_DOC))
+
+
+def load_evals():
+    """.claude/evals/run_evals.py from this repository, whatever tree --root names."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".claude", "evals"))
+    try:
+        import run_evals  # noqa: E402  (the eval runner, not an installed package)
+    finally:
+        sys.path.pop(0)
+    return run_evals
+
+
+def check_evals(root, files):
+    cases = [f for f in files if re.fullmatch(r"\.claude/evals/cases/[^/]+", f)]
+    if not cases:
+        return
+    ev = load_evals()
+    for rel in cases:
+        if not rel.endswith(".json"):
+            finding(rel, 0, "evals", "a case file is <id>.json")
+            continue
+        res = ev.run_all(root, [os.path.join(root, rel)])[0]
+        print("%s  %s" % ("PASS" if res["passed"] else "FAIL", res["id"]))
+        if not res["passed"]:
+            finding(rel, 0, "evals", res["detail"])
+
+
 CHECKS = {
     "frontmatter": check_frontmatter,
     "routing-pins": check_routing_pins,
@@ -947,6 +1044,8 @@ CHECKS = {
     "specs": check_specs,
     "finalize": check_finalize,
     "proposals": check_proposals,
+    "required-checks": check_required_checks,
+    "evals": check_evals,
 }
 
 

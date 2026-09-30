@@ -7,6 +7,7 @@ One file per rule, named after the rule file. Nothing here is an instruction: ev
 ## What an evidence file holds
 
 - **Hazard**: the failure the rule prevents, described generically. What goes wrong, how it hides, and why the obvious check does not catch it.
+- **Examples** (optional): worked forms of the instruction, moved here to keep the rule short.
 - **Mechanism**: why the rule's instruction prevents it, and which hook, CI check or gate gives it teeth, if any.
 - **Instances**: observed occurrences in this repository, each with a link to the issue, pull request or commit. This list starts empty and grows.
 - **Loosening criteria**: the evidence that would justify relaxing the rule.
