@@ -169,13 +169,20 @@ func TestDoctorDoesNotRunAuthStatus(t *testing.T) {
 }
 
 func TestDoctorUnreadableStateDirIsNotAbsent(t *testing.T) {
-	// A regular file as the parent makes Lstat fail with ENOTDIR, not
-	// ENOENT: doctor must report unreadable, never absent.
-	blocker := filepath.Join(t.TempDir(), "file-not-dir")
-	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
+	// The trigger is platform-specific: a regular file as the parent
+	// makes Lstat fail with ENOTDIR on Unix, but Windows reports the
+	// same path as not-exist, so Windows uses a name the OS rejects.
+	var missing string
+	if runtime.GOOS == "windows" {
+		missing = filepath.Join(t.TempDir(), "state*?")
+	} else {
+		blocker := filepath.Join(t.TempDir(), "file-not-dir")
+		if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		missing = filepath.Join(blocker, "state")
 	}
-	t.Setenv("MYTHHELM_HOME", filepath.Join(blocker, "state"))
+	t.Setenv("MYTHHELM_HOME", missing)
 	code, stdout, stderr := runMain("doctor")
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, stderr)
