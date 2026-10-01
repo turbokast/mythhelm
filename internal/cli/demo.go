@@ -96,20 +96,22 @@ func runDemo(args []string, stdio Stdio) error {
 		Adapter: "fake", Billing: "local-scripted", ExecutionProfile: "trusted-host",
 		TrustProjectConfig: "sha256:" + digest, Env: os.Environ(),
 	})
+	// finish writes the run's terminal result line and surfaces any
+	// streaming write error; the review screen follows it.
+	resultErr := finish(r, out, runErr)
 
-	// The run's own result line already streamed; the review screen says
-	// what it produced. A run that never recorded has nothing to review.
+	// A run that never recorded has nothing to review.
 	if out.RunID != "" {
 		banner("review")
 		if rerr := demoReview(stdio.Out, state, out.RunID); rerr != nil {
-			return errors.Join(runErr, rerr)
+			return errors.Join(resultErr, rerr)
 		}
 	}
 	banner("done")
 	if _, err := fmt.Fprintf(stdio.Out, "state in %s was removed afterwards\n", cell(state)); err != nil {
 		return err
 	}
-	return runErr
+	return resultErr
 }
 
 // seedDemoRepo builds the disposable example: a committed README, a task

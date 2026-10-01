@@ -124,7 +124,7 @@ func TestDemoLabelsEveryScreen(t *testing.T) {
 	if screens < 4 {
 		t.Errorf("screens = %d, want at least the repository, run, review and done screens", screens)
 	}
-	for _, want := range []string{"Run: ", "State: ", "Candidate diff:"} {
+	for _, want := range []string{"Run: ", "State: ", "Candidate diff:", "result: ready_for_review; exit 0"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("demo output lacks %q", want)
 		}
