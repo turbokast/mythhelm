@@ -146,7 +146,9 @@ func (f fixture) logWorkerDiagnostics(t *testing.T) {
 	t.Helper()
 	logs, err := filepath.Glob(filepath.Join(f.state, "runs", "*", "attempts", "*", "worker.log"))
 	if err != nil {
-		t.Fatal(err)
+		// A diagnostic helper must never fail the test it annotates.
+		t.Logf("worker diagnostic unavailable: %v", err)
+		return
 	}
 	for _, path := range logs {
 		file, err := os.Open(path) // #nosec G304 -- test-owned worker diagnostics
