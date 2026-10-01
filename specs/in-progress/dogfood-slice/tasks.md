@@ -533,7 +533,7 @@
 - **Test plan**: harness helpers from design §12 (forge identity, hold lock, hold an exclusive transaction).
 - **Invariants touched**: I06, I12, §7.7, §17.5, §18.4, G04.
 
-### Task 16 — Claude Code probe, auth evidence and billing admission
+### Task 16 — Claude Code probe, auth evidence and billing admission ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -570,6 +570,16 @@
   - `TestSingleCurrentDeclaration`: declaring twice leaves exactly one row with `superseded_at IS NULL`, and a direct second insert violates `declarations_current`.
 - **Test plan**: fakeclaude helper mode (design §12) serves `--version` and `auth status` fixtures; settings fixtures live in temp homes.
 - **Invariants touched**: I01, I02, I03, I04, I15 (honest non-satisfaction), I16, I19, §9.3, §13.10, G05 (recorded not-passed).
+
+- **Status**: ✅ Completed — Native probe, PII-safe auth/config evidence, declared billing and transactional declarations implemented; PR #54.
+- **Implementation**: Pinned native resolution, strict bounded status/config parsing, complete selected MCP digests and atomic declaration replacement; strict billing remains blocked and declared posture stays unqualified. Commit b301600.
+- **Spec deviations**:
+  - `internal/adapter/adapter.go` extends the native probe input contract; `internal/admission/admission.go` orders the strict refusal before unavailable adapter checks and carries nullable typed native auth evidence.
+  - `internal/journal/declarations.go` supplies transaction-bound projection/read APIs for the existing schema; `internal/supervisor/receipt.go` emits allowlisted native auth for the explicit PII persistence acceptance.
+  - `adapters/claudecode/doc.go`, `auth_test.go` and `settings_linux_test.go` separate the required API disclaimer, real auth/receipt fixtures and inotify credential-read proof from the probe tests. Own handoff and scratchpad entries record dependent seams and limits.
+  - Native config source symlinks are unsupported; raw config-directory text is omitted from durable JSON while its identity hash remains. Every present settings/MCP source needs trust; ambiguous JSON/auth and unsupported policyHelper sources fail closed. Remote cached policy and macOS MDM are not certified; Q5 network behavior remains unknown after a failed sandboxed trace.
+- **Files modified**: `adapters/claudecode/doc.go`, `adapters/claudecode/probe.go`, `adapters/claudecode/compat.go`, `adapters/claudecode/settings.go`, `adapters/claudecode/probe_test.go`, `adapters/claudecode/auth_test.go`, `adapters/claudecode/settings_linux_test.go`, `internal/adapter/adapter.go`, `internal/admission/admission.go`, `internal/admission/billing.go`, `internal/admission/billing_test.go`, `internal/journal/declarations.go`, `internal/supervisor/receipt.go`, `docs/decisions/0002-dogfood-billing-posture.md`, `specs/in-progress/dogfood-slice/tasks.md`, `specs/in-progress/dogfood-slice/handoff.md`, `specs/in-progress/dogfood-slice/scratchpad.md`.
+- **Acceptance evidence**: All 16 named checks passed; the full race suite passed through the gate wrapper. Red-first: wrong-value stubs failed every acceptance; symlink-following, omitted lexical MCP digest, skipped strict auth JSON validation and raw-orgId persistence mutants failed retained regressions; restored implementation passed.
 
 ### Task 17 — Claude Code launch, stream-json decoding and result mapping
 
