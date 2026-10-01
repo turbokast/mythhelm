@@ -71,7 +71,7 @@ func TestAPIKeyEnvBlocksNamesOnly(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN"} {
 		t.Run(name, func(t *testing.T) {
-			_, _, err := admission.ResolveCredentialEnv([]string{"PATH=/fixture", name + "=planted-secret"}, false, false)
+			_, _, err := admission.ResolveCredentialEnv([]string{"PATH=/fixture", name + "=planted-secret"}, false, false, nil)
 			blocked(t, err, "credential_route_override")
 			if !strings.Contains(err.Error(), name) || strings.Contains(err.Error(), "planted-secret") {
 				t.Fatalf("override message must name only variable: %v", err)
@@ -81,12 +81,28 @@ func TestAPIKeyEnvBlocksNamesOnly(t *testing.T) {
 }
 func TestStripCredentialEnvRecordedAsOverride(t *testing.T) {
 	t.Parallel()
-	env, overrides, err := admission.ResolveCredentialEnv([]string{"HOME=/fixture", "ANTHROPIC_API_KEY=planted-secret"}, true, false)
+	env, overrides, err := admission.ResolveCredentialEnv([]string{"HOME=/fixture", "ANTHROPIC_API_KEY=planted-secret"}, true, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Join(env, " ") != "HOME=/fixture" || len(overrides) != 1 || overrides[0].Name != "ANTHROPIC_API_KEY" || overrides[0].Kind != "env_remove" || overrides[0].Value != "" {
 		t.Fatalf("stripped child and override = %v, %+v", env, overrides)
+	}
+}
+func TestCredentialEnvPassthroughKeepsTrustedNames(t *testing.T) {
+	t.Parallel()
+	env, _, err := admission.ResolveCredentialEnv(
+		[]string{"HOME=/fixture", "GOPATH=/go", "ANTHROPIC_API_KEY=planted-secret"},
+		true, false, []string{"GOPATH"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(env, " ")
+	if !strings.Contains(joined, "GOPATH=/go") || strings.Contains(joined, "planted-secret") {
+		t.Fatalf("passthrough child = %v", env)
+	}
+	if _, _, err := admission.ResolveCredentialEnv([]string{"HOME=/fixture"}, true, false, []string{"ANTHROPIC_API_KEY"}); err == nil {
+		t.Fatal("passthrough must not restore a denied credential route")
 	}
 }
 func TestBillingMismatchNeedsNativeSetup(t *testing.T) {

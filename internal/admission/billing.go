@@ -52,8 +52,9 @@ func strictBillingBlock() error {
 
 // ResolveCredentialEnv previews child-only credential-route removals. It
 // examines names, never credential values. oauthOptIn is a trusted user-level
-// choice; project configuration must never set it (AC-4.7).
-func ResolveCredentialEnv(parent []string, strip, oauthOptIn bool) ([]string, []adapter.ConfigDelta, error) {
+// choice; project configuration must never set it (AC-4.7). Trusted
+// passthrough names are applied without restoring denied credential routes.
+func ResolveCredentialEnv(parent []string, strip, oauthOptIn bool, passthrough []string) ([]string, []adapter.ConfigDelta, error) {
 	names := claudecode.CredentialOverrideNames()
 	var found []string
 	var oauth string // opaque complete env entry; never decoded or persisted
@@ -77,7 +78,7 @@ func ResolveCredentialEnv(parent []string, strip, oauthOptIn bool) ([]string, []
 	if len(found) > 0 && !strip {
 		return nil, nil, &BlockedError{Code: "credential_route_override", Field: strings.Join(found, ", "), Action: "remove these variables or pass --strip-credential-env to remove them from this child only"}
 	}
-	child, err := security.BuildEnv(parent, nil, nil)
+	child, err := security.BuildEnv(parent, passthrough, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -125,7 +126,7 @@ func NativeAdmissionError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, claudecode.ErrCapability) || errors.Is(err, claudecode.ErrUnavailable) {
+	if errors.Is(err, claudecode.ErrCapability) {
 		return &BlockedError{Code: "native_capability_unavailable", Capability: true, Action: err.Error()}
 	}
 	var blocked *adapter.BlockedError

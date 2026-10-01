@@ -17,6 +17,7 @@ const (
 	evNativeSession    = "attempt.native_session"
 	evProgress         = "attempt.progress"
 	evPermissionDenied = "attempt.permission_denied"
+	evNativeError      = "attempt.native_error"
 	evProtocolCounters = "attempt.protocol_counters"
 	evNativeResult     = "attempt.native_result"
 	evStopRequested    = "attempt.stop_requested"

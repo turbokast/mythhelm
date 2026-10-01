@@ -1,0 +1,4 @@
+# synthetic: doc-derived stream-json shapes; Task 20 replaces these with a sanitised recording
+{"type":"system","subtype":"init","session_id":"synth-max-turns","model":"claude-synthetic","claude_code_version":"2.1.284","permissionMode":"acceptEdits","apiKeySource":"none","tools":["Bash"],"mcp_servers":[],"plugins":[]}
+{"type":"assistant","message":{"model":"claude-synthetic","content":[{"type":"tool_use","name":"Bash","input":{}}]}}
+{"type":"result","subtype":"error_max_turns","is_error":true,"num_turns":30,"duration_ms":90000,"modelUsage":{"claude-synthetic":{"inputTokens":9000,"outputTokens":1000,"cacheReadInputTokens":0,"cacheCreationInputTokens":0}},"total_cost_usd":"1.07","permission_denials":[],"errors":[{"type":"turn_limit"},{"type":"turn_limit"}]}

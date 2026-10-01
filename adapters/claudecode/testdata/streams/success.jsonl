@@ -1,0 +1,6 @@
+# synthetic: doc-derived stream-json shapes; Task 20 replaces these with a sanitised recording
+{"type":"system","subtype":"init","session_id":"synth-success","model":"claude-synthetic","claude_code_version":"2.1.284","permissionMode":"acceptEdits","apiKeySource":"none","tools":["Bash","Read","Edit"],"mcp_servers":[{"name":"synth-mcp","status":"connected"},{"name":"synth-off","status":"failed"}],"plugins":["plugin-a"]}
+{"type":"assistant","message":{"model":"claude-synthetic","content":[{"type":"text","text":"synthetic turn one"},{"type":"tool_use","name":"Bash","input":{"command":"true"}}]}}
+{"type":"assistant","message":{"model":"claude-synthetic","content":[{"type":"tool_use","name":"Read","input":{"path":"x"}},{"type":"tool_use","name":"this-tool-name-is-far-too-long-to-report-verbatim-because-it-exceeds-sixty-four","input":{}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}
+{"type":"result","subtype":"success","is_error":false,"num_turns":2,"duration_ms":1500,"stop_reason":"end_turn","modelUsage":{"claude-synthetic":{"inputTokens":100,"outputTokens":50,"cacheReadInputTokens":10,"cacheCreationInputTokens":5}},"total_cost_usd":0.0123,"permission_denials":[],"errors":[]}

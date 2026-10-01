@@ -28,10 +28,6 @@ import (
 const AdapterID = "builtin/claudecode"
 const maxProbeOutput = 1 << 20
 
-// ErrUnavailable keeps execution unavailable until Task 17 adds the owned
-// launch/session implementation. Probing never launches an inference task.
-var ErrUnavailable = errors.New("claude code launch is unavailable until launch integration")
-
 type binaryKey struct {
 	path  string
 	size  int64
@@ -120,25 +116,27 @@ func (a *claudeAdapter) probe(ctx context.Context, in adapter.ProbeInput, goos s
 }
 
 func (*claudeAdapter) Capabilities(p adapter.Probe) adapter.CapabilityRecord {
+	// Worker detachment and process-group ownership were established for
+	// the worker on Linux and macOS in Task 9; the mechanics are
+	// native-agnostic, so they hold for this adapter there too. Structured
+	// events and token usage are decoded from stream-json; quota and cost
+	// stay unknown because the native reports no authoritative remainder.
 	platform := adapter.Platform{OS: p.OS, WorkerDetachment: adapter.Unknown, ProcessTreeOwnership: adapter.Unknown}
-	if p.OS == "windows" {
+	switch p.OS {
+	case "linux", "darwin":
+		platform.WorkerDetachment, platform.ProcessTreeOwnership = adapter.Supported, adapter.Supported
+	case "windows":
 		platform.WorkerDetachment = adapter.Unsupported
 		platform.ProcessTreeOwnership = adapter.Unsupported
 	}
 	return adapter.CapabilityRecord{
 		SchemaVersion: 1, AdapterID: AdapterID, AdapterVersion: "0.1.0", RuntimeVersion: p.Version, Mode: "headless", ExecutionSurface: "native-cli-structured (print, stream-json)", HarnessID: "claude-code",
-		FidelityQualification: "native executable; launch fidelity awaits fixture validation",
+		FidelityQualification: "native executable; stream-json launch validated against synthetic fixtures",
 		Billing:               adapter.BillingCapabilities{Entitlement: "user-declared, NOT verified by MYTHHELM", IncludedOnlySupported: adapter.Unsupported, PaidOveragePrevention: adapter.Unknown},
 		HostIntegration:       adapter.HostIntegration{HerdrEmbedded: adapter.Unsupported, HerdrStateBridge: adapter.Unsupported, NativeInteractiveAttach: adapter.Unsupported},
-		Capabilities:          adapter.Capabilities{StructuredEvents: adapter.Unknown, Resume: adapter.Unsupported, LiveSteer: adapter.Unsupported, ApprovalBridge: adapter.Unsupported, UsageTokens: adapter.Unknown, QuotaRemaining: adapter.Unknown, HardMonetaryLimit: adapter.Unsupported, NativeSubagents: adapter.Unknown},
+		Capabilities:          adapter.Capabilities{StructuredEvents: adapter.Supported, Resume: adapter.Unsupported, LiveSteer: adapter.Unsupported, ApprovalBridge: adapter.Unsupported, UsageTokens: adapter.Supported, QuotaRemaining: adapter.Unknown, HardMonetaryLimit: adapter.Unsupported, NativeSubagents: adapter.Unknown},
 		Sandbox:               adapter.Sandbox{Status: adapter.Unsupported, Scope: "trusted-host: not contained"}, Platform: platform, Qualification: p.Compatibility + "; G05 not-passed",
 	}
-}
-func (*claudeAdapter) Prepare(context.Context, adapter.PrepareInput) (adapter.LaunchProposal, error) {
-	return adapter.LaunchProposal{}, ErrUnavailable
-}
-func (*claudeAdapter) Start(context.Context, adapter.LaunchProposal, adapter.Launcher) (adapter.Session, error) {
-	return nil, ErrUnavailable
 }
 
 // AuthEvidence contains only supported non-secret status fields and a hashed

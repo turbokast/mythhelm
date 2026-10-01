@@ -67,9 +67,11 @@ Run states and transitions. Any other transition is rejected by `supervisor.Tran
 | `verifying` | `ready_for_review` (reason empty when all checks passed, `unverified` under `--no-checks`), `failed` (`verification_failed`, `verification_unavailable`) |
 | `ready_for_review` | `applying` |
 | `applying` | `completed`, `blocked` (`branch_exists`, `base_missing`, `flags_unaccepted`) |
-| `stopping` | `cancelled`, `interrupted` (`stop_unconfirmed`) |
+| `stopping` | `cancelled`, `interrupted` (`stop_unconfirmed`), `blocked` (`billing_route_mismatch`) |
 | `interrupted` (`stop_unconfirmed`, `unresolved_descendants`, `worker_lost`) | `recovering` |
 | `recovering` | `executing`, `verifying`, `failed`, `interrupted` (`quarantined`) |
+
+A run that is already `stopping` still ends `blocked` when the attempt stopped for `billing_route_mismatch`: AC-4.4 is unconditional, and the route violation dominates the user's cancellation. The attempt stays `stopped` with the mismatch reason, so no evidence is lost.
 
 `blocked`, `failed`, `cancelled` and `completed` are terminal. The planning and integrating states are not entered (N4): with one candidate based on the admitted snapshot, the candidate commit is the combined revision, and the receipt says so.
 

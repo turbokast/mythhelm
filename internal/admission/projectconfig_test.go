@@ -64,6 +64,27 @@ func TestLoadProjectConfigStrictAndDigest(t *testing.T) {
 	}
 }
 
+func TestLoadProjectConfigValidatesAllowedTools(t *testing.T) {
+	t.Parallel()
+	good := "schema_version = 1\n[adapters.claudecode]\nallowed_tools = [\"Bash(go test *)\"]\n[[checks]]\nname = \"test\"\nargv = [\"true\"]\ntimeout = \"1s\"\n"
+	cfg, _, err := admission.ParseProjectConfig([]byte(good))
+	if err != nil || len(cfg.Adapters.ClaudeCode.AllowedTools) != 1 {
+		t.Fatalf("good rules = %+v, err = %v", cfg, err)
+	}
+	bad := []string{
+		"schema_version = 1\n[adapters.claudecode]\nallowed_tools = [\"\"]\n",
+		"schema_version = 1\n[adapters.claudecode]\nallowed_tools = [\"ok\", \"bad\x00rule\"]\n",
+		"schema_version = 1\n[adapters.claudecode]\nallowed_tools = [\"" + strings.Repeat("x", 1025) + "\"]\n",
+		"schema_version = 1\n[adapters.claudecode]\nallowed_tools = [\"--dangerously-skip-permissions\"]\n",
+		"schema_version = 1\n[adapters.claudecode]\nallowed_tools = [\"-p\"]\n",
+	}
+	for _, raw := range bad {
+		if _, _, err := admission.ParseProjectConfig([]byte(raw)); !errors.Is(err, admission.ErrProjectConfig) {
+			t.Fatalf("bad rules err = %v, want ErrProjectConfig", err)
+		}
+	}
+}
+
 func TestLoadProjectConfigRejectsSymlinkEscape(t *testing.T) {
 	dir := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "outside.toml")

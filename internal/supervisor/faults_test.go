@@ -139,7 +139,7 @@ func seedLaunch(t *testing.T, f fixture, scenario string, trustConfig ...string)
 	if err := supervisor.RecordLaunchIntent(t.Context(), j, journal.AttemptRow{AttemptID: d.AttemptID, RunID: d.RunID, TaskID: d.TaskID, AttemptNumber: 1, LaunchTokenSHA256: hex.EncodeToString(sum[:]), WorkspacePath: d.Workdir}, prod); err != nil {
 		t.Fatal(err)
 	}
-	proc, err := workers.Spawn(os.Args[0], f.state, d.RunID, d.AttemptID, workers.Launch{LaunchToken: token, TaskID: d.TaskID, AdapterID: d.Adapter.ID, Path: d.Proposal.Spec.Path, Args: d.Proposal.Spec.Args, Dir: d.Proposal.Spec.Dir, Env: d.Proposal.Spec.Env, PromptPath: filepath.Join(d.RunDir, "task.md"), StopLadder: d.Proposal.StopLadder})
+	proc, err := workers.Spawn(os.Args[0], f.state, d.RunID, d.AttemptID, workers.Launch{LaunchToken: token, TaskID: d.TaskID, AdapterID: d.Adapter.ID, Path: d.Proposal.Spec.Path, NativeSHA256: d.Probe.SHA256, Args: d.Proposal.Spec.Args, Dir: d.Proposal.Spec.Dir, Env: d.Proposal.Spec.Env, PromptPath: filepath.Join(d.RunDir, "task.md"), StopLadder: d.Proposal.StopLadder})
 	if err != nil {
 		t.Fatal(err)
 	}

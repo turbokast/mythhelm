@@ -33,7 +33,7 @@ var ErrCorruptSpool = errors.New("corrupt spool")
 var workerEvents = []string{
 	"attempt.state_changed", "attempt.launched", "attempt.native_session", "attempt.progress",
 	"attempt.permission_denied", "attempt.protocol_counters", "attempt.native_result",
-	"attempt.stop_requested", "attempt.stopped",
+	"attempt.stop_requested", "attempt.stopped", "attempt.native_error",
 }
 
 // AttemptRef locates an attempt's files in the state directory.

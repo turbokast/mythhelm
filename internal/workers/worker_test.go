@@ -94,16 +94,21 @@ func (a attempt) launch(t *testing.T, scenario string) Launch {
 	if err := os.WriteFile(prompt, []byte("# Task\nedit a file\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	probe, err := fake.New().Probe(context.Background(), adapter.ProbeInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	return Launch{
-		LaunchToken: "tok_" + a.attemptID,
-		TaskID:      "task_1",
-		AdapterID:   fake.New().Descriptor().ID,
-		Path:        lp.Spec.Path,
-		Args:        lp.Spec.Args,
-		Dir:         lp.Spec.Dir,
-		Env:         lp.Spec.Env,
-		PromptPath:  prompt,
-		StopLadder:  lp.StopLadder,
+		LaunchToken:  "tok_" + a.attemptID,
+		TaskID:       "task_1",
+		AdapterID:    fake.New().Descriptor().ID,
+		Path:         lp.Spec.Path,
+		NativeSHA256: probe.SHA256,
+		Args:         lp.Spec.Args,
+		Dir:          lp.Spec.Dir,
+		Env:          lp.Spec.Env,
+		PromptPath:   prompt,
+		StopLadder:   lp.StopLadder,
 	}
 }
 
@@ -556,6 +561,61 @@ func TestWorkerRefusesSecondLaunch(t *testing.T) {
 	}
 }
 
+func TestNativeErrorPoisonIsSticky(t *testing.T) {
+	w, sp := stubWorker(t)
+	var prog progress
+	var out outcome
+	for _, class := range []string{"authentication_failed", "rate_limit"} {
+		if err := w.observe(sp, adapter.NativeError{Class: class}, &prog, &out); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if out.nativeErr != "authentication_failed" {
+		t.Fatalf("poison = %q, want authentication_failed: a rate limit must not wash auth", out.nativeErr)
+	}
+	out = outcome{}
+	for _, class := range []string{"rate_limit", "billing_error"} {
+		if err := w.observe(sp, adapter.NativeError{Class: class}, &prog, &out); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if out.nativeErr != "billing_error" {
+		t.Fatalf("poison = %q, want billing_error", out.nativeErr)
+	}
+	out = outcome{}
+	if err := w.observe(sp, adapter.NativeError{Class: "rate_limit"}, &prog, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.nativeErr != "rate_limit" {
+		t.Fatalf("poison = %q, want rate_limit alone to stick", out.nativeErr)
+	}
+	// End to end through classification: poison plus a successful result
+	// and a clean exit still fails, while a lone rate limit yields.
+	res := adapter.Result{Subtype: "success"}
+	poisoned := outcome{nativeErr: "authentication_failed", result: &res, exit: adapter.NativeExit{Code: 0}, report: adapter.InterruptReport{Confirmed: true}}
+	if state, reason := classify(poisoned, false); state != "failed_native" || reason != "authentication_failed" {
+		t.Fatalf("classify = %s/%s, want failed_native/authentication_failed", state, reason)
+	}
+	poisoned.nativeErr = "rate_limit"
+	if state, _ := classify(poisoned, false); state != "succeeded_native" {
+		t.Fatalf("classify = %s, want succeeded_native after a mere rate limit", state)
+	}
+}
+
+func TestWorkerRefusesSwappedNative(t *testing.T) {
+	a := newAttempt(t)
+	l := a.launch(t, "happy")
+	l.NativeSHA256 = strings.Repeat("0", 64)
+	proc := a.spawn(t, l)
+	evs := a.waitDone(t)
+	if st, err := proc.Wait(); err != nil || !st.Success() {
+		t.Fatalf("worker exit = %v, %v (log %q)", st, err, a.workerLog())
+	}
+	if st, reason := final(t, evs); st != "failed_native" || reason != "launch_failed" {
+		t.Errorf("final state = %s (%s), want failed_native (launch_failed)", st, reason)
+	}
+}
+
 func TestLaunchFailureEndsAttempt(t *testing.T) {
 	a := newAttempt(t)
 	l := a.launch(t, "happy")
@@ -693,7 +753,7 @@ func TestAbortJoinsInFlightLadder(t *testing.T) {
 	pending := make(chan adapter.InterruptReport, 1)
 	pending <- adapter.InterruptReport{Sent: []adapter.StopSignal{adapter.StopInterrupt}, Confirmed: true}
 	cause := errors.New("spool failed")
-	out := outcome{stopBy: "user", pending: pending}
+	out := outcome{stopBy: "user", pending: pending, stopStarted: true}
 	if err := w.abort(context.Background(), sp, sess, out, cause); !errors.Is(err, cause) {
 		t.Fatalf("abort = %v, want the cause", err)
 	}
