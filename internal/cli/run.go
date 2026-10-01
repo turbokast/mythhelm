@@ -30,6 +30,10 @@ func runRun(args []string, stdio Stdio) error {
 	useCommitted := fs.Bool("use-committed", false, "run on the committed HEAD when the checkout has uncommitted changes")
 	rev := fs.String("rev", "", "run on this committed revision instead of HEAD")
 	trustConfig := fs.String("trust-project-config", "", "trust the admitted mythhelm.toml digest (sha256:<hex>)")
+	trustNative := fs.String("trust-native-config", "", "trust the inventoried native config digest (sha256:<hex>; claudecode only)")
+	stripCreds := fs.Bool("strip-credential-env", false, "remove credential-route variables from the native child only (claudecode only)")
+	declareEntitlement := fs.String("declare-entitlement", "", "record plan=<pro|max|team|enterprise>,extra-usage=disabled for this identity (claudecode only)")
+	allowUntested := fs.Bool("allow-untested-native-version", false, "run a native version without fixtures, labelled experimental (claudecode only)")
 	noChecks := fs.Bool("no-checks", false, "waive checks; result is unverified and exits 5")
 	keepGoing := fs.Bool("keep-going", false, "continue checks after an unavailable executable")
 	format := fs.String("format", "plain", "output format: plain or jsonl")
@@ -63,20 +67,24 @@ func runRun(args []string, stdio Stdio) error {
 		return finish(r, supervisor.Outcome{}, err)
 	}
 	req := admission.Request{
-		StateDir:           stateDir,
-		Repo:               cwd,
-		TaskFile:           *taskFile,
-		Adapter:            *adapterName,
-		Billing:            *billing,
-		ExecutionProfile:   *profile,
-		UseCommitted:       *useCommitted,
-		Rev:                *rev,
-		Host:               *host,
-		Scenario:           *scenario,
-		Env:                os.Environ(),
-		TrustProjectConfig: *trustConfig,
-		NoChecks:           *noChecks,
-		KeepGoing:          *keepGoing,
+		StateDir:                   stateDir,
+		Repo:                       cwd,
+		TaskFile:                   *taskFile,
+		Adapter:                    *adapterName,
+		Billing:                    *billing,
+		ExecutionProfile:           *profile,
+		UseCommitted:               *useCommitted,
+		Rev:                        *rev,
+		Host:                       *host,
+		Scenario:                   *scenario,
+		Env:                        os.Environ(),
+		TrustProjectConfig:         *trustConfig,
+		NoChecks:                   *noChecks,
+		KeepGoing:                  *keepGoing,
+		StripCredentialEnv:         *stripCreds,
+		TrustNativeConfig:          *trustNative,
+		DeclareEntitlement:         *declareEntitlement,
+		AllowUntestedNativeVersion: *allowUntested,
 	}
 	if !*nonInteractive {
 		req.Confirm = prompter(stdio)

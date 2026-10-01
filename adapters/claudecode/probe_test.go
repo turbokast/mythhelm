@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -33,11 +36,105 @@ func TestMain(m *testing.M) {
 		case "auth status":
 			fmt.Print(os.Getenv("FAKE_AUTH"))
 		default:
-			os.Exit(8)
+			fakeClaudeLaunch()
 		}
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
+}
+
+// fakeClaudeLaunch is the launch-mode fake native: it asserts the argv, the
+// stdin prompt and the child environment, then replays a fixture. Any
+// assertion failure exits 9; the replayed stream exits FAKE_EXIT (default 0).
+func fakeClaudeLaunch() {
+	fail := func(format string, args ...any) {
+		fmt.Fprintf(os.Stderr, "fakeclaude: "+format+"\n", args...)
+		os.Exit(9)
+	}
+	want := []string{"-p", "--output-format", "stream-json", "--verbose", "--input-format", "text",
+		"--permission-mode", "acceptEdits", "--permission-prompts", "none"}
+	argv := os.Args[1:]
+	if len(argv) < len(want) {
+		fail("argv too short: %q", argv)
+	}
+	for i, w := range want {
+		if argv[i] != w {
+			fail("argv[%d] = %q, want %q (argv %q)", i, argv[i], w, argv)
+		}
+	}
+	rest := argv[len(want):]
+	rules := strings.Split(os.Getenv("FAKE_ALLOWED_TOOLS"), "\x1f")
+	if os.Getenv("FAKE_ALLOWED_TOOLS") == "" {
+		rules = nil
+	}
+	if len(rules) == 0 {
+		if len(rest) != 0 {
+			fail("unexpected argv tail %q without allowed tools", rest)
+		}
+	} else {
+		if len(rest) != len(rules)+1 || rest[0] != "--allowedTools" {
+			fail("argv tail %q, want --allowedTools followed by %q", rest, rules)
+		}
+		for i, r := range rules {
+			if rest[i+1] != r {
+				fail("argv tail %q, want --allowedTools followed by %q", rest, rules)
+			}
+		}
+	}
+	if marker := os.Getenv("FAKE_PROMPT_MARKER"); marker != "" {
+		for _, arg := range argv {
+			if strings.Contains(arg, marker) {
+				fail("prompt marker %q appears in argv", marker)
+			}
+		}
+	}
+	prompt, err := io.ReadAll(io.LimitReader(os.Stdin, maxProbeOutput+1))
+	if err != nil || len(prompt) > maxProbeOutput {
+		fail("reading stdin: %v", err)
+	}
+	if path := os.Getenv("FAKE_PROMPT"); path != "" {
+		wantPrompt, err := os.ReadFile(path) // #nosec G304 G703 -- Fake helper reads only the path its isolated test fixture names.
+		if err != nil || string(prompt) != string(wantPrompt) {
+			fail("stdin prompt %q does not match %s", prompt, path)
+		}
+	}
+	for _, name := range []string{"ANTHROPIC_API_KEY", "AWS_SECRET_ACCESS_KEY"} {
+		for _, kv := range os.Environ() {
+			if strings.HasPrefix(kv, name+"=") {
+				fail("forbidden child variable %s is present", name)
+			}
+		}
+	}
+	for _, kv := range []string{"DISABLE_AUTOUPDATER=1", "CLAUDE_CODE_STARTUP_FAILURE_RESULTS=1"} {
+		if !slices.Contains(os.Environ(), kv) {
+			fail("child variable %s is missing", kv)
+		}
+	}
+	if attempt, ok := os.LookupEnv("MYTHHELM_ATTEMPT_ID"); !ok || attempt == "" || attempt != os.Getenv("FAKE_ATTEMPT") {
+		fail("MYTHHELM_ATTEMPT_ID = %q, want %q", attempt, os.Getenv("FAKE_ATTEMPT"))
+	}
+	if passthrough := os.Getenv("FAKE_PASSTHROUGH"); passthrough != "" {
+		if !slices.Contains(os.Environ(), passthrough) {
+			fail("passthrough %s is missing from the child", passthrough)
+		}
+	}
+	if stream := os.Getenv("FAKE_STREAM"); stream != "" {
+		raw, err := os.ReadFile(stream) // #nosec G304 G703 -- Fake helper reads only the path its isolated test fixture names.
+		if err != nil {
+			fail("reading stream %s: %v", stream, err)
+		}
+		for line := range strings.Lines(string(raw)) {
+			if line == "\n" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			fmt.Print(line)
+		}
+	}
+	if code := os.Getenv("FAKE_EXIT"); code != "" && code != "0" {
+		n, _ := strconv.Atoi(code)
+		os.Exit(n)
+	}
+	os.Exit(0)
 }
 
 func fakeProbeInput(t *testing.T, version string) adapter.ProbeInput {
@@ -151,6 +248,27 @@ func TestSettingsEnvCredentialBlocksNoStripOption(t *testing.T) {
 	}
 }
 
+func TestInventoryAdmittedProjectUsesBlobs(t *testing.T) {
+	t.Parallel()
+	home, workspace := t.TempDir(), t.TempDir()
+	// A dirty file on disk must not shadow the admitted blob.
+	writeConfig(t, workspace, filepath.Join(".claude", "settings.json"), `{"apiKeyHelper":"disk-helper"}`)
+	blobs := map[string][]byte{"project": []byte(`{"hooks":{"PreToolUse":[{"hooks":[{}]}]}}`)}
+	m, err := InventoryAdmittedProject(home, workspace, blobs, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.RequiresTrust || m.Hooks != 1 {
+		t.Fatalf("blob manifest = %+v, want the admitted hooks inventoried", m)
+	}
+	bad := map[string][]byte{"project": []byte(`{"apiKeyHelper":"blob-helper"}`)}
+	_, err = InventoryAdmittedProject(home, workspace, bad, nil)
+	var block *adapter.BlockedError
+	if !errors.As(err, &block) || block.Code != "native_settings_credential_override" || strings.Contains(err.Error(), "blob-helper") {
+		t.Fatalf("blob credential must block names only, got %v", err)
+	}
+}
+
 func TestApiKeyHelperBlocks(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	home, workspace := t.TempDir(), t.TempDir()
@@ -212,7 +330,7 @@ func TestNativeJSONRejectsAmbiguousAndMalformedSources(t *testing.T) {
 		t.Run(fmt.Sprintf("case_%02d_len_%d", i, len(raw)), func(t *testing.T) {
 			home, workspace := t.TempDir(), t.TempDir()
 			writeConfig(t, home, filepath.Join(".claude", "settings.json"), raw)
-			_, err := inventorySettings(home, workspace, filepath.Join(home, ".claude"), filepath.Join(home, ".claude.json"), "")
+			_, err := inventorySettings(home, workspace, filepath.Join(home, ".claude"), filepath.Join(home, ".claude.json"), "", nil)
 			var block *adapter.BlockedError
 			if !errors.As(err, &block) || block.Code != "native_config_unreadable" {
 				t.Fatalf("malformed/ambiguous config allowed: %v", err)
@@ -276,7 +394,7 @@ func TestNativeTrustDigestIncludesEveryWorkspaceAlias(t *testing.T) {
 	}
 	inventory := func() Manifest {
 		t.Helper()
-		m, e := inventorySettings(home, alias, filepath.Join(home, ".claude"), source, "")
+		m, e := inventorySettings(home, alias, filepath.Join(home, ".claude"), source, "", nil)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -304,12 +422,12 @@ func TestManagedFragmentsAndMCPAreInventoried(t *testing.T) {
 	home, workspace, managed := t.TempDir(), t.TempDir(), t.TempDir()
 	writeConfig(t, managed, filepath.Join("managed-settings.d", "10-hooks.json"), `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"managed-fixture-hook"}]}]}}`)
 	writeConfig(t, managed, "managed-mcp.json", `{"mcpServers":{"managed-fixture":{"command":"never-execute"}}}`)
-	m, err := inventorySettings(home, workspace, filepath.Join(home, ".claude"), filepath.Join(home, ".claude.json"), managed)
+	m, err := inventorySettings(home, workspace, filepath.Join(home, ".claude"), filepath.Join(home, ".claude.json"), managed, nil)
 	if err != nil || m.Hooks != 1 || len(m.MCPServers) != 1 || len(m.Digests) != 2 || !m.RequiresTrust {
 		t.Fatalf("managed executable sources omitted: %+v, %v", m, err)
 	}
 	writeConfig(t, managed, "managed-settings.json", `{"env":{"ANTHROPIC_API_KEY":"planted-managed-value"}}`)
-	_, err = inventorySettings(home, workspace, filepath.Join(home, ".claude"), filepath.Join(home, ".claude.json"), managed)
+	_, err = inventorySettings(home, workspace, filepath.Join(home, ".claude"), filepath.Join(home, ".claude.json"), managed, nil)
 	var block *adapter.BlockedError
 	if !errors.As(err, &block) || block.Code != "native_settings_credential_override" {
 		t.Fatalf("managed credential bypassed inventory: %v", err)
@@ -333,7 +451,7 @@ func TestSettingsNeverFollowCredentialSymlink(t *testing.T) {
 	if err := os.Symlink(target, filepath.Join(config, "settings.json")); err != nil {
 		t.Fatal(err)
 	}
-	_, err := inventorySettings(home, workspace, config, filepath.Join(home, ".claude.json"), "")
+	_, err := inventorySettings(home, workspace, config, filepath.Join(home, ".claude.json"), "", nil)
 	var block *adapter.BlockedError
 	if !errors.As(err, &block) || block.Code != "native_config_unreadable" {
 		t.Fatalf("native credential symlink allowed: %v", err)
@@ -349,7 +467,7 @@ func TestForceLoginMethodRejectsEverySetNonSubscriptionValue(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			home, workspace := t.TempDir(), t.TempDir()
 			writeConfig(t, home, filepath.Join(".claude", "settings.json"), tc.raw)
-			_, err := inventorySettings(home, workspace, filepath.Join(home, ".claude"), filepath.Join(home, ".claude.json"), "")
+			_, err := inventorySettings(home, workspace, filepath.Join(home, ".claude"), filepath.Join(home, ".claude.json"), "", nil)
 			if tc.allowed {
 				if err != nil {
 					t.Fatalf("native subscription login setting refused: %v", err)
@@ -370,7 +488,7 @@ func TestUserMCPDigestIgnoresUnconfiguredWorkspacePaths(t *testing.T) {
 	writeConfig(t, home, ".claude.json", `{"mcpServers":{"fixture":{"command":"same-command"}}}`)
 	manifests := make([]Manifest, 2)
 	for i := range manifests {
-		m, err := inventorySettings(home, t.TempDir(), filepath.Join(home, ".claude"), filepath.Join(home, ".claude.json"), "")
+		m, err := inventorySettings(home, t.TempDir(), filepath.Join(home, ".claude"), filepath.Join(home, ".claude.json"), "", nil)
 		if err != nil {
 			t.Fatal(err)
 		}

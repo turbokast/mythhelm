@@ -115,7 +115,7 @@ func runExit(o supervisor.Outcome) (ExitCode, string) {
 		return ExitOwnership, categories[ExitOwnership]
 	case supervisor.RunFailed:
 		switch o.Reason {
-		case "native_failed", "protocol_error", "recovered_partial":
+		case "native_failed", "protocol_error", "provider_limit", "recovered_partial":
 			return ExitNative, categories[ExitNative]
 		case "verification_failed":
 			return ExitVerify, "verification_failed"

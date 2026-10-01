@@ -28,7 +28,7 @@ func TestSettingsNeverReadNativeCredentialSymlink(t *testing.T) {
 	if _, err = unix.InotifyAddWatch(fd, target, unix.IN_OPEN|unix.IN_ACCESS); err != nil {
 		t.Fatal(err)
 	}
-	_, inventoryErr := inventorySettings(home, workspace, config, filepath.Join(home, ".claude.json"), "")
+	_, inventoryErr := inventorySettings(home, workspace, config, filepath.Join(home, ".claude.json"), "", nil)
 	if inventoryErr == nil {
 		t.Error("symlinked native config unexpectedly admitted")
 	}

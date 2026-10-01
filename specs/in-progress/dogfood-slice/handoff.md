@@ -117,7 +117,13 @@
 
 ## Task 17 — Claude Code launch, stream-json decoding and result mapping
 
-<!-- pending -->
+- **Produces**: `claudecode.Argv(bin, allowedTools)`; `Prepare`/`Start` with owned session; `mythhelm run --adapter claudecode` with `--strip-credential-env`, `--trust-native-config`, `--declare-entitlement`, `--allow-untested-native-version`. `builtin/claudecode` is registered in `workers.adapters`; `adapter.ClimbLadder` is the shared stop climb.
+- **Launch**: argv is `-p --output-format stream-json --verbose --input-format text --permission-mode acceptEdits --permission-prompts none` plus `--allowedTools` rules last; prompt on stdin only; child env is the allowlist plus trusted passthrough plus the three MYTHHELM deltas, denylist always winning; the executable hash is re-checked at `Prepare`. Ladder is SIGTERM (10 s) then SIGKILL (5 s).
+- **Decoding**: per-field status model, fail-closed; explicit JSON null means absent; required `session_id`/`apiKeySource`/`subtype`; cost kept as the native literal (never float64); unknown error classes become `native_error`; deterministic usage ordering with bounded keys. Duplicate init, assistant-before-init, success-without-init and >100 malformed frames are `protocol_error`; only an error result without init is accepted (startup failures). MCP selection walks to the nearest existing ancestor; `--` rules are refused.
+- **Mapping**: worker stops at once on `apiKeySource != "none"` (`stopped`/`billing_route_mismatch` → run `blocked`, exit 3), dominating even a concurrent user stop (`stopping → blocked`); auth classes → run `blocked`/`native_auth_or_billing` (exit 3); every native error is journaled as `attempt.native_error` evidence with sticky poison; success beats a lone rate limit, otherwise `failed_native`/`provider_limit` (exit 4); `protocol_error` → failed (exit 4). Stops discovered while draining record `stop_requested` in conclude (stopped is unreachable from running). The worker re-verifies the native SHA-256 at `Start`. The receipt reports trusted `allowed_tools`, hook count and the native trust grant.
+- **Admission**: credential screen before any native process; probe; blob-based project inventory (`InventoryAdmittedProject`) with explicit/stored/interactive trust; auth status with the exact child env (source checkout as cwd); fresh or stored declaration bound to the native identity; billing; `Prepare`. Fresh declarations and explicit native grants persist in the `admission.decided` transaction.
+- **Limits — Task 20**: stream shapes are synthetic until a recorded fixture lands; the AC-4.7 OAuth opt-in stays false (no trusted user-level config loader in the slice); the managed-policy/MDM source gap from Task 16 is unchanged; Q5 still unknown.
+- **For Task 19**: run-level claudecode tests live in `internal/supervisor/claudecode_test.go` (sidecar fakeclaude); the E2E suite can reuse that pattern for packaged runs.
 
 ## Task 18 — Offline demo and read-only doctor
 

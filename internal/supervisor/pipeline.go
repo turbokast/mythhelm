@@ -178,7 +178,7 @@ func (p *pipeline) run(ctx context.Context) error {
 		p.out.ActiveRun = active[i].RunID
 		return p.runTo(ctx, RunBlocked, "active_run_exists")
 	}
-	if err := p.append(ctx, "admission.decided", d.Record()); err != nil {
+	if err := p.appendAdmission(ctx); err != nil {
 		return err
 	}
 	if err := p.snapshot(ctx); err != nil {
@@ -188,6 +188,38 @@ func (p *pipeline) run(ctx context.Context) error {
 		return err
 	}
 	return p.attempt(ctx)
+}
+
+// appendAdmission journals the decision with its native side effects: a
+// fresh entitlement declaration and an explicit native-config trust grant
+// commit in the same transaction as the admission event, so a crash
+// between them cannot admit a run whose declaration never persisted.
+func (p *pipeline) appendAdmission(ctx context.Context) error {
+	d := p.d
+	at := time.Now().UTC()
+	ev, err := newEvent(d.RunID, "", "", "admission.decided", d.Record(), at)
+	if err != nil {
+		return err
+	}
+	var project func(*sql.Tx) error
+	if d.Declaration != nil || d.RecordNativeTrust {
+		decl, trust, digest, repo := d.Declaration, d.RecordNativeTrust, d.NativeConfigDigest, d.RepoIdentity
+		project = func(tx *sql.Tx) error {
+			if decl != nil {
+				if err := journal.InsertDeclaration(ctx, tx, *decl); err != nil {
+					return err
+				}
+			}
+			if trust {
+				return journal.InsertTrustGrant(ctx, tx, admission.NativeConfigTrustKind, repo, digest, at)
+			}
+			return nil
+		}
+	}
+	if err := p.prod.append(ctx, p.j, ev, project); err != nil {
+		return err
+	}
+	return p.flush(ctx)
 }
 
 // snapshot writes the task and clones the admitted revision (AC-3.3).
@@ -257,15 +289,16 @@ func (p *pipeline) attempt(ctx context.Context) error {
 
 	lp := d.Proposal
 	proc, err := workers.Spawn(p.exe, d.StateDir, d.RunID, d.AttemptID, workers.Launch{
-		LaunchToken: token,
-		TaskID:      d.TaskID,
-		AdapterID:   d.Adapter.ID,
-		Path:        lp.Spec.Path,
-		Args:        lp.Spec.Args,
-		Dir:         lp.Spec.Dir,
-		Env:         lp.Spec.Env,
-		PromptPath:  filepath.Join(d.RunDir, taskFile),
-		StopLadder:  lp.StopLadder,
+		LaunchToken:  token,
+		TaskID:       d.TaskID,
+		AdapterID:    d.Adapter.ID,
+		Path:         lp.Spec.Path,
+		NativeSHA256: d.Probe.SHA256,
+		Args:         lp.Spec.Args,
+		Dir:          lp.Spec.Dir,
+		Env:          lp.Spec.Env,
+		PromptPath:   filepath.Join(d.RunDir, taskFile),
+		StopLadder:   lp.StopLadder,
 	})
 	if err != nil {
 		// Spawn kills a worker it could not hand the launch to, and a
@@ -569,6 +602,13 @@ func (p *pipeline) conclude(ctx context.Context) error {
 		}
 		return p.runTo(ctx, RunInterrupted, reason)
 	case AttemptStopped:
+		// A worker-initiated billing stop is a policy block, not a
+		// cancellation, even when the run is already stopping because the
+		// user also asked: the route violation is the significant fact
+		// (AC-4.4), and stopping exits to blocked for exactly this reason.
+		if p.out.AttemptReason == "billing_route_mismatch" {
+			return p.runTo(ctx, RunBlocked, "billing_route_mismatch")
+		}
 		if !stopping {
 			if err := p.runTo(ctx, RunStopping, ""); err != nil {
 				return err
@@ -580,7 +620,19 @@ func (p *pipeline) conclude(ctx context.Context) error {
 			return p.runTo(ctx, RunCancelled, "")
 		}
 		if p.out.AttemptState == AttemptFailedNative {
-			return p.runTo(ctx, RunFailed, "native_failed")
+			// Classified native failures keep their reason at run level
+			// (design §6.4). Auth and billing classes block the run;
+			// protocol and provider failures fail it.
+			switch p.out.AttemptReason {
+			case "authentication_failed", "oauth_org_not_allowed", "account_on_hold", "billing_error":
+				return p.runTo(ctx, RunBlocked, "native_auth_or_billing")
+			case "protocol_error":
+				return p.runTo(ctx, RunFailed, "protocol_error")
+			case "provider_limit":
+				return p.runTo(ctx, RunFailed, "provider_limit")
+			default:
+				return p.runTo(ctx, RunFailed, "native_failed")
+			}
 		}
 		if err := p.runTo(ctx, RunVerifying, ""); err != nil {
 			return err

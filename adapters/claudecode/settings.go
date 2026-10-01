@@ -62,7 +62,25 @@ func InventorySettings(home, workspace string) (Manifest, error) {
 // InventorySettingsForEnv binds the config root to the admitted child env.
 // Callers must inventory the exact workspace the native will use.
 func InventorySettingsForEnv(home, workspace string, env []string) (Manifest, error) {
-	configDir := filepath.Join(home, ".claude")
+	configDir, claudeJSONPath, managed := configRoots(home, env)
+	return inventorySettings(home, workspace, configDir, claudeJSONPath, managed, nil)
+}
+
+// InventoryAdmittedProject inventories the design §6.2 file sources for a
+// run whose workspace clone does not exist yet: the admitted revision's
+// committed project blobs stand in for the project sources the native will
+// read from the clone. Keys are "project" (.claude/settings.json),
+// "project_local" (.claude/settings.local.json) and "project_mcp"
+// (.mcp.json); an absent key means the file is not in the revision. Every
+// other source is read from disk as usual, and workspace is still the
+// future native working directory for per-project MCP selection.
+func InventoryAdmittedProject(home, workspace string, blobs map[string][]byte, env []string) (Manifest, error) {
+	configDir, claudeJSONPath, managed := configRoots(home, env)
+	return inventorySettings(home, workspace, configDir, claudeJSONPath, managed, blobs)
+}
+
+func configRoots(home string, env []string) (configDir, claudeJSONPath, managed string) {
+	configDir = filepath.Join(home, ".claude")
 	custom := false
 	for _, kv := range env {
 		if value, ok := strings.CutPrefix(kv, "CLAUDE_CONFIG_DIR="); ok && value != "" {
@@ -70,11 +88,10 @@ func InventorySettingsForEnv(home, workspace string, env []string) (Manifest, er
 			custom = true
 		}
 	}
-	claudeJSONPath := filepath.Join(home, ".claude.json")
+	claudeJSONPath = filepath.Join(home, ".claude.json")
 	if custom {
 		claudeJSONPath = filepath.Join(configDir, ".claude.json")
 	}
-	managed := ""
 	switch runtime.GOOS {
 	case "linux":
 		managed = "/etc/claude-code"
@@ -83,10 +100,10 @@ func InventorySettingsForEnv(home, workspace string, env []string) (Manifest, er
 	case "windows":
 		managed = `C:\Program Files\ClaudeCode`
 	}
-	return inventorySettings(home, workspace, configDir, claudeJSONPath, managed)
+	return configDir, claudeJSONPath, managed
 }
 
-func inventorySettings(home, workspace, configDir, claudeJSONPath, managed string) (Manifest, error) {
+func inventorySettings(home, workspace, configDir, claudeJSONPath, managed string, blobs map[string][]byte) (Manifest, error) {
 	manifest := Manifest{Digests: map[string]string{}, MCPServers: []string{}}
 	if !filepath.IsAbs(home) || !filepath.IsAbs(workspace) || !filepath.IsAbs(configDir) {
 		return Manifest{}, settingsError("config_root")
@@ -107,7 +124,7 @@ func inventorySettings(home, workspace, configDir, claudeJSONPath, managed strin
 		}
 	}
 	for _, src := range sources {
-		raw, present, err := readSettings(src.path)
+		raw, present, err := readSource(src.name, src.path, blobs)
 		if err != nil {
 			return Manifest{}, settingsError(src.name)
 		}
@@ -236,6 +253,26 @@ func settingsBlock(code, field string) error {
 	return &adapter.BlockedError{Code: code, Field: field, Action: "fix it in native settings; MYTHHELM does not edit or strip native configuration"}
 }
 func settingsError(source string) error { return settingsBlock("native_config_unreadable", source) }
+
+// readSource reads one inventory source: an admitted blob overrides the
+// project sources when the caller supplied them, since the clone the
+// native will read does not exist at admission time.
+func readSource(name, path string, blobs map[string][]byte) ([]byte, bool, error) {
+	if blobs != nil {
+		switch name {
+		case "project", "project_local", "project_mcp":
+			raw, ok := blobs[name]
+			if !ok {
+				return nil, false, nil
+			}
+			if len(raw) > maxSettingsBytes {
+				return nil, true, settingsError(name)
+			}
+			return raw, true, nil
+		}
+	}
+	return readSettings(path)
+}
 func readSettings(path string) ([]byte, bool, error) {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {

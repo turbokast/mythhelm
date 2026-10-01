@@ -132,6 +132,18 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 	if v := nativeSession["mcp"]; v != nil {
 		mcp = v
 	}
+	tools := any(unknown)
+	if len(adm.AllowedTools) > 0 {
+		rules := make([]string, 0, len(adm.AllowedTools))
+		for _, rule := range adm.AllowedTools {
+			rules = append(rules, known(rule))
+		}
+		tools = rules
+	}
+	hooks := any(unknown)
+	if adm.NativeConfigDigest != "" {
+		hooks = adm.NativeHooks
+	}
 	taskTitle := unknown
 	taskPath := filepath.Join(j.StateDir(), "runs", runID, taskFile)
 	if b, err := os.ReadFile(taskPath); err == nil { // #nosec G304 -- state directory and generated run ID
@@ -155,9 +167,9 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 		"admitted_snapshot": map[string]any{"source_repo": known(run.SourceRepo), "branch": known(run.SourceBranch), "base_rev": known(run.BaseRev), "dirty_at_admission": dirty},
 		"execution_bundle": map[string]any{"harness": known(adm.Adapter.Harness), "adapter": known(run.AdapterID), "surface": known(adm.Adapter.Surface),
 			"native_version": known(adm.Native.Version), "native_sha256": known(adm.Native.SHA256), "model": eventValue(nativeSession, "model"),
-			"permission_mode": eventValue(nativeSession, "permission_mode"), "allowed_tools": unknown, "execution_profile": profile, "compatibility": known(adm.Native.Compatibility)},
+			"permission_mode": eventValue(nativeSession, "permission_mode"), "allowed_tools": tools, "execution_profile": profile, "compatibility": known(adm.Native.Compatibility)},
 		"fidelity_differences": fidelity,
-		"native_configuration": map[string]any{"settings_digests": digests, "hooks": unknown, "mcp_servers": mcp, "trust_grant": unknown},
+		"native_configuration": map[string]any{"settings_digests": digests, "hooks": hooks, "mcp_servers": mcp, "trust_grant": known(adm.NativeTrustGrant)},
 		"billing": map[string]any{"mode": known(run.BillingPosture), "qualified": qualified, "g05": known(adm.Billing.G05),
 			"credential_provenance": known(adm.Billing.CredentialProvenance), "entitlement_class": known(adm.Billing.EntitlementClass),
 			"entitlement_source": known(adm.Billing.EntitlementSource), "paid_continuation": known(adm.Billing.PaidContinuation),
@@ -231,7 +243,7 @@ func receiptExit(state, reason string) int {
 	case string(RunInterrupted):
 		return 6
 	case string(RunFailed):
-		if reason == "native_failed" || reason == "protocol_error" || reason == "recovered_partial" {
+		if reason == "native_failed" || reason == "protocol_error" || reason == "provider_limit" || reason == "recovered_partial" {
 			return 4
 		}
 		if reason == "verification_failed" || reason == "verification_unavailable" {

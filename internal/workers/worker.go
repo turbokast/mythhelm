@@ -7,6 +7,8 @@ package workers
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -22,6 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/turbokast/mythhelm/adapters/claudecode"
 	"github.com/turbokast/mythhelm/adapters/fake"
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/security"
@@ -58,22 +61,24 @@ var ErrNoProcess = errors.New("no such process")
 
 // adapters are the adapters a worker can start, by descriptor ID.
 var adapters = map[string]func() adapter.Adapter{
-	"builtin/fake": fake.New,
+	"builtin/fake":       fake.New,
+	"builtin/claudecode": claudecode.New,
 }
 
 // Launch is the admitted native launch the supervisor hands a worker on its
 // stdin. It never touches the disk, because Env may carry the AC-4.7 opt-in
 // credential.
 type Launch struct {
-	LaunchToken string             `json:"launch_token"`
-	TaskID      string             `json:"task_id"`
-	AdapterID   string             `json:"adapter_id"`
-	Path        string             `json:"path"`
-	Args        []string           `json:"args"`
-	Dir         string             `json:"dir"`
-	Env         []string           `json:"env"`
-	PromptPath  string             `json:"prompt_path"` // the task file, delivered on the native's stdin
-	StopLadder  []adapter.StopStep `json:"stop_ladder"`
+	LaunchToken  string             `json:"launch_token"`
+	TaskID       string             `json:"task_id"`
+	AdapterID    string             `json:"adapter_id"`
+	Path         string             `json:"path"`
+	NativeSHA256 string             `json:"native_sha256"` // pinned at probe; re-verified before exec
+	Args         []string           `json:"args"`
+	Dir          string             `json:"dir"`
+	Env          []string           `json:"env"`
+	PromptPath   string             `json:"prompt_path"` // the task file, delivered on the native's stdin
+	StopLadder   []adapter.StopStep `json:"stop_ladder"`
 }
 
 // Identity is worker.json: what the supervisor checks before it accepts a
@@ -325,6 +330,19 @@ func writeFileAtomic(dir, name string, body []byte) error {
 	return nil
 }
 
+func hashFile(path string) (string, error) {
+	f, err := os.Open(path) //nolint:gosec // The admitted launch names the native executable.
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
 func attemptMarker(attemptID string) string {
 	return attemptEnvVar + "=" + attemptID
 }
@@ -347,9 +365,16 @@ type worker struct {
 
 // outcome is what the worker learned about the native process.
 type outcome struct {
-	stopBy       string // requester of an active stop, or ""
+	stopBy string // requester of an active stop, or ""
+	// stopReason qualifies a worker-initiated stop (AC-4.4); user stops
+	// carry no reason. stopStarted records that the ladder ran or is
+	// running, so a stop is never requested twice; stopRecorded records
+	// that attempt.stop_requested reached the spool.
+	stopReason   string
+	stopStarted  bool
+	stopRecorded bool
 	result       *adapter.Result
-	nativeErr    string // class of the last NativeError observation
+	nativeErr    string // sticky poison: the first non-rate_limit class wins; rate_limit sticks only when alone
 	exited       bool   // exit holds the native's observed exit
 	exit         adapter.NativeExit
 	report       adapter.InterruptReport
@@ -447,8 +472,18 @@ func (w *worker) run(ctx context.Context) (retErr error) {
 	return w.conclude(ctx, sp, sess, out)
 }
 
-// start opens the prompt and launches the native process once through l.
+// start verifies the pinned native, opens the prompt and launches the
+// native process once through l.
 func (w *worker) start(ctx context.Context, l *launcher) (adapter.Session, error) {
+	// The last hash check before exec: a binary swapped between admission
+	// and spawn fails the launch instead of running unverified (I02).
+	if w.launch.NativeSHA256 == "" {
+		return nil, errors.New("launch carries no native digest")
+	}
+	digest, err := hashFile(w.launch.Path)
+	if err != nil || digest != w.launch.NativeSHA256 {
+		return nil, errors.New("native executable failed verification")
+	}
 	prompt, err := os.Open(w.launch.PromptPath)
 	if err != nil {
 		return nil, fmt.Errorf("opening the prompt: %w", err)
@@ -483,6 +518,7 @@ func (w *worker) abort(ctx context.Context, sp *spool, sess adapter.Session, out
 		if out.stopBy == "" {
 			out.stopBy = "worker"
 		}
+		out.stopStarted = true
 		out.report = sess.Interrupt(ctx)
 	}
 	if !out.exited {
@@ -525,6 +561,14 @@ func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session)
 			if err := w.observe(sp, ob, &prog, &out); err != nil {
 				return out, err
 			}
+			// A worker-initiated stop (AC-4.4) starts its ladder here;
+			// after the native exited there is nothing left to stop, but
+			// the requester and reason are still recorded.
+			if out.stopBy != "" && !out.stopStarted && !out.exited {
+				if err := w.requestStop(ctx, sp, sess, &out, out.stopBy, out.stopReason); err != nil {
+					return out, err
+				}
+			}
 		case exit := <-done:
 			out.exit, out.exited, done = exit, true, nil
 			// Observations is closed before Done fires; drain what is queued
@@ -553,21 +597,35 @@ func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session)
 			if !ok {
 				continue
 			}
-			out.stopBy = by
-			if err := sp.emit(evStopRequested, map[string]string{"requested_by": by}); err != nil {
+			if err := w.requestStop(ctx, sp, sess, &out, by, ""); err != nil {
 				return out, err
 			}
-			if err := emitState(sp, "stop_requested", ""); err != nil {
-				return out, err
-			}
-			w.log.Info("stop requested", "requested_by", by)
-			pending := make(chan adapter.InterruptReport, 1)
-			out.pending = pending
-			w.pendingStop = pending
-			go func() { pending <- sess.Interrupt(ctx) }()
 		}
 	}
 	return out, prog.flush(sp, true)
+}
+
+// requestStop records one stop request and runs the ladder for it. The first
+// requester stands; later requests join the running ladder through pending.
+func (w *worker) requestStop(ctx context.Context, sp *spool, sess adapter.Session, out *outcome, by, reason string) error {
+	if out.stopStarted {
+		return nil
+	}
+	out.stopStarted = true
+	out.stopBy, out.stopReason = by, reason
+	if err := sp.emit(evStopRequested, map[string]string{"requested_by": by}); err != nil {
+		return err
+	}
+	if err := emitState(sp, "stop_requested", ""); err != nil {
+		return err
+	}
+	out.stopRecorded = true
+	w.log.Info("stop requested", "requested_by", by)
+	pending := make(chan adapter.InterruptReport, 1)
+	out.pending = pending
+	w.pendingStop = pending
+	go func() { pending <- sess.Interrupt(ctx) }()
+	return nil
 }
 
 // observe maps one observation to its event (design §5).
@@ -578,11 +636,21 @@ func (w *worker) observe(sp *spool, ob adapter.Observation, prog *progress, out 
 		if mcp == nil {
 			mcp = []adapter.MCPServer{}
 		}
-		return sp.emit(evNativeSession, map[string]any{
+		if err := sp.emit(evNativeSession, map[string]any{
 			"session_id": o.SessionID, "model": o.Model, "native_version": o.NativeVersion,
 			"permission_mode": o.PermissionMode, "auth_source": o.APIKeySource,
 			"tool_count": o.ToolCount, "mcp": mcp, "plugin_count": o.PluginCount,
-		})
+		}); err != nil {
+			return err
+		}
+		// AC-4.4: a session that did not start on the admitted route is
+		// interrupted immediately. The first requester stands: a user stop
+		// already in flight keeps the outcome, with this session's source
+		// preserved as evidence above.
+		if o.APIKeySource != "none" && out.stopBy == "" {
+			out.stopBy, out.stopReason = "worker", "billing_route_mismatch"
+		}
+		return nil
 	case adapter.Progress:
 		prog.add(o)
 		return prog.flush(sp, false)
@@ -593,7 +661,19 @@ func (w *worker) observe(sp *spool, ob adapter.Observation, prog *progress, out 
 	case adapter.PermissionDenied:
 		return sp.emit(evPermissionDenied, map[string]string{"tool_name": o.ToolName})
 	case adapter.NativeError:
-		out.nativeErr = o.Class
+		// A native error is evidence, not just classification input: it is
+		// journaled so a policy block (or a swallowed decoder failure)
+		// survives whatever the attempt's terminal state says.
+		if err := sp.emit(evNativeError, map[string]string{"class": o.Class}); err != nil {
+			return err
+		}
+		// Poison is sticky: a later rate limit never washes an earlier
+		// auth, billing, protocol or unrecognised class, while a later
+		// auth class still overrides an earlier rate limit (design §6.4:
+		// the auth row precedes the success row unconditionally).
+		if o.Class != "rate_limit" || out.nativeErr == "" {
+			out.nativeErr = o.Class
+		}
 	case adapter.Result:
 		out.result = &o
 	case adapter.ProtocolCounters:
@@ -614,8 +694,22 @@ func (w *worker) conclude(ctx context.Context, sp *spool, sess adapter.Session, 
 	if sp.terminalWritten {
 		return nil
 	}
-	if out.stopBy == "" && sess != nil {
-		// The native exited by itself; anything left in its group is
+	if out.stopBy != "" && !out.stopRecorded {
+		// The stop was recorded only after the native exited (a
+		// worker-initiated stop discovered while draining, or an abort).
+		// The attempt still passes through stop_requested on its way to
+		// its terminal state; stopped is unreachable from running.
+		if err := sp.emit(evStopRequested, map[string]string{"requested_by": out.stopBy}); err != nil {
+			return err
+		}
+		if err := emitState(sp, "stop_requested", ""); err != nil {
+			return err
+		}
+		out.stopRecorded = true
+	}
+	if !out.stopStarted && sess != nil {
+		// No ladder has run: the native exited by itself, or a stop was
+		// recorded only after its exit. Anything left in its group is
 		// stopped before anything else, even if the spool then fails.
 		// Nothing is sent when the group is already gone.
 		out.report = sess.Interrupt(ctx)
@@ -689,13 +783,20 @@ func classify(out outcome, unresolved bool) (state, reason string) {
 	case out.aborted:
 		return "interrupted", "worker_persistence_failed"
 	case out.stopBy != "":
-		return "stopped", ""
-	case out.nativeErr != "":
+		return "stopped", out.stopReason
+	case out.nativeErr != "" && out.nativeErr != "rate_limit":
+		// Auth and billing classes, protocol violations and unrecognised
+		// errors fail the attempt whatever the result frame says.
 		return "failed_native", out.nativeErr
+	case res != nil && !res.IsError && res.Subtype == "success" && exit.Code == 0 && exit.Signal == "":
+		// A successful result after a mere rate limit is still a success
+		// (design §6.4: the success row wins over the rate-limit row).
+		return "succeeded_native", ""
+	case out.nativeErr != "":
+		// Only rate_limit reaches here.
+		return "failed_native", "provider_limit"
 	case res != nil && (res.IsError || res.Subtype != "success"):
 		return "failed_native", res.Subtype
-	case res != nil && exit.Code == 0 && exit.Signal == "":
-		return "succeeded_native", ""
 	case res == nil && exit.Code == 0 && exit.Signal == "":
 		return "failed_native", "result_unobserved"
 	case exit.Signal != "":
@@ -722,10 +823,12 @@ func nativeResult(out outcome) map[string]any {
 		"result_observed": out.result != nil,
 		"subtype":         nil, "is_error": nil, "num_turns": nil, "duration_ms": nil, "stop_reason": nil,
 		"usage_native_reported": nil, "retail_equivalent_estimate_usd": nil, "denials": nil,
+		"error_count": nil, "startup_failure_reason": nil,
 	}
 	if r := out.result; r != nil {
 		p["subtype"], p["is_error"], p["num_turns"], p["duration_ms"] = r.Subtype, r.IsError, r.NumTurns, r.DurationMS
 		p["stop_reason"], p["retail_equivalent_estimate_usd"] = orNull(r.StopReason), orNull(r.CostUSD)
+		p["error_count"], p["startup_failure_reason"] = r.ErrorCount, orNull(r.StartupFailureReason)
 		if r.Tokens != nil {
 			p["usage_native_reported"] = r.Tokens
 		}

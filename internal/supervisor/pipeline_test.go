@@ -37,6 +37,13 @@ const cliEnv = "MYTHHELM_TEST_CLI"
 // TestMain lets the test binary play every process of a run: the CLI, the
 // worker (__worker) and the fake agent (__fake-agent).
 func TestMain(m *testing.M) {
+	// A copy of the test binary installed as `claude` on PATH plays the
+	// native for claudecode runs. Its behaviour comes from the
+	// fakeclaude.json sidecar in its own directory: PATH and the child
+	// environment cannot carry fixture selectors through the allowlist.
+	if base := filepath.Base(os.Args[0]); base == "claude" || base == "claude.exe" {
+		os.Exit(fakeClaudeMain())
+	}
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "__check":
