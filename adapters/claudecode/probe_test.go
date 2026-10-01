@@ -197,6 +197,12 @@ func TestNativeJSONRejectsAmbiguousAndMalformedSources(t *testing.T) {
 		`{"env":{"ANTHROPIC_API_KEY":"planted"},"env":{}}`,
 		`{"hooks":{},"hooks":{"SessionStart":[]}}`,
 		`{"forceLoginMethod":"console","forceLoginMethod":"claudeai"}`,
+		`{"apiKeyHelper":"fixture-helper","APIKeyHelper":null}`,
+		`{"env":{"ANTHROPIC_BASE_URL":"fixture-route"},"Env":null}`,
+		`{"forceLoginMethod":"console","ForceLoginMethod":"claudeai"}`,
+		`{"policyHelper":"fixture-helper","PolicyHelper":null}`,
+		"{\"apiKeyHelper\":\"fixture-helper\",\"apiKeyHelper\":null}",
+		`{"mcpServers":{"a":{}},"mcpſervers":{"b":{}}}`,
 		`{"env":[]} `,
 		`[]`,
 		`{"broken":`,
@@ -212,6 +218,39 @@ func TestNativeJSONRejectsAmbiguousAndMalformedSources(t *testing.T) {
 				t.Fatalf("malformed/ambiguous config allowed: %v", err)
 			}
 		})
+	}
+}
+
+func TestFoldKeyMatchesEqualFold(t *testing.T) {
+	t.Parallel()
+	folded := [][2]string{
+		{"apiKeyHelper", "APIKeyHelper"},
+		{"env", "ENV"},
+		{"apiKeyHelper", "apiKeyHelper"}, // Kelvin sign folds with K
+		{"mcpServers", "mcpſervers"},     // long s folds with s/S
+		{"subscriptionType", "ſubscriptionType"},
+	}
+	for _, pair := range folded {
+		if !strings.EqualFold(pair[0], pair[1]) {
+			t.Fatalf("fixture pair is not fold-equal: %q %q", pair[0], pair[1])
+		}
+		if foldKey(pair[0]) != foldKey(pair[1]) {
+			t.Errorf("foldKey splits fold-equal keys: %q %q", pair[0], pair[1])
+		}
+	}
+	distinct := [][2]string{
+		{"env", "env "},
+		{"apiKeyHelper", "apiKeyHelpers"},
+		{"mcpServers", "mcServers"},
+		{"env", "énv"},
+	}
+	for _, pair := range distinct {
+		if strings.EqualFold(pair[0], pair[1]) {
+			t.Fatalf("fixture pair unexpectedly fold-equal: %q %q", pair[0], pair[1])
+		}
+		if foldKey(pair[0]) == foldKey(pair[1]) {
+			t.Errorf("foldKey merges distinct keys: %q %q", pair[0], pair[1])
+		}
 	}
 }
 

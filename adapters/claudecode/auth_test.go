@@ -174,12 +174,15 @@ func TestAuthStatusRejectsUnknownOrMalformedEvidence(t *testing.T) {
 	sum := sha256.Sum256(binary)
 	good := fmt.Sprintf(`{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","subscriptionType":"max","configDirectory":%q,"orgId":"fixture-id"}`, t.TempDir())
 	for name, raw := range map[string]string{
-		"duplicate auth route": strings.Replace(good, `"authMethod":"claude.ai"`, `"authMethod":"console","authMethod":"claude.ai"`, 1),
-		"duplicate loggedIn":   strings.Replace(good, `"loggedIn":true`, `"loggedIn":false,"loggedIn":true`, 1),
-		"unknown subscription": strings.Replace(good, `"subscriptionType":"max"`, `"subscriptionType":"max-planted-secret"`, 1),
-		"relative config":      strings.Replace(good, fmt.Sprintf(`"configDirectory":%q`, extractConfigDirectory(t, good)), `"configDirectory":"relative"`, 1),
-		"wrong loggedIn type":  strings.Replace(good, `"loggedIn":true`, `"loggedIn":"true"`, 1),
-		"deep unknown field":   strings.TrimSuffix(good, "}") + `,"unknown":` + strings.Repeat("[", 65) + `0` + strings.Repeat("]", 65) + `}`,
+		"duplicate auth route":              strings.Replace(good, `"authMethod":"claude.ai"`, `"authMethod":"console","authMethod":"claude.ai"`, 1),
+		"duplicate loggedIn":                strings.Replace(good, `"loggedIn":true`, `"loggedIn":false,"loggedIn":true`, 1),
+		"case-folded auth route":            strings.Replace(good, `"authMethod":"claude.ai"`, `"authMethod":"console","AuthMethod":"claude.ai"`, 1),
+		"case-folded loggedIn":              strings.Replace(good, `"loggedIn":true`, `"loggedIn":false,"LoggedIn":true`, 1),
+		"case-folded subscription (long-s)": strings.Replace(good, `"subscriptionType":"max"`, `"subscriptionType":"planted","ſubscriptionType":"max"`, 1),
+		"unknown subscription":              strings.Replace(good, `"subscriptionType":"max"`, `"subscriptionType":"max-planted-secret"`, 1),
+		"relative config":                   strings.Replace(good, fmt.Sprintf(`"configDirectory":%q`, extractConfigDirectory(t, good)), `"configDirectory":"relative"`, 1),
+		"wrong loggedIn type":               strings.Replace(good, `"loggedIn":true`, `"loggedIn":"true"`, 1),
+		"deep unknown field":                strings.TrimSuffix(good, "}") + `,"unknown":` + strings.Repeat("[", 65) + `0` + strings.Repeat("]", 65) + `}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			env := []string{"GO_WANT_FAKECLAUDE=1", "GORACE=atexit_sleep_ms=0", "FAKE_AUTH=" + raw}

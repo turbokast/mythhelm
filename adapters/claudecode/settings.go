@@ -263,6 +263,10 @@ func readSettings(path string) ([]byte, bool, error) {
 // validObject checks syntax, depth and duplicate object keys without decoding
 // string values. In particular, account/session values in .claude.json never
 // enter a decoded generic map or an account-bearing Go struct.
+//
+// Duplicate detection is case-fold aware: encoding/json matches struct fields
+// under Unicode simple folding while native parsers are case-sensitive, so
+// fold-equivalent keys in one object are rejected as ambiguous (I02, I04).
 func validObject(raw []byte) bool {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 || len(raw) > maxSettingsBytes || raw[0] != '{' || !utf8.Valid(raw) || !json.Valid(raw) {
@@ -305,6 +309,8 @@ func validObject(raw []byte) bool {
 				if json.Unmarshal(raw[start:i+1], &key) != nil {
 					return false
 				}
+				// encoding/json matches fields case-insensitively; native parsers do not.
+				key = foldKey(key)
 				f := &stack[len(stack)-1]
 				if f.keys[key] {
 					return false
@@ -315,6 +321,22 @@ func validObject(raw []byte) bool {
 		}
 	}
 	return true
+}
+
+// foldKey maps each rune to the smallest member of its Unicode simple-fold
+// orbit, so foldKey(a) == foldKey(b) exactly when strings.EqualFold(a, b).
+// strings.ToLower alone is insufficient: the orbit also covers characters such
+// as ſ (U+017F) and the Kelvin sign (U+212A), which encoding/json folds too.
+func foldKey(s string) string {
+	return strings.Map(func(r rune) rune {
+		lowest := r
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			if f < lowest {
+				lowest = f
+			}
+		}
+		return lowest
+	}, s)
 }
 
 func managedFragments(path string) ([]os.DirEntry, error) {

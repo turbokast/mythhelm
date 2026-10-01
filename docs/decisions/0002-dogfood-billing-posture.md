@@ -35,8 +35,10 @@ that claim or the native service's enforcement.
    subscription types. It retains typed non-secret evidence and `identity_ref`.
    Email and organisation name are not decoded; raw organisation ID is used only
    to compute the hash. Raw config-directory text is excluded from durable JSON.
-   Duplicate keys, malformed types, excessive nesting and unrecognised evidence
-   fail closed. Probes have bounded output and time, and never launch inference.
+   Duplicate keys, including case-folded equivalents that encoding/json would
+   match to one field, malformed types, excessive nesting and unrecognised
+   evidence fail closed. Probes have bounded output and time, and never launch
+   inference.
 5. Credential-route environment overrides block with names only. The explicit
    strip option changes the child's environment and records removal names. Native
    settings have no strip option: helpers, conflicting login methods and credential
