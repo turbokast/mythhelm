@@ -2,7 +2,7 @@
 
 - Status: proposed
 - Date: 2026-10-01
-- Scope: MH-1 / dogfood-slice Task 16; requirements FR-4, design §6.1–6.2.
+- Scope: MH-1 / dogfood-slice Tasks 16–17; requirements FR-4, design §6.1–6.2.
 - Maintainer decisions recorded in the approved scratchpad: 2026-09-29, Q1 and Q7.
 
 ## Context
@@ -46,10 +46,18 @@ that claim or the native service's enforcement.
    env settings block, directing the user to fix their native setup.
 6. The maintainer's AC-4.7 OAuth-token exception is a trusted **user-level** choice.
    A caller may pass the opaque complete environment entry to the native child
-   only after that opt-in. Project configuration cannot grant it. Task 17 wires
-   the user configuration and records `native-subscription-token` provenance;
-   first-party subscription status is still required. No token enters the journal,
-   receipt, settings manifest or diagnostics.
+   only after that opt-in. Project configuration cannot grant it. No token enters
+   the journal, receipt, settings manifest or diagnostics.
+
+   Amendment (Task 17, 2026-10-01): Task 17 did **not** wire the user
+   configuration, so the exception remains unavailable and doubly closed.
+   Admission passes `oauthOptIn=false`, so `ResolveCredentialEnv` never
+   preserves the entry and the route still blocks with names only; launch
+   `childEnv` preserves an entry only when admission granted it and never
+   adds one itself. No `native-subscription-token` provenance is recorded
+   because no grant can exist yet. Wiring the opt-in needs a fresh
+   maintainer decision; until then the exception clause above describes
+   intent, not behavior.
 7. The settings inventory records digests and counts/names, excluding native
    commands, endpoints, environment values and account/session data. Every native
    settings or MCP source requires a digest-bound execution trust grant. Account
