@@ -37,8 +37,9 @@ that claim or the native service's enforcement.
    to compute the hash. Raw config-directory text is excluded from durable JSON.
    Duplicate keys, including case-folded equivalents that encoding/json would
    match to one field, malformed types, excessive nesting and unrecognised
-   evidence fail closed. Probes have bounded output and time, and never launch
-   inference.
+   evidence fail closed. Fold-aware rejection applies at all object levels as a
+   fail-closed over-approximation, including case-sensitive map keys. Probes
+   have bounded output and time, and never launch inference.
 5. Credential-route environment overrides block with names only. The explicit
    strip option changes the child's environment and records removal names. Native
    settings have no strip option: helpers, conflicting login methods and credential

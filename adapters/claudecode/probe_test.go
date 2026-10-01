@@ -193,7 +193,7 @@ func TestClaudeJSONAccountDataNeverDecoded(t *testing.T) {
 
 func TestNativeJSONRejectsAmbiguousAndMalformedSources(t *testing.T) {
 	t.Parallel()
-	for _, raw := range []string{
+	for i, raw := range []string{
 		`{"env":{"ANTHROPIC_API_KEY":"planted"},"env":{}}`,
 		`{"hooks":{},"hooks":{"SessionStart":[]}}`,
 		`{"forceLoginMethod":"console","forceLoginMethod":"claudeai"}`,
@@ -209,7 +209,7 @@ func TestNativeJSONRejectsAmbiguousAndMalformedSources(t *testing.T) {
 		string([]byte{'{', '"', 'x', '"', ':', '"', 0xff, '"', '}'}),
 		`{"nested":` + strings.Repeat("[", 65) + `0` + strings.Repeat("]", 65) + `}`,
 	} {
-		t.Run(fmt.Sprintf("case_%d", len(raw)), func(t *testing.T) {
+		t.Run(fmt.Sprintf("case_%02d_len_%d", i, len(raw)), func(t *testing.T) {
 			home, workspace := t.TempDir(), t.TempDir()
 			writeConfig(t, home, filepath.Join(".claude", "settings.json"), raw)
 			_, err := inventorySettings(home, workspace, filepath.Join(home, ".claude"), filepath.Join(home, ".claude.json"), "")

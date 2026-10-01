@@ -267,6 +267,9 @@ func readSettings(path string) ([]byte, bool, error) {
 // Duplicate detection is case-fold aware: encoding/json matches struct fields
 // under Unicode simple folding while native parsers are case-sensitive, so
 // fold-equivalent keys in one object are rejected as ambiguous (I02, I04).
+// Canonicalization applies at all levels, including case-sensitive map keys,
+// as a fail-closed over-approximation: schema-aware per-level folding would
+// risk drift between the validator and the decode structs.
 func validObject(raw []byte) bool {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 || len(raw) > maxSettingsBytes || raw[0] != '{' || !utf8.Valid(raw) || !json.Valid(raw) {
@@ -326,7 +329,8 @@ func validObject(raw []byte) bool {
 // foldKey maps each rune to the smallest member of its Unicode simple-fold
 // orbit, so foldKey(a) == foldKey(b) exactly when strings.EqualFold(a, b).
 // strings.ToLower alone is insufficient: the orbit also covers characters such
-// as ſ (U+017F) and the Kelvin sign (U+212A), which encoding/json folds too.
+// as ſ (U+017F) and the Kelvin sign (U+212A), which encoding/json folds too
+// (see encoding/json/fold.go: foldName equality is bytes.EqualFold).
 func foldKey(s string) string {
 	return strings.Map(func(r rune) rune {
 		lowest := r
