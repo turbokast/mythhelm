@@ -139,12 +139,13 @@ type Decision struct {
 	NoChecks      bool
 	KeepGoing     bool
 
-	Task     Task
-	Snapshot Snapshot
-	Profile  Profile
-	Adapter  adapter.Descriptor
-	Probe    adapter.Probe
-	Proposal adapter.LaunchProposal
+	NativeAuth *AuthEvidence
+	Task       Task
+	Snapshot   Snapshot
+	Profile    Profile
+	Adapter    adapter.Descriptor
+	Probe      adapter.Probe
+	Proposal   adapter.LaunchProposal
 }
 
 // requiredCapabilities are the capabilities a run cannot proceed without; an
@@ -166,12 +167,11 @@ func Decide(ctx context.Context, req Request) (Decision, error) {
 		return Decision{}, err
 	}
 	d.Task = task
+	if req.Billing == BillingSubscriptionOnly {
+		return Decision{}, strictBillingBlock()
+	}
 	if err := checkCapabilityFlags(req); err != nil {
 		return Decision{}, err
-	}
-	if req.Billing == BillingSubscriptionOnly {
-		return Decision{}, &BlockedError{Code: "entitlement_qualification_unavailable", Field: "--billing subscription-only",
-			Action: "MYTHHELM cannot yet verify an included-only entitlement, so strict subscription-only never admits a run"}
 	}
 	if d.Profile, err = consentProfile(req); err != nil {
 		return Decision{}, err
@@ -404,6 +404,7 @@ func short(rev string) string {
 type Record struct {
 	Adapter              adapter.Descriptor       `json:"adapter"`
 	Native               adapter.Probe            `json:"native"`
+	NativeAuth           *AuthEvidence            `json:"native_auth,omitempty"`
 	Snapshot             Snapshot                 `json:"snapshot"`
 	Task                 TaskRecord               `json:"task"`
 	DataDestinations     []string                 `json:"data_destinations"`
@@ -443,6 +444,7 @@ func (d Decision) Record() Record {
 	return Record{
 		Adapter:              d.Adapter,
 		Native:               d.Probe,
+		NativeAuth:           d.NativeAuth,
 		Snapshot:             d.Snapshot,
 		Task:                 TaskRecord{SHA256: d.Task.SHA256, Bytes: len(d.Task.Content)},
 		DataDestinations:     dataDestinations(d.Adapter.ID),

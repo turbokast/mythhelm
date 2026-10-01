@@ -479,7 +479,7 @@
 - **Spec deviations**: `internal/admission/admission.go` exports the task-title parser so the receipt can read the digest-checked `task.md` without journaling task text; `internal/journal/journal.go` exposes the opened state directory. `internal/journal/projections.go`, `internal/supervisor/pipeline.go` and `internal/cli/dispatch.go` add the read projections, terminal receipt step and command registration. `internal/supervisor/identity_error_windows.go`, `internal/supervisor/identity_error_other.go` and `internal/supervisor/identity_error_windows_test.go` restrict the Windows worker identity retry to transient sharing violations during atomic replacement (CI exposed an existing race). Fields the current adapters cannot establish remain `"unknown"` (including hooks and allowed tools).
 - **Files modified**: `internal/admission/admission.go`, `internal/cli/dispatch.go`, `internal/cli/review.go`, `internal/cli/review_test.go`, `internal/journal/journal.go`, `internal/journal/projections.go`, `internal/supervisor/identity_error_other.go`, `internal/supervisor/identity_error_windows.go`, `internal/supervisor/identity_error_windows_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/receipt.go`, `internal/supervisor/receipt_test.go`, `specs/in-progress/dogfood-slice/tasks.md`, `specs/in-progress/dogfood-slice/handoff.md`.
 
-### Task 14 — Guarded apply
+### Task 14 — Guarded apply ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -501,6 +501,10 @@
   - `TestApplyDoesNotRunUserHooks`: a `reference-transaction` hook in the user repo, which would touch a marker file, does not run.
 - **Test plan**: temp user repos; simulate a crash by journaling the intent and then running apply again.
 - **Invariants touched**: I08, G03, §11.7, §7.5.
+- **Status**: ✅ Completed — guarded branch creation, crash reconciliation and version 2 receipt; PR #52.
+- **Implementation**: `apply` requires a ready candidate, a valid new branch, an existing admitted base commit, and explicit acceptance of validation flags or unverified checks. It journals intent before object import and atomic branch creation; a matching branch completes without another fetch, and in-flight policy conflicts become terminal blocked with a refreshed receipt. It preserves the journal-verified version 1 receipt and atomically writes and journals version 2 with the branch effect. Tests cover source fingerprint, existing/concurrent branches, run state, flags, unverified acceptance, crash reconciliation, invalid names, user hooks and the success/refusal `apply.result` JSONL schema. Commits f1b40c9, 90f3f03, bc3ef30 8b812a1 and bb52b37.
+- **Spec deviations**: `internal/workspace/apply.go` imports objects with a source-only, no-force fetch and creates the branch in a prepared, no-deref `update-ref` transaction, rejecting symbolic destinations while the ref lock is held. The design's destination fetch refspec can fast-forward a branch created concurrently after preflight; the atomic creation closes that race. `internal/workspace/apply_test.go` tests ordinary and symbolic competing writes and reflog shorthand rejection. `internal/workspace/git.go` shares the safe command factory with the interactive ref transaction. `docs/decisions/0006-guarded-branch-apply.md` records this security and persistence decision. `internal/supervisor/apply.go` owns apply orchestration and journal events under the run owner lock; `internal/supervisor/apply_test.go` exercises the real fake-adapter CLI and crash path. `internal/cli/dispatch.go` registers the command. Initial apply refuses all existing branches (AC-8.3); only recorded intent permits matching-branch reconciliation (AC-8.4), tightening the design's broadly stated reconcile-first step. `internal/cli/review.go` uses the shared receipt digest verifier introduced in `internal/supervisor/receipt.go`.
+- **Files modified**: `docs/decisions/0006-guarded-branch-apply.md`, `internal/workspace/apply.go`, `internal/workspace/apply_test.go`, `internal/workspace/git.go`, `internal/cli/apply.go`, `internal/cli/dispatch.go`, `internal/cli/review.go`, `internal/supervisor/apply.go`, `internal/supervisor/apply_test.go`, `internal/supervisor/receipt.go`, `specs/in-progress/dogfood-slice/tasks.md`, `specs/in-progress/dogfood-slice/handoff.md`.
 
 ### Task 15 — Stop, recover, and the §18.4 fault-injection subset
 
@@ -531,7 +535,7 @@
 - **Status**: In progress — stop/recovery core and all named fault tests pass; apply receipt crash repair awaits Task 14's merged API.
 - **Spec deviations**: Supporting CLI dispatch/exit mapping, pipeline continuation and receipt repair, worker descendant identity recording and panic boundary tests, spool terminal-write tracking, Linux zombie recognition, portable orphan marker helpers, fake launch-count fixture and ADR 0007 are required for the task's ownership and fault acceptance. A recovered quarantined partial candidate ends failed/recovered_partial (exit 4); it is never verified success. An unfinished check without a durable verification result remains ownership unresolved instead of repeating external effects. A panic after a terminal spool line is written preserves that potentially ingested state and logs worker_panic instead of appending an illegal second terminal transition (design §11 boundary clarification).
 
-### Task 16 — Claude Code probe, auth evidence and billing admission
+### Task 16 — Claude Code probe, auth evidence and billing admission ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -568,6 +572,16 @@
   - `TestSingleCurrentDeclaration`: declaring twice leaves exactly one row with `superseded_at IS NULL`, and a direct second insert violates `declarations_current`.
 - **Test plan**: fakeclaude helper mode (design §12) serves `--version` and `auth status` fixtures; settings fixtures live in temp homes.
 - **Invariants touched**: I01, I02, I03, I04, I15 (honest non-satisfaction), I16, I19, §9.3, §13.10, G05 (recorded not-passed).
+
+- **Status**: ✅ Completed — Native probe, PII-safe auth/config evidence, declared billing and transactional declarations implemented; PR #54.
+- **Implementation**: Pinned native resolution, strict bounded status/config parsing, complete selected MCP digests and atomic declaration replacement; strict billing remains blocked and declared posture stays unqualified. Commit b301600.
+- **Spec deviations**:
+  - `internal/adapter/adapter.go` extends the native probe input contract; `internal/admission/admission.go` orders the strict refusal before unavailable adapter checks and carries nullable typed native auth evidence.
+  - `internal/journal/declarations.go` supplies transaction-bound projection/read APIs for the existing schema; `internal/supervisor/receipt.go` emits allowlisted native auth for the explicit PII persistence acceptance.
+  - `adapters/claudecode/doc.go`, `auth_test.go` and `settings_linux_test.go` separate the required API disclaimer, real auth/receipt fixtures and inotify credential-read proof from the probe tests. Own handoff and scratchpad entries record dependent seams and limits.
+  - Native config source symlinks are unsupported; raw config-directory text is omitted from durable JSON while its identity hash remains. Every present settings/MCP source needs trust; ambiguous JSON/auth and unsupported policyHelper sources fail closed. Remote cached policy and macOS MDM are not certified; Q5 network behavior remains unknown after a failed sandboxed trace.
+- **Files modified**: `adapters/claudecode/doc.go`, `adapters/claudecode/probe.go`, `adapters/claudecode/compat.go`, `adapters/claudecode/settings.go`, `adapters/claudecode/probe_test.go`, `adapters/claudecode/auth_test.go`, `adapters/claudecode/settings_linux_test.go`, `internal/adapter/adapter.go`, `internal/admission/admission.go`, `internal/admission/billing.go`, `internal/admission/billing_test.go`, `internal/journal/declarations.go`, `internal/supervisor/receipt.go`, `docs/decisions/0002-dogfood-billing-posture.md`, `specs/in-progress/dogfood-slice/tasks.md`, `specs/in-progress/dogfood-slice/handoff.md`, `specs/in-progress/dogfood-slice/scratchpad.md`.
+- **Acceptance evidence**: All 16 named checks passed; the full race suite passed through the gate wrapper. Red-first: wrong-value stubs failed every acceptance; symlink-following, omitted lexical MCP digest, skipped strict auth JSON validation and raw-orgId persistence mutants failed retained regressions; restored implementation passed.
 
 ### Task 17 — Claude Code launch, stream-json decoding and result mapping
 

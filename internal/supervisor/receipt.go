@@ -143,6 +143,12 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("receipt: reading admitted task: %w", err)
 	}
+	nativeAuth := any(unknown)
+	if adm.NativeAuth != nil {
+		nativeAuth = map[string]any{"logged_in": adm.NativeAuth.LoggedIn, "auth_method": known(adm.NativeAuth.AuthMethod),
+			"api_provider": known(adm.NativeAuth.APIProvider), "subscription_type": known(adm.NativeAuth.SubscriptionType),
+			"identity_ref": known(adm.NativeAuth.IdentityRef)}
+	}
 	r := Receipt{
 		"schema_version": 1, "run_id": run.RunID, "state": run.State, "exit_code": exit,
 		"requested_outcome": map[string]any{"task_file_sha256": known(run.TaskSHA256), "title": taskTitle, "deliverable": "review-candidate"},
@@ -156,7 +162,7 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 			"credential_provenance": known(adm.Billing.CredentialProvenance), "entitlement_class": known(adm.Billing.EntitlementClass),
 			"entitlement_source": known(adm.Billing.EntitlementSource), "paid_continuation": known(adm.Billing.PaidContinuation),
 			"paid_continuation_user_declaration": known(adm.Billing.PaidContinuationUserDeclaration), "init_api_key_source": eventValue(nativeSession, "auth_source"),
-			"retail_equivalent_estimate_usd": price, "tokens": tokens},
+			"retail_equivalent_estimate_usd": price, "tokens": tokens, "native_auth": nativeAuth},
 		"routing": map[string]any{"decision": "pinned by --adapter; no routing in this slice"},
 		"native_result": map[string]any{"attempt_state": unknown, "subtype": eventValue(native, "subtype"), "num_turns": eventValue(native, "num_turns"),
 			"duration_ms": eventValue(native, "duration_ms"), "session_id": known(session), "permission_denials": denials},
@@ -213,7 +219,7 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 
 func receiptExit(state, reason string) int {
 	switch state {
-	case string(RunReadyForReview):
+	case string(RunReadyForReview), string(RunCompleted):
 		if reason == "unverified" {
 			return 5
 		}
@@ -243,6 +249,15 @@ func WriteReceipt(dir string, r Receipt) (string, error) {
 		return "", err
 	}
 	b = append(b, '\n')
+	return WriteReceiptBytes(dir, "receipt.json", b)
+}
+
+// WriteReceiptBytes uses the same atomic path for the current receipt and
+// the preserved version 1 receipt. Only these two fixed names are accepted.
+func WriteReceiptBytes(dir, name string, b []byte) (string, error) {
+	if name != "receipt.json" && name != "receipt.v1.json" {
+		return "", fmt.Errorf("invalid receipt file %q", name)
+	}
 	sum := sha256.Sum256(b)
 	f, err := os.CreateTemp(dir, ".receipt-*.json")
 	if err != nil {
@@ -264,8 +279,47 @@ func WriteReceipt(dir string, r Receipt) (string, error) {
 	if err := f.Close(); err != nil {
 		return "", err
 	}
-	if err := os.Rename(f.Name(), filepath.Join(dir, "receipt.json")); err != nil {
+	if err := os.Rename(f.Name(), filepath.Join(dir, name)); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// ReadReceipt verifies the current receipt against the latest journaled
+// receipt.written digest. It returns exact bytes so apply can preserve v1.
+func ReadReceipt(ctx context.Context, j *journal.Journal, runID string) (Receipt, []byte, error) {
+	path := filepath.Join(j.StateDir(), "runs", runID, "receipt.json")
+	b, err := os.ReadFile(path) // #nosec G304 -- caller validates projection-bound run ID
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading receipt for %s: %w", runID, err)
+	}
+	events, err := j.Events(ctx, runID, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	var expected string
+	for _, ev := range events {
+		if ev.Type != "receipt.written" {
+			continue
+		}
+		var m struct {
+			SHA256 string `json:"sha256"`
+		}
+		if err := json.Unmarshal(ev.Payload, &m); err != nil {
+			return nil, nil, err
+		}
+		expected = m.SHA256
+	}
+	sum := sha256.Sum256(b)
+	if expected == "" || expected != hex.EncodeToString(sum[:]) {
+		return nil, nil, fmt.Errorf("receipt for %s does not match its journaled SHA-256", runID)
+	}
+	var r Receipt
+	if err := json.Unmarshal(b, &r); err != nil {
+		return nil, nil, err
+	}
+	if r["run_id"] != runID {
+		return nil, nil, fmt.Errorf("receipt for %s has another run ID", runID)
+	}
+	return r, b, nil
 }
