@@ -163,7 +163,30 @@ func eventPayload(t *testing.T, f fixture, runID, typ string) map[string]any {
 	return nil
 }
 
+// requireUnixClaude skips run-level tests where the probe refuses by
+// design: process-tree ownership is unsupported on Windows, so admission
+// ends 7 before any native starts (pinned by TestClaudeWindowsRefuses).
+func requireUnixClaude(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("claudecode runs are unsupported on Windows; the refusal is pinned separately")
+	}
+}
+
+func TestClaudeWindowsRefuses(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("the Windows probe refusal runs on Windows only")
+	}
+	installFakeClaude(t, fakeClaudeConfig{Version: "2.1.284", Auth: fakeAuth(t)})
+	f := newFixture(t)
+	code, _, stderr := f.run(t, f.claudeRun()...)
+	if code != 7 || !strings.Contains(stderr, "native_capability_unavailable") {
+		t.Fatalf("exit %d, stderr %q; want 7 naming the refused capability", code, stderr)
+	}
+}
+
 func TestApiKeySourceMismatchStopsAttempt(t *testing.T) {
+	requireUnixClaude(t)
 	installFakeClaude(t, fakeClaudeConfig{Version: "2.1.284", Auth: fakeAuth(t), Stream: []string{
 		claudeInit("ANTHROPIC_API_KEY"),
 		claudeResult("success", false, `"num_turns":1`),
@@ -200,6 +223,7 @@ func TestApiKeySourceMismatchStopsAttempt(t *testing.T) {
 }
 
 func TestApiKeySourceMismatchInterruptsLiveNative(t *testing.T) {
+	requireUnixClaude(t)
 	installFakeClaude(t, fakeClaudeConfig{Version: "2.1.284", Auth: fakeAuth(t), SleepAfterLines: 1, SleepMs: 30000, Stream: []string{
 		claudeInit("ANTHROPIC_API_KEY"),
 		claudeResult("success", false, `"num_turns":1`),
@@ -273,6 +297,7 @@ func TestBillingMismatchDuringUserStopStillBlocks(t *testing.T) {
 }
 
 func TestReceiptReportsToolsHooksAndTrustGrant(t *testing.T) {
+	requireUnixClaude(t)
 	home := t.TempDir()
 	claudeDir := filepath.Join(home, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o700); err != nil {
@@ -330,6 +355,7 @@ func TestReceiptReportsToolsHooksAndTrustGrant(t *testing.T) {
 }
 
 func TestTrustedAllowedToolsReachChildArgv(t *testing.T) {
+	requireUnixClaude(t)
 	argvFile := filepath.Join(t.TempDir(), "argv")
 	installFakeClaude(t, fakeClaudeConfig{Version: "2.1.284", Auth: fakeAuth(t), ArgvFile: argvFile, Stream: []string{
 		claudeInit("none"),
@@ -364,6 +390,7 @@ func TestTrustedAllowedToolsReachChildArgv(t *testing.T) {
 }
 
 func TestAuthFailedMapsToBlocked(t *testing.T) {
+	requireUnixClaude(t)
 	installFakeClaude(t, fakeClaudeConfig{Version: "2.1.284", Auth: fakeAuth(t), Exit: 1, Stream: []string{
 		claudeInit("none"),
 		`{"type":"assistant","message":{"content":[],"error":"authentication_failed"}}`,
@@ -392,6 +419,7 @@ func TestAuthFailedMapsToBlocked(t *testing.T) {
 }
 
 func TestRateLimitNoInventedCountdown(t *testing.T) {
+	requireUnixClaude(t)
 	installFakeClaude(t, fakeClaudeConfig{Version: "2.1.284", Auth: fakeAuth(t), Exit: 1, Stream: []string{
 		claudeInit("none"),
 		`{"type":"assistant","message":{"content":[],"error":{"class":"rate_limit"}}}`,
@@ -432,6 +460,7 @@ func TestRateLimitNoInventedCountdown(t *testing.T) {
 }
 
 func TestRateLimitThenSuccessSucceeds(t *testing.T) {
+	requireUnixClaude(t)
 	installFakeClaude(t, fakeClaudeConfig{Version: "2.1.284", Auth: fakeAuth(t), Stream: []string{
 		claudeInit("none"),
 		`{"type":"assistant","message":{"content":[],"error":"rate_limit"}}`,
@@ -452,6 +481,7 @@ func TestRateLimitThenSuccessSucceeds(t *testing.T) {
 }
 
 func TestCostStoredAsEstimateString(t *testing.T) {
+	requireUnixClaude(t)
 	installFakeClaude(t, fakeClaudeConfig{Version: "2.1.284", Auth: fakeAuth(t), Stream: []string{
 		claudeInit("none"),
 		`{"type":"assistant","message":{"content":[{"type":"text","text":"synthetic"}]}}`,
@@ -481,6 +511,7 @@ func TestCostStoredAsEstimateString(t *testing.T) {
 }
 
 func TestProtocolErrorMapsToFailed(t *testing.T) {
+	requireUnixClaude(t)
 	installFakeClaude(t, fakeClaudeConfig{Version: "2.1.284", Auth: fakeAuth(t), Stream: []string{
 		`{"type":"assistant","message":{"content":[]}}`,
 		claudeResult("success", false, `"num_turns":1`),
@@ -514,6 +545,7 @@ func TestClaudeCredentialOverrideBlocks(t *testing.T) {
 }
 
 func TestClaudeRequiresDeclaration(t *testing.T) {
+	requireUnixClaude(t)
 	installFakeClaude(t, fakeClaudeConfig{Version: "2.1.284", Auth: fakeAuth(t)})
 	f := newFixture(t)
 	args := f.claudeRun()
@@ -535,6 +567,7 @@ func TestClaudeRequiresDeclaration(t *testing.T) {
 }
 
 func TestClaudeBadDeclarationExits2(t *testing.T) {
+	requireUnixClaude(t)
 	installFakeClaude(t, fakeClaudeConfig{Version: "2.1.284", Auth: fakeAuth(t)})
 	f := newFixture(t)
 	args := f.claudeRun()
@@ -550,6 +583,7 @@ func TestClaudeBadDeclarationExits2(t *testing.T) {
 }
 
 func TestClaudeTrustNativeConfigGrantLifecycle(t *testing.T) {
+	requireUnixClaude(t)
 	home := t.TempDir()
 	claudeDir := filepath.Join(home, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o700); err != nil {
@@ -586,6 +620,7 @@ func TestClaudeTrustNativeConfigGrantLifecycle(t *testing.T) {
 }
 
 func TestClaudeUntrustedNativeConfigBlocks(t *testing.T) {
+	requireUnixClaude(t)
 	home := t.TempDir()
 	claudeDir := filepath.Join(home, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o700); err != nil {

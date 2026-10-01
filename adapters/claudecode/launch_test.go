@@ -135,6 +135,9 @@ func runLaunch(t *testing.T, in adapter.PrepareInput, extra []string) ([]adapter
 }
 
 func TestPromptOnStdinOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Prepare refuses Windows by design; the probe tests pin the refusal")
+	}
 	t.Parallel()
 	const prompt = "# Task PROMPT-MARKER-7f3a\n\nDo the thing.\n"
 	promptPath := filepath.Join(t.TempDir(), "prompt.md")
@@ -162,6 +165,9 @@ func TestPromptOnStdinOnly(t *testing.T) {
 }
 
 func TestChildEnvIsAllowlisted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Prepare refuses Windows by design; the probe tests pin the refusal")
+	}
 	t.Parallel()
 	promptPath := filepath.Join(t.TempDir(), "prompt.md")
 	if err := os.WriteFile(promptPath, []byte("task\n"), 0o600); err != nil {
