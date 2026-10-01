@@ -40,6 +40,11 @@ func newEnv(t *testing.T) env {
 		"MYTHHELM_HOME=" + e.state, "GIT_CONFIG_NOSYSTEM=1",
 		"GIT_AUTHOR_NAME=E2E", "GIT_AUTHOR_EMAIL=e2e@example.com",
 		"GIT_COMMITTER_NAME=E2E", "GIT_COMMITTER_EMAIL=e2e@example.com",
+		// No E2E check needs the network: every proxy points at the
+		// closed discard port, so a network attempt fails loudly.
+		"HTTP_PROXY=http://127.0.0.1:9/", "HTTPS_PROXY=http://127.0.0.1:9/",
+		"ALL_PROXY=http://127.0.0.1:9/", "http_proxy=http://127.0.0.1:9/",
+		"https_proxy=http://127.0.0.1:9/", "all_proxy=http://127.0.0.1:9/",
 	}
 	return e
 }
@@ -50,7 +55,9 @@ func (e env) withParent(t *testing.T) []string {
 		name, _, _ := strings.Cut(kv, "=")
 		return slices.Contains([]string{"HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_STATE_HOME",
 			"MYTHHELM_HOME", "GIT_CONFIG_NOSYSTEM", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
-			"GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"}, name)
+			"GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
+			"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+			"http_proxy", "https_proxy", "all_proxy"}, name)
 	})
 	return append(out, e.vars...)
 }
@@ -388,6 +395,20 @@ func TestE2EKillCLIWorkerSurvivesThenRecover(t *testing.T) {
 	if err := proc.Signal(syscall.Signal(0)); err != nil {
 		t.Fatalf("worker pid %d did not survive the CLI: %v", id.PID, err)
 	}
+	// If the test fails before cancellation, reap the detached worker
+	// and its slow native (10-minute sleep) by pid. No process-group
+	// kill: the native owns a separate group, so a group kill would
+	// miss it and could hit an unrelated group.
+	var native *os.Process
+	if id.NativePID != nil {
+		native, _ = os.FindProcess(*id.NativePID)
+	}
+	t.Cleanup(func() {
+		_ = proc.Kill()
+		if native != nil {
+			_ = native.Kill()
+		}
+	})
 	// Recovery reattaches to the live worker; interrupting it stops the
 	// slow native and cancels the run without relaunching anything.
 	rec := startLive(t, e, repo, "recover", runID)

@@ -38,7 +38,12 @@ func TestE2EDemoStaysOffline(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("demo exit %d", code)
 	}
-	for _, leak := range []string{"api.muse", "api.anthropic", "github.com", "http"} {
+	// The environment points every proxy variable at a closed port
+	// (see newEnv), so a demo that reached the network would fail
+	// instead of leaking. The output must not name remote endpoints
+	// either; the check stays on domains so documentation wording that
+	// merely contains "http" cannot fail it.
+	for _, leak := range []string{"api.muse", "api.anthropic", "github.com"} {
 		if strings.Contains(strings.ToLower(stdout), leak) {
 			t.Fatalf("demo output mentions %q:\n%s", leak, stdout)
 		}

@@ -23,16 +23,18 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	root := filepath.Dir(filepath.Dir(filepath.Dir(file)))
-	out := filepath.Join(os.TempDir(), "mythhelm-e2e-bin")
+	// A unique staging dir: concurrent test processes on one host must
+	// not share or remove each other's binary.
+	out, err := os.MkdirTemp("", "mythhelm-e2e-bin-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "e2e: staging build dir:", err)
+		os.Exit(1)
+	}
 	name := "mythhelm-e2e"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
 	bin := filepath.Join(out, name)
-	if err := os.MkdirAll(out, 0o750); err != nil {
-		fmt.Fprintln(os.Stderr, "e2e: staging build dir:", err)
-		os.Exit(1)
-	}
 	cmd := exec.Command("go", "build", "-o", bin, "./cmd/mythhelm")
 	cmd.Dir = root
 	if out, err := cmd.CombinedOutput(); err != nil {
