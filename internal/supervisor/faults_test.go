@@ -676,3 +676,529 @@ func TestRecoverListsOrphansInNativeLaunchWindow(t *testing.T) {
 		t.Fatalf("recovery signalled unknown native: %v", err)
 	}
 }
+
+func recordApplyCompleted(t *testing.T, f fixture, runID, branch, commit string) {
+	t.Helper()
+	j := f.journal(t)
+	payload, err := json.Marshal(map[string]string{"branch": branch, "target_repo": f.onlyRun(t).SourceRepo, "candidate_commit": commit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Append(t.Context(), journal.Event{SchemaVersion: journal.EnvelopeVersion, EventID: ids.New("evt"),
+		RunID: runID, ProducerID: ids.New("sup"), ProducerSequence: 1, Generation: 1,
+		ObservedAt: time.Now().UTC(), Type: "apply.completed", Payload: payload}, nil); err != nil {
+		t.Fatal(err)
+	}
+	p := supervisor.NewProducer(ids.New("sup"), 1)
+	if err := supervisor.TransitionRun(t.Context(), j, runID, supervisor.RunCompleted, "", p); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func breakWorkspace(t *testing.T, f fixture, attemptID string) {
+	t.Helper()
+	if _, err := applyDB(t, f.state).ExecContext(t.Context(), `UPDATE attempts SET workspace_path = ? WHERE attempt_id = ?`,
+		filepath.Join(t.TempDir(), "missing"), attemptID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func eventTypeCounts(t *testing.T, f fixture, runID string) map[string]int {
+	t.Helper()
+	counts := map[string]int{}
+	for _, ev := range f.events(t, runID) {
+		counts[ev.Type]++
+	}
+	return counts
+}
+
+func latestReceiptDigest(t *testing.T, f fixture, runID string) (sha string, schema float64) {
+	t.Helper()
+	for _, ev := range f.events(t, runID) {
+		if ev.Type != "receipt.written" {
+			continue
+		}
+		var m struct {
+			SchemaVersion float64 `json:"schema_version"`
+			SHA256        string  `json:"sha256"`
+		}
+		if err := json.Unmarshal(ev.Payload, &m); err != nil {
+			t.Fatal(err)
+		}
+		sha, schema = m.SHA256, m.SchemaVersion
+	}
+	if sha == "" {
+		t.Fatal("no journaled receipt")
+	}
+	return sha, schema
+}
+
+func receiptFileSHA(t *testing.T, path string) (raw []byte, sha string) {
+	t.Helper()
+	var err error
+	raw, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(raw)
+	return raw, hex.EncodeToString(sum[:])
+}
+
+// dropV2ReceiptJournal simulates a crash between the v2 receipt file write
+// and its digest journal append: the file stays, the journal keeps the v1
+// digest. It returns the deleted v2 digest. Test-only: production code can
+// never delete journal events (journal_no_delete trigger).
+func dropV2ReceiptJournal(t *testing.T, f fixture, runID string) string {
+	t.Helper()
+	db := applyDB(t, f.state)
+	if _, err := db.ExecContext(t.Context(), `DROP TRIGGER journal_no_delete`); err != nil {
+		t.Fatal(err)
+	}
+	var payload string
+	if err := db.QueryRowContext(t.Context(), `SELECT payload FROM journal WHERE run_id = ? AND type = 'receipt.written' ORDER BY seq DESC LIMIT 1`, runID).Scan(&payload); err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		SHA256 string `json:"sha256"`
+	}
+	if err := json.Unmarshal([]byte(payload), &m); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `DELETE FROM journal WHERE run_id = ? AND type = 'receipt.written' AND payload = ?`, runID, payload); err != nil {
+		t.Fatal(err)
+	}
+	return m.SHA256
+}
+
+func applyCandidate(t *testing.T, f fixture, runID string) (attemptID, commit string) {
+	t.Helper()
+	j := f.journal(t)
+	attempt, err := j.LatestAttempt(t.Context(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := j.Candidate(t.Context(), attempt.AttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return attempt.AttemptID, c.Commit
+}
+
+func assertNoWorkerActivity(t *testing.T, before, after map[string]int) {
+	t.Helper()
+	for typ, count := range after {
+		if !strings.HasPrefix(typ, "attempt.") {
+			continue
+		}
+		if count != before[typ] {
+			t.Fatalf("worker event %s grew %d -> %d during apply recovery", typ, before[typ], count)
+		}
+	}
+}
+
+func TestRecoverApplyCreatesAbsentBranch(t *testing.T) {
+	f, runID := readyApplyFixture(t)
+	_, commit := applyCandidate(t, f, runID)
+	branch := "review/recovered-absent"
+	recordApplyIntent(t, f, runID, branch, commit)
+	before := eventTypeCounts(t, f, runID)
+	if code, _, stderr := f.run(t, "recover", runID); code != 0 {
+		t.Fatalf("recover exit %d: %s", code, stderr)
+	}
+	if run := f.onlyRun(t); run.State != string(supervisor.RunCompleted) {
+		t.Fatalf("run projected %s, want completed", run.State)
+	}
+	got, err := workspace.BranchCommit(t.Context(), f.repo, branch)
+	if err != nil || got != commit {
+		t.Fatalf("branch %s at %s, want %s", branch, got, commit)
+	}
+	raw, sha := receiptFileSHA(t, filepath.Join(f.state, "runs", runID, "receipt.json"))
+	var r map[string]any
+	if err := json.Unmarshal(raw, &r); err != nil {
+		t.Fatal(err)
+	}
+	if r["schema_version"] != float64(2) || r["state"] != string(supervisor.RunCompleted) {
+		t.Fatalf("receipt not v2 completed: %v %v", r["schema_version"], r["state"])
+	}
+	effects := r["external_effects"].([]any)
+	if len(effects) != 1 || effects[0].(map[string]any)["type"] != "branch_created" {
+		t.Fatalf("external effects = %v, want one branch_created", r["external_effects"])
+	}
+	if digest, _ := latestReceiptDigest(t, f, runID); digest != sha {
+		t.Fatal("repaired v2 digest not journaled")
+	}
+	assertNoWorkerActivity(t, before, eventTypeCounts(t, f, runID))
+}
+
+func TestRecoverApplyCompletesAfterBranchCreation(t *testing.T) {
+	f, runID := readyApplyFixture(t)
+	attemptID, commit := applyCandidate(t, f, runID)
+	branch := "review/recovered-branch"
+	recordApplyIntent(t, f, runID, branch, commit)
+	j := f.journal(t)
+	attempt, err := j.LatestAttempt(t.Context(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.ApplyBranch(t.Context(), f.repo, attempt.WorkspacePath,
+		"refs/mythhelm/candidates/"+attempt.AttemptID, branch, commit); err != nil {
+		t.Fatal(err)
+	}
+	// Reconciliation must complete from the existing branch and journal
+	// without issuing another fetch.
+	breakWorkspace(t, f, attemptID)
+	fingerprint := f.fingerprint(t)
+	before := eventTypeCounts(t, f, runID)
+	if code, _, stderr := f.run(t, "recover", runID); code != 0 {
+		t.Fatalf("recover exit %d: %s", code, stderr)
+	}
+	if run := f.onlyRun(t); run.State != string(supervisor.RunCompleted) {
+		t.Fatalf("run projected %s, want completed", run.State)
+	}
+	if got, err := workspace.BranchCommit(t.Context(), f.repo, branch); err != nil || got != commit {
+		t.Fatalf("branch %s at %s, want %s", branch, got, commit)
+	}
+	if f.fingerprint(t) != fingerprint {
+		t.Fatal("recovery touched the source beyond the recorded branch")
+	}
+	_, sha := receiptFileSHA(t, filepath.Join(f.state, "runs", runID, "receipt.json"))
+	if digest, schema := latestReceiptDigest(t, f, runID); digest != sha || schema != 2 {
+		t.Fatal("repaired v2 digest not journaled")
+	}
+	assertNoWorkerActivity(t, before, eventTypeCounts(t, f, runID))
+}
+
+func TestRecoverApplyCompletesAfterCompletedTransition(t *testing.T) {
+	f, runID := readyApplyFixture(t)
+	attemptID, commit := applyCandidate(t, f, runID)
+	branch := "review/recovered-transition"
+	recordApplyIntent(t, f, runID, branch, commit)
+	j := f.journal(t)
+	attempt, err := j.LatestAttempt(t.Context(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.ApplyBranch(t.Context(), f.repo, attempt.WorkspacePath,
+		"refs/mythhelm/candidates/"+attempt.AttemptID, branch, commit); err != nil {
+		t.Fatal(err)
+	}
+	recordApplyCompleted(t, f, runID, branch, commit)
+	breakWorkspace(t, f, attemptID)
+	raw, _ := receiptFileSHA(t, filepath.Join(f.state, "runs", runID, "receipt.json"))
+	var before map[string]any
+	if err := json.Unmarshal(raw, &before); err != nil {
+		t.Fatal(err)
+	}
+	if before["schema_version"] != float64(1) {
+		t.Fatalf("fixture receipt schema = %v, want v1", before["schema_version"])
+	}
+	fingerprint := f.fingerprint(t)
+	counts := eventTypeCounts(t, f, runID)
+	if code, _, stderr := f.run(t, "recover", runID); code != 0 {
+		t.Fatalf("recover exit %d: %s", code, stderr)
+	}
+	if run := f.onlyRun(t); run.State != string(supervisor.RunCompleted) {
+		t.Fatalf("run projected %s, want completed", run.State)
+	}
+	if f.fingerprint(t) != fingerprint {
+		t.Fatal("recovery touched the source beyond the recorded branch")
+	}
+	_, sha := receiptFileSHA(t, filepath.Join(f.state, "runs", runID, "receipt.json"))
+	if digest, schema := latestReceiptDigest(t, f, runID); digest != sha || schema != 2 {
+		t.Fatal("repaired v2 digest not journaled")
+	}
+	assertNoWorkerActivity(t, counts, eventTypeCounts(t, f, runID))
+}
+
+func TestRecoverApplyAdoptsUnjournaledV2(t *testing.T) {
+	f, runID := readyApplyFixture(t)
+	branch := "review/recovered-v2"
+	if code, _, stderr := f.run(t, "apply", runID, "--to-branch", branch, "--format", "jsonl"); code != 0 {
+		t.Fatalf("apply exit %d: %s", code, stderr)
+	}
+	v2Path := filepath.Join(f.state, "runs", runID, "receipt.json")
+	v1Path := filepath.Join(f.state, "runs", runID, "receipt.v1.json")
+	_, v2sha := receiptFileSHA(t, v2Path)
+	_, v1sha := receiptFileSHA(t, v1Path)
+	if dropped := dropV2ReceiptJournal(t, f, runID); dropped != v2sha {
+		t.Fatalf("dropped digest %s, want the v2 file digest %s", dropped, v2sha)
+	}
+	if digest, schema := latestReceiptDigest(t, f, runID); digest != v1sha || schema != 1 {
+		t.Fatal("journal no longer describes the preserved v1")
+	}
+	fingerprint := f.fingerprint(t)
+	if code, _, stderr := f.run(t, "recover", runID); code != 0 {
+		t.Fatalf("recover exit %d: %s", code, stderr)
+	}
+	if run := f.onlyRun(t); run.State != string(supervisor.RunCompleted) {
+		t.Fatalf("run projected %s, want completed", run.State)
+	}
+	// Adoption journals the digest of the exact bytes; it never rewrites them.
+	if _, sha := receiptFileSHA(t, v2Path); sha != v2sha {
+		t.Fatal("recovery rewrote the unjournaled v2 file")
+	}
+	if _, sha := receiptFileSHA(t, v1Path); sha != v1sha {
+		t.Fatal("recovery rewrote the preserved v1 file")
+	}
+	if digest, schema := latestReceiptDigest(t, f, runID); digest != v2sha || schema != 2 {
+		t.Fatal("adopted v2 digest not journaled")
+	}
+	if f.fingerprint(t) != fingerprint {
+		t.Fatal("recovery touched the source checkout")
+	}
+}
+
+func TestRecoverApplyRejectsForgedOrMissingPreservedV1(t *testing.T) {
+	for _, tc := range []struct {
+		name, want string
+		forge      func(t *testing.T, path string)
+	}{
+		{"forged", "preserved v1 receipt does not match its journaled digest", func(t *testing.T, path string) {
+			t.Helper()
+			if err := os.WriteFile(path, []byte(`{"forged":true}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"missing", "preserved v1 receipt unavailable", func(t *testing.T, path string) {
+			t.Helper()
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, runID := readyApplyFixture(t)
+			branch := "review/recovered-" + tc.name
+			if code, _, stderr := f.run(t, "apply", runID, "--to-branch", branch, "--format", "jsonl"); code != 0 {
+				t.Fatalf("apply exit %d: %s", code, stderr)
+			}
+			v2Path := filepath.Join(f.state, "runs", runID, "receipt.json")
+			_, v2sha := receiptFileSHA(t, v2Path)
+			dropV2ReceiptJournal(t, f, runID)
+			tc.forge(t, filepath.Join(f.state, "runs", runID, "receipt.v1.json"))
+			events := len(f.events(t, runID))
+			fingerprint := f.fingerprint(t)
+			code, _, stderr := f.run(t, "recover", runID)
+			if code != 6 || !strings.Contains(stderr, tc.want) {
+				t.Fatalf("recover exit %d: %s, want 6 naming %q", code, stderr, tc.want)
+			}
+			if run := f.onlyRun(t); run.State != string(supervisor.RunCompleted) {
+				t.Fatalf("run projected %s, want completed", run.State)
+			}
+			if n := len(f.events(t, runID)); n != events {
+				t.Fatalf("journal grew %d -> %d on rejected adoption", events, n)
+			}
+			if _, sha := receiptFileSHA(t, v2Path); sha != v2sha {
+				t.Fatal("rejected adoption rewrote the receipt file")
+			}
+			if f.fingerprint(t) != fingerprint {
+				t.Fatal("rejected adoption touched the source checkout")
+			}
+		})
+	}
+}
+
+func TestRecoverApplyRejectsMissingIntent(t *testing.T) {
+	for _, tc := range []struct {
+		name, state string
+		force       func(t *testing.T, f fixture, runID string)
+	}{
+		{"applying", string(supervisor.RunApplying), func(t *testing.T, f fixture, runID string) {
+			t.Helper()
+			p := supervisor.NewProducer(ids.New("sup"), 1)
+			if err := supervisor.TransitionRun(t.Context(), f.journal(t), runID, supervisor.RunApplying, "", p); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"completed", string(supervisor.RunCompleted), func(t *testing.T, f fixture, runID string) {
+			t.Helper()
+			if _, err := applyDB(t, f.state).ExecContext(t.Context(), `UPDATE runs SET state = 'completed' WHERE run_id = ?`, runID); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, runID := readyApplyFixture(t)
+			tc.force(t, f, runID)
+			events := len(f.events(t, runID))
+			fingerprint := f.fingerprint(t)
+			code, _, stderr := f.run(t, "recover", runID)
+			if code != 6 || !strings.Contains(stderr, "without a journaled apply intent") {
+				t.Fatalf("recover exit %d: %s, want 6 naming the missing intent", code, stderr)
+			}
+			if run := f.onlyRun(t); run.State != tc.state {
+				t.Fatalf("run projected %s, want %s", run.State, tc.state)
+			}
+			if n := len(f.events(t, runID)); n != events {
+				t.Fatalf("journal grew %d -> %d without an intent", events, n)
+			}
+			if got, err := workspace.BranchCommit(t.Context(), f.repo, "review/never-created"); err != nil || got != "" {
+				t.Fatalf("branch created without intent: %s, %v", got, err)
+			}
+			if f.fingerprint(t) != fingerprint {
+				t.Fatal("recovery without intent touched the source checkout")
+			}
+		})
+	}
+}
+
+func TestRecoverApplyRejectsMismatchedIntent(t *testing.T) {
+	f, runID := readyApplyFixture(t)
+	recordApplyIntent(t, f, runID, "review/recovered-mismatch", strings.Repeat("0", 40))
+	events := len(f.events(t, runID))
+	fingerprint := f.fingerprint(t)
+	code, _, stderr := f.run(t, "recover", runID)
+	if code != 6 || !strings.Contains(stderr, "intent no longer matches the run") {
+		t.Fatalf("recover exit %d: %s, want 6 naming the mismatched intent", code, stderr)
+	}
+	if run := f.onlyRun(t); run.State != string(supervisor.RunApplying) {
+		t.Fatalf("run projected %s, want applying", run.State)
+	}
+	if n := len(f.events(t, runID)); n != events {
+		t.Fatalf("journal grew %d -> %d on mismatched intent", events, n)
+	}
+	if f.fingerprint(t) != fingerprint {
+		t.Fatal("recovery on mismatched intent touched the source checkout")
+	}
+}
+
+func TestRecoverApplyBlocksConflictingBranch(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		plant func(t *testing.T, f fixture, branch string)
+	}{
+		{"ordinary", func(t *testing.T, f fixture, branch string) {
+			t.Helper()
+			f.git(t, "branch", branch, "HEAD~1")
+		}},
+		{"symbolic", func(t *testing.T, f fixture, branch string) {
+			t.Helper()
+			f.git(t, "symbolic-ref", "refs/heads/"+branch, "refs/heads/untouched")
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, runID := readyApplyFixture(t)
+			attemptID, commit := applyCandidate(t, f, runID)
+			branch := "review/recovered-conflict"
+			recordApplyIntent(t, f, runID, branch, commit)
+			tc.plant(t, f, branch)
+			breakWorkspace(t, f, attemptID)
+			fingerprint := f.fingerprint(t)
+			code, _, _ := f.run(t, "recover", runID)
+			if code != 3 {
+				t.Fatalf("recover exit %d, want 3 for the conflicting destination", code)
+			}
+			if run := f.onlyRun(t); run.State != "blocked" || run.Reason != "branch_exists" {
+				t.Fatalf("run projected %s/%s, want blocked/branch_exists", run.State, run.Reason)
+			}
+			raw, sha := receiptFileSHA(t, filepath.Join(f.state, "runs", runID, "receipt.json"))
+			var r map[string]any
+			if err := json.Unmarshal(raw, &r); err != nil {
+				t.Fatal(err)
+			}
+			if r["schema_version"] != float64(1) || r["state"] != "blocked" {
+				t.Fatalf("blocked receipt = %v/%v, want v1 blocked", r["schema_version"], r["state"])
+			}
+			if digest, _ := latestReceiptDigest(t, f, runID); digest != sha {
+				t.Fatal("blocked v1 digest not journaled")
+			}
+			if f.fingerprint(t) != fingerprint {
+				t.Fatal("conflicting destination changed during recovery")
+			}
+		})
+	}
+}
+
+func TestRecoverApplyIsIdempotent(t *testing.T) {
+	f, runID := readyApplyFixture(t)
+	branch := "review/recovered-idempotent"
+	if code, _, stderr := f.run(t, "apply", runID, "--to-branch", branch, "--format", "jsonl"); code != 0 {
+		t.Fatalf("apply exit %d: %s", code, stderr)
+	}
+	_, sha := receiptFileSHA(t, filepath.Join(f.state, "runs", runID, "receipt.json"))
+	events := len(f.events(t, runID))
+	for i := 0; i < 2; i++ {
+		if code, _, stderr := f.run(t, "recover", runID); code != 0 {
+			t.Fatalf("recover %d exit %d: %s", i, code, stderr)
+		}
+	}
+	if n := len(f.events(t, runID)); n != events {
+		t.Fatalf("journal grew %d -> %d on reconciled recovery", events, n)
+	}
+	if _, after := receiptFileSHA(t, filepath.Join(f.state, "runs", runID, "receipt.json")); after != sha {
+		t.Fatal("reconciled recovery rewrote the receipt file")
+	}
+}
+
+func TestRecoverApplyLeavesCompletedBranchAlone(t *testing.T) {
+	for _, tc := range []struct {
+		name, want string
+		disturb    func(t *testing.T, f fixture, branch string)
+	}{
+		{"absent", "apply branch is absent after completion", func(t *testing.T, f fixture, branch string) {
+			t.Helper()
+			f.git(t, "branch", "-D", branch)
+		}},
+		{"moved", "apply branch no longer matches the candidate", func(t *testing.T, f fixture, branch string) {
+			t.Helper()
+			f.git(t, "update-ref", "refs/heads/"+branch, "HEAD~1")
+		}},
+		{"symbolic", "apply destination is now a symbolic ref", func(t *testing.T, f fixture, branch string) {
+			t.Helper()
+			f.git(t, "update-ref", "-d", "refs/heads/"+branch)
+			f.git(t, "symbolic-ref", "refs/heads/"+branch, "refs/heads/untouched")
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, runID := readyApplyFixture(t)
+			branch := "review/recovered-undisturbed"
+			if code, _, stderr := f.run(t, "apply", runID, "--to-branch", branch, "--format", "jsonl"); code != 0 {
+				t.Fatalf("apply exit %d: %s", code, stderr)
+			}
+			tc.disturb(t, f, branch)
+			events := len(f.events(t, runID))
+			fingerprint := f.fingerprint(t)
+			code, _, stderr := f.run(t, "recover", runID)
+			if code != 6 || !strings.Contains(stderr, tc.want) {
+				t.Fatalf("recover exit %d: %s, want 6 naming %q", code, stderr, tc.want)
+			}
+			if run := f.onlyRun(t); run.State != string(supervisor.RunCompleted) {
+				t.Fatalf("run projected %s, want completed", run.State)
+			}
+			if n := len(f.events(t, runID)); n != events {
+				t.Fatalf("journal grew %d -> %d on disturbed branch", events, n)
+			}
+			if f.fingerprint(t) != fingerprint {
+				t.Fatal("recovery touched the disturbed destination")
+			}
+		})
+	}
+}
+
+func TestRecoverApplyUnresolvedWhenV1ReceiptLost(t *testing.T) {
+	f, runID := readyApplyFixture(t)
+	_, commit := applyCandidate(t, f, runID)
+	branch := "review/recovered-lost-v1"
+	recordApplyIntent(t, f, runID, branch, commit)
+	if err := os.Remove(filepath.Join(f.state, "runs", runID, "receipt.json")); err != nil {
+		t.Fatal(err)
+	}
+	events := len(f.events(t, runID))
+	fingerprint := f.fingerprint(t)
+	code, _, stderr := f.run(t, "recover", runID)
+	if code != 6 || !strings.Contains(stderr, "reading receipt") {
+		t.Fatalf("recover exit %d: %s, want 6 naming the lost receipt", code, stderr)
+	}
+	if run := f.onlyRun(t); run.State != string(supervisor.RunApplying) {
+		t.Fatalf("run projected %s, want applying", run.State)
+	}
+	if n := len(f.events(t, runID)); n != events {
+		t.Fatalf("journal grew %d -> %d on lost receipt", events, n)
+	}
+	if got, err := workspace.BranchCommit(t.Context(), f.repo, branch); err != nil || got != "" {
+		t.Fatalf("branch created without a verified receipt: %s, %v", got, err)
+	}
+	if f.fingerprint(t) != fingerprint {
+		t.Fatal("recovery without a receipt touched the source checkout")
+	}
+}

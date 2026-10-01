@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/admission"
@@ -70,7 +71,16 @@ func RecoverWithHooks(ctx context.Context, j *journal.Journal, runID string, h H
 		err = p.repairReceipt(ctx)
 		return out, err
 	case RunApplying, RunCompleted:
-		return out, fmt.Errorf("%w: apply receipt reconciliation requires recorded apply intent", ErrOwnership)
+		out.Mode = "continued"
+		err = p.recoverApply(ctx, row)
+		// Delegation may have transitioned the run (completed or blocked);
+		// report the reconciled state either way.
+		if fresh, rerr := j.Run(ctx, runID); rerr == nil {
+			out.State, out.Reason = RunState(fresh.State), fresh.Reason
+		} else if err == nil {
+			err = errors.Join(ErrOwnership, rerr)
+		}
+		return out, err
 	}
 	a, err := j.LatestAttempt(ctx, runID)
 	if err != nil {
@@ -340,4 +350,208 @@ func (p *pipeline) repairReceipt(ctx context.Context) error {
 		return err
 	}
 	return p.append(ctx, "receipt.written", map[string]any{"schema_version": 1, "sha256": sha, "path": "receipt.json"})
+}
+
+// journaledApplyRecords reads the apply intent and completion records. Any
+// corrupt apply payload fails closed: recovery never interprets around it.
+func journaledApplyRecords(events []journal.Event) (intent, completed *applyRecord, err error) {
+	for _, ev := range events {
+		if ev.Type != "apply.intent_recorded" && ev.Type != "apply.completed" {
+			continue
+		}
+		var m applyRecord
+		if err := json.Unmarshal(ev.Payload, &m); err != nil {
+			return nil, nil, errors.Join(ErrOwnership, err)
+		}
+		if ev.Type == "apply.intent_recorded" {
+			intent = &m
+		} else {
+			completed = &m
+		}
+	}
+	return intent, completed, nil
+}
+
+// recoverApply reconciles an apply interrupted by a crash. The journaled
+// intent binds the exact branch and candidate; the branch effect is
+// inspected before any durable state is repaired. States ApplyRun can
+// resume are delegated to it under this owner lock; the one it cannot —
+// a v2 receipt file whose digest was never journaled — is verified field
+// by field against the preserved v1 bytes and adopted only when genuine.
+// Anything else leaves ownership unresolved without touching the journal,
+// the receipts or the source checkout.
+func (p *pipeline) recoverApply(ctx context.Context, row journal.RunRow) error {
+	runID := row.RunID
+	events, err := p.j.Events(ctx, runID, 0)
+	if err != nil {
+		return errors.Join(ErrOwnership, err)
+	}
+	intent, completed, err := journaledApplyRecords(events)
+	if err != nil {
+		return err
+	}
+	if intent == nil {
+		return fmt.Errorf("%w: run is %s without a journaled apply intent", ErrOwnership, row.State)
+	}
+	if completed != nil && *completed != *intent {
+		return fmt.Errorf("%w: journaled apply completion does not match its intent", ErrOwnership)
+	}
+	attempt, err := p.j.LatestAttempt(ctx, runID)
+	if err != nil {
+		return errors.Join(ErrOwnership, err)
+	}
+	candidate, err := p.j.Candidate(ctx, attempt.AttemptID)
+	if err != nil {
+		return errors.Join(ErrOwnership, err)
+	}
+	if intent.TargetRepo != row.SourceRepo || intent.CandidateCommit != candidate.Commit {
+		return fmt.Errorf("%w: journaled apply intent no longer matches the run", ErrOwnership)
+	}
+	if err := workspace.CheckBranch(ctx, row.SourceRepo, intent.Branch); err != nil {
+		return errors.Join(ErrOwnership, err)
+	}
+	current, err := workspace.BranchCommit(ctx, row.SourceRepo, intent.Branch)
+	if err != nil && !errors.Is(err, workspace.ErrBranchExists) {
+		return errors.Join(ErrOwnership, err)
+	}
+	if row.State == string(RunCompleted) {
+		// A completed run's effect is history: a disturbed destination is
+		// manual reconciliation, never a silent repair or re-creation.
+		switch {
+		case err != nil:
+			return fmt.Errorf("%w: apply destination is now a symbolic ref", ErrOwnership)
+		case current == "":
+			return fmt.Errorf("%w: apply branch is absent after completion", ErrOwnership)
+		case current != candidate.Commit:
+			return fmt.Errorf("%w: apply branch no longer matches the candidate", ErrOwnership)
+		}
+		r, _, rerr := ReadReceipt(ctx, p.j, runID)
+		if rerr != nil {
+			return p.adoptUnjournaledV2(ctx, events, row, intent, completed, candidate.Commit)
+		}
+		if r["state"] == string(RunCompleted) && r["schema_version"] == float64(2) {
+			return nil
+		}
+		if r["schema_version"] != float64(1) {
+			return fmt.Errorf("%w: verified receipt is neither v1 nor completed v2", ErrOwnership)
+		}
+	}
+	// The journaled intent is the standing instruction to complete this
+	// explicitly requested apply, so an absent branch is created, an
+	// existing one reconciled, and a conflicting destination or missing
+	// base terminalizes the run as blocked with a fresh v1 receipt.
+	_, derr := ApplyRun(ctx, p.j, runID, intent.Branch, false, false)
+	if derr == nil {
+		return nil
+	}
+	if fresh, rerr := p.j.Run(ctx, runID); rerr == nil && fresh.State == string(RunBlocked) {
+		return nil
+	} else if rerr != nil {
+		return errors.Join(ErrOwnership, derr, rerr)
+	}
+	return errors.Join(ErrOwnership, derr)
+}
+
+// adoptUnjournaledV2 repairs a crash between the v2 receipt file write and
+// its digest journal append. The preserved v1 bytes must match the latest
+// journaled digest and the run's ready receipt; the unjournaled v2 bytes
+// must equal that v1 outside exactly the apply fields. Only then is the
+// digest of the exact v2 bytes journaled. No file is rewritten.
+func (p *pipeline) adoptUnjournaledV2(ctx context.Context, events []journal.Event, row journal.RunRow, intent, completed *applyRecord, candidateCommit string) error {
+	if completed == nil {
+		return fmt.Errorf("%w: completed run has no journaled apply completion", ErrOwnership)
+	}
+	var latest string
+	for _, ev := range events {
+		if ev.Type != "receipt.written" {
+			continue
+		}
+		var m struct {
+			SHA256 string `json:"sha256"`
+		}
+		if err := json.Unmarshal(ev.Payload, &m); err != nil {
+			return errors.Join(ErrOwnership, err)
+		}
+		latest = m.SHA256
+	}
+	if latest == "" {
+		return fmt.Errorf("%w: no journaled receipt to verify against", ErrOwnership)
+	}
+	dir := filepath.Join(p.j.StateDir(), "runs", row.RunID)
+	preserved, err := os.ReadFile(filepath.Join(dir, "receipt.v1.json"))
+	if err != nil {
+		return fmt.Errorf("%w: preserved v1 receipt unavailable: %v", ErrOwnership, err)
+	}
+	sum := sha256.Sum256(preserved)
+	if hex.EncodeToString(sum[:]) != latest {
+		return fmt.Errorf("%w: preserved v1 receipt does not match its journaled digest", ErrOwnership)
+	}
+	var v1 map[string]any
+	if err := json.Unmarshal(preserved, &v1); err != nil {
+		return errors.Join(ErrOwnership, err)
+	}
+	candidate, _ := v1["candidate"].(map[string]any)
+	if v1["schema_version"] != float64(1) || v1["run_id"] != row.RunID ||
+		v1["state"] != string(RunReadyForReview) || candidate["commit"] != candidateCommit {
+		return fmt.Errorf("%w: preserved v1 receipt is not the run's ready receipt", ErrOwnership)
+	}
+	current, err := os.ReadFile(filepath.Join(dir, "receipt.json"))
+	if err != nil {
+		return errors.Join(ErrOwnership, err)
+	}
+	var v2 map[string]any
+	if err := json.Unmarshal(current, &v2); err != nil {
+		return errors.Join(ErrOwnership, err)
+	}
+	if err := checkAdoptedV2(v2, v1, row, intent, candidateCommit); err != nil {
+		return err
+	}
+	sum = sha256.Sum256(current)
+	return p.append(ctx, "receipt.written", map[string]any{"schema_version": 2, "sha256": hex.EncodeToString(sum[:]), "path": "receipt.json"})
+}
+
+// checkAdoptedV2 proves the unjournaled bytes are ApplyRun's genuine output:
+// the exact deterministic apply fields over the verified v1, nothing else.
+func checkAdoptedV2(v2, v1 map[string]any, row journal.RunRow, intent *applyRecord, candidateCommit string) error {
+	fail := func(format string, args ...any) error {
+		return fmt.Errorf("%w: unjournaled v2 receipt "+format, append([]any{ErrOwnership}, args...)...)
+	}
+	if v2["schema_version"] != float64(2) {
+		return fail("has schema %v, want 2", v2["schema_version"])
+	}
+	if v2["state"] != string(RunCompleted) {
+		return fail("has state %v, want completed", v2["state"])
+	}
+	if v2["run_id"] != row.RunID {
+		return fail("names another run")
+	}
+	if v2["exit_code"] != float64(0) {
+		return fail("has exit code %v, want 0", v2["exit_code"])
+	}
+	effects, ok := v2["external_effects"].([]any)
+	if !ok || len(effects) != 1 {
+		return fail("has %v external effects, want one branch effect", v2["external_effects"])
+	}
+	effect, ok := effects[0].(map[string]any)
+	if !ok {
+		return fail("has a malformed branch effect")
+	}
+	if effect["type"] != "branch_created" && effect["type"] != "branch_reconciled" {
+		return fail("has effect type %v", effect["type"])
+	}
+	if effect["target_repo"] != row.SourceRepo || effect["branch"] != intent.Branch || effect["commit"] != candidateCommit {
+		return fail("names another branch effect")
+	}
+	actions, ok := v2["remaining_human_action"].([]any)
+	if !ok || len(actions) != 2 || actions[0] != "review the branch" || actions[1] != "sign off (DCO) after review" {
+		return fail("has unexpected remaining actions")
+	}
+	for _, key := range []string{"schema_version", "state", "exit_code", "external_effects", "remaining_human_action"} {
+		delete(v1, key)
+		delete(v2, key)
+	}
+	if !reflect.DeepEqual(v1, v2) {
+		return fail("differs from the verified v1 outside the apply fields")
+	}
+	return nil
 }
