@@ -309,13 +309,16 @@ func writeTemp(dir, name string, body []byte) (string, error) {
 	return f.Name(), nil
 }
 
-// writeFileAtomic replaces dir/name with body.
+// writeFileAtomic replaces dir/name with body. On Windows the supervisor's
+// identity poll can hold name open across the rename; that exact
+// sharing/lock failure is retried under a bounded budget.
 func writeFileAtomic(dir, name string, body []byte) error {
 	tmp, err := writeTemp(dir, name, body)
 	if err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, filepath.Join(dir, name)); err != nil {
+	dst := filepath.Join(dir, name)
+	if err := renameWithRetry(func() error { return os.Rename(tmp, dst) }, retryIdentityWrite, maxIdentityWriteRetries, identityWriteRetryDelay); err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}
