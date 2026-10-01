@@ -3,7 +3,6 @@ package supervisor_test
 import (
 	"database/sql"
 	"encoding/json"
-	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -36,23 +35,8 @@ func readyApplyFixture(t *testing.T) (fixture, string) {
 	t.Helper()
 	f := newFixture(t)
 	digest := f.config(t, "pass")
+	// f.run already logs the redacted worker diagnostic on failure.
 	if code, _, stderr := f.run(t, f.checkedRun(digest)...); code != 0 {
-		// Preserve the redacted worker diagnostic when native launch fails;
-		// the summary's launch_failed label alone cannot identify the cause.
-		logs, err := filepath.Glob(filepath.Join(f.state, "runs", "*", "attempts", "*", "worker.log"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, path := range logs {
-			file, err := os.Open(path) // #nosec G304 -- test-owned worker diagnostics
-			if err != nil {
-				t.Logf("worker diagnostic unavailable: %v", err)
-				continue
-			}
-			raw, readErr := io.ReadAll(io.LimitReader(file, 64<<10))
-			_ = file.Close()
-			t.Logf("redacted worker diagnostic: %s (read error: %v)", raw, readErr)
-		}
 		t.Fatalf("run exit %d: %s", code, stderr)
 	}
 	return f, f.onlyRun(t).RunID
