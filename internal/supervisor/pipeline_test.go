@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -132,7 +133,33 @@ func (f fixture) run(t *testing.T, args ...string) (code int, stdout, stderr str
 	default:
 		t.Fatalf("mythhelm %s: %v", strings.Join(args, " "), err)
 	}
+	if code != 0 {
+		f.logWorkerDiagnostics(t)
+	}
 	return code, out.String(), errOut.String()
+}
+
+// logWorkerDiagnostics preserves the redacted worker log when a fixture run
+// fails; the summary's launch_failed label alone cannot identify the cause.
+// t.Logf keeps passing runs silent and annotates failing ones.
+func (f fixture) logWorkerDiagnostics(t *testing.T) {
+	t.Helper()
+	logs, err := filepath.Glob(filepath.Join(f.state, "runs", "*", "attempts", "*", "worker.log"))
+	if err != nil {
+		// A diagnostic helper must never fail the test it annotates.
+		t.Logf("worker diagnostic unavailable: %v", err)
+		return
+	}
+	for _, path := range logs {
+		file, err := os.Open(path) // #nosec G304 -- test-owned worker diagnostics
+		if err != nil {
+			t.Logf("worker diagnostic unavailable: %v", err)
+			continue
+		}
+		raw, readErr := io.ReadAll(io.LimitReader(file, 64<<10))
+		_ = file.Close()
+		t.Logf("redacted worker diagnostic: %s (read error: %v)", raw, readErr)
+	}
 }
 
 // fakeRun is a complete fake-adapter command line; extra flags are appended.
