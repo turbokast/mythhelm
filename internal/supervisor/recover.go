@@ -478,9 +478,9 @@ func (p *pipeline) adoptUnjournaledV2(ctx context.Context, events []journal.Even
 		return fmt.Errorf("%w: no journaled receipt to verify against", ErrOwnership)
 	}
 	dir := filepath.Join(p.j.StateDir(), "runs", row.RunID)
-	preserved, err := os.ReadFile(filepath.Join(dir, "receipt.v1.json"))
+	preserved, err := os.ReadFile(filepath.Join(dir, "receipt.v1.json")) // #nosec G304 -- fixed name under the owner-locked run directory
 	if err != nil {
-		return fmt.Errorf("%w: preserved v1 receipt unavailable: %v", ErrOwnership, err)
+		return fmt.Errorf("%w: preserved v1 receipt unavailable: %w", ErrOwnership, err)
 	}
 	sum := sha256.Sum256(preserved)
 	if hex.EncodeToString(sum[:]) != latest {
@@ -495,7 +495,7 @@ func (p *pipeline) adoptUnjournaledV2(ctx context.Context, events []journal.Even
 		v1["state"] != string(RunReadyForReview) || candidate["commit"] != candidateCommit {
 		return fmt.Errorf("%w: preserved v1 receipt is not the run's ready receipt", ErrOwnership)
 	}
-	current, err := os.ReadFile(filepath.Join(dir, "receipt.json"))
+	current, err := os.ReadFile(filepath.Join(dir, "receipt.json")) // #nosec G304 -- fixed name under the owner-locked run directory
 	if err != nil {
 		return errors.Join(ErrOwnership, err)
 	}

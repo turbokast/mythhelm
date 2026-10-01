@@ -736,7 +736,7 @@ func latestReceiptDigest(t *testing.T, f fixture, runID string) (sha string, sch
 func receiptFileSHA(t *testing.T, path string) (raw []byte, sha string) {
 	t.Helper()
 	var err error
-	raw, err = os.ReadFile(path)
+	raw, err = os.ReadFile(path) // #nosec G304 -- test-owned fixture receipt
 	if err != nil {
 		t.Fatal(err)
 	}
