@@ -168,6 +168,37 @@ func TestDoctorDoesNotRunAuthStatus(t *testing.T) {
 	}
 }
 
+func TestDoctorUnreadableStateDirIsNotAbsent(t *testing.T) {
+	// A regular file as the parent makes Lstat fail with ENOTDIR, not
+	// ENOENT: doctor must report unreadable, never absent.
+	blocker := filepath.Join(t.TempDir(), "file-not-dir")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MYTHHELM_HOME", filepath.Join(blocker, "state"))
+	code, stdout, stderr := runMain("doctor")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "unreadable") || strings.Contains(stdout, "absent (not created)") {
+		t.Fatalf("unreadable state reported as:\n%s", stdout)
+	}
+}
+
+func TestRunBoundedCapsOutput(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := runBoundedEnv(exe, []string{"__bigout"}, os.Environ())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != maxProbeOutput {
+		t.Fatalf("captured %d bytes, want exactly the %d-byte cap", len(out), maxProbeOutput)
+	}
+}
+
 func TestDoctorClaudeMissing(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	code, stdout, stderr := runMain("doctor")

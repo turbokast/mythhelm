@@ -25,6 +25,9 @@ func TestMain(m *testing.M) {
 			os.Exit(workers.Main(os.Args[2:]))
 		case fake.AgentCommand:
 			os.Exit(fake.AgentMain(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+		case "__bigout":
+			_, _ = os.Stdout.Write(bytes.Repeat([]byte("x"), 1<<20))
+			os.Exit(0)
 		}
 	}
 	os.Exit(m.Run())

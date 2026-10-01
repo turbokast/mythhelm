@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"regexp"
@@ -171,9 +173,14 @@ func stateFacts() map[string]any {
 		return map[string]any{"error": cell(err.Error())}
 	}
 	// Lstat only: a missing state dir is reported, never created (AC-12.2).
+	// Only a non-existence error means absent; anything else (permissions,
+	// I/O) is the kind of fault doctor exists to surface.
 	fi, err := os.Lstat(dir)
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
 		return map[string]any{"path": dir, "status": "absent (not created)"}
+	}
+	if err != nil {
+		return map[string]any{"path": dir, "status": "unreadable", "error": cell(err.Error())}
 	}
 	kind := "file"
 	switch {
@@ -213,17 +220,29 @@ func runBounded(name string, args []string) ([]byte, error) {
 	return runBoundedEnv(name, args, os.Environ())
 }
 
+// maxProbeOutput caps one version probe's captured stdout. A version line
+// needs a few hundred bytes; a hostile binary on PATH must not balloon
+// doctor's memory inside its 10 s timeout.
+const maxProbeOutput = 4096
+
 func runBoundedEnv(name string, args []string, env []string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), doctorProbeTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...) // #nosec G204 -- fixed version-probe argv, no shell
 	cmd.Env = env
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	if err := cmd.Run(); err != nil {
+	pipe, err := cmd.StdoutPipe()
+	if err != nil {
 		return nil, err
 	}
-	return bytes.Clone(stdout.Bytes()), nil
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	out, rerr := io.ReadAll(io.LimitReader(pipe, maxProbeOutput))
+	_, _ = io.Copy(io.Discard, pipe)
+	if werr := cmd.Wait(); werr != nil {
+		return nil, werr
+	}
+	return out, rerr
 }
 
 func writeDoctorPlain(w io.Writer, r doctorReport) error {
@@ -238,6 +257,9 @@ func writeDoctorPlain(w io.Writer, r doctorReport) error {
 	state := fmt.Sprint(r.StateDir["status"])
 	if r.StateDir["path"] != nil {
 		state = fmt.Sprint(r.StateDir["path"]) + " (" + state + ")"
+	}
+	if r.StateDir["error"] != nil {
+		state += ": " + fmt.Sprint(r.StateDir["error"])
 	}
 	settings := "sources: " + fmt.Sprint(r.Settings["sources"]) + "; hooks: " + fmt.Sprint(r.Settings["hooks"]) + "; mcp: " + fmt.Sprint(r.Settings["mcp_servers"])
 	if r.Settings["error"] != nil {
