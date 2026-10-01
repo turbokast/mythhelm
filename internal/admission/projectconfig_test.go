@@ -75,6 +75,8 @@ func TestLoadProjectConfigValidatesAllowedTools(t *testing.T) {
 		"schema_version = 1\n[adapters.claudecode]\nallowed_tools = [\"\"]\n",
 		"schema_version = 1\n[adapters.claudecode]\nallowed_tools = [\"ok\", \"bad\x00rule\"]\n",
 		"schema_version = 1\n[adapters.claudecode]\nallowed_tools = [\"" + strings.Repeat("x", 1025) + "\"]\n",
+		"schema_version = 1\n[adapters.claudecode]\nallowed_tools = [\"--dangerously-skip-permissions\"]\n",
+		"schema_version = 1\n[adapters.claudecode]\nallowed_tools = [\"-p\"]\n",
 	}
 	for _, raw := range bad {
 		if _, _, err := admission.ParseProjectConfig([]byte(raw)); !errors.Is(err, admission.ErrProjectConfig) {

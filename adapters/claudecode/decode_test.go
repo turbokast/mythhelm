@@ -181,6 +181,9 @@ func TestDecodeInitRequiresSessionAndSource(t *testing.T) {
 
 func TestDecodeResultRequiresSubtype(t *testing.T) {
 	t.Parallel()
+	init := []byte(`{"type":"system","subtype":"init","session_id":"s","apiKeySource":"none"}`)
+	// The init frame goes first: without it the success-without-init rule
+	// would answer instead of the rule under test.
 	for _, frame := range []string{
 		`{"type":"result","is_error":false}`,
 		`{"type":"result","subtype":"","is_error":false}`,
@@ -189,9 +192,9 @@ func TestDecodeResultRequiresSubtype(t *testing.T) {
 		`{"type":"result","subtype":"success","total_cost_usd":"twelve cents"}`,
 		`{"type":"result","subtype":"success","total_cost_usd":[1]}`,
 	} {
-		obs := decodeAll([][]byte{[]byte(frame)})
-		if len(obs) != 1 || obs[0] != (adapter.NativeError{Class: "protocol_error"}) {
-			t.Fatalf("%s = %+v, want one protocol_error", frame, obs)
+		obs := decodeAll([][]byte{init, []byte(frame)})
+		if len(obs) != 2 || obs[1] != (adapter.NativeError{Class: "protocol_error"}) {
+			t.Fatalf("%s = %+v, want session then protocol_error", frame, obs)
 		}
 	}
 	// A malformed result still poisons the attempt when a valid session ran.
@@ -217,7 +220,7 @@ func TestDecodeErrorClassMapping(t *testing.T) {
 		"":                      "native_error",
 	} {
 		obs := decodeAll([][]byte{init,
-			[]byte(`{"type":"assistant","message":{"content":[],"error":"` + class + `"}}`)})
+			[]byte(`{"type":"assistant","error":"` + class + `"}`)})
 		var errs []adapter.NativeError
 		for _, ob := range obs {
 			if e, ok := ob.(adapter.NativeError); ok {
@@ -230,8 +233,8 @@ func TestDecodeErrorClassMapping(t *testing.T) {
 	}
 	// Object-shaped errors read their class field; a null error is absent.
 	obs := decodeAll([][]byte{init,
-		[]byte(`{"type":"assistant","message":{"content":[],"error":{"class":"rate_limit"}}}`),
-		[]byte(`{"type":"assistant","message":{"content":[],"error":null}}`)})
+		[]byte(`{"type":"assistant","error":{"class":"rate_limit"}}`),
+		[]byte(`{"type":"assistant","error":null}`)})
 	var errs []adapter.NativeError
 	for _, ob := range obs {
 		if e, ok := ob.(adapter.NativeError); ok {
@@ -346,19 +349,63 @@ func TestDecodeSuccessWithoutInitIsProtocolError(t *testing.T) {
 	}
 }
 
+func TestDecodeAssistantErrorIndependentOfContent(t *testing.T) {
+	t.Parallel()
+	init := []byte(`{"type":"system","subtype":"init","session_id":"s","apiKeySource":"none"}`)
+	// The top-level error classifies even beside an unfamiliar content
+	// shape: a failure never hides behind a new block type.
+	obs := decodeAll([][]byte{init,
+		[]byte(`{"type":"assistant","error":"rate_limit","message":{"content":[{"type":"unknown_future_block","x":1}]}}`)})
+	var errs []adapter.NativeError
+	for _, ob := range obs {
+		if e, ok := ob.(adapter.NativeError); ok {
+			errs = append(errs, e)
+		}
+	}
+	if len(errs) != 1 || errs[0].Class != "rate_limit" {
+		t.Fatalf("error beside unknown content = %+v, want one rate_limit", errs)
+	}
+	// A present message that is not an object at all is a shape
+	// violation, not vendor evolution.
+	obs = decodeAll([][]byte{init,
+		[]byte(`{"type":"assistant","message":42}`)})
+	if len(obs) != 3 || obs[2] != (adapter.NativeError{Class: "protocol_error"}) {
+		t.Fatalf("non-object message = %+v, want progress then protocol_error", obs)
+	}
+	// message.error is not a vendor shape (SDKAssistantMessage.error is
+	// top-level): the narrow content read ignores it.
+	obs = decodeAll([][]byte{init,
+		[]byte(`{"type":"assistant","message":{"content":[],"error":"authentication_failed"}}`)})
+	for _, ob := range obs {
+		if e, ok := ob.(adapter.NativeError); ok {
+			t.Fatalf("nested message.error classified as %+v, want ignored", e)
+		}
+	}
+}
+
 func TestDecodeAliasConflictsFailTheFrame(t *testing.T) {
 	t.Parallel()
 	for _, frame := range []string{
 		`{"type":"system","subtype":"init","session_id":"s","apiKeySource":"none","claude_code_version":"1","version":"2"}`,
 		`{"type":"system","subtype":"init","session_id":"s","apiKeySource":"none","mcp_servers":[],"mcpServers":[{}]}`,
+	} {
+		obs := decodeAll([][]byte{[]byte(frame)})
+		if len(obs) != 1 || obs[0] != (adapter.NativeError{Class: "protocol_error"}) {
+			t.Fatalf("%s = %+v, want one protocol_error", frame, obs)
+		}
+	}
+	// Result conflicts decode after init: without it the
+	// success-without-init rule would answer instead.
+	init := []byte(`{"type":"system","subtype":"init","session_id":"s","apiKeySource":"none"}`)
+	for _, frame := range []string{
 		`{"type":"result","subtype":"success","is_error":false,"isError":true}`,
 		`{"type":"result","subtype":"success","total_cost_usd":"1.00","totalCostUsd":"2.00"}`,
 		`{"type":"result","subtype":"success","num_turns":1,"numTurns":2}`,
 		`{"type":"result","subtype":"success","stop_reason":"a","stopReason":"b"}`,
 	} {
-		obs := decodeAll([][]byte{[]byte(frame)})
-		if len(obs) != 1 || obs[0] != (adapter.NativeError{Class: "protocol_error"}) {
-			t.Fatalf("%s = %+v, want one protocol_error", frame, obs)
+		obs := decodeAll([][]byte{init, []byte(frame)})
+		if len(obs) != 2 || obs[1] != (adapter.NativeError{Class: "protocol_error"}) {
+			t.Fatalf("%s = %+v, want session then protocol_error", frame, obs)
 		}
 	}
 	// Identical spellings agree and are accepted.

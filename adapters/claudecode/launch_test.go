@@ -254,6 +254,8 @@ func TestPrepareRejectsBadInput(t *testing.T) {
 		"missing probe":    func(in *adapter.PrepareInput) { in.Probe = adapter.Probe{} },
 		"missing prompt":   func(in *adapter.PrepareInput) { in.Prompt = nil },
 		"empty rule":       func(in *adapter.PrepareInput) { in.AllowedTools = []string{""} },
+		"dash rule":        func(in *adapter.PrepareInput) { in.AllowedTools = []string{"--dangerously-skip-permissions"} },
+		"short dash rule":  func(in *adapter.PrepareInput) { in.AllowedTools = []string{"-p"} },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {

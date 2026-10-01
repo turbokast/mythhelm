@@ -83,7 +83,10 @@ func (a *claudeAdapter) Prepare(_ context.Context, in adapter.PrepareInput) (ada
 		return adapter.LaunchProposal{}, errors.New("claudecode: prompt is required")
 	}
 	for _, rule := range in.AllowedTools {
-		if rule == "" || len(rule) > MaxAllowedToolRule || strings.ContainsRune(rule, 0) {
+		// Dash-prefixed rules are refused: past --allowedTools the
+		// native would parse them as its own options, so a rule must
+		// never look like one.
+		if rule == "" || len(rule) > MaxAllowedToolRule || strings.ContainsRune(rule, 0) || strings.HasPrefix(rule, "-") {
 			return adapter.LaunchProposal{}, fmt.Errorf("claudecode: invalid allowed-tools rule %q", rule)
 		}
 	}

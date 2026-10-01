@@ -134,21 +134,30 @@ func (d *streamDecoder) decodeAssistant(obj map[string]json.RawMessage) []adapte
 	d.turns++
 	var out []adapter.Observation
 	out = append(out, adapter.Progress{Turn: d.turns})
+	// The error rides top-level on the vendor's assistant message
+	// (SDKAssistantMessage.error). It is classified independently of the
+	// content shape, so a failure can never hide behind a new block type.
+	if class, ok := errorClass(obj["error"]); ok {
+		out = append(out, adapter.NativeError{Class: class})
+	}
+	raw, ok := obj["message"]
+	if !ok || string(raw) == "null" {
+		return out
+	}
 	var msg struct {
 		Content []struct {
 			Type string `json:"type"`
 			Name string `json:"name"`
 		} `json:"content"`
-		Error json.RawMessage `json:"error"`
 	}
-	if raw, ok := obj["message"]; ok && json.Unmarshal(raw, &msg) == nil {
-		for _, block := range msg.Content {
-			if block.Type == "tool_use" {
-				out = append(out, adapter.Progress{Turn: d.turns, Tool: streamToolName(block.Name)})
-			}
-		}
-		if class, ok := errorClass(msg.Error); ok {
-			out = append(out, adapter.NativeError{Class: class})
+	// Tool extraction is informational, but a present message that is not
+	// an object at all is a shape violation, not vendor evolution.
+	if json.Unmarshal(raw, &msg) != nil {
+		return append(out, d.protocolViolation()...)
+	}
+	for _, block := range msg.Content {
+		if block.Type == "tool_use" {
+			out = append(out, adapter.Progress{Turn: d.turns, Tool: streamToolName(block.Name)})
 		}
 	}
 	return out

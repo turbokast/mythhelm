@@ -30,6 +30,7 @@ type fakeClaudeConfig struct {
 	SleepMs         int            `json:"sleep_ms"`
 	IgnoreTerm      bool           `json:"ignore_term"`
 	ArgvFile        string         `json:"argv_file"`
+	DelayMs         int            `json:"delay_ms"`
 }
 
 func fakeClaudeMain() int {
@@ -65,6 +66,10 @@ func fakeClaudeMain() int {
 	// Only the launch invocation reports its argv: probes answer above.
 	if cfg.ArgvFile != "" {
 		_ = os.WriteFile(cfg.ArgvFile, []byte(strings.Join(os.Args, "\n")), 0o600) // #nosec G703 -- test-declared path under t.TempDir
+	}
+	// A start delay holds init back so a test signal lands first.
+	if cfg.DelayMs > 0 {
+		time.Sleep(time.Duration(cfg.DelayMs) * time.Millisecond)
 	}
 	_, _ = io.Copy(io.Discard, os.Stdin)
 	for i, line := range cfg.Stream {
@@ -389,11 +394,65 @@ func TestTrustedAllowedToolsReachChildArgv(t *testing.T) {
 	}
 }
 
+func TestUserStopBeforeInitKeepsBillingBlock(t *testing.T) {
+	requireSignals(t)
+	// The native holds init back, so the user's interrupt is recorded
+	// first (250 ms poll), and ignores SIGTERM, so it survives the
+	// user's ladder long enough to report its mismatching source.
+	// AC-4.4 is unconditional: the late mismatch still ends the run
+	// blocked, with the user kept as requester.
+	installFakeClaude(t, fakeClaudeConfig{Version: "2.1.284", Auth: fakeAuth(t), DelayMs: 3000, IgnoreTerm: true, Stream: []string{
+		claudeInit("ANTHROPIC_API_KEY"),
+		claudeResult("success", false, `"num_turns":1`),
+	}})
+	f := newFixture(t)
+	r := startLive(t, f, f.claudeRun("--format", "jsonl")...)
+	r.waitStdout(t, "the launch", isType("attempt.launched"))
+	if err := r.cmd.Process.Signal(os.Interrupt); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := r.wait(t)
+	if code != 3 {
+		t.Fatalf("exit %d, stderr %q; want 3", code, stderr)
+	}
+	run := f.onlyRun(t)
+	if run.State != "blocked" || run.Reason != "billing_route_mismatch" {
+		t.Fatalf("run projected %s/%s, want blocked/billing_route_mismatch", run.State, run.Reason)
+	}
+	if state, reason := terminalAttempt(t, f, run.RunID); state != "stopped" || reason != "billing_route_mismatch" {
+		t.Fatalf("attempt %s/%s, want stopped/billing_route_mismatch", state, reason)
+	}
+	// The first requester stands even as the policy reason applies.
+	requested := eventPayload(t, f, run.RunID, "attempt.stop_requested")
+	if requested["requested_by"] != "user-interrupt" {
+		t.Fatalf("attempt.stop_requested = %v, want the user recorded first", requested)
+	}
+	evs, err := decodeEnvelopes(strings.Join(stdout, "\n") + "\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stopping, blocked bool
+	for _, ev := range evs {
+		if ev.Type != "run.state_changed" {
+			continue
+		}
+		switch payloadOf(t, ev)["state"] {
+		case "stopping":
+			stopping = true
+		case "blocked":
+			blocked = stopping
+		}
+	}
+	if !stopping || !blocked {
+		t.Fatalf("stopping=%t blocked-after-stopping=%t; want the user stop first, then the block", stopping, blocked)
+	}
+}
+
 func TestAuthFailedMapsToBlocked(t *testing.T) {
 	requireUnixClaude(t)
 	installFakeClaude(t, fakeClaudeConfig{Version: "2.1.284", Auth: fakeAuth(t), Exit: 1, Stream: []string{
 		claudeInit("none"),
-		`{"type":"assistant","message":{"content":[],"error":"authentication_failed"}}`,
+		`{"type":"assistant","error":"authentication_failed"}`,
 		claudeResult("error_auth", true, ""),
 	}})
 	f := newFixture(t)
@@ -422,7 +481,7 @@ func TestRateLimitNoInventedCountdown(t *testing.T) {
 	requireUnixClaude(t)
 	installFakeClaude(t, fakeClaudeConfig{Version: "2.1.284", Auth: fakeAuth(t), Exit: 1, Stream: []string{
 		claudeInit("none"),
-		`{"type":"assistant","message":{"content":[],"error":{"class":"rate_limit"}}}`,
+		`{"type":"assistant","error":{"class":"rate_limit"}}`,
 		claudeResult("error_retry", true, ""),
 	}})
 	f := newFixture(t)
@@ -463,7 +522,7 @@ func TestRateLimitThenSuccessSucceeds(t *testing.T) {
 	requireUnixClaude(t)
 	installFakeClaude(t, fakeClaudeConfig{Version: "2.1.284", Auth: fakeAuth(t), Stream: []string{
 		claudeInit("none"),
-		`{"type":"assistant","message":{"content":[],"error":"rate_limit"}}`,
+		`{"type":"assistant","error":"rate_limit"}`,
 		claudeResult("success", false, `"num_turns":1`),
 	}})
 	f := newFixture(t)

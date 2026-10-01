@@ -366,8 +366,9 @@ type worker struct {
 // outcome is what the worker learned about the native process.
 type outcome struct {
 	stopBy string // requester of an active stop, or ""
-	// stopReason qualifies a worker-initiated stop (AC-4.4); user stops
-	// carry no reason. stopStarted records that the ladder ran or is
+	// stopReason qualifies a stop: billing_route_mismatch whenever AC-4.4
+	// fired, even under a user requester; a pure user stop carries no
+	// reason. stopStarted records that the ladder ran or is
 	// running, so a stop is never requested twice; stopRecorded records
 	// that attempt.stop_requested reached the spool.
 	stopReason   string
@@ -644,11 +645,15 @@ func (w *worker) observe(sp *spool, ob adapter.Observation, prog *progress, out 
 			return err
 		}
 		// AC-4.4: a session that did not start on the admitted route is
-		// interrupted immediately. The first requester stands: a user stop
-		// already in flight keeps the outcome, with this session's source
-		// preserved as evidence above.
-		if o.APIKeySource != "none" && out.stopBy == "" {
-			out.stopBy, out.stopReason = "worker", "billing_route_mismatch"
+		// interrupted immediately, and the run ends blocked whatever else
+		// was in flight. The first requester stands, but the policy
+		// reason always applies: a user stop that beat init must not
+		// demote the route violation to a cancellation footnote.
+		if o.APIKeySource != "none" {
+			if out.stopBy == "" {
+				out.stopBy = "worker"
+			}
+			out.stopReason = "billing_route_mismatch"
 		}
 		return nil
 	case adapter.Progress:
