@@ -613,7 +613,7 @@
 - **Test plan**: fakeclaude replays each fixture through the real worker and launcher.
 - **Invariants touched**: I01, I06, I07, I09, I15, §9.3, §9.7, §12.3.
 
-### Task 18 — Offline demo and read-only doctor
+### Task 18 — Offline demo and read-only doctor ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
