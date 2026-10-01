@@ -57,7 +57,8 @@ func (e env) withParent(t *testing.T) []string {
 			"MYTHHELM_HOME", "GIT_CONFIG_NOSYSTEM", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
 			"GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
 			"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
-			"http_proxy", "https_proxy", "all_proxy"}, name)
+			"http_proxy", "https_proxy", "all_proxy",
+			"NO_PROXY", "no_proxy"}, name)
 	})
 	return append(out, e.vars...)
 }
