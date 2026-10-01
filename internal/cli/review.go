@@ -2,14 +2,10 @@ package cli
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -56,37 +52,11 @@ func runReview(args []string, stdio Stdio) error {
 	if err != nil {
 		return err
 	}
-	runDir := filepath.Join(dir, "runs", run.RunID)
-	b, err := os.ReadFile(filepath.Join(runDir, "receipt.json")) // #nosec G304 -- run ID is validated and projection-bound
-	if err != nil {
-		return fmt.Errorf("reading receipt for %s: %w", run.RunID, err)
-	}
-	events, err := j.Events(ctx, run.RunID, 0)
+	r, _, err := supervisor.ReadReceipt(ctx, j, run.RunID)
 	if err != nil {
 		return err
 	}
-	var expected string
-	for _, ev := range events {
-		if ev.Type != "receipt.written" {
-			continue
-		}
-		var m struct {
-			SHA256 string `json:"sha256"`
-		}
-		if err := json.Unmarshal(ev.Payload, &m); err != nil {
-			return err
-		}
-		expected = m.SHA256
-	}
-	sum := sha256.Sum256(b)
-	if expected == "" || expected != hex.EncodeToString(sum[:]) {
-		return fmt.Errorf("receipt for %s does not match its journaled SHA-256", run.RunID)
-	}
-	var r supervisor.Receipt
-	if err := json.Unmarshal(b, &r); err != nil {
-		return err
-	}
-	if r["run_id"] != run.RunID || r["state"] != run.State {
+	if r["state"] != run.State {
 		return fmt.Errorf("receipt for %s does not match its run projection", run.RunID)
 	}
 	if *format == "jsonl" {

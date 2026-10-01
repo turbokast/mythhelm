@@ -70,19 +70,10 @@ func GitBlob(ctx context.Context, dir, oid string, dst io.Writer) error {
 }
 
 func git(ctx context.Context, dir string, userRepo bool, index string, stream io.Writer, args ...string) ([]byte, error) {
-	hooks, err := emptyHooksDir()
+	cmd, err := gitCommand(ctx, dir, userRepo, args...)
 	if err != nil {
 		return nil, err
 	}
-	argv := append([]string{
-		"-c", "core.fsmonitor=false",
-		"-c", "core.hooksPath=" + hooks,
-		"-c", "gc.auto=0",
-		"-c", "maintenance.auto=false",
-	}, args...)
-	cmd := exec.CommandContext(ctx, "git", argv...) // #nosec G204 -- fixed binary, argv array, no shell
-	cmd.Dir = dir
-	cmd.Env = gitEnv(os.Environ(), userRepo)
 	if index != "" {
 		cmd.Env = append(cmd.Env, "GIT_INDEX_FILE="+index)
 	}
@@ -109,6 +100,24 @@ func git(ctx context.Context, dir string, userRepo bool, index string, stream io
 		return nil, fmt.Errorf("git %s: %w (%d bytes)", strings.Join(args, " "), ErrOutputTooLarge, maxStdout)
 	}
 	return stdout.buf.Bytes(), nil
+}
+
+// gitCommand shares safety configuration with interactive ref transactions.
+func gitCommand(ctx context.Context, dir string, userRepo bool, args ...string) (*exec.Cmd, error) {
+	hooks, err := emptyHooksDir()
+	if err != nil {
+		return nil, err
+	}
+	argv := append([]string{
+		"-c", "core.fsmonitor=false",
+		"-c", "core.hooksPath=" + hooks,
+		"-c", "gc.auto=0",
+		"-c", "maintenance.auto=false",
+	}, args...)
+	cmd := exec.CommandContext(ctx, "git", argv...) // #nosec G204 -- fixed binary, argv array, no shell
+	cmd.Dir = dir
+	cmd.Env = gitEnv(os.Environ(), userRepo)
+	return cmd, nil
 }
 
 // cappedBuffer keeps at most max bytes and records whether more arrived. It
