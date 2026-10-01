@@ -39,13 +39,14 @@ func critical(typ string) bool {
 // run's owner lock ingests it into the journal; the worker never opens the
 // database.
 type spool struct {
-	f          *os.File
-	sync       func(*os.File) error // the fsync seam; (*os.File).Sync outside tests
-	runID      string
-	taskID     string
-	attemptID  string
-	producerID string
-	seq        int64
+	f               *os.File
+	sync            func(*os.File) error // the fsync seam; (*os.File).Sync outside tests
+	runID           string
+	taskID          string
+	attemptID       string
+	producerID      string
+	seq             int64
+	terminalWritten bool // terminal transition may already have been ingested
 }
 
 // createSpool creates the attempt's spool. It fails if the spool exists, so
@@ -92,6 +93,14 @@ func (s *spool) emit(typ string, payload any) error {
 		return fmt.Errorf("writing %s to the spool: %w", typ, err)
 	}
 	s.seq++
+	if typ == evStateChanged {
+		if m, ok := payload.(map[string]any); ok {
+			state, _ := m["state"].(string)
+			if state != "launching" && state != "running" && state != "stop_requested" {
+				s.terminalWritten = true
+			}
+		}
+	}
 	if critical(typ) {
 		if err := s.sync(s.f); err != nil {
 			return fmt.Errorf("syncing %s: %w", typ, err)

@@ -770,3 +770,147 @@ func (neverEnding) Read(p []byte) (int, error) {
 	}
 	return len(p), nil
 }
+
+func TestWorkerPanicStopsNativeAndRecordsInterruption(t *testing.T) {
+	for _, boundary := range []string{"before_launch", "process_created", "session_started"} {
+		t.Run(boundary, func(t *testing.T) {
+			a := newAttempt(t)
+			calls := 0
+			w := &worker{}
+			secret := "private panic content"
+			if boundary == "session_started" {
+				w.spoolSync = func(*os.File) error {
+					calls++
+					if calls == 4 {
+						panic(secret)
+					}
+					return nil
+				}
+			} else {
+				w.writeFile = func(dir, name string, body []byte) error {
+					calls++
+					if calls == 1 && boundary == "before_launch" || calls == 3 && boundary == "process_created" {
+						panic(secret)
+					}
+					return writeFileAtomic(dir, name, body)
+				}
+			}
+			escaped := false
+			t.Cleanup(func() {
+				if escaped && w.id.NativePID != nil {
+					if p, err := os.FindProcess(*w.id.NativePID); err == nil {
+						_ = p.Kill()
+						_ = p.Release()
+					}
+				}
+			})
+			var runErr error
+			func() {
+				defer func() {
+					if recover() != nil {
+						escaped = true
+					}
+				}()
+				runErr = a.runInProcess(t, a.launch(t, "slow"), w)
+			}()
+			if escaped || runErr == nil {
+				t.Fatalf("worker panic escaped boundary: %v error %v", escaped, runErr)
+			}
+			evs := a.events(t)
+			if state, reason := final(t, evs); state != "interrupted" || reason != "worker_panic" {
+				t.Fatalf("panic outcome %s/%s", state, reason)
+			}
+			if stop := stoppedOf(t, evs); !stop.Confirmed {
+				t.Fatalf("native not confirmed gone: %v", stop)
+			}
+			if boundary != "before_launch" && len(stoppedOf(t, evs).SignalsSent) == 0 {
+				t.Fatal("panic did not stop native")
+			}
+			raw, _ := os.ReadFile(filepath.Join(a.dir, "spool.jsonl"))
+			if strings.Contains(string(raw), secret) || strings.Contains(runErr.Error(), secret) {
+				t.Fatal("raw panic content persisted")
+			}
+		})
+	}
+}
+
+func TestWorkerPanicPreservesObservedNonzeroExit(t *testing.T) {
+	for _, eventType := range []string{evNativeResult, evStopped} {
+		t.Run(eventType, func(t *testing.T) {
+			a := newAttempt(t)
+			panicked := false
+			w := &worker{spoolSync: func(*os.File) error {
+				evs := a.events(t)
+				if !panicked && evs[len(evs)-1].Type == eventType {
+					panicked = true
+					panic("private native content")
+				}
+				return nil
+			}}
+			if err := a.runInProcess(t, a.launch(t, "native-fails"), w); err == nil || !panicked {
+				t.Fatalf("panic boundary not exercised: %v", err)
+			}
+			evs := a.events(t)
+			for _, ev := range evs {
+				if ev.Type != evNativeResult {
+					continue
+				}
+				var result map[string]json.RawMessage
+				if err := json.Unmarshal(ev.Payload, &result); err != nil {
+					t.Fatal(err)
+				}
+				if string(result["exit_code"]) != "1" {
+					t.Fatalf("I09: observed nonzero exit became %s", result["exit_code"])
+				}
+			}
+			if state, reason := final(t, evs); state != "interrupted" || reason != "worker_panic" {
+				t.Fatalf("panic outcome %s/%s", state, reason)
+			}
+		})
+	}
+}
+
+func TestAbortClearsJoinedStopLadder(t *testing.T) {
+	w, sp := stubWorker(t)
+	defer func() { _ = sp.close() }()
+	pending := make(chan adapter.InterruptReport, 1)
+	pending <- adapter.InterruptReport{Confirmed: true}
+	w.pendingStop = pending
+	_ = w.abort(t.Context(), sp, &stubSession{}, outcome{pending: pending}, errors.New("test abort"))
+	if w.pendingStop != nil {
+		t.Fatal("consumed stop ladder retained; panic cleanup would wait on an empty channel")
+	}
+}
+
+func TestWorkerPanicAfterTerminalWritePreservesState(t *testing.T) {
+	a := newAttempt(t)
+	panicked := false
+	w := &worker{spoolSync: func(*os.File) error {
+		evs := a.events(t)
+		last := evs[len(evs)-1]
+		if !panicked && last.Type == evStateChanged && stateOf(t, last).State == "failed_native" {
+			panicked = true
+			panic("private panic content")
+		}
+		return nil
+	}}
+	if err := a.runInProcess(t, a.launch(t, "native-fails"), w); err == nil || !panicked {
+		t.Fatalf("terminal sync panic not exercised: %v", err)
+	}
+	terminals := 0
+	for _, ev := range a.events(t) {
+		if ev.Type != evStateChanged {
+			continue
+		}
+		state := stateOf(t, ev).State
+		if state != "launching" && state != "running" && state != "stop_requested" {
+			terminals++
+			if state != "failed_native" {
+				t.Fatalf("already-written terminal state overwritten with %s", state)
+			}
+		}
+	}
+	if terminals != 1 {
+		t.Fatalf("spool must have one terminal transition for ingestion, got %d", terminals)
+	}
+}

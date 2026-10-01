@@ -231,7 +231,7 @@ func receiptExit(state, reason string) int {
 	case string(RunInterrupted):
 		return 6
 	case string(RunFailed):
-		if reason == "native_failed" || reason == "protocol_error" {
+		if reason == "native_failed" || reason == "protocol_error" || reason == "recovered_partial" {
 			return 4
 		}
 		if reason == "verification_failed" || reason == "verification_unavailable" {

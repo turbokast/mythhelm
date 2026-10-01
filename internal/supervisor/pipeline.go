@@ -129,6 +129,11 @@ func Run(ctx context.Context, d admission.Decision, h Hooks) (Outcome, error) {
 	p := &pipeline{d: d, h: h, j: j, exe: exe, prod: NewProducer(ids.New("sup"), 1),
 		out: Outcome{RunID: d.RunID, AttemptID: d.AttemptID}}
 	err = p.run(ctx)
+	if err != nil && p.out.State == "" {
+		// A failed initial journal append admits nothing and starts no
+		// worker. Report the persistence admission refusal (exit 3).
+		err = unavailable(err)
+	}
 	return p.out, err
 }
 
@@ -338,6 +343,12 @@ func (p *pipeline) freezeAfterStop(ctx context.Context) error {
 		}
 		return p.runTo(ctx, RunInterrupted, reason)
 	}
+	return p.freezeCandidate(ctx)
+}
+
+// freezeCandidate is called only after ownership has been confirmed gone,
+// either by the worker or by recovery's recorded PID/start-time checks.
+func (p *pipeline) freezeCandidate(ctx context.Context) error {
 	c, err := integration.Freeze(ctx, p.d.Workdir, p.d.Snapshot.BaseRev, integration.CommitMeta{
 		RunID: p.d.RunID, AttemptID: p.d.AttemptID, Title: p.d.Task.Title,
 		Name: p.d.GitName, Email: p.d.GitEmail,
@@ -525,8 +536,10 @@ func (p *pipeline) watch(ctx context.Context, ref AttemptRef, exited <-chan stru
 			if err := workers.RequestStop(ref.Dir(), stopRequester); err != nil {
 				return fmt.Errorf("requesting a stop: %w", err)
 			}
-			if err := p.runTo(ctx, RunStopping, ""); err != nil {
-				return err
+			if p.out.State != RunStopping {
+				if err := p.runTo(ctx, RunStopping, ""); err != nil {
+					return err
+				}
 			}
 			p.h.Notice(StopRequestedNotice)
 		case <-tick.C:

@@ -113,7 +113,7 @@ func (st step) validate() error {
 		if st.Synth != "" && st.Synth != "oversized" && st.Synth != "deep" {
 			return fmt.Errorf("unknown synth %q", st.Synth)
 		}
-	case "write":
+	case "write", "append":
 		if !filepath.IsLocal(filepath.FromSlash(st.Path)) {
 			return fmt.Errorf("path %q is not local to the workdir", st.Path)
 		}
@@ -185,12 +185,22 @@ func AgentMain(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			if _, err := stdout.Write(append(st.frame(), '\n')); err != nil {
 				return fail(err)
 			}
-		case "write":
+		case "write", "append":
 			p := filepath.Join(*workdir, filepath.FromSlash(st.Path))
 			if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
 				return fail(err)
 			}
-			if err := os.WriteFile(p, []byte(st.Content), 0o600); err != nil {
+			if st.Op == "append" {
+				f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600) // #nosec G304 -- validated local path in an embedded scenario
+				if err != nil {
+					return fail(err)
+				}
+				_, err = io.WriteString(f, st.Content)
+				err = errors.Join(err, f.Close())
+				if err != nil {
+					return fail(err)
+				}
+			} else if err := os.WriteFile(p, []byte(st.Content), 0o600); err != nil {
 				return fail(err)
 			}
 		case "sleep":

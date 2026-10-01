@@ -65,7 +65,7 @@ func exitCode(err error) ExitCode {
 		return ExitCapability
 	case errors.As(err, &blocked):
 		return ExitBlocked
-	case errors.Is(err, supervisor.ErrOwnerHeld):
+	case errors.Is(err, supervisor.ErrOwnerHeld), errors.Is(err, supervisor.ErrOwnership):
 		return ExitOwnership
 	default:
 		return ExitInternal
@@ -115,7 +115,7 @@ func runExit(o supervisor.Outcome) (ExitCode, string) {
 		return ExitOwnership, categories[ExitOwnership]
 	case supervisor.RunFailed:
 		switch o.Reason {
-		case "native_failed", "protocol_error":
+		case "native_failed", "protocol_error", "recovered_partial":
 			return ExitNative, categories[ExitNative]
 		case "verification_failed":
 			return ExitVerify, "verification_failed"
