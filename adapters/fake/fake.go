@@ -38,8 +38,6 @@ const (
 	maxUnknownTypes = 32
 	// maxToolName is the longest tool name reported as is.
 	maxToolName = 64
-	// stopPollInterval is how often Interrupt checks whether the group is gone.
-	stopPollInterval = 25 * time.Millisecond
 )
 
 // ErrUnknownScenario is returned by Prepare for a scenario that is not
@@ -271,46 +269,7 @@ func (s *session) send(ob adapter.Observation) {
 // Interrupt climbs the stop ladder until the process group is confirmed
 // gone, the ladder ends or ctx is done.
 func (s *session) Interrupt(ctx context.Context) adapter.InterruptReport {
-	var rep adapter.InterruptReport
-	for _, step := range s.ladder {
-		if s.proc.GroupGone() {
-			rep.Confirmed = true
-			return rep
-		}
-		if err := s.proc.Signal(step.Signal); err != nil {
-			rep.Errors = append(rep.Errors, fmt.Sprintf("%s: %v", step.Signal, err))
-		}
-		rep.Sent = append(rep.Sent, step.Signal)
-		if waitGone(ctx, s.proc, step.Grace) {
-			rep.Confirmed = true
-			return rep
-		}
-		if err := ctx.Err(); err != nil {
-			rep.Errors = append(rep.Errors, err.Error())
-			return rep
-		}
-	}
-	rep.Confirmed = s.proc.GroupGone()
-	return rep
-}
-
-func waitGone(ctx context.Context, proc adapter.OwnedProc, grace time.Duration) bool {
-	deadline := time.NewTimer(grace)
-	defer deadline.Stop()
-	tick := time.NewTicker(stopPollInterval)
-	defer tick.Stop()
-	for {
-		if proc.GroupGone() {
-			return true
-		}
-		select {
-		case <-ctx.Done():
-			return false
-		case <-deadline.C:
-			return proc.GroupGone()
-		case <-tick.C:
-		}
-	}
+	return adapter.ClimbLadder(ctx, s.proc, s.ladder)
 }
 
 // Frame types written by the fake agent.
@@ -369,7 +328,7 @@ func (d *decoder) decode(frame []byte) adapter.Observation {
 	switch head.Type {
 	case frameInit:
 		var f initFrame
-		if json.Unmarshal(frame, &f) != nil || f.SessionID == "" {
+		if json.Unmarshal(frame, &f) != nil || f.SessionID == "" || f.APIKeySource == "" {
 			break
 		}
 		return adapter.SessionStarted{SessionID: f.SessionID, Model: f.Model, NativeVersion: f.NativeVersion, PermissionMode: f.PermissionMode, APIKeySource: f.APIKeySource}

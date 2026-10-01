@@ -66,6 +66,17 @@ type PrepareInput struct {
 	Env       []string  // the allowlisted child environment, as KEY=value
 	Prompt    io.Reader // the task text, delivered on stdin
 	Scenario  string    // fake adapter only
+	// Probe is the pinned native identity a native adapter launches.
+	// Prepare re-checks the executable hash, so a binary swapped between
+	// probe and launch fails closed instead of running unverified.
+	Probe Probe // native adapters only; the fake resolves itself
+	// AllowedTools carries the trusted project's native tool rules, in
+	// order. Empty means no --allowedTools flag.
+	AllowedTools []string // claudecode only
+	// Passthrough names the trusted project environment entries the child
+	// keeps. Admission validates them; Prepare applies them without
+	// restoring denied credential routes.
+	Passthrough []string // claudecode only
 }
 
 // LaunchProposal is everything needed to start one native attempt.
@@ -178,6 +189,55 @@ type InterruptReport struct {
 	Errors    []string     `json:"errors,omitempty"`
 }
 
+// stopPollInterval is how often ClimbLadder checks whether the group is gone.
+const stopPollInterval = 25 * time.Millisecond
+
+// ClimbLadder delivers each rung to the process group until GroupGone holds,
+// the ladder ends or ctx is done. Both adapters' sessions share it, so stop
+// confirmation cannot drift between them (I06).
+func ClimbLadder(ctx context.Context, proc OwnedProc, ladder []StopStep) InterruptReport {
+	var rep InterruptReport
+	for _, step := range ladder {
+		if proc.GroupGone() {
+			rep.Confirmed = true
+			return rep
+		}
+		if err := proc.Signal(step.Signal); err != nil {
+			rep.Errors = append(rep.Errors, fmt.Sprintf("%s: %v", step.Signal, err))
+		}
+		rep.Sent = append(rep.Sent, step.Signal)
+		if waitGroupGone(ctx, proc, step.Grace) {
+			rep.Confirmed = true
+			return rep
+		}
+		if err := ctx.Err(); err != nil {
+			rep.Errors = append(rep.Errors, err.Error())
+			return rep
+		}
+	}
+	rep.Confirmed = proc.GroupGone()
+	return rep
+}
+
+func waitGroupGone(ctx context.Context, proc OwnedProc, grace time.Duration) bool {
+	deadline := time.NewTimer(grace)
+	defer deadline.Stop()
+	tick := time.NewTicker(stopPollInterval)
+	defer tick.Stop()
+	for {
+		if proc.GroupGone() {
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-deadline.C:
+			return proc.GroupGone()
+		case <-tick.C:
+		}
+	}
+}
+
 // Observation is a closed sum type: SessionStarted, Progress, Retry,
 // PermissionDenied, NativeError, Result or ProtocolCounters.
 type Observation interface{ observation() }
@@ -239,12 +299,13 @@ type Result struct {
 	StartupFailureReason string
 }
 
-// TokenUsage is native-reported token usage for one model.
+// TokenUsage is native-reported token usage for one model. A nil field is
+// unreported, never zero (I09).
 type TokenUsage struct {
-	Input         int64 `json:"input"`
-	Output        int64 `json:"output"`
-	CacheRead     int64 `json:"cache_read"`
-	CacheCreation int64 `json:"cache_creation"`
+	Input         *int64 `json:"input"`
+	Output        *int64 `json:"output"`
+	CacheRead     *int64 `json:"cache_read"`
+	CacheCreation *int64 `json:"cache_creation"`
 }
 
 // ProtocolCounters summarises what the stream decoder dropped. It is sent

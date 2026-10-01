@@ -1,0 +1,2 @@
+# synthetic: doc-derived stream-json shapes; Task 20 replaces these with a sanitised recording
+{"type":"result","subtype":"error_startup","is_error":true,"stop_reason":"startup_failure","modelUsage":{},"permission_denials":[],"errors":[{"type":"startup"}],"startup_failure_reason":"config_error"}

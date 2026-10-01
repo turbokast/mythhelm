@@ -120,7 +120,7 @@ var legalRun = map[RunState][]RunState{
 	RunVerifying:      {RunReadyForReview, RunFailed},
 	RunReadyForReview: {RunApplying},
 	RunApplying:       {RunCompleted, RunBlocked},
-	RunStopping:       {RunCancelled, RunInterrupted},
+	RunStopping:       {RunCancelled, RunInterrupted, RunBlocked},
 	RunInterrupted:    {RunRecovering},
 	RunRecovering:     {RunExecuting, RunVerifying, RunFailed, RunInterrupted},
 }

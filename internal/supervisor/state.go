@@ -44,9 +44,13 @@ var runTransitions = map[RunState][]RunState{
 	RunVerifying:      {RunReadyForReview, RunFailed},
 	RunReadyForReview: {RunApplying},
 	RunApplying:       {RunCompleted, RunBlocked},
-	RunStopping:       {RunCancelled, RunInterrupted},
-	RunInterrupted:    {RunRecovering},
-	RunRecovering:     {RunExecuting, RunVerifying, RunFailed, RunInterrupted},
+	// Stopping also exits to blocked: a worker-initiated billing stop
+	// (AC-4.4) is a policy block even when the user asked to stop first.
+	// The route violation is the significant fact, and the attempt's
+	// stopped/billing_route_mismatch reason preserves the evidence.
+	RunStopping:    {RunCancelled, RunInterrupted, RunBlocked},
+	RunInterrupted: {RunRecovering},
+	RunRecovering:  {RunExecuting, RunVerifying, RunFailed, RunInterrupted},
 }
 
 // AttemptState is an attempt's lifecycle state (design §4). reserved,

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/turbokast/mythhelm/adapters/claudecode"
 	"github.com/turbokast/mythhelm/internal/security"
 	"github.com/turbokast/mythhelm/internal/workspace"
 )
@@ -125,6 +126,13 @@ func ParseProjectConfig(raw []byte) (ProjectConfig, string, error) {
 	}
 	if _, err := security.BuildEnv(nil, cfg.Environment.Passthrough, nil); err != nil {
 		return cfg, "", fmt.Errorf("%w: %w", ErrProjectConfig, err)
+	}
+	for _, rule := range cfg.Adapters.ClaudeCode.AllowedTools {
+		// Dash-prefixed rules are refused at the config gate too: past
+		// --allowedTools the native would parse them as its own options.
+		if rule == "" || len(rule) > claudecode.MaxAllowedToolRule || strings.ContainsRune(rule, 0) || strings.HasPrefix(rule, "-") {
+			return cfg, "", fmt.Errorf("%w: invalid adapters.claudecode allowed_tools rule %q", ErrProjectConfig, rule)
+		}
 	}
 	seen := make(map[string]bool, len(cfg.Checks))
 	for _, check := range cfg.Checks {

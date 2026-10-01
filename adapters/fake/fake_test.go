@@ -258,6 +258,19 @@ func TestFakeScenarioProtocolFaultsCounted(t *testing.T) {
 	}
 }
 
+func TestDecodeInitWithoutCredentialIsDropped(t *testing.T) {
+	bare := `{"type":"fake.init","session_id":"s1"}`
+	complete := `{"type":"fake.init","session_id":"s1","api_key_source":"env"}`
+	if obs := newDecoder().decode([]byte(bare)); obs != nil {
+		t.Fatalf("bare init = %#v; want the frame dropped: no credential, no session", obs)
+	}
+	obs := newDecoder().decode([]byte(complete))
+	init, ok := obs.(adapter.SessionStarted)
+	if !ok || init.APIKeySource != "env" {
+		t.Fatalf("complete init = %#v; want the system session with api_key_source", obs)
+	}
+}
+
 func TestDecodeUnknownTypesBounded(t *testing.T) {
 	d := newDecoder()
 	for i := range maxUnknownTypes + 5 {

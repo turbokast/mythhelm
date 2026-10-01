@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/turbokast/mythhelm/adapters/claudecode"
 	"github.com/turbokast/mythhelm/adapters/fake"
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/ids"
@@ -90,6 +91,11 @@ type Request struct {
 	TrustProjectConfig string   // sha256:<digest> of the admitted config
 	NoChecks           bool
 	KeepGoing          bool
+	// The remaining flags apply only to --adapter claudecode.
+	StripCredentialEnv         bool   // remove credential routes from the child only (AC-4.3)
+	TrustNativeConfig          string // sha256:<digest> of the inventoried native config (AC-2.5)
+	DeclareEntitlement         string // plan=<class>,extra-usage=disabled (AC-4.2)
+	AllowUntestedNativeVersion bool   // run a native version without fixtures (experimental)
 	// Confirm asks the user a yes/no question. It is nil under
 	// --non-interactive, and then every question blocks instead (AC-1.4).
 	Confirm func(question string) (bool, error)
@@ -138,6 +144,19 @@ type Decision struct {
 	RecordTrust   bool
 	NoChecks      bool
 	KeepGoing     bool
+	// Declaration is the entitlement assertion the supervisor persists
+	// with the admitted event: a fresh --declare-entitlement row, or nil
+	// when billing used a stored row. RecordNativeTrust likewise persists
+	// the explicit native-config grant for NativeConfigDigest.
+	Declaration        *Declaration
+	RecordNativeTrust  bool
+	NativeConfigDigest string
+	// NativeHooks counts the inventoried settings hooks (zero is a real
+	// measurement once a native config was inventoried). NativeTrustGrant
+	// names the grant backing the run, or is empty when nothing needed
+	// trusting or no native config was inventoried.
+	NativeHooks      int
+	NativeTrustGrant string
 
 	NativeAuth *AuthEvidence
 	Task       Task
@@ -177,26 +196,57 @@ func Decide(ctx context.Context, req Request) (Decision, error) {
 		return Decision{}, err
 	}
 
-	a := fake.New()
-	d.Adapter = a.Descriptor()
-	if d.Probe, err = a.Probe(ctx, adapter.ProbeInput{}); err != nil {
-		return Decision{}, fmt.Errorf("probing adapter %s: %w", d.Adapter.ID, err)
+	if req.Adapter == AdapterClaudeCode {
+		d, err = decideClaudeCode(ctx, req, d)
+	} else {
+		d, err = decideFake(ctx, req, d)
 	}
-
-	if d.Snapshot, err = chooseSnapshot(ctx, req); err != nil {
+	if err != nil {
 		return Decision{}, err
+	}
+	if mode := d.Proposal.Billing.Mode; mode != req.Billing {
+		return Decision{}, &BlockedError{Code: "billing_posture_mismatch", Field: "--billing " + req.Billing,
+			Action: fmt.Sprintf("adapter %s runs under the %s billing posture; pass --billing %s", d.Adapter.ID, mode, mode)}
+	}
+	// Gated on the proposal that is launched and journaled, so admission
+	// checks exactly what admission.decided records.
+	for name, v := range requiredCapabilities(d.Proposal.Capabilities) {
+		if v != adapter.Supported {
+			return Decision{}, &BlockedError{Code: "capability_unavailable", Field: fmt.Sprintf("%s=%s", name, v), Capability: true,
+				Action: fmt.Sprintf("adapter %s does not support a capability this run requires", d.Adapter.ID)}
+		}
+	}
+	return d, nil
+}
+
+// admitRepo resolves the snapshot, the Git identity and the project config.
+// Both adapters share it: checks, tool rules and passthrough come from the
+// same admitted revision.
+func admitRepo(ctx context.Context, req Request, d *Decision) error {
+	var err error
+	if d.Snapshot, err = chooseSnapshot(ctx, req); err != nil {
+		return err
 	}
 	name, nameErr := workspace.Git(ctx, d.Snapshot.SourceRepo, true, "config", "--get", "user.name")
 	email, emailErr := workspace.Git(ctx, d.Snapshot.SourceRepo, true, "config", "--get", "user.email")
 	if nameErr != nil || emailErr != nil || strings.TrimSpace(string(name)) == "" || strings.TrimSpace(string(email)) == "" {
-		return Decision{}, &BlockedError{Code: "git_identity_unavailable", Field: d.Snapshot.SourceRepo,
+		return &BlockedError{Code: "git_identity_unavailable", Field: d.Snapshot.SourceRepo,
 			Action: "configure Git user.name and user.email before admitting a run"}
 	}
 	d.GitName, d.GitEmail = strings.TrimSpace(string(name)), strings.TrimSpace(string(email))
-	if err := d.admitProjectConfig(ctx, req); err != nil {
+	return d.admitProjectConfig(ctx, req)
+}
+
+func decideFake(ctx context.Context, req Request, d Decision) (Decision, error) {
+	a := fake.New()
+	d.Adapter = a.Descriptor()
+	var err error
+	if d.Probe, err = a.Probe(ctx, adapter.ProbeInput{}); err != nil {
+		return Decision{}, fmt.Errorf("probing adapter %s: %w", d.Adapter.ID, err)
+	}
+	if err := admitRepo(ctx, req, &d); err != nil {
 		return Decision{}, err
 	}
-
 	d.RunID, d.TaskID, d.AttemptID = ids.New("run"), ids.New("task"), ids.New("att")
 	d.RunDir = filepath.Join(req.StateDir, "runs", d.RunID)
 	d.Workdir = filepath.Join(d.RunDir, "workspace")
@@ -214,17 +264,63 @@ func Decide(ctx context.Context, req Request) (Decision, error) {
 	case err != nil:
 		return Decision{}, fmt.Errorf("preparing adapter %s: %w", d.Adapter.ID, err)
 	}
-	if mode := d.Proposal.Billing.Mode; mode != req.Billing {
-		return Decision{}, &BlockedError{Code: "billing_posture_mismatch", Field: "--billing " + req.Billing,
-			Action: fmt.Sprintf("adapter %s runs under the %s billing posture; pass --billing %s", d.Adapter.ID, mode, mode)}
+	return d, nil
+}
+
+// decideClaudeCode admits a native run through the design §6.2 steps: the
+// repository, the credential-route screen, the probe, the native inventory
+// and trust, the auth evidence, the billing posture and the launch.
+func decideClaudeCode(ctx context.Context, req Request, d Decision) (Decision, error) {
+	a := claudecode.New()
+	d.Adapter = a.Descriptor()
+	if err := admitRepo(ctx, req, &d); err != nil {
+		return Decision{}, err
 	}
-	// Gated on the proposal that is launched and journaled, so admission
-	// checks exactly what admission.decided records.
-	for name, v := range requiredCapabilities(d.Proposal.Capabilities) {
-		if v != adapter.Supported {
-			return Decision{}, &BlockedError{Code: "capability_unavailable", Field: fmt.Sprintf("%s=%s", name, v), Capability: true,
-				Action: fmt.Sprintf("adapter %s does not support a capability this run requires", d.Adapter.ID)}
-		}
+	// Step 1 runs before any native process starts, so the version probe
+	// never inherits a credential route. The opt-in stays false: the
+	// slice has no trusted user-level config loader yet, so without it
+	// the token route blocks or strips like any other override (AC-4.7).
+	childEnv, deltas, err := ResolveCredentialEnv(req.Env, req.StripCredentialEnv, false, d.ProjectConfig.Environment.Passthrough)
+	if err != nil {
+		return Decision{}, err
+	}
+	if d.Probe, err = a.Probe(ctx, adapter.ProbeInput{Env: childEnv, Workdir: d.Snapshot.SourceRepo, AllowUntestedNativeVersion: req.AllowUntestedNativeVersion}); err != nil {
+		return Decision{}, NativeAdmissionError(fmt.Errorf("probing adapter %s: %w", d.Adapter.ID, err))
+	}
+	d.RunID, d.TaskID, d.AttemptID = ids.New("run"), ids.New("task"), ids.New("att")
+	d.RunDir = filepath.Join(req.StateDir, "runs", d.RunID)
+	d.Workdir = filepath.Join(d.RunDir, "workspace")
+	manifest, err := d.admitNativeConfig(ctx, req, childEnv)
+	if err != nil {
+		return Decision{}, err
+	}
+	// Auth status runs with the exact child environment and, for its
+	// working directory, the source checkout: the workspace clone does
+	// not exist yet, and it carries the same committed project settings.
+	authEnv := append(append([]string{}, childEnv...),
+		"DISABLE_AUTOUPDATER=1", "CLAUDE_CODE_STARTUP_FAILURE_RESULTS=1", "MYTHHELM_ATTEMPT_ID="+d.AttemptID)
+	evidence, err := claudecode.AuthStatus(ctx, d.Probe, authEnv, d.Snapshot.SourceRepo)
+	if err != nil {
+		return Decision{}, NativeAdmissionError(err)
+	}
+	d.NativeAuth = &evidence
+	decl, err := resolveDeclaration(ctx, req, evidence)
+	if err != nil {
+		return Decision{}, err
+	}
+	posture, err := ResolveBilling(ctx, req.Billing, evidence, decl)
+	if err != nil {
+		return Decision{}, err
+	}
+	d.Proposal, err = a.Prepare(ctx, claudePrepareInput(&d, childEnv))
+	if err != nil {
+		return Decision{}, NativeAdmissionError(fmt.Errorf("preparing adapter %s: %w", d.Adapter.ID, err))
+	}
+	d.Proposal.Billing = posture
+	d.Proposal.Overrides = append(deltas, d.Proposal.Overrides...)
+	d.Proposal.Manifest = adapter.ConfigManifest{Digests: manifest.Digests}
+	if req.DeclareEntitlement != "" {
+		d.Declaration = decl
 	}
 	return d, nil
 }
@@ -237,6 +333,18 @@ func validate(req *Request) error {
 	case AdapterFake:
 		if req.Scenario == "" {
 			req.Scenario = "happy"
+		}
+		if req.StripCredentialEnv {
+			problems = append(problems, "--strip-credential-env applies only to --adapter claudecode")
+		}
+		if req.TrustNativeConfig != "" {
+			problems = append(problems, "--trust-native-config applies only to --adapter claudecode")
+		}
+		if req.DeclareEntitlement != "" {
+			problems = append(problems, "--declare-entitlement applies only to --adapter claudecode")
+		}
+		if req.AllowUntestedNativeVersion {
+			problems = append(problems, "--allow-untested-native-version applies only to --adapter claudecode")
 		}
 	case AdapterClaudeCode:
 		if req.Scenario != "" {
@@ -288,9 +396,6 @@ func checkCapabilityFlags(req Request) error {
 	case req.ExecutionProfile == ProfileRestricted, req.ExecutionProfile == ProfileInspect:
 		return &BlockedError{Code: "execution_profile_unavailable", Field: "--execution-profile " + req.ExecutionProfile, Capability: true,
 			Action: "sandboxed profiles are not in this build; only trusted-host (not contained) is available"}
-	case req.Adapter == AdapterClaudeCode:
-		return &BlockedError{Code: "adapter_unavailable", Field: "--adapter claudecode", Capability: true,
-			Action: "the Claude Code adapter is not in this build yet; only --adapter fake runs"}
 	}
 	return nil
 }
@@ -420,6 +525,10 @@ type Record struct {
 	ProjectConfigDigest  string                   `json:"project_config_digest,omitempty"`
 	NoChecks             bool                     `json:"no_checks"`
 	KeepGoing            bool                     `json:"keep_going"`
+	AllowedTools         []string                 `json:"allowed_tools,omitempty"`
+	NativeConfigDigest   string                   `json:"native_config_digest,omitempty"`
+	NativeHooks          int                      `json:"native_hooks,omitempty"`
+	NativeTrustGrant     string                   `json:"native_trust_grant,omitempty"`
 }
 
 // GitIdentity is the commit identity captured from the source repository at
@@ -460,13 +569,20 @@ func (d Decision) Record() Record {
 		ProjectConfigDigest:  d.ConfigDigest,
 		NoChecks:             d.NoChecks,
 		KeepGoing:            d.KeepGoing,
+		AllowedTools:         d.ProjectConfig.Adapters.ClaudeCode.AllowedTools,
+		NativeConfigDigest:   d.NativeConfigDigest,
+		NativeHooks:          d.NativeHooks,
+		NativeTrustGrant:     d.NativeTrustGrant,
 	}
 }
 
 func dataDestinations(adapterID string) []string {
 	out := []string{"local state directory"}
-	if adapterID == fake.New().Descriptor().ID {
+	switch adapterID {
+	case fake.New().Descriptor().ID:
 		out = append(out, "no network (scripted fake agent)")
+	case claudecode.AdapterID:
+		out = append(out, "first-party native API over the network")
 	}
 	return out
 }
