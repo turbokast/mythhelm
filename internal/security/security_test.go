@@ -121,6 +121,23 @@ func TestRedactingHandler(t *testing.T) {
 	}
 }
 
+func TestCredentialEnvNames(t *testing.T) {
+	env := []string{
+		"PATH=/bin", "HOME=/home/u", "ANTHROPIC_API_KEY=secret",
+		"CLAUDE_CODE_OAUTH_TOKEN=secret", "AWS_SECRET_ACCESS_KEY=secret",
+		"OPENAI_API_KEY=secret", "MY_ANTHROPIC_KEY=not-a-prefix-match",
+		"ANTHROPIC_API_KEY=duplicate",
+	}
+	got := CredentialEnvNames(env)
+	want := []string{"ANTHROPIC_API_KEY", "AWS_SECRET_ACCESS_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("CredentialEnvNames = %q, want %q", got, want)
+	}
+	if got := CredentialEnvNames(nil); len(got) != 0 {
+		t.Fatalf("CredentialEnvNames(nil) = %q, want empty", got)
+	}
+}
+
 func TestCredentialName(t *testing.T) {
 	for _, name := range []string{"token", "api_key", "apiKey", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN", "AWS_SECRET_ACCESS_KEY", "password", "client-secret", "credentials", "private_key"} {
 		if !credentialName(name) {

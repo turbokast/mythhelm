@@ -34,6 +34,8 @@ var commands = map[string]command{
 	"recover": {summary: "recover an abandoned run without relaunching native work", run: runRecover},
 	"apply":   {summary: "apply a reviewed candidate to a new local branch", run: runApply},
 	"version": {summary: "print the version, commit and Go version", run: runVersion},
+	"demo":    {summary: "run a scripted offline demonstration (fake agent, disposable repo)", run: runDemo},
+	"doctor":  {summary: "report environment facts without writing anything", run: runDoctor},
 }
 
 // Main runs the command named by args[0] and returns the process exit code.

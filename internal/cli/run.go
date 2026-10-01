@@ -89,12 +89,19 @@ func runRun(args []string, stdio Stdio) error {
 	if !*nonInteractive {
 		req.Confirm = prompter(stdio)
 	}
+	out, err := executeRun(r, req)
+	return finish(r, out, err)
+}
+
+// executeRun admits req and supervises its one native attempt, streaming
+// events through r. `run` and `demo` share it; only the request's repo,
+// state dir and pre-supplied grants differ.
+func executeRun(r renderer, req admission.Request) (supervisor.Outcome, error) {
 	ctx := context.Background()
 	d, err := admission.Decide(ctx, req)
 	if err != nil {
-		return finish(r, supervisor.Outcome{}, err)
+		return supervisor.Outcome{}, err
 	}
-
 	interrupts := make(chan os.Signal, 2)
 	signal.Notify(interrupts, os.Interrupt)
 	defer signal.Stop(interrupts)
@@ -105,7 +112,7 @@ func runRun(args []string, stdio Stdio) error {
 			err = &outcomeError{code: code, category: category, err: errors.New(describe(out))}
 		}
 	}
-	return finish(r, out, err)
+	return out, err
 }
 
 // finish writes run.result for err (nil on success) and returns err, or the
