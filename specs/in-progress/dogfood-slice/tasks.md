@@ -634,6 +634,15 @@
   - `TestDoctorDoesNotRunAuthStatus`: it may contact the network, so doctor reports `run admission to query`.
 - **Test plan**: packaged-binary style, calling `cli.Main` with a temp env.
 - **Invariants touched**: G01, I13, A30, §5.1.
+- **Produces**: `mythhelm demo [--check pass|fail]`, `mythhelm doctor [--format plain|jsonl]`, hidden `__demo-check pass|fail`.
+- **Status**: ✅ Completed — Offline scripted demo and read-only doctor implemented; PR #TBD.
+- **Implementation**: `runDemo` seeds a disposable git repo (repo-local identity only) whose `mythhelm.toml` check re-executes the binary as `__demo-check`, admits with the precomputed digest, runs the fake adapter against a temp state dir through the shared `executeRun`, then prints the receipt summary and candidate diff from the explicit state dir; every screen carries the `SCRIPTED DEMO` banner and both temp dirs are removed. `runDoctor` reports AC-12.1 facts (version/platform, git, `claude` path/version with auth deferred to admission, credential-route names only, settings sources with hook/MCP counts, sandbox presence, state-dir status, terminal facts) using read-only probes with timeouts; `claude --version` runs with proxy variables stripped.
+- **Spec deviations**:
+  - `internal/cli/run.go` extracts `executeRun` (admit plus supervise with the caller's renderer) shared by `run` and `demo`; no behavior change to `run`.
+  - `internal/cli/dispatch.go` registers the `demo` and `doctor` commands.
+  - `internal/security/env.go` exports `CredentialEnvNames` so doctor names denylisted routes without values; `internal/security/security_test.go` pins it.
+- **Files modified**: `internal/cli/demo.go`, `internal/cli/doctor.go`, `internal/cli/demo_test.go`, `internal/cli/doctor_test.go`, `cmd/mythhelm/main.go`, `internal/cli/dispatch.go`, `internal/cli/run.go`, `internal/security/env.go`, `internal/security/security_test.go`, `specs/in-progress/dogfood-slice/tasks.md`, `specs/in-progress/dogfood-slice/handoff.md`.
+- **Acceptance evidence**: All 6 named checks passed; `cli.TestMain` plays the demo check, worker and fake agent for spawned children. Red-first: the demo failed on missing git identity until repo-local config was seeded, and on `worker_lost` until `TestMain` dispatched the worker/agent commands. Extra: `TestDemoRemovesTempDirs`, `TestDemoCheckMain`, `TestDoctorJsonl`, `TestDoctorClaudeMissing`, `TestCredentialEnvNames`.
 
 ### Task 19 — Packaged-binary end-to-end suite and README status
 

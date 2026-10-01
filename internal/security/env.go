@@ -39,6 +39,24 @@ func deniedEnv(name string) bool {
 	})
 }
 
+// CredentialEnvNames reports the names (never the values) of the entries of
+// env that the credential denylist covers, sorted and deduplicated. Doctor
+// uses it to name the credential routes without printing secrets.
+func CredentialEnvNames(env []string) []string {
+	var names []string
+	for _, kv := range env {
+		name, _, _ := strings.Cut(kv, "=")
+		if name == "" || !deniedEnv(name) {
+			continue
+		}
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
 // BuildEnv returns the child environment: the variables from parent ("K=V"
 // entries, later duplicates winning) that are on the platform allowlist or
 // named in passthrough, overlaid with set, sorted by name. A passthrough or set

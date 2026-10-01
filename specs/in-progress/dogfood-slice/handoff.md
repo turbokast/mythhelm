@@ -121,7 +121,10 @@
 
 ## Task 18 — Offline demo and read-only doctor
 
-<!-- pending -->
+- **Produces**: `mythhelm demo [--check pass|fail]`; `mythhelm doctor [--format plain|jsonl]`; hidden `__demo-check pass|fail` (`cli.DemoCheckMain`, registered in `cmd/mythhelm/main.go`).
+- **Demo**: seeds a disposable repo under `os.MkdirTemp` (repo-local git identity; the user's git config is never touched), admits with the precomputed `mythhelm.toml` digest, shares `executeRun` with `run`, reviews from the explicit temp state dir without `MYTHHELM_HOME`, banners every screen `SCRIPTED DEMO`, removes both temp dirs. Exit 0 on pass, 5 on `--check fail`.
+- **Doctor**: read-only by construction (Lstat, LookPath, bounded `--version` probes, settings inventory); never runs `auth status`, never creates the state dir. Version probes strip proxy variables. Credential routes come from `security.CredentialEnvNames` (names only).
+- **For Task 19**: `cli.TestMain` in `demo_test.go` dispatches check/worker/agent commands; the E2E suite can reuse `runMain` plus temp env for packaged-binary style runs.
 
 ## Task 19 — Packaged-binary end-to-end suite and README status
 
