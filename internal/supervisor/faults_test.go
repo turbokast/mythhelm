@@ -1202,3 +1202,89 @@ func TestRecoverApplyUnresolvedWhenV1ReceiptLost(t *testing.T) {
 		t.Fatal("recovery without a receipt touched the source checkout")
 	}
 }
+
+func journalStopped(t *testing.T, f fixture, runID, attemptID string, confirmed bool, scan string) {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{"confirmed": confirmed, "unresolved_pids": []int{}, "descendant_scan": scan})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.journal(t).Append(t.Context(), journal.Event{SchemaVersion: journal.EnvelopeVersion, EventID: ids.New("evt"),
+		RunID: runID, AttemptID: attemptID, ProducerID: ids.New("sup"), ProducerSequence: 1, Generation: 1,
+		ObservedAt: time.Now().UTC(), Type: "attempt.stopped", Payload: payload}, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStopDecidesFromLastStoppedEvent(t *testing.T) {
+	for _, tc := range []struct{ name, scan string }{
+		{"unconfirmed tail", "proc-environ"},
+		{"failed scan tail", "failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, runID := readyApplyFixture(t)
+			attemptID, _ := applyCandidate(t, f, runID)
+			journalStopped(t, f, runID, attemptID, true, "proc-environ")
+			journalStopped(t, f, runID, attemptID, false, tc.scan)
+			code, stdout, _ := f.run(t, "stop", runID)
+			if code == 0 && strings.Contains(stdout, "worker confirmed no remaining processes") {
+				t.Fatalf("stop decided from the first stopped event: %q", stdout)
+			}
+			if code != 6 {
+				t.Fatalf("stop exit %d, want 6 (ownership unresolved)", code)
+			}
+		})
+	}
+	t.Run("single clean event still confirms", func(t *testing.T) {
+		f, runID := readyApplyFixture(t)
+		attemptID, _ := applyCandidate(t, f, runID)
+		journalStopped(t, f, runID, attemptID, true, "proc-environ")
+		code, stdout, stderr := f.run(t, "stop", runID)
+		if code != 0 || !strings.Contains(stdout, "worker confirmed no remaining processes") {
+			t.Fatalf("stop exit %d: %q %s, want confirmed stop", code, stdout, stderr)
+		}
+	})
+}
+
+func TestRecoverQuarantineFreezeFailureKeepsItsReason(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("quarantine resolution needs the Linux orphan scanner")
+	}
+	// No checks: recovery must not need the workspace before the freeze.
+	f := newFixture(t)
+	if code, _, stderr := f.run(t, f.fakeRun()...); code != 5 {
+		t.Fatalf("run exit %d: %s", code, stderr)
+	}
+	runID := f.onlyRun(t).RunID
+	attemptID, _ := applyCandidate(t, f, runID)
+	db := applyDB(t, f.state)
+	if _, err := db.ExecContext(t.Context(), `UPDATE runs SET state = 'interrupted' WHERE run_id = ?`, runID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `UPDATE attempts SET state = 'quarantined' WHERE attempt_id = ?`, attemptID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `DELETE FROM candidates WHERE attempt_id = ?`, attemptID); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(map[string]any{"confirmed": true, "unresolved_pids": []int{1 << 30}, "descendant_scan": "proc-environ"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.journal(t).Append(t.Context(), journal.Event{SchemaVersion: journal.EnvelopeVersion, EventID: ids.New("evt"),
+		RunID: runID, AttemptID: attemptID, ProducerID: ids.New("sup"), ProducerSequence: 1, Generation: 1,
+		ObservedAt: time.Now().UTC(), Type: "attempt.stopped", Payload: payload}, nil); err != nil {
+		t.Fatal(err)
+	}
+	breakWorkspace(t, f, attemptID)
+	code, _, stderr := f.run(t, "recover", runID)
+	if run := f.onlyRun(t); run.State != "failed" || run.Reason != "freeze_failed" {
+		t.Fatalf("run projected %s/%s, want failed/freeze_failed", run.State, run.Reason)
+	}
+	if _, err := f.journal(t).Candidate(t.Context(), attemptID); !errors.Is(err, journal.ErrNotFound) {
+		t.Fatalf("failed freeze got candidate: %v", err)
+	}
+	if !strings.Contains(stderr, "freeze_failed") || strings.Contains(stderr, "illegal") {
+		t.Fatalf("recover exit %d: %s, want the freeze failure without an illegal transition", code, stderr)
+	}
+}

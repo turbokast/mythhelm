@@ -33,6 +33,15 @@ func Stop(ctx context.Context, j *journal.Journal, runID string) (string, error)
 	if err != nil {
 		return "", err
 	}
+	// Duplicate stopped events are reachable when a panic interrupts
+	// conclude between the stopped line and the terminal state line. The
+	// last observation wins, as in recovery and freeze-after-stop.
+	var last struct {
+		Confirmed      bool   `json:"confirmed"`
+		UnresolvedPIDs []int  `json:"unresolved_pids"`
+		DescendantScan string `json:"descendant_scan"`
+	}
+	found := false
 	for _, ev := range events {
 		if ev.AttemptID != a.AttemptID || ev.Type != "attempt.stopped" {
 			continue
@@ -45,10 +54,13 @@ func Stop(ctx context.Context, j *journal.Journal, runID string) (string, error)
 		if err := json.Unmarshal(ev.Payload, &stop); err != nil {
 			return "", err
 		}
-		if stop.DescendantScan == "failed" {
+		last, found = stop, true
+	}
+	if found {
+		if last.DescendantScan == "failed" {
 			return "", fmt.Errorf("%w: descendant scan failed", ErrOwnership)
 		}
-		if stop.Confirmed && len(stop.UnresolvedPIDs) == 0 {
+		if last.Confirmed && len(last.UnresolvedPIDs) == 0 {
 			return "stopped", nil
 		}
 	}

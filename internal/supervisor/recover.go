@@ -143,6 +143,13 @@ func RecoverWithHooks(ctx context.Context, j *journal.Journal, runID string, h H
 					if err := p.freezeCandidate(ctx); err != nil {
 						return out, err
 					}
+					if p.out.State == RunFailed || p.out.State == RunInterrupted {
+						// The freeze classified the run itself; recovered_partial
+						// must neither overwrite that reason nor attempt an
+						// illegal failed→failed transition.
+						out.Outcome, out.Mode = p.out, "continued"
+						return out, nil
+					}
 				} else if err != nil {
 					return out, err
 				}
