@@ -418,6 +418,55 @@ func TestDecodeAliasConflictsFailTheFrame(t *testing.T) {
 	}
 }
 
+func TestDecodeUsageAndModelUsageAreComplementary(t *testing.T) {
+	t.Parallel()
+	init := []byte(`{"type":"system","subtype":"init","session_id":"s","apiKeySource":"none"}`)
+	// Live natives emit aggregate usage alongside the per-model
+	// breakdown: the two complement, never contradict.
+	frame := []byte(`{"type":"result","subtype":"success","is_error":false,` +
+		`"usage":{"input_tokens":11,"output_tokens":3},` +
+		`"modelUsage":{"synthetic-model":{"inputTokens":11,"outputTokens":3}}}`)
+	obs := decodeAll([][]byte{init, frame})
+	if len(obs) != 2 {
+		t.Fatalf("both usage fields = %+v, want session then Result", obs)
+	}
+	res, ok := obs[1].(adapter.Result)
+	if !ok {
+		t.Fatalf("both usage fields = %+v, want Result", obs)
+	}
+	got, ok := res.Tokens["synthetic-model"]
+	if !ok || got.Input == nil || *got.Input != 11 || got.Output == nil || *got.Output != 3 {
+		t.Fatalf("Tokens = %+v, want the modelUsage breakdown", res.Tokens)
+	}
+	// A flat aggregate alone has no model to attribute to: the result
+	// still decodes, with usage unreported rather than guessed.
+	flat := []byte(`{"type":"result","subtype":"success","is_error":false,` +
+		`"usage":{"input_tokens":11,"output_tokens":3}}`)
+	obs = decodeAll([][]byte{init, flat})
+	if len(obs) != 2 {
+		t.Fatalf("flat usage = %+v, want session then Result", obs)
+	}
+	res, ok = obs[1].(adapter.Result)
+	if !ok || res.Tokens != nil {
+		t.Fatalf("flat usage = %+v, want Result with nil Tokens", obs)
+	}
+	// Older natives carried the breakdown in usage itself; that shape
+	// still decodes when modelUsage is absent.
+	legacy := []byte(`{"type":"result","subtype":"success","is_error":false,` +
+		`"usage":{"synthetic-model":{"inputTokens":7,"outputTokens":1}}}`)
+	obs = decodeAll([][]byte{init, legacy})
+	if len(obs) != 2 {
+		t.Fatalf("legacy usage = %+v, want session then Result", obs)
+	}
+	res, ok = obs[1].(adapter.Result)
+	if !ok {
+		t.Fatalf("legacy usage = %+v, want Result", obs)
+	}
+	if got, ok := res.Tokens["synthetic-model"]; !ok || got.Input == nil || *got.Input != 7 {
+		t.Fatalf("Tokens = %+v, want the legacy breakdown", res.Tokens)
+	}
+}
+
 func TestDecodeCostGrammarIsDecimalOnly(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

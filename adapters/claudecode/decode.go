@@ -352,16 +352,31 @@ func decodeCost(obj map[string]json.RawMessage) (string, bool) {
 }
 
 func decodeUsage(obj map[string]json.RawMessage) (map[string]adapter.TokenUsage, bool) {
-	raw, st := aliasRaw(obj, "modelUsage", "model_usage", "usage")
-	if st == fieldBad {
+	// modelUsage is the per-model breakdown and usage the aggregate
+	// totals: live natives emit both, so they are read separately and
+	// never compared as aliases.
+	if raw, st := aliasRaw(obj, "modelUsage", "model_usage"); st == fieldBad {
 		return nil, false
+	} else if st == fieldFound {
+		if out := perModelUsage(raw); len(out) > 0 {
+			return out, true
+		}
 	}
-	if st != fieldFound {
-		return nil, true
+	// Older natives carried the breakdown in usage itself; a flat
+	// aggregate has no model to attribute to and stays unreported
+	// rather than guessed.
+	if raw, ok := obj["usage"]; ok && string(raw) != "null" {
+		if out := perModelUsage(raw); len(out) > 0 {
+			return out, true
+		}
 	}
+	return nil, true
+}
+
+func perModelUsage(raw json.RawMessage) map[string]adapter.TokenUsage {
 	var perModel map[string]map[string]json.RawMessage
 	if json.Unmarshal(raw, &perModel) != nil {
-		return nil, true
+		return nil
 	}
 	// Sorted for a deterministic journal when the native reports more
 	// models than the bound keeps.
@@ -384,9 +399,9 @@ func decodeUsage(obj map[string]json.RawMessage) (map[string]adapter.TokenUsage,
 		}
 	}
 	if len(out) == 0 {
-		return nil, true
+		return nil
 	}
-	return out, true
+	return out
 }
 
 // tokenCount reads one informational token field: absent, null, ambiguous
