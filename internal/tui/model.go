@@ -31,9 +31,13 @@ type Config struct {
 	StateDir string
 	Caps     caps.Caps
 	Tokens   theme.Tokens
-	Events   <-chan journal.Event
-	Notices  *NoticeBacklog
-	Actions  Actions
+	// ThemeName names the built-in theme Tokens came from, so the first
+	// toggle moves away from it; empty means "dark". Custom loaded tokens
+	// keep no name: toggling from them lands on a built-in.
+	ThemeName string
+	Events    <-chan journal.Event
+	Notices   *NoticeBacklog
+	Actions   Actions
 }
 
 // NoticeBacklog retains unjournaled notices in arrival order. Add never
@@ -100,6 +104,10 @@ type Model struct {
 // newModel builds the program state with default dimensions; the first
 // WindowSizeMsg replaces them with the terminal's real size.
 func newModel(cfg Config) *Model {
+	name := cfg.ThemeName
+	if name == "" {
+		name = "dark"
+	}
 	return &Model{
 		cfg:       cfg,
 		loadDiff:  defaultLoadDiff,
@@ -107,7 +115,7 @@ func newModel(cfg Config) *Model {
 		height:    24,
 		focusPane: paneTasks,
 		focusPrev: paneTasks,
-		themeName: "dark",
+		themeName: name,
 	}
 }
 

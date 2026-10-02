@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/turbokast/mythhelm/internal/tui/theme"
 	"github.com/turbokast/mythhelm/internal/tui/viewmodel"
 )
 
@@ -561,6 +562,21 @@ func TestPaletteViewOnlyActions(t *testing.T) {
 		}
 		if m.cfg.Tokens == before {
 			t.Errorf("tokens unchanged after Toggle theme")
+		}
+	})
+
+	t.Run("toggle from light lands on dark", func(t *testing.T) {
+		t.Parallel()
+		light, err := theme.BuiltIn("light")
+		if err != nil {
+			t.Fatalf("BuiltIn(light): %v", err)
+		}
+		cfg := testConfig(fullCaps, t)
+		cfg.Tokens, cfg.ThemeName = light, "light"
+		m := newModel(cfg)
+		m.toggleTheme()
+		if m.themeName != "dark" {
+			t.Fatalf("theme = %q, want dark", m.themeName)
 		}
 	})
 	t.Run("help opens the help overlay", func(t *testing.T) {

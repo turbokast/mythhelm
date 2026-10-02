@@ -201,7 +201,7 @@
 - **Invariants touched**: None (navigation changes focus, not state; confirmations arrive in task 9).
 - **Status**: ✅ Completed — keyboard focus, `/` filter, `:` palette, `?` help and `Enter`/`Esc` flows are wired into the model with the `Action` registry task 9 consumes; PR #98.
 - **Implementation**: `nav.go` (`handleKey` dispatch, Esc back-out dialog→palette→help→filter→pane, never quits) with `palette.go` (`Action` enum + 8-entry registry, view-only selections act, task-9 actions close without acting) and `help.go` (full-name overlay); `model.go` gains overlay branches, the filter line and `selectedLane` preserved across reloads. Commit 8b742587ef3c6eb0f7f5f607da1ced18b4f34b3f.
-- **Spec deviations**: None.
+- **Spec deviations**: `Config` gains a `ThemeName` field (empty means dark) so `newModel` initialises the toggle state from the supplied tokens instead of assuming dark; otherwise none.
 - **Files modified**: `internal/tui/nav.go`, `internal/tui/palette.go`, `internal/tui/help.go`, `internal/tui/nav_test.go`, `internal/tui/model.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
 ### Task 8 — Truthful motion
