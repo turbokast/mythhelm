@@ -140,7 +140,7 @@
 - **Spec deviations**: `Diff` gains a `TotalLines()` accessor the §8 snippet omits (task 6's provenance-carrying footer needs the pre-cap total; same precedent as task 2's `Goal` field).
 - **Files modified**: `internal/tui/diff.go`, `internal/tui/diff_test.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
-### Task 6 — App shell, layouts and mission view
+### Task 6 — App shell, layouts and mission view ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: complex (several new abstractions: model, layout ladder, five panes)
@@ -171,6 +171,10 @@
   - `TestLayeringNoCliImport`: fails if `internal/cli` is referenced anywhere under `internal/tui/` (same grep shape as task 2's write guard, including the non-empty scanned-file-set assertion).
 - **Test plan**: drive `Update`/`View` directly with synthetic snapshots and `WindowSizeMsg`s; golden strings per breakpoint.
 - **Invariants touched**: I06 (§7.3: stopping/requested wording, resize preservation), I07 (§11.6: verification paired with revision, never inferred), I09 (§13.4: `unknown` labels, kind labels on figures), I13 (§3.3: ASCII glyph table asserted load-bearing in `ColourNever`+`IconsASCII` goldens), §12.7 (control characters sanitised before render — `styles.go` routes rendered text through `security.TermSafe`).
+- **Status**: ✅ Completed — the Bubble Tea mission view renders one snapshot through the §15.4 layout ladder; PR #97.
+- **Implementation**: `model.go` (Config/Run/Model/Update/View) with `mission.go` (five §15.1 panes, §7 next-action table, paired revisions) on `layout.go`/`styles.go`/`actions.go`; 13 acceptance tests pass (Load-built native/mismatch fixtures, width-safe goldens). Commit cea62c416ac1dcacfad962bd3f0cff38d6283f26.
+- **Spec deviations**: The truncation notice spans the full view width below the columns (the exact `git diff` command never fits a pane column); its counts/cap/command text follows design §8 verbatim. `NoticeBacklog` lands in `model.go` now and moves to `live.go` in task 10.
+- **Files modified**: `internal/tui/model.go`, `internal/tui/mission.go`, `internal/tui/layout.go`, `internal/tui/styles.go`, `internal/tui/actions.go`, `internal/tui/model_test.go`, `internal/tui/layout_test.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
 ### Task 7 — Navigation, palette and help
 
