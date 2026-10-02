@@ -3,7 +3,7 @@
 ### Dependencies
 
 - Prerequisite specs: `specs/*/dogfood-slice/` (shipped; `mythhelm demo` the FR-2 tape
-  drives); `specs/*/tui-slice/` (refined; FR-3's full tape only — Task 7's scaffold does
+  drives); `specs/*/tui-slice/` (in progress; FR-3's full tape only — Task 7's scaffold does
   not wait for it). Coordinate with `specs/*/openssf-badge/` (refined; shared §19.3/G10
   prose — whichever lands second reconciles; see design §7).
 - Order: Task 1 and Task 4 start in parallel (disjoint Files). Then Task 2 after 1;
@@ -43,9 +43,9 @@
 - **Acceptance**:
   - `_config.yml` parses as strict YAML (`python3 -c yaml.safe_load` exits 0; a scratch
     edit inserting a tab-indented line makes it exit non-zero).
-  - `navigation.yml` names all seven routes above; `for r in $(sed -n 's/^ *- path: //p'
+  - `navigation.yml` names all seven routes above; `for r in $(sed -n 's/^ *path: //p'
     docs/_data/navigation.yml); do test -f "docs/$r" || echo "MISSING $r"; done` prints
-    nothing once Task 2 lands (before Task 2 it lists exactly the three guide pages;
+    nothing once Task 2 lands (before Task 2 it lists exactly the six non-home routes;
     a route pointing at `docs/nope.md` prints `MISSING nope.md`).
   - `docs/index.md` starts with the design §2 front matter block: line 1 is `---`, line 2
     is `layout: default`, line 3 starts with `title: ` (deleting line 2 fails the check).
@@ -146,6 +146,7 @@
   - `docs/demos/demo.transcript.txt`
   - `docs/demos/normalize.sed`
   - `docs/demos/manifest.json`
+  - `docs/demos/record.sh` (the record command per design §3)
   - `docs/demos/README.md` (the documented record command + recording table)
 - **Produces**: Tape contract — header comments `Binary-Version:`/`Binary-Commit:`/
   `VHS-Version:`; manifest schema per design §3; `docs/demos/normalize.sed` verbatim per
@@ -155,21 +156,25 @@
   - `docs/demos/normalize.sed` is byte-identical to the design §3 block (modulo the
     reviewer's fix, recorded as a deviation); building the binary (`go build`, never
     `go run`) and re-running the §3 pipeline, then `diff`ing against
-    `demo.transcript.txt`, exits 0. Running it with `--check fail` (exit 5) instead and
-    diffing exits non-zero (failing counterfactual: the transcript discriminates pass
-    from fail).
+    `demo.transcript.txt`, exits 0, and the taped binary's own exit status is 0
+    (the §3 `PIPESTATUS` assertion — never `sed`'s status). Running it with
+    `--check fail` instead exits 5 and diffing exits non-zero (failing
+    counterfactual: the transcript discriminates pass from fail).
   - The tape's `Run`/`Type` lines invoke only the local `mythhelm` binary:
     `grep -E 'curl|wget|ssh |http' docs/demos/demo.tape` prints nothing, and
     `grep -cE '^(Run|Type) ' docs/demos/demo.tape` is at least 1 (non-empty leg).
     Covered classes and residual per design §3; the reviewer confirms each `Run`/`Type`
     line by eye and records it in the completion entry.
   - `manifest.json` parses (`python3 -c json.load` exits 0); its `binary_commit` is a
-    40-hex ancestor of `HEAD`; its `vhs_version` equals `vhs --version` on the recording
-    machine (record both outputs in the completion entry).
+    40-hex commit present in the repo, and the transcript regenerates identically
+    from a worktree at that exact commit (design §4 steps 2–3); its `vhs_version`
+    equals `vhs --version` on the recording machine (record both outputs in the
+    completion entry).
   - The transcript carries the binary's own labels: `grep -c 'SCRIPTED DEMO'`
     prints at least 4 (banner per screen — `demo.go:80-82`).
-  - The full record (`vhs` render + transcript regen) completes in under 10 minutes
-    timed with `time` (NFR-2); only free tooling installed (list versions in the entry).
+  - The full record (`docs/demos/record.sh` end to end: build + transcript regen +
+    `vhs` render + verify) completes in under 10 minutes timed with `time` (NFR-2);
+    only free tooling installed (list versions in the entry).
   - `scripts/ci/check-public-hygiene.sh` passes.
 - **Test plan**: shell/JSON checks; the Go qualifiers named in the manifest already exist
   (`internal/cli/demo_test.go`).
@@ -191,7 +196,7 @@
 - **Acceptance**:
   - `file docs/demos/demo.gif` reports `GIF image data`; size is over 10 KB and under
     ~5 MB (over: non-trivial recording; under: design D5 revisit threshold).
-  - The README caption names `docs/demos/demo.tape` and the `vhs docs/demos/demo.tape`
+  - The README caption names `docs/demos/demo.tape` and the `docs/demos/record.sh`
     command within 3 lines of the embed (anchored; deleting the tape path from the
     caption fails the check).
   - `docs/user-guide.md` carries the same embed and caption (same anchored check).

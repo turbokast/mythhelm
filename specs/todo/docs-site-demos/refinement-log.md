@@ -56,6 +56,7 @@ for /spec (below). No further edits made after the Ready verdict.
    adjust when writing design.md current state.
 2. NFR-1 (L79) is tagged `[G10]`; its substance is the §19.4 fork-safe lane
    (already cited in the text). `[§19.4]` would be the precise tag.
+   Resolved: requirements.md NFR-1 now carries `[§19.4]` — no open issue.
 3. Cross-spec citations use lifecycle paths (`specs/refined/tui-slice/`,
    `specs/done/dogfood-slice/`, `specs/unrefined/openssf-badge/`). The
    self-citation rule (`.claude/rules/spec-authoring.md`: cite as
@@ -63,9 +64,9 @@ for /spec (below). No further edits made after the Ready verdict.
    happened here. Prefer the `specs/*/<name>/` form in design.md/tasks.md.
 4. DoD L86's deferral leg mentions "the tape scaffold" without defining it;
    design.md should state what merges (skeleton tape vs placeholder page).
-5. Sequencing caution: L28's "tui-slice is refined" holds by directory
-   location, but `specs/refined/tui-slice/requirements.md:3` still carries a
-   stale "Unrefined. Run /refine-spec tui-slice before /spec." banner.
-   Confirm that spec's true state before scheduling FR-3 work.
+5. Sequencing caution: `tui-slice` lives under `specs/in-progress/tui-slice/`
+   (cite state-agnostically as `specs/*/tui-slice/`), and no TUI code exists
+   in the tree — requirements must not describe the slice as refined.
+   Do not schedule FR-3 work until that spec lands.
 6. Out of scope, flagged for the orchestrator: `specs/unrefined/openssf-badge/requirements.md:80`
    cites the same stale `specs/unrefined/tui-slice/` path.

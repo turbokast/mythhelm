@@ -12,7 +12,7 @@ MYTHHELM's guides currently live as Markdown in the repository (README.md, CONTR
 
 The card asks for two deliverables. First, published user and contributor guides extracted from the spec: the G10 gate (§18.7) requires licence, security policy, contribution path, provenance, changelog and limitations to be published, and §19.3 requires published governance and a contribution path whose good-first-issue route needs no paid subscriptions. Most of that prose exists at the root already (LICENSE, SECURITY.md, CONTRIBUTING.md, CHANGELOG.md); what is missing is the published site that assembles it. Second, scripted, reproducible terminal recordings of the demo and the TUI, made with Charm VHS, embedded in the docs and README.
 
-The two recordings split on reachability. The demo half can be recorded today: `mythhelm demo` exists (`internal/cli/demo.go`) and runs against a scripted fake adapter, so a VHS tape driving it has a failing counterfactual now. The TUI half cannot: no TUI code exists (`internal/` has no `tui` package, `mods/` is absent) and the TUI itself is the refined `tui-slice` spec (MH-2). The TUI recording therefore sequences behind that spec; see Dependencies.
+The two recordings split on reachability. The demo half can be recorded today: `mythhelm demo` exists (`internal/cli/demo.go`) and runs against a scripted fake adapter, so a VHS tape driving it has a failing counterfactual now. The TUI half cannot: no TUI code exists (`internal/` has no `tui` package, `mods/` is absent) and the TUI itself is the `tui-slice` spec (`specs/*/tui-slice/`, MH-2). The TUI recording therefore sequences behind that spec; see Dependencies.
 
 Grounding verdicts (2026-10-02; rule: `.claude/rules/spec-premise-grounding.md`):
 
@@ -23,7 +23,7 @@ Grounding verdicts (2026-10-02; rule: `.claude/rules/spec-premise-grounding.md`)
 - The Deferred table has a Charm VHS demo GIFs row — HOLDS (`docs/automation.md:74`).
 - Card is Stage 1 under §20.3 — HOLDS (`docs/spec/master-spec.md:2107`).
 - Release gate is G10 — HOLDS (`docs/spec/master-spec.md:1947`, "G10 — Public release").
-- The recordings depend on the TUI slice (MH-2, `specs/refined/tui-slice/`) — HOLDS for the TUI recording: `specs/refined/tui-slice/requirements.md` exists and is refined; `ls internal/` shows no `tui` package and `mods/` is absent.
+- The recordings depend on the TUI slice (MH-2, `specs/*/tui-slice/`) — HOLDS for the TUI recording: `specs/*/tui-slice/requirements.md` exists and the TUI recording sequences behind that spec's landing; `ls internal/` shows no `tui` package and `mods/` is absent.
 - The demo recording does not wait on the TUI — HOLDS: `mythhelm demo` exists (`internal/cli/demo.go:48`) and runs scripted, so a tape driving it fails today (no tapes exist) and passes after.
 - No docs site exists — HOLDS (`.github/workflows/` holds 13 workflows, none Pages-related; no mkdocs/jekyll/docusaurus config under `docs/` or `.github/`).
 - No VHS tapes exist — HOLDS (`find . -name '*.tape'` returns nothing; "vhs" appears only in `docs/automation.md:74`, orchestration logs and stale worktrees).
@@ -95,7 +95,7 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 
 ## Dependencies
 
-- **Prerequisite (recordings of the TUI): `tui-slice` (MH-2, `specs/refined/tui-slice/`)** — FR-3 sequences behind the TUI slice landing; no TUI code exists today (`internal/` has no `tui` package, `mods/` absent). FR-1 and FR-2 have no TUI dependency and can ship first.
+- **Prerequisite (recordings of the TUI): `tui-slice` (MH-2, `specs/*/tui-slice/`)** — FR-3 sequences behind the TUI slice landing; no TUI code exists today (`internal/` has no `tui` package, `mods/` absent). FR-1 and FR-2 have no TUI dependency and can ship first.
 - **Builds on: `dogfood-slice` (`specs/done/dogfood-slice/`, MH-1)** — the `mythhelm demo` command and plain/JSONL output the FR-2 tape drives.
 - **Coordinate with: `openssf-badge` (MH-9, `specs/*/openssf-badge/`)** — also touches §19.3 and the G10 gate; the two specs must agree on which one publishes the contribution path and security policy content the site assembles.
 - **Supersedes**: none. **Conflicts**: none known.

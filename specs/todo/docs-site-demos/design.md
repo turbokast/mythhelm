@@ -1,6 +1,6 @@
 # Documentation Site and Scripted Terminal Demos — Design
 
-> Mode-A design for `specs/refined/docs-site-demos/requirements.md`, which is ground truth.
+> Mode-A design for `specs/*/docs-site-demos/requirements.md`, which is ground truth.
 > Scope: single spec, 7 tasks, `auto-confirmed (non-interactive)`.
 > Normative source: docs/spec/master-spec.md; § numbers, I-IDs and G-IDs refer to it.
 
@@ -16,7 +16,7 @@
   finds nothing on this machine.
 - **No TUI.** `ls internal/` shows `adapter admission buildinfo cli ids integration
   journal security statedir supervisor workers workspace` — no `tui` package, no `mods/`.
-  The TUI is `specs/*/tui-slice/` (MH-2), currently refined.
+  The TUI is `specs/*/tui-slice/` (MH-2), currently in progress.
 - **The demo exists and is scripted.** `internal/cli/demo.go:48` (`runDemo`,
   `grep -n "func runDemo" internal/cli/demo.go`) runs `executeRun` with
   `Adapter: "fake"`, `Billing: "local-scripted"` (`demo.go:94-98`), labels every screen
@@ -76,6 +76,7 @@ Layout (D4, default (a) of requirements Q2):
 ```text
 docs/demos/
   README.md            # the documented record command + per-recording table
+  record.sh            # the record command: build, transcript regen, GIF render, verify
   demo.tape            # drives `mythhelm demo --check pass` end to end (D6)
   demo.gif             # rendered artifact, checked in (D5)
   demo.transcript.txt  # normalized stdout of the taped commands (the reproducibility proof)
@@ -87,8 +88,15 @@ docs/demos/
 **Record command** (documented in `docs/demos/README.md`, AC-2.1/AC-3.1):
 
 ```sh
-vhs docs/demos/demo.tape   # renders docs/demos/demo.gif (VHS version pinned in the tape header)
+docs/demos/record.sh   # builds the binary, regenerates the transcript, renders the GIF, verifies all three
 ```
+
+`record.sh` (checked in by Task 4) runs, in order: the `go build` below; the
+normalization pipeline with `pipefail` and an explicit binary exit-status
+assertion; `vhs docs/demos/demo.tape`, which renders `docs/demos/demo.gif`
+(VHS version pinned in the tape header); and a verify pass (`diff` of the
+regenerated transcript, manifest revision check). A bare
+`vhs docs/demos/demo.tape` only renders the GIF and is not the record command.
 
 The tape header is comments declaring `Binary-Version:`, `Binary-Commit:`, and
 `VHS-Version:` (AC-4.1 declaration). The manifest repeats the revision in machine-checked
@@ -120,10 +128,15 @@ exits 1 with an `exit status 5` trailer on the fail path, while the binary itsel
 (`internal/cli/demo_test.go:100` asserts 5 through `runMain`).
 
 ```sh
+set -o pipefail
 go build -o /tmp/mythhelm-record ./cmd/mythhelm
 /tmp/mythhelm-record demo --check pass | sed -E -f docs/demos/normalize.sed \
   > docs/demos/demo.transcript.txt
+test "${PIPESTATUS[0]}" -eq 0   # the binary's status, never sed's
 ```
+
+The `PIPESTATUS` assertion is the verification: without it a failing binary
+still yields a zero pipeline status from `sed`, masking the failure.
 
 `docs/demos/normalize.sed` (checked in by Task 4; portable across GNU and BSD `sed`):
 
@@ -170,17 +183,21 @@ Task 6 adds the `checks` job; the two tasks share that file and never run in par
   and the Task 3 PR description instructs the maintainer to add it. Steps:
   1. Mirror drift: `cmp` each `docs/mirror/*` against its root source; stale mirror
      fails with the `cp` command to refresh it.
-  2. Transcript freshness: rebuild the binary from the checkout (`go build`, never
-     `go run` — §3), re-run the §3 normalization pipeline, `diff` against
-     `demo.transcript.txt`; drift fails (this is the AC-4.1 staleness check — D7).
-  3. Manifest revision: `binary_commit` must be an ancestor of `HEAD`
-     (`git merge-base --is-ancestor`); an unknown revision fails.
-  4. Capability qualifiers: for every `capabilities[]` entry, `go test -v
-     -run "^<qualifier>$" -count=1 ./...` must print a `^--- PASS: <qualifier>` line
-     (checked with `set -o pipefail … | grep -q`; a bare `-run` exits 0 even when the
-     qualifier matches nothing, so the PASS line is the assertion). A shown capability
-     with no passing qualifier fails (AC-4.2). `tui.tape` has no manifest entry until
-     FR-3 lands, so it is exempt by construction.
+  2. Transcript freshness: check out the manifest's `binary_commit` into a detached
+     worktree (`git worktree add --detach`), build the binary there from source
+     (`go build`, never `go run` — §3), re-run the §3 normalization pipeline
+     (including its exit-status assertion), `diff` against `demo.transcript.txt`;
+     drift fails (this is the AC-4.1 staleness check — D7).
+  3. Manifest revision: `binary_commit` must be a 40-hex commit present in the repo
+     (`git cat-file -t`); step 2 rebuilds and re-runs from that exact commit, never
+     from `HEAD`. An unknown revision fails.
+  4. Capability qualifiers: for every `capabilities[]` entry, in the step-2 worktree
+     at `binary_commit`, `go test -v -run "^<qualifier>$" -count=1 ./...` must print
+     a `^--- PASS: <qualifier>` line (checked with `set -o pipefail … | grep -q`;
+     a bare `-run` exits 0 even when the qualifier matches nothing, so the PASS line
+     is the assertion). A shown capability with no passing qualifier at the declared
+     revision fails (AC-4.2). `tui.tape` has no manifest entry until FR-3 lands, so
+     it is exempt by construction.
 - `build` (needs `checks`): first an "Inject mirror front matter" step that prepends
   `---\nlayout: default\ntitle: <LICENSE|Security policy|Changelog|Governance>\n---\n`
   to the working-tree `docs/mirror/*.md` copies (transient: never committed, and it runs
@@ -193,7 +210,7 @@ Task 6 adds the `checks` job; the two tasks share that file and never run in par
   `pages: write` + `id-token: write` on that job only, each with a why-comment.
 
 `README.md` gains the demo GIF embed with a caption naming `docs/demos/demo.tape` and the
-`vhs` record command, plus the published site URL (Task 5; AC-2.3, DoD).
+`docs/demos/record.sh` record command, plus the published site URL (Task 5; AC-2.3, DoD).
 
 ## 5. TUI recording, sequenced behind tui-slice (FR-3)
 
@@ -215,7 +232,7 @@ follow-up: the tape shows the TUI's own verification status, never pane text as 
 | D4 | Tapes and GIFs side by side in `docs/demos/` | Requirements Q2 default (a); reviewable in one directory, embeddable from README and the site with relative paths. Release attachments (b) would hide the artifact from PR review. |
 | D5 | GIF in tree for the short demo loop | Requirements Q3 default (a); GIFs embed in README and Pages with no player. Revisit on size: if `demo.gif` exceeds ~5 MB the implementer reports back and MP4/WebM becomes a follow-up. |
 | D6 | First tape drives `mythhelm demo --check pass` end to end | Requirements Q4 default (a); the pass path is the honest first impression, and `fail` is already qualified by `TestDemoCheckFailsScenarioExit5`. |
-| D7 | AC-4.1 staleness = transcript drift, not commit equality | Forcing `manifest.binary_commit == HEAD` would fail every unrelated commit. CI instead re-runs the taped commands and diffs the normalized transcript (behavioural staleness), plus an ancestor check on the declared revision (provenance sanity). |
+| D7 | AC-4.1 staleness = transcript drift at the declared revision, not commit equality with HEAD | Forcing `manifest.binary_commit == HEAD` would fail every unrelated commit. CI instead checks out the declared `binary_commit`, re-runs the taped commands there and diffs the normalized transcript (behavioural staleness at the declared revision). |
 | D8 | One `docs.yml` workflow for build, deploy and recording checks | One file, one review surface; the `checks` job gates both PRs and the deploy. Task 3 creates it, Task 6 extends it sequentially. |
 | D9 | VHS version pinned at implementation time in tape header + manifest | Pinning a version from memory now would be supply-chain fiction (`.claude/rules/github-workflows.md`); the implementing task records the `vhs --version` it actually used. NFR-2 (under 10 min, free tooling) is timed then. |
 
