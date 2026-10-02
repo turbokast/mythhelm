@@ -27,6 +27,12 @@ func compatibility(version string, allowUntested bool) (string, error) {
 		if version == "2.1.284" {
 			return "fixture-tested on 2.1.284", nil
 		}
+		// Task 20 recorded a sanitised 2.1.285 stream (pinned by
+		// TestDecodeFixture/recorded) and passed the live canary on
+		// it; later patches stay visibly untested.
+		if version == "2.1.285" {
+			return "fixture-tested on 2.1.284; recorded on 2.1.285", nil
+		}
 		return "fixture-tested on 2.1.284; running " + version + " untested", nil
 	}
 	if allowUntested {
