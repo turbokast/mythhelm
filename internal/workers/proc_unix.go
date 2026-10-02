@@ -5,12 +5,24 @@ package workers
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"syscall"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/turbokast/mythhelm/internal/adapter"
 )
+
+// procGone reports whether err means "no such process": ENOENT (already
+// reaped when looked up) or ESRCH (reaped mid-lookup: on Linux a worker
+// reaped between the open and the read of /proc/<pid>/stat surfaces ESRCH
+// on the read). It checks both syscall and x/sys errnos, which are distinct
+// types. Anything else stays fail-closed: undeterminable is not gone.
+func procGone(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) ||
+		errors.Is(err, syscall.ESRCH) ||
+		errors.Is(err, unix.ESRCH)
+}
 
 // detachedAttr puts the worker in a new session, so a terminal hangup or a
 // signal to the CLI's process group does not reach it (AC-5.2).

@@ -37,3 +37,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: Signal S-4 shows demand for continuing work when one subscription is exhausted; D-2 accepted the spec-compliant shape. No card covers the account-profile model, native-home credential isolation or the §13.10 exhaustion flow; MH-5, MH-15 and MH-16 are consumed, not duplicated.
 - **Cards**: MH-17,MH-5,MH-15,MH-16
 - **Evidence**: product/signals.md S-4; product/decisions.md D-2
+
+### D-6 — 2026-10-02: MH-1 → shipped (dogfood-slice)
+- **Type**: lifecycle-sync
+- **Decision**: MH-1 moved to shipped
+- **Rationale**: dogfood-slice reached done; finalize merged, main CI green
+- **Cards**: MH-1
+- **Evidence**: PR #78 (finalize, b0fcd81); main CI success at b0fcd81

@@ -121,16 +121,6 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Source**: master spec §16.6 (topology, scoped discovery, state mapping, input ownership, detach and restore), §5.7, §15.11, §18.10, §20.3 and §22.2 item 5
 - **Summary**: First-class use inside Herdr: launch in a pane, project scoped MYTHHELM state, keep one input writer and restore attachments rather than relaunching work. Herdr may present state but never certifies completion or creates a second process owner (I17, I18). Lane inspectors and native attachment follow in Stage 2.
 
-### MH-1: Dogfood slice: one native Claude Code attempt, from task to applied candidate
-- **Status**: implementing
-- **Stage**: 1
-- **Gates**: G01, G03, G04, G06, G07
-- **Score**: 3.0 = (value 5 + urgency 5 + risk 5) / effort 5
-- **Spec**: `dogfood-slice`
-- **Issue**: [#22](https://github.com/turbokast/mythhelm/issues/22)
-- **Source**: master spec §20.3 and §22.2 items 2 to 4 (ownership, source protection, the delivery loop), the scripted fake adapter of §22.2 item 1, and the plain and JSONL output and offline demo of item 5
-- **Summary**: The first runnable MYTHHELM: admission, a managed snapshot, a detached worker owning one native Claude Code attempt, configured checks, a receipt and a guarded apply, with the offline demo and read-only doctor. It proves the task to reviewable artifact loop on MYTHHELM itself before any second adapter, TUI or routing work.
-
 ### MH-8: Documentation site and scripted terminal demos
 - **Status**: triaged
 - **Stage**: 1
@@ -203,4 +193,12 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 
 ## Closed
 
-No closed cards.
+### MH-1: Dogfood slice: one native Claude Code attempt, from task to applied candidate
+- **Status**: shipped
+- **Stage**: 1
+- **Gates**: G01, G03, G04, G06, G07
+- **Score**: 3.0 = (value 5 + urgency 5 + risk 5) / effort 5
+- **Spec**: `dogfood-slice`
+- **Issue**: [#22](https://github.com/turbokast/mythhelm/issues/22)
+- **Source**: master spec §20.3 and §22.2 items 2 to 4 (ownership, source protection, the delivery loop), the scripted fake adapter of §22.2 item 1, and the plain and JSONL output and offline demo of item 5
+- **Summary**: The first runnable MYTHHELM: admission, a managed snapshot, a detached worker owning one native Claude Code attempt, configured checks, a receipt and a guarded apply, with the offline demo and read-only doctor. It proves the task to reviewable artifact loop on MYTHHELM itself before any second adapter, TUI or routing work.

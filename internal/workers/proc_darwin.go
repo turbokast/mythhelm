@@ -20,8 +20,8 @@ const descendantScan = "sysctl-procargs2"
 func ProcessStartTime(pid int) (time.Time, error) {
 	kp, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
 	// A PID with no process yields an empty reply, which x/sys reports as
-	// EIO.
-	if errors.Is(err, unix.EIO) || err == nil && int(kp.Proc.P_pid) != pid {
+	// EIO. A PID reaped mid-lookup surfaces ESRCH instead.
+	if errors.Is(err, unix.EIO) || procGone(err) || err == nil && int(kp.Proc.P_pid) != pid {
 		return time.Time{}, fmt.Errorf("%w: pid %d", ErrNoProcess, pid)
 	}
 	if err != nil {

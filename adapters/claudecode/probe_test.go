@@ -168,6 +168,10 @@ func TestUntestedMinorVersionExit7(t *testing.T) {
 			t.Fatalf("supported minor = %+v, %v", p, err)
 		}
 	}
+	p, err := probePlatform(context.Background(), fakeProbeInput(t, "2.1.285"), "linux")
+	if err != nil || !strings.Contains(p.Compatibility, "recorded on 2.1.285") {
+		t.Fatalf("2.1.285 must name its Task 20 recording, got %+v, %v", p, err)
+	}
 }
 
 func TestWindowsClaudecodeExit7(t *testing.T) {
