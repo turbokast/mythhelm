@@ -77,7 +77,7 @@
 - **Test plan**: table tests over (flags × env) with a fake `getenv`; no TTY needed.
 - **Invariants touched**: None (pure parsing; no state read, no values rendered).
 
-### Task 4 — Built-in themes in mods/
+### Task 4 — Built-in themes in mods/ ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: standard
@@ -97,6 +97,10 @@
   - `TestUnknownTheme`: `BuiltIn("aurora")` returns `ErrUnknownTheme`.
 - **Test plan**: golden token structs for the built-ins; adversarial token fixtures; luminance unit cases. (The adversarial-token control-survival test lives in task 9 — the approval/spend/stop surfaces it renders only exist from tasks 6/9.)
 - **Invariants touched**: I11 (§14.11: the token format carries no code paths to approval/evidence surfaces; the survival proof is task 9's `TestRequiredControlsSurviveAdversarialTheme`), I13 (§3.3: no font requirement in the format).
+- **Status**: ✅ Completed — declarative dark/light token files plus the shared loader/validator landed; PR #90.
+- **Implementation**: `BuiltIn`/`Load` share one strict parse+validate path; WCAG 4.5:1 gate on Text/TextMuted × Surface/SurfaceRaised. Commit 7ef2641f67f715719eb77141aa552460aff422d0.
+- **Spec deviations**: None.
+- **Files modified**: `mods/themes/dark.toml`, `mods/themes/light.toml`, `mods/themes/themes.go`, `internal/tui/theme/theme.go`, `internal/tui/theme/theme_test.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
 ### Task 5 — Diff viewer component
 

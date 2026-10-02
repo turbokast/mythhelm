@@ -20,7 +20,11 @@
 
 ## Task 4 — Built-in themes in mods/
 
-<!-- pending -->
+- **Produces**: `theme.Tokens{Surface, SurfaceRaised, Text, TextMuted, Focus, Attention, OK, Warning, Err, Border}` (`internal/tui/theme/theme.go`); `theme.BuiltIn("dark"|"light")`, `theme.Load(path)`, `(Tokens) Validate()`, `theme.ErrUnknownTheme`, `theme.ErrInvalidTheme`; `themes.Files embed.FS` (`mods/themes/themes.go`); `mods/themes/dark.toml`, `mods/themes/light.toml`. As designed, no API differences.
+- **For dependents**: consume `theme.Tokens` by value from `BuiltIn`/`Load` — both validate before returning, so no re-validation. TOML schema is flat snake_case (`surface_raised`, `text_muted`, …); colours strict `#rrggbb`; `border` is `rounded|ascii`.
+- **For dependents**: `Validate` enforces WCAG 4.5:1 on Text/TextMuted × Surface/SurfaceRaised — task 9's adversarial-token test must expect low-contrast sets to fail `Validate` (render adversarial tokens directly, not via `Load`).
+- **For dependents**: every `ErrInvalidTheme` names the offending key; branch with `errors.Is`, never string matching. `Load` reads are size-bounded (64 KiB).
+- **Deviations that change a later task's inputs**: none.
 
 ## Task 5 — Diff viewer component
 
