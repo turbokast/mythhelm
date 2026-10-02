@@ -21,9 +21,11 @@
 - **Files**:
   - `go.mod` (add requires)
   - `go.sum` (add hashes)
+  - `internal/tui/tools.go` (new pin file, creates `internal/tui/`; package `tui` with blank imports of `github.com/charmbracelet/bubbletea`, `github.com/charmbracelet/lipgloss`, `github.com/charmbracelet/bubbles`, `github.com/mattn/go-isatty` plus a comment stating the file exists only to keep the requires tidy-clean; pins per Produces below)
 - **Produces**: module versions `github.com/charmbracelet/bubbletea v1.3.10`, `github.com/charmbracelet/lipgloss v1.1.0`, `github.com/charmbracelet/bubbles v1.0.0`, `github.com/mattn/go-isatty v0.0.24` direct (its current indirect version, promoted).
+- **Domain exception**: go-implementer owns this `internal/tui/` pin file as incidental to the `go.mod` change (later tasks replace it with real consumers).
 - **Acceptance**:
-  - `go mod tidy -diff` prints nothing, and `go list -m github.com/charmbracelet/bubbletea github.com/charmbracelet/lipgloss github.com/charmbracelet/bubbles github.com/mattn/go-isatty` shows exactly the four pinned versions; any drift changes that output and fails the task.
+  - `go mod tidy -diff` prints nothing with the pin file present, and `go list -m github.com/charmbracelet/bubbletea github.com/charmbracelet/lipgloss github.com/charmbracelet/bubbles github.com/mattn/go-isatty` shows exactly the four pinned versions; any drift changes that output and fails the task. (Without the pin file `go mod tidy` drops the unimported requires, leaving `go.mod` byte-identical to base.)
   - The PR's dependency-review and `licenses` CI jobs pass with the new modules on the allowlist; a GPL-licensed transitive dependency would fail them.
   - `govulncheck ./...` reports no findings, and `CGO_ENABLED=0 go build ./...` succeeds; before this task the Charm imports do not resolve, so any consumer fails to build.
 - **Test plan**: no new Go tests; verification is the gate commands plus the recorded `go list -m` output.

@@ -24,3 +24,5 @@
 - Sibling specs checked 2026-10-02: `specs/in-progress/`, `specs/unfinalized/` are empty; `specs/todo/` holds only `specs/*/docs-site-demos/`, which explicitly claims no `internal/tui/` or `mods/` changes and sequences its FR-3 behind this spec. No other live sibling spec exists. No file conflicts. The two specs' planned `README.md` edits are disjoint regions (status section vs demo embed).
 
 ## Discoveries
+
+- 2026-10-02 spec fix (Task 1): `go mod tidy` drops unimported requires, so Task 1's original Files (`go.mod`/`go.sum` only) left `go.mod` byte-identical to base and its acceptance was unachievable. Fix: Task 1 now also writes `internal/tui/tools.go` (package `tui`, blank imports of the four pinned modules) so the pins survive `tidy -diff`; go-implementer owns that pin file as incidental to the `go.mod` change.
