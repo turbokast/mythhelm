@@ -349,6 +349,23 @@ func TestAppendValidatesEnvelope(t *testing.T) {
 	}
 }
 
+func TestEventsLimit(t *testing.T) {
+	j, _ := openTemp(t)
+	for i := int64(1); i <= 3; i++ {
+		mustAppend(t, j, event("run_a", "sup_a", i, 1))
+	}
+	evs, err := j.EventsLimit(t.Context(), "run_a", 0, 2)
+	if err != nil {
+		t.Fatalf("EventsLimit: %v", err)
+	}
+	if len(evs) != 2 || evs[0].RunSequence != 1 || evs[1].RunSequence != 2 {
+		t.Fatalf("EventsLimit(2) = %d rows, want first 2 in run_sequence order", len(evs))
+	}
+	if _, err := j.EventsLimit(t.Context(), "run_a", 0, 0); err == nil {
+		t.Fatal("EventsLimit(0) = nil, want an error")
+	}
+}
+
 func TestEventsRoundTrip(t *testing.T) {
 	j, _ := openTemp(t)
 	observed := time.Date(2026, 9, 29, 12, 0, 0, 123456789, time.FixedZone("CEST", 2*3600))

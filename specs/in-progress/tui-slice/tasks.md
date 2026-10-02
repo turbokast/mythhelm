@@ -265,7 +265,7 @@
 - **Test plan**: synthetic event producers (blocking and flooding); `View` row counting; goroutine accounting.
 - **Invariants touched**: I06 (§7.3: UI lag never stalls ownership — drop-and-replay), I05 (§11.3: read-only polling adds no writer).
 
-### Task 11 — Accessible linear renderer
+### Task 11 — Accessible linear renderer ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -284,6 +284,10 @@
   - `TestAccessibleResumeFromCursor`: over a fixture run with more than `accessiblePageSize` events, a first invocation (`After: 0`) cancelled after the history page streams returns exactly the first page plus a trailing `next-after: <K>` line; a second invocation with `After: K` streams the remainder with no overlap or gap, in `run_sequence` order, plus its own trailer (AC-5.3); a variant without the trailer or with overlapping pages fails.
 - **Test plan**: temp state DB fixtures; golden label streams; byte-scan for escape sequences.
 - **Invariants touched**: I09 (§13.4: same `unknown`/kind labelling as the TUI), I14 (§16.1: support claimed only for tested combinations — no claim text in this task).
+- **Status**: ✅ Completed — the `--accessible` screen-reader renderer streams complete state labels plus the ordered event stream with paged resume; PR #95.
+- **Implementation**: `RunAccessible` emits the snapshot summary (fresh caught-up invocations only), `event <seq>:` lines reusing `plainEvent` labels, and a `next-after: <K>` trailer on context end; stdlib-only cell-width truncation at 200 cells with bidi neutralisation. Commit 224a3dd030d926d9e1bcae0c8bc66495374fed54.
+- **Spec deviations**: The summary carries no `approval:` line (the acceptance text's "approval-adjacent status line"): the pipeline has no approval state — `waiting_approval` is never entered (N10) — so inventing one would violate truthfulness; the wide-safe test defends the status line adjacent to hostile content (the run-state line) instead. Review found the uncapped history read let live follow emit pre-existing overflow past the page, so the fix adds `journal.EventsLimit` + `viewmodel.EventsSinceLimit` in `internal/journal/journal.go`, `internal/journal/journal_test.go` and `internal/tui/viewmodel/viewmodel.go` (additive, SQL-enforced cap; initial read fetches `accessiblePageSize+1` and an over-page invocation returns after one page plus trailer with no follow).
+- **Files modified**: `internal/cli/accessible.go`, `internal/cli/accessible_test.go`, `internal/journal/journal.go`, `internal/journal/journal_test.go`, `internal/tui/viewmodel/viewmodel.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
 ### Task 12 — CLI launch wiring
 

@@ -161,6 +161,17 @@ func EventsSince(ctx context.Context, dir, runID string, after int64) ([]journal
 	return j.Events(ctx, runID, after)
 }
 
+// EventsSinceLimit is EventsSince capped at limit rows, for paged readers
+// that probe for overflow with one extra row.
+func EventsSinceLimit(ctx context.Context, dir, runID string, after int64, limit int) ([]journal.Event, error) {
+	j, err := journal.OpenReadOnly(ctx, dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = j.Close() }()
+	return j.EventsLimit(ctx, runID, after, limit)
+}
+
 func decodeProgress(ev journal.Event) (*Progress, error) {
 	var m struct {
 		AssistantTurns int            `json:"assistant_turns"`
