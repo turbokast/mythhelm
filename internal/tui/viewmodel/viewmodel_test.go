@@ -287,6 +287,53 @@ func TestLoadScansProgressAndNativeExit(t *testing.T) {
 	})
 }
 
+func TestLoadScopesAttemptEvidence(t *testing.T) {
+	t.Parallel()
+	b := newBuilder(t)
+	runID := "run_retry"
+	b.addRun(runID, "executing", strings.Repeat("e", 64))
+	oldAttempt := b.addAttempt(runID)
+	appendAttempt := func(typ, payload, attemptID string) {
+		t.Helper()
+		b.seq++
+		ev := journal.Event{
+			SchemaVersion: journal.EnvelopeVersion, EventID: ids.New("evt"),
+			RunID: runID, AttemptID: attemptID, ProducerID: "producer_test",
+			ProducerSequence: b.seq, Generation: 1, ObservedAt: time.Now().UTC(),
+			Type: typ, Payload: json.RawMessage(payload),
+		}
+		if err := b.j.Append(t.Context(), ev, nil); err != nil {
+			t.Fatalf("Append(%s): %v", typ, err)
+		}
+	}
+	appendAttempt("attempt.progress", progressPayload, oldAttempt)
+	appendAttempt("attempt.native_result", nativePayload, oldAttempt)
+	newAttempt := ids.New("att")
+	b.append(runID, "attempt.launch_intent_recorded", `{}`, func(tx *sql.Tx) error {
+		return journal.InsertAttempt(t.Context(), tx, journal.AttemptRow{
+			AttemptID: newAttempt, RunID: runID, TaskID: ids.New("task"), AttemptNumber: 2,
+			State: "running", LaunchTokenSHA256: "token", WorkspacePath: b.dir,
+		})
+	})
+	b.close()
+
+	snap, err := viewmodel.Load(t.Context(), b.dir, runID)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if snap.Attempt == nil || snap.Attempt.AttemptID != newAttempt {
+		t.Fatalf("Attempt = %+v, want the running retry %s", snap.Attempt, newAttempt)
+	}
+	// The previous attempt's progress and result must not masquerade as the
+	// retry's launch evidence: a new running retry waits for its own ack.
+	if snap.LatestProgress != nil {
+		t.Errorf("LatestProgress = %+v, want nil (stale attempt evidence)", snap.LatestProgress)
+	}
+	if snap.NativeExit != nil {
+		t.Errorf("NativeExit = %+v, want nil (stale attempt evidence)", snap.NativeExit)
+	}
+}
+
 func TestLoadScansAdmission(t *testing.T) {
 	t.Parallel()
 	t.Run("folded", func(t *testing.T) {

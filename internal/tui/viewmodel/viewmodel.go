@@ -98,6 +98,17 @@ func Load(ctx context.Context, dir, runID string) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
+	// Attempt evidence belongs to the latest attempt only: a retry must not
+	// inherit its predecessor's progress or result as launch evidence.
+	// Unattributed events (synthetic feeds) still fold; without a latest
+	// attempt there is nothing to scope to, so everything folds.
+	currentAttempt := ""
+	if snap.Attempt != nil {
+		currentAttempt = snap.Attempt.AttemptID
+	}
+	stale := func(ev journal.Event) bool {
+		return currentAttempt != "" && ev.AttemptID != "" && ev.AttemptID != currentAttempt
+	}
 	receiptWritten := false
 	for _, ev := range events {
 		if ev.RunSequence > snap.LastRunSeq {
@@ -107,10 +118,15 @@ func Load(ctx context.Context, dir, runID string) (Snapshot, error) {
 		case "attempt.progress":
 			// Progress is advisory: a malformed payload is skipped with
 			// the latest good value kept.
-			if p, err := decodeProgress(ev); err == nil {
-				snap.LatestProgress = p
+			if !stale(ev) {
+				if p, err := decodeProgress(ev); err == nil {
+					snap.LatestProgress = p
+				}
 			}
 		case "attempt.native_result":
+			if stale(ev) {
+				continue
+			}
 			native, err := decodeNativeExit(ev)
 			if err != nil {
 				return Snapshot{}, err

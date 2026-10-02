@@ -53,12 +53,13 @@ type motionFrameMsg struct{}
 // the frames remaining on each active moment, and the previous run state
 // for failure-transition detection.
 type motionState struct {
-	arrival        bool
-	launched       bool
-	dispatchFrames int
-	pulseFrames    int
-	deliveryFrames int
-	prevRunState   string
+	arrival         bool
+	launched        bool
+	launchedAttempt string
+	dispatchFrames  int
+	pulseFrames     int
+	deliveryFrames  int
+	prevRunState    string
 }
 
 // pending reports whether any moment still owns frames.
@@ -92,6 +93,7 @@ func (m *Model) consumeEvent(ev journal.Event) {
 			return
 		}
 		m.motion.launched = true
+		m.motion.launchedAttempt = ev.AttemptID
 		if full {
 			m.motion.dispatchFrames = motionDispatchFrames
 		}

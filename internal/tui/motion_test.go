@@ -195,6 +195,26 @@ func TestDispatchNeedsLaunchAck(t *testing.T) {
 	}
 }
 
+func TestReloadNewAttemptWaitsForAck(t *testing.T) {
+	t.Parallel()
+	m := dispatchModel(t, fullCaps)
+	m, _ = motionFeed(t, m, liveEvent("attempt.launched", `{}`, "att_1", 21))
+	if !m.motion.launched {
+		t.Fatal("the lane's own ack did not launch it")
+	}
+	// A reload that swaps in a new running attempt resets the launch: the
+	// retry waits for its own ack, not the previous attempt's.
+	retry := dispatchSnapshot()
+	retry.Attempt.AttemptID = "att_2"
+	m.setSnapshot(t.Context(), retry)
+	if m.motion.launched {
+		t.Error("reload with a new attempt kept the old launch")
+	}
+	if view := m.View(); !strings.Contains(view, "dispatching") {
+		t.Errorf("retry view lost the dispatching label\n%s", view)
+	}
+}
+
 // TestRouteCardShowsRecordedAdmission pins the moment 2 truth rule: the
 // route card shows the adapter id/version/surface from Snapshot.Admission,
 // the profile from the run, and the static pinned-route reason — with no

@@ -150,9 +150,24 @@ func Run(ctx context.Context, cfg Config) error {
 // animation frames, which only Update can schedule beside their tick.
 func (m *Model) setSnapshot(ctx context.Context, snap viewmodel.Snapshot) {
 	wasReady := m.ready
+	prevAttempt, nextAttempt := "", ""
+	if m.snap.Attempt != nil {
+		prevAttempt = m.snap.Attempt.AttemptID
+	}
+	if snap.Attempt != nil {
+		nextAttempt = snap.Attempt.AttemptID
+	}
 	m.snap = snap
 	m.ready = true
 	m.loadErr = nil
+	if nextAttempt != prevAttempt {
+		// A new attempt waits for its own ack: the old launch (consumed
+		// or seeded) must not carry over. seedLaunched re-seeds from the
+		// new snapshot's scoped evidence below.
+		m.motion.launched = false
+		m.motion.launchedAttempt = ""
+		m.motion.dispatchFrames = 0
+	}
 	m.seedLaunched()
 	m.noteRunState(wasReady)
 	if m.selectedTask == "" {
