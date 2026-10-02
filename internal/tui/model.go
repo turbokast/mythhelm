@@ -69,7 +69,10 @@ func (b *NoticeBacklog) Drain() []string {
 
 // Model is the mission-view program: one snapshot rendered through the §15.4
 // layout ladder. dialog holds a pending confirmation id ("" = none); task 9
-// replaces it with rich confirmation prompts.
+// replaces it with rich confirmation prompts. focusPrev restores the previous
+// pane on Esc; filterOn/filterText hold the / filter; palette and helpOpen
+// hold the : and ? overlays; themeName tracks the active built-in theme;
+// selectedLane is the stable lane identity a reload keeps.
 type Model struct {
 	cfg          Config
 	snap         viewmodel.Snapshot
@@ -82,9 +85,16 @@ type Model struct {
 	width        int
 	height       int
 	focusPane    string
+	focusPrev    string
 	focusIndex   int
 	selectedTask string
+	selectedLane string
 	dialog       string
+	filterOn     bool
+	filterText   string
+	palette      paletteState
+	helpOpen     bool
+	themeName    string
 }
 
 // newModel builds the program state with default dimensions; the first
@@ -96,6 +106,8 @@ func newModel(cfg Config) *Model {
 		width:     singleWidth,
 		height:    24,
 		focusPane: paneTasks,
+		focusPrev: paneTasks,
+		themeName: "dark",
 	}
 }
 
@@ -131,6 +143,12 @@ func (m *Model) setSnapshot(ctx context.Context, snap viewmodel.Snapshot) {
 			m.selectedTask = snap.Attempt.TaskID
 		}
 	}
+	if m.selectedLane == "" {
+		m.selectedLane = snap.Run.RunID
+		if snap.Attempt != nil && snap.Attempt.AttemptID != "" {
+			m.selectedLane = snap.Attempt.AttemptID
+		}
+	}
 	m.diff, m.diffErr = Diff{}, nil
 	if snap.Attempt != nil && snap.Candidate != nil {
 		d, err := m.loadDiff(ctx, snap.Attempt.WorkspacePath, snap.Candidate.BaseRev, snap.Candidate.Commit)
@@ -162,24 +180,31 @@ func defaultLoadDiff(ctx context.Context, ws, base, commit string) (Diff, error)
 func (m *Model) Init() tea.Cmd { return nil }
 
 // Update implements tea.Model: resizes re-lay out around preserved identity,
-// Ctrl-C quits. Key dispatch arrives in task 7.
+// keys dispatch through handleKey (nav.go), where Ctrl-C alone quits.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.applySize(msg)
 		return m, nil
 	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" {
-			return m, tea.Quit
-		}
-		return m, nil
+		return m.handleKey(msg)
 	default:
 		return m, nil
 	}
 }
 
-// View implements tea.Model, dispatching on the layout ladder.
+// View implements tea.Model, dispatching on the layout ladder. The dialog,
+// palette and help overlays take over the whole view while open.
 func (m *Model) View() string {
+	if m.dialog != "" {
+		return m.render(m.dialogLines())
+	}
+	if m.palette.open {
+		return m.render(m.paletteLines())
+	}
+	if m.helpOpen {
+		return m.render(m.helpLines())
+	}
 	if m.loadErr != nil {
 		return m.render([]line{{text: "error: " + cell(m.loadErr.Error())}})
 	}
@@ -194,7 +219,11 @@ func (m *Model) View() string {
 	}
 	switch resolveLayout(m.width, m.height) {
 	case layoutCompact:
-		return m.render(m.compactLines())
+		rows := m.compactLines()
+		if ln, ok := m.filterLine(); ok {
+			rows = append(rows, ln)
+		}
+		return m.render(rows)
 	case layoutSingle:
 		return m.viewSingle()
 	case layoutTwoPane:
@@ -241,6 +270,9 @@ func (m *Model) viewSingle() string {
 		rows = append(rows, m.truncationNotice()...)
 	}
 	rows = append(rows, m.criticalStatusLine(), m.footerLine())
+	if ln, ok := m.filterLine(); ok {
+		rows = append(rows, ln)
+	}
 	return m.render(rows)
 }
 
@@ -266,11 +298,11 @@ type column struct {
 }
 
 func (m *Model) tasksColumn(width int) column {
-	return column{width: width, rows: m.tasksLines(width)}
+	return column{width: width, rows: m.applyFilter(m.tasksLines(width))}
 }
 
 func (m *Model) agentsColumn(width int) column {
-	return column{width: width, rows: m.agentsLines(width)}
+	return column{width: width, rows: m.applyFilter(m.agentsLines(width))}
 }
 
 // detailColumn is the switchable detail panel: the selected change when it
@@ -283,15 +315,16 @@ func (m *Model) detailColumn(width int) column {
 	return column{width: width, rows: m.agentsLines(width)}
 }
 
-// focusedPaneLines is the single rung's full-width pane.
+// focusedPaneLines is the single rung's full-width pane. The filter applies
+// to the tasks and agents panes only; the detail pane is never filtered.
 func (m *Model) focusedPaneLines(width int) []line {
 	switch m.focusPane {
 	case paneAgents:
-		return m.agentsLines(width)
+		return m.applyFilter(m.agentsLines(width))
 	case paneDetail:
 		return m.detailLines(width)
 	default:
-		return m.tasksLines(width)
+		return m.applyFilter(m.tasksLines(width))
 	}
 }
 
@@ -322,6 +355,9 @@ func (m *Model) viewColumns(l layout, cols []column) string {
 	}
 	out = append(out, m.finaliseRows(m.statusLines(), m.width)...)
 	out = append(out, m.finaliseRows([]line{m.footerLine()}, m.width)...)
+	if ln, ok := m.filterLine(); ok {
+		out = append(out, m.finaliseRows([]line{ln}, m.width)...)
+	}
 	if m.height > 0 && len(out) > m.height {
 		out = out[:m.height]
 	}
