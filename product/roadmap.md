@@ -7,27 +7,26 @@
 
 Cards with a spec, being specified or implemented.
 
-Nothing in flight.
+- **MH-9** OpenSSF Best Practices badge (specced, stage 1, score 9.0; spec `openssf-badge`; [#30](https://github.com/turbokast/mythhelm/issues/30))
+- **MH-2** TUI slice: the focused mission view (specced, stage 1, score 3.3; spec `tui-slice`; [#23](https://github.com/turbokast/mythhelm/issues/23))
+- **MH-8** Documentation site and scripted terminal demos (specced, stage 1, score 3.0; spec `docs-site-demos`; [#29](https://github.com/turbokast/mythhelm/issues/29))
 
 ## Next
 
 The five highest-scored cards without a spec in the current or next stage.
 
-- **MH-9** OpenSSF Best Practices badge (triaged, stage 1, score 9.0; [#30](https://github.com/turbokast/mythhelm/issues/30))
 - **MH-10** Harness compatibility records and qualification registry (triaged, stage 0, score 4.7; [#31](https://github.com/turbokast/mythhelm/issues/31))
 - **MH-7** Release pipeline: GoReleaser archives, attestations and signatures (triaged, stage 1, score 4.3; [#28](https://github.com/turbokast/mythhelm/issues/28))
 - **MH-11** Windows process-tree ownership (triaged, stage 1, score 4.3; [#32](https://github.com/turbokast/mythhelm/issues/32))
 - **MH-12** Strict subscription-only qualification for Claude Code (triaged, stage 1, score 3.8; [#33](https://github.com/turbokast/mythhelm/issues/33))
+- **MH-17** Account profiles and exhaustion handoff (triaged, stage 2, score 3.7; [#82](https://github.com/turbokast/mythhelm/issues/82))
 
 ## Later
 
 Every other open card, by score.
 
-- **MH-17** Account profiles and exhaustion handoff (triaged, stage 2, score 3.7; [#82](https://github.com/turbokast/mythhelm/issues/82))
 - **MH-13** Contained execution profiles: restricted and inspect (triaged, stage 1, score 3.5; [#34](https://github.com/turbokast/mythhelm/issues/34))
-- **MH-2** TUI slice: the focused mission view (triaged, stage 1, score 3.3; [#23](https://github.com/turbokast/mythhelm/issues/23))
 - **MH-3** Herdr bridge: single-pane experience with scoped status (triaged, stage 1, score 3.3; [#24](https://github.com/turbokast/mythhelm/issues/24))
-- **MH-8** Documentation site and scripted terminal demos (triaged, stage 1, score 3.0; [#29](https://github.com/turbokast/mythhelm/issues/29))
 - **MH-4** Codex adapter: the second qualified native adapter (triaged, stage 2, score 2.8; [#25](https://github.com/turbokast/mythhelm/issues/25))
 - **MH-16** Quota observations and the budget ledger (triaged, stage 2, score 2.8; [#37](https://github.com/turbokast/mythhelm/issues/37))
 - **MH-5** Routing across authorised profiles (triaged, stage 2, score 2.5; [#26](https://github.com/turbokast/mythhelm/issues/26))
