@@ -24,7 +24,7 @@ Add to the skill's test-writing rules: every acceptance test covering a JSONL or
 
 **Proposed change:**
 
-Add a validation step: collect every `go test … -run <selector>` command embedded in the spec's task text; for each, dry-match it against the tree that results from the task's merge and fail validation when it matches zero tests, naming the task and the selector. Never validate against the base tree: a task may introduce the selected test, so base-tree matching would reject valid tasks before implementation. Follow `-run` semantics for slash-separated subtest selectors (e.g. `TestDecodeFixture/recorded`): `-list` matches top-level tests only, so split the selector and match its top-level element, or run the selector with `-count=1` as the dry match.
+Add a validation step: collect every `go test … -run <selector>` command embedded in the spec's task text; for each, dry-match it against the tree that results from the task's merge and fail validation when it matches zero tests, naming the task and the selector. Never validate against the base tree: a task may introduce the selected test, so base-tree matching would reject valid tasks before implementation. Follow `-run` semantics for slash-separated subtest selectors (e.g. `TestDecodeFixture/recorded`): `-list` matches top-level tests only, so split the selector and match its top-level element, or run the selector with `-count=1` as the dry match. Fail closed: unparseable command extraction, a match error, or a match timeout blocks validation exactly like a zero-match selector.
 
 ## P-dogfood-slice-3 — Windows atomic-replace retry pattern in knowledge
 
