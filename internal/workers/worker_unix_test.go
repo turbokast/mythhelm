@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -115,4 +116,23 @@ func (a attempt) heartbeat(t *testing.T) int64 {
 		return 0 // caught mid-write; the next read sees it whole
 	}
 	return hb.Beat
+}
+
+// TestProcGoneMapsReadRace pins the /proc open/read race: a worker reaped
+// between open and read surfaces ESRCH on the read, which must mean "gone"
+// exactly like ENOENT, or verifyIdentity rejects a legitimately reaped
+// worker (exit 6 worker_lost) instead of accepting it on PID and token.
+func TestProcGoneMapsReadRace(t *testing.T) {
+	readRace := &fs.PathError{Op: "read", Path: "/proc/9976/stat", Err: syscall.ESRCH}
+	if !procGone(readRace) {
+		t.Errorf("procGone(%v) = false, want true", readRace)
+	}
+	missing := &fs.PathError{Op: "open", Path: "/proc/9976/stat", Err: syscall.ENOENT}
+	if !procGone(missing) {
+		t.Errorf("procGone(%v) = false, want true", missing)
+	}
+	denied := &fs.PathError{Op: "open", Path: "/proc/1/stat", Err: syscall.EACCES}
+	if procGone(denied) {
+		t.Errorf("procGone(%v) = true, want false: undeterminable stays fail-closed", denied)
+	}
 }
