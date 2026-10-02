@@ -385,9 +385,24 @@ func nullable(s string) sql.NullString {
 // Events returns runID's events with run_sequence greater than afterRunSeq,
 // in run_sequence order.
 func (j *Journal) Events(ctx context.Context, runID string, afterRunSeq int64) ([]Event, error) {
-	rows, err := j.db.QueryContext(ctx, `SELECT event_id, schema_version, run_id, task_id, attempt_id,
+	return j.queryEvents(ctx, `SELECT event_id, schema_version, run_id, task_id, attempt_id,
 		producer_id, producer_sequence, run_sequence, generation, caused_by, observed_at, type, payload
 		FROM journal WHERE run_id = ? AND run_sequence > ? ORDER BY run_sequence`, runID, afterRunSeq)
+}
+
+// EventsLimit is Events capped at limit rows, so paged readers never load
+// the whole history to discover it overflows the page.
+func (j *Journal) EventsLimit(ctx context.Context, runID string, afterRunSeq int64, limit int) ([]Event, error) {
+	if limit < 1 {
+		return nil, fmt.Errorf("journal: event limit must be at least 1, got %d", limit)
+	}
+	return j.queryEvents(ctx, `SELECT event_id, schema_version, run_id, task_id, attempt_id,
+		producer_id, producer_sequence, run_sequence, generation, caused_by, observed_at, type, payload
+		FROM journal WHERE run_id = ? AND run_sequence > ? ORDER BY run_sequence LIMIT ?`, runID, afterRunSeq, limit)
+}
+
+func (j *Journal) queryEvents(ctx context.Context, query string, args ...any) ([]Event, error) {
+	rows, err := j.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("journal: querying events: %w", err)
 	}

@@ -522,6 +522,42 @@ func TestAccessibleResumeFromCursor(t *testing.T) {
 	}
 }
 
+func TestAccessibleOverPageNoFollow(t *testing.T) {
+	t.Parallel()
+	f := newAccessibleFixture(t)
+	runID := ids.New("run")
+	f.addRun(runID, "executing", strings.Repeat("0", 64))
+	const extra = 5
+	for i := 0; i < accessiblePageSize+extra; i++ {
+		f.append(runID, "attempt.progress", fmt.Sprintf(`{"assistant_turns":%d}`, i+1), nil)
+	}
+	// A short poll that survives several live ticks must still yield exactly
+	// one page plus its trailer: an over-page history never starts live
+	// follow, so later ticks cannot emit the pre-existing overflow.
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	sb := &syncBuffer{}
+	done := make(chan error, 1)
+	go func() {
+		done <- RunAccessible(ctx, AccessibleConfig{
+			RunID: runID, StateDir: f.dir, Out: sb, Poll: 10 * time.Millisecond,
+		})
+	}()
+	waitAccessibleLines(t, sb, accessiblePageSize)
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("RunAccessible: %v", err)
+	}
+	got := accessibleLines(t, sb.String())
+	if len(got) != accessiblePageSize+1 {
+		t.Fatalf("over-page short poll yielded %d lines, want %d + trailer", len(got), accessiblePageSize)
+	}
+	if got[accessiblePageSize] != fmt.Sprintf("next-after: %d", accessiblePageSize) {
+		t.Errorf("trailer = %q, want %q", got[accessiblePageSize], fmt.Sprintf("next-after: %d", accessiblePageSize))
+	}
+}
+
 // runAccessiblePage runs one paging invocation: resume offset after, waiting
 // for want event lines before cancelling. The hour-long poll cadence keeps
 // live ticks out of the page so the line count is exact.

@@ -51,9 +51,11 @@ const defaultAccessiblePoll = 500 * time.Millisecond
 // of history) start with the current-state summary; resume and paging
 // invocations are pure stream continuations, so labels never repeat across
 // pages. New events stream as they journal; polls with no new events write
-// nothing. On context end it writes the next-after trailer as its last line
-// and returns nil. Load, stream and write failures return an error with no
-// trailer.
+// nothing. An over-page history yields exactly one page plus the trailer and
+// returns without live follow, so a later event can never advance next-after
+// past skipped history. On context end it writes the next-after trailer as
+// its last line and returns nil. Load, stream and write failures return an
+// error with no trailer.
 func RunAccessible(ctx context.Context, cfg AccessibleConfig) error {
 	if cfg.Out == nil {
 		return fmt.Errorf("accessible: no output writer")
@@ -66,14 +68,17 @@ func RunAccessible(ctx context.Context, cfg AccessibleConfig) error {
 	if err != nil {
 		return err
 	}
-	history, err := viewmodel.EventsSince(ctx, cfg.StateDir, cfg.RunID, cfg.After)
+	// One row past the page: its presence proves overflow without loading
+	// the whole history.
+	history, err := viewmodel.EventsSinceLimit(ctx, cfg.StateDir, cfg.RunID, cfg.After, accessiblePageSize+1)
 	if err != nil {
 		return err
 	}
 	w := &accessibleWriter{out: cfg.Out}
 	last := cfg.After
 	page := history
-	if len(page) > accessiblePageSize {
+	overflow := len(page) > accessiblePageSize
+	if overflow {
 		page = page[:accessiblePageSize]
 	}
 	if accessibleShowsSummary(cfg.After, len(history)) {
@@ -87,6 +92,10 @@ func RunAccessible(ctx context.Context, cfg AccessibleConfig) error {
 	}
 	if err := w.err; err != nil {
 		return err
+	}
+	if overflow {
+		w.line(fmt.Sprintf("next-after: %d", last))
+		return w.err
 	}
 	ticker := time.NewTicker(poll)
 	defer ticker.Stop()
@@ -118,9 +127,10 @@ func RunAccessible(ctx context.Context, cfg AccessibleConfig) error {
 
 // accessibleShowsSummary reports whether this invocation opens with the
 // current-state summary: fresh invocations whose whole history fits one
-// page. EventsSince is uncapped, so a history of exactly accessiblePageSize
-// is complete, not truncated. Resume and paging invocations stay pure
-// stream continuations, so labels never repeat across pages.
+// page. The initial read fetches one row past the page, so a history of
+// exactly accessiblePageSize is complete, not truncated. Resume and paging
+// invocations stay pure stream continuations, so labels never repeat across
+// pages.
 func accessibleShowsSummary(after int64, historyLen int) bool {
 	return after == 0 && historyLen <= accessiblePageSize
 }
