@@ -76,7 +76,8 @@ func (b *NoticeBacklog) Drain() []string {
 // replaces it with rich confirmation prompts. focusPrev restores the previous
 // pane on Esc; filterOn/filterText hold the / filter; palette and helpOpen
 // hold the : and ? overlays; themeName tracks the active built-in theme;
-// selectedLane is the stable lane identity a reload keeps.
+// selectedLane is the stable lane identity a reload keeps; motion holds the
+// session-observed truthful-motion state (motion.go).
 type Model struct {
 	cfg          Config
 	snap         viewmodel.Snapshot
@@ -99,6 +100,7 @@ type Model struct {
 	palette      paletteState
 	helpOpen     bool
 	themeName    string
+	motion       motionState
 }
 
 // newModel builds the program state with default dimensions; the first
@@ -116,6 +118,9 @@ func newModel(cfg Config) *Model {
 		focusPane: paneTasks,
 		focusPrev: paneTasks,
 		themeName: name,
+		// The arrival reveal is pending only under full motion; reduced
+		// and off collapse it to the immediate paint (moment 1).
+		motion: motionState{arrival: cfg.Caps.Motion == caps.MotionFull},
 	}
 }
 
@@ -140,11 +145,16 @@ func Run(ctx context.Context, cfg Config) error {
 
 // setSnapshot installs a snapshot and (re)loads its candidate diff. The
 // selected task keeps its identity across reloads; only a first load picks
-// the default.
+// the default. It also seeds the launch the snapshot already proves and
+// moves focus on the failure-transition edge (motion.go); it never arms
+// animation frames, which only Update can schedule beside their tick.
 func (m *Model) setSnapshot(ctx context.Context, snap viewmodel.Snapshot) {
+	wasReady := m.ready
 	m.snap = snap
 	m.ready = true
 	m.loadErr = nil
+	m.seedLaunched()
+	m.noteRunState(wasReady)
 	if m.selectedTask == "" {
 		m.selectedTask = snap.Run.RunID
 		if snap.Attempt != nil && snap.Attempt.TaskID != "" {
@@ -184,18 +194,36 @@ func defaultLoadDiff(ctx context.Context, ws, base, commit string) (Diff, error)
 	return ParseDiff(out)
 }
 
-// Init implements tea.Model; the task 6 program has no start-up commands.
-func (m *Model) Init() tea.Cmd { return nil }
+// Init implements tea.Model; its only start-up command is the arrival
+// reveal's settling tick under full motion (nil otherwise).
+func (m *Model) Init() tea.Cmd { return m.scheduleMotion() }
 
 // Update implements tea.Model: resizes re-lay out around preserved identity,
-// keys dispatch through handleKey (nav.go), where Ctrl-C alone quits.
+// keys dispatch through handleKey (nav.go), where Ctrl-C alone quits; live
+// events fold into the snapshot and arm their moment (motion.go); motion
+// frames count the active moments down. Any key skips a pending arrival.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.applySize(msg)
 		return m, nil
 	case tea.KeyMsg:
+		m.motion.arrival = false
 		return m.handleKey(msg)
+	case eventMsg:
+		m.consumeEvent(msg.Event)
+		return m, m.scheduleMotion()
+	case motionFrameMsg:
+		if m.cfg.Caps.Motion != caps.MotionFull {
+			return m, nil
+		}
+		m.motion.arrival = false
+		for _, frames := range []*int{&m.motion.dispatchFrames, &m.motion.pulseFrames, &m.motion.deliveryFrames} {
+			if *frames > 0 {
+				*frames--
+			}
+		}
+		return m, m.scheduleMotion()
 	default:
 		return m, nil
 	}
@@ -227,7 +255,7 @@ func (m *Model) View() string {
 	}
 	switch resolveLayout(m.width, m.height) {
 	case layoutCompact:
-		rows := m.compactLines()
+		rows := m.gateCompactActivity(m.compactLines())
 		if ln, ok := m.filterLine(); ok {
 			rows = append(rows, ln)
 		}
@@ -295,7 +323,7 @@ func (m *Model) viewTwoPane() string {
 // detail side by side.
 func (m *Model) viewThreePane() string {
 	widths := columnWidths(m.width, 3)
-	detail := column{width: widths[2], rows: m.detailLines(widths[2])}
+	detail := column{width: widths[2], rows: m.detailRows(widths[2])}
 	return m.viewColumns(layoutThreePane, []column{m.tasksColumn(widths[0]), m.agentsColumn(widths[1]), detail})
 }
 
@@ -306,11 +334,11 @@ type column struct {
 }
 
 func (m *Model) tasksColumn(width int) column {
-	return column{width: width, rows: m.applyFilter(m.tasksLines(width))}
+	return column{width: width, rows: m.applyFilter(m.tasksRows(width))}
 }
 
 func (m *Model) agentsColumn(width int) column {
-	return column{width: width, rows: m.applyFilter(m.agentsLines(width))}
+	return column{width: width, rows: m.applyFilter(m.agentsRows(width))}
 }
 
 // detailColumn is the switchable detail panel: the selected change when it
@@ -318,9 +346,9 @@ func (m *Model) agentsColumn(width int) column {
 // width so the diff renderer fits before styling.
 func (m *Model) detailColumn(width int) column {
 	if m.focusPane == paneDetail {
-		return column{width: width, rows: m.detailLines(width)}
+		return column{width: width, rows: m.detailRows(width)}
 	}
-	return column{width: width, rows: m.applyFilter(m.agentsLines(width))}
+	return column{width: width, rows: m.applyFilter(m.agentsRows(width))}
 }
 
 // focusedPaneLines is the single rung's full-width pane. The filter applies
@@ -328,11 +356,11 @@ func (m *Model) detailColumn(width int) column {
 func (m *Model) focusedPaneLines(width int) []line {
 	switch m.focusPane {
 	case paneAgents:
-		return m.applyFilter(m.agentsLines(width))
+		return m.applyFilter(m.agentsRows(width))
 	case paneDetail:
-		return m.detailLines(width)
+		return m.detailRows(width)
 	default:
-		return m.applyFilter(m.tasksLines(width))
+		return m.applyFilter(m.tasksRows(width))
 	}
 }
 
