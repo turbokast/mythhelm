@@ -103,7 +103,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Summary**: The `restricted` and `inspect` execution profiles with boundaries that pass adversarial tests, and a clear refusal wherever an operating system cannot provide them. The dogfood slice admits only `trusted-host` with explicit consent (its non-goal N9).
 
 ### MH-2: TUI slice: the focused mission view
-- **Status**: specced
+- **Status**: implementing
 - **Stage**: 1
 - **Gates**: G09
 - **Score**: 3.3 = (value 5 + urgency 5 + risk 3) / effort 4
