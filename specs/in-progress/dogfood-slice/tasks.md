@@ -701,7 +701,7 @@
 - **Domain/agent**: maintainer (human), assisted by go-implementer for the fixture and compatibility files
 - **Budget**: standard
 - **Depends on**: Task 19
-- **Change**: The maintainer runs `MYTHHELM_LIVE_CLAUDE=1 go test -tags live ./adapters/claudecode -run TestLiveCanary`. They then run one real, small MYTHHELM task in their MYTHHELM checkout, for example a follow-up issue from this spec: `mythhelm run --task-file task.md --adapter claudecode --billing subscription-declared --execution-profile trusted-host`. Next they review it, apply it with `mythhelm apply <run> --to-branch dogfood/<topic>`, and sign off under the DCO. Finally, commit the sanitised evidence.
+- **Change**: The maintainer runs `MYTHHELM_LIVE_CLAUDE=1 go test -tags live ./adapters/claudecode -run TestLiveClaudeCanary`. They then run one real, small MYTHHELM task in their MYTHHELM checkout, for example a follow-up issue from this spec: `mythhelm run --task-file task.md --adapter claudecode --billing subscription-declared --execution-profile trusted-host`. Next they review it, apply it with `mythhelm apply <run> --to-branch dogfood/<topic>`, and sign off under the DCO. Finally, commit the sanitised evidence.
 - **Files**:
   - `docs/dogfood/0001-first-run.md` (command, outcome, receipt excerpt with home paths, session IDs and org hash replaced by placeholders, and friction found)
   - `adapters/claudecode/testdata/streams/recorded-<version>.jsonl` (sanitised: prompt, assistant and tool text replaced; IDs placeholdered)
