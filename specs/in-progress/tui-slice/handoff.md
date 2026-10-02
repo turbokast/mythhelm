@@ -49,7 +49,12 @@
 
 ## Task 6 — App shell, layouts and mission view
 
-<!-- pending -->
+- **Produces**: `internal/tui/model.go` — `tui.Config{RunID, StateDir, Caps, Tokens, Events, Notices, Actions}`, `tui.Run(ctx, cfg) error` (sync `viewmodel.Load`, then alt-screen Tea program; `ErrNoDatabase` shows the empty state, other load failures return), `tui.Model` with `Update`/`View`, `tui.NoticeBacklog` with nil-safe `Add`/`Drain`; `mission.go` (header, tasks, agents, selected-change, status strip, footer, `nextAction` §7 table); `layout.go` (140/100/80-column and 10-row breakpoints, resize identity preservation); `styles.go` (`cell`/`cellOrUnknown` via `security.TermSafe`, geometric-shapes table `─│▶●·…—`); `actions.go` (`Actions` struct only); PR #97.
+- **For dependents** (tasks 7–10, 12): drive `Update`/`View` directly in tests (D13); construct via `newModel(cfg)` + `setSnapshot` + `WindowSizeMsg`. `Update` currently handles `WindowSizeMsg` and Ctrl-C only — task 7 owns all other key dispatch. Only Ctrl-C quits; `q` and the palette arrive in tasks 7/9.
+- **For dependents**: the selected-change pane drops `Diff.Render`'s in-pane counts footer when truncated and shows the full-width two-line provenance notice instead (counts + cap + exact `` git -C "<workspace>" diff <base> <commit> ``); never render both. The two-pane detail panel shows agents unless `focusPane == "detail"`.
+- **For dependents**: `Model.dialog` is a string confirmation id (`""` = none) that resize preserves — task 9 replaces it with rich confirmation prompts. `setSnapshot` preserves `selectedTask` across reloads (defaults to attempt `TaskID`, else run ID) and reloads the diff through the `loadDiff` seam (default: review-style `git diff` over the attempt workspace with 40–64 hex revision validation); tests stub `loadDiff`, never poke `diff`/`diffErr`.
+- **For dependents**: fit plain text with `fitLine` before `styleText` — never cut a styled row (the ANSI-splitting hazard); `joinColumns` is the only styled-row joiner. New non-ASCII glyphs must join the `geometricShapes` table or `TestNoFontDependentGlyphs` fails; new files must not name the CLI package or `TestLayeringNoCliImport` fails (layering runs one way).
+- **Deviations affecting later tasks**: `NoticeBacklog` lives in `model.go` until task 10 moves it to `live.go` with `LiveFeed` (same API); the truncation notice spans the full width below the columns (task 10's virtualisation must keep it visible when the detail pane shows a truncated diff).
 
 ## Task 7 — Navigation, palette and help
 
