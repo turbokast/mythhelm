@@ -7,7 +7,7 @@
 
 Cards with a spec, being specified or implemented.
 
-- **MH-1** Dogfood slice: one native Claude Code attempt, from task to applied candidate (implementing, stage 1, score 3.0; spec `dogfood-slice`; [#22](https://github.com/turbokast/mythhelm/issues/22))
+Nothing in flight.
 
 ## Next
 
