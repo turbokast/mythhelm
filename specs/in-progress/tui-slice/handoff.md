@@ -40,7 +40,12 @@
 
 ## Task 5 — Diff viewer component
 
-<!-- pending -->
+- **Produces**: `internal/tui/diff.go` — `tui.Diff{Files, Lines, Truncated, TruncateCap}`, `tui.ParseDiff(unified []byte) (Diff, error)`, `(Diff) Render(width int, caps caps.Caps, t theme.Tokens) []string`, `(Diff) TotalLines() int`; `tui.DiffFile{OldPath, NewPath, Header, Hunks}`, `tui.DiffHunk{Header, OldStart, OldCount, NewStart, NewCount, Lines}`, `tui.DiffLine{Kind, Text}`, `tui.DiffLineKind` (`DiffFileBoundary`, `DiffFileMeta`, `DiffHunkHeader`, `DiffContext`, `DiffAdd`, `DiffDel`); caps `maxDiffLines = 50000`, `maxDiffBytes = 4 << 20`; PR #94.
+- **For dependents** (task 6): `Render` fits every row (footer included) to `width` cells with `…`/`+` markers that never split a wide glyph; an empty diff renders the `(empty diff)` label row; a truncated diff appends `showing R of N lines (50,000-line limit)` / `(4 MiB byte limit)` where R is `len(Diff.Lines)` and N is `TotalLines()`.
+- **For dependents** (task 6): `ParseDiff` takes bare bytes with no provenance, so the selected-change pane owns the exact-command footer — on `Truncated`, build it from `len(Lines)`/`TotalLines()`/`TruncateCap` plus the `CandidateRow` base/commit (TestTruncationFooterNamesExactCommand). Malformed input returns an unexported error, so branch on error presence, not identity.
+- **For dependents**: highlighting uses explicit truecolour sequences from theme tokens (deterministic under test, unlike profile-driven styling); `ColourNever`+`IconsASCII` output is pure ASCII with no escapes. Every rendered row passes through `security.TermSafe` before measuring or styling.
+- **Deviations affecting later tasks**: the `TotalLines()` accessor is new (the §8 snippet omits it); no API differences otherwise.
+
 
 ## Task 6 — App shell, layouts and mission view
 

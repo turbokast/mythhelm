@@ -116,7 +116,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `mods/themes/dark.toml`, `mods/themes/light.toml`, `mods/themes/themes.go`, `internal/tui/theme/theme.go`, `internal/tui/theme/theme_test.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
-### Task 5 — Diff viewer component
+### Task 5 — Diff viewer component ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: complex (width-safe Unicode handling plus truncation semantics)
@@ -135,6 +135,10 @@
   - `TestMarkdownDiffKeepsDiffChrome`: a diff over a `.md` file renders hunk headers and `+`/`-` markers structurally (AC-1.2; a Markdown-prose rendering fails).
 - **Test plan**: inline fixtures plus generated wide/tab/bidi cases; golden rows.
 - **Invariants touched**: I09 (§13.4: absent diff renders as labelled absence, never empty success), §12.7 (control characters sanitised before render — a fixture with ANSI escapes in diff content renders them inert).
+- **Status**: ✅ Completed — width-safe unified-diff parser and renderer for the selected-change pane; PR #94.
+- **Implementation**: `ParseDiff` enforces hunk counts and fails malformed input, capping at 50,000 lines / 4 MiB (bytes first, cut to the last in-budget newline); `Render` measures with `lipgloss.Width`, sanitises via `TermSafe`, and highlights structurally in theme colours with an ASCII fallback. Commit ccee1067084e81b0ebca815336e5f7b031610f66.
+- **Spec deviations**: `Diff` gains a `TotalLines()` accessor the §8 snippet omits (task 6's provenance-carrying footer needs the pre-cap total; same precedent as task 2's `Goal` field).
+- **Files modified**: `internal/tui/diff.go`, `internal/tui/diff_test.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
 ### Task 6 — App shell, layouts and mission view
 
