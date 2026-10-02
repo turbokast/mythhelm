@@ -12,19 +12,19 @@
 
 ## Implementation Tasks
 
-### Task 1 — Register the assessment, answer the passing criteria, record the URL and N/A table
+### Task 1 — Register the assessment, answer the passing criteria, record the URL and N/A/Unmet table
 
 - **Domain/agent**: maintainer
 - **Budget**: standard
 - **Depends on**: None
-- **Change**: Register the project entry under the maintainer's personal bestpractices account (Q1), answer every passing-tier criterion with repo evidence or an N/A justification naming the gap, and record the assessment URL of record, the site-generated badge snippet and the N/A rows. The `design.md` edit below is the AC-1.2-mandated exception per design D3.
+- **Change**: Register the project entry under the maintainer's personal bestpractices account (Q1), answer every passing-tier criterion with repo evidence (N/A only where the criterion allows it; SHOULD/SUGGESTED gaps answered Unmet with a justification naming the gap; applicable MUST/MUST NOT answered Met or allowed-N/A), and record the assessment URL of record, the site-generated badge snippet and the §3 rows. The `design.md` edit below is the AC-1.2-mandated exception per design D3.
 - **Files**:
-  - `specs/*/openssf-badge/design.md` (fill the §3 N/A table: one row per N/A answer; the spec's own directory in whichever lifecycle state holds it when this task runs)
-- **Produces**: Assessment URL of record (stable `<host>/projects/<id>` URL); N/A criterion ids with justifications (design §3 rows; ids are the app's criterion keys as in the `.json` `<name>_status` keys); site-generated badge snippet bytes (expected shape `[![OpenSSF Best Practices](<project-URL>/badge)](<project-URL>)` on the non-locale URL form; the site's bytes win).
+  - `specs/*/openssf-badge/design.md` (fill the §3 N/A/Unmet table: one row per N/A or Unmet answer; the spec's own directory in whichever lifecycle state holds it when this task runs)
+- **Produces**: Assessment URL of record (stable `<host>/projects/<id>` URL); N/A and Unmet criterion ids with justifications (design §3 rows; ids are the app's criterion keys as in the `.json` `<name>_status` keys); site-generated badge snippet bytes (expected shape `[![OpenSSF Best Practices](<project-URL>/badge)](<project-URL>)` on the non-locale URL form; the site's bytes win).
 - **Acceptance**:
   - `check-assessment-registered`: `curl -sSL <assessment-URL>.json` returns 200 JSON whose `repo_url` points at `github.com/turbokast/mythhelm`. Red before registration: non-200.
   - Questionnaire complete: `badge_percentage_0 == 100` in that JSON. Red on a fresh assessment: below 100.
-  - `check-na-justified` (design §6) passes: the N/A id set in the JSON equals the §3 rows, every justification non-empty and identical in both places.
+  - `check-na-justified` (design §6) passes: every N/A sits on a criterion that allows it, the N/A-or-Unmet id set in the JSON equals the §3 rows, every justification non-empty and identical in both places.
   - The recorded snippet's link-target project id equals the URL of record's id.
 - **Test plan**: Maintainer-run against the live app; paste the `curl`/JSON outputs into the completion entry. No repo tests: no code changes.
 - **Invariants touched**: None (external questionnaire plus spec-table rows; no code, no release claim, no advertised capability changes in-repo).
@@ -34,15 +34,15 @@
 - **Domain/agent**: maintainer
 - **Budget**: standard
 - **Depends on**: Task 1
-- **Change**: File one backlog card per N/A criterion from Task 1 through `/backlog add` and the normal approval flow (never by writing `product/` directly), then reference each card id from its N/A justification or the assessment notes and fill the §3 card column. The `design.md` edit below is part of the AC-1.2-mandated record per design D3.
+- **Change**: File one backlog card per Unmet criterion from Task 1 through `/backlog add` and the normal approval flow (never by writing `product/` directly), then reference each card id from its Unmet justification or the assessment notes and fill the §3 card column. The `design.md` edit below is part of the AC-1.2-mandated record per design D3.
 - **Files**:
-  - `specs/*/openssf-badge/design.md` (fill the card-id column of the §3 rows Task 1 wrote)
-- **Produces**: Card id per N/A criterion (`MH-<n>`), recorded in design §3 and the completion entry.
+  - `specs/*/openssf-badge/design.md` (fill the card-id column of the §3 Unmet rows Task 1 wrote)
+- **Produces**: Card id per Unmet criterion (`MH-<n>`), recorded in design §3 and the completion entry.
 - **Acceptance**:
-  - `check-cards-complete` (design §6) passes: the `.json` N/A count equals the count of approved backlog cards naming those criterion ids (`python3 scripts/pm/pm.py list` plus card inspection).
-  - `check-cards-referenced` (design §6) passes: each N/A justification or `general_comments` names its card id.
+  - `check-cards-complete` (design §6) passes: the `.json` Unmet count equals the count of approved backlog cards naming those criterion ids (`python3 scripts/pm/pm.py list` plus card inspection).
+  - `check-cards-referenced` (design §6) passes: each Unmet justification or `general_comments` names its card id.
   - `check-assessment-passing` (design §6) passes with the card references in place: `badge_percentage_0 == 100`, `badge_level` in {passing, silver, gold}.
-  - Zero-N/A branch: if Task 1 recorded no N/A rows, no cards are filed and the completion entry records the N/A count of 0 with the JSON probe output alongside `badge_percentage_0 == 100` (the check asserts the zero count, not an empty "every card" universal).
+  - Zero-Unmet branch: if Task 1 recorded no Unmet rows, no cards are filed and the completion entry records the Unmet count of 0 with the JSON probe output alongside `badge_percentage_0 == 100` (the check asserts the zero count, not an empty "every card" universal).
 - **Test plan**: Maintainer-run; paste the `pm.py`, `curl` and approval-request outputs into the completion entry. No repo tests: no code changes.
 - **Invariants touched**: None (product approval flow plus external assessment notes; no code).
 

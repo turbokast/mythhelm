@@ -16,25 +16,25 @@ Scope: single spec, ~3 tasks, one work stream (external assessment + README badg
 ### 2. Assessment registration and answers (FR-1; §19.3, §19.4, G10)
 
 - The maintainer registers the project entry under their personal bestpractices account (Q1 settled) and records the stable `<host>/projects/<id>` URL as the **assessment URL of record** in the Task 1 completion entry and `handoff.md`.
-- The maintainer walks every passing-tier criterion. Each answer cites repo evidence (file + line/section, e.g. the §1 artifacts) or N/A with a justification naming the gap (FR-3 feeds these).
+- The maintainer walks every passing-tier criterion. Each answer cites repo evidence (file + line/section, e.g. the §1 artifacts); N/A is used only where the criterion text allows it, and SHOULD/SUGGESTED gaps are answered Unmet with a justification naming the gap (FR-3 feeds these). Applicable MUST/MUST NOT criteria are answered Met (or N/A where allowed) — a backlog card cannot substitute for meeting them.
 - The maintainer copies the site-generated embed snippet verbatim from the project page and records it in the completion entry. Expected shape (pattern verified live, §1; `<project-URL>` is the non-locale `<host>/projects/<id>` form): `[![OpenSSF Best Practices](<project-URL>/badge)](<project-URL>)`; the site's own bytes win over this pattern.
 - Host form: the site-issued URL wins. Either host with the right project id satisfies AC-1.1/AC-2.2 (verified same-project redirect, §1; D5).
 
-### 3. N/A justification record (AC-1.2)
+### 3. N/A and Unmet justification record (AC-1.2)
 
-Task 1 adds one row per N/A answer; Task 2 fills the card column. Criterion ids are the app's criterion keys as they appear in the `.json` `<name>_status` keys (§1). Justification text is identical in the assessment and here.
+Task 1 adds one row per N/A or Unmet answer; Task 2 fills the card column for Unmet rows (N/A rows take `—`: N/A means not applicable, not a gap). Criterion ids are the app's criterion keys as they appear in the `.json` `<name>_status` keys (§1). Justification text is identical in the assessment and here.
 
-| Criterion id | Why N/A | Backlog card |
+| Criterion id | Answer + justification | Backlog card |
 |---|---|---|
 
-Zero rows until Task 1 walks the questionnaire; an empty table with `badge_percentage_0 == 100` means nothing was N/A.
+Zero rows until Task 1 walks the questionnaire; an empty table with `badge_percentage_0 == 100` means every criterion was Met.
 
 ### 4. Backlog cards for unmet criteria (FR-3; §19.3, §19.4, G10)
 
-- One card per unmet criterion via `/backlog add` (product-skills flow): the title names the criterion id and the gap; the summary grounds the gap at source; scored and filed for maintainer approval through the pm-sync flow, with a GitHub issue per that skill's second write gate. Pre-alpha-unmeetable criteria proceed as N/A-with-backlog-card now (Q2 settled); the badge is not deferred to the first release.
+- One card per Unmet criterion via `/backlog add` (product-skills flow): the title names the criterion id and the gap; the summary grounds the gap at source; scored and filed for maintainer approval through the pm-sync flow, with a GitHub issue per that skill's second write gate. SHOULD/SUGGESTED gaps proceed as Unmet-with-backlog-card now (Q2 settled); the badge is not deferred to the first release.
 - Nobody writes `product/` directly (`knowledge/domains.md`); the task is maintainer-run and the cards land only through approval.
-- After approval the maintainer references each card id from its N/A justification (or the assessment notes, AC-3.2) and fills the §3 card column.
-- Count rule (AC-3.1): the number of cards equals the number of N/A answers; `check-cards-complete` compares the `.json` N/A count against the filed cards.
+- After approval the maintainer references each card id from its Unmet justification (or the assessment notes, AC-3.2) and fills the §3 card column.
+- Count rule (AC-3.1): the number of cards equals the number of Unmet answers; `check-cards-complete` compares the `.json` Unmet count against the filed cards.
 
 ### 5. README badge (FR-2, NFR-1; §19.3, G10)
 
@@ -47,17 +47,17 @@ Zero rows until Task 1 walks the questionnaire; an empty table with `badge_perce
 
 `<AU>` is the assessment URL of record. Every check states its red state.
 
-- `check-assessment-passing` (AC-1.1): `curl -sSL <AU>.json` returns 200 with `badge_percentage_0 == 100` and `badge_level` in {passing, silver, gold}. Red: URL unregistered (non-200) or percentage below 100.
-- `check-na-justified` (AC-1.2): every `<name>_status == 'N/A'` in the JSON has a non-empty `<name>_justification`, and the N/A id set equals the §3 table rows with identical text. Red: an unjustified N/A or a table mismatch.
+- `check-assessment-passing` (AC-1.1): `curl -sSL <AU>.json` returns 200 with `badge_percentage_0 == 100` and `badge_level` in {passing, silver, gold}. The app's own percentage enforces the MUST/SHOULD/N/A rules, so 100 means every applicable MUST/MUST NOT is met (or allowed-N/A). Red: URL unregistered (non-200) or percentage below 100.
+- `check-na-justified` (AC-1.2): every `<name>_status == 'N/A'` in the JSON sits on a criterion whose text allows N/A and has a non-empty `<name>_justification`; every Unmet has a non-empty justification; and the N/A-or-Unmet id set equals the §3 table rows with identical text. Red: an unjustified N/A, an N/A where not allowed, an unjustified Unmet, or a table mismatch.
 - `check-readme-badge` (AC-2.1): the badges block (anchored region around the `grep -n 'badge\.svg\|scorecard\.dev\|shields\.io/badge' README.md` hits) contains the snippet verbatim with the `<AU>` link target, and `curl -sSL -o /dev/null -w '%{http_code} %{content_type}' <image-URL>` prints `200 image/svg+xml`. Red today: no badge line.
 - `check-badge-link-current` (AC-2.2): the project id extracted from the README link target equals the id in `<AU>`. Red: a re-registration changes the id without a README update; also red on the pre-change README, where extraction finds no badge id.
-- `check-cards-complete` (AC-3.1): the `.json` N/A count equals the count of backlog cards naming those criterion ids (`python3 scripts/pm/pm.py list` plus card inspection). Red: a gap without a card.
-- `check-cards-referenced` (AC-3.2): each N/A justification or `general_comments` names its card id. Red: a justification without a card reference.
+- `check-cards-complete` (AC-3.1): the `.json` Unmet count equals the count of backlog cards naming those criterion ids (`python3 scripts/pm/pm.py list` plus card inspection). Red: a gap without a card.
+- `check-cards-referenced` (AC-3.2): each Unmet justification or `general_comments` names its card id. Red: a justification without a card reference.
 
 ### 7. Task contracts
 
-- Task 1 → Task 2: assessment URL of record; N/A criterion ids with justifications (§3 rows); site-generated snippet.
-- Task 2 → Task 3: card id per N/A criterion (§3 card column); verified passing state.
+- Task 1 → Task 2: assessment URL of record; N/A and Unmet criterion ids with justifications (§3 rows); site-generated snippet.
+- Task 2 → Task 3: card id per Unmet criterion (§3 card column); verified passing state.
 - Record locations: each task's completion entry in `tasks.md` and its `handoff.md` section (seeded by run-spec). No Go signatures: the contracts are the URL, the snippet bytes and the §3 rows.
 
 ### 8. Decisions
@@ -74,10 +74,10 @@ Zero rows until Task 1 walks the questionnaire; an empty table with `badge_perce
 
 | Spec demand | Position |
 |---|---|
-| G10 "provenance … published" | Not met in this spec: no releases exist pre-alpha, so release/provenance criteria go N/A-with-backlog-card per FR-3 (N2 still binds). |
-| G10 "limitations … published" | Partially met: `README.md` carries a pre-alpha status section; any passing criterion demanding more goes N/A-with-backlog-card per FR-3. |
-| §19.4 reproducible builds / SBOM / attestations | Deferred via FR-3 cards where the questionnaire demands them; not built here (N2). |
-| §19.3/§19.4 demands surfaced as unmet criteria | N/A-with-backlog-card per FR-3; this spec satisfies none of them directly (N2). |
+| G10 "provenance … published" | Out of BadgeApp passing scope: no passing criterion requires build provenance; `version_unique`/`release_notes` are answered Met with a no-releases-yet justification and `release_notes_vulns` is explicit N/A (N2 still binds). |
+| G10 "limitations … published" | Partially met: `README.md` carries a pre-alpha status section; no passing criterion demands a limitations page, so nothing is carded for it. |
+| §19.4 reproducible builds / SBOM / attestations | Beyond the passing tier: not demanded by the questionnaire at this level and not built here (N2). |
+| §19.3/§19.4 demands surfaced as unmet criteria | Unmet (SHOULD/SUGGESTED) answers carry justification + card per FR-3; this spec satisfies none of them directly (N2). |
 | Badge tiers above passing | Out of scope (N1); the checks accept passing-or-higher but no task pursues silver or gold. |
 
 ### 10. Cross-spec references

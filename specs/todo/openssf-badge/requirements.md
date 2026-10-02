@@ -10,7 +10,7 @@
 
 MYTHHELM is a public open-source repository aiming at a public preview whose release gate (G10) requires licence, security policy, contribution path, provenance, changelog and limitations to be published. The OpenSSF Best Practices badge is an independent, externally verifiable checklist that the project's governance, contribution and CI/supply-chain posture meets a recognised passing bar. Earning it exercises the same artifacts G10 demands and gives contributors and downstream users a single visible signal.
 
-The repository already publishes most of the G10 document set (LICENSE, NOTICE, SECURITY.md, CONTRIBUTING.md, GOVERNANCE.md, CODE_OF_CONDUCT.md, CHANGELOG.md) and carries CI, licence and OpenSSF Scorecard badges in the README, but no OpenSSF Best Practices badge: the acceptance state fails today. Because the project is pre-alpha with no releases yet, some passing-level criteria (notably around releases, provenance and published limitations) may not be satisfiable now; the card explicitly scopes those as new backlog cards rather than silent N/A answers.
+The repository already publishes most of the G10 document set (LICENSE, NOTICE, SECURITY.md, CONTRIBUTING.md, GOVERNANCE.md, CODE_OF_CONDUCT.md, CHANGELOG.md) and carries CI, licence and OpenSSF Scorecard badges in the README, but no OpenSSF Best Practices badge: the acceptance state fails today. Because the project is pre-alpha with no releases yet, `version_unique`/`release_notes` are answered Met with a no-releases-yet justification and `release_notes_vulns` is an explicit N/A; no passing-level criterion requires build provenance or a published limitations page. SHOULD/SUGGESTED gaps become backlog cards with Unmet-with-justification answers; applicable MUST/MUST NOT criteria are met before the badge is claimed (adjudication 2026-10-02: every applicable MUST/MUST NOT is met or meetable pre-release).
 
 Grounding verdicts (2026-10-02; no vendor second reader per dispatch):
 
@@ -34,7 +34,7 @@ Failure reachable today: yes — the badge is absent and no assessment is linked
 | # | Out of scope | Still binding in this spec |
 |---|---|---|
 | N1 | Silver or gold badge tiers. | G10: the passing badge and its unmet-criteria cards are published. |
-| N2 | Satisfying currently-unmeetable criteria (releases, provenance) inside this spec. | FR-3: each becomes a card; no criterion is answered N/A without a card or a recorded justification. |
+| N2 | Satisfying criteria beyond the passing tier (e.g. release provenance) inside this spec. | FR-3: each SHOULD/SUGGESTED gap becomes a card answered Unmet with justification; N/A is used only where the criterion allows it; applicable MUST/MUST NOT criteria are met before the badge is claimed. |
 | N3 | Changes to CI workflows beyond what a passing criterion requires. | §19.4: existing checks keep passing. |
 
 ## Functional Requirements
@@ -43,8 +43,8 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 
 ### FR-1 — Passing-level assessment completed (§19.3, §19.4, G10)
 
-- **AC-1.1** [G10] The project shall hold a published OpenSSF Best Practices assessment at the passing level (100% of passing criteria answered passing or justified N/A), reachable at a stable `bestpractices.coreinfrastructure.org/projects/<id>` URL. The maintainer registers the entry under their personal bestpractices.coreinfrastructure.org account and owns future re-attestations.
-- **AC-1.2** [§19.3, §19.4] If a passing criterion is answered N/A, then the assessment's justification text shall state why it does not apply, and the reason shall be recorded in this spec's `design.md`. No in-repo snapshot of the assessment state is kept — the external assessment URL is the only record.
+- **AC-1.1** [G10] The project shall hold a published OpenSSF Best Practices assessment at the passing level — every MUST/MUST NOT met (or N/A where the criterion allows it), every SHOULD met or unmet-with-justification, every SUGGESTED considered (i.e. `badge_percentage_0 == 100` as computed by the app) — reachable at a stable `bestpractices.coreinfrastructure.org/projects/<id>` URL. The maintainer registers the entry under their personal bestpractices.coreinfrastructure.org account and owns future re-attestations.
+- **AC-1.2** [§19.3, §19.4] If a passing criterion is answered N/A (only where the criterion allows it) or Unmet, then the assessment's justification text shall state why, and the reason shall be recorded in this spec's `design.md`. No in-repo snapshot of the assessment state is kept — the external assessment URL is the only record.
 
 ### FR-2 — Badge displayed in the README (§19.3, G10)
 
@@ -53,8 +53,8 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 
 ### FR-3 — Unmet criteria become backlog cards (§19.3, §19.4, G10)
 
-- **AC-3.1** [G10] For every passing-level criterion the project does not meet (e.g. no release exists yet, no build provenance, no published limitations page), the assessment shall answer N/A with a justification naming the gap, and the system of record shall contain a backlog card naming the criterion id and the gap; the count of such cards equals the count of unmet criteria. Pre-alpha-unmeetable criteria proceed as N/A-with-backlog-card now; the badge is not deferred until the first release.
-- **AC-3.2** [§19.3] When all such cards are filed, the assessment shall reference them (in N/A justifications or the assessment's notes) so an auditor can trace each gap.
+- **AC-3.1** [G10] For every passing-level criterion the project does not meet that permits an Unmet answer (SHOULD/SUGGESTED, e.g. a deferred SHOULD), the assessment shall answer Unmet with a justification naming the gap, and the system of record shall contain a backlog card naming the criterion id and the gap; the count of such cards equals the count of criteria answered Unmet. Applicable MUST/MUST NOT criteria shall be met (or N/A where the criterion allows it) before the badge is claimed — a backlog card does not change assessment rules. Pre-alpha answers the app permits (Met with a no-releases-yet justification where no release exists; N/A where the criterion text allows it, e.g. `release_notes_vulns`) proceed now; the badge is not deferred until the first release.
+- **AC-3.2** [§19.3] When all such cards are filed, the assessment shall reference them (in Unmet justifications or the assessment's notes) so an auditor can trace each gap.
 
 ## Non-Functional Requirements
 
@@ -69,8 +69,8 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 ## Open Questions
 
 - **Q1 — RESOLVED (2026-10-02)**: The bestpractices.coreinfrastructure.org entry is owned by the maintainer's personal account. The maintainer registers the entry and owns future re-attestations (see AC-1.1).
-- **Q2 — RESOLVED (2026-10-02)**: The maintainer accepts N/A-with-backlog-card for pre-alpha-unmeetable criteria; proceed now, do not defer until the first release (see AC-3.1).
-- **Q3 — RESOLVED (2026-10-02)**: External URL only — no in-repo snapshot of the assessment state; N/A reasons live in this spec's `design.md` per AC-1.2 (see AC-1.2).
+- **Q2 — RESOLVED (2026-10-02, re-resolved on review the same day)**: N/A is used only where the criterion allows it; SHOULD/SUGGESTED gaps are answered Unmet with justification and carded; applicable MUST/MUST NOT criteria are met before the badge is claimed. Adjudication found every applicable MUST/MUST NOT met or meetable pre-release, so proceed now — do not defer until the first release (see AC-3.1).
+- **Q3 — RESOLVED (2026-10-02)**: External URL only — no in-repo snapshot of the assessment state; N/A/Unmet reasons live in this spec's `design.md` per AC-1.2 (see AC-1.2).
 
 ## Dependencies
 
