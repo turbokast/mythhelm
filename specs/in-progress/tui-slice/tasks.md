@@ -13,7 +13,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — TUI dependencies
+### Task 1 — TUI dependencies ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -30,6 +30,10 @@
   - `govulncheck ./...` reports no findings, and `CGO_ENABLED=0 go build ./...` succeeds; before this task the Charm imports do not resolve, so any consumer fails to build.
 - **Test plan**: no new Go tests; verification is the gate commands plus the recorded `go list -m` output.
 - **Invariants touched**: §19.2 (Apache-2.0-compatible licences only, exact pins), §19.4 (supply-chain review), I13 (§3.3: no font/network/service dependency introduced).
+- **Status**: ✅ Completed — the §6.4 TUI stack is pinned at the D11/D12 versions with a tidy-clean pin file; PR #93.
+- **Implementation**: `go get` at the four exact pins plus `internal/tui/tools.go` (package `tui`, blank imports of the four modules); `go-isatty` promoted indirect→direct, `go list -m` shows exactly the pins, `tidy -diff` clean. Commit 5948279b33da6b2157bd10e37014228892dc53ff.
+- **Spec deviations**: None.
+- **Files modified**: `go.mod`, `go.sum`, `internal/tui/tools.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
 ### Task 2 — View-model read seam ✅ COMPLETED
 

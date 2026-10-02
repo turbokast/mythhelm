@@ -8,7 +8,10 @@
 
 ## Task 1 — TUI dependencies
 
-<!-- pending -->
+- **Produces**: direct requires `github.com/charmbracelet/bubbletea v1.3.10`, `github.com/charmbracelet/lipgloss v1.1.0`, `github.com/charmbracelet/bubbles v1.0.0`, `github.com/mattn/go-isatty v0.0.24` (promoted indirect→direct) in `go.mod`/`go.sum`; `internal/tui/tools.go` pin file (package `tui`, blank imports); PR #93.
+- **For dependents** (tasks 5, 6, 12): import the Charm modules and `go-isatty` directly — the pins are held by `tools.go` until real consumers exist; do not delete `tools.go` until at least one real import of each module lands, or `go mod tidy` drops the require.
+- **For dependents**: `govulncheck` reports no findings on the new modules; the `licenses`/dependency-review CI legs cover the allowlist (§19.2/§19.4).
+- **Deviations affecting later tasks**: none.
 
 ## Task 2 — View-model read seam
 
