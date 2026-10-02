@@ -47,12 +47,13 @@ const accessibleMaxWidth = 200
 const defaultAccessiblePoll = 500 * time.Millisecond
 
 // RunAccessible writes the accessible label stream for cfg.RunID to cfg.Out.
-// Fresh invocations that reach the present (After == 0 with a partial first
-// page) start with the current-state summary; resume and paging invocations
-// are pure stream continuations, so labels never repeat across pages. New
-// events stream as they journal; polls with no new events write nothing. On
-// context end it writes the next-after trailer as its last line and returns
-// nil. Load, stream and write failures return an error with no trailer.
+// Fresh invocations that reach the present (After == 0 with at most one page
+// of history) start with the current-state summary; resume and paging
+// invocations are pure stream continuations, so labels never repeat across
+// pages. New events stream as they journal; polls with no new events write
+// nothing. On context end it writes the next-after trailer as its last line
+// and returns nil. Load, stream and write failures return an error with no
+// trailer.
 func RunAccessible(ctx context.Context, cfg AccessibleConfig) error {
 	if cfg.Out == nil {
 		return fmt.Errorf("accessible: no output writer")
@@ -75,7 +76,7 @@ func RunAccessible(ctx context.Context, cfg AccessibleConfig) error {
 	if len(page) > accessiblePageSize {
 		page = page[:accessiblePageSize]
 	}
-	if cfg.After == 0 && len(history) < accessiblePageSize {
+	if accessibleShowsSummary(cfg.After, len(history)) {
 		for _, line := range accessibleSummary(snap) {
 			w.line(line)
 		}
@@ -115,6 +116,24 @@ func RunAccessible(ctx context.Context, cfg AccessibleConfig) error {
 	}
 }
 
+// accessibleShowsSummary reports whether this invocation opens with the
+// current-state summary: fresh invocations whose whole history fits one
+// page. EventsSince is uncapped, so a history of exactly accessiblePageSize
+// is complete, not truncated. Resume and paging invocations stay pure
+// stream continuations, so labels never repeat across pages.
+func accessibleShowsSummary(after int64, historyLen int) bool {
+	return after == 0 && historyLen <= accessiblePageSize
+}
+
+// cellOrUnknown sanitises a stored value for a state label; an empty value
+// is absent, so it renders unknown, never blank (I09).
+func cellOrUnknown(s string) string {
+	if s == "" {
+		return "unknown"
+	}
+	return cell(s)
+}
+
 // accessibleWriter keeps the first write error; every line passes through
 // fitAccessibleLine so output is single-line, bidi-safe and width-capped.
 type accessibleWriter struct {
@@ -135,7 +154,7 @@ func (w *accessibleWriter) line(s string) {
 func accessibleSummary(snap viewmodel.Snapshot) []string {
 	lines := []string{
 		"goal: " + cell(snap.Goal),
-		"run state: " + cell(snap.Run.State) + " (reason: " + reasonOrNone(snap.Run.Reason) + ")",
+		"run state: " + cellOrUnknown(snap.Run.State) + " (reason: " + reasonOrNone(snap.Run.Reason) + ")",
 		accessibleAttemptLine(snap),
 		accessibleCandidateLine(snap),
 		accessibleVerificationLine(snap),
@@ -162,7 +181,7 @@ func accessibleAttemptLine(snap viewmodel.Snapshot) string {
 	if snap.Attempt == nil {
 		return "attempt: none recorded"
 	}
-	line := fmt.Sprintf("attempt %d: %s", snap.Attempt.AttemptNumber, cell(snap.Attempt.State))
+	line := fmt.Sprintf("attempt %d: %s", snap.Attempt.AttemptNumber, cellOrUnknown(snap.Attempt.State))
 	if snap.Attempt.Reason != "" {
 		line += " (" + cell(snap.Attempt.Reason) + ")"
 	}
@@ -178,9 +197,9 @@ func accessibleCandidateLine(snap viewmodel.Snapshot) string {
 	}
 	var paths []string
 	if err := json.Unmarshal(snap.Candidate.ChangedPaths, &paths); err != nil {
-		return "candidate: " + cell(snap.Candidate.Commit) + " (changed files unknown)"
+		return "candidate: " + cellOrUnknown(snap.Candidate.Commit) + " (changed files unknown)"
 	}
-	head := fmt.Sprintf("candidate: %s (%d files changed", cell(snap.Candidate.Commit), len(paths))
+	head := fmt.Sprintf("candidate: %s (%d files changed", cellOrUnknown(snap.Candidate.Commit), len(paths))
 	if len(paths) == 0 {
 		return head + ")"
 	}
@@ -221,7 +240,7 @@ func accessibleVerificationLine(snap viewmodel.Snapshot) string {
 	if result == "NOT RUN" {
 		return "verification: NOT RUN (waived by --no-checks)"
 	}
-	return fmt.Sprintf("verification: %s (candidate %s)", cell(result), cell(snap.Verification.CandidateCommit))
+	return fmt.Sprintf("verification: %s (candidate %s)", cell(result), cellOrUnknown(snap.Verification.CandidateCommit))
 }
 
 func accessibleProgressLine(snap viewmodel.Snapshot) string {
@@ -239,13 +258,10 @@ func accessibleAdmissionLine(snap viewmodel.Snapshot) string {
 	if snap.Admission == nil {
 		return "admission: unknown"
 	}
-	paid := snap.Admission.PaidContinuation
-	if paid == "" {
-		paid = "unknown"
-	}
 	return fmt.Sprintf("admission: adapter %s %s (%s); qualified: %t; paid continuation: %s",
-		cell(snap.Admission.AdapterID), cell(snap.Admission.AdapterVersion),
-		cell(snap.Admission.AdapterSurface), snap.Admission.Qualified, cell(paid))
+		cellOrUnknown(snap.Admission.AdapterID), cellOrUnknown(snap.Admission.AdapterVersion),
+		cellOrUnknown(snap.Admission.AdapterSurface), snap.Admission.Qualified,
+		cellOrUnknown(snap.Admission.PaidContinuation))
 }
 
 func accessibleNativeExitLine(snap viewmodel.Snapshot) string {
@@ -255,7 +271,7 @@ func accessibleNativeExitLine(snap viewmodel.Snapshot) string {
 	case native.ExitCode != nil:
 		exit = fmt.Sprintf("exit code %d", *native.ExitCode)
 	case native.Signal != nil:
-		exit = "signal " + cell(*native.Signal)
+		exit = "signal " + cellOrUnknown(*native.Signal)
 	}
 	observed := "no result frame observed"
 	if native.ResultObserved {
@@ -265,7 +281,8 @@ func accessibleNativeExitLine(snap viewmodel.Snapshot) string {
 }
 
 // accessibleNextAction maps every run state to its required next step,
-// mirroring the mission view's table: requested states never read confirmed.
+// keeping design §7's requested-vs-confirmed distinctions in linearised
+// copy: requested states never read confirmed.
 func accessibleNextAction(state string) string {
 	switch state {
 	case "created", "admission":

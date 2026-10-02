@@ -20,6 +20,7 @@ import (
 
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
+	"github.com/turbokast/mythhelm/internal/tui/viewmodel"
 )
 
 // accessibleFixture journals a run's events and projections in a fresh temp
@@ -246,6 +247,69 @@ func TestAccessibleLabels(t *testing.T) {
 	}
 }
 
+func TestAccessibleEmptyValuesRenderUnknown(t *testing.T) {
+	t.Parallel()
+	// Populated rows with empty stored values: every label renders unknown,
+	// never blank (I09). The snapshot is built directly — no journal row
+	// carries these blanks, the view-model leaves missing keys empty.
+	emptySignal := ""
+	snap := viewmodel.Snapshot{
+		Goal:         "unknown",
+		Attempt:      &journal.AttemptRow{AttemptNumber: 2},
+		Candidate:    &journal.CandidateRow{ChangedPaths: json.RawMessage(`[]`)},
+		Verification: &journal.VerificationRow{},
+		Admission:    &viewmodel.Admission{},
+		NativeExit:   &viewmodel.NativeExit{Signal: &emptySignal},
+	}
+	want := []string{
+		"goal: unknown",
+		"run state: unknown (reason: none)",
+		"attempt 2: unknown",
+		"candidate: unknown (0 files changed)",
+		"verification: unknown (candidate unknown)",
+		"progress: unknown",
+		"admission: adapter unknown unknown (unknown); qualified: false; paid continuation: unknown",
+		"native exit: signal unknown; no result frame observed",
+		"next action: unknown",
+		"actions: none available",
+	}
+	lines := accessibleSummary(snap)
+	if len(lines) != len(want) {
+		t.Fatalf("summary has %d lines, want %d: %q", len(lines), len(want), lines)
+	}
+	for i, w := range want {
+		if lines[i] != w {
+			t.Errorf("summary line %d = %q, want %q", i, lines[i], w)
+		}
+	}
+}
+
+func TestAccessibleShowsSummary(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		after      int64
+		historyLen int
+		want       bool
+	}{
+		{0, 0, true},
+		{0, 1, true},
+		{0, accessiblePageSize - 1, true},
+		// A full page is still complete (EventsSince is uncapped), so a
+		// fresh invocation over exactly accessiblePageSize events keeps
+		// its labels; only an over-page history pages without them.
+		{0, accessiblePageSize, true},
+		{0, accessiblePageSize + 1, false},
+		{1, 0, false},
+		{int64(accessiblePageSize), 5, false},
+	}
+	for _, tc := range cases {
+		if got := accessibleShowsSummary(tc.after, tc.historyLen); got != tc.want {
+			t.Errorf("accessibleShowsSummary(%d, %d) = %t, want %t",
+				tc.after, tc.historyLen, got, tc.want)
+		}
+	}
+}
+
 func TestAccessibleNoChatter(t *testing.T) {
 	t.Parallel()
 	f := newAccessibleFixture(t)
@@ -450,6 +514,12 @@ func TestAccessibleResumeFromCursor(t *testing.T) {
 	if second[extra] != fmt.Sprintf("next-after: %d", total) {
 		t.Errorf("second trailer = %q, want %q", second[extra], fmt.Sprintf("next-after: %d", total))
 	}
+
+	// A resume at the end echoes its cursor: trailer only, no events.
+	echo := runAccessiblePage(t, f.dir, runID, total, 0)
+	if len(echo) != 1 || echo[0] != fmt.Sprintf("next-after: %d", total) {
+		t.Errorf("past-end resume = %q, want only the echo trailer", echo)
+	}
 }
 
 // runAccessiblePage runs one paging invocation: resume offset after, waiting
@@ -466,7 +536,14 @@ func runAccessiblePage(t *testing.T, dir, runID string, after int64, want int) [
 			RunID: runID, StateDir: dir, Out: sb, Poll: time.Hour, After: after,
 		})
 	}()
-	waitAccessibleLines(t, sb, want)
+	if want == 0 {
+		// No history line will arrive to prove startup, so settle
+		// briefly instead: cancelling during Load errors with no
+		// trailer, while cancelling a live follower echoes cleanly.
+		time.Sleep(200 * time.Millisecond)
+	} else {
+		waitAccessibleLines(t, sb, want)
+	}
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatalf("RunAccessible(after=%d): %v", after, err)
