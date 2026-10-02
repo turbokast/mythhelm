@@ -57,6 +57,8 @@ func TestBuiltInsValidate(t *testing.T) {
 	}{
 		{name: "low contrast text", change: func(t *Tokens) { t.Text = "#23242f" }, wantKey: "text"},
 		{name: "low contrast muted", change: func(t *Tokens) { t.TextMuted = "#2b2e40" }, wantKey: "text_muted"},
+		{name: "low contrast text on raised surface", change: func(t *Tokens) { t.Text = "#85899e" }, wantKey: "text"},
+		{name: "low contrast muted text on raised surface", change: func(t *Tokens) { t.TextMuted = "#82869a" }, wantKey: "text_muted"},
 	}
 	for _, tt := range lowContrast {
 		t.Run(tt.name, func(t *testing.T) {
