@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -26,7 +25,7 @@ const clockTicks = 100
 // the safe direction.
 func ProcessStartTime(pid int) (time.Time, error) {
 	stat, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
-	if errors.Is(err, fs.ErrNotExist) {
+	if procGone(err) {
 		return time.Time{}, fmt.Errorf("%w: pid %d", ErrNoProcess, pid)
 	}
 	if err != nil {
