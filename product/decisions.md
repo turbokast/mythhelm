@@ -44,3 +44,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: dogfood-slice reached done; finalize merged, main CI green
 - **Cards**: MH-1
 - **Evidence**: PR #78 (finalize, b0fcd81); main CI success at b0fcd81
+
+### D-13 — 2026-10-02: Link MH-17 to issue #82
+- **Type**: card-add
+- **Decision**: MH-17's Issue field and its roadmap line in product/backlog.md and product/roadmap.md point to #82
+- **Rationale**: The backlog add procedure creates a card's public issue after the card is approved and merged (PR #80), then records the link so contributors can find the discussion
+- **Cards**: MH-17
+- **Evidence**: https://github.com/turbokast/mythhelm/issues/82; PR #80 (ac0797d)
