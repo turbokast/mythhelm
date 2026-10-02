@@ -1,0 +1,14 @@
+# Built-in light theme tokens for the TUI mission view.
+#
+# Same schema as dark.toml: unknown keys are rejected, colours are #rrggbb,
+# and text and text_muted each hold at least 4.5:1 contrast on both surfaces.
+surface = "#fafafa"
+surface_raised = "#eef0f4"
+text = "#1a1b26"
+text_muted = "#4c5372"
+focus = "#2959c3"
+attention = "#6d4fc2"
+ok = "#2f7a3d"
+warning = "#8a5a00"
+err = "#b4232a"
+border = "rounded"
