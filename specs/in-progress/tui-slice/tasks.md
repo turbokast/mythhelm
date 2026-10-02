@@ -57,7 +57,7 @@
 - **Test plan**: build fixtures with `journal.Open` + `Append` in `t.TempDir()`; table-driven over run states.
 - **Invariants touched**: I18 (§7.8: read-only seam, never a second writer), I09 (§13.4: absent projections stay nil/`unknown`, never zero values), I06 (§7.3: requested vs confirmed states pass through unmapped).
 
-### Task 3 — Terminal capability parsing
+### Task 3 — Terminal capability parsing ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: standard
@@ -76,6 +76,10 @@
   - `TestColorFgBgNeverConsulted`: `COLORFGBG=15;0` with `auto` flags and an otherwise empty environment yields the same `Caps` as the empty environment (AC-4.4); an implementation keying colour detection off `COLORFGBG` fails.
 - **Test plan**: table tests over (flags × env) with a fake `getenv`; no TTY needed.
 - **Invariants touched**: None (pure parsing; no state read, no values rendered).
+- **Status**: ✅ Completed — `internal/tui/caps` parses §15.7 modes and resolves them against `NO_COLOR`/`TERM`; PR #89.
+- **Implementation**: Strict `Parse` (rejects `""`/wrong case; errors name dimension+value, wrap `ErrInvalidMode`); suppression-wins `Resolve` (`NO_COLOR` beats `always`, `TERM=dumb` beats enabling flags; zero `Caps` suppresses). Commit a425654.
+- **Spec deviations**: None.
+- **Files modified**: `internal/tui/caps/caps.go`, `internal/tui/caps/caps_test.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
 ### Task 4 — Built-in themes in mods/
 
