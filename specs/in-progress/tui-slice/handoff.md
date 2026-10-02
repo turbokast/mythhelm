@@ -67,7 +67,10 @@
 
 ## Task 8 — Truthful motion
 
-<!-- pending -->
+- **Produces**: `internal/tui/motion.go` — `eventMsg{journal.Event}` live feed (folds progress/launch-ack/native-result/admission into the snapshot), `motionFrameMsg` settling frames on one shared 80 ms tick chain (`motionFrameInterval`, at most 2 frames = 160 ms ≤ 200 ms), `motionState` (arrival/launched/frame counters/prevRunState), pane-row wrappers `tasksRows`/`agentsRows`/`detailRows` plus `gateCompactActivity`; `model.go` triggers (`Init` arrival tick, any-key arrival skip, `setSnapshot` launch seeding + first-load/transition failure focus to tasks); PR #99.
+- **For dependents** (tasks 9–10, 12): row builders moved — `tasksColumn`/`agentsColumn`/`detailColumn`/`focusedPaneLines`/three-pane detail and the compact branch now go through the motion wrappers; add new key branches in `handleKey` as before (arrival clears in `Update` before dispatch). `setSnapshot` never arms frames (only `Update` schedules beside its tick); failure focus moves only on first failed load or a transition into failed/blocked, steady reloads preserve focus.
+- **For dependents** (task 10): send live journaled events as `eventMsg` — the fold is advisory and `Load` reloads converge it. Keep the poll tick a distinct message from `motionFrameMsg` (the no-loop test counts motion frames only); `Init` will `Batch` the arrival tick with the poll tick. Inspect-mode loads seed `launched` from progress/native-result/post-launch attempt states only — a bare running projection without those still shows `dispatching` until the live ack; backfill from `EventsSince` if task 10 wants the ack pre-seeded.
+- **Deviations that change a later task's inputs**: none.
 
 ## Task 9 — Palette actions and confirmations
 
