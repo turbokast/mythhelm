@@ -388,6 +388,26 @@ func TestRenderSanitisesControls(t *testing.T) {
 	}
 }
 
+func TestParseKeepsNoNewlineMarkers(t *testing.T) {
+	input := "diff --git a/x b/x\n--- a/x\n+++ b/x\n" +
+		"@@ -1,1 +1,1 @@\n-old\n\\ No newline at end of file\n+new\n\\ No newline at end of file\n"
+	d, err := ParseDiff([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseDiff: %v", err)
+	}
+	// Rows: boundary, ---, +++, hunk header, removed, old-side marker,
+	// added, new-side marker. The trailing marker arrives after the hunk
+	// counts complete; it must be kept, not skipped as preamble.
+	if len(d.Lines) != 8 {
+		t.Fatalf("len(Lines) = %d, want 8 rows with both markers", len(d.Lines))
+	}
+	for _, i := range []int{5, 7} {
+		if d.Lines[i].Kind != DiffContext || d.Lines[i].Text != "\\ No newline at end of file" {
+			t.Errorf("row %d = %+v, want the context no-newline marker", i, d.Lines[i])
+		}
+	}
+}
+
 func TestRenderEmptyLabelsAbsence(t *testing.T) {
 	tokens := darkTokens(t)
 	d, err := ParseDiff(nil)

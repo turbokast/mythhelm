@@ -210,6 +210,11 @@ func (p *diffParser) parse(lines []string) error {
 			if err := p.bodyLine(line); err != nil {
 				return err
 			}
+		case p.hunkOpen && strings.HasPrefix(line, "\\"):
+			// A trailing "\ No newline" marker after the hunk's counted rows
+			// are complete: kept as a context row like the mid-hunk marker
+			// path in bodyLine, never skipped as preamble.
+			p.hunk.Lines = append(p.hunk.Lines, DiffLine{Kind: DiffContext, Text: line})
 		default:
 			p.metaLine(line)
 		}
