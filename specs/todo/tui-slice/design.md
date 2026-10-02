@@ -194,6 +194,7 @@ type Diff struct {
     Files []DiffFile // parsed from unified diff bytes
     Lines []DiffLine // flattened render rows with widths precomputed
     Truncated bool   // true when the input exceeded maxDiffLines or maxDiffBytes
+    TruncateCap string // which cap truncated the input: "lines" or "bytes" (only meaningful when Truncated)
 }
 const maxDiffLines = 50000
 const maxDiffBytes = 4 << 20 // 4 MiB: same order as 50k typical lines, so neither cap dominates normal diffs
@@ -201,7 +202,7 @@ func ParseDiff(unified []byte) (Diff, error)
 func (d Diff) Render(width int, caps caps.Caps, t theme.Tokens) []string
 ```
 
-- Inputs beyond `maxDiffLines` set `Truncated`. Inputs beyond `maxDiffBytes` are truncated to the budget (cut back to the last newline within budget, so no partial row is parsed) before splitting, parsing and width measurement, and also set `Truncated` — a single giant line can no longer blow the retained buffer or the measurement work. `ParseDiff` takes bare bytes with no provenance, so the selected-change pane (task 6, which has the `CandidateRow`) labels either cap explicitly ("showing 50,000 of N lines — full diff via `git -C <workspace> diff <base> <commit>`"; the total N is counted from the full input, an O(1)-memory scan, so byte truncation keeps the same shown/total-lines label), never silently (D7).
+- Inputs beyond `maxDiffLines` set `Truncated`. Inputs beyond `maxDiffBytes` are truncated to the budget (cut back to the last newline within budget, so no partial row is parsed) before splitting, parsing and width measurement, and also set `Truncated` — a single giant line can no longer blow the retained buffer or the measurement work. `ParseDiff` takes bare bytes with no provenance, so the selected-change pane (task 6, which has the `CandidateRow`) labels either cap explicitly, never silently (D7). The label shows the retained line count actually rendered — `len(Diff.Lines)`, not the cap — over the total N counted from the full input (an O(1)-memory scan), and names the cap that fired from `TruncateCap`: "showing R of N lines (50,000-line limit) — full diff via `git -C <workspace> diff <base> <commit>`" vs "showing R of N lines (4 MiB byte limit) — full diff via `git -C <workspace> diff <base> <commit>`". The byte cap fires first when both would apply, so the label never claims 50,000 rendered lines when the byte budget retained fewer.
 - The viewer is virtualised: only visible rows render (§13); the full parsed buffer stays searchable.
 
 ## 9. Navigation (§15.5)
