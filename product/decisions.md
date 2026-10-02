@@ -27,7 +27,7 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 ### D-2 — 2026-10-02: Accept native multi-profile exhaustion handoff as a new card idea
 - **Type**: signal-triage
 - **Decision**: Maintainer accepted the plan from the multi-subscription signal: a new card for native multi-profile execution with user-confirmed exhaustion handoff goes to /triage; same-vendor automatic account rotation is not pursued
-- **Rationale**: Users clearly want it, but vendor terms forbid tools from handling subscription tokens and the master spec (A04, §13.2, §13.10) forbids identity cycling to defeat a limit; native profile homes plus handoff deliver most of the liked behaviour within both
+- **Rationale**: Users clearly want it, but Anthropic's terms forbid third-party developers from collecting, storing or intermediating Claude.ai credentials or session tokens (OpenAI's forbid circumventing rate limits) and the master spec (A04, §13.2, §13.10) forbids identity cycling to defeat a limit; native profile homes plus handoff deliver most of the liked behaviour within both
 - **Cards**: MH-16,MH-15,MH-5
 - **Evidence**: product/signals.md entry for this theme; https://code.claude.com/docs/en/legal-and-compliance
 
