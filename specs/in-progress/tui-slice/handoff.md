@@ -64,7 +64,10 @@
 
 ## Task 11 — Accessible linear renderer
 
-<!-- pending -->
+- **Produces**: `internal/cli/accessible.go` — `cli.AccessibleConfig{RunID, StateDir, Out, Poll, After}` (`Poll <= 0` means 500 ms; `After` streams only `run_sequence > After`), `cli.RunAccessible(ctx, cfg) error`, unexported `accessiblePageSize = 1000`; PR #95.
+- **For dependents** (task 12): map `--after <K>` straight to `After`. `RunAccessible` blocks following live until ctx ends, then writes `next-after: <last>` (echoing `After` when nothing streamed) as its last line and returns nil — the launch wiring owns the ctx lifetime (signal cancel for `run`/`demo`, prompt return for `review`). A poll racing cancellation still shuts down clean with the trailer; other `Load`/`EventsSince`/write failures return an error with no trailer.
+- **For dependents**: the snapshot summary (goal, run/attempt/candidate/verification/progress/admission/native-exit, next action, full-name actions) emits only when `After == 0` with a partial first page; full-page and resume invocations are pure `event <seq>: ...` continuations so labels never repeat across pages. Event text reuses `plainEvent` flattened to one line (`; `-joined). Every line is capped at 200 cells with a `... (truncated)` marker, bidi controls become U+FFFD, and changed filenames fit whole with a `... and N more` remainder — no new width dependency (stdlib-only table).
+- **Deviation affecting later tasks**: no `approval:` summary line exists (the pipeline has no approval state; `waiting_approval` is never entered) — task 12 must not document or grep for one.
 
 ## Task 12 — CLI launch wiring
 
