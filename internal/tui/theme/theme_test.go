@@ -54,11 +54,12 @@ func TestBuiltInsValidate(t *testing.T) {
 		name    string
 		change  func(*Tokens)
 		wantKey string
+		wantBG  string
 	}{
-		{name: "low contrast text", change: func(t *Tokens) { t.Text = "#23242f" }, wantKey: "text"},
-		{name: "low contrast muted", change: func(t *Tokens) { t.TextMuted = "#2b2e40" }, wantKey: "text_muted"},
-		{name: "low contrast text on raised surface", change: func(t *Tokens) { t.Text = "#85899e" }, wantKey: "text"},
-		{name: "low contrast muted text on raised surface", change: func(t *Tokens) { t.TextMuted = "#82869a" }, wantKey: "text_muted"},
+		{name: "low contrast text", change: func(t *Tokens) { t.Text = "#23242f" }, wantKey: "text", wantBG: "surface"},
+		{name: "low contrast muted", change: func(t *Tokens) { t.TextMuted = "#2b2e40" }, wantKey: "text_muted", wantBG: "surface"},
+		{name: "low contrast text on raised surface", change: func(t *Tokens) { t.Text = "#85899e" }, wantKey: "text", wantBG: "surface_raised"},
+		{name: "low contrast muted text on raised surface", change: func(t *Tokens) { t.TextMuted = "#82869a" }, wantKey: "text_muted", wantBG: "surface_raised"},
 	}
 	for _, tt := range lowContrast {
 		t.Run(tt.name, func(t *testing.T) {
@@ -71,6 +72,9 @@ func TestBuiltInsValidate(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tt.wantKey) {
 				t.Fatalf("Validate() error = %v, want it to name %q", err, tt.wantKey)
+			}
+			if !strings.Contains(err.Error(), tt.wantBG) {
+				t.Fatalf("Validate() error = %v, want it to name background %q", err, tt.wantBG)
 			}
 		})
 	}
