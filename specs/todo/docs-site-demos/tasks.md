@@ -1,0 +1,263 @@
+## Documentation Site and Scripted Terminal Demos — Tasks
+
+### Dependencies
+
+- Prerequisite specs: `specs/*/dogfood-slice/` (shipped; `mythhelm demo` the FR-2 tape
+  drives); `specs/*/tui-slice/` (in progress; FR-3's full tape only — Task 7's scaffold does
+  not wait for it). Coordinate with `specs/*/openssf-badge/` (refined; shared §19.3/G10
+  prose — whichever lands second reconciles; see design §7).
+- Order: Task 1 and Task 4 start in parallel (disjoint Files). Then Task 2 after 1;
+  Task 3 after 2; Task 5 after 4 and 2 (it edits Task 2's `docs/user-guide.md`);
+  Task 6 after 3 and 5 (shares `.github/workflows/docs.yml` with Task 3 — never in
+  parallel with it); Task 7 after 4. Parallel groups: {1, 4}; {2, 7} after their
+  prerequisites (disjoint Files); {3, 5} after theirs.
+- **Gates for every task.** No Go code changes, so the Go gates are skipped with that
+  reason. Docs tasks: `scripts/ci/check-public-hygiene.sh`. Release tasks (3, 6):
+  `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12` locally, `zizmor` in CI,
+  plus `scripts/ci/check-public-hygiene.sh`. Files existing or an agent reporting success
+  is not completion; cite the runner output.
+- **Completion convention.** Append ` ✅ COMPLETED` to the heading, keep every original
+  field, and add `Implementation` (at most 3 lines, plus the commit SHA),
+  `Spec deviations` ("None" or a justification) and `Files modified`.
+- **Commits.** Every commit is signed off (`git commit -s`, DCO). No decision record
+  needed: no billing, persistence, process-ownership or public-contract change.
+
+---
+
+## Implementation Tasks
+
+### Task 1 — Site scaffold: config, nav, layout, home
+
+- **Domain/agent**: go-implementer
+- **Budget**: standard
+- **Change**: Create the Jekyll scaffold under `docs/` per design §2 so later tasks have
+  pages to fill and the workflow has a source directory to build.
+- **Files**:
+  - `docs/_config.yml` (minima theme, title/description; nav data file reference)
+  - `docs/_data/navigation.yml` (Home, User guide, Contributing, Security policy, Changelog, Licence, Limitations)
+  - `docs/_layouts/default.html` (minima override: nav include, build-revision footer)
+  - `docs/index.md` (home stub with links; Task 5 adds the demo embed)
+- **Produces**: Site contract — `docs/` is the Jekyll source root; `_data/navigation.yml`
+  is the nav; authored guide pages are top-level `docs/*.md` routes and root-guide
+  mirrors live under `docs/mirror/`.
+- **Acceptance**:
+  - `_config.yml` parses as strict YAML (`python3 -c yaml.safe_load` exits 0; a scratch
+    edit inserting a tab-indented line makes it exit non-zero).
+  - `navigation.yml` names all seven routes above; `for r in $(sed -n 's/^ *path: //p'
+    docs/_data/navigation.yml); do test -f "docs/$r" || echo "MISSING $r"; done` prints
+    nothing once Task 2 lands (before Task 2 it lists exactly the six non-home routes;
+    a route pointing at `docs/nope.md` prints `MISSING nope.md`).
+  - `docs/index.md` starts with the design §2 front matter block: line 1 is `---`, line 2
+    is `layout: default`, line 3 starts with `title: ` (deleting line 2 fails the check).
+  - No `http` URL in the scaffold points at a MYTHHELM-owned host: `grep -rEo
+    'https?://[^"'\'' )]+' docs/_config.yml docs/_data docs/_layouts docs/index.md`
+    prints only `github.com/turbokast/mythhelm` and Pages-default hosts, and the grep
+    prints at least one line (non-empty leg).
+  - `scripts/ci/check-public-hygiene.sh` passes.
+- **Test plan**: shell/YAML checks run locally; no Go tests (no Go files).
+- **Invariants touched**: I13 (§3.3: no MYTHHELM-owned network service; the scaffold links nowhere else).
+
+### Task 2 — Guide pages and root-guide mirrors
+
+- **Domain/agent**: go-implementer
+- **Budget**: standard
+- **Depends on**: Task 1
+- **Change**: Author the user guide, contributing and limitations pages extracted from the
+  master spec, and mirror the four root guides so the site carries every G10 item.
+- **Files**:
+  - `docs/user-guide.md` (installation, quickstart/demo, limitations pointer)
+  - `docs/contributing.md` (governance summary, contribution path, DCO, good-first-issue route)
+  - `docs/limitations.md` (limitations register: pre-alpha, fake adapter only, TUI planned)
+  - `docs/mirror/LICENSE.md` (byte mirror of `LICENSE`)
+  - `docs/mirror/SECURITY.md` (byte mirror of `SECURITY.md`)
+  - `docs/mirror/CHANGELOG.md` (byte mirror of `CHANGELOG.md`)
+  - `docs/mirror/GOVERNANCE.md` (byte mirror of `GOVERNANCE.md`)
+  - `docs/_data/navigation.yml` (wire the new routes into the nav)
+- **Acceptance**:
+  - Each mirror is byte-identical to its root source (`cmp LICENSE docs/mirror/LICENSE.md`
+    and the three others all exit 0; deleting the last line of any mirror makes its `cmp`
+    exit non-zero). No mirror carries front matter in the tree: `head -1` of each mirror
+    differs from `---`.
+  - Each authored page (`user-guide.md`, `contributing.md`, `limitations.md`) starts with
+    the design §2 front matter block: line 1 `---`, line 2 `layout: default`, line 3
+    `title: …` (deleting line 2 of any page fails the check).
+  - `docs/contributing.md` contains a `Signed-off-by` mention and a `good first issue`
+    link inside its contribution-path section (anchored: both matches fall between the
+    `## Contribution path` heading and the next `##` heading; moving either line above the
+    heading fails the check).
+  - `docs/limitations.md` names the TUI as planned, not shipped (`grep -i 'tui.*planned'`
+    hits; `grep -ci 'tui.*shipped\|tui.*available now'` prints 0).
+  - The task's pages and mirrors carry no provenance/SBOM claim: `grep -rEli
+    'provenance|sbom' docs/user-guide.md docs/contributing.md docs/limitations.md
+    docs/mirror/` prints nothing (scoped to this task's files — `docs/automation.md`,
+    `docs/decisions/`, `docs/harness/` and `docs/spec/` legitimately mention them).
+  - `scripts/ci/check-public-hygiene.sh` passes.
+- **Test plan**: `cmp`/`grep` checks run locally; the drift check that keeps the mirrors
+  honest lands in Task 6.
+- **Invariants touched**: I14 (§9.14: unshipped TUI labelled planned, never advertised);
+  I13 (§3.3: pages link to no MYTHHELM-owned service).
+
+### Task 3 — Pages build-and-deploy workflow
+
+- **Domain/agent**: release-engineer
+- **Budget**: standard
+- **Depends on**: Task 2
+- **Change**: Add `.github/workflows/docs.yml` with `checks` (mirror drift only for now),
+  `build` (Jekyll) and `deploy` (Pages) jobs, and move the Pages row to Active.
+- **Files**:
+  - `.github/workflows/docs.yml`
+  - `docs/automation.md` (move the "GitHub Pages docs" row from Deferred to Active)
+- **Produces**: Workflow contract — jobs `checks`, `build` (needs `checks`), `deploy`
+  (needs `build`, `push` to `main` only); Task 6 adds recording steps to `checks`.
+- **Acceptance**:
+  - `actionlint` passes; `zizmor` passes in CI on the PR.
+  - Every `uses:` is pinned to a 40-character SHA with a `# vX.Y.Z` comment, checked by
+    `test "$(grep -cE 'uses: .+@[0-9a-f]{40} #' .github/workflows/docs.yml)" -eq
+    "$(grep -c 'uses: ' .github/workflows/docs.yml)"` (a scratch edit replacing one SHA
+    with its tag fails the equality).
+  - Top-level `permissions:` is `contents: read`; only `deploy` carries `pages: write`
+    and `id-token: write`, each with a why-comment; no job references `secrets.*`
+    (NFR-1 fork safety — `grep -c 'secrets\.' .github/workflows/docs.yml` prints 0).
+  - The `build` job succeeds in CI on the PR and uploads the Pages artifact; before this
+    task no `docs.yml` run exists.
+  - The `build` job runs the design §4 "Inject mirror front matter" step before the
+    Jekyll build (`grep -c 'Inject mirror front matter' .github/workflows/docs.yml`
+    prints 1), then asserts the mirrors rendered: `_site/mirror/LICENSE.html`,
+    `_site/mirror/SECURITY.html`, `_site/mirror/CHANGELOG.html` and
+    `_site/mirror/GOVERNANCE.html` all exist (a scratch rename of `docs/mirror/` to
+    `docs/_mirror/`, or deleting the inject step, fails this step — the AC-1.2
+    built-site proof).
+  - The PR description tells the maintainer to set Pages source to "GitHub Actions" and
+    to add the `Docs checks` job as a required check in the branch ruleset.
+- **Test plan**: CI run on the PR; paste the job URLs in the completion entry.
+- **Invariants touched**: I13 (§3.3: Pages is documentation hosting, never a runtime
+  dependency — no repo test or binary fetches the site); §19.4 (pinned, least-privilege,
+  fork-safe CI).
+
+### Task 4 — Demo tape, transcript and manifest
+
+- **Domain/agent**: go-implementer
+- **Budget**: standard
+- **Depends on**: None (parallel with Task 1; disjoint Files)
+- **Change**: Add the VHS tape driving `mythhelm demo --check pass`, its normalized
+  transcript, the manifest declaring the binary revision, and the record-command docs.
+- **Files**:
+  - `docs/demos/demo.tape`
+  - `docs/demos/demo.transcript.txt`
+  - `docs/demos/normalize.sed`
+  - `docs/demos/manifest.json`
+  - `docs/demos/record.sh` (the record command per design §3)
+  - `docs/demos/README.md` (the documented record command + recording table)
+- **Produces**: Tape contract — header comments `Binary-Version:`/`Binary-Commit:`/
+  `VHS-Version:`; manifest schema per design §3; `docs/demos/normalize.sed` verbatim per
+  design §3 (temp paths, `run_`/`att_` ULIDs, both pid shapes, protected empty-sha256,
+  40-hex SHAs, 12-hex evidence prefixes). Tasks 5 and 6 consume these verbatim.
+- **Acceptance**:
+  - `docs/demos/normalize.sed` is byte-identical to the design §3 block (modulo the
+    reviewer's fix, recorded as a deviation); building the binary (`go build`, never
+    `go run`) and re-running the §3 pipeline, then `diff`ing against
+    `demo.transcript.txt`, exits 0, and the taped binary's own exit status is 0
+    (the §3 `PIPESTATUS` assertion — never `sed`'s status). Running it with
+    `--check fail` instead exits 5 and diffing exits non-zero (failing
+    counterfactual: the transcript discriminates pass from fail).
+  - The tape's `Run`/`Type` lines invoke only the local `mythhelm` binary:
+    `grep -E 'curl|wget|ssh |http' docs/demos/demo.tape` prints nothing, and
+    `grep -cE '^(Run|Type) ' docs/demos/demo.tape` is at least 1 (non-empty leg).
+    Covered classes and residual per design §3; the reviewer confirms each `Run`/`Type`
+    line by eye and records it in the completion entry.
+  - `manifest.json` parses (`python3 -c json.load` exits 0); its `binary_commit` is a
+    40-hex commit present in the repo, and the transcript regenerates identically
+    from a worktree at that exact commit (design §4 steps 2–3); its `vhs_version`
+    equals `vhs --version` on the recording machine (record both outputs in the
+    completion entry).
+  - The transcript carries the binary's own labels: `grep -c 'SCRIPTED DEMO'`
+    prints at least 4 (banner per screen — `demo.go:80-82`).
+  - The full record (`docs/demos/record.sh` end to end: build + transcript regen +
+    `vhs` render + verify) completes in under 10 minutes timed with `time` (NFR-2);
+    only free tooling installed (list versions in the entry).
+  - `scripts/ci/check-public-hygiene.sh` passes.
+- **Test plan**: shell/JSON checks; the Go qualifiers named in the manifest already exist
+  (`internal/cli/demo_test.go`).
+- **Invariants touched**: I09 (§13.4: transcript keeps the binary's labels verbatim,
+  never collapsed); I07 (§11.5: manifest pins the exact recorded revision);
+  I14 (§9.14: declared capabilities name their qualifying tests).
+
+### Task 5 — Rendered demo GIF and embeds
+
+- **Domain/agent**: go-implementer
+- **Budget**: standard
+- **Depends on**: Task 4, Task 2
+- **Change**: Render `demo.gif` from the Task 4 tape and embed it with its caption in the
+  README and the site, plus the published site URL in the README.
+- **Files**:
+  - `docs/demos/demo.gif`
+  - `README.md` (demo embed + caption + site URL link)
+  - `docs/user-guide.md` (demo embed + caption)
+- **Acceptance**:
+  - `file docs/demos/demo.gif` reports `GIF image data`; size is over 10 KB and under
+    ~5 MB (over: non-trivial recording; under: design D5 revisit threshold).
+  - The README caption names `docs/demos/demo.tape` and the `docs/demos/record.sh`
+    command within 3 lines of the embed (anchored; deleting the tape path from the
+    caption fails the check).
+  - `docs/user-guide.md` carries the same embed and caption (same anchored check).
+  - The README links the published site URL once (`https://turbokast.github.io/mythhelm/`
+    or the actual Pages URL recorded in the completion entry).
+  - `scripts/ci/check-public-hygiene.sh` passes.
+- **Test plan**: `file`/`stat`/anchored `grep`; visual spot-check that the GIF shows the
+  demo's SCRIPTED DEMO screens (note the timestamp frames inspected in the entry).
+- **Invariants touched**: I09 (§13.4: the recording shows the binary's labels — the GIF
+  renders the same taped run the transcript proves); I14 (§9.14: only demo behaviour with
+  versioned qualifiers is shown).
+
+### Task 6 — Recording honesty checks in CI
+
+- **Domain/agent**: release-engineer
+- **Budget**: standard
+- **Depends on**: Task 3, Task 5 (shares `.github/workflows/docs.yml` with Task 3; never in parallel)
+- **Change**: Extend the `checks` job with transcript freshness, manifest-revision and
+  capability-qualifier steps. Stands alone from Task 3 because it consumes the Task 4/5
+  tape contract, which lands after Task 3's prerequisites, and keeps deploy reviewable
+  separately.
+- **Files**:
+  - `.github/workflows/docs.yml`
+- **Acceptance**:
+  - `actionlint` passes; `zizmor` passes in CI on the PR; new `uses:` (if any) pinned to
+    40-char SHA with `# vX.Y.Z`; no `secrets.*` reference (`grep -c` prints 0).
+  - Stale-transcript probe: on a scratch branch, append one line to
+    `docs/demos/demo.transcript.txt`; the `checks` job fails naming the transcript diff.
+    Record the run URL, then drop the branch.
+  - Unqualified-capability probe: on a scratch branch, add a manifest capability with
+    `qualifier: TestDoesNotExist`; the `checks` job fails because no
+    `--- PASS: TestDoesNotExist` line appears (a bare `-run` would exit 0 — design §4).
+    Record the run URL, then drop the branch.
+  - Unknown-revision probe: on a scratch branch, set `binary_commit` to 40 zeros; the
+    `checks` job fails naming the revision. Record the run URL, then drop the branch.
+  - On the PR itself the `checks` job is green (all three probes fail only on their
+    scratch branches).
+- **Test plan**: three scratch-branch CI probes (dogfood Task 3 pattern) + green PR run;
+  paste all four job URLs in the completion entry.
+- **Invariants touched**: I07 (§11.5: verification attaches to the declared revision;
+  stale fails); I14 (§9.14: unqualified capabilities fail); §19.4 (fork-safe checks).
+
+### Task 7 — TUI tape scaffold (FR-3 defers behind tui-slice)
+
+- **Domain/agent**: go-implementer
+- **Budget**: standard
+- **Depends on**: Task 4
+- **Change**: Merge the comment-only `tui.tape` scaffold and the "planned" docs note so
+  FR-3's shape is fixed while its recording waits for `specs/*/tui-slice/` to land.
+- **Files**:
+  - `docs/demos/tui.tape` (header comments: planned, interface = tui-slice acceptance, no `Run` lines)
+  - `docs/demos/README.md` (TUI row marked planned with the tui-slice dependency)
+- **Acceptance**:
+  - `grep -c '^Run ' docs/demos/tui.tape` prints 0 and the file contains the word
+    `planned` plus a `specs/*/tui-slice/` reference.
+  - No manifest entry names the TUI recording (`grep -c tui docs/demos/manifest.json`
+    prints 0), so the Task 6 qualifier check exempts it by construction.
+  - The site shows no TUI recording image: `grep -ril 'tui\.\(gif\|mp4\|webm\)' docs/
+    README.md` prints nothing, while the limitations page still labels the TUI planned
+    (Task 2 check re-run green).
+  - `scripts/ci/check-public-hygiene.sh` passes.
+- **Test plan**: `grep` checks; the follow-up tape task is filed when tui-slice lands.
+- **Invariants touched**: I14 (§9.14: unshipped TUI never presented as shipped);
+  I17 (§16.6.2: no pane text or terminal text presented as completion proof).
