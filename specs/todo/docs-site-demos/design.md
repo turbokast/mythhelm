@@ -193,7 +193,9 @@ Task 6 adds the `checks` job; the two tasks share that file and never run in par
      from `HEAD`. An unknown revision fails.
   4. Capability qualifiers: for every `capabilities[]` entry, in the step-2 worktree
      at `binary_commit`, `go test -v -run "^<qualifier>$" -count=1 ./...` must print
-     a `^--- PASS: <qualifier>` line (checked with `set -o pipefail … | grep -q`;
+     a `^--- PASS: <qualifier>` line (checked with `set -o pipefail … | grep -E
+     '^--- PASS: <qualifier>' >/dev/null`, never `grep -q`: quiet grep closes the
+     pipe on first match and can SIGPIPE a passing `go test` run;
      a bare `-run` exits 0 even when the qualifier matches nothing, so the PASS line
      is the assertion). A shown capability with no passing qualifier at the declared
      revision fails (AC-4.2). `tui.tape` has no manifest entry until FR-3 lands, so
