@@ -163,7 +163,7 @@ unaccounted=task 20 (1 dispatch)
 | 20 | - | 1 | 0 | #67 | yes | yes |
 ```
 
-Note: the Merged column above is stale for #52/#53/#54 (all three merged: 65c3d1e, 4fd69ae, 8e20861); the log rows predate their merges.
+Note: the table above is verbatim `runspec.py summary` output: its Review rounds column counts run-events rows only, so T16/T17/T19 show 0 there while the task-entry rounds (T16 code/architect, T17 one, T19 two) come from the tasks.md completion entries, a separate source. The Merged column is stale for #52/#53/#54 (all three merged: 65c3d1e, 4fd69ae, 8e20861); the log rows predate their merges.
 
 ## Lessons
 

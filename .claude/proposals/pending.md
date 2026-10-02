@@ -24,7 +24,7 @@ Add to the skill's test-writing rules: every acceptance test covering a JSONL or
 
 **Proposed change:**
 
-Add a validation step: collect every `go test … -run <selector>` command embedded in the spec's task text; for each, run `go test -list <selector>` (or the equivalent dry match) against the base tree and fail validation when a selector matches zero tests, naming the task and the selector.
+Add a validation step: collect every `go test … -run <selector>` command embedded in the spec's task text; for each, run `go test -list <selector>` (or the equivalent dry match) against the tree that results from the task's merge and fail validation when a selector matches zero tests, naming the task and the selector. Never validate against the base tree: a task may introduce the selected test, so base-tree matching would reject valid tasks before implementation.
 
 ## P-dogfood-slice-3 — Windows atomic-replace retry pattern in knowledge
 
@@ -48,4 +48,4 @@ Append a short entry: on Windows, atomic file replacement via rename can fail tr
 
 **Proposed change:**
 
-Add a dispatch step: before starting a task attempt, append the `run_start` row (once per spec run) and the task's `dispatch` row to `.claude/data/run-events.jsonl`; after the attempt ends, append the `return` row (and `merge` after the merge). A dispatch without its rows is incomplete; the orchestrator backfills missing rows for already-merged tasks before finalizing.
+Add a dispatch step: before starting a task attempt, append the `run_start` row (once per spec run) and the task's `dispatch` row to `.claude/data/run-events.jsonl`; after the attempt ends, append the `return` row (and `merge` after the merge). A dispatch without its rows is incomplete. Before finalizing, the orchestrator may backfill rows for already-merged tasks only from authoritative records (merged PRs, merge commits). Backfilled rows must carry provenance marking them as reconstructed, and consumers must distinguish them from observed rows when computing attempt metrics and attribution. Use the schema's `null` and `unknown` values for unavailable attribution or results; never treat the generated `ts` as the original event time when that time cannot be recovered.
