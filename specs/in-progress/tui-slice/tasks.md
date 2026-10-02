@@ -176,7 +176,7 @@
 - **Spec deviations**: The truncation notice spans the full view width below the columns (the exact `git diff` command never fits a pane column); its counts/cap/command text follows design §8 verbatim. `NoticeBacklog` lands in `model.go` now and moves to `live.go` in task 10.
 - **Files modified**: `internal/tui/model.go`, `internal/tui/mission.go`, `internal/tui/layout.go`, `internal/tui/styles.go`, `internal/tui/actions.go`, `internal/tui/model_test.go`, `internal/tui/layout_test.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
-### Task 7 — Navigation, palette and help
+### Task 7 — Navigation, palette and help ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: standard
@@ -199,6 +199,10 @@
   - `TestNoMouseOffered`: a structural grep over `internal/tui/` sources (excluding the test itself) finds no mouse wiring (`MouseMsg`, `WithMouseCellMotion`/`WithMouseAllMotion`, or equivalent): the test first asserts the scanned file set is non-empty so a wrong scan path fails instead of false-passing. Mouse is not offered in this slice, so AC-3.2 holds vacuously (AC-3.2, D9); any mouse subscription fails.
 - **Test plan**: `Update`-level key-message tests plus `View` goldens for palette/help overlays.
 - **Invariants touched**: None (navigation changes focus, not state; confirmations arrive in task 9).
+- **Status**: ✅ Completed — keyboard focus, `/` filter, `:` palette, `?` help and `Enter`/`Esc` flows are wired into the model with the `Action` registry task 9 consumes; PR #98.
+- **Implementation**: `nav.go` (`handleKey` dispatch, Esc back-out dialog→palette→help→filter→pane, never quits) with `palette.go` (`Action` enum + 8-entry registry, view-only selections act, task-9 actions close without acting) and `help.go` (full-name overlay); `model.go` gains overlay branches, the filter line and `selectedLane` preserved across reloads. Commit 8b742587ef3c6eb0f7f5f607da1ced18b4f34b3f.
+- **Spec deviations**: None.
+- **Files modified**: `internal/tui/nav.go`, `internal/tui/palette.go`, `internal/tui/help.go`, `internal/tui/nav_test.go`, `internal/tui/model.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
 ### Task 8 — Truthful motion
 

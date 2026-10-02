@@ -58,7 +58,12 @@
 
 ## Task 7 — Navigation, palette and help
 
-<!-- pending -->
+- **Produces**: `internal/tui/nav.go` — `handleKey` dispatch (Ctrl-C alone quits), Tab/Shift-Tab + Left/Right pane cycling with `focusPrev`, Up/Down/`j`/`k` index moves, `/` filter input, `Enter` details, `q` exit-options dialog, Esc back-out order dialog→palette→help→filter→previous pane (never quits); `palette.go` — `tui.Action` int enum (`actionStop`, `actionRecover`, `actionApply`, `actionExport`, `actionSwitchPane`, `actionTheme`, `actionHelp`, `actionQuit`), 8-entry `actionRegistry`, substring `filteredActions`, view-only selection routing; `help.go` — contextual full-name overlay; PR #98.
+- **For dependents** (tasks 8–10): `Update` routes every key through `handleKey`; add new key branches there, never in `model.go`. Dialog/palette/help/filter states layer (each `Esc` unwinds one); `View` renders the topmost overlay full-screen in dialog→palette→help priority.
+- **For dependents** (task 9): palette `Enter` on stop/recover/apply/export closes the palette with no effect — wire effects in `runPaletteSelection` (beware the zero-value `actionDef`, which aliases `actionStop`; the selection guard returns early out of range). `dialogLines` renders only `dialogExitOptions`; replace with `dialogs.go` rich prompts and add confirm keys (dialog keys except `Esc` are currently ignored).
+- **For dependents**: the `/` filter applies to tasks/agents rendered rows via `applyFilter` in `tasksColumn`/`agentsColumn`/`focusedPaneLines` (model.go); the detail pane is deliberately exempt so verification status stays visible under any filter (I07) — keep it exempt.
+- **For dependents**: `setSnapshot` preserves `selectedTask` and the new `selectedLane` (attempt ID, else run ID) across reloads; `focusPane`/`focusIndex` survive untouched. Theme toggles via `themeName` (`dark`/`light`) reloading `theme.BuiltIn`; overlays and the filter line use only the `geometricShapes` glyphs, so no font-table change was needed.
+- **Deviations that change a later task's inputs**: none.
 
 ## Task 8 — Truthful motion
 
