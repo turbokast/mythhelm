@@ -12,7 +12,12 @@
 
 ## Task 2 — View-model read seam
 
-<!-- pending -->
+- **Produces**: `internal/tui/viewmodel/viewmodel.go` — `Snapshot` (`Run`, `Attempt`/`Candidate`/`Verification`/`Receipt` nil-able, `Goal string`, `LatestProgress *Progress`, `NativeExit *NativeExit`, `Admission *Admission`, `LastRunSeq`, `At`), `Load(ctx, dir, runID) (Snapshot, error)`, `EventsSince(ctx, dir, runID, after) ([]journal.Event, error)`; PR #91.
+- **Produces**: `Progress{AssistantTurns, ToolUses, Retries, RunSeq}`, `NativeExit{ExitCode *int, Signal *string, ResultObserved, RunSeq}`, `Admission{AdapterID, AdapterVersion, AdapterSurface, Qualified, PaidContinuation, RunSeq}` — all folded from the latest matching event in `run_sequence` order.
+- **For dependents**: `Load` opens the DB read-only per call and closes it; poll by re-invoking `Load` (task 10/12) — there is no second fold path to keep in sync.
+- **For dependents**: `Goal` is the receipt's `requested_outcome.title` when a receipt loaded, else the digest-checked `task.md` title, else `"unknown"`; a digest mismatch fails `Load` (tasks 6, 11 consume `Goal` directly).
+- **For dependents**: missing run wraps `journal.ErrNotFound`; missing database reports `journal.ErrNoDatabase` (empty state, not an error screen); malformed `attempt.native_result`/`admission.decided` fail naming type + `run_sequence`, malformed progress is skipped.
+- **Deviation affecting tasks 6, 11**: `Snapshot` carries the extra `Goal string` field (design §3 text requires it; the struct snippet omits it).
 
 ## Task 3 — Terminal capability parsing
 
