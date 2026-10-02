@@ -81,6 +81,16 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Source**: master spec §13.8, §13.9, §13.10, §18.9 and §20.3
 - **Summary**: Entitlement and overage-prevention evidence that lets strict subscription-only admission pass for Claude Code instead of blocking. The dogfood slice ships only a user-declared, never-verified posture (its non-goal N8); this card earns the strict one (I15).
 
+### MH-17: Account profiles and exhaustion handoff
+- **Status**: triaged
+- **Stage**: 2
+- **Gates**: G04, G05
+- **Score**: 3.7 = (value 4 + urgency 3 + risk 4) / effort 3
+- **Spec**: (none)
+- **Issue**: (none)
+- **Source**: master spec §13.2, §13.3, §13.10, §8.3 and §20.4; signal S-4; decision D-2
+- **Summary**: Named account profiles bound to documented native homes (CLAUDE_CONFIG_DIR, CODEX_HOME) with native sign-in and tested credential isolation, never reading or copying a token (I19), each with an explicit quota-bucket id. On a structured limit error the run preserves its work as waiting_for_allowance and offers a user-confirmed switch to another authorised profile through a handoff package (MH-15); cross-provider failover only under a pre-approved policy (I04, I16). Same-vendor automatic rotation is excluded (§13.2).
+
 ### MH-13: Contained execution profiles: restricted and inspect
 - **Status**: triaged
 - **Stage**: 1

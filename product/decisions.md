@@ -24,6 +24,20 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Cards**: MH-1, MH-2, MH-3, MH-4, MH-5, MH-6, MH-7, MH-8, MH-9, MH-10, MH-11, MH-12, MH-13, MH-14, MH-15, MH-16
 - **Evidence**: the card issues [#22](https://github.com/turbokast/mythhelm/issues/22) to [#37](https://github.com/turbokast/mythhelm/issues/37)
 
+### D-2 — 2026-10-02: Accept native multi-profile exhaustion handoff as a new card idea
+- **Type**: signal-triage
+- **Decision**: Maintainer accepted the plan from the multi-subscription signal: a new card for native multi-profile execution with user-confirmed exhaustion handoff goes to /triage; same-vendor automatic account rotation is not pursued
+- **Rationale**: Users clearly want it, but Anthropic's terms forbid third-party developers from collecting, storing or intermediating Claude.ai credentials or session tokens (OpenAI's forbid circumventing rate limits) and the master spec (A04, §13.2, §13.10) forbids identity cycling to defeat a limit; native profile homes plus handoff deliver most of the liked behaviour within both
+- **Cards**: MH-16,MH-15,MH-5
+- **Evidence**: product/signals.md entry for this theme; https://code.claude.com/docs/en/legal-and-compliance
+
+### D-4 — 2026-10-02: Add MH-17: account profiles and exhaustion handoff
+- **Type**: card-add
+- **Decision**: MH-17 filed as triaged, stage 2, score 3.7
+- **Rationale**: Signal S-4 shows demand for continuing work when one subscription is exhausted; D-2 accepted the spec-compliant shape. No card covers the account-profile model, native-home credential isolation or the §13.10 exhaustion flow; MH-5, MH-15 and MH-16 are consumed, not duplicated.
+- **Cards**: MH-17,MH-5,MH-15,MH-16
+- **Evidence**: product/signals.md S-4; product/decisions.md D-2
+
 ### D-6 — 2026-10-02: MH-1 → shipped (dogfood-slice)
 - **Type**: lifecycle-sync
 - **Decision**: MH-1 moved to shipped

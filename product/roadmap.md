@@ -23,6 +23,7 @@ The five highest-scored cards without a spec in the current or next stage.
 
 Every other open card, by score.
 
+- **MH-17** Account profiles and exhaustion handoff (triaged, stage 2, score 3.7)
 - **MH-13** Contained execution profiles: restricted and inspect (triaged, stage 1, score 3.5; [#34](https://github.com/turbokast/mythhelm/issues/34))
 - **MH-2** TUI slice: the focused mission view (triaged, stage 1, score 3.3; [#23](https://github.com/turbokast/mythhelm/issues/23))
 - **MH-3** Herdr bridge: single-pane experience with scoped status (triaged, stage 1, score 3.3; [#24](https://github.com/turbokast/mythhelm/issues/24))
