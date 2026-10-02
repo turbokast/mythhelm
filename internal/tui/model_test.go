@@ -271,6 +271,12 @@ func TestNextActionTable(t *testing.T) {
 		s.Verification.CandidateCommit = commitA
 		return s
 	}
+	passedWithoutCandidateSnap := func() viewmodel.Snapshot {
+		s := richSnapshot()
+		s.Run.State = "ready_for_review"
+		s.Candidate = nil
+		return s
+	}
 	stateSnap := func(state string) viewmodel.Snapshot {
 		s := richSnapshot()
 		s.Run.State = state
@@ -291,6 +297,7 @@ func TestNextActionTable(t *testing.T) {
 		{"ready verified", verifiedSnap(), "review the candidate, then apply or close"},
 		{"ready unverified", unverifiedSnap(), "verification unavailable — apply needs explicit unverified acceptance"},
 		{"ready mismatch", mismatchSnap(), "verification unavailable — apply needs explicit unverified acceptance"},
+		{"ready passed without candidate", passedWithoutCandidateSnap(), "verification unavailable — apply needs explicit unverified acceptance"},
 		{"blocked", stateSnap("blocked"), "read the reason; recover or start a new run"},
 		{"failed", stateSnap("failed"), "read the reason; recover or start a new run"},
 		{"interrupted", stateSnap("interrupted"), "recover the run"},

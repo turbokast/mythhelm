@@ -10,11 +10,14 @@ import (
 
 // verified reports whether the snapshot's candidate is verified: a passed
 // verification row that checked exactly the frozen candidate commit (I07).
+// Without a frozen candidate there is nothing the check could verify, so a
+// passed row alone never verifies (matching verificationLines, which also
+// withholds the label when the candidate is nil).
 func verified(snap viewmodel.Snapshot) bool {
 	if snap.Verification == nil || snap.Verification.Result != "passed" {
 		return false
 	}
-	return snap.Candidate == nil || snap.Verification.CandidateCommit == snap.Candidate.Commit
+	return snap.Candidate != nil && snap.Verification.CandidateCommit == snap.Candidate.Commit
 }
 
 // nextAction maps the run state to its design §7 next-action string. Stopping
