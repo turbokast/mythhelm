@@ -48,17 +48,25 @@ func TestLiveClaudeCanary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	var sawSession, sawResult bool
+	var sawSession, sawResult, sawRateLimit bool
 	for ob := range sess.Observations() {
-		switch ob.(type) {
+		switch ob := ob.(type) {
 		case adapter.SessionStarted:
 			sawSession = true
 		case adapter.Result:
 			sawResult = true
+		case adapter.NativeError:
+			if ob.Class == "rate_limit" {
+				sawRateLimit = true
+			}
 		}
 	}
 	exit := <-sess.Done()
-	if !sawSession || !sawResult {
+	switch canaryVerdict(sawSession, sawResult, sawRateLimit) {
+	case "pass":
+	case "limited":
+		t.Skipf("native is rate-limited (exit=%+v); retry after the reset", exit)
+	default:
 		t.Fatalf("canary observed session=%v result=%v exit=%+v", sawSession, sawResult, exit)
 	}
 	// The sanitised recording is written by hand from this run's observed

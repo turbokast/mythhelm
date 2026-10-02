@@ -205,6 +205,44 @@ func TestChildEnvIsAllowlisted(t *testing.T) {
 	}
 }
 
+// canaryVerdict classifies a drained canary stream. A missing session or
+// result fails, unless the only barrier was a provider rate limit: retry
+// after the reset is the maintainer's call, not a product verdict. A
+// result after a mere limit still passes, matching the worker's success
+// row (design §6.4).
+func canaryVerdict(sawSession, sawResult, sawRateLimit bool) string {
+	switch {
+	case sawSession && sawResult:
+		return "pass"
+	case sawRateLimit && !sawResult:
+		return "limited"
+	default:
+		return "fail"
+	}
+}
+
+func TestCanaryVerdict(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		session, result, limited bool
+		want                     string
+	}{
+		{true, true, false, "pass"},
+		{true, true, true, "pass"},
+		{true, false, true, "limited"},
+		{false, false, true, "limited"},
+		{true, false, false, "fail"},
+		{false, true, false, "fail"},
+		{false, false, false, "fail"},
+		{false, true, true, "fail"},
+	} {
+		if got := canaryVerdict(tc.session, tc.result, tc.limited); got != tc.want {
+			t.Fatalf("canaryVerdict(%v,%v,%v) = %q, want %q",
+				tc.session, tc.result, tc.limited, got, tc.want)
+		}
+	}
+}
+
 func TestCINeverPassesLiveTag(t *testing.T) {
 	t.Parallel()
 	entries, err := filepath.Glob(filepath.Join("..", "..", ".github", "workflows", "*.yml"))
