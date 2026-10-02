@@ -310,6 +310,27 @@ func TestAccessibleShowsSummary(t *testing.T) {
 	}
 }
 
+func TestAccessibleCancelDuringStartupEchoes(t *testing.T) {
+	t.Parallel()
+	// A cancellation that lands during the startup queries shuts down
+	// clean with the echoed trailer, like the follow-loop race: no error,
+	// no missing trailer. A pre-cancelled context pins this deterministically
+	// (on a loaded runner the 200 ms echo settle can lose the race).
+	f := newAccessibleFixture(t)
+	runID := ids.New("run")
+	f.addRun(runID, "executing", strings.Repeat("0", 64))
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	var out bytes.Buffer
+	err := RunAccessible(ctx, AccessibleConfig{RunID: runID, StateDir: f.dir, Out: &out, After: 41})
+	if err != nil {
+		t.Fatalf("RunAccessible with cancelled ctx = %v, want clean shutdown", err)
+	}
+	if got := out.String(); got != "next-after: 41\n" {
+		t.Fatalf("output = %q, want only the echo trailer", got)
+	}
+}
+
 func TestAccessibleNoChatter(t *testing.T) {
 	t.Parallel()
 	f := newAccessibleFixture(t)
@@ -574,8 +595,9 @@ func runAccessiblePage(t *testing.T, dir, runID string, after int64, want int) [
 	}()
 	if want == 0 {
 		// No history line will arrive to prove startup, so settle
-		// briefly instead: cancelling during Load errors with no
-		// trailer, while cancelling a live follower echoes cleanly.
+		// briefly instead. Either way the trailer echoes: cancelling a
+		// live follower echoes, and a cancel landing in startup echoes
+		// too (TestAccessibleCancelDuringStartupEchoes).
 		time.Sleep(200 * time.Millisecond)
 	} else {
 		waitAccessibleLines(t, sb, want)

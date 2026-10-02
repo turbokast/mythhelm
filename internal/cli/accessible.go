@@ -54,8 +54,9 @@ const defaultAccessiblePoll = 500 * time.Millisecond
 // nothing. An over-page history yields exactly one page plus the trailer and
 // returns without live follow, so a later event can never advance next-after
 // past skipped history. On context end it writes the next-after trailer as
-// its last line and returns nil. Load, stream and write failures return an
-// error with no trailer.
+// its last line and returns nil. Cancellation during startup echoes the
+// trailer like the follow loop; other load, stream and write failures
+// return an error with no trailer.
 func RunAccessible(ctx context.Context, cfg AccessibleConfig) error {
 	if cfg.Out == nil {
 		return fmt.Errorf("accessible: no output writer")
@@ -64,17 +65,32 @@ func RunAccessible(ctx context.Context, cfg AccessibleConfig) error {
 	if poll <= 0 {
 		poll = defaultAccessiblePoll
 	}
+	w := &accessibleWriter{out: cfg.Out}
+	// A failure with a done context lost the race with cancellation: shut
+	// down clean with the echo trailer, mirroring the follow loop below.
+	cancelled := func(err error) bool {
+		if err == nil || ctx.Err() == nil {
+			return false
+		}
+		w.line(fmt.Sprintf("next-after: %d", cfg.After))
+		return true
+	}
 	snap, err := viewmodel.Load(ctx, cfg.StateDir, cfg.RunID)
 	if err != nil {
+		if cancelled(err) {
+			return w.err
+		}
 		return err
 	}
 	// One row past the page: its presence proves overflow without loading
 	// the whole history.
 	history, err := viewmodel.EventsSinceLimit(ctx, cfg.StateDir, cfg.RunID, cfg.After, accessiblePageSize+1)
 	if err != nil {
+		if cancelled(err) {
+			return w.err
+		}
 		return err
 	}
-	w := &accessibleWriter{out: cfg.Out}
 	last := cfg.After
 	page := history
 	overflow := len(page) > accessiblePageSize
