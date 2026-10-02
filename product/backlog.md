@@ -32,14 +32,15 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 ## Open
 
 ### MH-9: OpenSSF Best Practices badge
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 1
 - **Gates**: G10
 - **Score**: 9.0 = (value 2 + urgency 5 + risk 2) / effort 1
-- **Spec**: (none)
+- **Spec**: `openssf-badge`
 - **Issue**: [#30](https://github.com/turbokast/mythhelm/issues/30)
 - **Source**: master spec §19.3, §19.4 and the G10 public-release gate of §18.7
 - **Summary**: Complete the OpenSSF Best Practices questionnaire for the passing level and show the badge in the README, recording any criterion the project does not yet meet as its own card.
+- **Premise-grounded**: 2026-10-02 — C1 HOLDS; C2 HOLDS; C3 HOLDS; C4 HOLDS; C5 PARTIAL; C6 HOLDS (external); C7 PROCEDURE
 
 ### MH-10: Harness compatibility records and qualification registry
 - **Status**: triaged
@@ -102,14 +103,15 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Summary**: The `restricted` and `inspect` execution profiles with boundaries that pass adversarial tests, and a clear refusal wherever an operating system cannot provide them. The dogfood slice admits only `trusted-host` with explicit consent (its non-goal N9).
 
 ### MH-2: TUI slice: the focused mission view
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 1
 - **Gates**: G09
 - **Score**: 3.3 = (value 5 + urgency 5 + risk 3) / effort 4
-- **Spec**: (none)
+- **Spec**: `tui-slice`
 - **Issue**: [#23](https://github.com/turbokast/mythhelm/issues/23)
 - **Source**: master spec §15 (visual language, mission view, responsive layouts, navigation, motion, accessibility, render model), §20.3 and §22.2 item 5
 - **Summary**: The polished focused TUI that Stage 1 requires, on top of the run pipeline the dogfood slice delivers: the mission view, responsive layouts down to the linear accessible mode, keyboard flows and event-driven motion. The dogfood slice deliberately defers it (its non-goal N1).
+- **Premise-grounded**: 2026-10-02 — run pipeline exists HOLDS; dogfood N1 defers TUI HOLDS; Stage 1 requires polished TUI HOLDS; §15 coverage HOLDS; §22.2 item 5 HOLDS; G09 HOLDS; Bubble Tea stack HOLDS; no TUI exists yet HOLDS
 
 ### MH-3: Herdr bridge: single-pane experience with scoped status
 - **Status**: triaged
@@ -122,14 +124,15 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Summary**: First-class use inside Herdr: launch in a pane, project scoped MYTHHELM state, keep one input writer and restore attachments rather than relaunching work. Herdr may present state but never certifies completion or creates a second process owner (I17, I18). Lane inspectors and native attachment follow in Stage 2.
 
 ### MH-8: Documentation site and scripted terminal demos
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 1
 - **Gates**: G10
 - **Score**: 3.0 = (value 3 + urgency 5 + risk 1) / effort 3
-- **Spec**: (none)
+- **Spec**: `docs-site-demos`
 - **Issue**: [#29](https://github.com/turbokast/mythhelm/issues/29)
 - **Source**: master spec §14.9, §19.3 and §22.3; the GitHub Pages and VHS rows of the Deferred table in docs/automation.md
 - **Summary**: Published user and contributor guides extracted from the spec, and reproducible terminal recordings of the demo and TUI made with Charm VHS for the docs and README. The recordings depend on the TUI slice.
+- **Premise-grounded**: 2026-10-02 — 12 claims, 12 HOLDS, 0 PARTIAL, 0 UNVERIFIABLE; TUI recording sequences behind tui-slice (MH-2)
 
 ### MH-4: Codex adapter: the second qualified native adapter
 - **Status**: triaged

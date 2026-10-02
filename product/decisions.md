@@ -51,3 +51,21 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: The backlog add procedure creates a card's public issue after the card is approved and merged (PR #80), then records the link so contributors can find the discussion
 - **Cards**: MH-17
 - **Evidence**: https://github.com/turbokast/mythhelm/issues/82; PR #80 (ac0797d)
+
+### D-14 — 2026-10-02: MH-2 → specced (tui-slice)
+- **Type**: lifecycle-sync
+- **Decision**: MH-2 moved to specced
+- **Rationale**: tui-slice reached unrefined
+- **Cards**: MH-2
+
+### D-17 — 2026-10-02: MH-8 → specced (docs-site-demos)
+- **Type**: lifecycle-sync
+- **Decision**: MH-8 moved to specced
+- **Rationale**: docs-site-demos reached unrefined with grounded premise
+- **Cards**: MH-8
+
+### D-18 — 2026-10-02: MH-9 → specced (openssf-badge)
+- **Type**: lifecycle-sync
+- **Decision**: MH-9 moved to specced
+- **Rationale**: openssf-badge reached unrefined with grounded premise
+- **Cards**: MH-9
