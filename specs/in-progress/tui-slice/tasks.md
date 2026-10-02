@@ -204,7 +204,7 @@
 - **Spec deviations**: `Config` gains a `ThemeName` field (empty means dark) so `newModel` initialises the toggle state from the supplied tokens instead of assuming dark; otherwise none.
 - **Files modified**: `internal/tui/nav.go`, `internal/tui/palette.go`, `internal/tui/help.go`, `internal/tui/nav_test.go`, `internal/tui/model.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
-### Task 8 — Truthful motion
+### Task 8 — Truthful motion ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: complex (10 acceptance items: one truth rule per motion moment)
@@ -227,6 +227,10 @@
   - `TestNoPermanentLoop`: with `MotionFull` and no new events, the program schedules no further motion frames after transitions settle (~200 ms simulated). The test asserts over motion `Cmd`s only and excludes the permanent 200 ms poll tick, because that tick is specified (design §13 live/inspect mode) as a snapshot reload, not animation — counting it would fail a correct implementation. A self-rescheduling motion tick fails (AC-6.1).
 - **Test plan**: `Update`-level tests feeding synthetic event messages under each `MotionLevel`; frame scheduling observed via returned `tea.Cmd` nil-ness.
 - **Invariants touched**: I06 (§7.3: moments never depict requested as confirmed — arrival/dispatch/waiting cases above).
+- **Status**: ✅ Completed — the §15.6 motion subset renders only recorded state with reduced-motion collapse and no permanent loop; PR #99.
+- **Implementation**: `motion.go` (`eventMsg` feed folding progress/launch/native/admission + arming arrival/dispatch/pulse/delivery frames on one shared 80 ms tick chain settling in ≤2 frames) with `model.go` triggers (`Init` arrival tick, key-skipped arrival, `setSnapshot` launch seeding + failure focus) and pane-row wrappers injecting the route card, waiting indicator, stages strip, delivery outcome and failure artefact lines. Commit COMMIT_SHA_PLACEHOLDER.
+- **Spec deviations**: None.
+- **Files modified**: `internal/tui/motion.go`, `internal/tui/motion_test.go`, `internal/tui/model.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
 ### Task 9 — Palette actions and confirmations
 
