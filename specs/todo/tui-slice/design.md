@@ -31,7 +31,7 @@ No new verbs (N4). `run`, `demo` and `review` gain the launch rule; `runs list`,
 
 TTY detection promotes the already-required `mattn/go-isatty` to a direct dependency (D12).
 
-**New flags** on `run`, `demo`, `review` only: `--colour auto|always|never` with `--color` alias, `--motion auto|full|reduced|off`, `--icons auto|unicode|ascii` (§15.7), and `--accessible` (D10). Bad values exit 2 through the existing `usageError` path (`exit.go:30-37`, grep `type usageError`). `--plain` keeps its meaning: linear text, no cursor movement, no colour. Only `run` has `--plain` (`run.go:40`); `review` and `demo` gain none, so their on-TTY linear paths are piping, `TERM=dumb`, or `--accessible` — and `review`'s default `--format plain` (`review.go:23`) does not block the TUI (N4). "Explicit plain mode" (AC-2.5) means exactly the `--plain` flag leg of launch-rule step 2: `--format plain` is a machine-format default, not an explicit request, so on a TTY it still launches the TUI. In `review`, the launch rule is evaluated after the run lookup (`review.go:51-54`) but before the receipt gate (`review.go:55-58`): the TUI and `--accessible` branches launch without a receipt, while the linear branches keep the existing gate.
+**New flags** on `run`, `demo`, `review` only: `--colour auto|always|never` with `--color` alias, `--motion auto|full|reduced|off`, `--icons auto|unicode|ascii` (§15.7), `--accessible` (D10), and `--after <seq>` (resume offset for the `--accessible` stream, §12; honoured only on the `--accessible` branch and ignored elsewhere, like other presentation flags off their branch). Bad values (including a non-numeric `--after`) exit 2 through the existing `usageError` path (`exit.go:30-37`, grep `type usageError`). `--plain` keeps its meaning: linear text, no cursor movement, no colour. Only `run` has `--plain` (`run.go:40`); `review` and `demo` gain none, so their on-TTY linear paths are piping, `TERM=dumb`, or `--accessible` — and `review`'s default `--format plain` (`review.go:23`) does not block the TUI (N4). "Explicit plain mode" (AC-2.5) means exactly the `--plain` flag leg of launch-rule step 2: `--format plain` is a machine-format default, not an explicit request, so on a TTY it still launches the TUI. In `review`, the launch rule is evaluated after the run lookup (`review.go:51-54`) but before the receipt gate (`review.go:55-58`): the TUI and `--accessible` branches launch without a receipt, while the linear branches keep the existing gate.
 
 **Test seams** (consumed by task 12): the launch helper takes its dependencies as an explicit struct — never mutable package state (go-conventions):
 
@@ -193,14 +193,15 @@ New file `internal/tui/diff.go`: parses the unified diff bytes produced exactly 
 type Diff struct {
     Files []DiffFile // parsed from unified diff bytes
     Lines []DiffLine // flattened render rows with widths precomputed
-    Truncated bool   // true when the input exceeded maxDiffLines
+    Truncated bool   // true when the input exceeded maxDiffLines or maxDiffBytes
 }
 const maxDiffLines = 50000
+const maxDiffBytes = 4 << 20 // 4 MiB: same order as 50k typical lines, so neither cap dominates normal diffs
 func ParseDiff(unified []byte) (Diff, error)
 func (d Diff) Render(width int, caps caps.Caps, t theme.Tokens) []string
 ```
 
-- Inputs beyond `maxDiffLines` set `Truncated`; `ParseDiff` takes bare bytes with no provenance, so the selected-change pane (task 6, which has the `CandidateRow`) labels it explicitly ("showing 50,000 of N lines — full diff via `git -C <workspace> diff <base> <commit>`"), never silently (D7).
+- Inputs beyond `maxDiffLines` set `Truncated`. Inputs beyond `maxDiffBytes` are truncated to the budget (cut back to the last newline within budget, so no partial row is parsed) before splitting, parsing and width measurement, and also set `Truncated` — a single giant line can no longer blow the retained buffer or the measurement work. `ParseDiff` takes bare bytes with no provenance, so the selected-change pane (task 6, which has the `CandidateRow`) labels either cap explicitly ("showing 50,000 of N lines — full diff via `git -C <workspace> diff <base> <commit>`"; the total N is counted from the full input, an O(1)-memory scan, so byte truncation keeps the same shown/total-lines label), never silently (D7).
 - The viewer is virtualised: only visible rows render (§13); the full parsed buffer stays searchable.
 
 ## 9. Navigation (§15.5)
@@ -225,7 +226,7 @@ type Actions struct {
 ```
 
 - Stop is enabled in `executing`/`verifying`; after the call the run renders `stop requested` until `attempt.stopped` is journaled — requested is never labelled stopped (I06).
-- Recover is enabled only in `interrupted`; it runs `RecoverWithHooks` with hooks from `tui.LiveFeed` feeding the TUI event channel (§13), showing live recovery progress.
+- Recover is enabled only in `interrupted`; it runs `RecoverWithHooks` with hooks from `tui.LiveFeed` feeding the TUI live feed (§13), showing live recovery progress.
 - Apply is enabled only in `ready_for_review`; the dialog collects the branch name plus the two acceptance toggles and shows the §15.3-style verification table before confirming.
 - Export writes the focused pane's full plain-text content to `<stateDir>/exports/<runID>-<pane>.txt` and shows the path (D8): deterministic, no path prompt to mistype, outside any repository.
 - Production wiring (task 12, in `internal/cli/tui.go`): the wired `Stop` opens the database read-only per call (mirroring `internal/cli/stop.go:52-57` — the `journal.OpenReadOnly` plus `supervisor.Stop` call in `runStop`, verified live; the same line span in `internal/supervisor/stop.go` is `attempt.stopped` payload parsing, which never opens the journal); `Recover` opens read-write per call (mirroring `recover.go`, grep `journal.Open`); `Apply` opens read-write and holds `supervisor.AcquireOwner(<stateDir>/runs/<runID>)` for the call (mirroring `apply.go:59-72`, since `ApplyRun` requires the caller to hold the lock — `internal/supervisor/apply.go:62`, grep `must hold the run's owner lock`). Every handle is closed before its call returns; no journal handle outlives the action that opened it.
@@ -258,11 +259,13 @@ type AccessibleConfig struct {
     StateDir string
     Out io.Writer
     Poll time.Duration // snapshot re-read cadence; default 500ms
+    After int64        // resume offset: stream only events with run_sequence > After (0 = from the start)
 }
+const accessiblePageSize = 1000
 func RunAccessible(ctx context.Context, cfg AccessibleConfig) error
 ```
 
-It emits complete state labels (`run state: executing (reason: none); attempt 1: running; verification: waiting`), never repeats spinners, never rewrites the cursor, and streams meaningful changes in journal order. AC-5.2 holds by construction (text-only, full names, no colour/animation-only meaning). AC-5.3: bidi/combining/emoji/wide glyphs are measured by cell width and truncated safely so approval-adjacent controls never displace; filenames render in full or with labelled truncation. Long runs page through repeated invocations over `EventsSince` offsets, and the TUI export action (§10) covers in-TUI export.
+It emits complete state labels (`run state: executing (reason: none); attempt 1: running; verification: waiting`), never repeats spinners, never rewrites the cursor, and streams meaningful changes in journal order. AC-5.2 holds by construction (text-only, full names, no colour/animation-only meaning). AC-5.3: bidi/combining/emoji/wide glyphs are measured by cell width and truncated safely so approval-adjacent controls never displace; filenames render in full or with labelled truncation. Long runs page through repeated invocations: each invocation streams an initial history page of at most `accessiblePageSize` events after `After` (via `EventsSince`), then follows live until ctx ends; on clean return it prints `next-after: <seq>` as its last line, where `<seq>` is the max streamed `run_sequence` (echoing `After` when nothing streamed), so the next invocation resumes with `--after <seq>` (AC-5.3). The TUI export action (§10) covers in-TUI export.
 
 Advertised support (Q3, AC-5.4, I14): exactly the combinations the evidence task actually tests (default: one — the maintainer's NVDA/VoiceOver/Orca session recorded at run time); every other combination is labelled experimental or unsupported in the README status section (DoD). No claim is made before its test programme runs (N5).
 
@@ -270,12 +273,18 @@ Advertised support (Q3, AC-5.4, I14): exactly the combinations the evidence task
 
 Event-driven, never a render loop:
 
-- Live mode (`run`/`demo`): the pipeline's `Hooks.Event`/`Notice` feed a bounded channel into the Tea program through one constructor (task 10 `Produces`):
+- Live mode (`run`/`demo`): the pipeline's `Hooks.Event`/`Notice` feed the Tea program through one constructor (task 10 `Produces`):
   ```go
   // internal/tui/live.go
-  func LiveFeed() (events chan journal.Event, hooks supervisor.Hooks)
+  type NoticeBacklog struct {
+      mu sync.Mutex
+      pending []string
+  }
+  func (b *NoticeBacklog) Add(s string)    // appends; never blocks, never drops
+  func (b *NoticeBacklog) Drain() []string // atomically takes all pending, in order
+  func LiveFeed() (events chan journal.Event, notices *NoticeBacklog, hooks supervisor.Hooks)
   ```
-  `LiveFeed` creates the channel with capacity 256 and returns `Hooks{Event, Notice}` sharing one non-blocking send (`select` send with `default` drop — D18), so a paused TUI can never stall native event consumption; the next poll tick replays anything dropped. `Event` sends the journaled event as-is. `Notice` (`func(string)`, `pipeline.go:68`) maps its string to a synthetic event — `journal.Event{Type: "ui.notice", Payload: {"text": s} JSON-encoded, RunSequence: -1, ObservedAt: now UTC}` — sent through the same drop-on-full send; `RunSequence: -1` marks it synthetic (no journal row ever carries it) and the model renders it as a notice line, never as journal progress. `Interrupt` is left unset by `LiveFeed`; the launch wiring (task 12) sets it from `signal.Notify` exactly as `executeRun` does (`run.go:105-108`, capacity 2). A 200 ms `tea.Tick` rebuilds the snapshot with a fresh `Load` (scan included) at most 5 Hz (coalesced view updates); the supervisor preserves critical events independently, so coalescing loses nothing durable.
+  `LiveFeed` creates the events channel with capacity 256 and returns `Hooks` whose `Event` uses a non-blocking send (`select` send with `default` drop — D18), so a paused TUI can never stall native event consumption; the next poll tick replays dropped events from the journal. `Notice` (`func(string)`, `pipeline.go:68` — "status the user must see that is not an event", e.g. `DetachedNotice`'s `mythhelm recover` command) bypasses the drop-on-full channel into the returned `NoticeBacklog`: `Add` never blocks and never drops, so actionable unjournaled status is retained even when the events channel is full. The backlog stays tiny in practice — the pipeline emits notices only on its ~10 error-path call sites (`pipeline.go`, `recover.go`), each a short string fired O(1) times per run. The model drains the backlog on every 200 ms poll tick (task 10 wiring), mapping each drained string to a synthetic event — `journal.Event{Type: "ui.notice", Payload: {"text": s} JSON-encoded, RunSequence: -1, ObservedAt: drain time UTC}` — at drain time; `RunSequence: -1` marks it synthetic (no journal row ever carries it) and the model renders it as a notice line, never as journal progress. `Interrupt` is left unset by `LiveFeed`; the launch wiring (task 12) sets it from `signal.Notify` exactly as `executeRun` does (`run.go:105-108`, capacity 2). A 200 ms `tea.Tick` rebuilds the snapshot with a fresh `Load` (scan included) at most 5 Hz (coalesced view updates); the supervisor preserves critical events independently, so coalescing loses nothing durable.
 - Inspect mode (`review`): the same 200 ms tick without the live channel; quitting is instant.
 - WindowSizeMsg triggers re-layout only; key messages update focus/dialog state synchronously so input never waits on I/O.
 - Virtualisation: lists and diffs render through a viewport showing at most the pane's visible rows; the live stream tail shows at most the visible rows on screen while history search replays the journal via `EventsSince(ctx, dir, runID, 0)` with a caller-side filter — the history is therefore always complete, never a bounded memory copy (D17).
@@ -304,7 +313,7 @@ Event-driven, never a render loop:
 | D4 | 200 ms poll plus in-process wake channel | One mechanism covers live and inspect modes; polling the read-only journal cannot stall writers |
 | D5 | OS reduced-motion treated as unknown; the flag is the control | §15.7 explicitly names the explicit flag the portable control; no OS query here is reliable enough to override it silently |
 | D6 | Only themes are declarative data in `mods/`; keymap/layout stay code | Three half-validated schemas would weaken the G08 review; keymap/layout data formats arrive with MH-6 (N3) |
-| D7 | Diff input capped at 50,000 lines with an explicit label | Unbounded in-memory diffs risk OOM on huge candidates; the cap is labelled with the exact `git diff` fallback, never silent |
+| D7 | Diff input capped at 50,000 lines and 4 MiB with explicit labels | Unbounded in-memory diffs risk OOM on huge candidates; each cap is labelled with the exact `git diff` fallback, never silent |
 | D8 | Export writes to `<stateDir>/exports/<run>-<pane>.txt` | Deterministic, outside any repo, no path prompt to mistype |
 | D9 | No mouse support this slice | Keeps AC-3.2 vacuous and every action keyboard-reachable; mouse arrives only with a full keyboard-parity audit |
 | D10 | `--accessible` names the screen-reader mode | Short, matches §15.8 "accessibility"; `--screen-reader` rejected as longer with no extra clarity |
@@ -315,7 +324,7 @@ Event-driven, never a render loop:
 | D15 | Implement the applicable motion subset; register the rest (Q2 option a) | Stubbing handoff/conflict moments with no trigger would fake behaviour §15.6's truth rules forbid |
 | D16 | Advertise exactly the tested screen-reader combinations (Q3 option a) | I14: untested combinations are experimental/unsupported, never claimed |
 | D17 | History search replays the journal, not a memory copy | AC-6.2's "full stream in searchable history" stays complete with no bound to defend |
-| D18 | Live event callback drops (never blocks) when the TUI lags | A paused terminal must not stall native consumption (§15.9); the next poll tick replays drops |
+| D18 | Live journaled-event callback drops (never blocks) when the TUI lags; unjournaled notices use a drained backlog | A paused terminal must not stall native consumption (§15.9); the next poll tick replays dropped events from the journal and drains retained notices |
 
 No decision changes billing, persistence, process ownership or a public contract, so no ADR is required.
 

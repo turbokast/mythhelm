@@ -103,16 +103,17 @@
 - **Domain/agent**: tui-implementer
 - **Budget**: complex (width-safe Unicode handling plus truncation semantics)
 - **Depends on**: Task 1, Task 3, Task 4
-- **Change**: Add the width-safe unified-diff parser and renderer (design §8) consumed by the selected-change pane, with structural highlighting where caps allow and an explicit truncation label past the line cap. (Task 1 first: `diff.go` imports `lipgloss`, so without the pinned modules the package does not build.)
+- **Change**: Add the width-safe unified-diff parser and renderer (design §8) consumed by the selected-change pane, with structural highlighting where caps allow and an explicit truncation label past the line/byte caps. (Task 1 first: `diff.go` imports `lipgloss`, so without the pinned modules the package does not build.)
 - **Files**:
   - `internal/tui/diff.go`
   - `internal/tui/diff_test.go`
-- **Produces**: `tui.Diff{Files, Lines, Truncated}`, `tui.maxDiffLines = 50000`, `tui.ParseDiff(unified []byte) (Diff, error)`, `(Diff) Render(width int, caps caps.Caps, t theme.Tokens) []string`.
+- **Produces**: `tui.Diff{Files, Lines, Truncated}`, `tui.maxDiffLines = 50000`, `tui.maxDiffBytes = 4 << 20`, `tui.ParseDiff(unified []byte) (Diff, error)`, `(Diff) Render(width int, caps caps.Caps, t theme.Tokens) []string`.
 - **Acceptance**:
   - `TestParseHunks`: a two-file unified diff yields both files with correct hunk/line counts; malformed input returns an error rather than a half-diff.
   - `TestRenderWidthSafe`: every rendered row is at most `width` cells wide with tabs expanded and wide glyphs uncut (a wide glyph at the boundary truncates with the marker, never splits); a `len()`-based implementation fails the wide-glyph case.
   - `TestRenderAsciiFallback`: with `IconsASCII` + `ColourNever`, output contains no non-ASCII bytes and no escape introductions; the unicode/full-caps variant contains structural highlighting.
   - `TestTruncationLabelled`: input past `maxDiffLines` sets `Truncated` and the rendered footer carries the truncation label with the shown/total line counts; silently dropped lines fail this test. (The exact-command assertion lives in task 6: `ParseDiff` takes bare bytes with no provenance, so only the selected-change pane — which has the `CandidateRow` — can name base and commit.)
+  - `TestByteCapBoundsSingleLine`: a single-line input larger than `maxDiffBytes` sets `Truncated` with only the in-budget prefix parsed (parsed `Lines` bounded by the byte budget, never the full input length) and the rendered footer carries the shown/total label; a variant parsing the whole input fails (D7).
   - `TestMarkdownDiffKeepsDiffChrome`: a diff over a `.md` file renders hunk headers and `+`/`-` markers structurally (AC-1.2; a Markdown-prose rendering fails).
 - **Test plan**: inline fixtures plus generated wide/tab/bidi cases; golden rows.
 - **Invariants touched**: I09 (§13.4: absent diff renders as labelled absence, never empty success), §12.7 (control characters sanitised before render — a fixture with ANSI escapes in diff content renders them inert).
@@ -131,7 +132,7 @@
   - `internal/tui/styles.go` (caps/theme application, cell formatter)
   - `internal/tui/model_test.go`
   - `internal/tui/layout_test.go`
-- **Produces**: `tui.Config{RunID, StateDir string, Caps caps.Caps, Tokens theme.Tokens, Events <-chan journal.Event, Actions Actions}`; `tui.Run(ctx context.Context, cfg Config) error`; `tui.Actions{Stop, Recover, Apply}` struct with the exact field types of design §10 (no behavior yet — task 9 implements it); `tui.Model` with `Update`/`View` driving the layout ladder.
+- **Produces**: `tui.Config{RunID, StateDir string, Caps caps.Caps, Tokens theme.Tokens, Events <-chan journal.Event, Notices *NoticeBacklog, Actions Actions}`; `tui.Run(ctx context.Context, cfg Config) error`; `tui.Actions{Stop, Recover, Apply}` struct with the exact field types of design §10 (no behavior yet — task 9 implements it); `tui.Model` with `Update`/`View` driving the layout ladder.
 - **Acceptance**:
   - `TestLayoutBreakpoints`: golden views at 60/85/120/160 columns show compact/single/two-pane/three-pane arrangements per the §15.4 table; a 139-column render with three panes fails.
   - `TestShortHeightCompact`: heights of 5 and 9 rows render the compact view with the linear-mode offer (AC-2.4); 10 rows keeps the width-driven layout.
@@ -142,7 +143,7 @@
   - `TestStatusStripKindLabels`: a snapshot with `Admission` (qualified true, paid continuation "off") renders `qualified: true` and `paid continuation: off` in the status strip; a snapshot with nil `Admission` renders `unknown` for both, never blank or `0` (AC-7.3, AC-1.4 unknown-leg). A bare figure without its kind label fails, as does a `0` for an absent value.
   - `TestNativeResultNeverVerified`: a fixture run whose journaled events include `attempt.native_result` with exit code 0 (and no verification events), loaded through `viewmodel.Load`, renders `native exit: 0` with `NativeExit` populated and shows no `verified`/`pass` label (I07). The fixture is built by journaling the event and calling `Load` — never by hand-constructing the `Snapshot` — so the test proves the scanned path cannot render verification; a variant labelling the exit `verified` fails.
   - `TestVerificationMismatchLabelsRevisions`: a fixture with candidate commit B and a verification row against superseded commit A (built with `InsertCandidate`/`InsertVerification` in a journal tx, as task 2's fixtures) renders `checks ran against <short-A> — candidate is <short-B>` with no `verified` label (AC-7.2); a variant showing `verified` fails.
-  - `TestTruncationFooterNamesExactCommand`: a truncated diff over a fixture candidate renders a footer naming the exact fallback command `git -C <workspace> diff <base> <commit>` with base and commit from the `CandidateRow`; a footer without the exact command fails (moved from task 5, whose `ParseDiff` takes bare bytes with no provenance).
+  - `TestTruncationFooterNamesExactCommand`: a truncated diff over a fixture candidate renders a footer naming the exact fallback command `git -C <workspace> diff <base> <commit>` with base and commit from the `CandidateRow`; a footer without the exact command fails (moved from task 5, whose `ParseDiff` takes bare bytes with no provenance). The test covers a byte-truncated fixture as well as a line-truncated one.
   - `TestEscapesRenderedInert`: a snapshot fixture with ANSI escape sequences in task/reason text and diff content renders no escape introductions in `View` output (`styles.go` routes rendered text through `security.TermSafe`, §12.7); raw passthrough fails.
   - `TestNoFontDependentGlyphs`: `IconsASCII`+`ColourNever` goldens contain no byte ≥ 0x80; `IconsUnicode` goldens contain no private-use (U+E000+) or emoji rune, and every other non-ASCII rune comes from the geometric-shapes table in `styles.go` (AC-1.5, I13). A Nerd-Font glyph or emoji in any golden fails, as does an ASCII golden missing a text label its unicode twin carries.
   - `TestLayeringNoCliImport`: fails if `internal/cli` is referenced anywhere under `internal/tui/` (same grep shape as task 2's write guard, including the non-empty scanned-file-set assertion).
@@ -231,9 +232,10 @@
   - `internal/tui/history.go`
   - `internal/tui/live_test.go`
   - `internal/tui/model.go` (wire live messages)
-- **Produces**: `tui.LiveFeed() (events chan journal.Event, hooks supervisor.Hooks)` (capacity-256 channel; `Event` sends as-is, `Notice` maps to synthetic `Type: "ui.notice"` with `RunSequence: -1`, both non-blocking drop-on-full; `Interrupt` left unset for task 12); consumed by task 12's live-mode wiring.
+- **Produces**: `tui.LiveFeed() (events chan journal.Event, notices *NoticeBacklog, hooks supervisor.Hooks)` (capacity-256 channel; `Event` sends as-is, non-blocking drop-on-full; `Notice` appends to the backlog, never blocking or dropping; `Interrupt` left unset for task 12); `tui.NoticeBacklog` with `Add(s string)` / `Drain() []string`; model drains the backlog each poll tick into `ui.notice` render lines; consumed by task 12's live-mode wiring.
 - **Acceptance**:
-  - `TestLiveCallbackNeverBlocks`: `LiveFeed`'s `Hooks.Event` adapter uses non-blocking send — with a full channel and no reader, 10,000 rapid events return immediately and the next poll replays from the journal (AC-6.2 slow-terminal case); `LiveFeed`'s `Hooks.Notice` maps `"hello"` to a `ui.notice` event with `RunSequence == -1` and payload `{"text":"hello"}`, also non-blocking on a full channel.
+  - `TestLiveCallbackNeverBlocks`: `LiveFeed`'s `Hooks.Event` adapter uses non-blocking send — with a full channel and no reader, 10,000 rapid events return immediately and the next poll replays from the journal (AC-6.2 slow-terminal case); `LiveFeed`'s `Hooks.Notice` appends to the backlog with the same non-blocking guarantee — 1,000 rapid notices with a full channel and no reader return immediately and are all retained in order.
+  - `TestNoticeBacklogDrainsToNoticeLines`: `Drain` returns every retained notice in order and empties the backlog; a model tick with a non-empty backlog renders each string as a notice line via the `ui.notice` path (`RunSequence == -1`, payload `{"text":...}`), never as journal progress — a dropped-notice variant fails.
   - `TestCoalescedReload`: rapid event bursts rebuild the snapshot at most once per tick (event counter vs reload counter assertion); per-event rebuilds fail (AC-6.1).
   - `TestViewportVirtualises`: a 10,000-line stream renders at most the pane's visible rows; the row count in `View` output is bounded by pane height (AC-6.2).
   - `TestHistorySearchComplete`: searching history finds a match from the oldest journaled event, proving replay-from-zero rather than a bounded memory copy; a ring-buffer implementation fails on old matches.
@@ -250,13 +252,14 @@
 - **Files**:
   - `internal/cli/accessible.go`
   - `internal/cli/accessible_test.go`
-- **Produces**: `cli.AccessibleConfig{RunID, StateDir string, Out io.Writer, Poll time.Duration}`; `cli.RunAccessible(ctx context.Context, cfg AccessibleConfig) error`.
+- **Produces**: `cli.AccessibleConfig{RunID, StateDir string, Out io.Writer, Poll time.Duration, After int64}`; `cli.accessiblePageSize = 1000`; `cli.RunAccessible(ctx context.Context, cfg AccessibleConfig) error`.
 - **Acceptance**:
   - `TestAccessibleLabels`: output for a mid-run snapshot contains complete `run state: …`, `attempt …: …`, `verification: …` labels with full action names (AC-5.1/AC-5.2); label-only-state codes fail.
   - `TestAccessibleNoChatter`: repeated polls with no journal change emit no repeated lines (no spinner chatter); a per-tick heartbeat fails.
   - `TestAccessibleNoCursorCodes`: output contains no cursor-movement or alternate-screen sequences (AC-5.1); any `\x1b[` movement sequence fails.
   - `TestAccessibleOrderedStream`: events journaled out of viewed order still stream in `run_sequence` order (AC-5.1).
   - `TestAccessibleWideSafe`: bidi/combining/emoji/wide fixtures truncate by cell width without displacing the approval-adjacent status line (AC-5.3); a byte-sliced implementation fails.
+  - `TestAccessibleResumeFromCursor`: over a fixture run with more than `accessiblePageSize` events, a first invocation (`After: 0`) cancelled after the history page streams returns exactly the first page plus a trailing `next-after: <K>` line; a second invocation with `After: K` streams the remainder with no overlap or gap, in `run_sequence` order, plus its own trailer (AC-5.3); a variant without the trailer or with overlapping pages fails.
 - **Test plan**: temp state DB fixtures; golden label streams; byte-scan for escape sequences.
 - **Invariants touched**: I09 (§13.4: same `unknown`/kind labelling as the TUI), I14 (§16.1: support claimed only for tested combinations — no claim text in this task).
 
@@ -273,8 +276,9 @@
   - `internal/cli/review.go` (wire flags + dispatch)
   - `internal/cli/tui_test.go`
 - **Acceptance**:
-  - `TestLaunchRuleMatrix`: at two levels: non-TTY/`--plain`/`--format`/`--accessible` legs through `cli.Main` with piped stdio, and the TTY-selection legs in-package against the launch helper in `tui.go` with a forced-`isTerminal` `tuiDeps` plus recording `runTUI` — `--format jsonl` stays JSONL; `--plain`/non-TTY select linear; `--accessible` selects the accessible stream; TTY-forced stdio (via a `tuiDeps` with forced `isTerminal`) selects the TUI entry (asserted via `tuiDeps.runTUI` recording the branch, since tests cannot run Tea without a PTY); the recording `runTUI` also asserts `cap(cfg.Events) == 256`, proving the live branch feeds `tui.Config.Events` from `tui.LiveFeed` (task 10, design §13) with `Interrupt` set as in `executeRun` — a wiring that built its own channel or left `Events` nil fails. `demo` follows the same rule — forced TTY without `--plain` selects the TUI — but offers no `--format` flag, so step 1 never applies to it. Forced TTY with `--format plain` still selects the TUI entry: explicit plain mode is `--plain` only (design §2).
-  - `TestInvalidModesExit2`: `--colour rainbow`, `--motion turbo`, `--icons emoji` each exit 2 naming the flag (AC-4.3/AC-4.4).
+  - `TestLaunchRuleMatrix`: at two levels: non-TTY/`--plain`/`--format`/`--accessible` legs through `cli.Main` with piped stdio, and the TTY-selection legs in-package against the launch helper in `tui.go` with a forced-`isTerminal` `tuiDeps` plus recording `runTUI` — `--format jsonl` stays JSONL; `--plain`/non-TTY select linear; `--accessible` selects the accessible stream; TTY-forced stdio (via a `tuiDeps` with forced `isTerminal`) selects the TUI entry (asserted via `tuiDeps.runTUI` recording the branch, since tests cannot run Tea without a PTY); the recording `runTUI` also asserts `cap(cfg.Events) == 256`, proving the live branch feeds `tui.Config.Events` from `tui.LiveFeed` (task 10, design §13) with `Interrupt` set as in `executeRun`, and that `cfg.Notices` is non-nil with a working `Add`/`Drain` round-trip — a wiring that built its own channel, left `Events` nil, or left `Notices` nil fails. `demo` follows the same rule — forced TTY without `--plain` selects the TUI — but offers no `--format` flag, so step 1 never applies to it. Forced TTY with `--format plain` still selects the TUI entry: explicit plain mode is `--plain` only (design §2).
+  - `TestInvalidModesExit2`: `--colour rainbow`, `--motion turbo`, `--icons emoji` each exit 2 naming the flag (AC-4.3/AC-4.4); `--after xyz` exits 2 naming the flag.
+  - `TestAfterFlagResumesAccessible`: through `cli.Main` with piped stdio, `review <run> --accessible --after <K>` over a fixture run streams only events after K plus the matching `next-after:` trailer; the same invocation without `--accessible` leaves output unchanged (`--after` ignored off its branch).
   - `TestColorAlias`: `--color never` behaves as `--colour never`.
   - `TestUntouchedVerbsStable`: `runs list`, `stop`, `recover`, `apply`, `version`, `doctor` outputs are byte-identical with the new flags absent (N4; golden comparison against pre-change output).
   - `TestQuitLiveDetaches`: quitting the TUI branch while the run is active leaves the run running and prints the `review <run>` reattach line (I06; in-package against the launch helper with a stubbed `runTUI` that records detach vs stop).
@@ -298,7 +302,7 @@
   - `TestE2EPlainForcesLinear`: `--plain` output equals the non-TTY linear output for the same scenario (byte comparison).
   - `TestE2EJsonlStable`: `--format jsonl` with TUI flags present is line-identical to `--format jsonl` without them (N4: machine output unchanged).
   - `TestE2EAccessibleStream`: `--accessible` emits the ordered label stream with no cursor codes and exit code equal to the run outcome.
-  - `TestE2EInvalidFlagsExit2`: each invalid `--colour`/`--motion`/`--icons` value exits 2 on the packaged binary.
+  - `TestE2EInvalidFlagsExit2`: each invalid `--colour`/`--motion`/`--icons`/`--after` value exits 2 on the packaged binary.
   - `TestE2EReviewUnknownExits1`: `review run_missing` exits 1 with the not-found message on the packaged binary.
 - **Test plan**: `tests/e2e` harness (built binary, temp homes/states/repos, fake adapter scenarios); no PTY required.
 - **Invariants touched**: §15.10 (exit codes on the final binary).
