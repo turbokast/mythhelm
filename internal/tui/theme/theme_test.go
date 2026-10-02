@@ -70,11 +70,8 @@ func TestBuiltInsValidate(t *testing.T) {
 			if !errors.Is(err, ErrInvalidTheme) {
 				t.Fatalf("Validate() error = %v, want ErrInvalidTheme", err)
 			}
-			if !strings.Contains(err.Error(), tt.wantKey) {
-				t.Fatalf("Validate() error = %v, want it to name %q", err, tt.wantKey)
-			}
-			if !strings.Contains(err.Error(), tt.wantBG) {
-				t.Fatalf("Validate() error = %v, want it to name background %q", err, tt.wantBG)
+			if !strings.Contains(err.Error(), tt.wantKey+" on "+tt.wantBG+" contrast") {
+				t.Fatalf("Validate() error = %v, want contrast for %q on %q", err, tt.wantKey, tt.wantBG)
 			}
 		})
 	}
