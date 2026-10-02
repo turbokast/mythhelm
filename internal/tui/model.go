@@ -312,7 +312,7 @@ func (m *Model) detailColumn(width int) column {
 	if m.focusPane == paneDetail {
 		return column{width: width, rows: m.detailLines(width)}
 	}
-	return column{width: width, rows: m.agentsLines(width)}
+	return column{width: width, rows: m.applyFilter(m.agentsLines(width))}
 }
 
 // focusedPaneLines is the single rung's full-width pane. The filter applies

@@ -609,6 +609,18 @@ func TestFilterNeverHidesDetail(t *testing.T) {
 	if view := lanes.View(); !strings.Contains(view, "builtin/fake / trusted-host") {
 		t.Errorf("lane filter hid the matching lane\n%s", view)
 	}
+	// The two-pane rung filters its agents panel too: detailColumn doubles
+	// as the agents pane when detail is not focused.
+	two := readyModel(t, fullCaps, 120, 30)
+	two, _ = pressKey(t, two, specialMsg(tea.KeyTab))
+	if two.focusPane != paneAgents {
+		t.Fatalf("two-pane focus = %q, want agents", two.focusPane)
+	}
+	two, _ = pressKey(t, two, runeMsg("/"))
+	two = typeRunes(t, two, "zzz-no-such-row")
+	if view := two.View(); strings.Contains(view, "attempt 1") {
+		t.Errorf("two-pane filter left the agents lane visible\n%s", view)
+	}
 }
 
 // TestSelectedLaneDefaults pins the stable lane identity a reload keeps: the
