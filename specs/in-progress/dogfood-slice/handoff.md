@@ -141,7 +141,12 @@
 
 ## Task 20 — Dogfood: run MYTHHELM on MYTHHELM and record the evidence
 
-<!-- pending -->
+- **Produces**: `docs/dogfood/0001-first-run.md`; `adapters/claudecode/testdata/streams/recorded-2.1.285.jsonl` + `TestDecodeFixture/recorded`; `adapters/claudecode/COMPATIBILITY.md`; 2.1.285 `recorded` label in `compat.go`.
+- **Run**: canary PASS (6.8s); issue-#60 docs fix through run/review/apply with `subscription-declared` (Max): 9 turns, 4/4 checks, one `Bash` denial worked around, `ignored_outputs` accepted; branch `dogfood/canary-name`, checkout otherwise clean.
+- **Supporting fix**: the first limited canary exposed live result frames carrying both `usage` and `modelUsage` (PR #59: read separately; canary skips on rate-limit).
+- **Checkpoints**: no MDM/remote policy; transcripts accepted; Q2 confirmed; OAuth doubly closed. Q6 stays open (one no-inference-before-init observation).
+- **Friction**: #60 (subject), #62 (no declaration prompt), #63 (denial omits command), #64 (silent verification), #65 (unexplained flags).
+- **Finalize next**: all 20 tasks complete; run the spec lifecycle to done.
 
 ## Cross-cutting notes
 

@@ -65,6 +65,44 @@ func TestDecodeFixture(t *testing.T) {
 			t.Fatalf("success observations:\n got %+v\nwant %+v", obs, want)
 		}
 	})
+	t.Run("recorded", func(t *testing.T) {
+		t.Parallel()
+		obs := decodeAll(loadFixture(t, "recorded-2.1.285"))
+		if len(obs) != 4 {
+			t.Fatalf("recorded observations = %+v, want session, progress, native error, result", obs)
+		}
+		wantSession := adapter.SessionStarted{SessionID: "synth-session-285", Model: "claude-synthetic",
+			NativeVersion: "2.1.285", PermissionMode: "acceptEdits", APIKeySource: "none", ToolCount: 3,
+			MCPServers:  []adapter.MCPServer{{Name: "synth-mcp", Status: "connected"}, {Name: "synth-pending", Status: "pending"}, {Name: "synth-auth", Status: "needs-auth"}},
+			PluginCount: 1}
+		if !reflect.DeepEqual(obs[0], wantSession) {
+			t.Fatalf("recorded session:\n got %+v\nwant %+v", obs[0], wantSession)
+		}
+		if obs[1] != (adapter.Progress{Turn: 1}) {
+			t.Fatalf("recorded progress = %+v, want turn 1", obs[1])
+		}
+		if obs[2] != (adapter.NativeError{Class: "rate_limit"}) {
+			t.Fatalf("recorded error = %+v, want rate_limit", obs[2])
+		}
+		res, ok := obs[3].(adapter.Result)
+		if !ok {
+			t.Fatalf("recorded last is %T, want Result", obs[3])
+		}
+		// The live quirk this recording pins: subtype success with
+		// is_error, and a flat aggregate usage beside an empty
+		// modelUsage — decoded, with usage unreported, never a
+		// protocol error.
+		if res.Subtype != "success" || !res.IsError || res.Tokens != nil || res.CostUSD != "0" {
+			t.Fatalf("recorded result = %+v", res)
+		}
+		if res.NumTurns == nil || *res.NumTurns != 1 || res.DurationMS == nil || *res.DurationMS != 812 {
+			t.Fatalf("recorded result counts = %+v", res)
+		}
+		if res.StopReason != "stop_sequence" || !reflect.DeepEqual(res.PermissionDenials, []string{}) {
+			t.Fatalf("recorded result tail = %+v", res)
+		}
+	})
+
 	t.Run("error_max_turns", func(t *testing.T) {
 		t.Parallel()
 		obs := decodeAll(loadFixture(t, "error_max_turns"))

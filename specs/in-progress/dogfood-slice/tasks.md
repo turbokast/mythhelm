@@ -696,7 +696,7 @@
 - **Files modified**: `tests/e2e/main_test.go`, `tests/e2e/run_test.go`, `tests/e2e/demo_test.go`, `README.md`, `docs/decisions/0002-dogfood-billing-posture.md`, `specs/in-progress/dogfood-slice/tasks.md`, `specs/in-progress/dogfood-slice/handoff.md`.
 - **Acceptance evidence**: All 5 named checks plus 2 extra checks pass locally and under `-race`; cross-vet clean for windows/darwin. Red-first: the first run failed 4 checks on wrong test expectations (demo never applies; doctor names no demo; demo uses its own temp state dir; plain recover has no run.result envelope) — expectations corrected, no product change. Windows CI: only the Unix kill/recover test skips.
 
-### Task 20 — Dogfood: run MYTHHELM on MYTHHELM and record the evidence
+### Task 20 — Dogfood: run MYTHHELM on MYTHHELM and record the evidence ✅ COMPLETED
 
 - **Domain/agent**: maintainer (human), assisted by go-implementer for the fixture and compatibility files
 - **Budget**: standard
@@ -715,6 +715,14 @@
   - Friction points are filed as GitHub issues and linked from the doc.
 - **Test plan**: n/a (human run); the recorded fixture joins CI through the Task 17 tests.
 - **Invariants touched**: I08, I19 (sanitisation), I14 (first versioned live evidence), G02 (partial: fixture and canary only, no direct-native comparison).
+- **Status**: ✅ Completed — Live canary passed and dogfood run on issue #60 reached `ready_for_review` (exit 0), reviewed, applied to `dogfood/canary-name`; evidence PR #67 (candidate fix lands via PR #66).
+- **Implementation**: Maintainer ran `TestLiveClaudeCanary` (PASS, 6.8s, exit 0) then the issue-#60 docs fix through run/review/apply with `subscription-declared` on Max: 9 turns, one `Edit`, 4/4 checks green, one `Bash` denial worked around, `ignored_outputs` accepted explicitly. Evidence: `docs/dogfood/0001-first-run.md` (sanitised receipt excerpt, checkpoints, friction #60/#62–#65), `recorded-2.1.285.jsonl` (rate-limit encounter, synthetic values, pinned by `TestDecodeFixture/recorded`), `COMPATIBILITY.md` (§9.8/§9.14 record, `fixture-tested`, live-canary 2026-10-02). Checkpoints: no MDM/remote policy on the machine, transcript retention accepted, Q2 terms confirmed, OAuth stayed doubly closed (native login).
+- **Spec deviations**:
+  - The recording is a rate-limit encounter, not a success stream: raw native stdout is not persisted (spool holds worker observations), so the success stream was unrecoverable; the rate-limit stream was fully observed and pins the decoder's error shape (it fails pre-PR-#59). A success recording is future work, noted in both evidence files. Recorded as `adapters/claudecode/testdata/streams/recorded-2.1.285.jsonl`, pinned by the new `recorded` subtest in `adapters/claudecode/decode_test.go`.
+  - `adapters/claudecode/compat.go` qualifies 2.1.285 as `recorded` (plus `adapters/claudecode/probe_test.go`): leaving the string at `untested` would contradict the recording.
+  - The Task 20 text's own `-run TestLiveCanary` bug (issue #60) is fixed by the dogfood candidate, landing separately.
+- **Files modified**: `docs/dogfood/0001-first-run.md`, `adapters/claudecode/testdata/streams/recorded-2.1.285.jsonl`, `adapters/claudecode/COMPATIBILITY.md`, `adapters/claudecode/compat.go`, `adapters/claudecode/probe_test.go`, `adapters/claudecode/decode_test.go`, `specs/in-progress/dogfood-slice/tasks.md`, `specs/in-progress/dogfood-slice/handoff.md`, `specs/in-progress/dogfood-slice/scratchpad.md`.
+- **Acceptance evidence**: Canary green; run exit 0 with receipt; apply created the branch, checkout otherwise clean; `TestDecodeFixture/recorded` green (verified red pre-#59); secret-grep clean; friction filed as #62–#65 and linked.
 
 ---
 
