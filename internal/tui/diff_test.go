@@ -408,6 +408,23 @@ func TestParseKeepsNoNewlineMarkers(t *testing.T) {
 	}
 }
 
+func TestParseDecodesQuotedPaths(t *testing.T) {
+	// Git quotes non-ASCII pathnames (core.quotePath) with C-style escapes.
+	input := "diff --git \"a/f\\303\\264o\" \"b/f\\303\\264o\"\n" +
+		"--- \"a/f\\303\\264o\"\n+++ \"b/f\\303\\264o\"\n" +
+		"@@ -1,1 +1,1 @@\n-old\n+new\n"
+	d, err := ParseDiff([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseDiff: %v", err)
+	}
+	if len(d.Files) != 1 {
+		t.Fatalf("len(Files) = %d, want 1", len(d.Files))
+	}
+	if d.Files[0].OldPath != "f\xc3\xb4o" || d.Files[0].NewPath != "f\xc3\xb4o" {
+		t.Fatalf("paths = %+v, want decoded f\\303\\264o on both sides", d.Files[0])
+	}
+}
+
 func TestRenderEmptyLabelsAbsence(t *testing.T) {
 	tokens := darkTokens(t)
 	d, err := ParseDiff(nil)

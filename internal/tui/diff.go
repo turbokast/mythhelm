@@ -346,6 +346,9 @@ func isDiffMeta(line string) bool {
 // prefixes; the split is on the last " b/ " boundary, so only a path
 // containing " b/" itself mis-splits.
 func splitDiffGit(rest string) (old, new string) {
+	if i := strings.LastIndex(rest, ` "b/`); i >= 0 {
+		return stripABPrefix(rest[:i]), stripABPrefix(rest[i+1:])
+	}
 	if i := strings.LastIndex(rest, " b/"); i >= 0 {
 		return stripABPrefix(rest[:i]), stripABPrefix(rest[i+1:])
 	}
@@ -356,13 +359,40 @@ func splitDiffGit(rest string) (old, new string) {
 // paths untouched. A tab ends the path: non-git unified diffs append a
 // timestamp after one.
 func stripABPrefix(path string) string {
+	if end := gitQuoteEnd(path); end >= 0 {
+		if decoded, err := strconv.Unquote(path[:end+1]); err == nil {
+			return stripABPrefixDecoded(decoded)
+		}
+	}
 	if i := strings.Index(path, "\t"); i >= 0 {
 		path = path[:i]
 	}
+	return stripABPrefixDecoded(path)
+}
+
+func stripABPrefixDecoded(path string) string {
 	if strings.HasPrefix(path, "a/") || strings.HasPrefix(path, "b/") {
 		return path[2:]
 	}
 	return path
+}
+
+func gitQuoteEnd(path string) int {
+	if !strings.HasPrefix(path, `"`) {
+		return -1
+	}
+	escaped := false
+	for i := 1; i < len(path); i++ {
+		if path[i] == '"' && !escaped {
+			return i
+		}
+		if path[i] == '\\' {
+			escaped = !escaped
+		} else {
+			escaped = false
+		}
+	}
+	return -1
 }
 
 // atoi parses a required hunk count, which the header regex guarantees.
