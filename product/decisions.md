@@ -69,3 +69,9 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Decision**: MH-9 moved to specced
 - **Rationale**: openssf-badge reached unrefined with grounded premise
 - **Cards**: MH-9
+
+### D-19 — 2026-10-02: MH-2 → implementing (tui-slice)
+- **Type**: lifecycle-sync
+- **Decision**: MH-2 moved to implementing
+- **Rationale**: tui-slice reached in-progress; task PRs #89 #91 #92 merged
+- **Cards**: MH-2
