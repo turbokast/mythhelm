@@ -30,3 +30,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: Users clearly want it, but vendor terms forbid tools from handling subscription tokens and the master spec (A04, §13.2, §13.10) forbids identity cycling to defeat a limit; native profile homes plus handoff deliver most of the liked behaviour within both
 - **Cards**: MH-16,MH-15,MH-5
 - **Evidence**: product/signals.md entry for this theme; https://code.claude.com/docs/en/legal-and-compliance
+
+### D-4 — 2026-10-02: Add MH-17: account profiles and exhaustion handoff
+- **Type**: card-add
+- **Decision**: MH-17 filed as triaged, stage 2, score 3.7
+- **Rationale**: Signal S-4 shows demand for continuing work when one subscription is exhausted; D-2 accepted the spec-compliant shape. No card covers the account-profile model, native-home credential isolation or the §13.10 exhaustion flow; MH-5, MH-15 and MH-16 are consumed, not duplicated.
+- **Cards**: MH-17,MH-5,MH-15,MH-16
+- **Evidence**: product/signals.md S-4; product/decisions.md D-2
