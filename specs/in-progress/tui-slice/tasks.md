@@ -21,15 +21,17 @@
 - **Files**:
   - `go.mod` (add requires)
   - `go.sum` (add hashes)
+  - `internal/tui/tools.go` (new pin file, creates `internal/tui/`; package `tui` with blank imports of `github.com/charmbracelet/bubbletea`, `github.com/charmbracelet/lipgloss`, `github.com/charmbracelet/bubbles`, `github.com/mattn/go-isatty` plus a comment stating the file exists only to keep the requires tidy-clean; pins per Produces below)
 - **Produces**: module versions `github.com/charmbracelet/bubbletea v1.3.10`, `github.com/charmbracelet/lipgloss v1.1.0`, `github.com/charmbracelet/bubbles v1.0.0`, `github.com/mattn/go-isatty v0.0.24` direct (its current indirect version, promoted).
+- **Domain exception**: go-implementer owns this `internal/tui/` pin file as incidental to the `go.mod` change (later tasks replace it with real consumers).
 - **Acceptance**:
-  - `go mod tidy -diff` prints nothing, and `go list -m github.com/charmbracelet/bubbletea github.com/charmbracelet/lipgloss github.com/charmbracelet/bubbles github.com/mattn/go-isatty` shows exactly the four pinned versions; any drift changes that output and fails the task.
+  - `go mod tidy -diff` prints nothing with the pin file present, and `go list -m github.com/charmbracelet/bubbletea github.com/charmbracelet/lipgloss github.com/charmbracelet/bubbles github.com/mattn/go-isatty` shows exactly the four pinned versions; any drift changes that output and fails the task. (Without the pin file `go mod tidy` drops the unimported requires, leaving `go.mod` byte-identical to base.)
   - The PR's dependency-review and `licenses` CI jobs pass with the new modules on the allowlist; a GPL-licensed transitive dependency would fail them.
   - `govulncheck ./...` reports no findings, and `CGO_ENABLED=0 go build ./...` succeeds; before this task the Charm imports do not resolve, so any consumer fails to build.
 - **Test plan**: no new Go tests; verification is the gate commands plus the recorded `go list -m` output.
 - **Invariants touched**: §19.2 (Apache-2.0-compatible licences only, exact pins), §19.4 (supply-chain review), I13 (§3.3: no font/network/service dependency introduced).
 
-### Task 2 — View-model read seam
+### Task 2 — View-model read seam ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: complex (14 acceptance items: scan matrix plus failure/gate cases)
@@ -56,8 +58,12 @@
   - `TestLoadGoalFromTaskFile`: a fixture run in `executing` with no receipt but a digest-matching `task.md` yields the task title as the goal; a digest-mismatched `task.md` fails `Load` with an error.
 - **Test plan**: build fixtures with `journal.Open` + `Append` in `t.TempDir()`; table-driven over run states.
 - **Invariants touched**: I18 (§7.8: read-only seam, never a second writer), I09 (§13.4: absent projections stay nil/`unknown`, never zero values), I06 (§7.3: requested vs confirmed states pass through unmapped).
+- **Status**: ✅ Completed — the view-model read seam renders one read-only `Snapshot` per run; PR #91.
+- **Implementation**: `Load` folds the event scan into `LatestProgress`/`NativeExit`/`Admission`, gates `ReadReceipt` on `receipt.written`, and resolves `Goal` from the receipt title or digest-checked task file; malformed progress is skipped, malformed native/admission evidence fails. Commit 13758bf8b32a3cbb678ea66fd275f43e5cb68b7f.
+- **Spec deviations**: `Snapshot` gains a `Goal string` field the design §3 struct snippet omits (the §3 text plus task 2/6 acceptances require it); otherwise none.
+- **Files modified**: `internal/tui/viewmodel/viewmodel.go`, `internal/tui/viewmodel/viewmodel_test.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
-### Task 3 — Terminal capability parsing
+### Task 3 — Terminal capability parsing ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: standard
@@ -76,6 +82,10 @@
   - `TestColorFgBgNeverConsulted`: `COLORFGBG=15;0` with `auto` flags and an otherwise empty environment yields the same `Caps` as the empty environment (AC-4.4); an implementation keying colour detection off `COLORFGBG` fails.
 - **Test plan**: table tests over (flags × env) with a fake `getenv`; no TTY needed.
 - **Invariants touched**: None (pure parsing; no state read, no values rendered).
+- **Status**: ✅ Completed — `internal/tui/caps` parses §15.7 modes and resolves them against `NO_COLOR`/`TERM`; PR #89.
+- **Implementation**: Strict `Parse` (rejects `""`/wrong case; errors name dimension+value, wrap `ErrInvalidMode`); suppression-wins `Resolve` (`NO_COLOR` beats `always`, `TERM=dumb` beats enabling flags; zero `Caps` suppresses). Commit a425654.
+- **Spec deviations**: None.
+- **Files modified**: `internal/tui/caps/caps.go`, `internal/tui/caps/caps_test.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
 ### Task 4 — Built-in themes in mods/
 
