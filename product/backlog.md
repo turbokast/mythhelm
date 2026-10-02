@@ -87,7 +87,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Gates**: G04, G05
 - **Score**: 3.7 = (value 4 + urgency 3 + risk 4) / effort 3
 - **Spec**: (none)
-- **Issue**: (none)
+- **Issue**: [#82](https://github.com/turbokast/mythhelm/issues/82)
 - **Source**: master spec §13.2, §13.3, §13.10, §8.3 and §20.4; signal S-4; decision D-2
 - **Summary**: Named account profiles bound to documented native homes (CLAUDE_CONFIG_DIR, CODEX_HOME) with native sign-in and tested credential isolation, never reading or copying a token (I19), each with an explicit quota-bucket id. On a structured limit error the run preserves its work as waiting_for_allowance and offers a user-confirmed switch to another authorised profile through a handoff package (MH-15); cross-provider failover only under a pre-approved policy (I04, I16). Same-vendor automatic rotation is excluded (§13.2).
 
