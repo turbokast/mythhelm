@@ -13,7 +13,26 @@
 
 MYTHHELM orchestrates the coding agents you already use and trust, such as Claude Code, Codex and others, with their native harnesses intact. It gives them a shared mission, safe working boundaries, an honest control plane and a terminal experience worth opening.
 
-> **Status: pre-alpha, design stage.** There is no usable release yet. Everything described here is a proposed contract, not an implemented or benchmarked capability.
+> **Status: pre-alpha.** There is no usable release yet. The headless dogfood slice (`run`, `review`, `apply`, `recover`) plus an offline `demo` and a read-only `doctor` are implemented on `main` and covered by a packaged-binary end-to-end suite. Everything else below is a proposed contract, not an implemented or benchmarked capability.
+
+## Dogfood slice status
+
+Supported now:
+
+- Headless `mythhelm run --adapter fake|claudecode` with admission, supervision, verification, review, apply and recovery.
+- `mythhelm demo`: a fully offline scripted run in a disposable repository; every screen is labelled `SCRIPTED DEMO`.
+- `mythhelm doctor`: read-only prerequisite report; it writes nothing and prints no credential values.
+- Linux, macOS and Windows. Native Claude execution is refused on Windows by design (exit 7); the scripted adapter runs everywhere.
+- Dogfood billing postures `local-scripted` and `subscription-declared` (user-declared, never verified by MYTHHELM).
+
+Not supported yet:
+
+- The Bubble Tea TUI, plugins, routing and releases — all still planned.
+- `subscription-only`: it always blocks because no native surface qualifies an included-only boundary (G05 not passed).
+- The AC-4.7 OAuth-token exception: unwired, refused at both gates (see [ADR 0002](docs/decisions/0002-dogfood-billing-posture.md)).
+- macOS MDM preferences and remote cached managed policy as certified trust sources; the settings inventory covers files only.
+
+Try it with no credentials and no network: `go run ./cmd/mythhelm demo`. `go run ./cmd/mythhelm doctor` reports what your machine still needs for a real run.
 
 ## Principles
 

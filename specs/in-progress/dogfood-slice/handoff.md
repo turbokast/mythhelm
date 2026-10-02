@@ -134,7 +134,10 @@
 
 ## Task 19 — Packaged-binary end-to-end suite and README status
 
-<!-- pending -->
+- **Produces**: `tests/e2e/{main,run,demo}_test.go`; README dogfood-slice status; ADR 0002 §6 amendment.
+- **E2E**: `TestMain` builds the binary once; helpers `newEnv` (isolated home/state/git identity), `mkRepo` (seeded repo with `__demo-check` config), `run` (to completion), `startLive`/`waitLine`/`wait` (streaming). Kill test sends SIGKILL to the CLI, asserts the worker pid survives via `signal 0`, then recovers with SIGINT to `cancelled`/130.
+- **Docs**: README lists supported (headless run/review/apply/recover, demo, doctor, 3 OSes, dogfood postures) and not-supported (TUI/plugins/releases, `subscription-only`, OAuth exception, MDM/remote policy). ADR 0002 item 6 amended: the AC-4.7 exception is doubly closed, wiring needs a fresh maintainer decision.
+- **For Task 20**: run the suite with `go test ./tests/e2e/`; the README status paragraph is the starting point for the dogfood evidence report.
 
 ## Task 20 — Dogfood: run MYTHHELM on MYTHHELM and record the evidence
 

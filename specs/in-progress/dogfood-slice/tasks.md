@@ -668,7 +668,7 @@
 - **Files modified**: `internal/cli/demo.go`, `internal/cli/doctor.go`, `internal/cli/demo_test.go`, `internal/cli/doctor_test.go`, `cmd/mythhelm/main.go`, `internal/cli/dispatch.go`, `internal/cli/run.go`, `internal/security/env.go`, `internal/security/security_test.go`, `specs/in-progress/dogfood-slice/tasks.md`, `specs/in-progress/dogfood-slice/handoff.md`.
 - **Acceptance evidence**: All 6 named checks passed; `cli.TestMain` plays the demo check, worker and fake agent for spawned children. Red-first: the demo failed on missing git identity until repo-local config was seeded, and on `worker_lost` until `TestMain` dispatched the worker/agent commands. Extra: `TestDemoRemovesTempDirs`, `TestDemoCheckMain`, `TestDoctorJsonl`, `TestDoctorClaudeMissing`, `TestCredentialEnvNames`.
 
-### Task 19 — Packaged-binary end-to-end suite and README status
+### Task 19 — Packaged-binary end-to-end suite and README status ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -688,6 +688,13 @@
   - All pass on the five-runner CI matrix. Windows skips only the Unix-tagged tests, each with a reason.
 - **Test plan**: `TestMain` runs `go build -o $TMP/mythhelm[.exe]`.
 - **Invariants touched**: G01, G03, G04, G06, I08.
+- **Status**: ✅ Completed — Packaged-binary E2E suite plus README status and the deferred ADR 0002 §6 amendment; PR #58.
+- **Implementation**: `tests/e2e/main_test.go` builds `cmd/mythhelm` once into a temp dir. `run_test.go` covers run→review→failed-apply with fingerprint equality, the jsonl envelope contract with stderr evidence, spaced/unicode paths, and SIGKILL-the-CLI worker survival plus SIGINT recovery to `cancelled` (Unix-only, skipped with a reason on Windows). `demo_test.go` covers demo exit 0 on all OSes, offline output, and temp-dir/state-dir hygiene. README gains a dogfood-slice status section with supported/not-supported lists; ADR 0002 records the Task 17 OAuth outcome (doubly closed, unwired).
+- **Spec deviations**:
+  - Two extra demo checks beyond the named five: `TestE2EDemoStaysOffline` (no remote mentions; doctor covers git/claude/state-dir) and `TestE2EDemoRepoIsDisposable` (working dir and caller state dir untouched).
+  - The deferred ADR 0002 §6 amendment from Task 17 lands here: `docs/decisions/0002-dogfood-billing-posture.md` scope widens to Tasks 16–17.
+- **Files modified**: `tests/e2e/main_test.go`, `tests/e2e/run_test.go`, `tests/e2e/demo_test.go`, `README.md`, `docs/decisions/0002-dogfood-billing-posture.md`, `specs/in-progress/dogfood-slice/tasks.md`, `specs/in-progress/dogfood-slice/handoff.md`.
+- **Acceptance evidence**: All 5 named checks plus 2 extra checks pass locally and under `-race`; cross-vet clean for windows/darwin. Red-first: the first run failed 4 checks on wrong test expectations (demo never applies; doctor names no demo; demo uses its own temp state dir; plain recover has no run.result envelope) — expectations corrected, no product change. Windows CI: only the Unix kill/recover test skips.
 
 ### Task 20 — Dogfood: run MYTHHELM on MYTHHELM and record the evidence
 
