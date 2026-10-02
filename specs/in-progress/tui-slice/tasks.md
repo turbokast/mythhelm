@@ -29,7 +29,7 @@
 - **Test plan**: no new Go tests; verification is the gate commands plus the recorded `go list -m` output.
 - **Invariants touched**: §19.2 (Apache-2.0-compatible licences only, exact pins), §19.4 (supply-chain review), I13 (§3.3: no font/network/service dependency introduced).
 
-### Task 2 — View-model read seam
+### Task 2 — View-model read seam ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: complex (14 acceptance items: scan matrix plus failure/gate cases)
@@ -56,6 +56,10 @@
   - `TestLoadGoalFromTaskFile`: a fixture run in `executing` with no receipt but a digest-matching `task.md` yields the task title as the goal; a digest-mismatched `task.md` fails `Load` with an error.
 - **Test plan**: build fixtures with `journal.Open` + `Append` in `t.TempDir()`; table-driven over run states.
 - **Invariants touched**: I18 (§7.8: read-only seam, never a second writer), I09 (§13.4: absent projections stay nil/`unknown`, never zero values), I06 (§7.3: requested vs confirmed states pass through unmapped).
+- **Status**: ✅ Completed — the view-model read seam renders one read-only `Snapshot` per run; PR #91.
+- **Implementation**: `Load` folds the event scan into `LatestProgress`/`NativeExit`/`Admission`, gates `ReadReceipt` on `receipt.written`, and resolves `Goal` from the receipt title or digest-checked task file; malformed progress is skipped, malformed native/admission evidence fails. Commit 13758bf8b32a3cbb678ea66fd275f43e5cb68b7f.
+- **Spec deviations**: `Snapshot` gains a `Goal string` field the design §3 struct snippet omits (the §3 text plus task 2/6 acceptances require it); otherwise none.
+- **Files modified**: `internal/tui/viewmodel/viewmodel.go`, `internal/tui/viewmodel/viewmodel_test.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
 ### Task 3 — Terminal capability parsing
 
