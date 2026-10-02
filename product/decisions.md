@@ -23,3 +23,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: The in-flight dogfood-slice spec already covers §22.2 items 2 to 4 and parts of items 1 and 5, so it is one card (MH-1, implementing) and every other card names the dogfood non-goal it picks up. The remaining deliverables became cards for the next slices the spec implies: the TUI (§15), the Herdr bridge (§16.6), a second qualified adapter (§9.4), routing across profiles (§8), the plugin protocol and declarative themes (§14), the release pipeline and documentation deferred in docs/automation.md, the Best Practices badge (G10), compatibility records (§9.14), Windows ownership (§7.4), strict billing qualification (§13.9), contained profiles (§12.2), the task DAG and integration train (§11.5), messages and handoffs (§10) and quota observations (§13.3). Each card has a public GitHub issue so contributors can see and discuss the plan.
 - **Cards**: MH-1, MH-2, MH-3, MH-4, MH-5, MH-6, MH-7, MH-8, MH-9, MH-10, MH-11, MH-12, MH-13, MH-14, MH-15, MH-16
 - **Evidence**: the card issues [#22](https://github.com/turbokast/mythhelm/issues/22) to [#37](https://github.com/turbokast/mythhelm/issues/37)
+
+### D-2 — 2026-10-02: Accept native multi-profile exhaustion handoff as a new card idea
+- **Type**: signal-triage
+- **Decision**: Maintainer accepted the plan from the multi-subscription signal: a new card for native multi-profile execution with user-confirmed exhaustion handoff goes to /triage; same-vendor automatic account rotation is not pursued
+- **Rationale**: Users clearly want it, but vendor terms forbid tools from handling subscription tokens and the master spec (A04, §13.2, §13.10) forbids identity cycling to defeat a limit; native profile homes plus handoff deliver most of the liked behaviour within both
+- **Cards**: MH-16,MH-15,MH-5
+- **Evidence**: product/signals.md entry for this theme; https://code.claude.com/docs/en/legal-and-compliance
