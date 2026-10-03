@@ -27,12 +27,25 @@ Supported now:
 
 Not supported yet:
 
-- The Bubble Tea TUI, plugins, routing and releases — all still planned.
+- Plugins, routing and releases — all still planned.
 - `subscription-only`: it always blocks because no native surface qualifies an included-only boundary (G05 not passed).
 - The AC-4.7 OAuth-token exception: unwired, refused at both gates (see [ADR 0002](docs/decisions/0002-dogfood-billing-posture.md)).
 - macOS MDM preferences and remote cached managed policy as certified trust sources; the settings inventory covers files only.
 
 Try it with no credentials and no network: `go run ./cmd/mythhelm demo`. `go run ./cmd/mythhelm doctor` reports what your machine still needs for a real run.
+
+## TUI status
+
+Supported now (evidence: [G09 record](docs/tui-slice-g09-evidence.md); unrecorded combinations are experimental per I14):
+
+- The focused mission view on a TTY: `mythhelm run` / `demo` / `review` launch the Bubble Tea TUI with responsive layouts (wide, two-pane, single, compact), palette/command navigation and event-driven motion.
+- Stable linear output without a TTY, under `TERM=dumb`, with `--plain`, and machine output (`--format jsonl`); `--accessible` emits the ordered screen-reader stream. Covered on Linux, macOS and Windows (x86_64 and ARM) by the packaged-binary end-to-end suite.
+- Explicit `--colour` / `--motion` / `--icons` overrides; `NO_COLOR` and `TERM=dumb` suppress.
+
+Experimental until recorded in the G09 record:
+
+- Interactive use in any specific terminal/shell: only the combinations with full evidence rows are claimed.
+- Screen-reader support: only the recorded combinations are claimed (AC-5.4).
 
 ## Principles
 

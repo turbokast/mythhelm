@@ -111,4 +111,5 @@
 
 ## Task 14 — G09 evidence, UX session and README status
 
-<!-- pending -->
+- **Produces**: `docs/tui-slice-g09-evidence.md` — CI-covered behaviour (§1.1), interactive terminal/shell matrix (§1.2), §18.6 UX session record (§2), screen-reader session (§3), AC-1.1–AC-7.3 → test traceability (§4); `README.md` "TUI status" section with exactly the recorded combinations claimed.
+- **For dependents**: none — last task of the spec. Downstream `docs-site-demos` embeds its own demo; the README TUI section is disjoint from that embed.

@@ -378,3 +378,7 @@
   - AC-1.1 to AC-7.3 each trace to a named test from tasks 2–13 (traceability table in the evidence file); an untraced AC fails the task.
 - **Test plan**: human-run sessions; paste terminal versions, dates and result rows into the evidence file; reviewer checks every claim against a row.
 - **Invariants touched**: I14 (§9.14: every advertised capability carries its versioned test result).
+- **Status**: 🔄 In progress — evidence skeleton plus traceability drafted; interactive matrix, UX session and screen-reader session await maintainer runs.
+- **Implementation**: `docs/tui-slice-g09-evidence.md` (new; CI-covered behaviour §1.1, interactive matrix §1.2 TODO, UX session §2 TODO, screen-reader §3 TODO, AC-1.1–AC-7.3 traceability §4 complete); `README.md` (new "TUI status" section, unrecorded combinations experimental per I14).
+- **Spec deviations**: None.
+- **Files modified**: `docs/tui-slice-g09-evidence.md`, `README.md`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
