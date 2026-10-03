@@ -96,7 +96,11 @@
 
 ## Task 12 — CLI launch wiring
 
-<!-- pending -->
+- **Produces**: `internal/cli/tui.go` — `tuiDeps{isTerminal, runTUI}` seam (production: go-isatty on the stdio writer, `tui.Run`), `addTUIFlags` (`--colour`/`--color` alias sharing one variable, `--motion`, `--icons`, `--accessible`, `--after`), `selectLaunch` (format jsonl > `--plain` > `--accessible` > non-TTY/`TERM=dumb` > TUI), `runLiveTUI`/`runInspectTUI`/`runAccessibleLive`/`runAccessibleReview`, `wireActions`; `internal/cli/review.go` — `runReviewDispatch` (lookup, then the rule, then the receipt gate); flag+dispatch wiring in `run.go`/`demo.go`/`review.go`; PR #102.
+- **For dependents** (task 13): launch order has one deliberate clarification — `--accessible` beats piping and `TERM=dumb` (it is non-TTY-safe linear output; the acceptance tests require piped `--accessible` to stream), while `--format jsonl` beats everything and `--plain` beats `--accessible`. `--plain` exists only on `run`; `--format` exists only on `run`/`review` (`demo --format` and `review/demo --plain` exit 2). Invalid `--colour`/`--motion`/`--icons`/`--after` values exit 2 on every branch (validated before the rule); valid `--after` is honoured only on the `--accessible` branch.
+- **For dependents** (task 13): `run`/`demo --accessible` stream live while the pipeline runs (notices to stderr, no `run.result` line — the `next-after` trailer is stdout's last line) and exit with the run's outcome code; `review --accessible` follows only while the run is active (100 ms terminal-state watch over blocked/failed/cancelled/completed/ready_for_review, Ctrl-C anytime). Live quit-while-active detaches via two interrupts (exit 6, `detached from run <id>; reattach with: mythhelm review <id>`); quit-after-end returns the `runExit` mapping with the usual result line. `demo` skips its review screen after a detach.
+- **For dependents** (task 13): the `--format jsonl` byte-stability leg must normalise `run.result`'s random `EventID` and timestamp before comparing — two invocations are otherwise never byte-identical, on any branch.
+- **Deviations that change a later task's inputs**: the `--accessible`-over-piping order above (design §2's list reads the other way); everything else as designed.
 
 ## Task 13 — End-to-end launch and fallback
 

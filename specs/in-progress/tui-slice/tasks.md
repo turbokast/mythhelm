@@ -309,7 +309,7 @@
 - **Spec deviations**: The summary carries no `approval:` line (the acceptance text's "approval-adjacent status line"): the pipeline has no approval state — `waiting_approval` is never entered (N10) — so inventing one would violate truthfulness; the wide-safe test defends the status line adjacent to hostile content (the run-state line) instead. Review found the uncapped history read let live follow emit pre-existing overflow past the page, so the fix adds `journal.EventsLimit` + `viewmodel.EventsSinceLimit` in `internal/journal/journal.go`, `internal/journal/journal_test.go` and `internal/tui/viewmodel/viewmodel.go` (additive, SQL-enforced cap; initial read fetches `accessiblePageSize+1` and an over-page invocation returns after one page plus trailer with no follow).
 - **Files modified**: `internal/cli/accessible.go`, `internal/cli/accessible_test.go`, `internal/journal/journal.go`, `internal/journal/journal_test.go`, `internal/tui/viewmodel/viewmodel.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
-### Task 12 — CLI launch wiring
+### Task 12 — CLI launch wiring ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (9 acceptance items: launch matrix plus wiring proofs)
@@ -334,6 +334,10 @@
   - `TestActionsWiringStopReadOnly`: the wired `Stop` against a fixture run leaves `mythhelm.db` byte-identical (SHA-256 before/after); a wiring that opened read-write and journaled would fail.
 - **Test plan**: `cli.Main` tests asserting stdout/stderr/exit code; JSONL parsed line by line; a `tuiDeps` seam for the Tea program entry so tests do not need a PTY.
 - **Invariants touched**: I06 (§7.3: detach semantics preserved), I14 (§16.1: TTY-gated launch never claims unsupported terminals), §15.10 (exit codes unchanged).
+- **Status**: ✅ Completed — `run`, `demo` and `review` dispatch to the TUI, the accessible stream or the existing linear output through the shared launch rule; PR #102.
+- **Implementation**: `selectLaunch` (jsonl > plain > accessible > non-TTY/dumb > TUI) with the `tuiDeps` seam in `internal/cli/tui.go`; `run`/`demo`/`review` dispatch to `runLiveTUI`/`runInspectTUI`/`runAccessibleLive`/`runAccessibleReview`, with review's rule after the run lookup but before the receipt gate. Live quit-while-active detaches via two interrupts with the `review <run>` reattach line; `wireActions` follows design §10 per call (Stop read-only, Recover read-write, Apply holding the owner lock). Commit 2b78e3a6fc98aafd31f6303a38f14dea87d28cfa.
+- **Spec deviations**: `--accessible` beats the non-TTY/`TERM=dumb` legs (design §2's list reads the other way) — forced by this task's own acceptance tests (`TestAfterFlagResumesAccessible` runs piped through `cli.Main`), and sound because the accessible stream is itself non-TTY-safe linear output; `--plain` still beats `--accessible` and `--format jsonl` beats both, as designed. `demo` skips its review screen after a detach (a detached run has no receipt); `review --accessible` follows live only while the run is active (terminal-state watch, prompt return); live-accessible pipeline notices go to stderr so stdout stays a pure stream with the trailer last. Review found the watch could cancel the stream mid-startup (bare trailer, history lost) and, after gating on first write, could hang on empty resume pages; `internal/cli/accessible.go` therefore gains an optional `Started` channel closed once the initial page is processed even when it emits nothing, which the watch waits on before polling.
+- **Files modified**: `internal/cli/tui.go`, `internal/cli/tui_test.go`, `internal/cli/run.go`, `internal/cli/demo.go`, `internal/cli/review.go`, `internal/cli/accessible.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
 ### Task 13 — End-to-end launch and fallback
 

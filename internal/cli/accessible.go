@@ -32,6 +32,11 @@ type AccessibleConfig struct {
 	// After is the resume offset: only events with run_sequence > After
 	// stream (0 starts from the beginning).
 	After int64
+	// Started, when non-nil, is closed once the initial history page is
+	// processed — even when it emits no lines — so a supervisor (the
+	// review terminal-state watch) can act without racing startup.
+	// Failures before that point return without signalling.
+	Started chan<- struct{}
 }
 
 // accessiblePageSize bounds one invocation's initial history page; the
@@ -109,10 +114,17 @@ func RunAccessible(ctx context.Context, cfg AccessibleConfig) error {
 	if err := w.err; err != nil {
 		return err
 	}
+	signalStarted := func() {
+		if cfg.Started != nil {
+			close(cfg.Started)
+		}
+	}
 	if overflow {
 		w.line(fmt.Sprintf("next-after: %d", last))
+		signalStarted()
 		return w.err
 	}
+	signalStarted()
 	ticker := time.NewTicker(poll)
 	defer ticker.Stop()
 	for {
