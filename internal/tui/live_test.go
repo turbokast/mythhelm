@@ -332,6 +332,37 @@ func TestViewportVirtualises(t *testing.T) {
 	})
 }
 
+// TestCompactReservesNoticeRows pins notice reservation in the compact
+// view: with a verification line and three notices at 160x9, every notice
+// renders (detail rows yield, never notices); at 160x5 the five-row offer
+// still renders whole.
+func TestCompactReservesNoticeRows(t *testing.T) {
+	t.Parallel()
+	withNotices := func(height int) *Model {
+		m := readyModel(t, fullCaps, 160, height)
+		for _, s := range []string{"alpha", "beta", "gamma"} {
+			m.notices = append(m.notices, noticeEvent(s, time.Now().UTC()))
+		}
+		return m
+	}
+	view := withNotices(9).View()
+	stripped := stripANSISequences(view)
+	for _, want := range []string{"notice: alpha", "notice: beta", "notice: gamma"} {
+		if !strings.Contains(stripped, want) {
+			t.Errorf("160x9 compact view drops %q\n%s", want, view)
+		}
+	}
+	if rows := len(strings.Split(view, "\n")); rows > 9 {
+		t.Errorf("160x9 compact view has %d rows", rows)
+	}
+	offer := withNotices(5).View()
+	for _, want := range []string{"compact", "--accessible"} {
+		if !strings.Contains(offer, want) {
+			t.Errorf("160x5 compact view lost its offer %q\n%s", want, offer)
+		}
+	}
+}
+
 // TestHistorySearchComplete pins D17: history search replays the journal
 // from zero, so a match in the oldest journaled event is found. A bounded
 // ring-buffer copy of the tail would miss it.

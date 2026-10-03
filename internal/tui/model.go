@@ -298,8 +298,16 @@ func (m *Model) View() string {
 	}
 	switch resolveLayout(m.width, m.height) {
 	case layoutCompact:
-		rows := m.gateCompactActivity(m.compactLines())
-		rows = append(rows, m.noticeRows(maxNoticeRows)...)
+		body := m.gateCompactActivity(m.compactLines())
+		// Notices are must-see status, so they sit between the five-row
+		// offer (which a 5-row terminal always sees whole) and the
+		// detail rows: render's height truncation then drops detail
+		// before notices, never the reverse.
+		offer, detail := body, []line(nil)
+		if len(body) > compactOfferRows {
+			offer, detail = body[:compactOfferRows], body[compactOfferRows:]
+		}
+		rows := append(append(append([]line{}, offer...), m.noticeRows(maxNoticeRows)...), detail...)
 		if ln, ok := m.filterLine(); ok {
 			rows = append(rows, ln)
 		}

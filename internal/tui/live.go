@@ -128,14 +128,15 @@ func (m *Model) drainNotices(at time.Time) {
 
 // noticeRows renders the synthetic notice events as attention lines,
 // virtualised to a tail of at most max rows: the most recent notices stay
-// visible with a leading marker counting the dropped older ones. A nil
-// result renders nothing, so empty models are byte-identical to before.
+// visible with a leading marker counting the dropped older ones. Only the
+// shown tail is decoded, so a render costs O(max) however many notices the
+// session retained. A nil result renders nothing, so empty models are
+// byte-identical to before.
 func (m *Model) noticeRows(max int) []line {
 	if max < 1 || len(m.notices) == 0 {
 		return nil
 	}
-	all := make([]line, 0, len(m.notices))
-	for _, ev := range m.notices {
+	decode := func(ev journal.Event) line {
 		var p struct {
 			Text string `json:"text"`
 		}
@@ -143,20 +144,29 @@ func (m *Model) noticeRows(max int) []line {
 		if err := json.Unmarshal(ev.Payload, &p); err == nil {
 			text = p.Text
 		}
-		all = append(all, line{text: "notice: " + cell(text), colour: m.cfg.Tokens.Attention})
+		return line{text: "notice: " + cell(text), colour: m.cfg.Tokens.Attention}
 	}
-	if len(all) <= max {
+	if len(m.notices) <= max {
+		all := make([]line, 0, len(m.notices))
+		for _, ev := range m.notices {
+			all = append(all, decode(ev))
+		}
 		return all
 	}
 	if max == 1 {
-		return all[len(all)-1:]
+		return []line{decode(m.notices[len(m.notices)-1])}
 	}
-	dropped := len(all) - max + 1
-	marker := line{
+	tail := m.notices[len(m.notices)-max+1:]
+	rows := make([]line, 0, max)
+	dropped := len(m.notices) - max + 1
+	rows = append(rows, line{
 		text:   ellGlyph(m.cfg.Caps) + fmt.Sprintf(" and %d more notices", dropped),
 		colour: m.cfg.Tokens.TextMuted,
+	})
+	for _, ev := range tail {
+		rows = append(rows, decode(ev))
 	}
-	return append([]line{marker}, all[len(all)-max+1:]...)
+	return rows
 }
 
 // reloadSnapshot rebuilds the snapshot once via the Load seam (a full scan

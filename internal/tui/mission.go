@@ -367,6 +367,10 @@ func (m *Model) showNotice(l layout) bool {
 	}
 }
 
+// compactOfferRows is the leading run of compactLines rows the five-row
+// offer occupies; notice reservation splits the body here.
+const compactOfferRows = 5
+
 // compactLines renders the compact task/status view with its linear-mode
 // offer (AC-2.4). The first five rows carry the offer, so even a 5-row
 // terminal sees it; later rows add activity, verification and billing detail
