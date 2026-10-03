@@ -89,6 +89,7 @@ type actionResultMsg struct {
 	action      Action
 	applyBranch string
 	recoverOut  supervisor.RecoveryOutcome
+	stopState   string
 	err         error
 }
 
@@ -118,9 +119,10 @@ func (m *Model) cancelAction() {
 }
 
 // confirmStop runs the confirmed stop through the injected seam, off-loop.
-// The returned state string is advisory only: the run renders stop requested
-// until attempt.stopped is journaled — requested is never labelled stopped
-// (I06). A failure surfaces in place with state unchanged.
+// A "stopped" return means the stop was already confirmed, so nothing goes
+// pending; otherwise the run renders stop requested until attempt.stopped is
+// journaled — requested is never labelled stopped (I06). A failure surfaces
+// in place with state unchanged.
 func (m *Model) confirmStop() tea.Cmd {
 	if m.cfg.Actions.Stop == nil {
 		m.dialogErr = "stop unavailable: no supervisor seam wired"
@@ -133,8 +135,8 @@ func (m *Model) confirmStop() tea.Cmd {
 	stop, runID, ctx := m.cfg.Actions.Stop, m.snap.Run.RunID, m.actionCtx()
 	m.working = "Requesting stop..."
 	return func() tea.Msg {
-		_, err := stop(ctx, runID)
-		return actionResultMsg{action: actionStop, err: err}
+		state, err := stop(ctx, runID)
+		return actionResultMsg{action: actionStop, stopState: state, err: err}
 	}
 }
 
@@ -195,7 +197,11 @@ func (m *Model) applyActionResult(msg actionResultMsg) {
 			m.dialogErr = "stop failed: " + msg.err.Error()
 			return
 		}
-		m.stopRequested = true
+		// An already-confirmed stop ("stopped") leaves nothing pending:
+		// the label would lie about a request still outstanding (I06).
+		if msg.stopState != "stopped" {
+			m.stopRequested = true
+		}
 		m.closeDialog()
 	case actionRecover:
 		if msg.err != nil {

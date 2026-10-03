@@ -183,6 +183,19 @@ func TestStopLabelsRequested(t *testing.T) {
 		t.Errorf("stop requested survives a confirmed attempt.stopped\n%s", view)
 	}
 
+	// An already-confirmed stop ("stopped") leaves nothing pending: no
+	// request label, dialog closed (I06).
+	done := &fakeActions{stopRet: "stopped"}
+	m = actionModel(t, fullCaps, withState("executing", "running"), done.actions())
+	m = openPaletteSelection(t, m, "stop")
+	m = confirmDialog(t, m)
+	if m.dialog != "" {
+		t.Fatalf("after already-stopped dialog = %q, want closed", m.dialog)
+	}
+	if view := m.View(); strings.Contains(view, "stop requested") {
+		t.Errorf("already-confirmed stop shows a pending label\n%s", view)
+	}
+
 	for _, state := range []string{"ready_for_review", "interrupted", "failed", "completed"} {
 		m := actionModel(t, fullCaps, withState(state, "succeeded_native"), fakes.actions())
 		m, _ = pressKey(t, m, runeMsg(":"))
@@ -207,8 +220,10 @@ func TestStopLabelsRequested(t *testing.T) {
 func TestActionRunsOffLoop(t *testing.T) {
 	t.Parallel()
 	release := make(chan struct{})
+	started := make(chan struct{})
 	acts := Actions{
 		Stop: func(ctx context.Context, runID string) (string, error) {
+			close(started)
 			select {
 			case <-release:
 				return "stopping", nil
@@ -236,7 +251,12 @@ func TestActionRunsOffLoop(t *testing.T) {
 	if m.dialog != dialogStop || m.working == "" {
 		t.Errorf("Esc disturbed the in-flight call: dialog=%q working=%q", m.dialog, m.working)
 	}
-	// Quitting cancels the in-flight call and drops the working state.
+	// Quitting cancels an already-running call: run the command, wait for
+	// the callback to start, then quit and assert the cancellation error
+	// lands in place.
+	results := make(chan tea.Msg, 1)
+	go func() { results <- cmd() }()
+	<-started
 	m, quit := pressKey(t, m, specialMsg(tea.KeyCtrlC))
 	if quit == nil {
 		t.Fatal("ctrl+c returned no quit command")
@@ -244,15 +264,21 @@ func TestActionRunsOffLoop(t *testing.T) {
 	if m.working != "" || m.actCancel != nil {
 		t.Errorf("quit left the call in flight: working=%q", m.working)
 	}
-	// The late result still lands cleanly: either the accepted stop or the
-	// cancellation error in place, never a stuck working state.
 	close(release)
-	m = runActionCmd(t, m, cmd)
+	msg := <-results
+	res, ok := msg.(actionResultMsg)
+	if !ok {
+		t.Fatalf("command returned %T, want actionResultMsg", msg)
+	}
+	if !errors.Is(res.err, context.Canceled) {
+		t.Errorf("cancelled call result = %v, want context.Canceled", res.err)
+	}
+	m = runActionCmd(t, m, func() tea.Msg { return msg })
 	if m.working != "" {
 		t.Errorf("working survives the landed result: %q", m.working)
 	}
-	if !m.stopRequested && m.dialogErr == "" {
-		t.Error("landed result neither requested the stop nor surfaced its error")
+	if m.dialogErr == "" {
+		t.Errorf("cancelled call surfaced no error\n%s", m.View())
 	}
 }
 
