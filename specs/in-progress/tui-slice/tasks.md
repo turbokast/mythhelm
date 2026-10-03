@@ -361,7 +361,7 @@
 - **Spec deviations**: Beyond the listed file the change fixes two task-12 defects the new tests caught (same precedent as tasks 8–11): `run --accessible` always exited 1 with "not found" (the stream's initial `Load` raced `run.created`), fixed by `waitForRunJournaled` in `internal/cli/tui.go` (returns errors: absence retries, unexpected journal failures surface; on supervision-end a final check streams the row if it landed, so a fast run finishing inside the poll gap still streams fully on a watch-ended context instead of collapsing to a bare trailer); and live streams truncated at the last poll (e.g. summary plus event 1 only), fixed by a detached-context shutdown drain in `internal/cli/accessible.go` (pinned in `internal/cli/accessible_test.go` and `internal/cli/tui_test.go`). The `--plain`/JSONL byte comparisons normalise per-run IDs, PIDs, paths, digests and timings — raw outputs can never be byte-identical across runs — with guards asserting the raw streams differ so the normalisation stays load-bearing.
 - **Files modified**: `tests/e2e/tui_test.go`, `internal/cli/tui.go`, `internal/cli/accessible.go`, `internal/cli/accessible_test.go`, `internal/cli/tui_test.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
-### Task 14 — G09 evidence, UX session and README status
+### Task 14 — G09 evidence, UX session and README status ✅ COMPLETED
 
 - **Domain/agent**: maintainer
 - **Budget**: standard
@@ -378,7 +378,7 @@
   - AC-1.1 to AC-7.3 each trace to a named test from tasks 2–13 (traceability table in the evidence file); an untraced AC fails the task.
 - **Test plan**: human-run sessions; paste terminal versions, dates and result rows into the evidence file; reviewer checks every claim against a row.
 - **Invariants touched**: I14 (§9.14: every advertised capability carries its versioned test result).
-- **Status**: 🔄 In progress — evidence skeleton plus traceability drafted; interactive matrix, UX session and screen-reader session await maintainer runs.
-- **Implementation**: `docs/tui-slice-g09-evidence.md` (new; CI-covered behaviour §1.1, interactive matrix §1.2 TODO, UX session §2 TODO, screen-reader §3 TODO, AC-1.1–AC-7.3 traceability §4 complete); `README.md` (new "TUI status" section, unrecorded combinations experimental per I14).
+- **Status**: ✅ Completed — full §16.4 row (GNOME Terminal/VTE, zsh, Ubuntu 24.04), §18.6 UX session with a non-Vim engineer, screen-reader marked experimental, README claims exactly the recorded combination; PR #104.
+- **Implementation**: `docs/tui-slice-g09-evidence.md` (new; CI-covered behaviour §1.1, interactive matrix §1.2, UX session §2, screen-reader §3 experimental, AC-1.1–AC-7.3 traceability §4, findings §5 with F-1 exit-dialog unwired and F-2 cancel-vs-detach); `README.md` (new "TUI status" section naming the recorded combination, experimental caveats, known limitations).
 - **Spec deviations**: None.
 - **Files modified**: `docs/tui-slice-g09-evidence.md`, `README.md`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.

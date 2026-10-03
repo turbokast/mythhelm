@@ -3,9 +3,9 @@
 Spec: `tui-slice` (MH-2). Build under test: `dfc0f22` (origin/main,
 tasks 1–13 merged) unless a row says otherwise.
 
-**Status: DRAFT.** The traceability table (§4) is complete; the
-interactive matrix (§1.2), UX session (§2) and screen-reader session
-(§3) await maintainer-run sessions. Per I14, a combination without a
+**Status: complete 2026-10-03.** Interactive matrix row (§1.2),
+UX session (§2), screen-reader position (§3, experimental) and
+traceability (§4) are recorded. Per I14, a combination without a
 full row below is not claimed — see `README.md` ("TUI status").
 
 ## 1. Terminal/shell matrix (§16.4)
@@ -53,29 +53,36 @@ Participant profile (required): a non-Vim user unfamiliar with
 orchestration vocabulary. Screenshot-only records fail — every check
 needs observed interaction.
 
-- Participant: TODO (role, editor habits — must be non-Vim)
-- Date / build / terminal: TODO
-- Facilitator notes: TODO
+- Participant: software engineer, primarily a Claude Code and VS Code
+  user (non-Vim, unfamiliar with orchestration vocabulary)
+- Date / build / terminal: 2026-10-03 / `dfc0f22` / maintainer's
+  terminal (same as §1.2 row 1)
+- Facilitator notes: the participant had seen the maintainer run the
+  demo before their own session; all interaction below is the
+  participant driving.
 
 | Check | Completed | Confusion | Accidental actions | Notes |
 |---|---|---|---|---|
-| Demo run (`demo`) | TODO | TODO | TODO | TODO |
-| Native-profile discovery | TODO | TODO | TODO | TODO |
-| Billing understanding | TODO | TODO | TODO | TODO |
-| Bounded task start | TODO | TODO | TODO | TODO |
-| Attention-state recognition | TODO | TODO | TODO | TODO |
-| Diff inspection | TODO | TODO | TODO | TODO |
-| Stop / detach | TODO | TODO | TODO | TODO |
-| Receipt location | TODO | TODO | TODO | TODO |
+| Demo run (`demo`) | yes (had seen it run first) | sees tasks/agents/selected-change panes but does not intuitively know what is going on | none | needs an orienting first-run cue |
+| Native-profile discovery | no — guessed `builtin/fake` | does not know what a profile is | none | label not discoverable as a profile |
+| Billing understanding | no | the billing line is meaningless to them; wants to see an actual cost amount | none | kind-labels (AC-7.3) do not answer "what does it cost" |
+| Bounded task start | no — gave up | tried Enter, tabbing, applying; did not know what was going on at all | attempted an apply without understanding it | no discoverable task-start path in the slice |
+| Attention-state recognition | partial | reads ready-for-review as "something wants review" but not who, what or why | none | state visible, referent missing |
+| Diff inspection | partial | guesses the agent changed `demo.txt` but not what changed | none | diff panel found, content not read |
+| Stop / detach | no — gave up | tried `q` then every key to exit; nothing acted (consistent with §5 F-1) | none | exit path undiscoverable while the dialog is unwired |
+| Receipt location | no | no idea where the proof is | none | receipt not surfaced in the TUI flow |
 
 State-distinction checks (the participant names each state unaided):
 
 | State shown | Participant's reading | Correct? |
 |---|---|---|
-| running | TODO | TODO |
-| waiting | TODO | TODO |
-| ready for review | TODO | TODO |
-| applied | TODO | TODO |
+| running | "example running" | partial — recognised activity, not the state vocabulary |
+| waiting | not distinctly named | no |
+| ready for review | "waiting for a review" | yes — mapped to "something wants review" (see check 5) |
+| applied | "exit" | no — conflated end-of-flow with the applied state |
+
+The participant narrated the flow as "example running, then waiting
+for a review, then exit" rather than naming four distinct states.
 
 ## 3. Screen-reader session (AC-5.4)
 
@@ -83,8 +90,15 @@ One session against `--accessible` with NVDA, VoiceOver or Orca, or —
 until such a session is recorded — all screen-reader combinations
 stay experimental.
 
-- Screen reader + version / terminal / date / build: TODO
-- Result: TODO (full pass, or experimental with the blocking observations)
+- Screen reader + version / terminal / date / build: none — the
+  maintainer has no screen-reader access and knows no screen-reader
+  user (2026-10-03)
+- Result: **experimental** — all screen-reader combinations stay
+  experimental per AC-5.4 until a session is recorded. The
+  `--accessible` stream itself is covered by automated tests
+  (`TestAccessibleOrderedStream`, `TestAccessibleNoChatter`,
+  `TestAccessibleNoCursorCodes`, `TestE2EAccessibleStream`); only the
+  human screen-reader session is missing.
 
 ## 4. Traceability (AC-1.1 to AC-7.3 → tests from tasks 2–13)
 

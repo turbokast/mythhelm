@@ -42,10 +42,19 @@ Supported now (evidence: [G09 record](docs/tui-slice-g09-evidence.md); unrecorde
 - Stable linear output without a TTY, under `TERM=dumb`, with `--plain`, and machine output (`--format jsonl`); `--accessible` emits the ordered screen-reader stream. Covered on Linux, macOS and Windows (x86_64 and ARM) by the packaged-binary end-to-end suite.
 - Explicit `--colour` / `--motion` / `--icons` overrides; `NO_COLOR` and `TERM=dumb` suppress.
 
+Recorded interactive combination (full §16.4 row in the G09 record):
+
+- GNOME Terminal 3.52 (VTE 0.76) + zsh 5.9 on Ubuntu 24.04, 190x45.
+
 Experimental until recorded in the G09 record:
 
-- Interactive use in any specific terminal/shell: only the combinations with full evidence rows are claimed.
-- Screen-reader support: only the recorded combinations are claimed (AC-5.4).
+- Interactive use in any other terminal/shell: only the combinations with full evidence rows are claimed.
+- Screen-reader support: no human session recorded yet, all combinations experimental (AC-5.4).
+
+Known limitations (G09 findings, see the record §5):
+
+- The `q` exit-options dialog renders its rows but key selection is unwired; Esc closes it, Ctrl-C quits.
+- Mid-run Ctrl-C cancels the run (exit 130) instead of detaching; the detach path needs a slow-adapter retest.
 
 ## Principles
 
