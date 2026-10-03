@@ -24,8 +24,9 @@ const (
 )
 
 // Config is the TUI program's inputs. Events feeds live journaled events and
-// Notices carries unjournaled status in live mode (both wired in task 10);
-// Actions injects the supervisor calls the palette acts through (task 9).
+// Notices carries unjournaled status in live mode (both from LiveFeed,
+// live.go); Actions injects the supervisor calls the palette acts through
+// (task 9).
 type Config struct {
 	RunID    string
 	StateDir string
@@ -40,37 +41,6 @@ type Config struct {
 	Actions   Actions
 }
 
-// NoticeBacklog retains unjournaled notices in arrival order. Add never
-// blocks and never drops; Drain takes every pending notice atomically. Task
-// 10 moves this to live.go with LiveFeed and the poll-tick drain; it lives
-// here until then so Config compiles.
-type NoticeBacklog struct {
-	mu      sync.Mutex
-	pending []string
-}
-
-// Add appends a notice; it never blocks and never drops.
-func (b *NoticeBacklog) Add(s string) {
-	if b == nil {
-		return
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.pending = append(b.pending, s)
-}
-
-// Drain returns every retained notice in order and empties the backlog.
-func (b *NoticeBacklog) Drain() []string {
-	if b == nil {
-		return nil
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	out := b.pending
-	b.pending = nil
-	return out
-}
-
 // Model is the mission-view program: one snapshot rendered through the §15.4
 // layout ladder. dialog holds a pending confirmation id ("" = none) with its
 // transient state (dialogs.go); stopRequested marks a confirmed stop the
@@ -78,7 +48,10 @@ func (b *NoticeBacklog) Drain() []string {
 // pane on Esc; filterOn/filterText hold the / filter; palette and helpOpen
 // hold the : and ? overlays; themeName tracks the active built-in theme;
 // selectedLane is the stable lane identity a reload keeps; motion holds the
-// session-observed truthful-motion state (motion.go).
+// session-observed truthful-motion state (motion.go); notices holds the
+// drained ui.notice events (live.go); loadSnapshot is the poll-tick reload
+// seam; liveQuit/liveDone join the channel pump; recoverEvents and
+// recoverNotices feed the in-flight recover action live (live.go).
 type Model struct {
 	cfg              Config
 	snap             viewmodel.Snapshot
@@ -91,6 +64,7 @@ type Model struct {
 	diff             Diff
 	diffErr          error
 	loadDiff         func(ctx context.Context, workspace, base, commit string) (Diff, error)
+	loadSnapshot     func(ctx context.Context, dir, runID string) (viewmodel.Snapshot, error)
 	width            int
 	height           int
 	focusPane        string
@@ -115,6 +89,12 @@ type Model struct {
 	helpOpen         bool
 	themeName        string
 	motion           motionState
+	notices          []journal.Event
+	liveQuit         chan struct{}
+	liveDone         chan struct{}
+	liveMu           sync.Mutex
+	recoverEvents    chan journal.Event
+	recoverNotices   *NoticeBacklog
 }
 
 // newModel builds the program state with default dimensions; the first
@@ -125,13 +105,14 @@ func newModel(cfg Config) *Model {
 		name = "dark"
 	}
 	return &Model{
-		cfg:       cfg,
-		loadDiff:  defaultLoadDiff,
-		width:     singleWidth,
-		height:    24,
-		focusPane: paneTasks,
-		focusPrev: paneTasks,
-		themeName: name,
+		cfg:          cfg,
+		loadDiff:     defaultLoadDiff,
+		loadSnapshot: viewmodel.Load,
+		width:        singleWidth,
+		height:       24,
+		focusPane:    paneTasks,
+		focusPrev:    paneTasks,
+		themeName:    name,
 		// The arrival reveal is pending only under full motion; reduced
 		// and off collapse it to the immediate paint (moment 1).
 		motion: motionState{arrival: cfg.Caps.Motion == caps.MotionFull},
@@ -140,11 +121,18 @@ func newModel(cfg Config) *Model {
 
 // Run loads the run's snapshot and starts the mission-view program. A state
 // dir with no database shows the empty state; any other load failure (an
-// unknown run ID included) is returned before the program starts.
+// unknown run ID included) is returned before the program starts. In live
+// mode the channel pump forwards Events until the program exits, and the
+// 200 ms poll chain (live.go) reloads in both modes; quitting joins the
+// pump with no goroutine left behind.
 func Run(ctx context.Context, cfg Config) error {
 	m := newModel(cfg)
 	m.runCtx = ctx
-	snap, err := viewmodel.Load(ctx, cfg.StateDir, cfg.RunID)
+	load := m.loadSnapshot
+	if load == nil {
+		load = viewmodel.Load
+	}
+	snap, err := load(ctx, cfg.StateDir, cfg.RunID)
 	if err != nil {
 		if errors.Is(err, journal.ErrNoDatabase) {
 			m.empty = true
@@ -154,7 +142,17 @@ func Run(ctx context.Context, cfg Config) error {
 	} else {
 		m.setSnapshot(ctx, snap)
 	}
-	_, err = tea.NewProgram(m, tea.WithAltScreen()).Run()
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	if cfg.Events != nil {
+		m.startLivePump(func(ev journal.Event) { p.Send(eventMsg{Event: ev}) })
+	}
+	// Bootstrap the poll chain with one immediate tick: Init stays the
+	// motion tick alone, so the motion tests keep asserting Init nil-ness
+	// for "no motion frames" while live and inspect modes still reload.
+	go func() { p.Send(pollTickMsg{}) }()
+	_, err = p.Run()
+	m.stopLivePump()
+	m.cancelAction()
 	return err
 }
 
@@ -239,7 +237,8 @@ func (m *Model) Init() tea.Cmd { return m.scheduleMotion() }
 // Update implements tea.Model: resizes re-lay out around preserved identity,
 // keys dispatch through handleKey (nav.go), where Ctrl-C alone quits; live
 // events fold into the snapshot and arm their moment (motion.go); motion
-// frames count the active moments down. Any key skips a pending arrival.
+// frames count the active moments down; poll ticks drain notices and rebuild
+// the snapshot once (live.go). Any key skips a pending arrival.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -251,6 +250,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case eventMsg:
 		m.consumeEvent(msg.Event)
 		return m, m.scheduleMotion()
+	case pollTickMsg:
+		m.onPollTick()
+		return m, tea.Batch(m.pollCmd(), m.scheduleMotion())
 	case actionResultMsg:
 		m.applyActionResult(msg)
 		return m, nil
@@ -297,6 +299,7 @@ func (m *Model) View() string {
 	switch resolveLayout(m.width, m.height) {
 	case layoutCompact:
 		rows := m.gateCompactActivity(m.compactLines())
+		rows = append(rows, m.noticeRows(maxNoticeRows)...)
 		if ln, ok := m.filterLine(); ok {
 			rows = append(rows, ln)
 		}
@@ -333,12 +336,13 @@ func (m *Model) finaliseRows(rows []line, width int) []string {
 }
 
 // viewSingle renders the 80–99 column rung: labelled tabs, the focused pane,
-// the truncation notice when the detail pane shows a truncated diff, and the
-// persistent critical status.
+// the truncation notice when the detail pane shows a truncated diff, drained
+// notices, and the persistent critical status.
 func (m *Model) viewSingle() string {
 	var rows []line
 	rows = append(rows, m.tabsLine())
-	bodyH := m.height - 3
+	notices := m.noticeRows(maxNoticeRows)
+	bodyH := m.height - 3 - len(notices)
 	if m.showNotice(layoutSingle) {
 		bodyH -= 2
 	}
@@ -346,6 +350,7 @@ func (m *Model) viewSingle() string {
 	if m.showNotice(layoutSingle) {
 		rows = append(rows, m.truncationNotice()...)
 	}
+	rows = append(rows, notices...)
 	rows = append(rows, m.criticalStatusLine(), m.footerLine())
 	if ln, ok := m.filterLine(); ok {
 		rows = append(rows, ln)
@@ -405,12 +410,15 @@ func (m *Model) focusedPaneLines(width int) []line {
 	}
 }
 
-// viewColumns assembles the header, side-by-side panes, notice, status strip
-// and footer for the two- and three-pane rungs.
+// viewColumns assembles the header, side-by-side panes, truncation notice,
+// drained notices, status strip and footer for the two- and three-pane rungs.
+// Panes virtualise to the body height and notices to their tail cap, so the
+// truncation notice keeps its rows whenever a truncated diff shows.
 func (m *Model) viewColumns(l layout, cols []column) string {
 	widths := columnWidths(m.width, len(cols))
 	sep := " " + vBarGlyph(m.cfg.Caps) + " "
-	chrome := 2 + 2 + 1 // header, status strip, footer
+	notices := m.noticeRows(maxNoticeRows)
+	chrome := 2 + 2 + 1 + len(notices) // header, status strip, footer, notices
 	if m.showNotice(l) {
 		chrome += 2
 	}
@@ -430,6 +438,7 @@ func (m *Model) viewColumns(l layout, cols []column) string {
 	if m.showNotice(l) {
 		out = append(out, m.finaliseRows(m.truncationNotice(), m.width)...)
 	}
+	out = append(out, m.finaliseRows(notices, m.width)...)
 	out = append(out, m.finaliseRows(m.statusLines(), m.width)...)
 	out = append(out, m.finaliseRows([]line{m.footerLine()}, m.width)...)
 	if ln, ok := m.filterLine(); ok {

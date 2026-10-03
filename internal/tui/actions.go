@@ -142,8 +142,9 @@ func (m *Model) confirmStop() tea.Cmd {
 }
 
 // confirmRecover runs the confirmed recover through the injected seam with
-// empty hooks, off-loop; task 10 wires tui.LiveFeed here so recovery
-// progress feeds the live view (design §10). Success reports the outcome;
+// LiveFeed hooks, off-loop, so recovery progress feeds the live view
+// through the poll tick (design §10): journaled events reload the snapshot
+// and notices drain into notice lines. Success reports the outcome;
 // failure surfaces in place.
 func (m *Model) confirmRecover() tea.Cmd {
 	if m.cfg.Actions.Recover == nil {
@@ -155,9 +156,12 @@ func (m *Model) confirmRecover() tea.Cmd {
 		return nil
 	}
 	doRecover, runID, ctx := m.cfg.Actions.Recover, m.snap.Run.RunID, m.actionCtx()
+	events, notices, hooks := LiveFeed()
+	m.recoverEvents = events
+	m.recoverNotices = notices
 	m.working = "Recovering run..."
 	return func() tea.Msg {
-		out, err := doRecover(ctx, runID, supervisor.Hooks{})
+		out, err := doRecover(ctx, runID, hooks)
 		return actionResultMsg{action: actionRecover, recoverOut: out, err: err}
 	}
 }
@@ -208,6 +212,7 @@ func (m *Model) applyActionResult(msg actionResultMsg) {
 		m.stopConfirmed = false
 		m.closeDialog()
 	case actionRecover:
+		m.finishRecoverFeed()
 		if msg.err != nil {
 			m.dialogErr = "recover failed: " + msg.err.Error()
 			return
