@@ -21,6 +21,7 @@ var paneOrder = []string{paneTasks, paneAgents, paneDetail}
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	if key == "ctrl+c" {
+		m.cancelAction()
 		return m, tea.Quit
 	}
 	if m.dialog != "" {

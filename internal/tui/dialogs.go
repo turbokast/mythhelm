@@ -70,6 +70,7 @@ func (m *Model) closeDialog() {
 	m.resultTitle, m.resultBody = "", ""
 	m.applyBranch = ""
 	m.acceptFlags, m.acceptUnverified = false, false
+	m.working = ""
 }
 
 // showResult opens the generic result dialog: a title plus a plain body,
@@ -80,8 +81,13 @@ func (m *Model) showResult(title, body string) {
 }
 
 // dialogKey routes keys while a dialog is open. Esc cancels every dialog
-// with no call made (AC-3.3); every other key is dialog-specific.
+// with no call made (AC-3.3); every other key is dialog-specific. While a
+// confirmed call is in flight the dialog holds its working state and keys
+// are inert: the call cannot be unmade, and quitting (ctrl+c) cancels it.
 func (m *Model) dialogKey(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.working != "" {
+		return m, nil
+	}
 	if key == "esc" {
 		m.closeDialog()
 		return m, nil
@@ -97,14 +103,11 @@ func (m *Model) dialogKey(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case dialogStop:
-		m.confirmKey(key, m.confirmStop)
-		return m, nil
+		return m, m.confirmKey(key, m.confirmStop)
 	case dialogRecover:
-		m.confirmKey(key, m.confirmRecover)
-		return m, nil
+		return m, m.confirmKey(key, m.confirmRecover)
 	case dialogApply:
-		m.applyKey(key, msg)
-		return m, nil
+		return m, m.applyKey(key, msg)
 	default:
 		return m, nil
 	}
@@ -112,31 +115,32 @@ func (m *Model) dialogKey(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // confirmKey moves between the two buttons or activates the focused one.
 // Enter on Cancel closes with no call; only Enter on the confirm button —
-// which never holds initial focus — runs the action.
-func (m *Model) confirmKey(key string, confirm func()) {
+// which never holds initial focus — runs the action, returning its command.
+func (m *Model) confirmKey(key string, confirm func() tea.Cmd) tea.Cmd {
 	switch key {
 	case "left", "right", "tab", "shift+tab":
 		m.dialogFocus = 1 - m.dialogFocus
 	case "enter":
 		if m.dialogFocus == buttonConfirm {
-			confirm()
-		} else {
-			m.closeDialog()
+			return confirm()
 		}
+		m.closeDialog()
 	}
+	return nil
 }
 
 // applyKey drives the apply dialog: Tab cycles the branch field, the two
 // toggles and the button row; typing edits the branch; Space/Enter toggles;
-// Enter on the button row activates the focused button.
-func (m *Model) applyKey(key string, msg tea.KeyMsg) {
+// Enter on the button row activates the focused button, returning the
+// action's command when it confirms.
+func (m *Model) applyKey(key string, msg tea.KeyMsg) tea.Cmd {
 	switch key {
 	case "tab", "down":
 		m.dialogField = (m.dialogField + 1) % applyFieldCount
-		return
+		return nil
 	case "shift+tab", "up":
 		m.dialogField = (m.dialogField + applyFieldCount - 1) % applyFieldCount
-		return
+		return nil
 	}
 	switch m.dialogField {
 	case applyFieldBranch:
@@ -157,8 +161,9 @@ func (m *Model) applyKey(key string, msg tea.KeyMsg) {
 			m.acceptUnverified = !m.acceptUnverified
 		}
 	case applyFieldButtons:
-		m.confirmKey(key, m.confirmApply)
+		return m.confirmKey(key, m.confirmApply)
 	}
+	return nil
 }
 
 // dialogLines renders the pending confirmation. An unknown id renders
@@ -259,6 +264,9 @@ func (m *Model) buttonLine(confirm string) line {
 // open with state unchanged: errors surface where the action was invoked,
 // never swallowed.
 func (m *Model) withDialogErr(rows []line) []line {
+	if m.working != "" {
+		return append(rows, line{text: cell(m.working), colour: m.cfg.Tokens.TextMuted})
+	}
 	if m.dialogErr == "" {
 		return rows
 	}

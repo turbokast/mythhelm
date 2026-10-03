@@ -131,13 +131,34 @@ func (m *Model) consumeEvent(ev journal.Event) {
 			m.snap.Admission = a
 		}
 	case "attempt.stopped":
-		// The worker confirmed the stop: the pending request label
-		// retires (I06). Only the current attempt's confirmation (or an
-		// unattributed one, as synthetic feeds send) retires it.
-		if ev.AttemptID == "" || m.snap.Attempt == nil || ev.AttemptID == m.snap.Attempt.AttemptID {
+		// The pending request label retires only on a confirmation the
+		// payload proves (I06): an unconfirmed event, unresolved PIDs, a
+		// failed descendant scan, or a malformed payload keeps the label.
+		// Only the current attempt's confirmation (or an unattributed
+		// one, as synthetic feeds send) can retire it.
+		if ev.AttemptID != "" && m.snap.Attempt != nil && ev.AttemptID != m.snap.Attempt.AttemptID {
+			break
+		}
+		if stopConfirmed(ev.Payload) {
 			m.stopRequested = false
 		}
 	}
+}
+
+// stopConfirmed reports whether an attempt.stopped payload proves the stop:
+// confirmed with no unresolved PIDs and no failed descendant scan,
+// mirroring supervisor.Stop's convergence rule. Anything else — including a
+// malformed payload — keeps the request label.
+func stopConfirmed(payload json.RawMessage) bool {
+	var stop struct {
+		Confirmed      bool   `json:"confirmed"`
+		UnresolvedPIDs []int  `json:"unresolved_pids"`
+		DescendantScan string `json:"descendant_scan"`
+	}
+	if err := json.Unmarshal(payload, &stop); err != nil {
+		return false
+	}
+	return stop.Confirmed && len(stop.UnresolvedPIDs) == 0 && stop.DescendantScan != "failed"
 }
 
 // decodeLiveProgress decodes an attempt.progress payload with viewmodel's

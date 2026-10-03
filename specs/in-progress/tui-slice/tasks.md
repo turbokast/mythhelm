@@ -256,7 +256,7 @@
 - **Invariants touched**: I03 (§12.3: confirmations bind to exact effects), I06 (§7.3: requested vs confirmed), I11 (§14.11: adversarial-token control survival), I18 (§7.8: mutations only through supervisor entry points — fakes prove the seam).
 - **Status**: ✅ Completed — palette actions confirm through labelled prompts over the injected `Actions` seam with gated availability, in-place errors and state-dir export; PR #100.
 - **Implementation**: `dialogs.go` (stop/recover/apply/result prompts, Cancel-first focus, Esc cancels all) with `actions.go` (state gates, exact-effect confirms, `<stateDir>/exports/<run>-<pane>.txt` export) and `model.go`/`palette.go`/`motion.go` wiring (`stop requested` until `attempt.stopped`, disabled reasons in the palette). Commit 02596fbb28a57e606625cfa016247a917b52e3a6.
-- **Spec deviations**: None.
+- **Spec deviations**: Review drove two refinements, both inside the listed files: supervisor calls run off-loop via `tea.Cmd` with the result landed as `actionResultMsg` (the dialog holds a working state with inert keys; quit cancels the in-flight call; no invented timeout, matching the CLI), and the `attempt.stopped` handler retires the request label only on a payload proving confirmation (confirmed, no unresolved PIDs, scan not failed), mirroring `supervisor.Stop`; otherwise none.
 - **Files modified**: `internal/tui/actions.go`, `internal/tui/dialogs.go`, `internal/tui/actions_test.go`, `internal/tui/model.go`, `internal/tui/mission.go`, `internal/tui/motion.go`, `internal/tui/nav.go`, `internal/tui/palette.go`, `internal/tui/nav_test.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
 ### Task 10 — Live render loop and history

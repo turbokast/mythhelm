@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -89,11 +90,30 @@ func openPaletteSelection(t *testing.T, m *Model, query string) *Model {
 }
 
 // confirmDialog moves focus to the confirm button and presses Enter: the
-// explicit confirm every dialog requires.
+// explicit confirm every dialog requires. It then runs the action command
+// to completion and feeds the result back, as the Tea runtime would.
 func confirmDialog(t *testing.T, m *Model) *Model {
 	t.Helper()
 	m, _ = pressKey(t, m, specialMsg(tea.KeyLeft))
-	m, _ = pressKey(t, m, specialMsg(tea.KeyEnter))
+	m, cmd := pressKey(t, m, specialMsg(tea.KeyEnter))
+	return runActionCmd(t, m, cmd)
+}
+
+// runActionCmd executes an action command (nil when a gate refused) and
+// feeds a resulting action message back through Update.
+func runActionCmd(t *testing.T, m *Model, cmd tea.Cmd) *Model {
+	t.Helper()
+	if cmd == nil {
+		return m
+	}
+	if msg, ok := cmd().(actionResultMsg); ok {
+		updated, _ := m.Update(msg)
+		mm, ok := updated.(*Model)
+		if !ok {
+			t.Fatalf("Update returned %T, want *Model", updated)
+		}
+		return mm
+	}
 	return m
 }
 
@@ -130,13 +150,37 @@ func TestStopLabelsRequested(t *testing.T) {
 		t.Errorf("view labels the request stopped before attempt.stopped\n%s", view)
 	}
 
-	updated, _ := m.Update(eventMsg{Event: journal.Event{Type: "attempt.stopped", AttemptID: "att_1", RunSequence: 99}})
-	mm, ok := updated.(*Model)
-	if !ok {
-		t.Fatalf("Update returned %T, want *Model", updated)
+	// Only a proven confirmation retires the label: unconfirmed, unresolved,
+	// failed-scan and malformed payloads keep it (I06).
+	stopped := func(payload string) *Model {
+		t.Helper()
+		updated, _ := m.Update(eventMsg{Event: journal.Event{
+			Type: "attempt.stopped", AttemptID: "att_1", RunSequence: 99,
+			Payload: json.RawMessage(payload),
+		}})
+		mm, ok := updated.(*Model)
+		if !ok {
+			t.Fatalf("Update returned %T, want *Model", updated)
+		}
+		return mm
 	}
-	if view := mm.View(); strings.Contains(view, "stop requested") {
-		t.Errorf("stop requested survives attempt.stopped\n%s", view)
+	for _, tc := range []struct {
+		name    string
+		payload string
+	}{
+		{"unconfirmed", `{"confirmed":false,"unresolved_pids":[],"descendant_scan":"proc-environ"}`},
+		{"unresolved", `{"confirmed":true,"unresolved_pids":[4242],"descendant_scan":"proc-environ"}`},
+		{"scan failed", `{"confirmed":true,"unresolved_pids":[],"descendant_scan":"failed"}`},
+		{"malformed", `{"confirmed":`},
+		{"absent", ``},
+	} {
+		if view := stopped(tc.payload).View(); !strings.Contains(view, "stop requested") {
+			t.Errorf("%s stopped event retired the label\n%s", tc.name, view)
+		}
+	}
+	confirmed := `{"confirmed":true,"unresolved_pids":[],"descendant_scan":"proc-environ"}`
+	if view := stopped(confirmed).View(); strings.Contains(view, "stop requested") {
+		t.Errorf("stop requested survives a confirmed attempt.stopped\n%s", view)
 	}
 
 	for _, state := range []string{"ready_for_review", "interrupted", "failed", "completed"} {
@@ -154,6 +198,61 @@ func TestStopLabelsRequested(t *testing.T) {
 	}
 	if fakes.stops != 1 {
 		t.Errorf("Stop calls = %d, want exactly the 1 executing confirm", fakes.stops)
+	}
+}
+
+// TestActionRunsOffLoop pins the async action contract: confirming returns a
+// command while the dialog holds its working state, keys stay routed (Esc
+// cannot unmake the in-flight call), and the result lands when fed back.
+func TestActionRunsOffLoop(t *testing.T) {
+	t.Parallel()
+	release := make(chan struct{})
+	acts := Actions{
+		Stop: func(ctx context.Context, runID string) (string, error) {
+			select {
+			case <-release:
+				return "stopping", nil
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		},
+	}
+	m := actionModel(t, fullCaps, withState("executing", "running"), acts)
+	m = openPaletteSelection(t, m, "stop")
+	m, _ = pressKey(t, m, specialMsg(tea.KeyLeft))
+	m, cmd := pressKey(t, m, specialMsg(tea.KeyEnter))
+	if cmd == nil {
+		t.Fatal("confirming stop returned no command")
+	}
+	// The call runs off-loop: the dialog holds working state, not a result.
+	if view := m.View(); !strings.Contains(view, "Requesting stop...") {
+		t.Errorf("working dialog lacks the working label\n%s", view)
+	}
+	if m.stopRequested {
+		t.Error("stop requested before the call finished")
+	}
+	// Keys stay routed but inert: Esc cannot unmake the in-flight call.
+	m, _ = pressKey(t, m, specialMsg(tea.KeyEsc))
+	if m.dialog != dialogStop || m.working == "" {
+		t.Errorf("Esc disturbed the in-flight call: dialog=%q working=%q", m.dialog, m.working)
+	}
+	// Quitting cancels the in-flight call and drops the working state.
+	m, quit := pressKey(t, m, specialMsg(tea.KeyCtrlC))
+	if quit == nil {
+		t.Fatal("ctrl+c returned no quit command")
+	}
+	if m.working != "" || m.actCancel != nil {
+		t.Errorf("quit left the call in flight: working=%q", m.working)
+	}
+	// The late result still lands cleanly: either the accepted stop or the
+	// cancellation error in place, never a stuck working state.
+	close(release)
+	m = runActionCmd(t, m, cmd)
+	if m.working != "" {
+		t.Errorf("working survives the landed result: %q", m.working)
+	}
+	if !m.stopRequested && m.dialogErr == "" {
+		t.Error("landed result neither requested the stop nor surfaced its error")
 	}
 }
 

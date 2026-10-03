@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/turbokast/mythhelm/internal/supervisor"
 )
 
@@ -77,71 +78,140 @@ func (m *Model) applyGate() (bool, string) {
 	return false, "run is " + cellOrUnknown(m.snap.Run.State) + ", needs ready_for_review"
 }
 
-// confirmStop runs the confirmed stop through the injected seam. The
-// returned state string is advisory only: the run renders stop requested
+// actionResultMsg carries a finished supervisor call back to the update
+// loop. Actions run off-loop so the TUI keeps repainting while a call —
+// recover reattaching to its worker, apply running git — is in flight; the
+// call's context derives from the run context and dies with it (quit
+// cancels an in-flight call). No invented timeout: the CLI runs these same
+// entry points without one, and the TUI must not fail operations the CLI
+// would complete.
+type actionResultMsg struct {
+	action      Action
+	applyBranch string
+	recoverOut  supervisor.RecoveryOutcome
+	err         error
+}
+
+// actionCtx derives one action's context from the run context, cancelling
+// any previous in-flight call first (dialog prompts are modal, so at most
+// one action runs at a time).
+func (m *Model) actionCtx() context.Context {
+	if m.actCancel != nil {
+		m.actCancel()
+	}
+	base := m.runCtx
+	if base == nil {
+		base = context.Background()
+	}
+	ctx, cancel := context.WithCancel(base)
+	m.actCancel = cancel
+	return ctx
+}
+
+// cancelAction releases an in-flight supervisor call, if any.
+func (m *Model) cancelAction() {
+	if m.actCancel != nil {
+		m.actCancel()
+		m.actCancel = nil
+	}
+	m.working = ""
+}
+
+// confirmStop runs the confirmed stop through the injected seam, off-loop.
+// The returned state string is advisory only: the run renders stop requested
 // until attempt.stopped is journaled — requested is never labelled stopped
 // (I06). A failure surfaces in place with state unchanged.
-func (m *Model) confirmStop() {
+func (m *Model) confirmStop() tea.Cmd {
 	if m.cfg.Actions.Stop == nil {
 		m.dialogErr = "stop unavailable: no supervisor seam wired"
-		return
+		return nil
 	}
 	if ok, reason := m.stopGate(); !ok {
 		m.dialogErr = "stop disabled: " + reason
-		return
+		return nil
 	}
-	if _, err := m.cfg.Actions.Stop(context.Background(), m.snap.Run.RunID); err != nil {
-		m.dialogErr = "stop failed: " + err.Error()
-		return
+	stop, runID, ctx := m.cfg.Actions.Stop, m.snap.Run.RunID, m.actionCtx()
+	m.working = "Requesting stop..."
+	return func() tea.Msg {
+		_, err := stop(ctx, runID)
+		return actionResultMsg{action: actionStop, err: err}
 	}
-	m.stopRequested = true
-	m.closeDialog()
 }
 
 // confirmRecover runs the confirmed recover through the injected seam with
-// empty hooks; task 10 wires tui.LiveFeed here so recovery progress feeds
-// the live view (design §10). Success reports the outcome; failure surfaces
-// in place.
-func (m *Model) confirmRecover() {
+// empty hooks, off-loop; task 10 wires tui.LiveFeed here so recovery
+// progress feeds the live view (design §10). Success reports the outcome;
+// failure surfaces in place.
+func (m *Model) confirmRecover() tea.Cmd {
 	if m.cfg.Actions.Recover == nil {
 		m.dialogErr = "recover unavailable: no supervisor seam wired"
-		return
+		return nil
 	}
 	if ok, reason := m.recoverGate(); !ok {
 		m.dialogErr = "recover disabled: " + reason
-		return
+		return nil
 	}
-	out, err := m.cfg.Actions.Recover(context.Background(), m.snap.Run.RunID, supervisor.Hooks{})
-	if err != nil {
-		m.dialogErr = "recover failed: " + err.Error()
-		return
+	doRecover, runID, ctx := m.cfg.Actions.Recover, m.snap.Run.RunID, m.actionCtx()
+	m.working = "Recovering run..."
+	return func() tea.Msg {
+		out, err := doRecover(ctx, runID, supervisor.Hooks{})
+		return actionResultMsg{action: actionRecover, recoverOut: out, err: err}
 	}
-	m.showResult("Recover run", "recovery "+cellOrUnknown(out.Mode)+": run "+
-		cellOrUnknown(string(out.State))+" ("+cellOrUnknown(out.Reason)+")")
 }
 
 // confirmApply runs the confirmed apply with the dialog's exact branch and
-// toggles (I03). An empty branch and any failure surface in place with no
-// call made or state changed.
-func (m *Model) confirmApply() {
+// toggles (I03), off-loop. An empty branch surfaces in place with no call
+// made; any failure surfaces in place with state unchanged.
+func (m *Model) confirmApply() tea.Cmd {
 	if m.cfg.Actions.Apply == nil {
 		m.dialogErr = "apply unavailable: no supervisor seam wired"
-		return
+		return nil
 	}
 	if ok, reason := m.applyGate(); !ok {
 		m.dialogErr = "apply disabled: " + reason
-		return
+		return nil
 	}
 	if m.applyBranch == "" {
 		m.dialogErr = "target branch is required"
-		return
+		return nil
 	}
-	if _, err := m.cfg.Actions.Apply(context.Background(), m.snap.Run.RunID,
-		m.applyBranch, m.acceptFlags, m.acceptUnverified); err != nil {
-		m.dialogErr = "apply failed: " + err.Error()
-		return
+	apply, runID, branch, flags, unverified, ctx :=
+		m.cfg.Actions.Apply, m.snap.Run.RunID, m.applyBranch, m.acceptFlags, m.acceptUnverified, m.actionCtx()
+	m.working = "Applying candidate..."
+	return func() tea.Msg {
+		_, err := apply(ctx, runID, branch, flags, unverified)
+		return actionResultMsg{action: actionApply, applyBranch: branch, err: err}
 	}
-	m.showResult("Apply candidate", "applied "+m.snap.Run.RunID+" to "+m.applyBranch)
+}
+
+// applyActionResult lands a finished supervisor call: errors surface in the
+// open dialog, successes close it or report through the result prompt.
+func (m *Model) applyActionResult(msg actionResultMsg) {
+	m.working = ""
+	m.actCancel = nil
+	switch msg.action {
+	case actionStop:
+		if msg.err != nil {
+			m.dialogErr = "stop failed: " + msg.err.Error()
+			return
+		}
+		m.stopRequested = true
+		m.closeDialog()
+	case actionRecover:
+		if msg.err != nil {
+			m.dialogErr = "recover failed: " + msg.err.Error()
+			return
+		}
+		out := msg.recoverOut
+		m.showResult("Recover run", "recovery "+cellOrUnknown(out.Mode)+": run "+
+			cellOrUnknown(string(out.State))+" ("+cellOrUnknown(out.Reason)+")")
+	case actionApply:
+		if msg.err != nil {
+			m.dialogErr = "apply failed: " + msg.err.Error()
+			return
+		}
+		m.showResult("Apply candidate", "applied "+m.snap.Run.RunID+" to "+msg.applyBranch)
+	}
 }
 
 // runExport writes the focused pane's plain text to

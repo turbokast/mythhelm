@@ -85,6 +85,9 @@ type Model struct {
 	ready            bool
 	loadErr          error
 	empty            bool
+	runCtx           context.Context
+	actCancel        context.CancelFunc
+	working          string
 	diff             Diff
 	diffErr          error
 	loadDiff         func(ctx context.Context, workspace, base, commit string) (Diff, error)
@@ -139,6 +142,7 @@ func newModel(cfg Config) *Model {
 // unknown run ID included) is returned before the program starts.
 func Run(ctx context.Context, cfg Config) error {
 	m := newModel(cfg)
+	m.runCtx = ctx
 	snap, err := viewmodel.Load(ctx, cfg.StateDir, cfg.RunID)
 	if err != nil {
 		if errors.Is(err, journal.ErrNoDatabase) {
@@ -244,6 +248,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case eventMsg:
 		m.consumeEvent(msg.Event)
 		return m, m.scheduleMotion()
+	case actionResultMsg:
+		m.applyActionResult(msg)
+		return m, nil
 	case motionFrameMsg:
 		if m.cfg.Caps.Motion != caps.MotionFull {
 			return m, nil
