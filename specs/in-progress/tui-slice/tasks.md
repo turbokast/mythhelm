@@ -232,7 +232,7 @@
 - **Spec deviations**: Review found `Load` folded every attempt's progress/result unscoped, so a retry inherited its predecessor's launch evidence; the fix scopes `attempt.progress`/`attempt.native_result` folding to the latest attempt in `internal/tui/viewmodel/viewmodel.go` (unattributed events still fold; `internal/tui/viewmodel/viewmodel_test.go` pins it), records the acked attempt on launch, and resets the launch in `setSnapshot` when the attempt changes. Windows CI exposed a startup-cancel race in `internal/cli/accessible.go` (cancel landing in the startup queries errored instead of echoing), fixed by shutting down clean with the trailer when the context is done (`internal/cli/accessible_test.go` pins it with a pre-cancelled context); otherwise none.
 - **Files modified**: `internal/tui/motion.go`, `internal/tui/motion_test.go`, `internal/tui/model.go`, `internal/tui/viewmodel/viewmodel.go`, `internal/tui/viewmodel/viewmodel_test.go`, `internal/cli/accessible.go`, `internal/cli/accessible_test.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
-### Task 9 — Palette actions and confirmations
+### Task 9 — Palette actions and confirmations ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: standard
@@ -254,6 +254,10 @@
   - `TestRequiredControlsSurviveAdversarialTheme`: with a maximally adversarial in-test token set, the approval prompt, spend warning and stop-state labels render with their text intact (G08; moved from task 4, whose Files cannot render these task-6/9 surfaces). A theme that could hide them fails.
 - **Test plan**: fake `Actions` recording calls; `Update`-level dialog tests; temp state dirs for export.
 - **Invariants touched**: I03 (§12.3: confirmations bind to exact effects), I06 (§7.3: requested vs confirmed), I11 (§14.11: adversarial-token control survival), I18 (§7.8: mutations only through supervisor entry points — fakes prove the seam).
+- **Status**: ✅ Completed — palette actions confirm through labelled prompts over the injected `Actions` seam with gated availability, in-place errors and state-dir export; PR #100.
+- **Implementation**: `dialogs.go` (stop/recover/apply/result prompts, Cancel-first focus, Esc cancels all) with `actions.go` (state gates, exact-effect confirms, `<stateDir>/exports/<run>-<pane>.txt` export) and `model.go`/`palette.go`/`motion.go` wiring (`stop requested` until `attempt.stopped`, disabled reasons in the palette). Commit 02596fbb28a57e606625cfa016247a917b52e3a6.
+- **Spec deviations**: None.
+- **Files modified**: `internal/tui/actions.go`, `internal/tui/dialogs.go`, `internal/tui/actions_test.go`, `internal/tui/model.go`, `internal/tui/mission.go`, `internal/tui/motion.go`, `internal/tui/nav.go`, `internal/tui/palette.go`, `internal/tui/nav_test.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
 ### Task 10 — Live render loop and history
 
