@@ -36,7 +36,7 @@ test it.
 
 | # | Date | OS + version | Terminal + minimum version | Shell | Colour mode | Unicode/ASCII | Resize | Paste | Focus | Keyboard | Mouse | Copy | Alt-screen restore | Interrupted exit | Plain (`--plain`) | Screen reader |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | TODO | TODO | TODO (maintainer's own) | TODO | TODO | TODO | TODO | TODO | TODO | TODO | not offered (D9) | TODO | TODO | TODO | TODO | see §3 |
+| 1 | 2026-10-03 | Ubuntu 24.04.5 LTS | GNOME Terminal 3.52.0 (VTE 0.76.0), TERM=xterm-256color, 190x45 | zsh 5.9 | auto: distinct colours; `--colour never`: monochrome, no leakage (pass) | Unicode ─ │ ▶ ● render; `--icons ascii` switches to `- \| >` (pass) | drag 190→~100→190 mid-run: layout adapts, no garbling, no stuck approval (pass) | multi-line paste lands in `/` filter (pass) | Alt-Tab away/back: renders fine (pass) | arrows/Tab cycle panes; up/down within-pane (no-op on single-item demo); `/ : ? q` Esc respond; exit-option rows not selectable — unwired stub, only Esc acts (partial, see §5) | not offered (D9) | select then middle-click paste or Shift+Ctrl+C copies (selection goes to primary buffer per terminal semantics, not app behaviour) (pass) | previous terminal content intact after quit (pass) | Ctrl-C after completion: exit 0, review+done banners print (pass); mid-run Ctrl-C: run cancelled, exit 130, no detach/reattach line (see §5 F-2) | non-TTY piped run: linear banners, zero escape bytes, exit 0 (pass) | see §3 |
 
 Field meanings: colour mode = the resolved mode (`auto` resolution or
 forced flag); Unicode/ASCII = `--icons` rendering incl. wide/bidi
@@ -117,3 +117,24 @@ satisfied by §3 above (or the experimental marking), not by a Go test.
 | AC-7.1 | Requested-but-unconfirmed stop labelled requested | `TestStopLabelsRequested` (task 9) |
 | AC-7.2 | Verification status attached to its exact revision | `TestVerificationMismatchLabelsRevisions`, `TestNativeResultNeverVerified` (task 6) |
 | AC-7.3 | Cost/quota figures kind-labelled; unknown never zero | `TestStatusStripKindLabels` (task 6) |
+
+## 5. Findings for follow-up
+
+- **F-1 (exit-options dialog unwired):** `q` renders the exit-options
+  rows (`internal/tui/dialogs.go`, `dialogExitOptions`) but key
+  selection was never wired — "informational until a later task wires
+  its rows; only Esc acts" — and no later task did. Observed
+  2026-10-03: left/right/Tab/Enter all inert in the dialog; Esc closes
+  it; Ctrl-C quits. The README claims no selectable exit options.
+  Needs a follow-up task or backlog card to wire the rows (detach /
+  request stop / cancel) per the design exit behaviour.
+- **F-2 (mid-run Ctrl-C cancels instead of detaching):** task 12's
+  contract is "quit-while-active detaches via two interrupts with the
+  `review <run>` reattach line" (`TestQuitLiveDetaches` passes), but
+  three real mid-run Ctrl-C presses on the scripted demo (2026-10-03)
+  all cancelled the run with exit 130 and no detach line. Likely
+  mechanism: on a fast run the stop confirms before the detach logic
+  can engage, so the detach path is unobservable via `demo`. Needs a
+  slow-adapter retest or a design clarification of what TUI Ctrl-C
+  promises. (One very-early Ctrl-C attempt printed nothing after `^C`;
+  exit code not captured.)
