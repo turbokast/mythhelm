@@ -82,7 +82,10 @@
 
 ## Task 10 — Live render loop and history
 
-<!-- pending -->
+- **Produces**: `internal/tui/live.go` — `tui.LiveFeed() (events chan journal.Event, notices *NoticeBacklog, hooks supervisor.Hooks)` (capacity-256 channel; `Event` sends as-is, non-blocking drop-on-full; `Notice` appends to the backlog, never blocking or dropping; `Interrupt` unset), `tui.NoticeBacklog` with `Add`/`Drain` (moved from `model.go`, same API); 200 ms `pollTickMsg` coalesced reload via the `loadSnapshot` seam (default `viewmodel.Load`); `noticeRows` tail of 3 with a drop marker; `startLivePump`/`stopLivePump`; `internal/tui/history.go` — `tui.SearchHistory(ctx, dir, runID, query)` over `EventsSince(..., 0)` with a caller-side case-insensitive type-plus-payload filter; PR #101.
+- **For dependents** (task 12): thread `LiveFeed`'s channel and backlog into `Config.Events`/`Config.Notices` and set `Interrupt` from `signal.Notify` exactly as `executeRun` does (capacity 2) — `LiveFeed` leaves it unset. `Run` starts the pump only when `cfg.Events != nil`, bootstraps the poll chain in both modes with one immediate tick, and joins the pump plus in-flight supervisor calls on quit. Feed live journaled events through `Config.Events` only — the pump wraps each as `eventMsg` for the advisory fold, and the poll tick converges via `Load`. Drive `Update(pollTickMsg{})` in tests with a stubbed `loadSnapshot`; never call `stopLivePump` inside `Update` (join from outside the event loop only).
+- **For dependents**: drained notices live in `Model.notices` as synthetic `ui.notice` events (`RunSequence: -1`, payload `{"text":...}`) rendered as `notice: …` lines in every layout — never journal progress. Recover runs through its own `LiveFeed` hooks (`recoverEvents`/`recoverNotices`) folded on the poll tick and finished when the result lands. `Init` stays the motion tick alone (task 8's nil-ness assertions), so the poll chain is a distinct message the no-permanent-loop test ignores.
+- **Deviations that change a later task's inputs**: none — `Config.Events`/`Config.Notices` keep their task 6 shape; the `Run`-side poll bootstrap (not `Init`-batched, against the task 8 handoff's expectation) is internal to `Run` and changes no test seam.
 
 ## Task 11 — Accessible linear renderer
 
