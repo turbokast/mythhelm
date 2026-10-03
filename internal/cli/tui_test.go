@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/ids"
@@ -928,13 +929,15 @@ func TestWaitForRunJournaledSeesJournaledRun(t *testing.T) {
 	f.addRun(runID, "executing", strings.Repeat("0", 64))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	done := make(chan struct{})
+	done := make(chan error, 1)
 	go func() {
-		waitForRunJournaled(ctx, f.dir, runID)
-		close(done)
+		done <- waitForRunJournaled(ctx, f.dir, runID)
 	}()
 	select {
-	case <-done:
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("waitForRunJournaled = %v, want nil", err)
+		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("waitForRunJournaled did not see the journaled run")
 	}
@@ -944,19 +947,37 @@ func TestWaitForRunJournaledSeesJournaledRun(t *testing.T) {
 // never journals (no database at all) must not hang the live stream —
 // ending the context ends the wait, so it cannot outlive the run.
 func TestWaitForRunJournaledEndsOnCancel(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() {
+			done <- waitForRunJournaled(ctx, t.TempDir(), "run_missing")
+		}()
+		// The waiter is blocked (not merely unscheduled) before cancel.
+		synctest.Wait()
+		cancel()
+		if err := <-done; !errors.Is(err, context.Canceled) {
+			t.Fatalf("waitForRunJournaled = %v, want context.Canceled", err)
+		}
+	})
+}
+
+// TestWaitForRunJournaledSurfacesJournalErrors pins the wait's error path:
+// a corrupt database is not "not yet" — it returns promptly instead of
+// spinning until supervision ends.
+func TestWaitForRunJournaledSurfacesJournalErrors(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan struct{})
-	go func() {
-		waitForRunJournaled(ctx, t.TempDir(), "run_missing")
-		close(done)
-	}()
-	time.Sleep(50 * time.Millisecond)
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("waitForRunJournaled hung after cancel on a missing run")
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, journal.DBName), []byte("not a database"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A direct call: any return is prompt; a hang fails the suite timeout.
+	err := waitForRunJournaled(context.Background(), dir, "run_broken")
+	if err == nil {
+		t.Fatal("waitForRunJournaled on a corrupt database = nil, want an error")
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, journal.ErrNoDatabase) || errors.Is(err, journal.ErrNotFound) {
+		t.Fatalf("waitForRunJournaled = %v, want the journal error verbatim", err)
 	}
 }
