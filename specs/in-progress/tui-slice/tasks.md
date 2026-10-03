@@ -339,7 +339,7 @@
 - **Spec deviations**: `--accessible` beats the non-TTY/`TERM=dumb` legs (design §2's list reads the other way) — forced by this task's own acceptance tests (`TestAfterFlagResumesAccessible` runs piped through `cli.Main`), and sound because the accessible stream is itself non-TTY-safe linear output; `--plain` still beats `--accessible` and `--format jsonl` beats both, as designed. `demo` skips its review screen after a detach (a detached run has no receipt); `review --accessible` follows live only while the run is active (terminal-state watch, prompt return); live-accessible pipeline notices go to stderr so stdout stays a pure stream with the trailer last. Review found the watch could cancel the stream mid-startup (bare trailer, history lost) and, after gating on first write, could hang on empty resume pages; `internal/cli/accessible.go` therefore gains an optional `Started` channel closed once the initial page is processed even when it emits nothing, which the watch waits on before polling.
 - **Files modified**: `internal/cli/tui.go`, `internal/cli/tui_test.go`, `internal/cli/run.go`, `internal/cli/demo.go`, `internal/cli/review.go`, `internal/cli/accessible.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
-### Task 13 — End-to-end launch and fallback
+### Task 13 — End-to-end launch and fallback ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -356,6 +356,10 @@
   - `TestE2EReviewUnknownExits1`: `review run_missing` exits 1 with the not-found message on the packaged binary.
 - **Test plan**: `tests/e2e` harness (built binary, temp homes/states/repos, fake adapter scenarios); no PTY required.
 - **Invariants touched**: §15.10 (exit codes on the final binary).
+- **Status**: ✅ Completed — the packaged binary's launch rule, flag validation and fallback paths are covered end to end with the live-accessible startup race fixed; PR #103.
+- **Implementation**: `tests/e2e/tui_test.go` (6 acceptance tests over the fake happy/failing scenarios with per-run normalisation for the byte comparisons); `runAccessibleLive` waits for the run row before streaming and `RunAccessible` drains on shutdown. Commit 2c449f89339dc214b5c1cb6aec1fa5821ca38dcb.
+- **Spec deviations**: Beyond the listed file the change fixes two task-12 defects the new tests caught (same precedent as tasks 8–11): `run --accessible` always exited 1 with "not found" (the stream's initial `Load` raced `run.created`), fixed by `waitForRunJournaled` in `internal/cli/tui.go`; and live streams truncated at the last poll (e.g. summary plus event 1 only), fixed by a detached-context shutdown drain in `internal/cli/accessible.go`. The `--plain`/JSONL byte comparisons normalise per-run IDs, PIDs, paths, digests and timings — raw outputs can never be byte-identical across runs — with guards asserting the raw streams differ so the normalisation stays load-bearing.
+- **Files modified**: `tests/e2e/tui_test.go`, `internal/cli/tui.go`, `internal/cli/accessible.go`, `specs/in-progress/tui-slice/tasks.md`, `specs/in-progress/tui-slice/handoff.md`.
 
 ### Task 14 — G09 evidence, UX session and README status
 

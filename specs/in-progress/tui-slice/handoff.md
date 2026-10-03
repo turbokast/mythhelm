@@ -104,7 +104,10 @@
 
 ## Task 13 — End-to-end launch and fallback
 
-<!-- pending -->
+- **Produces**: `tests/e2e/tui_test.go` — `TestE2ENonTTYStaysLinear` (piped linear, no CSI, exits 0/5), `TestE2EPlainForcesLinear` (`--plain` byte-equals piped linear after normalisation), `TestE2EJsonlStable` (jsonl line-identical with TUI flags, N4), `TestE2EAccessibleStream` (ordered labels, no CSI, exit = outcome on `run` and `review`), `TestE2EInvalidFlagsExit2` (12 legs over run/review/demo), `TestE2EReviewUnknownExits1` (exact not-found messages with/without DB); PR #103.
+- **For dependents** (task 14): the byte comparisons normalise per-run IDs/PIDs/paths/digests/timings (`normalizeLinearRun`, `normalizeJSONLLine`) and assert the raw streams differ, so the comparisons stay meaningful; volatile JSONL keys are `launch_token_sha256`, `worker_pid`, `native_pid`, `native_pgid`, `worker_start_time`, `duration_ms`, `candidate_commit` plus `receipt.written`'s `sha256` — every other field compares strict, including `base_rev`, `producer_sequence` and the native build stamp.
+- **For dependents**: `run`/`demo --accessible` now wait for the run row before streaming (`waitForRunJournaled`, 20 ms pace, ends on ctx cancel) and `RunAccessible` drains since-last-poll on shutdown over a detached context — live streams end complete (1..N plus trailer) instead of truncating, and exit with the outcome code. The over-page early return is unchanged (no drain past the page).
+- **Deviations affecting later tasks**: the two accessible fixes above (in `internal/cli/tui.go` and `internal/cli/accessible.go`); no API changes. Unfixed suspicion for task 14's terminal sessions: `runLiveTUI` starts `tui.Run` — whose initial `Load` also fails fast on not-found — with no equivalent wait, so TTY live mode likely misbehaves when the state DB already exists (immediate error or detach); it needs PTY verification before any fix, since the fix interacts with detach semantics.
 
 ## Task 14 — G09 evidence, UX session and README status
 
