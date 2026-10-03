@@ -50,6 +50,46 @@ func nextAction(snap viewmodel.Snapshot, c caps.Caps) string {
 	}
 }
 
+// stopPending reports whether a confirmed stop still awaits worker
+// confirmation: the flag is set and the run is still in a state a stop
+// request can be outstanding against (I06).
+func (m *Model) stopPending() bool {
+	if !m.stopRequested {
+		return false
+	}
+	switch m.snap.Run.State {
+	case "executing", "verifying", "stopping":
+		return true
+	default:
+		return false
+	}
+}
+
+// stopConverged reports whether a reloaded snapshot retires a pending stop
+// request: the attempt reached stopped, or the run left the states a stop
+// request can be outstanding against.
+func stopConverged(snap viewmodel.Snapshot) bool {
+	if snap.Attempt != nil && snap.Attempt.State == "stopped" {
+		return true
+	}
+	switch snap.Run.State {
+	case "executing", "verifying", "stopping":
+		return false
+	default:
+		return true
+	}
+}
+
+// nextActionText is the next-action row with the pending-stop override: a
+// confirmed stop renders stop requested until the worker confirms it, never
+// stopped (I06).
+func (m *Model) nextActionText() string {
+	if m.stopPending() {
+		return "stop requested " + dashGlyph(m.cfg.Caps) + " waiting for worker confirmation"
+	}
+	return nextAction(m.snap, m.cfg.Caps)
+}
+
 // stateChip maps a run state to its §15.3 text chip.
 func stateChip(state string) string {
 	switch state {
@@ -262,7 +302,7 @@ func (m *Model) statusLines() []line {
 		"native exit: " + m.nativeExitText()
 	return []line{
 		{text: billing, colour: m.cfg.Tokens.TextMuted},
-		{text: "Next action: " + nextAction(m.snap, c), colour: m.cfg.Tokens.Text},
+		{text: "Next action: " + m.nextActionText(), colour: m.cfg.Tokens.Text},
 	}
 }
 
@@ -338,7 +378,7 @@ func (m *Model) compactLines() []line {
 		{text: "MYTHHELM  " + cellOrUnknown(snap.Run.RunID) + "  " + cellOrUnknown(snap.Run.State), colour: m.cfg.Tokens.Text},
 		{text: "Goal: " + cellOrUnknown(snap.Goal), colour: m.cfg.Tokens.Text},
 		{text: "state: " + stateChip(snap.Run.State) + " " + cellOrUnknown(snap.Run.State)},
-		{text: "next action: " + nextAction(snap, c)},
+		{text: "next action: " + m.nextActionText()},
 		{text: "compact view " + dashGlyph(c) + " small terminal (--accessible for linear)"},
 	}
 	lines = append(lines, line{text: "activity: " + m.activityText()})
@@ -381,7 +421,7 @@ func (m *Model) ruleLine(width int) string {
 // criticalStatusLine is the single pane's persistent critical status.
 func (m *Model) criticalStatusLine() line {
 	return line{
-		text:   cellOrUnknown(m.snap.Run.State) + " " + dashGlyph(m.cfg.Caps) + " " + nextAction(m.snap, m.cfg.Caps),
+		text:   cellOrUnknown(m.snap.Run.State) + " " + dashGlyph(m.cfg.Caps) + " " + m.nextActionText(),
 		colour: m.cfg.Tokens.Attention,
 	}
 }

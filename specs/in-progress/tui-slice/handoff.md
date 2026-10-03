@@ -74,7 +74,11 @@
 
 ## Task 9 — Palette actions and confirmations
 
-<!-- pending -->
+- **Produces**: `internal/tui/dialogs.go` — dialog ids (`dialogStop`, `dialogRecover`, `dialogApply`, `dialogDone`; `dialogExitOptions` moved here from `nav.go`), `openDialog`/`closeDialog`/`showResult`, `dialogKey` dispatch, `dialogLines`/`applyLines`/`buttonLine` rendering; `internal/tui/actions.go` — `actionGate`/`stopGate`/`recoverGate`/`applyGate`, `confirmStop`/`confirmRecover`/`confirmApply`, `runExport`/`exportText`/`stripANSI`/`sanitizeSegment`; PR #100.
+- **For dependents** (task 10, 12): `Recover` is called with empty `supervisor.Hooks{}` — task 10 wires `tui.LiveFeed` hooks there so recovery progress feeds the live view. Every confirm re-checks its gate and no-ops on a nil seam func with an in-place error, so task 12's wiring only fills `Config.Actions`.
+- **For dependents**: `Model.stopRequested` renders `stop requested` via `nextActionText` (mission.go) until `attempt.stopped` (motion.go `consumeEvent`) or a converging reload (`stopConverged` in `setSnapshot`) retires it; never trust `Stop`'s returned string as confirmation. Palette `Enter` on a disabled action is inert and leaves the palette open; `dialogFocus` always opens on Cancel and `dialogKey` Esc closes with no call — keep both for AC-3.3.
+- **For dependents**: export writes `<stateDir>/exports/<run>-<pane>.txt` (0600, dir 0700, run segment sanitised) and reports through `dialogDone`; result prompts dismiss with Enter/Esc. The task-7 `nav_test.go` placeholder subtest now asserts dispatch-through-gates.
+- **Deviations that change a later task's inputs**: none.
 
 ## Task 10 — Live render loop and history
 

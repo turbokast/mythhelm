@@ -6,9 +6,9 @@ import (
 	"github.com/turbokast/mythhelm/internal/tui/theme"
 )
 
-// Action identifies a command-palette entry (design §9–§10). Task 9
-// implements the stop/recover/apply/export effects; this task registers the
-// list the palette shows and routes the view-only selections.
+// Action identifies a command-palette entry (design §9–§10): stop, recover
+// and apply open confirmations, export runs immediately, and the rest are
+// view-only selections (actions.go gates each one).
 type Action int
 
 const (
@@ -68,17 +68,30 @@ func (m *Model) filteredActions() []actionDef {
 	return out
 }
 
-// runPaletteSelection runs the selected action and closes the palette. The
-// view-only actions take effect here; stop, recover, apply and export close
-// the palette without acting — their effects arrive in task 9, and faking
-// them would invent state the core did not report.
+// runPaletteSelection runs the selected action and closes the palette.
+// Disabled actions are inert and leave the palette open on their visible
+// reason; stop, recover and apply open their confirmations, export runs
+// immediately, and the view-only actions take effect at once.
 func (m *Model) runPaletteSelection() {
 	list := m.filteredActions()
-	m.palette.open = false
 	if m.palette.sel < 0 || m.palette.sel >= len(list) {
+		m.palette.open = false
 		return
 	}
-	switch list[m.palette.sel].id {
+	id := list[m.palette.sel].id
+	if ok, _ := m.actionGate(id); !ok {
+		return
+	}
+	m.palette.open = false
+	switch id {
+	case actionStop:
+		m.openDialog(dialogStop)
+	case actionRecover:
+		m.openDialog(dialogRecover)
+	case actionApply:
+		m.openDialog(dialogApply)
+	case actionExport:
+		m.runExport()
 	case actionSwitchPane:
 		m.cyclePane(1)
 	case actionTheme:
@@ -86,10 +99,7 @@ func (m *Model) runPaletteSelection() {
 	case actionHelp:
 		m.helpOpen = true
 	case actionQuit:
-		m.dialog = dialogExitOptions
-	default:
-		// Task 9 owns the remaining actions; the closed palette is the only
-		// effect until then.
+		m.openDialog(dialogExitOptions)
 	}
 }
 
@@ -122,7 +132,11 @@ func (m *Model) paletteLines() []line {
 		if i == m.palette.sel {
 			marker, colour = focusGlyph(m.cfg.Caps)+" ", t.Focus
 		}
-		rows = append(rows, line{text: marker + def.name + " (" + def.keys + ")", colour: colour})
+		text := marker + def.name + " (" + def.keys + ")"
+		if ok, reason := m.actionGate(def.id); !ok {
+			text += " " + dashGlyph(m.cfg.Caps) + " disabled: " + reason
+		}
+		rows = append(rows, line{text: text, colour: colour})
 	}
 	return rows
 }
