@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"strings"
 
@@ -22,6 +23,7 @@ func runReview(args []string, stdio Stdio) error {
 	fs := newFlagSet("review")
 	format := fs.String("format", "plain", "output format: plain or jsonl")
 	noDiff := fs.Bool("no-diff", false, "omit the candidate diff from plain output")
+	tuiFlags := addTUIFlags(fs)
 	positional, err := parseFlags(fs, args, stdio)
 	if err != nil {
 		return err
@@ -32,26 +34,47 @@ func runReview(args []string, stdio Stdio) error {
 	if *format != "plain" && *format != "jsonl" {
 		return usageErrorf("--format must be plain or jsonl, got %q", *format)
 	}
+	opts, err := tuiFlags.resolve(os.Getenv)
+	if err != nil {
+		return err
+	}
 	if !strings.HasPrefix(positional[0], "run_") || strings.ContainsAny(positional[0], `/\.`) {
 		return usageErrorf("invalid run ID %q", positional[0])
 	}
-	ctx := context.Background()
 	dir, err := statedir.Resolve()
 	if err != nil {
 		return err
 	}
+	return runReviewDispatch(stdio, prodTUIDeps, os.Getenv, dir, positional[0], *format, *noDiff, opts)
+}
+
+// runReviewDispatch looks the run up, then evaluates the launch rule before
+// the receipt gate: the TUI and --accessible branches launch without a
+// receipt, while the linear branches keep the existing gate. deps and getenv
+// are threaded so tests can force the TTY legs without a PTY.
+func runReviewDispatch(stdio Stdio, deps tuiDeps, getenv func(string) string, dir, runID, format string, noDiff bool, opts tuiOptions) error {
+	ctx := context.Background()
 	j, err := journal.OpenReadOnly(ctx, dir)
 	if errors.Is(err, journal.ErrNoDatabase) {
-		return fmt.Errorf("run %s: %w", positional[0], journal.ErrNotFound)
+		return fmt.Errorf("run %s: %w", runID, journal.ErrNotFound)
 	}
 	if err != nil {
 		return err
+	}
+	run, err := j.Run(ctx, runID)
+	if err != nil {
+		_ = j.Close()
+		return err
+	}
+	switch selectLaunch(format, false, opts.accessible, stdio.Out, deps, getenv) {
+	case launchTUI:
+		_ = j.Close()
+		return runInspectTUI(deps, dir, run.RunID, opts)
+	case launchAccessible:
+		_ = j.Close()
+		return runAccessibleReview(stdio, dir, run.RunID, opts.after)
 	}
 	defer func() { _ = j.Close() }()
-	run, err := j.Run(ctx, positional[0])
-	if err != nil {
-		return err
-	}
 	r, _, err := supervisor.ReadReceipt(ctx, j, run.RunID)
 	if err != nil {
 		return err
@@ -59,10 +82,10 @@ func runReview(args []string, stdio Stdio) error {
 	if r["state"] != run.State {
 		return fmt.Errorf("receipt for %s does not match its run projection", run.RunID)
 	}
-	if *format == "jsonl" {
+	if format == "jsonl" {
 		return json.NewEncoder(stdio.Out).Encode(r)
 	}
-	return writeReviewPlain(ctx, stdio.Out, j, r, run.RunID, !*noDiff)
+	return writeReviewPlain(ctx, stdio.Out, j, r, run.RunID, !noDiff)
 }
 
 func reviewString(m map[string]any, key string) string {

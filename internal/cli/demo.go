@@ -48,6 +48,7 @@ func DemoCheckMain(args []string, stdout, stderr io.Writer) int {
 func runDemo(args []string, stdio Stdio) error {
 	fs := newFlagSet("demo")
 	check := fs.String("check", "pass", "demo check outcome: pass or fail (fail ends the run at exit 5)")
+	tuiFlags := addTUIFlags(fs)
 	positional, err := parseFlags(fs, args, stdio)
 	if err != nil {
 		return err
@@ -57,6 +58,10 @@ func runDemo(args []string, stdio Stdio) error {
 	}
 	if *check != "pass" && *check != "fail" {
 		return usageErrorf("--check must be pass or fail, got %q", *check)
+	}
+	opts, err := tuiFlags.resolve(os.Getenv)
+	if err != nil {
+		return err
 	}
 	if _, err := workspace.Git(context.Background(), "", true, "--version"); err != nil {
 		return fmt.Errorf("demo needs git: %w", err)
@@ -90,18 +95,59 @@ func runDemo(args []string, stdio Stdio) error {
 	}
 
 	banner("run")
-	r := newRenderer("plain", stdio)
-	out, runErr := executeRun(r, admission.Request{
+	req := admission.Request{
 		StateDir: state, Repo: repo, TaskFile: task,
 		Adapter: "fake", Billing: "local-scripted", ExecutionProfile: "trusted-host",
 		TrustProjectConfig: "sha256:" + digest, Env: os.Environ(),
-	})
-	// finish writes the run's terminal result line and surfaces any
-	// streaming write error; the review screen follows it.
-	resultErr := finish(r, out, runErr)
+	}
+	// Demo offers no --format, so the launch rule is evaluated from the
+	// plain leg with an effective plain format; --plain itself stays a
+	// run-only flag.
+	var out supervisor.Outcome
+	var resultErr error
+	reviewOK := true
+	switch selectLaunch("plain", false, opts.accessible, stdio.Out, prodTUIDeps, os.Getenv) {
+	case launchTUI:
+		d, derr := admission.Decide(context.Background(), req)
+		if derr != nil {
+			resultErr = finish(newRenderer("plain", stdio), out, derr)
+			break
+		}
+		var runErr error
+		out, runErr = runLiveTUI(stdio, prodTUIDeps, state, d.RunID, opts,
+			func(ctx context.Context, hooks supervisor.Hooks) (supervisor.Outcome, error) {
+				return supervisor.Run(ctx, d, hooks)
+			})
+		// finish writes the run's terminal result line and surfaces any
+		// streaming write error; the review screen follows it.
+		resultErr = finish(newRenderer("plain", stdio), out, runErr)
+		reviewOK = !out.Detached
+	case launchAccessible:
+		d, derr := admission.Decide(context.Background(), req)
+		if derr != nil {
+			resultErr = finish(newRenderer("plain", stdio), out, derr)
+			break
+		}
+		var runErr error
+		// No finish: the stream's next-after trailer stays its last line.
+		out, runErr = runAccessibleLive(stdio, state, d.RunID, opts.after,
+			func(ctx context.Context, hooks supervisor.Hooks) (supervisor.Outcome, error) {
+				return supervisor.Run(ctx, d, hooks)
+			})
+		resultErr = runErr
+		reviewOK = !out.Detached
+	default:
+		r := newRenderer("plain", stdio)
+		var runErr error
+		out, runErr = executeRun(r, req)
+		// finish writes the run's terminal result line and surfaces any
+		// streaming write error; the review screen follows it.
+		resultErr = finish(r, out, runErr)
+	}
 
-	// A run that never recorded has nothing to review.
-	if out.RunID != "" {
+	// A run that never recorded has nothing to review, and a detached run
+	// has no receipt to review.
+	if out.RunID != "" && reviewOK {
 		banner("review")
 		if rerr := demoReview(stdio.Out, state, out.RunID); rerr != nil {
 			return errors.Join(resultErr, rerr)

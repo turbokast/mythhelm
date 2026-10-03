@@ -37,15 +37,17 @@ func runRun(args []string, stdio Stdio) error {
 	noChecks := fs.Bool("no-checks", false, "waive checks; result is unverified and exits 5")
 	keepGoing := fs.Bool("keep-going", false, "continue checks after an unavailable executable")
 	format := fs.String("format", "plain", "output format: plain or jsonl")
-	fs.Bool("plain", false, "linear text output, no cursor movement or colour (the only text output in this build)")
+	plain := fs.Bool("plain", false, "linear text output, no cursor movement or colour (the only text output in this build)")
 	nonInteractive := fs.Bool("non-interactive", false, "never ask: a decision that needs you exits 3, naming the flag that answers it")
 	scenario := fs.String("scenario", "", "fake adapter scenario (default happy)")
 	host := fs.String("host", "", "standalone (herdr is not available in this build)")
+	tuiFlags := addTUIFlags(fs)
 	positional, err := parseFlags(fs, args, stdio)
 	if errors.Is(err, flag.ErrHelp) {
 		return err
 	}
 	r := newRenderer(*format, stdio)
+	var opts tuiOptions
 	switch {
 	case err != nil:
 	case len(positional) > 0:
@@ -53,6 +55,8 @@ func runRun(args []string, stdio Stdio) error {
 	case *format != "plain" && *format != "jsonl":
 		r = newRenderer("plain", stdio)
 		err = usageErrorf("--format must be plain or jsonl, got %q", *format)
+	default:
+		opts, err = tuiFlags.resolve(os.Getenv)
 	}
 	if err != nil {
 		return finish(r, supervisor.Outcome{}, err)
@@ -89,8 +93,33 @@ func runRun(args []string, stdio Stdio) error {
 	if !*nonInteractive {
 		req.Confirm = prompter(stdio)
 	}
-	out, err := executeRun(r, req)
-	return finish(r, out, err)
+	switch selectLaunch(*format, *plain, opts.accessible, stdio.Out, prodTUIDeps, os.Getenv) {
+	case launchTUI:
+		d, err := admission.Decide(context.Background(), req)
+		if err != nil {
+			return finish(newRenderer("plain", stdio), supervisor.Outcome{}, err)
+		}
+		out, err := runLiveTUI(stdio, prodTUIDeps, stateDir, d.RunID, opts,
+			func(ctx context.Context, hooks supervisor.Hooks) (supervisor.Outcome, error) {
+				return supervisor.Run(ctx, d, hooks)
+			})
+		return finish(newRenderer("plain", stdio), out, err)
+	case launchAccessible:
+		d, err := admission.Decide(context.Background(), req)
+		if err != nil {
+			return finish(newRenderer("plain", stdio), supervisor.Outcome{}, err)
+		}
+		// No finish: the stream's next-after trailer is its last line,
+		// and the returned error already carries the outcome's exit code.
+		_, err = runAccessibleLive(stdio, stateDir, d.RunID, opts.after,
+			func(ctx context.Context, hooks supervisor.Hooks) (supervisor.Outcome, error) {
+				return supervisor.Run(ctx, d, hooks)
+			})
+		return err
+	default:
+		out, err := executeRun(r, req)
+		return finish(r, out, err)
+	}
 }
 
 // executeRun admits req and supervises its one native attempt, streaming
