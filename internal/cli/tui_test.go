@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/ids"
@@ -916,5 +917,115 @@ func TestReviewResumePastEndReturnsPromptly(t *testing.T) {
 	}
 	if got := out.String(); got != "next-after: 999\n" {
 		t.Fatalf("output = %q, want only the echo trailer", got)
+	}
+}
+
+// TestWaitForRunJournaledSeesJournaledRun pins the live stream's startup
+// wait: a journaled run row ends the wait without any cancellation.
+func TestWaitForRunJournaledSeesJournaledRun(t *testing.T) {
+	t.Parallel()
+	f := newAccessibleFixture(t)
+	runID := ids.New("run")
+	f.addRun(runID, "executing", strings.Repeat("0", 64))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- waitForRunJournaled(ctx, f.dir, runID)
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("waitForRunJournaled = %v, want nil", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("waitForRunJournaled did not see the journaled run")
+	}
+}
+
+// TestWaitForRunJournaledEndsOnCancel pins the wait's bound: a run that
+// never journals (no database at all) must not hang the live stream —
+// ending the context ends the wait, so it cannot outlive the run.
+func TestWaitForRunJournaledEndsOnCancel(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() {
+			done <- waitForRunJournaled(ctx, t.TempDir(), "run_missing")
+		}()
+		// The waiter is blocked (not merely unscheduled) before cancel.
+		synctest.Wait()
+		cancel()
+		if err := <-done; !errors.Is(err, context.Canceled) {
+			t.Fatalf("waitForRunJournaled = %v, want context.Canceled", err)
+		}
+	})
+}
+
+// TestWaitForRunJournaledSurfacesJournalErrors pins the wait's error path:
+// a corrupt database is not "not yet" — it returns promptly instead of
+// spinning until supervision ends.
+func TestWaitForRunJournaledSurfacesJournalErrors(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, journal.DBName), []byte("not a database"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A local deadline: a regressed waiter that retries the corrupt read
+	// must fail here in seconds, not at the suite timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := waitForRunJournaled(ctx, dir, "run_broken")
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal("waitForRunJournaled retried a corrupt database until the deadline, want the journal error promptly")
+	}
+	if err == nil {
+		t.Fatal("waitForRunJournaled on a corrupt database = nil, want an error")
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, journal.ErrNoDatabase) || errors.Is(err, journal.ErrNotFound) {
+		t.Fatalf("waitForRunJournaled = %v, want the journal error verbatim", err)
+	}
+}
+
+// TestRunAccessibleLiveEndsOnStrandedRun pins the live stream's shutdown
+// when the pipeline fails after journaling: the run sits in created,
+// which the terminal watch never observes as terminal, so supervision
+// end — not the watch — must end the stream. Without the Started-gated
+// stop, runAccessibleLive wedges on streamDone and this test times out
+// instead of hanging the suite.
+func TestRunAccessibleLiveEndsOnStrandedRun(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	j := openJournal(t, dir)
+	p := supervisor.NewProducer(ids.New("sup"), 1)
+	runID := createRun(t, j, p, t.TempDir())
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	boom := errors.New("flush boom")
+	supervise := func(context.Context, supervisor.Hooks) (supervisor.Outcome, error) {
+		return supervisor.Outcome{}, boom
+	}
+	var out, errBuf bytes.Buffer
+	type result struct {
+		out supervisor.Outcome
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		outcome, err := runAccessibleLive(Stdio{Out: &out, Err: &errBuf}, dir, runID, 0, supervise)
+		done <- result{out: outcome, err: err}
+	}()
+	select {
+	case r := <-done:
+		if !errors.Is(r.err, boom) {
+			t.Fatalf("runAccessibleLive = %v, want the pipeline error", r.err)
+		}
+		if !strings.Contains(out.String(), "next-after:") {
+			t.Fatalf("stream lacks its trailer, got:\n%s", out.String())
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("runAccessibleLive wedged on a stranded created run, want prompt shutdown with a trailer")
 	}
 }

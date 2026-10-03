@@ -608,3 +608,40 @@ func runAccessiblePage(t *testing.T, dir, runID string, after int64, want int) [
 	}
 	return accessibleLines(t, sb.String())
 }
+
+// TestAccessibleShutdownDrainsLateEvents journals one event after the
+// stream's history page with a poll cadence that never ticks: the
+// shutdown drain is the only path that can stream it, so the trailer
+// must name it. Without the drain the stream truncates at the last
+// poll (the trailer would echo next-after: 1 with event 2 missing).
+func TestAccessibleShutdownDrainsLateEvents(t *testing.T) {
+	t.Parallel()
+	f := newAccessibleFixture(t)
+	runID := ids.New("run")
+	f.addRun(runID, "executing", strings.Repeat("0", 64))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	sb := &syncBuffer{}
+	done := make(chan error, 1)
+	go func() {
+		done <- RunAccessible(ctx, AccessibleConfig{RunID: runID, StateDir: f.dir, Out: sb, Poll: time.Hour})
+	}()
+	// Nine summary lines plus event 1 prove the history page streamed
+	// and the stream sits in its follow loop before the late event
+	// lands.
+	waitAccessibleLines(t, sb, 10)
+	f.append(runID, "run.state_changed", `{"state":"executing","reason":"late"}`, nil)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("RunAccessible: %v", err)
+	}
+	out := sb.String()
+	lines := accessibleLines(t, out)
+	if last := lines[len(lines)-1]; last != "next-after: 2" {
+		t.Fatalf("trailer = %q, want next-after: 2:\n%s", last, out)
+	}
+	if !strings.Contains(out, "event 2: run: executing (late)") {
+		t.Fatalf("shutdown drain lost the late event:\n%s", out)
+	}
+}

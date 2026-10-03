@@ -293,14 +293,101 @@ func runAccessibleLive(stdio Stdio, stateDir, runID string, after int64, supervi
 	}()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	// The stream runs on its own signal context, ended by the terminal
+	// watch, by pipeline end once started, or by Ctrl-C: pipeline end
+	// must not cancel a stream whose initial Load has not run yet, or a
+	// fast run's history collapses to a bare trailer.
+	streamCtx, streamStop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer streamStop()
+	started := make(chan struct{})
+	go watchRunTerminal(streamCtx, streamStop, started, stateDir, runID)
 	streamDone := make(chan error, 1)
 	go func() {
-		streamDone <- RunAccessible(ctx, AccessibleConfig{RunID: runID, StateDir: stateDir, Out: stdio.Out, After: after})
+		// The pipeline journals run.created after it starts; the stream's
+		// initial Load must wait for that row, or a fast startup fails
+		// with "not found" and the run exits 1 with no stream at all.
+		if err := waitForRunJournaled(ctx, stateDir, runID); err != nil {
+			if ctx.Err() == nil {
+				streamDone <- err
+				return
+			}
+			// Supervision ended first: one final check, since a fast
+			// run can finish inside the poll gap. Absent means the
+			// pipeline failed before journaling, so there is nothing
+			// to stream and the outcome below carries the exit.
+			if found, ferr := runJournaled(context.Background(), stateDir, runID); ferr != nil || !found {
+				streamDone <- nil
+				return
+			}
+		}
+		streamDone <- RunAccessible(streamCtx, AccessibleConfig{RunID: runID, StateDir: stateDir, Out: stdio.Out, After: after, Started: started})
 	}()
 	res := <-done
 	stop()
-	streamErr := <-streamDone
+	// Supervision is over: the journal will not change further, so once
+	// the stream has started there is nothing left to follow. End it even
+	// when the run never reaches a terminal state — a pipeline error
+	// after CreateRun (a failed flush leaves it in created, which the
+	// terminal watch never observes as terminal) — or shutdown wedges on
+	// streamDone. Gating the stop on Started keeps a fast run's full
+	// history instead of a bare trailer.
+	var streamErr error
+	select {
+	case streamErr = <-streamDone:
+	case <-started:
+		streamStop()
+		streamErr = <-streamDone
+	}
 	return res.out, errors.Join(streamErr, outcomeMapped(res))
+}
+
+// accessibleRunWaitPace paces the live stream's wait for the pipeline to
+// journal its run: run.created normally lands within milliseconds.
+const accessibleRunWaitPace = 20 * time.Millisecond
+
+// waitForRunJournaled blocks until runID exists in stateDir's journal or ctx
+// ends, so a live stream never loads a run the pipeline has not journaled
+// yet. Absence (ErrNoDatabase, ErrNotFound) means "not yet"; any other
+// journal error returns immediately instead of spinning, and callers always
+// cancel ctx after the pipeline finishes, so the wait cannot outlive the run.
+func waitForRunJournaled(ctx context.Context, stateDir, runID string) error {
+	t := time.NewTicker(accessibleRunWaitPace)
+	defer t.Stop()
+	for {
+		found, err := runJournaled(ctx, stateDir, runID)
+		switch {
+		case err == nil:
+			if found {
+				return nil
+			}
+		case errors.Is(err, journal.ErrNoDatabase) || errors.Is(err, journal.ErrNotFound):
+			// Not journaled yet — keep waiting.
+		case ctx.Err() != nil:
+			return ctx.Err()
+		default:
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-t.C:
+		}
+	}
+}
+
+// runJournaled reports whether runID has a run row yet, distinguishing
+// absence (ErrNoDatabase, ErrNotFound) from unexpected journal errors.
+func runJournaled(ctx context.Context, stateDir, runID string) (bool, error) {
+	j, err := journal.OpenReadOnly(ctx, stateDir)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = j.Close() }()
+	_, err = j.Run(ctx, runID)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // accessibleWatchInterval paces the review stream's terminal-state watch: a
