@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/turbokast/mythhelm/internal/journal"
@@ -196,6 +197,44 @@ func TestStopLabelsRequested(t *testing.T) {
 		t.Errorf("already-confirmed stop shows a pending label\n%s", view)
 	}
 
+	// A confirmation that lands while the Stop call runs suppresses the
+	// pending label when the late success arrives (I06).
+	release := make(chan struct{})
+	slow := Actions{
+		Stop: func(ctx context.Context, runID string) (string, error) {
+			select {
+			case <-release:
+				return "stop_requested", nil
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		},
+	}
+	m = actionModel(t, fullCaps, withState("executing", "running"), slow)
+	m = openPaletteSelection(t, m, "stop")
+	m, _ = pressKey(t, m, specialMsg(tea.KeyLeft))
+	m, cmd := pressKey(t, m, specialMsg(tea.KeyEnter))
+	if cmd == nil {
+		t.Fatal("confirming stop returned no command")
+	}
+	updated, _ := m.Update(eventMsg{Event: journal.Event{
+		Type: "attempt.stopped", AttemptID: "att_1", RunSequence: 99,
+		Payload: json.RawMessage(confirmed),
+	}})
+	mm, ok := updated.(*Model)
+	if !ok {
+		t.Fatalf("Update returned %T, want *Model", updated)
+	}
+	m = mm
+	close(release)
+	m = runActionCmd(t, m, cmd)
+	if m.dialog != "" {
+		t.Fatalf("after late success dialog = %q, want closed", m.dialog)
+	}
+	if view := m.View(); strings.Contains(view, "stop requested") {
+		t.Errorf("late success re-raised the label after confirmation\n%s", view)
+	}
+
 	for _, state := range []string{"ready_for_review", "interrupted", "failed", "completed"} {
 		m := actionModel(t, fullCaps, withState(state, "succeeded_native"), fakes.actions())
 		m, _ = pressKey(t, m, runeMsg(":"))
@@ -264,8 +303,17 @@ func TestActionRunsOffLoop(t *testing.T) {
 	if m.working != "" || m.actCancel != nil {
 		t.Errorf("quit left the call in flight: working=%q", m.working)
 	}
+	// Read the result before releasing the callback: with release open,
+	// only cancellation can release it, so the outcome is deterministic.
+	// The timeout unblocks a regressed callback instead of hanging.
+	var msg tea.Msg
+	select {
+	case msg = <-results:
+	case <-time.After(5 * time.Second):
+		close(release)
+		t.Fatal("cancelled call never returned")
+	}
 	close(release)
-	msg := <-results
 	res, ok := msg.(actionResultMsg)
 	if !ok {
 		t.Fatalf("command returned %T, want actionResultMsg", msg)

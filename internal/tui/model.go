@@ -105,6 +105,7 @@ type Model struct {
 	acceptFlags      bool
 	acceptUnverified bool
 	stopRequested    bool
+	stopConfirmed    bool
 	dialogErr        string
 	resultTitle      string
 	resultBody       string
@@ -174,11 +175,13 @@ func (m *Model) setSnapshot(ctx context.Context, snap viewmodel.Snapshot) {
 	m.snap = snap
 	m.ready = true
 	m.loadErr = nil
-	if m.stopRequested && stopConverged(snap) {
+	if stopConverged(snap) {
 		// The reload proves the request converged (the attempt stopped
 		// or the run left the stopping states), so the pending label
-		// retires; until then it renders requested, never stopped (I06).
+		// retires and a late in-flight result cannot re-raise it; until
+		// then it renders requested, never stopped (I06).
 		m.stopRequested = false
+		m.stopConfirmed = true
 	}
 	if nextAttempt != prevAttempt {
 		// A new attempt waits for its own ack: the old launch (consumed

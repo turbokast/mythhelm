@@ -141,6 +141,9 @@ func (m *Model) consumeEvent(ev journal.Event) {
 		}
 		if stopConfirmed(ev.Payload) {
 			m.stopRequested = false
+			// Retained until the in-flight Stop result (if any) lands,
+			// so a late success cannot re-raise the pending label.
+			m.stopConfirmed = true
 		}
 	}
 }

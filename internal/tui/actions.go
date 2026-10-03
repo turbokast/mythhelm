@@ -133,6 +133,7 @@ func (m *Model) confirmStop() tea.Cmd {
 		return nil
 	}
 	stop, runID, ctx := m.cfg.Actions.Stop, m.snap.Run.RunID, m.actionCtx()
+	m.stopConfirmed = false
 	m.working = "Requesting stop..."
 	return func() tea.Msg {
 		state, err := stop(ctx, runID)
@@ -199,9 +200,12 @@ func (m *Model) applyActionResult(msg actionResultMsg) {
 		}
 		// An already-confirmed stop ("stopped") leaves nothing pending:
 		// the label would lie about a request still outstanding (I06).
-		if msg.stopState != "stopped" {
+		// A confirmation that arrived while the call ran also suppresses
+		// the pending label; either way the retained flag is consumed.
+		if msg.stopState != "stopped" && !m.stopConfirmed {
 			m.stopRequested = true
 		}
+		m.stopConfirmed = false
 		m.closeDialog()
 	case actionRecover:
 		if msg.err != nil {
