@@ -120,3 +120,4 @@ dispatched=5 returned=0 failed=1
 
 - P-tui-slice-1 — Tasks name the owner of every stub they leave
 - P-tui-slice-2 — Dispatch template requires signed-off worker commits
+- P-tui-slice-3 — Implementation skill carries the same DCO exception

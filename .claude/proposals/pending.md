@@ -73,3 +73,15 @@ Add to the implementation rules: a task may land an inert stub (rendered but unw
 **Proposed change:**
 
 In the first-attempt template's Rules, change "Commit named paths only." to "Commit named paths only, signed off (`git commit -s`)." Add to the retry template's digest rules: a DCO failure is fixed by `git rebase --signoff` plus push, never by an empty sign-off commit. When the retry continues an open PR (branch checked out from `origin/<branch>`), the rebase rewrites published commits, so the push must be `git push --force-with-lease` — the narrow, explicitly named exception to the template's no-force-push rule for this case only. A retry without an open PR starts from `origin/main` and must not force-push.
+
+## P-tui-slice-3 — Implementation skill carries the same DCO exception
+
+- **Source spec**: `tui-slice`
+- **Type**: skill
+- **Target**: `.claude/skills/implement/SKILL.md`
+- **Rationale**: P-tui-slice-2 exempts open-PR DCO retries from the dispatch template's no-force-push rule, but retry workers also follow the implementation skill, whose Step 7 forbids force pushes and whose Step 9 forbids rebases outright. Without the same exception there, a worker ordered to `rebase --signoff` plus force-with-lease faces two skills in direct conflict. (Applying both proposals must also reconcile `.claude/hooks/block-destructive.sh`, which blocks force pushes; that hook change rides with whichever proposal a maintainer accepts first.)
+- **Evidence**: P-tui-slice-2; `.claude/skills/implement/SKILL.md` Steps 7 and 9; PR #102 DCO cycle.
+
+**Proposed change:**
+
+In Step 7's rules, append to the no-force-push sentence: "Exception: an open-PR DCO retry signs off via `git rebase --signoff` and pushes with `git push --force-with-lease` (see P-tui-slice-2); this is the only rebase or force-push a worker ever performs." In Step 9's behind/conflict rule, append: "The DCO retry is the exception: it rebases with `--signoff` instead of merging."
