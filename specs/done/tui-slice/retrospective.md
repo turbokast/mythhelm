@@ -22,7 +22,7 @@
 | suggestion | Every 200 ms tick re-runs `git diff` + full parse unconditionally | `internal/tui/model.go:206` | none required |
 | suggestion | `decodeLiveProgress` duplicates `decodeProgress` field-for-field | `internal/tui/motion.go:170` | none required |
 | suggestion | `applyActionResult` clears `actCancel` without calling it (uncancelled ctx) | `internal/tui/actions.go:198` | none required |
-| suggestion | Design launch order lists `--accessible` after non-TTY/dumb; code (correctly) precedes | `specs/unfinalized/tui-slice/design.md:25` | none required |
+| suggestion | Design launch order lists `--accessible` after non-TTY/dumb; code (correctly) precedes | `specs/done/tui-slice/design.md:25` | none required |
 | suggestion | `theme.Load` has no non-test callers; no flag wires custom themes | `internal/tui/theme/theme.go:62` | none required |
 | suggestion | Negative `--after` silently accepted (non-numeric correctly exits 2) | `internal/cli/tui.go:98` | none required |
 | suggestion | `demo --accessible` prints review/done banners after the `next-after` trailer | `internal/cli/demo.go:150` | none required |
@@ -44,7 +44,7 @@ Foreign changes in range: 3eeabceb docs(spec): tui-slice task 1 pin file for tid
 | AC-2.1–2.4 layout ladder | met | `TestLayoutBreakpoints`, `TestShortHeightCompact` (PR #97) |
 | AC-2.5 stable linear output | met | `TestLaunchRuleMatrix` + e2e linear/plain/jsonl tests (PRs #102, #103) |
 | AC-2.6 resize safety | met | `TestResizePreservesIdentity` (PR #97) |
-| AC-3.1 keyboard flows | partial | Key/palette/help tests pass, but `q` opens an inert dialog — the `q` leg is decorative (F-1, issue #106) |
+| AC-3.1 keyboard flows | partial | Key/palette/help tests pass; `q` opens the exit dialog and Esc closes it, but the dialog's detach/request-stop rows are inert (F-1, issue #106) |
 | AC-3.2 mouse parity | met | `TestNoMouseOffered` (vacuous: mouse not offered, PR #98) |
 | AC-3.3 labelled confirmations | met | Task-9 dialog tests, Cancel-first focus (PR #100) |
 | AC-4.1 signature moments | met | Task-8 truth-rule tests, applicable subset (PR #99) |

@@ -72,4 +72,4 @@ Add to the implementation rules: a task may land an inert stub (rendered but unw
 
 **Proposed change:**
 
-In the first-attempt template's Rules, change "Commit named paths only." to "Commit named paths only, signed off (`git commit -s`)." Add to the retry template's digest rules: a DCO failure is fixed by `git rebase --signoff` plus push, never by an empty sign-off commit.
+In the first-attempt template's Rules, change "Commit named paths only." to "Commit named paths only, signed off (`git commit -s`)." Add to the retry template's digest rules: a DCO failure is fixed by `git rebase --signoff` plus push, never by an empty sign-off commit. When the retry continues an open PR (branch checked out from `origin/<branch>`), the rebase rewrites published commits, so the push must be `git push --force-with-lease` — the narrow, explicitly named exception to the template's no-force-push rule for this case only. A retry without an open PR starts from `origin/main` and must not force-push.
