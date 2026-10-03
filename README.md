@@ -32,7 +32,7 @@ Not supported yet:
 - The AC-4.7 OAuth-token exception: unwired, refused at both gates (see [ADR 0002](docs/decisions/0002-dogfood-billing-posture.md)).
 - macOS MDM preferences and remote cached managed policy as certified trust sources; the settings inventory covers files only.
 
-Try it with no credentials and no network: `go run ./cmd/mythhelm demo`. `go run ./cmd/mythhelm doctor` reports what your machine still needs for a real run.
+Try it with no credentials and no network at runtime: `go run ./cmd/mythhelm demo` (the first build needs the Go module cache populated). `go run ./cmd/mythhelm doctor` reports what your machine still needs for a real run.
 
 ## TUI status
 
