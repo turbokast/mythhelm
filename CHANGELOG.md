@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - mythhelm doctor: read-only prerequisite report that writes nothing (#57)
 - Declared billing posture subscription-declared with first-party auth evidence; strict subscription-only always blocks (#54)
 - Claude Code launch with stream-json decoding, in-flight billing-route enforcement and a pinned version record (#56)
+- Interactive TUI mission view: `run`, `demo` and `review` launch a focused Bubble Tea interface with responsive layouts, palette/command navigation, labelled confirmations and event-driven motion; plain, JSONL and non-TTY output unchanged (#102)
+- `--accessible` linear screen-reader stream with `--after` resume for `run`, `demo` and `review` (#95)
+- `--colour`, `--motion` and `--icons` presentation overrides (`NO_COLOR` and `TERM=dumb` still suppress) (#89)
 
 ### Security
 
