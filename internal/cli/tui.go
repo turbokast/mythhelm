@@ -295,12 +295,51 @@ func runAccessibleLive(stdio Stdio, stateDir, runID string, after int64, supervi
 	defer stop()
 	streamDone := make(chan error, 1)
 	go func() {
+		// The pipeline journals run.created after it starts; the stream's
+		// initial Load must wait for that row, or a fast startup fails
+		// with "not found" and the run exits 1 with no stream at all.
+		waitForRunJournaled(ctx, stateDir, runID)
 		streamDone <- RunAccessible(ctx, AccessibleConfig{RunID: runID, StateDir: stateDir, Out: stdio.Out, After: after})
 	}()
 	res := <-done
 	stop()
 	streamErr := <-streamDone
 	return res.out, errors.Join(streamErr, outcomeMapped(res))
+}
+
+// accessibleRunWaitPace paces the live stream's wait for the pipeline to
+// journal its run: run.created normally lands within milliseconds.
+const accessibleRunWaitPace = 20 * time.Millisecond
+
+// waitForRunJournaled blocks until runID exists in stateDir's journal or ctx
+// ends, so a live stream never loads a run the pipeline has not journaled
+// yet. A read failure means "not yet" — the stream's own Load surfaces real
+// errors once it starts — and callers always cancel ctx after the pipeline
+// finishes, so the wait cannot outlive the run.
+func waitForRunJournaled(ctx context.Context, stateDir, runID string) {
+	t := time.NewTicker(accessibleRunWaitPace)
+	defer t.Stop()
+	for {
+		if runJournaled(ctx, stateDir, runID) {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// runJournaled reports whether runID has a run row yet.
+func runJournaled(ctx context.Context, stateDir, runID string) bool {
+	j, err := journal.OpenReadOnly(ctx, stateDir)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = j.Close() }()
+	_, err = j.Run(ctx, runID)
+	return err == nil
 }
 
 // accessibleWatchInterval paces the review stream's terminal-state watch: a

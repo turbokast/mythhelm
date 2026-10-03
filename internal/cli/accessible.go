@@ -58,8 +58,9 @@ const defaultAccessiblePoll = 500 * time.Millisecond
 // pages. New events stream as they journal; polls with no new events write
 // nothing. An over-page history yields exactly one page plus the trailer and
 // returns without live follow, so a later event can never advance next-after
-// past skipped history. On context end it writes the next-after trailer as
-// its last line and returns nil. Cancellation during startup echoes the
+// past skipped history. On context end it drains the events journaled since
+// the last poll, then writes the next-after trailer as its last line and
+// returns nil. Cancellation during startup echoes the
 // trailer like the follow loop; other load, stream and write failures
 // return an error with no trailer.
 func RunAccessible(ctx context.Context, cfg AccessibleConfig) error {
@@ -130,6 +131,18 @@ func RunAccessible(ctx context.Context, cfg AccessibleConfig) error {
 	for {
 		select {
 		case <-ctx.Done():
+			// One last read before the trailer: events journaled since
+			// the previous poll — in particular a run's closing events,
+			// which land just before the supervisor stops this stream —
+			// still stream. The read uses a detached context because
+			// this one is done; a read failure keeps the last polled
+			// cursor rather than failing the shutdown.
+			if events, err := viewmodel.EventsSince(context.WithoutCancel(ctx), cfg.StateDir, cfg.RunID, last); err == nil {
+				for _, ev := range events {
+					w.line(accessibleEventLine(ev))
+					last = ev.RunSequence
+				}
+			}
 			w.line(fmt.Sprintf("next-after: %d", last))
 			return w.err
 		case <-ticker.C:
