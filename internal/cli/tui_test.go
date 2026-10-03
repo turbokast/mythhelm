@@ -534,6 +534,40 @@ func TestAfterFlagResumesAccessible(t *testing.T) {
 	}
 }
 
+func TestReviewAccessibleQuiescentReturnsPromptly(t *testing.T) {
+	// ready_for_review is inactive (outside supervisor activeStates) with a
+	// static journal: the stream must end on its own with its trailer
+	// instead of following live until Ctrl-C.
+	dir, runID := driveRun(t,
+		supervisor.RunAdmission, supervisor.RunExecuting, supervisor.RunVerifying,
+		supervisor.RunReadyForReview)
+	writeTestReceipt(t, dir, runID, string(supervisor.RunReadyForReview))
+	type result struct {
+		code        int
+		out, stderr string
+	}
+	done := make(chan result, 1)
+	go func() {
+		code, out, stderr := runMain("review", runID, "--accessible")
+		done <- result{code, out, stderr}
+	}()
+	select {
+	case res := <-done:
+		if res.code != 0 {
+			t.Fatalf("review --accessible exit %d: %s", res.code, res.stderr)
+		}
+		seqs := accessibleEventSeqs(t, res.out)
+		if len(seqs) == 0 {
+			t.Fatalf("quiescent stream has no events: %q", res.out)
+		}
+		if got := accessibleTrailer(t, res.out); got != seqs[len(seqs)-1] {
+			t.Fatalf("trailer next-after = %d, last streamed = %d", got, seqs[len(seqs)-1])
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("review --accessible on a ready_for_review run never returned")
+	}
+}
+
 func TestColorAlias(t *testing.T) {
 	colour := resolveTUIFlags(t, bareGetenv, "--colour", "never")
 	alias := resolveTUIFlags(t, bareGetenv, "--color", "never") //nolint:misspell // --color is the required alias spelling.

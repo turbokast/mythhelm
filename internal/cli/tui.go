@@ -317,9 +317,10 @@ func runAccessibleReview(stdio Stdio, stateDir, runID string, after int64) error
 	return RunAccessible(ctx, AccessibleConfig{RunID: runID, StateDir: stateDir, Out: stdio.Out, After: after})
 }
 
-// watchRunTerminal ends a review stream once its run reaches a terminal
-// state (state.go: blocked, failed, cancelled, completed). Poll failures are
-// ignored — a transient read error must not cut a live stream short.
+// watchRunTerminal ends a review stream once its run reaches a quiescent
+// state: the complement of supervisor activeStates (blocked, failed,
+// cancelled, completed, ready_for_review). Poll failures are ignored — a
+// transient read error must not cut a live stream short.
 func watchRunTerminal(ctx context.Context, stop context.CancelFunc, stateDir, runID string) {
 	t := time.NewTicker(accessibleWatchInterval)
 	defer t.Stop()
@@ -347,7 +348,8 @@ func accessibleRunTerminal(ctx context.Context, stateDir, runID string) bool {
 		return false
 	}
 	switch supervisor.RunState(run.State) {
-	case supervisor.RunBlocked, supervisor.RunFailed, supervisor.RunCancelled, supervisor.RunCompleted:
+	case supervisor.RunBlocked, supervisor.RunFailed, supervisor.RunCancelled, supervisor.RunCompleted,
+		supervisor.RunReadyForReview:
 		return true
 	default:
 		return false
