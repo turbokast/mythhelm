@@ -37,7 +37,7 @@ func runRun(args []string, stdio Stdio) error {
 	noChecks := fs.Bool("no-checks", false, "waive checks; result is unverified and exits 5")
 	keepGoing := fs.Bool("keep-going", false, "continue checks after an unavailable executable")
 	format := fs.String("format", "plain", "output format: plain or jsonl")
-	plain := fs.Bool("plain", false, "linear text output, no cursor movement or colour (the only text output in this build)")
+	plain := fs.Bool("plain", false, "linear text output, no cursor movement or colour (overrides the TUI and --accessible)")
 	nonInteractive := fs.Bool("non-interactive", false, "never ask: a decision that needs you exits 3, naming the flag that answers it")
 	scenario := fs.String("scenario", "", "fake adapter scenario (default happy)")
 	host := fs.String("host", "", "standalone (herdr is not available in this build)")

@@ -865,3 +865,29 @@ func TestActionsWiringStopReadOnly(t *testing.T) {
 		t.Fatal("wired Stop modified mythhelm.db, want a read-only call")
 	}
 }
+
+// TestWatchWaitsForStreamStart pins the review watch's startup gate: on an
+// already-terminal run the watch must not stop the stream before its first
+// write (cancelling mid-startup would yield a bare trailer with the summary
+// and history silently lost), and must stop it promptly once started.
+func TestWatchWaitsForStreamStart(t *testing.T) {
+	t.Parallel()
+	f := newAccessibleFixture(t)
+	runID := ids.New("run")
+	f.addRun(runID, "completed", strings.Repeat("0", 64))
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	started := make(chan struct{})
+	go watchRunTerminal(ctx, cancel, started, f.dir, runID)
+	select {
+	case <-ctx.Done():
+		t.Fatal("watch stopped a terminal run before the stream started")
+	case <-time.After(350 * time.Millisecond):
+	}
+	close(started)
+	select {
+	case <-ctx.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("watch did not stop a started terminal run")
+	}
+}
