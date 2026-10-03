@@ -126,23 +126,27 @@ func RunAccessible(ctx context.Context, cfg AccessibleConfig) error {
 		return w.err
 	}
 	signalStarted()
+	// drain replays the events journaled since the previous poll —
+	// in particular a run's closing events, which land just before the
+	// supervisor stops this stream. The read uses a detached context
+	// because this one is done; a read failure keeps the last polled
+	// cursor rather than failing the shutdown. Both shutdown paths
+	// drain: a tick that loses the race with cancellation must not
+	// truncate the stream the clean path would have completed.
+	drain := func() {
+		if events, err := viewmodel.EventsSince(context.WithoutCancel(ctx), cfg.StateDir, cfg.RunID, last); err == nil {
+			for _, ev := range events {
+				w.line(accessibleEventLine(ev))
+				last = ev.RunSequence
+			}
+		}
+	}
 	ticker := time.NewTicker(poll)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			// One last read before the trailer: events journaled since
-			// the previous poll — in particular a run's closing events,
-			// which land just before the supervisor stops this stream —
-			// still stream. The read uses a detached context because
-			// this one is done; a read failure keeps the last polled
-			// cursor rather than failing the shutdown.
-			if events, err := viewmodel.EventsSince(context.WithoutCancel(ctx), cfg.StateDir, cfg.RunID, last); err == nil {
-				for _, ev := range events {
-					w.line(accessibleEventLine(ev))
-					last = ev.RunSequence
-				}
-			}
+			drain()
 			w.line(fmt.Sprintf("next-after: %d", last))
 			return w.err
 		case <-ticker.C:
@@ -150,6 +154,7 @@ func RunAccessible(ctx context.Context, cfg AccessibleConfig) error {
 			if err != nil {
 				if ctx.Err() != nil {
 					// Lost the race with cancellation: shut down clean.
+					drain()
 					w.line(fmt.Sprintf("next-after: %d", last))
 					return w.err
 				}

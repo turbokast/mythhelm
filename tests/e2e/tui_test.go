@@ -38,9 +38,14 @@ var (
 	// tuiIDRe matches generated identifiers (run_…, att_…, evt_…, …): a
 	// lowercase prefix plus 26 Crockford base32 characters.
 	tuiIDRe = regexp.MustCompile(`[a-z]+_[0-9A-HJKMNP-TV-Z]{26}`)
-	// tuiPIDRe matches PIDs the plain renderer formats as float64
-	// (fmt.Sprint of a large float64, e.g. 2.63474e+06).
-	tuiPIDRe = regexp.MustCompile(`\d\.\d+e\+\d+`)
+	// tuiLinearPIDRe matches worker/native PIDs on the linear
+	// attempt.launched line. The renderer prints payload numbers with
+	// fmt.Sprint of a float64, which spells PIDs at or above 1e6 in
+	// exponent form (2.63474e+06) and smaller ones as plain integers,
+	// so both spellings normalise — an exponent-only match fails on
+	// low-PID hosts. The pid prefixes anchor the match; an "unknown"
+	// value never matches and stays strict.
+	tuiLinearPIDRe = regexp.MustCompile(`(worker pid |native pid )\d[\d.eE+-]*`)
 	// tuiEvidenceRe matches the short commit directory inside check
 	// evidence paths.
 	tuiEvidenceRe = regexp.MustCompile(`(evidence[/\\])[0-9a-f]{7,64}([/\\])`)
@@ -55,7 +60,7 @@ func normalizeLinearRun(s string, e env, repo string) string {
 	s = strings.ReplaceAll(s, repo, "<REPO>")
 	s = strings.ReplaceAll(s, e.home, "<HOME>")
 	s = tuiIDRe.ReplaceAllString(s, "<ID>")
-	return tuiPIDRe.ReplaceAllString(s, "<PID>")
+	return tuiLinearPIDRe.ReplaceAllString(s, "${1}<PID>")
 }
 
 // tuiVolatilePayloadKeys holds JSONL payload keys whose values vary run to
@@ -196,6 +201,26 @@ func assertAccessibleSummary(t *testing.T, out string, labels ...string) {
 	}
 }
 
+// TestNormalizeLinearRunPIDs pins both PID spellings the float64 renderer
+// emits: exponent form on high-PID hosts, plain integers below 1e6. An
+// exponent-only match passes on the former and fails on the latter.
+func TestNormalizeLinearRunPIDs(t *testing.T) {
+	e := env{home: "/home/e2e", state: "/state/e2e"}
+	repo := "/repo/e2e"
+	for _, line := range []string{
+		"attempt: worker pid 2.63474e+06, native pid 2.63475e+06\n",
+		"attempt: worker pid 1234, native pid 5678\n",
+	} {
+		if got, want := normalizeLinearRun(line, e, repo), "attempt: worker pid <PID>, native pid <PID>\n"; got != want {
+			t.Errorf("normalizeLinearRun(%q) = %q, want %q", line, got, want)
+		}
+	}
+	unknown := "attempt: worker pid unknown, native pid unknown\n"
+	if got := normalizeLinearRun(unknown, e, repo); got != unknown {
+		t.Errorf("normalizeLinearRun(%q) = %q, want it unchanged", unknown, got)
+	}
+}
+
 // TestE2ENonTTYStaysLinear runs the fake adapter with piped stdout: output
 // must be the linear stream with no cursor codes, and the exit code must
 // match the linear path's outcome (0 for a passing check, 5 for a failing
@@ -238,21 +263,24 @@ func TestE2ENonTTYStaysLinear(t *testing.T) {
 
 // TestE2EPlainForcesLinear runs one scenario with and without --plain: the
 // two outputs must be byte-identical after normalising per-run values (run
-// and attempt IDs, PIDs, state paths), and the exits must match.
+// and attempt IDs, PIDs, state paths), and the exits must match. Each leg
+// runs in its own env over the same repo, so path normalisation is
+// load-bearing too (the base revision stays shared and strict).
 func TestE2EPlainForcesLinear(t *testing.T) {
 	e := newEnv(t)
 	repo, digest := mkRepo(t, e, t.TempDir(), "pass")
+	other := newEnv(t)
 	base := baseRunArgs(digest)
 	plainArgs := append(append([]string{}, base...), "--plain")
 	plainCode, plainOut, plainErr := run(t, e, repo, plainArgs...)
-	defCode, defOut, defErr := run(t, e, repo, base...)
+	defCode, defOut, defErr := run(t, other, repo, base...)
 	if plainCode != defCode {
 		t.Fatalf("--plain exit %d != default piped exit %d", plainCode, defCode)
 	}
 	if plainOut == defOut {
 		t.Fatal("raw outputs are identical; expected per-run IDs to differ, proving normalisation is load-bearing")
 	}
-	normalPlain, normalDef := normalizeLinearRun(plainOut, e, repo), normalizeLinearRun(defOut, e, repo)
+	normalPlain, normalDef := normalizeLinearRun(plainOut, e, repo), normalizeLinearRun(defOut, other, repo)
 	if !bytes.Equal([]byte(normalPlain), []byte(normalDef)) {
 		t.Fatalf("--plain output differs from default piped output after normalisation:\n--- plain ---\n%s\n--- default ---\n%s",
 			normalPlain, normalDef)
@@ -264,15 +292,18 @@ func TestE2EPlainForcesLinear(t *testing.T) {
 
 // TestE2EJsonlStable runs one scenario with --format jsonl with and without
 // the TUI flags: the two streams must be line-identical after normalising
-// per-run values (N4: machine output unchanged), with matching exits.
+// per-run values (N4: machine output unchanged), with matching exits. Each
+// leg runs in its own env over the same repo, so path normalisation is
+// load-bearing too (the base revision stays shared and strict).
 func TestE2EJsonlStable(t *testing.T) {
 	e := newEnv(t)
 	repo, digest := mkRepo(t, e, t.TempDir(), "pass")
+	other := newEnv(t)
 	base := append(baseRunArgs(digest), "--format", "jsonl")
 	plainCode, plainOut, plainErr := run(t, e, repo, base...)
 	withTUI := append(append([]string{}, base...),
 		"--colour", "always", "--motion", "full", "--icons", "unicode", "--accessible", "--after", "5")
-	tuiCode, tuiOut, tuiErr := run(t, e, repo, withTUI...)
+	tuiCode, tuiOut, tuiErr := run(t, other, repo, withTUI...)
 	if plainCode != tuiCode {
 		t.Fatalf("jsonl with TUI flags exit %d != jsonl exit %d", tuiCode, plainCode)
 	}
@@ -284,7 +315,7 @@ func TestE2EJsonlStable(t *testing.T) {
 	identical := len(plainLines) > 0
 	for i := range plainLines {
 		normalPlain := normalizeJSONLLine(t, plainLines[i], e, repo)
-		normalTUI := normalizeJSONLLine(t, tuiLines[i], e, repo)
+		normalTUI := normalizeJSONLLine(t, tuiLines[i], other, repo)
 		if normalPlain != normalTUI {
 			t.Fatalf("jsonl line %d differs with TUI flags present:\n--- without ---\n%s\n--- with ---\n%s",
 				i+1, normalPlain, normalTUI)

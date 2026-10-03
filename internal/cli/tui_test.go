@@ -918,3 +918,45 @@ func TestReviewResumePastEndReturnsPromptly(t *testing.T) {
 		t.Fatalf("output = %q, want only the echo trailer", got)
 	}
 }
+
+// TestWaitForRunJournaledSeesJournaledRun pins the live stream's startup
+// wait: a journaled run row ends the wait without any cancellation.
+func TestWaitForRunJournaledSeesJournaledRun(t *testing.T) {
+	t.Parallel()
+	f := newAccessibleFixture(t)
+	runID := ids.New("run")
+	f.addRun(runID, "executing", strings.Repeat("0", 64))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		waitForRunJournaled(ctx, f.dir, runID)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("waitForRunJournaled did not see the journaled run")
+	}
+}
+
+// TestWaitForRunJournaledEndsOnCancel pins the wait's bound: a run that
+// never journals (no database at all) must not hang the live stream —
+// ending the context ends the wait, so it cannot outlive the run.
+func TestWaitForRunJournaledEndsOnCancel(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		waitForRunJournaled(ctx, t.TempDir(), "run_missing")
+		close(done)
+	}()
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("waitForRunJournaled hung after cancel on a missing run")
+	}
+}
