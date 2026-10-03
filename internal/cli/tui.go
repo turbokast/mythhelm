@@ -15,7 +15,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
-	"sync"
 	"time"
 
 	isatty "github.com/mattn/go-isatty"
@@ -315,22 +314,8 @@ func runAccessibleReview(stdio Stdio, stateDir, runID string, after int64) error
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	started := make(chan struct{})
-	out := &startSignalWriter{out: stdio.Out, started: started}
 	go watchRunTerminal(ctx, stop, started, stateDir, runID)
-	return RunAccessible(ctx, AccessibleConfig{RunID: runID, StateDir: stateDir, Out: out, After: after})
-}
-
-// startSignalWriter closes started on the first Write, proving the stream
-// finished its startup queries: every RunAccessible write post-dates them.
-type startSignalWriter struct {
-	out     io.Writer
-	started chan<- struct{}
-	once    sync.Once
-}
-
-func (w *startSignalWriter) Write(p []byte) (int, error) {
-	w.once.Do(func() { close(w.started) })
-	return w.out.Write(p)
+	return RunAccessible(ctx, AccessibleConfig{RunID: runID, StateDir: stateDir, Out: stdio.Out, After: after, Started: started})
 }
 
 // watchRunTerminal ends a review stream once its run reaches a quiescent

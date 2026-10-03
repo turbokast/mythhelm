@@ -891,3 +891,30 @@ func TestWatchWaitsForStreamStart(t *testing.T) {
 		t.Fatal("watch did not stop a started terminal run")
 	}
 }
+
+// TestReviewResumePastEndReturnsPromptly pins the empty-page case: a resume
+// past the last event of a terminal run emits no lines before following,
+// so the watch must still start and end the stream promptly with the echo
+// trailer — never hang until Ctrl-C.
+func TestReviewResumePastEndReturnsPromptly(t *testing.T) {
+	t.Parallel()
+	f := newAccessibleFixture(t)
+	runID := ids.New("run")
+	f.addRun(runID, "completed", strings.Repeat("0", 64))
+	var out bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		done <- runAccessibleReview(Stdio{Out: &out}, f.dir, runID, 999)
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("runAccessibleReview: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("resume past end hung: watch never started on the empty page")
+	}
+	if got := out.String(); got != "next-after: 999\n" {
+		t.Fatalf("output = %q, want only the echo trailer", got)
+	}
+}
