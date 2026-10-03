@@ -6,10 +6,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// dialogExitOptions is the confirmation id q opens (design §2). Task 9
-// replaces the string id with rich confirmation prompts.
-const dialogExitOptions = "exit-options"
-
 // maxFilterRunes and maxPaletteRunes bound the / filter and : palette inputs.
 const (
 	maxFilterRunes  = 128
@@ -28,10 +24,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if m.dialog != "" {
-		if key == "esc" {
-			m.dialog = ""
-		}
-		return m, nil
+		return m.dialogKey(key, msg)
 	}
 	if m.palette.open {
 		m.paletteKey(key, msg)
@@ -65,7 +58,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		m.openDetails()
 	case "q":
-		m.dialog = dialogExitOptions
+		m.openDialog(dialogExitOptions)
 	}
 	return m, nil
 }
@@ -84,7 +77,7 @@ func (m *Model) helpKey(key string) {
 		m.filterOn, m.filterText = true, ""
 	case "q":
 		m.helpOpen = false
-		m.dialog = dialogExitOptions
+		m.openDialog(dialogExitOptions)
 	}
 }
 
@@ -261,23 +254,4 @@ func (m *Model) filterLine() (line, bool) {
 		text += "_"
 	}
 	return line{text: text, colour: m.cfg.Tokens.TextMuted}, true
-}
-
-// dialogLines renders the pending confirmation. Only the exit-options dialog
-// exists in this task; task 9 replaces this stub with rich prompts. An
-// unknown id renders labelled, never blank.
-func (m *Model) dialogLines() []line {
-	if m.dialog != dialogExitOptions {
-		return []line{
-			{text: "dialog: " + cell(m.dialog), colour: m.cfg.Tokens.Text},
-			{text: "Esc cancels", colour: m.cfg.Tokens.TextMuted},
-		}
-	}
-	return []line{
-		{text: "Exit options", colour: m.cfg.Tokens.Text},
-		{text: "detach (leave running)"},
-		{text: "request stop"},
-		{text: "cancel"},
-		{text: "Esc cancels", colour: m.cfg.Tokens.TextMuted},
-	}
 }

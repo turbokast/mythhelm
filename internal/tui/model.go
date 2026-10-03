@@ -72,35 +72,45 @@ func (b *NoticeBacklog) Drain() []string {
 }
 
 // Model is the mission-view program: one snapshot rendered through the §15.4
-// layout ladder. dialog holds a pending confirmation id ("" = none); task 9
-// replaces it with rich confirmation prompts. focusPrev restores the previous
+// layout ladder. dialog holds a pending confirmation id ("" = none) with its
+// transient state (dialogs.go); stopRequested marks a confirmed stop the
+// worker has not journaled yet (actions.go). focusPrev restores the previous
 // pane on Esc; filterOn/filterText hold the / filter; palette and helpOpen
 // hold the : and ? overlays; themeName tracks the active built-in theme;
 // selectedLane is the stable lane identity a reload keeps; motion holds the
 // session-observed truthful-motion state (motion.go).
 type Model struct {
-	cfg          Config
-	snap         viewmodel.Snapshot
-	ready        bool
-	loadErr      error
-	empty        bool
-	diff         Diff
-	diffErr      error
-	loadDiff     func(ctx context.Context, workspace, base, commit string) (Diff, error)
-	width        int
-	height       int
-	focusPane    string
-	focusPrev    string
-	focusIndex   int
-	selectedTask string
-	selectedLane string
-	dialog       string
-	filterOn     bool
-	filterText   string
-	palette      paletteState
-	helpOpen     bool
-	themeName    string
-	motion       motionState
+	cfg              Config
+	snap             viewmodel.Snapshot
+	ready            bool
+	loadErr          error
+	empty            bool
+	diff             Diff
+	diffErr          error
+	loadDiff         func(ctx context.Context, workspace, base, commit string) (Diff, error)
+	width            int
+	height           int
+	focusPane        string
+	focusPrev        string
+	focusIndex       int
+	selectedTask     string
+	selectedLane     string
+	dialog           string
+	dialogField      int
+	dialogFocus      int
+	applyBranch      string
+	acceptFlags      bool
+	acceptUnverified bool
+	stopRequested    bool
+	dialogErr        string
+	resultTitle      string
+	resultBody       string
+	filterOn         bool
+	filterText       string
+	palette          paletteState
+	helpOpen         bool
+	themeName        string
+	motion           motionState
 }
 
 // newModel builds the program state with default dimensions; the first
@@ -160,6 +170,12 @@ func (m *Model) setSnapshot(ctx context.Context, snap viewmodel.Snapshot) {
 	m.snap = snap
 	m.ready = true
 	m.loadErr = nil
+	if m.stopRequested && stopConverged(snap) {
+		// The reload proves the request converged (the attempt stopped
+		// or the run left the stopping states), so the pending label
+		// retires; until then it renders requested, never stopped (I06).
+		m.stopRequested = false
+	}
 	if nextAttempt != prevAttempt {
 		// A new attempt waits for its own ack: the old launch (consumed
 		// or seeded) must not carry over. seedLaunched re-seeds from the

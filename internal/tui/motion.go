@@ -130,6 +130,13 @@ func (m *Model) consumeEvent(ev journal.Event) {
 		if a, err := decodeLiveAdmission(ev); err == nil {
 			m.snap.Admission = a
 		}
+	case "attempt.stopped":
+		// The worker confirmed the stop: the pending request label
+		// retires (I06). Only the current attempt's confirmation (or an
+		// unattributed one, as synthetic feeds send) retires it.
+		if ev.AttemptID == "" || m.snap.Attempt == nil || ev.AttemptID == m.snap.Attempt.AttemptID {
+			m.stopRequested = false
+		}
 	}
 }
 

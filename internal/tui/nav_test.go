@@ -591,14 +591,26 @@ func TestPaletteViewOnlyActions(t *testing.T) {
 			t.Errorf("after Exit options dialog = %q, want exit-options", m.dialog)
 		}
 	})
-	t.Run("task 9 actions close without acting", func(t *testing.T) {
+	t.Run("task 9 actions dispatch through their gates", func(t *testing.T) {
 		t.Parallel()
-		for _, q := range []string{"stop", "rec", "appl", "expo"} {
-			m := run(t, q)
-			if m.dialog != "" || m.helpOpen || m.focusPane != paneTasks {
-				t.Errorf("query %q acted: dialog=%q help=%v pane=%q",
-					q, m.dialog, m.helpOpen, m.focusPane)
+		// The ready_for_review flow model disables stop and recover: both
+		// stay inert with the palette open on their visible reasons.
+		for _, q := range []string{"stop", "rec"} {
+			m := flowModel(t)
+			m, _ = pressKey(t, m, runeMsg(":"))
+			m = typeRunes(t, m, q)
+			m, _ = pressKey(t, m, specialMsg(tea.KeyEnter))
+			if !m.palette.open || m.dialog != "" {
+				t.Errorf("query %q acted: palette open=%v dialog=%q", q, m.palette.open, m.dialog)
 			}
+		}
+		// Apply is enabled and opens its confirmation.
+		if m := run(t, "appl"); m.dialog != dialogApply {
+			t.Errorf("after Apply candidate dialog = %q, want apply", m.dialog)
+		}
+		// Export runs immediately and reports through the result dialog.
+		if m := run(t, "expo"); m.dialog != dialogDone {
+			t.Errorf("after Export view dialog = %q, want done", m.dialog)
 		}
 	})
 }
