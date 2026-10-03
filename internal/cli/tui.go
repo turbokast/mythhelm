@@ -294,9 +294,9 @@ func runAccessibleLive(stdio Stdio, stateDir, runID string, after int64, supervi
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	// The stream runs on its own signal context, ended by the terminal
-	// watch (or Ctrl-C): pipeline end must not cancel a stream whose
-	// initial Load has not run yet, or a fast run's history collapses to
-	// a bare trailer.
+	// watch, by pipeline end once started, or by Ctrl-C: pipeline end
+	// must not cancel a stream whose initial Load has not run yet, or a
+	// fast run's history collapses to a bare trailer.
 	streamCtx, streamStop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer streamStop()
 	started := make(chan struct{})
@@ -324,7 +324,20 @@ func runAccessibleLive(stdio Stdio, stateDir, runID string, after int64, supervi
 	}()
 	res := <-done
 	stop()
-	streamErr := <-streamDone
+	// Supervision is over: the journal will not change further, so once
+	// the stream has started there is nothing left to follow. End it even
+	// when the run never reaches a terminal state — a pipeline error
+	// after CreateRun (a failed flush leaves it in created, which the
+	// terminal watch never observes as terminal) — or shutdown wedges on
+	// streamDone. Gating the stop on Started keeps a fast run's full
+	// history instead of a bare trailer.
+	var streamErr error
+	select {
+	case streamErr = <-streamDone:
+	case <-started:
+		streamStop()
+		streamErr = <-streamDone
+	}
 	return res.out, errors.Join(streamErr, outcomeMapped(res))
 }
 
