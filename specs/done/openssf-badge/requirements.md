@@ -62,9 +62,9 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 
 ## Definition of Done
 
-- [ ] AC-1.1 to AC-3.2 each have a named check; badge link verified live.
-- [ ] Unmet-criteria cards filed through the normal backlog flow and linked from the assessment.
-- [ ] `README.md` renders the badge beside the existing badges.
+- [x] AC-1.1 to AC-3.2 each have a named check; badge link verified live.
+- [x] Unmet-criteria cards filed through the normal backlog flow and linked from the assessment.
+- [x] `README.md` renders the badge beside the existing badges.
 
 ## Open Questions
 
