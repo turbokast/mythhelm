@@ -48,7 +48,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Gates**: G10
 - **Score**: 5.0 = (value 3 + urgency 5 + risk 2) / effort 2
 - **Spec**: (none)
-- **Issue**: (none)
+- **Issue**: [#115](https://github.com/turbokast/mythhelm/issues/115)
 - **Source**: OpenSSF passing criterion warnings_strict (SUGGESTED); openssf-badge design §3
 - **Summary**: The lint set is golangci-lint standard plus bodyclose, errorlint, gosec, misspell and nolintlint (verified in .golangci.yml) — solid but not maximal, so warnings_strict is Unmet. Evaluate and enable the strictest practical further linters and fix the resulting fallout.
 
@@ -88,7 +88,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Gates**: G10
 - **Score**: 4.0 = (value 2 + urgency 5 + risk 1) / effort 2
 - **Spec**: (none)
-- **Issue**: (none)
+- **Issue**: [#113](https://github.com/turbokast/mythhelm/issues/113)
 - **Source**: OpenSSF passing criterion version_semver (SUGGESTED); openssf-badge design §3
 - **Summary**: No releases exist yet (verified: no git tags) and no version-numbering format is adopted, so version_semver is Unmet. Decide SemVer vs CalVer (with micro level for CalVer) and record it in the release process before MH-7 ships the first release.
 
@@ -98,7 +98,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Gates**: G10
 - **Score**: 4.0 = (value 2 + urgency 5 + risk 1) / effort 2
 - **Spec**: (none)
-- **Issue**: (none)
+- **Issue**: [#114](https://github.com/turbokast/mythhelm/issues/114)
 - **Source**: OpenSSF passing criterion version_tags (SUGGESTED); openssf-badge design §3
 - **Summary**: No releases exist yet (verified: no git tags), so version_tags is Unmet. Establish the tag-per-release discipline (tag format, who tags, GoReleaser trigger) alongside the MH-7 release pipeline.
 
