@@ -75,3 +75,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Decision**: MH-2 moved to implementing
 - **Rationale**: tui-slice reached in-progress; task PRs #89 #91 #92 merged
 - **Cards**: MH-2
+
+### D-20 — 2026-10-04: MH-2 → shipped (tui-slice)
+- **Type**: lifecycle-sync
+- **Decision**: MH-2 moved to shipped
+- **Rationale**: tui-slice finalized and merged
+- **Cards**: MH-2
+- **Evidence**: PR #108 (finalize), specs/done/tui-slice/retrospective.md
