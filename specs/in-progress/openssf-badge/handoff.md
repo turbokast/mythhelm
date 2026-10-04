@@ -8,7 +8,9 @@
 
 ## Task 1 — Register the assessment, answer the passing criteria, record the URL and N/A/Unmet table
 
-<!-- pending -->
+- **Produces**: assessment URL of record `https://www.bestpractices.dev/projects/15212` (`badge_percentage_0` = 100, `badge_level` = passing, verified live 2026-10-04); site-generated markdown snippet `[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15212/badge)](https://www.bestpractices.dev/projects/15212)`; design §3 rows for 3 Unmet + 6 N/A passing-tier answers with verbatim justifications.
+- **For dependents** (task 2): the 3 Unmet criteria needing cards are `version_semver`, `version_tags`, `warnings_strict` (all SUGGESTED gaps, all pre-release). The 6 N/A rows take `—` in the card column. `achieve_silver` (Unmet, empty justification) is a derived next-level gate, not an answer — excluded from §3 and from the card count by design.
+- **For dependents** (task 3): use the snippet bytes above verbatim; link-target id 15212 already equals the URL of record id.
 
 ## Task 2 — File backlog cards for unmet criteria and reference them from the assessment
 
