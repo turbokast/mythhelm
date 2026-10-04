@@ -26,8 +26,17 @@ Task 1 adds one row per N/A or Unmet answer; Task 2 fills the card column for Un
 
 | Criterion id | Answer + justification | Backlog card |
 |---|---|---|
+| `version_semver` | Unmet — SUGGESTED gap: no releases yet, so no SemVer/CalVer format adopted. (Will get a backlog card in task 2.) | (task 2) |
+| `version_tags` | Unmet — SUGGESTED gap: no releases yet, no git tags. (Will get a backlog card in task 2.) | (task 2) |
+| `warnings_strict` | Unmet — SUGGESTED gap: standard+gosec set is not maximal (no exhaustive style rules). | (task 2) |
+| `release_notes_vulns` | N/A — No releases and no publicly known vulnerabilities — criterion explicitly allows N/A here. | — |
+| `vulnerability_report_response` | N/A — No vulnerability reports received in the last 6 months. | — |
+| `crypto_keylength` | N/A — No keys, key agreement, or encryption anywhere in the software. | — |
+| `crypto_pfs` | N/A — No key agreement protocols in the software. | — |
+| `crypto_password_storage` | N/A — No passwords stored; no external-user authentication. | — |
+| `dynamic_analysis_unsafe` | N/A — Go/Python/Shell only; no memory-unsafe languages. | — |
 
-Zero rows until Task 1 walks the questionnaire; an empty table with `badge_percentage_0 == 100` means every criterion was Met.
+Recorded 2026-10-04 from `https://www.bestpractices.dev/projects/15212.json` at `badge_percentage_0 == 100`, `badge_level == passing`. Justification text is verbatim from the assessment. Excluded from this table: `achieve_silver` (Unmet, empty justification in JSON) — a derived next-level gate, not a passing-tier answer, so there is no justification to record; the N/A-or-Unmet equality in `check-na-justified` is over passing-tier criteria.
 
 ### 4. Backlog cards for unmet criteria (FR-3; §19.3, §19.4, G10)
 

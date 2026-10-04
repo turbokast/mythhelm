@@ -12,7 +12,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Register the assessment, answer the passing criteria, record the URL and N/A/Unmet table
+### Task 1 — Register the assessment, answer the passing criteria, record the URL and N/A/Unmet table ✅ COMPLETED
 
 - **Domain/agent**: maintainer
 - **Budget**: standard
@@ -28,6 +28,10 @@
   - The recorded snippet's link-target project id equals the URL of record's id.
 - **Test plan**: Maintainer-run against the live app; paste the `curl`/JSON outputs into the completion entry. No repo tests: no code changes.
 - **Invariants touched**: None (external questionnaire plus spec-table rows; no code, no release claim, no advertised capability changes in-repo).
+- **Status**: ✅ Completed — project registered as bestpractices.dev/projects/15212, passing tier at 100 (passing); §3 rows recorded; PR #111.
+- **Implementation**: Assessment URL of record `https://www.bestpractices.dev/projects/15212` (project id 15212). Checks: `curl -sSL <AU>.json` → http=200, `repo_url` = `https://github.com/turbokast/mythhelm`; `badge_percentage_0` = 100; `badge_level` = passing. N/A-or-Unmet passing-tier set = 3 Unmet (`version_semver`, `version_tags`, `warnings_strict`) + 6 N/A (`release_notes_vulns`, `vulnerability_report_response`, `crypto_keylength`, `crypto_pfs`, `crypto_password_storage`, `dynamic_analysis_unsafe`), all with non-empty justifications identical to design §3; every N/A sits on a criterion that allows it. `achieve_silver` (Unmet, empty justification) excluded as a derived next-level gate, not a passing-tier answer (noted in §3). Site-generated snippet (markdown form, link target id 15212 = URL of record id): `[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15212/badge)](https://www.bestpractices.dev/projects/15212)`.
+- **Spec deviations**: None.
+- **Files modified**: `specs/in-progress/openssf-badge/design.md`, `specs/in-progress/openssf-badge/tasks.md`, `specs/in-progress/openssf-badge/handoff.md`.
 
 ### Task 2 — File backlog cards for unmet criteria and reference them from the assessment
 
