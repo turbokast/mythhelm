@@ -82,3 +82,21 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: tui-slice finalized and merged
 - **Cards**: MH-2
 - **Evidence**: PR #108 (finalize), specs/done/tui-slice/retrospective.md
+
+### D-21 — 2026-10-04: Add card MH-18
+- **Type**: card-add
+- **Decision**: File backlog card MH-18
+- **Rationale**: openssf-badge task 2: one card per Unmet passing criterion
+- **Cards**: MH-18
+
+### D-22 — 2026-10-04: Add card MH-19
+- **Type**: card-add
+- **Decision**: File backlog card MH-19
+- **Rationale**: openssf-badge task 2: one card per Unmet passing criterion
+- **Cards**: MH-19
+
+### D-23 — 2026-10-04: Add card MH-20
+- **Type**: card-add
+- **Decision**: File backlog card MH-20
+- **Rationale**: openssf-badge task 2: one card per Unmet passing criterion
+- **Cards**: MH-20

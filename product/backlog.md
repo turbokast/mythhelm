@@ -42,6 +42,16 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Summary**: Complete the OpenSSF Best Practices questionnaire for the passing level and show the badge in the README, recording any criterion the project does not yet meet as its own card.
 - **Premise-grounded**: 2026-10-02 — C1 HOLDS; C2 HOLDS; C3 HOLDS; C4 HOLDS; C5 PARTIAL; C6 HOLDS (external); C7 PROCEDURE
 
+### MH-20: Strictest practical lint set
+- **Status**: triaged
+- **Stage**: 1
+- **Gates**: G10
+- **Score**: 5.0 = (value 3 + urgency 5 + risk 2) / effort 2
+- **Spec**: (none)
+- **Issue**: (none)
+- **Source**: OpenSSF passing criterion warnings_strict (SUGGESTED); openssf-badge design §3
+- **Summary**: The lint set is golangci-lint standard plus bodyclose, errorlint, gosec, misspell and nolintlint (verified in .golangci.yml) — solid but not maximal, so warnings_strict is Unmet. Evaluate and enable the strictest practical further linters and fix the resulting fallout.
+
 ### MH-10: Harness compatibility records and qualification registry
 - **Status**: triaged
 - **Stage**: 0
@@ -71,6 +81,26 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Issue**: [#32](https://github.com/turbokast/mythhelm/issues/32)
 - **Source**: master spec §7.4, §18.4, §20.2 and §22.2 item 2
 - **Summary**: Job Objects and process-tree ownership for workers on Windows, so detach, stop, crash and orphan handling pass there as they do on Unix. The dogfood slice keeps the seam and blocks the native adapter on Windows (its non-goal N7).
+
+### MH-18: Adopt SemVer or CalVer for releases
+- **Status**: triaged
+- **Stage**: 1
+- **Gates**: G10
+- **Score**: 4.0 = (value 2 + urgency 5 + risk 1) / effort 2
+- **Spec**: (none)
+- **Issue**: (none)
+- **Source**: OpenSSF passing criterion version_semver (SUGGESTED); openssf-badge design §3
+- **Summary**: No releases exist yet (verified: no git tags) and no version-numbering format is adopted, so version_semver is Unmet. Decide SemVer vs CalVer (with micro level for CalVer) and record it in the release process before MH-7 ships the first release.
+
+### MH-19: Tag every release in git
+- **Status**: triaged
+- **Stage**: 1
+- **Gates**: G10
+- **Score**: 4.0 = (value 2 + urgency 5 + risk 1) / effort 2
+- **Spec**: (none)
+- **Issue**: (none)
+- **Source**: OpenSSF passing criterion version_tags (SUGGESTED); openssf-badge design §3
+- **Summary**: No releases exist yet (verified: no git tags), so version_tags is Unmet. Establish the tag-per-release discipline (tag format, who tags, GoReleaser trigger) alongside the MH-7 release pipeline.
 
 ### MH-12: Strict subscription-only qualification for Claude Code
 - **Status**: triaged
