@@ -19,4 +19,5 @@
 
 ## Task 3 — Display the badge in the README and verify it live
 
-<!-- pending -->
+- **Produces**: README line 11 carries the Task 1 snippet verbatim, linking to `https://www.bestpractices.dev/projects/15212`; badge image live at 200 `image/svg+xml`, showing passing.
+- **For dependents**: terminal task — no dependents. Future README badge edits must keep the snippet bytes verbatim (link-target id 15212 = URL of record id).

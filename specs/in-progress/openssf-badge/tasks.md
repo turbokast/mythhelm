@@ -54,7 +54,7 @@
 - **Spec deviations**: None (D-24 decision entry was required by a review finding on PR #116, following the D-13 precedent — product-flow compliance, not a spec deviation).
 - **Files modified**: `specs/in-progress/openssf-badge/design.md`, `specs/in-progress/openssf-badge/tasks.md`, `specs/in-progress/openssf-badge/handoff.md`.
 
-### Task 3 — Display the badge in the README and verify it live
+### Task 3 — Display the badge in the README and verify it live ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -68,3 +68,7 @@
   - `scripts/ci/check-public-hygiene.sh` passes on the change.
 - **Test plan**: No repo tests (one-line docs change; N3 forbids CI additions). Verification is the live checks above; paste their outputs into the completion entry.
 - **Invariants touched**: I07 (§11.5: the badge claim is verified against the live assessment URL and the committed README bytes, not trusted from the paste action).
+- **Status**: ✅ Completed — badge snippet appended as README line 11 and verified live (passing); PR #118.
+- **Implementation**: README line 11 is the Task 1 snippet verbatim: `[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15212/badge)](https://www.bestpractices.dev/projects/15212)`. Checks: `curl -sSL -o badge.svg -w 'http=%{http_code} type=%{content_type} size=%{size_download}' https://www.bestpractices.dev/projects/15212/badge` → `http=200 type=image/svg+xml size=1212`, SVG `<title>openssf best practices: passing</title>` (check-readme-badge); README link-target id 15212 = URL-of-record id 15212 (check-badge-link-current); `check-public-hygiene: clean (544 files scanned)`. Commit b67742dca012993c881f421130c3c71e8e65c4d2.
+- **Spec deviations**: None.
+- **Files modified**: `README.md`, `specs/in-progress/openssf-badge/tasks.md`, `specs/in-progress/openssf-badge/handoff.md`.
