@@ -100,3 +100,9 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Decision**: File backlog card MH-20
 - **Rationale**: openssf-badge task 2: one card per Unmet passing criterion
 - **Cards**: MH-20
+
+### D-24 — 2026-10-04: Link MH-18/19/20 to issues #113/114/115
+- **Type**: card-add
+- **Decision**: MH-18/19/20 Issue fields and roadmap lines point to #113/114/115
+- **Rationale**: The backlog add procedure creates a card's public issue after the card is approved and merged (PR #112), then records the link so contributors can find the discussion
+- **Cards**: MH-18,MH-19,MH-20
