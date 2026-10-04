@@ -102,17 +102,6 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Source**: master spec §12.2, §12.3, §18.5 and §20.3
 - **Summary**: The `restricted` and `inspect` execution profiles with boundaries that pass adversarial tests, and a clear refusal wherever an operating system cannot provide them. The dogfood slice admits only `trusted-host` with explicit consent (its non-goal N9).
 
-### MH-2: TUI slice: the focused mission view
-- **Status**: implementing
-- **Stage**: 1
-- **Gates**: G09
-- **Score**: 3.3 = (value 5 + urgency 5 + risk 3) / effort 4
-- **Spec**: `tui-slice`
-- **Issue**: [#23](https://github.com/turbokast/mythhelm/issues/23)
-- **Source**: master spec §15 (visual language, mission view, responsive layouts, navigation, motion, accessibility, render model), §20.3 and §22.2 item 5
-- **Summary**: The polished focused TUI that Stage 1 requires, on top of the run pipeline the dogfood slice delivers: the mission view, responsive layouts down to the linear accessible mode, keyboard flows and event-driven motion. The dogfood slice deliberately defers it (its non-goal N1).
-- **Premise-grounded**: 2026-10-02 — run pipeline exists HOLDS; dogfood N1 defers TUI HOLDS; Stage 1 requires polished TUI HOLDS; §15 coverage HOLDS; §22.2 item 5 HOLDS; G09 HOLDS; Bubble Tea stack HOLDS; no TUI exists yet HOLDS
-
 ### MH-3: Herdr bridge: single-pane experience with scoped status
 - **Status**: triaged
 - **Stage**: 1
@@ -205,3 +194,14 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Issue**: [#22](https://github.com/turbokast/mythhelm/issues/22)
 - **Source**: master spec §20.3 and §22.2 items 2 to 4 (ownership, source protection, the delivery loop), the scripted fake adapter of §22.2 item 1, and the plain and JSONL output and offline demo of item 5
 - **Summary**: The first runnable MYTHHELM: admission, a managed snapshot, a detached worker owning one native Claude Code attempt, configured checks, a receipt and a guarded apply, with the offline demo and read-only doctor. It proves the task to reviewable artifact loop on MYTHHELM itself before any second adapter, TUI or routing work.
+
+### MH-2: TUI slice: the focused mission view
+- **Status**: shipped
+- **Stage**: 1
+- **Gates**: G09
+- **Score**: 3.3 = (value 5 + urgency 5 + risk 3) / effort 4
+- **Spec**: `tui-slice`
+- **Issue**: [#23](https://github.com/turbokast/mythhelm/issues/23)
+- **Source**: master spec §15 (visual language, mission view, responsive layouts, navigation, motion, accessibility, render model), §20.3 and §22.2 item 5
+- **Summary**: The polished focused TUI that Stage 1 requires, on top of the run pipeline the dogfood slice delivers: the mission view, responsive layouts down to the linear accessible mode, keyboard flows and event-driven motion. The dogfood slice deliberately defers it (its non-goal N1).
+- **Premise-grounded**: 2026-10-02 — run pipeline exists HOLDS; dogfood N1 defers TUI HOLDS; Stage 1 requires polished TUI HOLDS; §15 coverage HOLDS; §22.2 item 5 HOLDS; G09 HOLDS; Bubble Tea stack HOLDS; no TUI exists yet HOLDS
