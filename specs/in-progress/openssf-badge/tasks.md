@@ -33,7 +33,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `specs/in-progress/openssf-badge/design.md`, `specs/in-progress/openssf-badge/tasks.md`, `specs/in-progress/openssf-badge/handoff.md`.
 
-### Task 2 — File backlog cards for unmet criteria and reference them from the assessment
+### Task 2 — File backlog cards for unmet criteria and reference them from the assessment ✅ COMPLETED
 
 - **Domain/agent**: maintainer
 - **Budget**: standard
@@ -49,6 +49,10 @@
   - Zero-Unmet branch: if Task 1 recorded no Unmet rows, no cards are filed and the completion entry records the Unmet count of 0 with the JSON probe output alongside `badge_percentage_0 == 100` (the check asserts the zero count, not an empty "every card" universal).
 - **Test plan**: Maintainer-run; paste the `pm.py`, `curl` and approval-request outputs into the completion entry. No repo tests: no code changes.
 - **Invariants touched**: None (product approval flow plus external assessment notes; no code).
+- **Status**: ✅ Completed — 3 cards filed and approved for 3 Unmet criteria; justifications reference them; §3 card column filled; PR #TBD.
+- **Implementation**: Cards MH-18 (version_semver, issue #113), MH-19 (version_tags, issue #114), MH-20 (warnings_strict, issue #115) via product PRs #112 (cards + D-21/22/23) and #116 (issue links + D-24). Checks: `pm.py list` shows MH-18/19/20 triaged with criterion ids in Source (check-cards-complete: 3 Unmet = 3 cards); live `.json` shows each Unmet justification naming its card id + issue, verified byte-identical (check-cards-referenced); `badge_percentage_0` = 100, `badge_level` = passing with references in place (check-assessment-passing). Design §3 card column: MH-18/19/20 on Unmet rows, `—` on N/A rows.
+- **Spec deviations**: None (D-24 decision entry was required by a review finding on PR #116, following the D-13 precedent — product-flow compliance, not a spec deviation).
+- **Files modified**: `specs/in-progress/openssf-badge/design.md`, `specs/in-progress/openssf-badge/tasks.md`, `specs/in-progress/openssf-badge/handoff.md`.
 
 ### Task 3 — Display the badge in the README and verify it live
 

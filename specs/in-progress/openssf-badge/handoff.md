@@ -14,7 +14,8 @@
 
 ## Task 2 — File backlog cards for unmet criteria and reference them from the assessment
 
-<!-- pending -->
+- **Produces**: cards MH-18/19/20 (issues #113/114/115) for the 3 Unmet criteria; assessment justifications reference them; design §3 card column filled; `badge_percentage_0` = 100 unchanged.
+- **For dependents** (task 3): no open items — the snippet bytes in task 1's handoff are final; the badge shows passing.
 
 ## Task 3 — Display the badge in the README and verify it live
 
