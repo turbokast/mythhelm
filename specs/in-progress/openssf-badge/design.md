@@ -26,9 +26,9 @@ Task 1 adds one row per N/A or Unmet answer; Task 2 fills the card column for Un
 
 | Criterion id | Answer + justification | Backlog card |
 |---|---|---|
-| `version_semver` | Unmet — SUGGESTED gap: no releases yet, so no SemVer/CalVer format adopted. (Will get a backlog card in task 2.) | (task 2) |
-| `version_tags` | Unmet — SUGGESTED gap: no releases yet, no git tags. (Will get a backlog card in task 2.) | (task 2) |
-| `warnings_strict` | Unmet — SUGGESTED gap: standard+gosec set is not maximal (no exhaustive style rules). | (task 2) |
+| `version_semver` | Unmet — SUGGESTED gap: no releases yet, so no SemVer/CalVer format adopted. Tracked in MH-18 (Adopt SemVer or CalVer for releases), issue #113. | MH-18 |
+| `version_tags` | Unmet — SUGGESTED gap: no releases yet, no git tags. Tracked in MH-19 (Tag every release in git), issue #114. | MH-19 |
+| `warnings_strict` | Unmet — SUGGESTED gap: standard+gosec set is not maximal (no exhaustive style rules). Tracked in MH-20 (Strictest practical lint set), issue #115. | MH-20 |
 | `release_notes_vulns` | N/A — No releases and no publicly known vulnerabilities — criterion explicitly allows N/A here. | — |
 | `vulnerability_report_response` | N/A — No vulnerability reports received in the last 6 months. | — |
 | `crypto_keylength` | N/A — No keys, key agreement, or encryption anywhere in the software. | — |
