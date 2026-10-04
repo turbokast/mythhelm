@@ -106,3 +106,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Decision**: MH-18/19/20 Issue fields and roadmap lines point to #113/114/115
 - **Rationale**: The backlog add procedure creates a card's public issue after the card is approved and merged (PR #112), then records the link so contributors can find the discussion
 - **Cards**: MH-18,MH-19,MH-20
+
+### D-25 — 2026-10-05: MH-9 → shipped (openssf-badge)
+- **Type**: lifecycle-sync
+- **Decision**: MH-9 moved to shipped
+- **Rationale**: openssf-badge finalized and merged
+- **Cards**: MH-9
+- **Evidence**: PR #120 (finalize), specs/done/openssf-badge/retrospective.md
