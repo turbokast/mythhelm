@@ -65,9 +65,16 @@ if test "$REPIN" -eq 1 && test -n "$(git status --porcelain)"; then
 	exit 1
 fi
 if test "$REPIN" -eq 0; then
-	binary_dirt="$(git status --porcelain -- '*.go' 'go.mod' 'go.sum' "$SED")"
-	if test -n "$binary_dirt"; then
-		echo "record.sh: uncommitted Go/normalization changes would build a binary the pin $pin does not describe" >&2
+	# Recording inputs: Go sources, the module files, the normalization
+	# script, the tape, and every go:embed asset baked into the binary
+	# (extend this list when adding an embed directive).
+	recording_dirt="$(git status --porcelain -- \
+		'*.go' 'go.mod' 'go.sum' "$SED" "$TAPE" \
+		'adapters/fake/scenarios/*.json' \
+		'internal/journal/migrations/*.sql' \
+		'mods/themes/*.toml')"
+	if test -n "$recording_dirt"; then
+		echo "record.sh: uncommitted build or recording inputs could make the output disagree with pin $pin" >&2
 		echo "record.sh: commit them or re-run with --repin to regenerate and move the pins" >&2
 		exit 1
 	fi
