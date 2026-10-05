@@ -1,6 +1,6 @@
 # Product specification
 
-The adoption on this branch takes effect when its exact product changes receive the maintainer's signature and its reviewed PR merges; until then it is proposed.
+The maintainer's signed adoption is recorded in [product decisions D-26–D-39](../../product/decisions.md). [PR #126](https://github.com/turbokast/mythhelm/pull/126) carries that adoption to `main` through the normal review and merge checks.
 
 The current normative product design is [MYTHHELM Master Specification v2](../../mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md). Its explicit requirements are UR-01–UR-10, invariants I01–I25 are in §2, and acceptance cases AT-01–AT-48, stages S0–S6 and gates G01–G16 are in §18.
 

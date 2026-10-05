@@ -1,6 +1,6 @@
 # 0008. Integrated product contracts and durable supervision
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-05
 
 ## Context
@@ -9,7 +9,7 @@ The Revision 1.1 master and adaptive proposal describe overlapping product model
 
 ## Decision
 
-Adopt [Master Specification v2](../../mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md) through the [specification index](../spec/README.md), after signed product adoption and PR review. Keep the original source files and their historical references unchanged. [The adoption map](../spec/synthesis-adoption.md) connects the full destination and first delivery to product decisions and W01–W16 owners.
+Adopt [Master Specification v2](../../mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md) through the [specification index](../spec/README.md). The maintainer accepted the design through signed product decision D-26; [PR #126](https://github.com/turbokast/mythhelm/pull/126) carries it to `main` through normal review. Keep the original source files and their historical references unchanged. [The adoption map](../spec/synthesis-adoption.md) connects the full destination and first delivery to product decisions and W01–W16 owners.
 
 The destination uses one local canonical ledger and one per-user supervisor per execution host. Workers retain process ownership and bounded spools; clients and Herdr consume authenticated control/projection interfaces. Task, artifact, grant, policy and evaluation revisions bind acceptance and authority. These contracts replace competing Markdown task authorities and independent experiment executors.
 

@@ -1,6 +1,6 @@
 # Integrated product adoption
 
-This change adopts [Master Specification v2](../../mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md) as the design for new product work, through the [specification index](README.md). Adoption takes effect when the exact product changes are signed by the maintainer and the reviewed PR merges. Until then this branch is a proposal. It does not implement the application, qualify native services, advance the current delivery stage or authorise live experiments, account changes or deployment.
+This change adopts [Master Specification v2](../../mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md) as the design for new product work, through the [specification index](README.md). The maintainer has signed the exact product changes recorded in D-26–D-39; [PR #126](https://github.com/turbokast/mythhelm/pull/126) carries them to `main` through normal review. Adoption does not implement the application, qualify native services, advance the current delivery stage or authorise live experiments, account changes or deployment.
 
 The three synthesis deliverables remain [master](../../mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md), [decisions](../../mythhelm-synthesis/MYTHHELM_Synthesis_Decisions.md) and [implementation plan](../../mythhelm-synthesis/MYTHHELM_Implementation_Plan.md). The original master, proposal and prompt remain byte-identical. The synthesis's original repository snapshot was `d77f2e8`; this adoption was checked against `eb349c2`, including MH-9's merged shipped status.
 
@@ -12,7 +12,7 @@ During adoption review, `main` advanced to `3a33b0c`: PRs #122–#124 started an
 - [Backlog](../../product/backlog.md) preserves the three shipped cards, updates all 17 existing open cards and adds MH-21–MH-30. Each new card has grounded premises, score rationale and prerequisites. Missing public issue links are filled through a second signed sync after approved cards are committed, as the backlog procedure requires.
 - [Decisions](../../product/decisions.md) D-26–D-39 record adoption, reconciliation, reprioritisation, the ten additions and the treatment of earlier signals. Earlier entries remain unchanged; D-28 gives each changed score.
 - [Roadmap](../../product/roadmap.md) is regenerated from the same staged backlog. Its ranked candidate list is not a claim that prerequisites or release gates passed.
-- Agent entrypoints and authoring guidance resolve the specification index. Historical Revision 1.1 specs, ADRs, closed cards and audit IDs keep their original meanings. `docs-site-demos` remains specced; review its v2 reconciliation before implementation resumes.
+- Agent entrypoints and authoring guidance resolve the specification index. Historical Revision 1.1 specs, ADRs, closed cards and audit IDs keep their original meanings. MH-8 still reads `specced` in the product ledger; its in-progress `docs-site-demos` work needs reviewed v2 reconciliation when adoption takes effect.
 
 No existing card is marked shipped merely because its requirements appear in v2. Existing skills and signals do not mandate cheap-first models, kNN, keepalive calls, secret copying or identity rotation. Those suggestions either become bounded hypotheses or are excluded by the v2 contracts.
 
