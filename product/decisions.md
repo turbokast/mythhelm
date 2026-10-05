@@ -113,3 +113,9 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: openssf-badge finalized and merged
 - **Cards**: MH-9
 - **Evidence**: PR #120 (finalize), specs/done/openssf-badge/retrospective.md
+
+### D-42 — 2026-10-05: Add card MH-32
+- **Type**: card-add
+- **Decision**: File backlog card MH-32
+- **Rationale**: docs-site-demos task 7: FR-3 follow-up recording for the shipped TUI
+- **Cards**: MH-32

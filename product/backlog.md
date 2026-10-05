@@ -31,6 +31,16 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 
 ## Open
 
+### MH-32: TUI terminal recording (FR-3 follow-up)
+- **Status**: idea
+- **Stage**: 1
+- **Gates**: G10
+- **Score**: 8.0 = (value 2 + urgency 5 + risk 1) / effort 1
+- **Spec**: (none)
+- **Issue**: (none)
+- **Source**: master spec §14.9, §22.3; docs-site-demos FR-3/AC-3.2/AC-3.3 and design §5; specs/done/tui-slice/ (shipped 2026-10-04)
+- **Summary**: Record the shipped TUI on tape: drive the mission view, responsive layouts down to linear mode and keyboard flows with the TUI's own verification status on screen, limited to exactly the covered tui-slice behaviour; ship the full tape with header pins, a manifest entry naming qualifying tests, and a normalized transcript per the docs-site-demos tape contract, never pane text as proof.
+
 ### MH-20: Strictest practical lint set
 - **Status**: triaged
 - **Stage**: 1
