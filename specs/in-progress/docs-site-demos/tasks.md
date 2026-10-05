@@ -230,8 +230,8 @@
   versioned qualifiers is shown).
 - **Status**: ✅ Completed — rendered demo GIF with README and user-guide embeds plus the site URL landed; PR #140.
 - **Implementation**: GIF (1080x620, 1027454 bytes, 8.64s) rendered via `record.sh --repin` in a throwaway worktree at the manifest pin (transcript regen byte-identical; tape/manifest/transcript untouched); identical captions name the tape + `record.sh` adjacent to each embed; site URL linked once. Frames inspected at t=2 (command typing) and t=4/6/8 (`=== SCRIPTED DEMO: done ===`, checks passed, diff). Commit 1a68d74e7d879fe9198e45b38efbeb5b1b0429ac.
-- **Spec deviations**: User-guide embed is page-relative (`demos/demo.gif`) vs the README's root-relative path so it resolves on the site and on GitHub. Design §2's home-page (`index.md`) embed left out: the task Files/acceptance scope to README + user guide; one-line follow-up.
-- **Files modified**: `docs/demos/demo.gif`, `README.md`, `docs/user-guide.md`, `specs/in-progress/docs-site-demos/tasks.md`, `specs/in-progress/docs-site-demos/handoff.md`.
+- **Spec deviations**: User-guide embed is page-relative (`demos/demo.gif`) vs the README's root-relative path so it resolves on the site and on GitHub. Review round added the `docs/index.md` home-page embed (same captioned embed): design §2 and Task 1's Files both assign it to Task 5 even though Task 5's own Files list omits the file.
+- **Files modified**: `docs/demos/demo.gif`, `README.md`, `docs/user-guide.md`, `specs/in-progress/docs-site-demos/tasks.md`, `specs/in-progress/docs-site-demos/handoff.md`, plus review-round `docs/index.md` (home-page embed per design §2).
 
 ### Task 6 — Recording honesty checks in CI
 
