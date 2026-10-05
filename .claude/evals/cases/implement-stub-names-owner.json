@@ -1,0 +1,12 @@
+{
+  "id": "implement-stub-names-owner",
+  "hazard": "A task lands an inert stub owned by no later task, and the unwired seam ships because no per-task review sees it.",
+  "source": "P-tui-slice-1",
+  "targets": [
+    ".claude/skills/implement/SKILL.md"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "completion entry names the specific later task whose acceptance covers wiring it, quoting that task's acceptance line; the orchestrator verifies the named task exists and is not yet merged"
+  }
+}

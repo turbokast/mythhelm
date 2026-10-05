@@ -65,7 +65,7 @@ Rules for this dispatch:
 - Run every gate through scripts/harness/gate.sh, in the foreground, one command at a time.
   You are never notified when a background command ends, so a backgrounded gate strands
   you. If a gate needs longer, raise the Bash timeout.
-- Commit named paths only. Never git stash, git add -A, git reset --hard, git clean or a
+- Commit named paths only, signed off (`git commit -s`). Never git stash, git add -A, git reset --hard, git clean or a
   force push. If a hook blocks you, follow its Fix line or stop and report; never work
   around it.
 - Where the acceptance asserts that a token is absent, never write that token in a test,
@@ -99,6 +99,15 @@ DIGEST>>>
 When a pull request from an earlier attempt is open, continue it: git switch -c <branch>
 --track origin/<branch> instead of creating a branch, and read its review threads first.
 Diagnose before changing code: .claude/skills/investigating-failures/SKILL.md.
+A DCO failure is fixed by rebasing onto the PR base with signoff (normally
+`git rebase --signoff origin/main`) plus push, never by an empty sign-off
+commit: a bare rebase replays nothing on a freshly tracked branch, so no
+trailer is added. When the retry continues an open pull request (branch checked out from
+`origin/<branch>`), the rebase rewrites published commits, so push the branch explicitly
+with `git push --force-with-lease origin <branch>` — the narrow, explicitly named exception
+to this template's no-force-push rule for this case only (a bare force-push names no
+refspec and the main-push guard blocks it). A retry without an open pull request
+starts from `origin/main` and must not force-push.
 ```
 
 The digest is at most ten lines, derived from the `fail` event and the verification output, never pasted raw logs. Append it to the run log as the event's `detail`.
