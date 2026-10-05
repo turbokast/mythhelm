@@ -8,7 +8,7 @@ only: never edit or remove an entry. The format is in [`README.md`](README.md).
 
 - **Decision**: approved
 - **Date**: 2026-10-05
-- **Pull request**: pending
+- **Pull request**: #154
 - **Eval**: `decomposition-owns-visible-claims`
 - **Rationale**: Maintainer approved 2026-10-05, endorsing the recommendation: prevents user-visible claims dropping silently.
 - **Source spec**: `docs-site-demos`
