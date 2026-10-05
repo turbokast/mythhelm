@@ -255,7 +255,7 @@
 - **Invariants touched**: I07 (§11.5: verification attaches to the declared revision;
   stale fails); I14 (§9.14: unqualified capabilities fail); §19.4 (fork-safe checks).
 
-### Task 7 — TUI tape scaffold (FR-3 follow-up filed; tui-slice shipped) ✅ COMPLETED
+### Task 7 — TUI tape scaffold (FR-3 follow-up drafted; tui-slice shipped) ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard

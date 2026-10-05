@@ -64,7 +64,7 @@
 
 <!-- pending -->
 
-## Task 7 — TUI tape scaffold (FR-3 follow-up filed; tui-slice shipped)
+## Task 7 — TUI tape scaffold (FR-3 follow-up drafted; tui-slice shipped)
 
 - **Produces**: `docs/demos/tui.tape` (comment-only scaffold: states the
   recording is planned, names the interface as the `specs/done/tui-slice/`
@@ -76,6 +76,7 @@
 - **For the orchestrator**: file the drafted FR-3 follow-up card below via the
   backlog flow (`pm.py next-id` assigns the id; open the GitHub issue; the
   tape itself stays a scaffold with no `Run` lines):
+
   ```markdown
   ### MH-N: TUI terminal recording (FR-3 follow-up)
   - **Status**: idea
@@ -93,6 +94,7 @@
     naming qualifying tests from internal/tui/*_test.go, and a normalized
     transcript per the docs-site-demos tape contract, never pane text as proof.
   ```
+
 - **Traps**: never name a rendered TUI artifact filename in `docs/` or
   `README.md` until the follow-up renders one — the no-recording-image check
   greps those trees for exactly such names. Score uses urgency 5 (Stage 1 is
