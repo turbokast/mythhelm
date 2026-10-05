@@ -42,7 +42,15 @@
 
 ## Task 3 — Pages build-and-deploy workflow
 
-<!-- pending -->
+- **Produces**: workflow contract — jobs `checks` (`Docs checks`: mirror drift
+  via `cmp` + `::error` with the `cp` refresh hint), `build` (needs `checks`:
+  transient mirror-front-matter inject, Jekyll `source: ./docs`, Pages
+  artifact upload, assert `_site/mirror/*.html` rendered), `deploy` (needs
+  `build`, `push` to `main` only, `pages`/`id-token: write` with why-comments).
+- **For Task 6**: extend the `checks` job with the transcript-freshness,
+  manifest-revision and capability-qualifier steps per design §4 (fork-safe, no
+  secrets; new `uses:` pinned SHA + comment). `docs.yml` is shared with this
+  task — this task merges first, Task 6 starts from main after it.
 
 ## Task 4 — Demo tape, transcript and manifest
 

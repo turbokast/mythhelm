@@ -106,7 +106,7 @@
 - **Spec deviations**: None to the contract. `navigation.yml` listed in Files but required no change; Governance mirror linked from `contributing.md` per design §2's seven-item nav. Review round touched two files outside Files with justification: root `GOVERNANCE.md` (one-line MAINTAINERS link made absolute — the mirror must stay byte-identical to root, so the broken relative link could only be fixed at the source) and `specs/in-progress/docs-site-demos/design.md` (one-line adapter-coverage wording fix matching the task-record fix).
 - **Files modified**: `docs/user-guide.md`, `docs/contributing.md`, `docs/limitations.md`, `docs/mirror/LICENSE.md`, `docs/mirror/SECURITY.md`, `docs/mirror/CHANGELOG.md`, `docs/mirror/GOVERNANCE.md`, `specs/in-progress/docs-site-demos/tasks.md`, `specs/in-progress/docs-site-demos/handoff.md`, plus review-round `GOVERNANCE.md` (absolute MAINTAINERS link) and `specs/in-progress/docs-site-demos/design.md` (adapter-coverage wording).
 
-### Task 3 — Pages build-and-deploy workflow
+### Task 3 — Pages build-and-deploy workflow ✅ COMPLETED
 
 - **Domain/agent**: release-engineer
 - **Budget**: standard
@@ -142,6 +142,10 @@
 - **Invariants touched**: I13 (§3.3: Pages is documentation hosting, never a runtime
   dependency — no repo test or binary fetches the site); §19.4 (pinned, least-privilege,
   fork-safe CI).
+- **Status**: ✅ Completed — Pages workflow (checks/build/deploy) and automation.md row move landed; PR #139.
+- **Implementation**: `checks` (mirror drift with refresh hint), `build` (inject + Jekyll + assert mirrors rendered), `deploy` (push-to-main only); 6/6 `uses:` pinned SHA + comment; `contents: read` top-level, `pages`/`id-token: write` on deploy only with why-comments, 0 `secrets.*`; actionlint exit 0; `Docs checks` green (run 37293185337); build green after Pages enablement (re-run job URL appended below). `docs/automation.md` moves the Pages row Deferred → Active; PR description carries the maintainer Pages-source + ruleset instructions. Commit b0c7277ddf2ccc648c6ac79eadd44f5dddcb4093.
+- **Spec deviations**: None. Entry + handoff written by the orchestrator from verified evidence (worker stopped at the Pages-disabled build failure, which needed the maintainer switch).
+- **Files modified**: `.github/workflows/docs.yml`, `docs/automation.md`, `specs/in-progress/docs-site-demos/tasks.md`, `specs/in-progress/docs-site-demos/handoff.md`.
 
 ### Task 4 — Demo tape, transcript and manifest ✅ COMPLETED
 
