@@ -105,7 +105,25 @@
 
 ## Task 6 — Recording honesty checks in CI
 
-<!-- pending -->
+- **Produces**: `Docs checks` now fails on mirror drift (Task 3), unknown
+  `manifest.json binary_commit` (40-hex + `git cat-file`), stale
+  `demo.transcript.txt` (detached worktree at the pin, `go build`, §3 pipeline
+  re-run, `diff`), and capabilities without a `^--- PASS: <qualifier>` line
+  from `go test -v -run` at the pin (never a bare `-run` exit, never
+  `grep -q`); each failure carries the refresh command.
+- **For the FR-3 follow-up**: the transcript step is demo-specific (it rebuilds
+  and re-runs `demo --check pass`); a TUI recording needs its own regen +
+  diff step. The qualifier step already loops every recording's capabilities
+  but asserts a single shared pin — per-recording pins need per-recording
+  worktrees.
+- **For the FR-3 follow-up**: keep new qualifiers strict Go test names
+  (`[A-Za-z0-9_]+`); anything else fails the name guard before any test runs.
+- **Traps**: `checks` uses `fetch-depth: 0` (the pin must be present whatever
+  its age) and `setup-go` with `go-version-file: go.mod`; `build`/`deploy`
+  are untouched. The revision step runs before the transcript step so unknown
+  revisions fail fast naming the revision.
+- **Deviations affecting later tasks**: none. `docs/automation.md`'s Docs-site
+  row names the new failure modes.
 
 ## Task 7 — TUI tape scaffold (FR-3 follow-up drafted; tui-slice shipped)
 

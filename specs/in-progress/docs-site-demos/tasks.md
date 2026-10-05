@@ -237,7 +237,7 @@
 - **Spec deviations**: User-guide embed is page-relative (`demos/demo.gif`) vs the README's root-relative path so it resolves on the site and on GitHub. Review round added the `docs/index.md` home-page embed (same captioned embed): design §2 and Task 1's Files both assign it to Task 5 even though Task 5's own Files list omits the file.
 - **Files modified**: `docs/demos/demo.gif`, `README.md`, `docs/user-guide.md`, `specs/in-progress/docs-site-demos/tasks.md`, `specs/in-progress/docs-site-demos/handoff.md`, plus review-round `docs/index.md` (home-page embed per design §2).
 
-### Task 6 — Recording honesty checks in CI
+### Task 6 — Recording honesty checks in CI ✅ COMPLETED
 
 - **Domain/agent**: release-engineer
 - **Budget**: standard
@@ -266,6 +266,11 @@
   paste all four job URLs in the completion entry.
 - **Invariants touched**: I07 (§11.5: verification attaches to the declared revision;
   stale fails); I14 (§9.14: unqualified capabilities fail); §19.4 (fork-safe checks).
+- **Status**: ✅ Completed — honesty checks (revision, transcript freshness, qualifiers) in `Docs checks` landed; PR #142.
+- **Implementation**: `checks` gains `fetch-depth: 0` + pinned `setup-go` and three steps: revision presence (40-hex + `cat-file`), transcript regen in a detached worktree at the pin with the §3 pipeline + `diff`, and per-capability `^--- PASS:` assertion (never bare `-run`, never `grep -q`); actionlint exit 0, 7/7 `uses:` pinned, 0 `secrets.*`, zizmor green. Commit 8413b9fb3e69bb1a1182214131abe72e6acd3b6a.
+- **Spec deviations**: None to the contract. Execution order is revision → transcript → qualifiers (design §4 lists transcript second, revision third) so an unknown revision fails fast naming the revision. `docs/automation.md` is outside Files: its Docs-site row now names the new failure modes (one sentence; the github-workflows rule keeps the table current in the same change).
+- **Files modified**: `.github/workflows/docs.yml`, `docs/automation.md`, `specs/in-progress/docs-site-demos/tasks.md`, `specs/in-progress/docs-site-demos/handoff.md`.
+- **CI evidence**: green PR run https://github.com/turbokast/mythhelm/actions/runs/37298784085/job/111726269471; stale probe https://github.com/turbokast/mythhelm/actions/runs/37298809164/job/111726351822 (PR #143); unqualified probe https://github.com/turbokast/mythhelm/actions/runs/37298825018/job/111726404257 (PR #144); unknown-revision probe https://github.com/turbokast/mythhelm/actions/runs/37298841014/job/111726456496 (PR #145); all scratch branches dropped.
 
 ### Task 7 — TUI tape scaffold (FR-3 follow-up drafted; tui-slice shipped) ✅ COMPLETED
 
