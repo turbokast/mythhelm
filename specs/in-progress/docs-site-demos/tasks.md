@@ -135,7 +135,7 @@
   dependency — no repo test or binary fetches the site); §19.4 (pinned, least-privilege,
   fork-safe CI).
 
-### Task 4 — Demo tape, transcript and manifest
+### Task 4 — Demo tape, transcript and manifest ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -182,6 +182,17 @@
 - **Invariants touched**: I09 (§13.4: transcript keeps the binary's labels verbatim,
   never collapsed); I07 (§11.5: manifest pins the exact recorded revision);
   I14 (§9.14: declared capabilities name their qualifying tests).
+- **Status**: ✅ Completed — tape, transcript, manifest and record command landed; PR #125.
+- **Implementation**: Tape drives `/tmp/mythhelm-record demo --check pass` via one `Type` line
+  (VHS v0.12.1 has no `Run`); manifest pins `binary_commit e0ecdbc9…`, verified identical
+  from a detached worktree; full `record.sh` in 20.9s. Commit a9fd10af562ea913650f20910c2cd99aff515bef.
+- **Spec deviations**: None to the contract. Tape uses `Type`+`Enter` (no `Run` in VHS v0.12.1);
+  `binary_version` records the clean-tree `mythhelm version` string, not the schema example's `devel`.
+  Tape `Run`/`Type` lines confirmed by eye: the single `Type` line invokes only the record-built
+  local binary; `Require git` is the demo's documented prerequisite. `vhs --version` on the
+  recording machine prints `vhs version v0.12.1`; manifest stores `v0.12.1`. Recorder tooling,
+  all free: go1.27.1, git 2.43.0, vhs v0.12.1, python3 3.12.10, ffmpeg 6.1.1, ttyd 1.7.7.
+- **Files modified**: `docs/demos/demo.tape`, `docs/demos/demo.transcript.txt`, `docs/demos/normalize.sed`, `docs/demos/manifest.json`, `docs/demos/record.sh`, `docs/demos/README.md`, `specs/in-progress/docs-site-demos/tasks.md`, `specs/in-progress/docs-site-demos/handoff.md`.
 
 ### Task 5 — Rendered demo GIF and embeds
 
