@@ -31,17 +31,6 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 
 ## Open
 
-### MH-9: OpenSSF Best Practices badge
-- **Status**: specced
-- **Stage**: 1
-- **Gates**: G10
-- **Score**: 9.0 = (value 2 + urgency 5 + risk 2) / effort 1
-- **Spec**: `openssf-badge`
-- **Issue**: [#30](https://github.com/turbokast/mythhelm/issues/30)
-- **Source**: master spec §19.3, §19.4 and the G10 public-release gate of §18.7
-- **Summary**: Complete the OpenSSF Best Practices questionnaire for the passing level and show the badge in the README, recording any criterion the project does not yet meet as its own card.
-- **Premise-grounded**: 2026-10-02 — C1 HOLDS; C2 HOLDS; C3 HOLDS; C4 HOLDS; C5 PARTIAL; C6 HOLDS (external); C7 PROCEDURE
-
 ### MH-20: Strictest practical lint set
 - **Status**: triaged
 - **Stage**: 1
@@ -235,3 +224,14 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Source**: master spec §15 (visual language, mission view, responsive layouts, navigation, motion, accessibility, render model), §20.3 and §22.2 item 5
 - **Summary**: The polished focused TUI that Stage 1 requires, on top of the run pipeline the dogfood slice delivers: the mission view, responsive layouts down to the linear accessible mode, keyboard flows and event-driven motion. The dogfood slice deliberately defers it (its non-goal N1).
 - **Premise-grounded**: 2026-10-02 — run pipeline exists HOLDS; dogfood N1 defers TUI HOLDS; Stage 1 requires polished TUI HOLDS; §15 coverage HOLDS; §22.2 item 5 HOLDS; G09 HOLDS; Bubble Tea stack HOLDS; no TUI exists yet HOLDS
+
+### MH-9: OpenSSF Best Practices badge
+- **Status**: shipped
+- **Stage**: 1
+- **Gates**: G10
+- **Score**: 9.0 = (value 2 + urgency 5 + risk 2) / effort 1
+- **Spec**: `openssf-badge`
+- **Issue**: [#30](https://github.com/turbokast/mythhelm/issues/30)
+- **Source**: master spec §19.3, §19.4 and the G10 public-release gate of §18.7
+- **Summary**: Complete the OpenSSF Best Practices questionnaire for the passing level and show the badge in the README, recording any criterion the project does not yet meet as its own card.
+- **Premise-grounded**: 2026-10-02 — C1 HOLDS; C2 HOLDS; C3 HOLDS; C4 HOLDS; C5 PARTIAL; C6 HOLDS (external); C7 PROCEDURE
