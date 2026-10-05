@@ -9,7 +9,7 @@ argument-hint: "[--check]"
 `product/roadmap.md` is a view of the backlog, never a separate plan: `scripts/pm/pm.py roadmap` generates it from the cards and the current stage.
 
 - **Now**: cards with a spec (`specced`, `implementing`).
-- **Next**: the five highest-scored `idea` or `triaged` cards in the current or next stage.
+- **Next**: the five highest-scored `idea` or `triaged` cards in an earlier stage, the current stage or the next stage.
 - **Later**: every other open card, by score.
 
 Because it is generated, the roadmap carries no decisions of its own: changing what is on it means changing the cards (`/backlog`), and this skill only redrafts the view.

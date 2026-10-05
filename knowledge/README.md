@@ -2,7 +2,7 @@
 
 Curated reference for the agents that build MYTHHELM. Rules in `.claude/rules/` say what to do; the files here hold the facts those rules and the agent definitions point to, so the always-loaded context stays small.
 
-Nothing here ships in a release, and nothing here overrides [`docs/spec/master-spec.md`](../docs/spec/master-spec.md) or [`docs/harness/charter.md`](../docs/harness/charter.md). When a file here disagrees with either, the file here is wrong: fix it in the same change that notices it.
+Nothing here ships in a release, and nothing here overrides the current product specification identified by [`docs/spec/README.md`](../docs/spec/README.md) or [`docs/harness/charter.md`](../docs/harness/charter.md). When a file here disagrees with either, the file here is wrong: fix it in the same change that notices it.
 
 ## When to read what
 

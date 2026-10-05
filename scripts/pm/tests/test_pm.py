@@ -56,6 +56,7 @@ class Repo:
         os.makedirs(os.path.join(self.root, "specs", "todo", "demo"))
         os.makedirs(os.path.join(self.root, "specs", "done", "old"))
         self.write("product/objectives.md", OBJECTIVES)
+        self.write("product/README.md", "# Product\n\nAgents propose; maintainers approve.\n")
         self.write("product/backlog.md", CLEAN_BACKLOG)
         self.write("product/decisions.md", DECISIONS)
         self.write("product/signals.md", SIGNALS)
@@ -193,8 +194,8 @@ class BacklogBrokenInputs(Base):
         self.assertFinding("missing field 'Stage'")
 
     def test_gates_vocabulary(self):
-        self.r.replace("product/backlog.md", "G01, G10", "G13")
-        self.assertFinding("gates must be 'none' or G01-G12")
+        self.r.replace("product/backlog.md", "G01, G10", "G17")
+        self.assertFinding("gates must be 'none' or G01-G16")
 
     def test_stage_vocabulary(self):
         self.r.replace("product/backlog.md", "- **Stage**: 2", "- **Stage**: soon")
@@ -268,7 +269,7 @@ class LogBrokenInputs(Base):
 class OtherFiles(Base):
     def test_objectives_need_the_current_stage(self):
         self.r.write("product/objectives.md", "# Objectives\n")
-        self.assertFinding("has no '> Current stage: N' line")
+        self.assertFinding("exactly one '> Current stage: N' line")
 
     def test_roadmap_names_real_cards(self):
         self.r.write("product/roadmap.md", self.r.read("product/roadmap.md") + "- **MH-42** ghost\n")
@@ -415,6 +416,125 @@ class Drafts(Base):
         pm.PRODUCT_DIR = None
         self.assertEqual(rc, 0, out)
         self.assertIn("product: OK", out)
+
+
+class AdaptiveProductDrafts(Base):
+    def test_later_stages_and_gates_are_scored_and_validated(self):
+        self.r.replace("product/objectives.md", "Current stage: 1", "Current stage: 5")
+        rc, _, err = self.r.run("rescore", "MH-3", "--stage", "6", "--out", self.out())
+        self.assertEqual(rc, 0, err)
+        with open(self.out(), encoding="utf-8") as f:
+            draft = f.read()
+        self.assertIn("- **Stage**: 6", draft)
+        self.assertIn("2.5 = (value 4 + urgency 3 + risk 3) / effort 4", draft)
+        self.r.write("product/backlog.md", draft)
+        rc, _, err = self.r.run("set", "MH-3", "gates", "G13, G14, G15, G16", "--out", self.out())
+        self.assertEqual(rc, 0, err)
+        with open(self.out(), encoding="utf-8") as f:
+            self.assertIn("G13, G14, G15, G16", f.read())
+
+    def test_current_stage_rejects_out_of_range_and_duplicate_values(self):
+        for text in ("# Objectives\n\n> Current stage: 7\n",
+                     "# Objectives\n\n> Current stage: 1\n> Current stage: 2\n"):
+            with self.subTest(text=text):
+                self.r.write("product/objectives.md", text)
+                self.assertFinding("exactly one '> Current stage: N' line")
+
+    def source(self, name, text):
+        path = self.out(name)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        return path
+
+    def test_objective_draft_is_reviewable_without_product_write(self):
+        source = self.source("objectives-source.md", "# Objectives\n\n> Current stage: 4\n")
+        rc, _, err = self.r.run("draft-text", "objectives", "--from", source, "--out", self.out())
+        self.assertEqual(rc, 0, err)
+        with open(self.out(), encoding="utf-8") as f:
+            self.assertIn("Current stage: 4", f.read())
+        self.assertEqual(self.r.read("product/objectives.md"), OBJECTIVES)
+        bad = self.source("bad.md", "# Objectives\n\n> Current stage: 7\n")
+        rc, _, err = self.r.run("draft-text", "objectives", "--from", bad, "--out", self.out("bad-out.md"))
+        self.assertEqual(rc, 2, err)
+        self.assertFalse(os.path.exists(self.out("bad-out.md")))
+
+    def test_readme_draft_stays_outside_product(self):
+        source = self.source("readme-source.md", "# Product\n\nCurrent spec and signed approvals.\n")
+        rc, _, err = self.r.run("draft-text", "readme", "--from", source, "--out", self.out())
+        self.assertEqual(rc, 0, err)
+        with open(self.out(), encoding="utf-8") as f:
+            self.assertIn("Current spec", f.read())
+        rc, _, err = self.r.run("draft-text", "readme", "--from", source,
+                               "--out", self.r.path("product/README.md"))
+        self.assertEqual(rc, 2, err)
+        self.assertIn("inside product/", err)
+        self.assertEqual(self.r.read("product/README.md"), "# Product\n\nAgents propose; maintainers approve.\n")
+
+    def test_readme_draft_refuses_hardlink_to_product(self):
+        source = self.source("readme-source.md", "# Product\n\nA proposed change.\n")
+        target = self.out("linked-draft.md")
+        os.link(self.r.path("product/README.md"), target)
+        before = self.r.read("product/README.md")
+        rc, _, err = self.r.run("draft-text", "readme", "--from", source, "--out", target)
+        self.assertEqual(rc, 2, err)
+        self.assertIn("multiple hardlinks", err)
+        self.assertEqual(self.r.read("product/README.md"), before)
+        with open(target, encoding="utf-8") as f:
+            self.assertEqual(f.read(), before)
+
+    def test_preamble_draft_preserves_cards_and_rejects_injected_card(self):
+        source = self.source("preamble.md", PREAMBLE.replace("Schema notes.", "Stages 0–6; gates G01–G16."))
+        rc, _, err = self.r.run("draft-text", "backlog-preamble", "--from", source, "--out", self.out())
+        self.assertEqual(rc, 0, err)
+        with open(self.out(), encoding="utf-8") as f:
+            draft = f.read()
+        before = pm.Backlog(CLEAN_BACKLOG, pm.Findings())
+        after = pm.Backlog(draft, pm.Findings())
+        self.assertEqual([c.render() for c in before.cards], [c.render() for c in after.cards])
+        self.assertIn("Stages 0–6", draft)
+        injected = self.source("injected.md", PREAMBLE + "\n## Open\n\n" + card(99, "Injected"))
+        rc, _, err = self.r.run("draft-text", "backlog-preamble", "--from", injected,
+                               "--out", self.out("injected-out.md"))
+        self.assertNotEqual(rc, 0, err)
+        self.assertFalse(os.path.exists(self.out("injected-out.md")))
+
+    def test_stage_includes_readme_without_changing_product(self):
+        stage = self.out("stage")
+        rc, _, err = self.r.run("stage", stage)
+        self.assertEqual(rc, 0, err)
+        with open(os.path.join(stage, "README.md"), encoding="utf-8") as f:
+            self.assertEqual(f.read(), self.r.read("product/README.md"))
+
+    def test_stage_rejects_symlink_before_copying_any_file(self):
+        stage = self.out("stage")
+        os.mkdir(stage)
+        target = os.path.join(stage, "README.md")
+        os.symlink(self.r.path("product/README.md"), target)
+        before = self.r.read("product/README.md")
+        rc, _, err = self.r.run("stage", stage)
+        self.assertEqual(rc, 2, err)
+        self.assertIn("already exists", err)
+        self.assertEqual(self.r.read("product/README.md"), before)
+        self.assertEqual(os.listdir(stage), ["README.md"], "preflight must precede every copy")
+
+    def test_stage_rejects_hardlink_without_truncating_product(self):
+        stage = self.out("stage")
+        os.mkdir(stage)
+        os.link(self.r.path("product/objectives.md"), os.path.join(stage, "objectives.md"))
+        rc, _, err = self.r.run("stage", stage)
+        self.assertEqual(rc, 2, err)
+        self.assertEqual(self.r.read("product/objectives.md"), OBJECTIVES)
+
+    def test_stage_preserves_existing_scratch_drafts(self):
+        stage = self.out("stage")
+        os.mkdir(stage)
+        with open(os.path.join(stage, "backlog.md"), "w", encoding="utf-8") as f:
+            f.write("Reviewed but not yet filed draft\n")
+        rc, _, err = self.r.run("stage", stage)
+        self.assertEqual(rc, 2, err)
+        with open(os.path.join(stage, "backlog.md"), encoding="utf-8") as f:
+            self.assertEqual(f.read(), "Reviewed but not yet filed draft\n")
+        self.assertEqual(os.listdir(stage), ["backlog.md"])
 
 
 class Scoring(unittest.TestCase):

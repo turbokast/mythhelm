@@ -14,7 +14,7 @@
 
 MYTHHELM orchestrates the coding agents you already use and trust, such as Claude Code, Codex and others, with their native harnesses intact. It gives them a shared mission, safe working boundaries, an honest control plane and a terminal experience worth opening.
 
-> **Status: pre-alpha.** There is no usable release yet. The headless dogfood slice (`run`, `review`, `apply`, `recover`) plus an offline `demo` and a read-only `doctor` are implemented on `main` and covered by a packaged-binary end-to-end suite. Everything else below is a proposed contract, not an implemented or benchmarked capability.
+> **Status: pre-alpha.** There is no usable release yet. The headless dogfood slice (`run`, `review`, `apply`, `recover`) plus an offline `demo` and a read-only `doctor` are implemented on `main` and covered by a packaged-binary end-to-end suite. The TUI is also implemented, with the evidence and limitations below. The broader adaptive product remains a design contract, not an implemented or benchmarked capability.
 
 ## Dogfood slice status
 
@@ -46,7 +46,7 @@ Supported now (evidence: [G09 record](docs/tui-slice-g09-evidence.md); unrecorde
 - Stable linear output without a TTY, under `TERM=dumb`, with `--plain`, and machine output (`--format jsonl`); `--accessible` emits the ordered screen-reader stream. Covered on Linux, macOS and Windows (x86_64 and ARM) by the packaged-binary end-to-end suite.
 - Explicit `--colour` / `--motion` / `--icons` overrides; `NO_COLOR` and `TERM=dumb` suppress.
 
-Recorded interactive combination (full §16.4 row in the G09 record):
+Recorded interactive combination (Revision 1.1 §16.4 row in the G09 record):
 
 - GNOME Terminal 3.52 (VTE 0.76) + zsh 5.9 on Ubuntu 24.04, 190x45.
 
@@ -70,7 +70,7 @@ Known limitations (G09 findings, see the record §5):
 
 ## Design
 
-The [master specification](docs/spec/master-spec.md) is the versioned design reference. It covers the architecture, invariants, adapter and billing contracts, the TUI and the staged roadmap. The user and contributor guides are available in [docs/user-guide.md](docs/user-guide.md) and [docs/contributing.md](docs/contributing.md).
+The [specification index](docs/spec/README.md) identifies [Master Specification v2](mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md) as the current design and preserves Revision 1.1 for historical references. The full vision combines native continuity, verified delivery, bounded parallel construction and evidence-gated adaptation. The first useful milestone is one qualified native route completing the task-to-verified-candidate loop. The [product adoption map](docs/spec/synthesis-adoption.md) connects all 16 implementation slices to the backlog.
 
 Published user and contributor guides: <https://turbokast.github.io/mythhelm/>.
 
