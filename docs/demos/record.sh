@@ -64,6 +64,14 @@ if test "$REPIN" -eq 1 && test -n "$(git status --porcelain)"; then
 	echo "record.sh: --repin needs a clean tree (pins must name a reproducible commit)" >&2
 	exit 1
 fi
+if test "$REPIN" -eq 0; then
+	binary_dirt="$(git status --porcelain -- '*.go' 'go.mod' 'go.sum' "$SED")"
+	if test -n "$binary_dirt"; then
+		echo "record.sh: uncommitted Go/normalization changes would build a binary the pin $pin does not describe" >&2
+		echo "record.sh: commit them or re-run with --repin to regenerate and move the pins" >&2
+		exit 1
+	fi
+fi
 
 echo "record.sh: build the binary (go build, never go run)"
 go build -o "$BIN" ./cmd/mythhelm
