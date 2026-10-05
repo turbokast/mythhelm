@@ -9,11 +9,6 @@ on:
 permissions:
   contents: read
 
-# Serialize Pages deployments; a queued deploy waits rather than cancelling the live one.
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
 jobs:
   checks:
     name: Docs checks
@@ -80,6 +75,12 @@ jobs:
     name: Deploy docs site
     if: github.event_name == 'push'
     needs: build
+    # Serialize only the push-gated deploys: site checks on PRs never enter
+    # this group, so they cannot starve or replace a pending deploy. (No
+    # queue key: actionlint rejects it; pending replacement within main
+    # pushes is latest-wins, which is safe for idempotent site publishes.)
+    concurrency:
+      group: pages
     runs-on: ubuntu-latest
     permissions:
       # Deploy the built site to GitHub Pages.
