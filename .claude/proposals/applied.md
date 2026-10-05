@@ -8,7 +8,7 @@ only: never edit or remove an entry. The format is in [`README.md`](README.md).
 
 - **Decision**: approved
 - **Date**: 2026-10-05
-- **Pull request**: pending
+- **Pull request**: #150
 - **Eval**: `implement-stub-names-owner`
 - **Rationale**: Maintainer approved 2026-10-05, endorsing the recommendation: closes the proven inert-stub seam cheaply.
 - **Source spec**: `tui-slice`
