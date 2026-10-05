@@ -99,11 +99,14 @@ DIGEST>>>
 When a pull request from an earlier attempt is open, continue it: git switch -c <branch>
 --track origin/<branch> instead of creating a branch, and read its review threads first.
 Diagnose before changing code: .claude/skills/investigating-failures/SKILL.md.
-A DCO failure is fixed by `git rebase --signoff` plus push, never by an empty sign-off
-commit. When the retry continues an open pull request (branch checked out from
-`origin/<branch>`), the rebase rewrites published commits, so the push must be
-`git push --force-with-lease` — the narrow, explicitly named exception to this
-template's no-force-push rule for this case only. A retry without an open pull request
+A DCO failure is fixed by rebasing onto the PR base with signoff (normally
+`git rebase --signoff origin/main`) plus push, never by an empty sign-off
+commit: a bare rebase replays nothing on a freshly tracked branch, so no
+trailer is added. When the retry continues an open pull request (branch checked out from
+`origin/<branch>`), the rebase rewrites published commits, so push the branch explicitly
+with `git push --force-with-lease origin <branch>` — the narrow, explicitly named exception
+to this template's no-force-push rule for this case only (a bare force-push names no
+refspec and the main-push guard blocks it). A retry without an open pull request
 starts from `origin/main` and must not force-push.
 ```
 
