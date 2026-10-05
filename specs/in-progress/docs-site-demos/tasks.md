@@ -61,7 +61,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `docs/_config.yml`, `docs/_data/navigation.yml`, `docs/_layouts/default.html`, `docs/index.md`, `specs/in-progress/docs-site-demos/tasks.md`, `specs/in-progress/docs-site-demos/handoff.md`.
 
-### Task 2 — Guide pages and root-guide mirrors
+### Task 2 — Guide pages and root-guide mirrors ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -71,7 +71,7 @@
 - **Files**:
   - `docs/user-guide.md` (installation, quickstart/demo, limitations pointer)
   - `docs/contributing.md` (governance summary, contribution path, DCO, good-first-issue route)
-  - `docs/limitations.md` (limitations register: pre-alpha, fake adapter only, TUI shipped with known limits)
+  - `docs/limitations.md` (limitations register: pre-alpha, narrow adapter coverage — scripted fake + Claude Code — TUI shipped with known limits)
   - `docs/mirror/LICENSE.md` (byte mirror of `LICENSE`)
   - `docs/mirror/SECURITY.md` (byte mirror of `SECURITY.md`)
   - `docs/mirror/CHANGELOG.md` (byte mirror of `CHANGELOG.md`)
@@ -101,6 +101,10 @@
   honest lands in Task 6.
 - **Invariants touched**: I14 (§9.14: shipped TUI described truthfully with its limits;
   no unshipped capability advertised); I13 (§3.3: pages link to no MYTHHELM-owned service).
+- **Status**: ✅ Completed — guide pages and root-guide mirrors landed; PR #138.
+- **Implementation**: Three authored pages (user guide, contributing with anchored DCO/good-first-issue, limitations naming the TUI shipped) plus four `cp` byte mirrors; nav needed no edit (Task 1 pre-wired all seven routes; loop prints nothing). Commit 7898e7ea23b444c0b1f3256b815debcf1d073bc5.
+- **Spec deviations**: None to the contract. `navigation.yml` listed in Files but required no change; Governance mirror linked from `contributing.md` per design §2's seven-item nav. Review round touched two files outside Files with justification: root `GOVERNANCE.md` (one-line MAINTAINERS link made absolute — the mirror must stay byte-identical to root, so the broken relative link could only be fixed at the source) and `specs/in-progress/docs-site-demos/design.md` (one-line adapter-coverage wording fix matching the task-record fix).
+- **Files modified**: `docs/user-guide.md`, `docs/contributing.md`, `docs/limitations.md`, `docs/mirror/LICENSE.md`, `docs/mirror/SECURITY.md`, `docs/mirror/CHANGELOG.md`, `docs/mirror/GOVERNANCE.md`, `specs/in-progress/docs-site-demos/tasks.md`, `specs/in-progress/docs-site-demos/handoff.md`, plus review-round `GOVERNANCE.md` (absolute MAINTAINERS link) and `specs/in-progress/docs-site-demos/design.md` (adapter-coverage wording).
 
 ### Task 3 — Pages build-and-deploy workflow
 

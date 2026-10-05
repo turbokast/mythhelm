@@ -66,7 +66,7 @@ sources starts with `---` (`head -1` shows `Apache License`, `# Security Policy`
 `# Changelog`, `# Governance`), so injection is unambiguous.
 | `docs/user-guide.md` | Authored extraction: installation, quickstart (`mythhelm demo`, `mythhelm doctor`), limitations pointer, demo recording embed (AC-1.1, AC-2.3) |
 | `docs/contributing.md` | Authored extraction: governance summary, contribution path, DCO sign-off requirement, good-first-issue route with no paid subscription (AC-1.3) |
-| `docs/limitations.md` | Authored limitations register extracted from the master spec (§22.3): pre-alpha, one fake adapter, TUI shipped with known limits (truthful status, I14) |
+| `docs/limitations.md` | Authored limitations register extracted from the master spec (§22.3): pre-alpha, narrow adapter coverage (scripted fake + Claude Code), TUI shipped with known limits (truthful status, I14) |
 | `docs/mirror/LICENSE.md` etc. | Byte mirrors of `LICENSE`, `SECURITY.md`, `CHANGELOG.md`, `GOVERNANCE.md` (D3). `CONTRIBUTING.md` is extracted into `contributing.md`, not mirrored. The directory has no underscore prefix: Jekyll excludes non-special `_`-prefixed directories from the build, so `_mirror/` pages would 404 |
 
 ## 3. Record command, tapes and manifest (§14.9, §22.3)
