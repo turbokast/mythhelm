@@ -23,8 +23,10 @@ Step 5 of `/finalize-spec`. A pull request's checks ran on its own head; `main` 
 1. **Wait for a verdict** on the commit, in the foreground, with a Bash timeout of 600000:
 
    ```bash
-   python3 scripts/harness/finalize.py ci --sha <sha> --wait --timeout 540
+   python3 scripts/harness/finalize.py ci --sha <full-sha> --wait --timeout 540
    ```
+
+   Pass the full 40-character SHA (`git rev-parse <sha>` when starting from a short one): `gh run list --commit` does not match short SHAs, and a short SHA yields a false `verdict=pending` even when the runs are green.
 
    The script polls `gh run list --branch main --commit <sha>` itself, every 30 seconds, and exits when every push run on that commit has completed. Exit 3 (`verdict=pending`) means its time ran out: run it again, at most eight times in all; after that escalate `ci-timeout` with the runs still pending. Waiting inside the script, not by an agent's `sleep` or by yielding the turn, keeps the delay real and the budget countable.
 

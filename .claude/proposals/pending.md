@@ -86,18 +86,6 @@ In the first-attempt template's Rules, change "Commit named paths only." to "Com
 
 In Step 7's rules, append to the no-force-push sentence: "Exception: an open-PR DCO retry signs off via `git rebase --signoff` and pushes with `git push --force-with-lease` (see P-tui-slice-2); this is the only rebase or force-push a worker ever performs." In Step 9's behind/conflict rule, append: "The DCO retry is the exception: it rebases with `--signoff` instead of merging."
 
-## P-openssf-badge-1 — verify-ci passes the full commit SHA (short SHAs miss)
-
-- **Source spec**: `openssf-badge`
-- **Type**: skill
-- **Target**: `.claude/skills/finalize-spec-verify-ci/SKILL.md`
-- **Rationale**: `gh run list --commit <short-sha>` silently matches zero runs even when completed runs exist for that commit, and `finalize.py ci` reports the miss as `verdict=pending` ("no push run on main yet") — a false negative that sends the operator down a re-wait loop. Pinning the step to full 40-char SHAs removes the trap at the call site regardless of when the script learns to normalize.
-- **Evidence**: openssf-badge retrospective §CI history: `finalize.py ci --sha d77f2e8 --wait` → pending with 6 completed runs present; `gh run list --branch main --commit d77f2e8` → 0 runs; full-SHA invocation → `verdict=green`, runs=6.
-
-**Proposed change:**
-
-In Step 1, change the command template to use a full SHA and add the warning: "Pass the full 40-character SHA (`git rev-parse <sha>` when starting from a short one): `gh run list --commit` does not match short SHAs, and a short SHA yields a false `verdict=pending` even when the runs are green."
-
 ## P-docs-site-demos-1 — spec-decomposition: user-visible design claims need a task owner
 
 - **Source spec**: `docs-site-demos`
