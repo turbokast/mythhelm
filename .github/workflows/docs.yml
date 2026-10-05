@@ -99,7 +99,7 @@ jobs:
             if (cd "$parent/wt" || exit 1; set -o pipefail; go test -v -run "^${qualifier}$" -count=1 ./... | grep -E "^--- PASS: ${qualifier}" >/dev/null); then
               echo "recording '$recording': qualifier $qualifier passed at $commit"
             else
-              echo "::error::recording '$recording' capability '$capability' has no passing qualifier $qualifier at $commit"
+              echo "::error::recording '$recording' capability '$capability' has no passing qualifier $qualifier at $commit; point the capability at a test that passes at the pinned revision, or re-record with docs/demos/record.sh --repin"
               fail=1
             fi
           done < /tmp/honesty.qualifiers
