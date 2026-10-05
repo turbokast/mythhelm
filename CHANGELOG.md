@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--accessible` linear screen-reader stream for `run`, `demo` and `review`, with `--after` resumption on `review` (`run` and `demo` start a new run, so a cursor from an earlier run does not apply) (#95)
 - `--colour`, `--motion` and `--icons` presentation overrides (`NO_COLOR` and `TERM=dumb` still suppress) (#89)
 - OpenSSF Best Practices passing badge: assessment linked from the README; unmet SUGGESTED criteria tracked as MH-18/19/20 (#30)
+- Published documentation site: user guide, contributor guide, licence, security policy, changelog and limitations register, rebuilt on every merge to main (#139)
+- Scripted demo recording embedded in the README and the docs site, reproducible from the checked-in tape via docs/demos/record.sh (#140)
 
 ### Security
 

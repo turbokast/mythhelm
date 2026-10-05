@@ -2,8 +2,8 @@
 #
 # This tape is a placeholder: it drives nothing yet and renders nothing. The
 # full FR-3 tape lands as a follow-up now that the TUI slice has shipped; the
-# follow-up card is drafted in specs/in-progress/docs-site-demos/handoff.md
-# (Task 7 section) for the orchestrator to file via the backlog flow.
+# follow-up card is filed as MH-32 (PR #141); the draft that specified it is
+# in specs/done/docs-site-demos/handoff.md (Task 7 section).
 #
 # Interface the follow-up tape will drive (tui-slice acceptance, all shipped
 # in specs/done/tui-slice/): the mission view, responsive layouts down to the
