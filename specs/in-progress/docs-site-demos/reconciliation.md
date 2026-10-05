@@ -12,16 +12,18 @@ R1.1 meaning and its merged evidence:
 
 | Criterion | R1.1 requirement (short) | Evidence |
 |---|---|---|
-| AC-1.1 | guides + mirrors reachable from nav | Task 2, PR #138 |
+| AC-1.1 | site published on each main merge with user/contributor and repository guides | Task 2, PR #138; Task 3, PR #139 |
 | AC-1.2 | licence, security, contribution, changelog, limitations from nav | Task 2, PR #138 |
 | AC-1.3 | contribution path, no paid subscription | Task 2, PR #138 |
-| AC-1.4 | limitations register | Task 2, PR #138 |
+| AC-1.4 | no MYTHHELM-owned runtime service; tests and binaries do not fetch from the site | Task 3, PR #139 |
 | AC-2.1 | demo tape reproducible from transcript | Task 4, PR #125 (`record.sh`, byte-identical regen) |
-| AC-2.2 | manifest pins revision, VHS, qualifiers | Task 4, PR #125 |
+| AC-2.2 | estimated or unknown values retain the binary's labels | Task 4, PR #125 |
 | AC-2.3 | README + docs site embed the GIF with provenance | Task 5, PR #140 |
 | NFR-1 | GitHub-native, pinned, least-privilege, fork-safe | Task 3, PR #139 |
 | NFR-2 | record under 10 minutes, free tooling | Task 4, PR #125 (11–21s runs) |
-| AC-3.1/3.2/3.3 | TUI recording (landed-TUI precondition holds) | Scaffold merged Task 7, PR #137; full tape is card MH-32 |
+| AC-3.1/3.2/3.3 | TUI recording (landed-TUI precondition holds) | Scaffold merged Task 7, PR #137; full tape is card MH-32 (PR #141, pending merge) |
+| AC-4.1 | tapes declare the exact binary revision; CI rejects stale recordings | Task 4 manifest, PR #125; Task 6 CI checks pending (PR #142, held for this file) |
+| AC-4.2 | capability declarations have versioned test qualifiers; CI rejects missing qualifiers | Task 4 manifest, PR #125; Task 6 CI checks pending (PR #142, held for this file) |
 
 Shipped tasks (1, 2, 3, 4, 5, 7) stand as R1.1 evidence. The spec's
 `requirements.md`, `design.md` and `tasks.md` are unchanged by this file.
@@ -36,9 +38,11 @@ W05/W16`). The remaining work maps as follows:
   proof that published recordings match their declared revisions.
 - Finalize (retrospective, review, PM sync) → closes the R1.1 record; the
   shipped MH-8 becomes historical evidence, same standing as MH-1/MH-2/MH-9.
-- MH-32 (FR-3 follow-up: full TUI tape) → W05 user-journey coverage for the
-  shipped TUI, bound by AC-3.2/AC-3.3 (covered behaviour only, verification
-  status on screen, never pane text as proof).
+- MH-32 (FR-3 follow-up: full TUI tape, filed in PR #141, pending merge) →
+  W05 user-journey coverage for the shipped TUI, bound by AC-3.2/AC-3.3
+  (covered behaviour only, verification status on screen, never pane text
+  as proof). The TUI recording stays in MH-8's completion scope until that
+  transfer is on record; finalize runs after both PRs merge.
 
 ## 3. Qualification clarification
 
@@ -50,10 +54,13 @@ record claims to. Concretely:
   reproducible, not that any native harness executes correctly.
 - The Jekyll build, mirror drift check and Task 6 qualifier assertions are
   fixture/local coverage of docs infrastructure.
-- Per v2 §7, qualification is whole-bundle (harness, executable, adapter,
-  OS/arch, provider, auth class, sandbox profile) and per-target across all
-  seven targets, with `fixture-tested` explicitly distinct from
-  `live-qualified`. Native-route qualification lives in MH-10/MH-12/MH-4/MH-29
+- Per Master Specification v2 §7.1 (`mythhelm-synthesis/
+  MYTHHELM_Master_Spec_v2.md`), qualification is whole-bundle and per-target
+  across all seven targets, with `fixture-tested` explicitly distinct from
+  `live-qualified`. This is a summary, not the complete §7.1 key — see §7.1
+  for all required dimensions (native surface, observed model/snapshot,
+  effort/speed, tooling digests, workspace/environment class, host-attachment
+  record). Native-route qualification lives in MH-10/MH-12/MH-4/MH-29
   (W02/W14), untouched by this spec.
 - Per D-27's rationale, shipped slices and walkthroughs cannot stand in for
   native qualification or human UX evidence; this spec's UX evidence stays
