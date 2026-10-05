@@ -74,7 +74,7 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 ## Open Questions
 
 1. **Which linters are candidates, and what makes one "practical"?** Blocks FR-1. Options: (a) enable-all-then-trim trial over the full golangci-lint catalogue; (b) a curated shortlist (e.g. revive, gocritic, perfsprint, testpackage, dupl) trial-run one by one. No default yet — /spec runs the trials and lets the findings decide.
-2. **How are trials run reproducibly?** Blocks FR-1. Options: (a) locally installed golangci-lint pinned to the CI version (v9.3.0); (b) trial CI runs on the spec branch. Default: (a), with (b) as the referee.
+2. **How are trials run reproducibly?** Blocks FR-1. Options: (a) locally installed golangci-lint v2.13.2, the binary version CI pins (`.github/workflows/ci.yml` lint job; v9.3.0 is the action version); (b) trial CI runs on the spec branch. Default: (a), with (b) as the referee.
 3. **Where does the prepared justification text live?** Blocks FR-4. Options: (a) the spec record (scratchpad/retrospective) plus the task PR description; (b) a docs note beside the badge link. Default: (a) — the assessment is external, so no tree file can hold its live state.
 4. **Fallout that spans domains?** Blocks task scoping. Options: (a) one config task plus per-domain fallout tasks joined by dependencies; (b) a single task when fallout is small and single-domain. Default: (a) per the one-domain-per-task rule; /spec decides from the trial spread.
 
