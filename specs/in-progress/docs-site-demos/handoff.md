@@ -66,4 +66,34 @@
 
 ## Task 7 — TUI tape scaffold (FR-3 follow-up filed; tui-slice shipped)
 
-<!-- pending -->
+- **Produces**: `docs/demos/tui.tape` (comment-only scaffold: states the
+  recording is planned, names the interface as the `specs/done/tui-slice/`
+  acceptance, no `Run` lines); `docs/demos/README.md` TUI row marked planned
+  with the tui-slice dependency.
+- **For Task 6**: no TUI manifest entry and no TUI recording image exist, so
+  the qualifier check exempts the scaffold by construction; the follow-up adds
+  both (manifest entry + artifact + transcript) and falls under the checks then.
+- **For the orchestrator**: file the drafted FR-3 follow-up card below via the
+  backlog flow (`pm.py next-id` assigns the id; open the GitHub issue; the
+  tape itself stays a scaffold with no `Run` lines):
+  ```markdown
+  ### MH-N: TUI terminal recording (FR-3 follow-up)
+  - **Status**: idea
+  - **Stage**: 1
+  - **Gates**: G10
+  - **Score**: 8.0 = (value 2 + urgency 5 + risk 1) / effort 1
+  - **Spec**: (none)
+  - **Issue**: (none)
+  - **Source**: master spec §14.9, §22.3; docs-site-demos FR-3/AC-3.2/AC-3.3 and design §5; specs/done/tui-slice/ (shipped 2026-10-04)
+  - **Summary**: Record the shipped TUI on tape: drive the mission view
+    (internal/tui/mission.go), responsive layouts down to linear mode
+    (internal/tui/layout.go) and keyboard flows (internal/tui/nav.go) with the
+    TUI's own verification status on screen, limited to exactly the covered
+    tui-slice behaviour; ship the full tape with header pins, a manifest entry
+    naming qualifying tests from internal/tui/*_test.go, and a normalized
+    transcript per the docs-site-demos tape contract, never pane text as proof.
+  ```
+- **Traps**: never name a rendered TUI artifact filename in `docs/` or
+  `README.md` until the follow-up renders one — the no-recording-image check
+  greps those trees for exactly such names. Score uses urgency 5 (Stage 1 is
+  current per product/objectives.md); rescore if the stage advances before filing.
