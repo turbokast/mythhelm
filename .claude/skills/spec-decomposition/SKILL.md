@@ -62,6 +62,8 @@ A task whose output later tasks consume has a `Produces` field with exact Go sig
 - The Files resolve to one domain in `knowledge/domains.md`; **Domain/agent** names that domain's agent (`go-implementer`, `tui-implementer`, `release-engineer`, `agent-config-editor`), or `maintainer` for a human-run step. A mixed list is split into two tasks joined by a dependency.
 - The task that completes the spec's own bookkeeping adds nothing to Files for `tasks.md` or `scratchpad.md`: every task updates both as part of completion.
 
+Coverage pass: for every sentence in design.md that states what a user sees (page text, labels, placeholders, error wording), name the task whose Files list contains the file carrying that text. A user-visible claim with no owning task is a gap: assign it to a task's Files or record it as an explicit follow-up with its card or issue. The finalize review re-checks this mapping.
+
 ## Invariants touched
 
 List the invariants (`knowledge/invariants.md`) and master-spec sections the task can affect, each with what the task does to keep it: `I09 (v2 §7.3: absent values stay "unknown")`. A task that reaches none says `None (<why>)`. A task that cannot keep an invariant is not written; the conflict goes to the honesty register and to a person.

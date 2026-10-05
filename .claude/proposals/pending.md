@@ -49,15 +49,3 @@ Append a short entry: on Windows, atomic file replacement via rename can fail tr
 **Proposed change:**
 
 Add a dispatch step: before starting a task attempt, append the `run_start` row (once per spec run) and the task's `dispatch` row to `.claude/data/run-events.jsonl`; after the attempt ends, append the `return` row (and `merge` after the merge). A dispatch without its rows is incomplete. Before finalizing, the orchestrator may backfill rows for already-merged tasks only from authoritative records (merged PRs, merge commits). Backfilled rows must carry provenance marking them as reconstructed, and consumers must distinguish them from observed rows when computing attempt metrics and attribution. Use the schema's `null` and `unknown` values for unavailable attribution or results; never treat the generated `ts` as the original event time when that time cannot be recovered.
-
-## P-docs-site-demos-1 — spec-decomposition: user-visible design claims need a task owner
-
-- **Source spec**: `docs-site-demos`
-- **Type**: skill
-- **Target**: `.claude/skills/spec-decomposition/SKILL.md`
-- **Rationale**: design §5 required the docs site to show the word "planned" where the TUI recording will go, but no task's Files list owned a site page for that claim — Task 7 owned only the tape scaffold and the (unrendered) demos README row. No task built it, and no task recorded skipping it, so the gap surfaced only at finalize review. A decomposition check that every user-visible design claim has a task owner prevents silent drops.
-- **Evidence**: docs-site-demos retrospective §Review Summary (suggestion 2) and §Deviations (Review row); `specs/done/docs-site-demos/design.md` §5 vs Task 7 Files in `tasks.md`; PR #137 merged without it.
-
-**Proposed change:**
-
-Add to the decomposition steps, after task Files lists are drafted: "Coverage pass: for every sentence in design.md that states what a user sees (page text, labels, placeholders, error wording), name the task whose Files list contains the file carrying that text. A user-visible claim with no owning task is a gap: assign it to a task's Files or record it as an explicit follow-up with its card or issue. The finalize review re-checks this mapping."

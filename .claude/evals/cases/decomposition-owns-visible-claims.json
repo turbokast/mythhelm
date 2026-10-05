@@ -1,0 +1,12 @@
+{
+  "id": "decomposition-owns-visible-claims",
+  "hazard": "A user-visible design claim has no owning task, no task records skipping it, and the gap surfaces only at finalize review.",
+  "source": "P-docs-site-demos-1",
+  "targets": [
+    ".claude/skills/spec-decomposition/SKILL.md"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "A user-visible claim with no owning task is a gap"
+  }
+}
