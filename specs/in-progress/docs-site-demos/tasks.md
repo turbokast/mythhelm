@@ -255,7 +255,7 @@
 - **Invariants touched**: I07 (§11.5: verification attaches to the declared revision;
   stale fails); I14 (§9.14: unqualified capabilities fail); §19.4 (fork-safe checks).
 
-### Task 7 — TUI tape scaffold (FR-3 follow-up filed; tui-slice shipped)
+### Task 7 — TUI tape scaffold (FR-3 follow-up drafted; tui-slice shipped) ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -282,3 +282,7 @@
 - **Test plan**: `grep` checks; the follow-up tape card is drafted now that tui-slice has landed.
 - **Invariants touched**: I14 (§9.14: unshipped TUI never presented as shipped);
   I17 (§16.6.2: no pane text or terminal text presented as completion proof).
+- **Status**: ✅ Completed — comment-only `tui.tape` scaffold, planned README row and drafted FR-3 follow-up card landed; PR #137.
+- **Implementation**: Tape is comments only (planned, `specs/done/tui-slice/` acceptance as the interface, zero `Run` lines); README TUI row planned with no artifact path; card draft scores 8.0 = (2+5+1)/1. Commit 620cfed4e6a51b77ab9c220f1810409dde4377eb.
+- **Spec deviations**: None. The limitations-page re-run is N/A on this base: Task 2 is unmerged (parallel group {2, 7}, disjoint Files) so `docs/limitations.md` does not exist here; the no-recording-image grep over `docs/` + `README.md` prints nothing.
+- **Files modified**: `docs/demos/tui.tape`, `docs/demos/README.md`, `specs/in-progress/docs-site-demos/handoff.md`, `specs/in-progress/docs-site-demos/tasks.md`.

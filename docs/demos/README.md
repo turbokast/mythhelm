@@ -29,6 +29,14 @@ command: it skips the build, the transcript regen and the verify pass.
 | Recording | Tape | Artifact | Transcript | Binary revision | VHS |
 |---|---|---|---|---|---|
 | demo | `docs/demos/demo.tape` | `docs/demos/demo.gif` | `docs/demos/demo.transcript.txt` | `e0ecdbc9554c90da6ac61f6300b7cc836acae266` | v0.12.1 |
+| tui (planned) | `docs/demos/tui.tape` (scaffold, drives nothing yet) | planned | planned | — | — |
+
+The TUI recording is planned, not recorded: `docs/demos/tui.tape` is a
+comment-only scaffold with no `Run` lines, and there is no TUI manifest entry
+or rendered artifact yet. The follow-up tape lands on the shipped TUI slice
+(`specs/done/tui-slice/`: mission view, responsive layouts, keyboard flows),
+limited to exactly that covered behaviour, and keeps the demo tape's
+contract (tape header pins, manifest entry, normalized transcript).
 
 The demo tape drives `mythhelm demo --check pass` end to end against the fake
 adapter with local-scripted billing: no network, no paid credentials. Its
