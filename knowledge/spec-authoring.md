@@ -16,7 +16,7 @@ The format of a MYTHHELM spec, and the patterns that make one implementable with
 | `refinement-log.md` | `/refine-spec` | Assessment rounds and the changes each made. |
 | `plan.md` | `/spec-create-epic` | An epic's master plan; the only file in an epic directory. |
 
-Resolve the normative source through [`docs/spec/README.md`](../docs/spec/README.md) and name its revision in every new spec. New work targets Master Specification v2: invariants `I01`–`I25` (§2), gates `G01`–`G16` (§18.3), acceptance cases `AT-01`–`AT-48` (§18.2), and its section numbers. Existing specs retain their named Revision 1.1 vocabulary, including audit IDs such as `A30`; do not silently reinterpret old numeric references. Unfinished work needs reviewed reconciliation before implementation resumes.
+The [specification index](../docs/spec/README.md) identifies Master Specification v2 for new work: invariants `I01`–`I25` (§2), gates `G01`–`G16` (§18.3), acceptance cases `AT-01`–`AT-48` (§18.2), and its section numbers. Historical Revision 1.1 references, including audit IDs such as `A30`, keep their original meaning. The [authoring rule](../.claude/rules/spec-authoring.md) governs source selection and reviewed reconciliation of unfinished work.
 
 ---
 
@@ -160,7 +160,7 @@ Each pattern is a defect shape that passes a casual review, and what catches it.
 
 ## Worked example
 
-A historical Revision 1.1 example, shown as `/spec` would leave it in `todo/`. Its source path, section numbers and A30 references remain pinned to Revision 1.1; use the v2 template above for new work.
+A historical Revision 1.1 example, shown as `/spec` would leave it in `todo/`. Its source path, section numbers and A30 references remain pinned to Revision 1.1. The templates above describe the v2 format for new work.
 
 **requirements.md**
 

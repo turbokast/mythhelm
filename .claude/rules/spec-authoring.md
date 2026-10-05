@@ -11,10 +11,12 @@ paths:
 
 A spec is the contract an implementing agent works from and a reviewer judges against. Write it so neither has to guess. The format, with a worked example, is in `knowledge/spec-authoring.md`; `specs/README.md` has the lifecycle.
 
+Resolve the normative source through `docs/spec/README.md` and name its revision in every new spec. Use the v2 template in `knowledge/spec-authoring.md` for new work. Preserve existing specs' named Revision 1.1 vocabulary, including audit IDs such as `A30`; never silently reinterpret old numeric references. Reconcile unfinished work through review before implementation resumes.
+
 ## requirements.md
 
 - Number every objective (`O1`), non-goal (`N1`), requirement (`FR-1`) and acceptance criterion (`AC-1.1`, the requirement number, then the criterion). Never renumber a published ID: retire it and add a new one.
-- Tag every acceptance criterion with what it serves, in brackets before the text: version-qualified master invariants (`I02`), gates (`G01`), acceptance cases (`AT-05`) and sections (`v2 §11.3`). Resolve the current master through `docs/spec/README.md`; historical audit IDs such as `A30` remain explicitly Revision 1.1. A harness spec cites the charter principle or rule it serves instead. A criterion that serves nothing is scope creep or a missing citation; find out which.
+- Tag every acceptance criterion with what it serves, in brackets before the text: version-qualified master invariants (`I02 (v2 §2)`), gates (`G01 (v2 §18.3)`), acceptance cases (`AT-05 (v2 §18.2)`) and sections (`v2 §11.3`). A harness spec cites the charter principle or rule it serves instead. A criterion that serves nothing is scope creep or a missing citation; find out which.
 - Write criteria in EARS form ("When <trigger>, the system shall <response>"; "If <unwanted condition>, then …") with concrete values. Each one is checkable by a named test, a command or an inspectable artifact.
 - Every non-goal names what still binds: the invariant or gate that applies to whatever the spec does ship. A spec narrows scope; it never quietly narrows an invariant.
 

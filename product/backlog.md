@@ -153,7 +153,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 ### MH-4: Codex native adapter and included-only qualification
 - **Status**: triaged
 - **Stage**: 1
-- **Gates**: G02, G05
+- **Gates**: G02, G04, G05
 - **Score**: 3.3 = (value 5 + urgency 5 + risk 3) / effort 4
 - **Spec**: (none)
 - **Issue**: [#25](https://github.com/turbokast/mythhelm/issues/25)

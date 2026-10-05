@@ -218,3 +218,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: The backlog procedure creates public issues after the maintainer approves and the agent commits the cards; these links complete that required second step.
 - **Cards**: MH-21,MH-22,MH-23,MH-24,MH-25,MH-26,MH-27,MH-28,MH-29,MH-30
 - **Evidence**: Approved product adoption commit 6a837d3; PR #126; public issues #127–#136.
+
+### D-41 — 2026-10-05: Clarify lifecycle qualification and roadmap eligibility
+- **Type**: strategic-adjustment
+- **Decision**: Add G04 to MH-4 so its listed gates include the already required stop/recovery evidence. Regenerate the roadmap with wording that includes earlier stages, matching the existing selection rule.
+- **Rationale**: PR review identified two metadata omissions; the corrections change no card scope, score, stage, status, issue link or selection behaviour.
+- **Cards**: MH-4
+- **Evidence**: PR #126 review: https://github.com/turbokast/mythhelm/pull/126#discussion_r4182195654 and https://github.com/turbokast/mythhelm/pull/126#discussion_r4182195664; v2 G04; pm.py urgency_for and render_roadmap.

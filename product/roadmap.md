@@ -11,7 +11,7 @@ Cards with a spec, being specified or implemented.
 
 ## Next
 
-The five highest-scored cards without a spec in the current or next stage.
+The five highest-scored cards without a spec in an earlier stage, the current stage or the next stage.
 
 - **MH-10** Harness compatibility records and qualification registry (triaged, stage 0, score 5.0; [#31](https://github.com/turbokast/mythhelm/issues/31))
 - **MH-20** Strictest practical lint set (triaged, stage 1, score 5.0; [#115](https://github.com/turbokast/mythhelm/issues/115))

@@ -25,7 +25,7 @@ Each transition is filed by `.claude/skills/pm-sync-core/SKILL.md` §Lifecycle s
 Weighted shortest job first: `score = (value + urgency + risk) / effort`, each input 1 to 5, rounded half up to one decimal. The rubric is at the top of `product/backlog.md`.
 
 - **value** is user value for the product the spec describes.
-- **urgency** is derived from the stage: 5 for the current stage or earlier, 3 for the next, 2 for the one after, 1 beyond or `later`. This is a priority heuristic across v2 capability stages, not an execution dependency graph or a calendar. When the current stage advances, affected open cards need `pm.py rescore`; file those changes with the stage decision.
+- **urgency** is derived from the stage: 5 for the current stage or earlier, 3 for the next, 2 for the one after, 1 beyond or `later`. This is a priority heuristic across v2 capability stages, not an execution dependency graph or a calendar. A stage advance changes affected urgencies, which explains the paired rescore in the [product rules](../.claude/rules/product-management.md#records).
 - **risk** is the risk the card retires: an invariant it enforces (`knowledge/invariants.md`) or an unproven boundary the spec depends on.
 - **effort** follows the size of comparable specs: about three tasks per point.
 
@@ -41,7 +41,7 @@ V2 §§5, 8 and 12 distinguish essential local operational state from optional l
 
 ## The approval mechanism
 
-`scripts/orchestration/approvals.py` provides the shared "agents propose, maintainers approve" procedure. The Claude hook additionally enforces it in that client; other clients run shared checks explicitly and never treat hook availability as permission to bypass it. `pm.py stage` copies all six product files to scratch. Structured verbs edit cards/logs; `draft-text objectives|readme|backlog-preamble` drafts reviewed prose outside `product/`. Validate the complete staged set and file exact requests before any product write.
+`scripts/orchestration/approvals.py` provides the shared "agents propose, maintainers approve" mechanism. The Claude hook adds immediate enforcement in that client; the approval boundary is shared by every client. Scratch drafts leave product files unchanged until the exact proposed content receives a maintainer signature. The [product rules](../.claude/rules/product-management.md#agents-propose-maintainers-approve) and [PM Sync Core procedure](../.claude/skills/pm-sync-core/SKILL.md#file-a-change) define staging, drafting, validation and filing.
 
 - **A request is a whole proposed file.** It records the SHA-256 of the file as it is (the base), of the proposed content (the result) and of the diff. A whole file rather than a patch keeps the approval decidable: the hook can compute exactly what a Write or Edit would leave and compare hashes.
 - **The approval binds base and result.** Binding the base means a change that lands between request and write (another session, another branch) makes the approval stale instead of being overwritten. Binding the result means an approval releases exactly the reviewed content: not a different edit, and not a deletion of the file.

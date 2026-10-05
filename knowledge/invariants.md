@@ -32,10 +32,6 @@ MUST is release-blocking for a shipped capability. Weakening an invariant requir
 | I24 | Parallel attempts isolate mutable environments and reconcile external-resource ownership before reassignment. A lease timeout is not proof a writer stopped. |
 | I25 | Users can pin a qualified route/policy, inspect provenance, pause/stop, export state, disable learning and return to native tools without a MYTHHELM service dependency. |
 
-## Citing an invariant in a task
+## Citation reference
 
-- **In `tasks.md`.** List every invariant the task can affect under `Invariants touched`, by ID with the spec section it relies on: `I09 (v2 §7.3: billing evidence stays typed and labelled)`. Name what the task does to keep it, not the invariant's title.
-- **In tests.** Name the test after the behaviour that keeps the invariant, and put the ID in a comment beside the assertion or in the test name: `TestAdmissionBlocksUnknownBilling // I02`. The test must fail when the invariant is broken; see `.claude/rules/teeth-discipline.md`.
-- **In a review.** A finding that an invariant is broken cites the ID and the `file:line` that breaks it. A plausible-but-unverified risk is a question, not a finding.
-- **In code.** Cite an invariant in a comment only where the code would otherwise look wrong: a deliberately fail-closed branch, a refusal that looks over-cautious, an extra reconciliation step.
-- **When a task cannot keep one.** Stop and escalate. A spec's honesty register (for example `design.md` §15 of a slice) records where a slice is weaker than the master spec; an implementer never decides that alone.
+The [invariant-evidence procedure](../.claude/rules/teeth-discipline.md#invariant-evidence) connects version-qualified invariant IDs to task requirements, tests, reviews and code. Exact revisions keep a historical slice's evidence distinct from the current v2 contract; an honesty register records any remaining gap.

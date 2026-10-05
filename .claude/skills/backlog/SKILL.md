@@ -30,7 +30,7 @@ Run `python3 scripts/pm/pm.py list` (add `--status <s>` to filter, `--json` for 
 
 ## next
 
-1. `python3 scripts/pm/pm.py next`: the highest-scored `triaged` or `idea` card whose stage is the current or next one ([`product/objectives.md`](../../../product/objectives.md)).
+1. `python3 scripts/pm/pm.py next`: the highest-scored `triaged` or `idea` card in an earlier stage, the current stage or the next stage ([`product/objectives.md`](../../../product/objectives.md)).
 2. Read its linked issue (`gh issue view <n> -R turbokast/mythhelm --comments`) for discussion the card does not reflect yet.
 3. Check that nothing already covers it: `grep -rlE "MH-<n>([^0-9]|$)" specs/` and the specs in `specs/in-progress/` and `specs/todo/`.
 4. Present the card, why it is first (its score inputs against the runner-up) and the path to shipping it:
