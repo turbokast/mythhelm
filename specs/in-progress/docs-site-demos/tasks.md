@@ -251,6 +251,7 @@
 - **Files**:
   - `docs/demos/tui.tape` (header comments: planned, interface = tui-slice acceptance, no `Run` lines)
   - `docs/demos/README.md` (TUI row marked planned with the tui-slice dependency)
+  - `specs/in-progress/docs-site-demos/handoff.md` (Task 7 section drafts the FR-3 follow-up card)
 - **Acceptance**:
   - `grep -c '^Run ' docs/demos/tui.tape` prints 0 and the file contains the word
     `planned` plus a `specs/*/tui-slice/` reference.

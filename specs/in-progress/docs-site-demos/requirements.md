@@ -95,9 +95,9 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 
 ## Dependencies
 
-- **Prerequisite (recordings of the TUI): `tui-slice` (MH-2, `specs/*/tui-slice/`)** — FR-3 sequences behind the TUI slice landing; no TUI code exists today (`internal/` has no `tui` package, `mods/` absent). FR-1 and FR-2 have no TUI dependency and can ship first.
+- **Builds on (FR-3 recording follow-up): `tui-slice` (MH-2, `specs/done/tui-slice/`, shipped 2026-10-04)** — Task 7 drafts the backlog card for the full FR-3 tape as a follow-up. FR-1 and FR-2 have no TUI dependency and ship first.
 - **Builds on: `dogfood-slice` (`specs/done/dogfood-slice/`, MH-1)** — the `mythhelm demo` command and plain/JSONL output the FR-2 tape drives.
-- **Coordinate with: `openssf-badge` (MH-9, `specs/*/openssf-badge/`)** — also touches §19.3 and the G10 gate; the two specs must agree on which one publishes the contribution path and security policy content the site assembles.
+- **Coordinate with: `openssf-badge` (MH-9, `specs/done/openssf-badge/`, shipped)** — also touches §19.3 and the G10 gate; it shipped first, so this spec reconciles the shared sentences it assembles.
 - **Supersedes**: none. **Conflicts**: none known.
 
 ## Impacted components
