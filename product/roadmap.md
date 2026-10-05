@@ -13,16 +13,17 @@ Cards with a spec, being specified or implemented.
 
 The five highest-scored cards without a spec in an earlier stage, the current stage or the next stage.
 
+- **MH-32** TUI terminal recording (FR-3 follow-up) (idea, stage 1, score 8.0)
 - **MH-10** Harness compatibility records and qualification registry (triaged, stage 0, score 5.0; [#31](https://github.com/turbokast/mythhelm/issues/31))
 - **MH-20** Strictest practical lint set (triaged, stage 1, score 5.0; [#115](https://github.com/turbokast/mythhelm/issues/115))
 - **MH-7** Release pipeline: GoReleaser archives, attestations and signatures (triaged, stage 1, score 4.3; [#28](https://github.com/turbokast/mythhelm/issues/28))
 - **MH-11** Windows process-tree ownership (triaged, stage 1, score 4.3; [#32](https://github.com/turbokast/mythhelm/issues/32))
-- **MH-18** Adopt SemVer or CalVer for releases (triaged, stage 1, score 4.0; [#113](https://github.com/turbokast/mythhelm/issues/113))
 
 ## Later
 
 Every other open card, by score.
 
+- **MH-18** Adopt SemVer or CalVer for releases (triaged, stage 1, score 4.0; [#113](https://github.com/turbokast/mythhelm/issues/113))
 - **MH-19** Tag every release in git (triaged, stage 1, score 4.0; [#114](https://github.com/turbokast/mythhelm/issues/114))
 - **MH-12** Strict subscription-only qualification for Claude Code (triaged, stage 1, score 3.8; [#33](https://github.com/turbokast/mythhelm/issues/33))
 - **MH-22** Protected acceptance and a complete v2 one-agent workflow (triaged, stage 1, score 3.8; [#128](https://github.com/turbokast/mythhelm/issues/128))

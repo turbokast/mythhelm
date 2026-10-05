@@ -225,3 +225,9 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: PR review identified two metadata omissions; the corrections change no card scope, score, stage, status, issue link or selection behaviour.
 - **Cards**: MH-4
 - **Evidence**: PR #126 review: https://github.com/turbokast/mythhelm/pull/126#discussion_r4182195654 and https://github.com/turbokast/mythhelm/pull/126#discussion_r4182195664; v2 G04; pm.py urgency_for and render_roadmap.
+
+### D-42 — 2026-10-05: Add card MH-32
+- **Type**: card-add
+- **Decision**: File backlog card MH-32
+- **Rationale**: docs-site-demos task 7: FR-3 follow-up recording for the shipped TUI
+- **Cards**: MH-32
