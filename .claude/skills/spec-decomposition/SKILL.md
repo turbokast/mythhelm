@@ -64,7 +64,7 @@ A task whose output later tasks consume has a `Produces` field with exact Go sig
 
 ## Invariants touched
 
-List the invariants (`knowledge/invariants.md`) and master-spec sections the task can affect, each with what the task does to keep it: `I09 (§13.4: absent values stay "unknown")`. A task that reaches none says `None (<why>)`. A task that cannot keep an invariant is not written; the conflict goes to the honesty register and to a person.
+List the invariants (`knowledge/invariants.md`) and master-spec sections the task can affect, each with what the task does to keep it: `I09 (v2 §7.3: absent values stay "unknown")`. A task that reaches none says `None (<why>)`. A task that cannot keep an invariant is not written; the conflict goes to the honesty register and to a person.
 
 ## Acceptance
 

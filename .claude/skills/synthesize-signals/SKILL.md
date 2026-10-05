@@ -6,7 +6,7 @@ argument-hint: "[--since YYYY-MM-DD] [--label <label>]"
 
 # Synthesize Signals
 
-MYTHHELM has no central telemetry (spec §17.2), so what users need is learnt from what they say in public: GitHub issues, discussions and comments on pull requests. This skill reads them, groups them into themes and drafts `product/signals.md` entries. A theme that warrants work goes to `/triage` and `/backlog add`; this skill never files cards itself.
+MYTHHELM requires no central telemetry; essential local operational state and optional learning are separate (v2 §§8.4 and 12). This skill uses public evidence of user needs: GitHub issues, discussions and comments on pull requests. This skill reads them, groups them into themes and drafts `product/signals.md` entries. A theme that warrants work goes to `/triage` and `/backlog add`; this skill never files cards itself.
 
 ## Input
 

@@ -87,7 +87,21 @@
 
 ## Task 5 — Rendered demo GIF and embeds
 
-<!-- pending -->
+- **Produces**: `docs/demos/demo.gif` (1080x620, ~1 MB, 8.64s) rendered from
+  the Task 4 tape at the manifest pin via `record.sh`; README + user-guide
+  embeds with identical captions naming `docs/demos/demo.tape` and
+  `docs/demos/record.sh`; site URL `https://turbokast.github.io/mythhelm/`
+  in the README Design section.
+- **For Task 6**: the GIF is committed bytes — no check re-renders it (the
+  honesty-register residual stands: transcript + manifest revision + review
+  of the GIF in PR #140 is the GIF-to-tape binding). Tape, manifest and
+  transcript are byte-untouched by this task, so every Task 4 pin still holds.
+- **For the orchestrator**: the review added the design §2 home-page demo
+  embed in `docs/index.md`; no follow-up is required.
+- **Traps**: the user-guide embed is page-relative (`demos/demo.gif`), the
+  README embed root-relative (`docs/demos/demo.gif`) — keep both in sync
+  with the caption if the artifact path ever moves.
+- **Deviations affecting later tasks**: none to the tape contract.
 
 ## Task 6 — Recording honesty checks in CI
 

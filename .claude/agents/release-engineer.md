@@ -23,7 +23,7 @@ You own, per `knowledge/domains.md`:
 
 ## Before you begin
 
-1. Read the task and the spec sections it cites; for CI work, master spec §19.4 and §16.5.
+1. Read the task and its named specification revision, resolved through `docs/spec/README.md`; new CI/release work uses v2 §§17 and 18.3. Historical task evidence keeps its Revision 1.1 references.
 2. Read `docs/automation.md` (principles, active and deferred automation) and `docs/harness/charter.md` §Platform: GitHub.
 3. Read `.claude/rules/github-workflows.md`; it loads when you open `.github/` files.
 4. Read the current `.github/workflows/ci.yml` and the job you are changing.

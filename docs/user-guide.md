@@ -34,6 +34,9 @@ runtime, and labels every screen `SCRIPTED DEMO`:
 go run ./cmd/mythhelm demo
 ```
 
+![Scripted demo recording](demos/demo.gif)
+*Honest recording of `mythhelm demo --check pass`, rendered from `docs/demos/demo.tape` — regenerate it with `docs/demos/record.sh`.*
+
 To check what your machine still needs for a real run, use the read-only
 prerequisite report. It writes nothing and prints no credential values:
 

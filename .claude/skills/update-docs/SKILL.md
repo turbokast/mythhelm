@@ -23,7 +23,7 @@ Keeps the documentation true after a change ships. `/finalize-spec-publish` runs
 | Document | Update when the change | Never |
 |---|---|---|
 | `README.md` | changes what MYTHHELM can do, its status, install or first-run steps | describe internals |
-| `docs/` (user and contributor docs) | changes a command, flag, exit code, file format, config key or behaviour they describe | edit `docs/spec/master-spec.md`: the design reference changes only through its own reviewed change |
+| `docs/` (user and contributor docs) | changes a command, flag, exit code, file format, config key or behaviour they describe | edit the current master identified by `docs/spec/README.md`: the design reference changes only through its own reviewed change; preserved source revisions remain intact |
 | `knowledge/` | changes a fact a page states: a path, a table row, a mechanism, a failure mode | add instructions; they belong in rules (`.claude/rules/knowledge-conventions.md`) |
 | `WORKFLOW.md` | changes how maintainers drive the agents | restate skill procedures |
 | `CLAUDE.md` | changes a convention or command every session needs | add anything that fits in a rule, a skill or `knowledge/`: its bytes count against the always-on budget |

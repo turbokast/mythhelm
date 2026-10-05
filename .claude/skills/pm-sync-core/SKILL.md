@@ -25,8 +25,8 @@ Agents never write `product/` directly. `.claude/hooks/guard-product-write.sh` r
 
 ## File a change
 
-1. **Stage.** `STAGE="$(mktemp -d)"; python3 scripts/pm/pm.py stage "$STAGE"`. This copies the five product files; nothing under `product/` changes.
-2. **Draft.** Run each `pm.py` write verb against the stage: `python3 scripts/pm/pm.py --product-dir "$STAGE" <verb> ... --out "$STAGE/<file>"`. Chain as many as the change needs; each reads the staged files and writes one back. A new card or entry id comes from the verb itself, which reserves it with `pm.py next-id` at this moment; never type an id you remember, and never put a number in a draft you show before this step.
+1. **Stage.** `STAGE="$(mktemp -d)"; python3 scripts/pm/pm.py stage "$STAGE"`. This copies the product files, including the README; nothing under `product/` changes. Use a fresh directory: any existing destination file or link is rejected before copying.
+2. **Draft.** Run each `pm.py` write verb against the stage: `python3 scripts/pm/pm.py --product-dir "$STAGE" <verb> ... --out "$STAGE/<file>"`. Chain as many as the change needs; each reads the staged files and writes one back. For reviewed prose use `draft-text objectives|readme|backlog-preamble --from <scratch-source> --out <staged-file>`; it never writes product files or changes card/log records. A new card or entry id comes from the verb itself, which reserves it with `pm.py next-id` at this moment; never type an id you remember, and never put a number in a draft you show before this step.
 3. **Record the decision.** Every change except a pure roadmap redraft appends a `decisions.md` entry with `pm.py ... decide --type <type>`, naming the cards and the evidence.
 4. **Redraft the roadmap** when a card's status or score changed: `pm.py --product-dir "$STAGE" roadmap --out "$STAGE/roadmap.md"`.
 5. **Validate** the whole staged set: `python3 scripts/pm/pm.py --product-dir "$STAGE" validate` must print `product: OK` (a stale-roadmap warning means step 4 was skipped). The verbs refuse a draft that would not validate, so a failure here is a finding to fix, not to file.

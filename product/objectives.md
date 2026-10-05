@@ -1,51 +1,60 @@
 # Objectives
 
-What MYTHHELM is trying to achieve, derived from the [master spec](../docs/spec/master-spec.md): the delivery stages of §20, the release gates G01–G12 of §18.7 and the open-source commitments of §3. The spec is normative; this file is the index the backlog scores against, and it defers to the spec on any difference. Changing it is a maintainer decision (see [README.md](README.md)).
+What MYTHHELM is trying to achieve, derived from [Master Specification v2](../mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md): stages and gates in §18, explicit requirements in §1 and invariants in §2. The [specification index](../docs/spec/README.md) distinguishes the current design from preserved historical sources. The spec is normative; this file is the index the backlog scores against. Changing it requires a signed maintainer decision.
 
 > Current stage: 1
 
-The line above is read by `scripts/pm/pm.py`: a card's urgency depends on how far its stage lies beyond the current stage. Advancing the stage is an `objective-change` decision, and it is filed together with the rescored backlog that `pm.py rescore` drafts.
+This is the current delivery focus, not a claim that every earlier boundary proof passed. S0 native fidelity, entitlement and lifecycle obligations still block any advertised capability lacking evidence. The existing dogfood and TUI slices do not establish the complete S1 product. No stage advances in this adoption.
+
+The current-stage line is read by `scripts/pm/pm.py`; card urgency follows its distance from that stage. A later stage advance is an `objective-change` decision paired with a tool-generated rescore. Stage numbers express dependencies rather than calendar promises: optional S6 delivery can proceed after its S1 prerequisites without waiting for S4/S5 learning.
 
 ## Stages
 
-The spec replaces calendar dates with complete vertical slices, each closed by an exit gate (§20.1). A stage is done when its exit gate passes for everything the project advertises, not when its deliverables exist.
-
-| Stage | Name | Delivers (summary) | Exit gate |
+| Stage | Name | Complete outcome | Exit gate |
 |---|---|---|---|
-| 0 | Prove the uncertain boundaries (§20.2) | A native-integration and process-ownership spike: headless paths of the candidate harnesses against disposable fixtures, fidelity, entitlement and overage records, Herdr launch and restore, worker survival and stop on Windows and Unix, a small TUI fixture. | The initial adapter surface is chosen from measured compatibility, authentication constraints are resolved, and every capability claim the spike cannot justify is removed. |
-| 1 | A complete single-agent product (§20.3) | Installable binary, offline demo, read-only doctor, one qualified native adapter with included-allowance and overage evidence, one writer, managed snapshot, local routing, durable run and worker ownership, candidate diff, configured verification, receipt, stop, detach and recovery, a focused TUI, plain and JSONL output, one declarative theme format, the single-pane Herdr experience. | G01, G03–G07, G09 and G11 for advertised combinations; G02 for the shipped native surface; G10 for the public preview; G12 for any enabled alternative surface. The task → native work → checks → reviewable artifact loop works without manual repair. |
-| 2 | Multi-harness public alpha (§20.4) | At least two independently qualified native adapters, authorised profiles, deterministic selection, a dependency-aware task DAG, two-writer mode, messages and handoffs, resource reservations, the serialized integration train, explicit quota and cost uncertainty, public plugin and host-bridge protocols, trusted executable plugins, declarative workflow, keymap and layout mods, Herdr lane inspectors. | Parallel and cross-provider tasks outperform or simplify representative workflows without losing source safety, recovery or billing honesty. G08 joins the core gates. |
-| 3 | Version 1.0 (§20.5) | Published host, adapter and terminal support matrix; stable configuration and plugin protocol; accessible linear interface; native version management; migration and update path; optional GitHub publisher; local evaluation and routing history; storage management; documented limitations and governance. | All applicable G01–G12 requirements pass, including Herdr and per-surface entitlement evidence; the provider compliance review is recorded; positioning has survived user testing. |
-| later | Justified by evidence (§20.6) | Measured local learning, funded remote routing, qualified SDK-runtime alternatives, richer native controls, sandboxed computational plugins, advanced UI mods, remote execution. | Each needs its own evidence; team-shared state, cloud offload and multi-tenant hosting need separate threat models. |
+| 0 | Boundary proof | One viable native included-only route, fidelity/lifecycle/trust evidence, v2 contracts and a safe migration design. The first route is chosen by qualification, not brand. | AT-02–AT-04, AT-11 and AT-47 for the proposed route; remaining uncertainty is explicit and blocks affected claims. |
+| 1 | First useful product | One qualified native route; one durable supervisor and worker-owned execution; isolated single-agent work, protected checks, review/apply/receipt; polished standalone and Herdr use, plain/JSONL/accessibility and declarative themes. | Applicable G01–G11, G16 and G12 for any enabled alternative surface. The complete task-to-verified-candidate journey works without manual state repair. |
+| 2 | Continuity | A second independently qualified harness; native session recovery and grounded handoffs; scoped retrieval, task/dependency revisions, export and erasure. Seven-harness qualification continues independently. | G02/G05 for each added route, G13/G16, plus inherited safety gates; AT-14–AT-18 and AT-43 pass. |
+| 3 | Bounded construction and extensions | Two isolated writers under stable contracts; global resource/child accounting, serialized integration and bounded repair; versioned process plugins and broader declarative mods. | G04–G08 for enabled features, AT-19–AT-21, AT-26 and AT-38/39; combined correctness and useful user outcomes are measured. |
+| 4 | Evaluated portfolio | P1–P4 fixed policies, complete outcome accounting, consented observations, protected bounded experiments and recommendations with uncertainty. P3 requires S3. | G14 data/experiment cases AT-25–AT-30/33; no promotion from development-only wins, hidden exploration or weakened acceptance. |
+| 5 | Adaptive product | Scoped policy/prompt promotion, rollback, new-model qualification/calibration/canaries and whole-pipeline replacement, including a simpler single agent. | Full G14: AT-31/32/34 plus a demonstrated useful scoped live improvement against the strongest relevant simpler baseline. Inconclusive evidence keeps fixed behavior and an experimental label. |
+| 6 | Optional verified production delivery | Explicitly authorised exact-build deployment, independent destination health checks, effect reconciliation and bounded rollback. Disabled by default; independent of learning. | G15 per destination, including AT-09/44/45. Missing authority yields a preserved release-ready candidate and a blocked deployment request. |
+| later | Separately justified mechanisms | Wider parallelism, general combinatorial optimization, optional embeddings, host-owned execution, distributed scheduling and sandboxed plugin marketplaces. | A separate spec demonstrates need, qualified authority/security/billing and benefit against the simpler design. These mechanisms are not prerequisites for S5 adaptation. |
 
-Scope cuts that protect delivery (§20.7) bind every stage: native fidelity, included-allowance admission, correct cancellation, source protection, permission clarity, honest cost uncertainty, a reviewable artifact, a usable TUI and first-class Herdr behaviour are never cut for the advertised topology.
+Version 1.0 is a separate maintainer release decision for an honestly advertised subset, not another stage. All applicable gates must pass; adaptive claims additionally require S5 evidence. Qualifying all seven harnesses is the full target, not a prerequisite for shipping one useful route.
 
 ## Release gates
 
-The acceptance matrix of §18.7. A card names the gates it moves toward passing.
+The authoritative acceptance cases and scope are v2 §18.2–§18.3. A card's gate list names the gates it advances, not gates it has already passed.
 
-| Gate | Pass condition (summary of §18.7) | First required at |
+| Gate | Pass condition | First applies |
 |---|---|---|
-| G01 | Free baseline: install, build, offline demo and contributor tests need no account, paid credentials or cloud service. | Stage 1 |
-| G02 | Native preservation: each advertised harness surface has a fidelity record, a direct-native comparison and evidence; no hidden substitution. | Stage 1 (shipped surface) |
-| G03 | Source protection: default runs never modify the original checkout; dirty state and apply races are handled. | Stage 1 |
-| G04 | Lifecycle: detach, crash, orphan, cancellation and resume tests pass on every advertised platform. | Stage 1 |
-| G05 | Billing honesty: strict subscription-only admits only qualified included allowance with overage prevention. | Stage 1 |
-| G06 | Integration correctness: frozen outputs are combined and checked at the final revision. | Stage 1 |
-| G07 | Trust enforcement: approval binding and declared sandbox boundaries pass adversarial tests. | Stage 1 |
-| G08 | Mod safety: declarative mods cannot execute code or hide required controls; executable-plugin trust is explicit. | Stage 2 |
-| G09 | Terminal usability: the supported terminal and shell matrix, plain mode, resize and keyboard flows have recorded results. | Stage 1 |
-| G10 | Public release: licence, security policy, contribution path, provenance, changelog and limitations are published. | Stage 1 (public preview) |
-| G11 | Herdr: embedded behaviour, scoped state, input ownership, detach, restore and no-duplicate-launch tests pass. | Stage 1 |
-| G12 | Alternative surfaces: any enabled SDK-runtime or alternative surface passes its own gates. | Stage 1 (when enabled) |
+| G01 | Free build, offline demo and normal contributor tests without MYTHHELM account or paid credentials. | S1 |
+| G02 | Exact native harness/surface fidelity, documented deltas and appropriate fixture/live continuity evidence. | S0 qualification; each advertised route |
+| G03 | Source files/index/refs protected; apply and verification reject stale state. | S1 |
+| G04 | One owner, durable launch, bounded stop/recovery, children and supported-platform lifecycle evidence. | S1; every enabled expansion |
+| G05 | Included-only admission across all model-using roles/children; no bought-credit/overage continuation; honest quota evidence. | S0 qualification; every route |
+| G06 | Protected checks at the exact accepted integration revision; stale and unverified outputs cannot self-certify. | S1; parallel cases at S3 |
+| G07 | Startup trust, exact grants, scoped data access and substantiated enforcement boundaries; learner cannot widen authority. | S0 qualification; relevant features thereafter |
+| G08 | Declarative mods cannot execute code/hide controls; process plugins have explicit trust, pins and conformance. | S1 themes; S3 executable plugins |
+| G09 | Honest CLI/JSONL results, keyboard/accessibility/resize/streaming and complete user journeys. | S1 per supported environment |
+| G10 | Public licensing, security, provenance, contribution and precise compatibility/limitation evidence. | Every public release |
+| G11 | Herdr remains a scoped client; input ownership, detach/restart and no-duplicate-launch evidence. | S1 |
+| G12 | Each alternative SDK, interactive or host-owned surface independently passes fidelity, billing, lifecycle and security gates. | Whenever enabled |
+| G13 | Grounded handoffs, session loss, mandatory context, ACLs, search degradation, stale dependency invalidation and scoped portability. | S2 |
+| G14 | Comparable outcome data, protected experiments, evidence-gated scoped promotion, rollback and simpler-pipeline selection. | S4 portions; full adaptive claims at S5 |
+| G15 | Authorised deployment, exact-build independent health, uncertain-effect reconciliation and scoped rollback. | Optional S6 |
+| G16 | Safe v1/v2 migration, single writer, compatible backup/restore, scoped export and honest erasure. | S1 migration; S2 portability |
 
 ## Commitments
 
-The open-source promise of §3. A card that would break one is dropped, not scored.
-
-- **C1 — Free, complete core (§3.3).** The core, built-in adapters, safety controls, TUI, headless mode, official themes, plugin SDK and local routing carry no licence fee, paid tier, feature gate or required account.
-- **C2 — No paid service required (§3.3, I13).** No paid router, hosted registry, analytics service or cloud coordination; the offline demo and the contributor test suite need no paid credentials.
-- **C3 — Included allowance by default (§3.3, I15).** The default workflow never requires separate inference payments or paid overages; a metered profile exists only by explicit consent and is never a fallback.
-- **C4 — No capability for sale (§3.3).** Donations and sponsorship never unlock capabilities or influence routing defaults; no affiliate-biased routing.
-- **C5 — Local-first, one trusted user (§3.4, §17.2).** The security model is one operating-system user supervising authorised native tools. Metrics are collected locally and only when enabled; there is no central telemetry, so product evidence comes from GitHub issues and discussions, CI and evaluation runs.
-- **C6 — Honest claims (§3.5, §22.3, I14).** An unimplemented feature stays marked unimplemented and an unqualified one unverified; one native agent plus verification is the baseline to beat.
+- **C1 — Free complete core (v2 §1, UR-01).** Official core, adapters, safety controls, TUI, headless operation, official mods, SDK and local routing have no paid tier or required MYTHHELM account.
+- **C2 — No mandatory paid or hosted service (v2 §§1,8,17; I13).** Offline demo and normal contributor tests need no paid credentials, custom font, central router, catalogue or telemetry service.
+- **C3 — Included allowance by default (v2 §7; I15).** Metered inference, purchased credits, paid overages and auxiliaries never appear silently; optional metered profiles require explicit consent and are never fallback routes.
+- **C4 — No capability or preference for sale (v2 §1).** Donations and sponsorship cannot unlock official features or influence routing preference; third-party costs remain explicit.
+- **C5 — Local-first operational state (v2 §§5,8.4,17).** Essential receipts and recovery evidence exist while executing. Optional learning, backfill, exploration and external sharing are separately controlled; there is no central telemetry requirement.
+- **C6 — Honest capability and performance claims (v2 §§7,13,18; I09/I14).** Unqualified surfaces stay blocked/experimental, unknown stays unknown, and accepted useful outcomes are compared with direct-native and strong simpler baselines.
+- **C7 — Native identity and complete support vision (v2 §§1,7; I01/I16/I19).** Preserve the actual chosen harness, native-owned authentication and useful features. Retain Claude Code, Codex, OpenCode, Meta Muse Code, Kimi Code CLI, Cursor Agent CLI and Antigravity as independently qualified targets.
+- **C8 — First-class control and accessibility (v2 §§14–17).** Standalone and Herdr journeys share one lifecycle owner and input lease; keyboard, plain/machine output, accessibility and Windows/macOS/Linux remain product commitments with honest evidence matrices.
+- **C9 — Substantive bounded adaptation (v2 §§9–13; I20–I25).** Grounded continuity and a small policy portfolio can improve routing, context, prompts, review and decomposition. Learning may select a simpler workflow, cannot expand authority, and remains optional.
+- **C10 — Verified outcomes within authority (v2 §§8,11).** Protected exact-revision acceptance precedes success. Standing grants enable decisive work; applying, publishing and deployment remain distinct effects, with optional production delivery requiring independent health evidence.
