@@ -25,6 +25,7 @@ Every automated check, bot and housekeeping job in this repository, what it does
 | DCO (`DCO sign-off`, required) | Fails a PR with any commit lacking a matching `Signed-off-by`. | PR, merge queue (skipped) | `.github/workflows/dco.yml` | GitHub-native |
 | Dependency review (`Dependency review`, required) | Blocks PRs adding dependencies with moderate+ advisories or licences outside the allow-list. | PR, merge queue (skipped) | `.github/workflows/dependency-review.yml` | GitHub-native |
 | CodeQL (`Analyze (actions)`, required; `Analyze (go)`, required) | CodeQL `security-extended` analysis of the workflows and the Go code. | push to `main`, PR, merge queue, weekly | `.github/workflows/codeql.yml` | GitHub-native |
+| Docs site (`Docs checks`) | Builds the Jekyll site from `docs/` and deploys it to GitHub Pages on push to `main`. `Docs checks` fails on root-guide mirror drift and gates the build; the build asserts every mirror page rendered. Needs the maintainer to set the Pages source to GitHub Actions and to require `Docs checks` in the `main` ruleset. | push to `main`, PR, merge queue | `.github/workflows/docs.yml` | GitHub-native |
 | OpenSSF Scorecard | Supply-chain posture score, published to the Scorecard API and code scanning. | push to `main`, weekly, manual | `.github/workflows/scorecard.yml` | OSS-in-Actions |
 | zizmor | Security audit of every workflow and `dependabot.yml`. The `zizmor` job fails on findings of low severity or higher; the `zizmor (code scanning)` job uploads SARIF to code scanning. | push to `main`, PR, merge queue (audit only) | `.github/workflows/zizmor.yml` | OSS-in-Actions |
 | PR title lint | Enforces the Conventional Commits title convention in [CONTRIBUTING.md](../CONTRIBUTING.md#pull-request-titles). | PR opened, edited, synchronised, reopened | `.github/workflows/pr-title.yml` | OSS-in-Actions |
@@ -70,7 +71,6 @@ Each deferred item has a trigger that activates it. Add it in the PR that meets 
 | Homebrew, Scoop, winget, AUR | Package-manager publishing. Tap and repository tokens live only in a tag-triggered job bound to a protected `release` environment; never reachable from PRs. | First release | OSS-in-Actions |
 | go-licenses notices | Generates the third-party licence notices shipped in release archives (`go-licenses save`/`report`). | First release | OSS-in-Actions |
 | macOS x64 runner | Adds an Intel macOS leg to the Go matrix; `macos-latest` covers arm64 today. | First release | GitHub-native |
-| GitHub Pages docs | Published user and contributor guides extracted from the spec. | First user-facing guide | GitHub-native |
 | Charm VHS demo GIFs | Scripted, reproducible terminal recordings of the TUI for docs and README. | First TUI | OSS-in-Actions |
 | benchstat benchmarks | Benchmarks on PRs compared with `main` using benchstat. | First performance-sensitive code | OSS-in-Actions |
 | harden-runner | Egress auditing, then blocking, for workflow runners. | Next PR, once `ci.yml` settles | OSS-in-Actions |

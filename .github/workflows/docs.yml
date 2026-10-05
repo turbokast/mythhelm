@@ -1,0 +1,94 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+# Serialize Pages deployments; a queued deploy waits rather than cancelling the live one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    name: Docs checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Task 6 adds transcript-freshness, manifest-revision and
+      # capability-qualifier steps here.
+      - name: Check root-guide mirrors are fresh
+        run: |
+          fail=0
+          for pair in "LICENSE:docs/mirror/LICENSE.md" \
+              "SECURITY.md:docs/mirror/SECURITY.md" \
+              "CHANGELOG.md:docs/mirror/CHANGELOG.md" \
+              "GOVERNANCE.md:docs/mirror/GOVERNANCE.md"; do
+            src="${pair%%:*}"
+            mirror="${pair##*:}"
+            if ! cmp -s "$src" "$mirror"; then
+              echo "::error::$mirror drifts from $src; refresh with: cp $src $mirror"
+              fail=1
+            fi
+          done
+          exit "$fail"
+
+  build:
+    name: Build docs site
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The mirrors carry no front matter in the tree (the checks job forbids
+      # drift); Jekyll skips .md files without it, so inject it transiently.
+      # This runs after checks, so it cannot mask mirror drift.
+      - name: Inject mirror front matter
+        run: |
+          inject() {
+            printf -- '---\nlayout: default\ntitle: %s\n---\n' "$2" \
+              | cat - "docs/mirror/$1" > "docs/mirror/$1.new"
+            mv "docs/mirror/$1.new" "docs/mirror/$1"
+          }
+          inject LICENSE.md LICENSE
+          inject SECURITY.md "Security policy"
+          inject CHANGELOG.md Changelog
+          inject GOVERNANCE.md Governance
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/jekyll-build-pages@44a6e6beabd48582f863aeeb6cb2151cc1716697 # v1.0.13
+        with:
+          source: ./docs
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+      - name: Assert mirrors rendered
+        run: |
+          for page in LICENSE SECURITY CHANGELOG GOVERNANCE; do
+            if [ ! -f "_site/mirror/$page.html" ]; then
+              echo "::error::expected _site/mirror/$page.html in the built site"
+              exit 1
+            fi
+          done
+
+  deploy:
+    name: Deploy docs site
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      # Deploy the built site to GitHub Pages.
+      pages: write
+      # Request the OIDC token deploy-pages uses to authenticate the deployment.
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
