@@ -4,6 +4,8 @@ This change adopts [Master Specification v2](../../mythhelm-synthesis/MYTHHELM_M
 
 The three synthesis deliverables remain [master](../../mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md), [decisions](../../mythhelm-synthesis/MYTHHELM_Synthesis_Decisions.md) and [implementation plan](../../mythhelm-synthesis/MYTHHELM_Implementation_Plan.md). The original master, proposal and prompt remain byte-identical. The synthesis's original repository snapshot was `d77f2e8`; this adoption was checked against `eb349c2`, including MH-9's merged shipped status.
 
+During adoption review, `main` advanced to `3a33b0c`: PRs #122–#124 started and re-grounded the existing `docs-site-demos` run and merged its first site-scaffold task. Those changes do not alter the application baseline or product file bases used here. MH-8 still reads `specced` in the product ledger while its spec is now in progress. Preserve that run's Revision 1.1 evidence; its lifecycle sync and reviewed reconciliation of unfinished work remain required when v2 takes effect.
+
 ## What changes in the product layer
 
 - [Objectives](../../product/objectives.md) derive S0–S6, G01–G16 and ten commitments from v2. Current stage remains 1 as a delivery focus, with outstanding S0 qualification explicitly blocking unsupported claims.

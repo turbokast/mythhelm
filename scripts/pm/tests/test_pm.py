@@ -470,6 +470,18 @@ class AdaptiveProductDrafts(Base):
         self.assertIn("inside product/", err)
         self.assertEqual(self.r.read("product/README.md"), "# Product\n\nAgents propose; maintainers approve.\n")
 
+    def test_readme_draft_refuses_hardlink_to_product(self):
+        source = self.source("readme-source.md", "# Product\n\nA proposed change.\n")
+        target = self.out("linked-draft.md")
+        os.link(self.r.path("product/README.md"), target)
+        before = self.r.read("product/README.md")
+        rc, _, err = self.r.run("draft-text", "readme", "--from", source, "--out", target)
+        self.assertEqual(rc, 2, err)
+        self.assertIn("multiple hardlinks", err)
+        self.assertEqual(self.r.read("product/README.md"), before)
+        with open(target, encoding="utf-8") as f:
+            self.assertEqual(f.read(), before)
+
     def test_preamble_draft_preserves_cards_and_rejects_injected_card(self):
         source = self.source("preamble.md", PREAMBLE.replace("Schema notes.", "Stages 0–6; gates G01–G16."))
         rc, _, err = self.r.run("draft-text", "backlog-preamble", "--from", source, "--out", self.out())

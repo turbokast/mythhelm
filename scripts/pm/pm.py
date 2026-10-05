@@ -644,8 +644,13 @@ def write_out(root, out, text):
                          "draft to a scratch file, then file it with python3 scripts/orchestration/approvals.py "
                          "request" % out)
     # O_NOFOLLOW: a symlink swapped in after the check above cannot redirect the write.
-    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o666)
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o666)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
+        # realpath cannot detect a scratch hardlink to a protected product file.
+        # Inspect the opened inode before truncation, including for prose drafts.
+        if os.fstat(f.fileno()).st_nlink > 1:
+            raise InputError("--out %s has multiple hardlinks; use an independent scratch file" % out)
+        f.truncate(0)
         f.write(text)
     print("drafted %s" % out)
 
