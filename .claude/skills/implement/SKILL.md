@@ -46,7 +46,7 @@ Runs one task of a spec from start to an open, reviewable pull request. `/run-sp
      --title "<type>: <summary> (<alias> task <N>)" --body-file <file>
    ```
 
-   The body is public and permanent (`.claude/rules/public-repo-hygiene.md`): what and why, an acceptance-criterion → test table, gate evidence as real output lines, spec deviations. Never `git add -A`, `git stash`, `git reset --hard` or a force push; `.claude/hooks/block-destructive.sh` blocks them. When a hook blocks you, read its Fix line and follow it; never work around a guard.
+   The body is public and permanent (`.claude/rules/public-repo-hygiene.md`): what and why, an acceptance-criterion → test table, gate evidence as real output lines, spec deviations. Never `git add -A`, `git stash`, `git reset --hard` or a force push; `.claude/hooks/block-destructive.sh` blocks them. Exception: an open-PR DCO retry signs off by rebasing onto the PR base (normally `git rebase --signoff origin/main`) and pushes its branch explicitly with `git push --force-with-lease origin <branch>` (see P-tui-slice-2); this is the only rebase or force-push a worker ever performs. When a hook blocks you, read its Fix line and follow it; never work around a guard.
 8. **Write the completion entry and the hand-off**, refresh the markers they invalidate, commit and push them to the same branch — task-completion Steps 3–6. The pull request now carries code, tests, entry and hand-off. End with the task-report block (task-completion §The task-report block), `"status": "pr_open"`.
 9. **Answer the review.** CodeRabbit and Sourcery review every pull request, and CI must be green. For each review thread: verify the finding against the code; fix a real one (with a test when it is behavioural), or rebut it with evidence (`file:line`, a test, a spec section); reply on the thread and resolve it:
 
@@ -55,7 +55,7 @@ Runs one task of a spec from start to an open, reviewable pull request. `/run-sp
    gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -F id=<thread-id>
    ```
 
-   Every push re-runs Step 6's gates first. When `main` moved and the pull request conflicts or is behind, merge `origin/main` into the branch (never rebase), re-run the gates and push. Repeat until `python3 scripts/harness/runspec.py pr-check --spec <spec> --task <N> --pr <n>` prints `verdict=ready`. Never merge your own task by hand when `/run-spec` runs the spec; otherwise the operator merges.
+   Every push re-runs Step 6's gates first. When `main` moved and the pull request conflicts or is behind, merge `origin/main` into the branch (never rebase), re-run the gates and push. The DCO retry is the exception: it rebases with `--signoff` instead of merging. Repeat until `python3 scripts/harness/runspec.py pr-check --spec <spec> --task <N> --pr <n>` prints `verdict=ready`. Never merge your own task by hand when `/run-spec` runs the spec; otherwise the operator merges.
 
 ## Handling failures and ambiguity
 
