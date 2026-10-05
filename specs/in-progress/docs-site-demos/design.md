@@ -14,9 +14,8 @@
 - **No tapes.** `find . -name '*.tape'` returns nothing; outside `specs/`, "vhs" appears
   only in `docs/automation.md:74`, orchestration logs and stale worktrees. `which vhs`
   finds nothing on this machine.
-- **No TUI.** `ls internal/` shows `adapter admission buildinfo cli ids integration
-  journal security statedir supervisor workers workspace` — no `tui` package, no `mods/`.
-  The TUI is `specs/*/tui-slice/` (MH-2), currently in progress.
+- **TUI shipped.** `specs/done/tui-slice/` (MH-2) merged 2026-10-04; `internal/tui/`
+  carries the mission view. FR-3's recording is filed as a follow-up by Task 7 (§5).
 - **The demo exists and is scripted.** `internal/cli/demo.go:48` (`runDemo`,
   `grep -n "func runDemo" internal/cli/demo.go`) runs `executeRun` with
   `Adapter: "fake"`, `Billing: "local-scripted"` (`demo.go:94-98`), labels every screen
@@ -33,8 +32,9 @@
   link-time `ldflags`, falling back to embedded VCS info, else `"devel"`/`"unknown"`.
 - **Deferred rows name both halves.** `docs/automation.md:73` (GitHub Pages docs, trigger
   "First user-facing guide") and `:74` (Charm VHS demo GIFs, trigger "First TUI").
-- **No conflicting specs.** `specs/todo/`, `specs/in-progress/`, `specs/unfinalized/` are
-  empty. `specs/*/openssf-badge/` (MH-9, refined) also touches §19.3/G10 content; see §7.
+- **Sibling specs shipped.** `specs/done/tui-slice/` (MH-2) and
+  `specs/done/openssf-badge/` (MH-9) both merged; this spec reconciles shared §19.3/G10
+  sentences with the latter (see §7).
 
 ## 2. Site layout (§19.3, G10)
 
@@ -66,7 +66,7 @@ sources starts with `---` (`head -1` shows `Apache License`, `# Security Policy`
 `# Changelog`, `# Governance`), so injection is unambiguous.
 | `docs/user-guide.md` | Authored extraction: installation, quickstart (`mythhelm demo`, `mythhelm doctor`), limitations pointer, demo recording embed (AC-1.1, AC-2.3) |
 | `docs/contributing.md` | Authored extraction: governance summary, contribution path, DCO sign-off requirement, good-first-issue route with no paid subscription (AC-1.3) |
-| `docs/limitations.md` | Authored limitations register extracted from the master spec (§22.3): pre-alpha, one fake adapter, no TUI yet (labelled planned, N1/I14) |
+| `docs/limitations.md` | Authored limitations register extracted from the master spec (§22.3): pre-alpha, one fake adapter, TUI shipped with known limits (truthful status, I14) |
 | `docs/mirror/LICENSE.md` etc. | Byte mirrors of `LICENSE`, `SECURITY.md`, `CHANGELOG.md`, `GOVERNANCE.md` (D3). `CONTRIBUTING.md` is extracted into `contributing.md`, not mirrored. The directory has no underscore prefix: Jekyll excludes non-special `_`-prefixed directories from the build, so `_mirror/` pages would 404 |
 
 ## 3. Record command, tapes and manifest (§14.9, §22.3)
@@ -82,7 +82,7 @@ docs/demos/
   demo.transcript.txt  # normalized stdout of the taped commands (the reproducibility proof)
   normalize.sed        # the exact normalization expressions (portable GNU/BSD sed)
   manifest.json        # exact schema below; one entry per recording
-  tui.tape             # scaffold only until specs/*/tui-slice/ lands (Task 7, FR-3)
+  tui.tape             # scaffold only; full tape is a Task 7 follow-up (FR-3)
 ```
 
 **Record command** (documented in `docs/demos/README.md`, AC-2.1/AC-3.1):
@@ -214,15 +214,17 @@ Task 6 adds the `checks` job; the two tasks share that file and never run in par
 `README.md` gains the demo GIF embed with a caption naming `docs/demos/demo.tape` and the
 `docs/demos/record.sh` record command, plus the published site URL (Task 5; AC-2.3, DoD).
 
-## 5. TUI recording, sequenced behind tui-slice (FR-3)
+## 5. TUI recording: scaffold now, follow-up records (FR-3)
 
-`docs/demos/tui.tape` merges as a scaffold: header comments stating it is planned, the
-interface it will drive (`specs/*/tui-slice/` acceptance: mission view, layouts, keyboard
-flows — AC-3.2 limits the tape to exactly that covered behaviour), and no `Run` lines.
-The site shows the word "planned" where the TUI recording will go — never a mock-up
-image (N1/I14). The full FR-3 tape is a follow-up task after `tui-slice` lands; the DoD
-permits "explicitly deferred … with the tape scaffold merged". AC-3.3 (I17) binds the
-follow-up: the tape shows the TUI's own verification status, never pane text as proof.
+`tui-slice` shipped 2026-10-04, so FR-3's precondition ("after the TUI slice has landed")
+holds; the full tape stays a follow-up to keep this run reviewable, and Task 7 drafts its
+card. `docs/demos/tui.tape` merges as a scaffold: header comments stating the recording
+is planned, the interface it will drive (`specs/done/tui-slice/` acceptance: mission view,
+layouts, keyboard flows — AC-3.2 limits the tape to exactly that covered behaviour), and
+no `Run` lines. The site shows the word "planned" where the TUI recording will go — never
+a mock-up image (N1/I14). The DoD permits "explicitly deferred … with the tape scaffold
+merged". AC-3.3 (I17) binds the follow-up: the tape shows the TUI's own verification
+status, never pane text as proof.
 
 ## 6. Decisions
 
@@ -240,13 +242,13 @@ follow-up: the tape shows the TUI's own verification status, never pane text as 
 
 ## 7. Cross-spec references
 
-- Prerequisite: `specs/*/tui-slice/` (MH-2) for FR-3 only; FR-1/FR-2 ship first (§5).
+- Builds on: `specs/done/tui-slice/` (MH-2, shipped 2026-10-04) for FR-3's follow-up only; FR-1/FR-2 ship first (§5).
 - Builds on: `specs/*/dogfood-slice/` (MH-1) — `mythhelm demo`, plain output.
-- Coordinate with: `specs/*/openssf-badge/` (MH-9, refined) — also touches §19.3/G10
-  prose. This spec assembles the site from the root guides; `openssf-badge` adds only its
-  badge link and assessment answers. Whichever lands second reconciles shared sentences;
-  no file overlap is expected beyond `README.md` badges (this spec's README edit is the
-  demo embed + site URL, not badges).
+- Coordinate with: `specs/done/openssf-badge/` (MH-9, shipped) — also touches §19.3/G10
+  prose. This spec assembles the site from the root guides; `openssf-badge` added only its
+  badge link and assessment answers. This spec lands second and reconciles shared sentences;
+  no file overlap is expected beyond `README.md` (this spec's README edit is the
+  demo embed + site URL, disjoint from the badge line).
 
 ## 8. Honesty register
 
@@ -254,7 +256,7 @@ follow-up: the tape shows the TUI's own verification status, never pane text as 
 |---|---|
 | §19.3 published contribution path (AC-1.3) | Met: `contributing.md` + DCO + good-first-issue route; good-first-issue *content* volume is the backlog's job, not this spec's. |
 | G10 provenance / SBOM published | NOT met (requirements N4): no release exists yet, so the site carries no provenance/SBOM claims at all rather than weak ones. |
-| §14.9 TUI recordings (§5, FR-3) | Deferred behind `specs/*/tui-slice/`; scaffold + "planned" label only. |
+| §14.9 TUI recordings (§5, FR-3) | Scaffold + "planned" label in this run; full tape filed as follow-up now that `tui-slice` has shipped. |
 | §22.3 bit-reproducible recordings | Partially met: GIF bytes are encoder-nondeterministic; the normalized transcript is the reproducibility proof CI enforces. |
 | AC-4.1 GIF-to-tape binding | Residual: no CI step re-renders `demo.gif` and compares frames, so a swapped but plausible GIF passes every check. The transcript + manifest revision + human review of the GIF in the PR is the binding. A render-compare step (duration/frame-count/perceptual hash) is a follow-up if recordings multiply. |
 | VHS row of the Deferred table (`docs/automation.md:74`) | Stays Deferred until FR-3 lands: its trigger is "First TUI" and its text names TUI recordings. Only the Pages row moves to Active. |

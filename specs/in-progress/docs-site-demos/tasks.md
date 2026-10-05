@@ -3,9 +3,9 @@
 ### Dependencies
 
 - Prerequisite specs: `specs/*/dogfood-slice/` (shipped; `mythhelm demo` the FR-2 tape
-  drives); `specs/*/tui-slice/` (in progress; FR-3's full tape only — Task 7's scaffold does
-  not wait for it). Coordinate with `specs/*/openssf-badge/` (refined; shared §19.3/G10
-  prose — whichever lands second reconciles; see design §7).
+  drives); `specs/*/tui-slice/` (shipped 2026-10-04; FR-3's full tape is filed as a
+  follow-up by Task 7). `specs/*/openssf-badge/` shipped first; this spec reconciles
+  shared §19.3/G10 sentences per design §7 (its README edit is disjoint from the badge line).
 - Order: Task 1 and Task 4 start in parallel (disjoint Files). Then Task 2 after 1;
   Task 3 after 2; Task 5 after 4 and 2 (it edits Task 2's `docs/user-guide.md`);
   Task 6 after 3 and 5 (shares `.github/workflows/docs.yml` with Task 3 — never in
@@ -67,7 +67,7 @@
 - **Files**:
   - `docs/user-guide.md` (installation, quickstart/demo, limitations pointer)
   - `docs/contributing.md` (governance summary, contribution path, DCO, good-first-issue route)
-  - `docs/limitations.md` (limitations register: pre-alpha, fake adapter only, TUI planned)
+  - `docs/limitations.md` (limitations register: pre-alpha, fake adapter only, TUI shipped with known limits)
   - `docs/mirror/LICENSE.md` (byte mirror of `LICENSE`)
   - `docs/mirror/SECURITY.md` (byte mirror of `SECURITY.md`)
   - `docs/mirror/CHANGELOG.md` (byte mirror of `CHANGELOG.md`)
@@ -85,8 +85,9 @@
     link inside its contribution-path section (anchored: both matches fall between the
     `## Contribution path` heading and the next `##` heading; moving either line above the
     heading fails the check).
-  - `docs/limitations.md` names the TUI as planned, not shipped (`grep -i 'tui.*planned'`
-    hits; `grep -ci 'tui.*shipped\|tui.*available now'` prints 0).
+  - `docs/limitations.md` names the TUI as shipped, not planned (`grep -ci
+    'tui.*shipped\|tui.*available'` prints at least 1; `grep -ci 'tui.*planned\|no tui
+    yet'` prints 0).
   - The task's pages and mirrors carry no provenance/SBOM claim: `grep -rEli
     'provenance|sbom' docs/user-guide.md docs/contributing.md docs/limitations.md
     docs/mirror/` prints nothing (scoped to this task's files — `docs/automation.md`,
@@ -94,8 +95,8 @@
   - `scripts/ci/check-public-hygiene.sh` passes.
 - **Test plan**: `cmp`/`grep` checks run locally; the drift check that keeps the mirrors
   honest lands in Task 6.
-- **Invariants touched**: I14 (§9.14: unshipped TUI labelled planned, never advertised);
-  I13 (§3.3: pages link to no MYTHHELM-owned service).
+- **Invariants touched**: I14 (§9.14: shipped TUI described truthfully with its limits;
+  no unshipped capability advertised); I13 (§3.3: pages link to no MYTHHELM-owned service).
 
 ### Task 3 — Pages build-and-deploy workflow
 
@@ -239,13 +240,14 @@
 - **Invariants touched**: I07 (§11.5: verification attaches to the declared revision;
   stale fails); I14 (§9.14: unqualified capabilities fail); §19.4 (fork-safe checks).
 
-### Task 7 — TUI tape scaffold (FR-3 defers behind tui-slice)
+### Task 7 — TUI tape scaffold (FR-3 follow-up filed; tui-slice shipped)
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
 - **Depends on**: Task 4
 - **Change**: Merge the comment-only `tui.tape` scaffold and the "planned" docs note so
-  FR-3's shape is fixed while its recording waits for `specs/*/tui-slice/` to land.
+  FR-3's shape is fixed (`specs/done/tui-slice/` shipped 2026-10-04), and draft the FR-3
+  follow-up recording card in `handoff.md` for the orchestrator to file via the backlog flow.
 - **Files**:
   - `docs/demos/tui.tape` (header comments: planned, interface = tui-slice acceptance, no `Run` lines)
   - `docs/demos/README.md` (TUI row marked planned with the tui-slice dependency)
@@ -255,9 +257,12 @@
   - No manifest entry names the TUI recording (`grep -c tui docs/demos/manifest.json`
     prints 0), so the Task 6 qualifier check exempts it by construction.
   - The site shows no TUI recording image: `grep -ril 'tui\.\(gif\|mp4\|webm\)' docs/
-    README.md` prints nothing, while the limitations page still labels the TUI planned
+    README.md` prints nothing, while the limitations page TUI-status check still passes
     (Task 2 check re-run green).
+  - `handoff.md`'s Task 7 section drafts the FR-3 follow-up recording card (title, summary
+    with TUI evidence refs, score) for the orchestrator to file; the tape itself stays
+    a scaffold with no `Run` lines.
   - `scripts/ci/check-public-hygiene.sh` passes.
-- **Test plan**: `grep` checks; the follow-up tape task is filed when tui-slice lands.
+- **Test plan**: `grep` checks; the follow-up tape card is drafted now that tui-slice has landed.
 - **Invariants touched**: I14 (§9.14: unshipped TUI never presented as shipped);
   I17 (§16.6.2: no pane text or terminal text presented as completion proof).
