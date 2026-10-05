@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# record.sh: the documented record command for the MYTHHELM terminal
+# recordings (docs-site-demos, FR-2/FR-4). It builds the binary, regenerates
+# the demo transcript, renders the demo GIF from the checked-in tape, and
+# verifies all three. A bare `vhs docs/demos/demo.tape` only renders the GIF
+# and is not the record command.
+#
+# Usage: docs/demos/record.sh
+#
+# Needs only free tooling: go, git, python3, and a VHS install (vhs renders
+# through ffmpeg and ttyd). Install VHS from https://github.com/charmbracelet/vhs
+# (for example `go install github.com/charmbracelet/vhs@latest`) and ttyd from
+# https://github.com/tsl0922/ttyd; ffmpeg comes from the OS packages.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT"
+
+DEMOS="docs/demos"
+BIN="/tmp/mythhelm-record"
+TAPE="$DEMOS/demo.tape"
+TRANSCRIPT="$DEMOS/demo.transcript.txt"
+SED="$DEMOS/normalize.sed"
+MANIFEST="$DEMOS/manifest.json"
+GIF="$DEMOS/demo.gif"
+
+for tool in go git vhs python3; do
+	if ! command -v "$tool" >/dev/null 2>&1; then
+		echo "record.sh: need $tool on PATH" >&2
+		exit 2
+	fi
+done
+
+echo "record.sh: versions"
+go version
+git --version
+vhs --version
+python3 --version
+
+echo "record.sh: build the binary (go build, never go run)"
+go build -o "$BIN" ./cmd/mythhelm
+
+echo "record.sh: regenerate the transcript"
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+"$BIN" demo --check pass | sed -E -f "$SED" >"$tmp"
+# The binary's own exit status, never sed's: without this a failing binary
+# still yields a zero pipeline status from sed and masks the failure.
+test "${PIPESTATUS[0]}" -eq 0
+if test -f "$TRANSCRIPT" && cmp -s "$tmp" "$TRANSCRIPT"; then
+	echo "record.sh: transcript unchanged"
+else
+	cp "$tmp" "$TRANSCRIPT"
+	echo "record.sh: transcript written to $TRANSCRIPT"
+fi
+
+echo "record.sh: render the GIF from the checked-in tape"
+vhs "$TAPE"
+
+echo "record.sh: verify"
+# Determinism: the pipeline re-run from the same binary must byte-match the
+# transcript just written.
+"$BIN" demo --check pass | sed -E -f "$SED" >"$tmp"
+test "${PIPESTATUS[0]}" -eq 0
+diff "$tmp" "$TRANSCRIPT"
+# The transcript keeps the binary's own labels verbatim (I09).
+test "$(grep -c 'SCRIPTED DEMO' "$TRANSCRIPT")" -ge 4
+# The manifest parses, and its declared revision is a commit in this repo (I07).
+python3 - "$MANIFEST" <<'EOF'
+import json, subprocess, sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    manifest = json.load(fh)
+for rec in manifest["recordings"]:
+    commit = rec["binary_commit"]
+    assert len(commit) == 40 and all(c in "0123456789abcdef" for c in commit), commit
+    subprocess.run(["git", "cat-file", "-e", commit], check=True)
+    print("record.sh: manifest revision %s (%s) is present" % (commit, rec["name"]))
+EOF
+# The manifest's VHS pin matches the renderer that just ran.
+want="$(python3 -c 'import json;print(json.load(open("'"$MANIFEST"'"))["recordings"][0]["vhs_version"])')"
+have="$(vhs --version | sed -E 's/.*(v[0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+test "$want" = "$have" || {
+	echo "record.sh: manifest vhs_version $want != installed $have; re-pin the manifest and tape header" >&2
+	exit 1
+}
+# The render produced a GIF.
+test "$(file -b "$GIF" | cut -d, -f1)" = "GIF image data"
+
+echo "record.sh: ok (binary, transcript, GIF verified)"

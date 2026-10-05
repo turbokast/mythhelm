@@ -1,0 +1,16 @@
+{
+  "recordings": [
+    {
+      "name": "demo",
+      "tape": "docs/demos/demo.tape",
+      "artifact": "docs/demos/demo.gif",
+      "transcript": "docs/demos/demo.transcript.txt",
+      "binary_version": "v0.0.0-20261005073052-e0ecdbc9554c",
+      "binary_commit": "e0ecdbc9554c90da6ac61f6300b7cc836acae266",
+      "vhs_version": "v0.12.1",
+      "capabilities": [
+        {"name": "offline scripted run", "qualifier": "TestDemoOfflineNoCredentials"}
+      ]
+    }
+  ]
+}
