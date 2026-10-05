@@ -23,8 +23,15 @@ Set FontSize 20
 Set Width 1080
 Set Height 620
 
-Type "/tmp/mythhelm-record demo --check pass"
+# TERM=dumb forces the linear run: under VHS's tty the demo would otherwise
+# launch the live TUI (selectLaunch) and never print the done banner. The
+# forced output is byte-identical to the transcript (verified by diff).
+Type "TERM=dumb /tmp/mythhelm-record demo --check pass"
 Enter
 
-Wait+Screen@60s /removed afterwards/
-Sleep 2s
+# Fixed sleep, not Wait+Screen: VHS v0.12.1 screen-text matching only sees the
+# first screenful, so a done-banner Wait never matches (verified: the demo
+# completes and the banner renders, but the Wait times out). The demo runs in
+# ~2s; 10s is a 5x margin. The transcript (not the GIF) is the proof, and
+# Task 5 spot-checks the rendered GIF by eye.
+Sleep 10s

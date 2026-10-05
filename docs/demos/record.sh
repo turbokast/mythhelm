@@ -38,6 +38,12 @@ git --version
 vhs --version
 python3 --version
 
+pin="$(python3 -c 'import json;print(json.load(open("'"$MANIFEST"'"))["recordings"][0]["binary_commit"])')"
+head="$(git rev-parse HEAD)"
+if test "$head" != "$pin"; then
+	echo "record.sh: warning: checkout $head != manifest binary_commit $pin; re-pin the manifest and tape header with this run's outputs" >&2
+fi
+
 echo "record.sh: build the binary (go build, never go run)"
 go build -o "$BIN" ./cmd/mythhelm
 
