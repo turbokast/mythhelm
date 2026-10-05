@@ -35,6 +35,9 @@ Not supported yet:
 
 Try it with no credentials and no network at runtime: `go run ./cmd/mythhelm demo` (the first build needs the Go module cache populated). `go run ./cmd/mythhelm doctor` reports what your machine still needs for a real run.
 
+![Scripted demo recording](docs/demos/demo.gif)
+*Honest recording of `mythhelm demo --check pass`, rendered from `docs/demos/demo.tape` — regenerate it with `docs/demos/record.sh`.*
+
 ## TUI status
 
 Supported now (evidence: [G09 record](docs/tui-slice-g09-evidence.md); unrecorded combinations are experimental per I14):
@@ -68,6 +71,8 @@ Known limitations (G09 findings, see the record §5):
 ## Design
 
 The [specification index](docs/spec/README.md) identifies [Master Specification v2](mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md) as the current design and preserves Revision 1.1 for historical references. The full vision combines native continuity, verified delivery, bounded parallel construction and evidence-gated adaptation. The first useful milestone is one qualified native route completing the task-to-verified-candidate loop. The [product adoption map](docs/spec/synthesis-adoption.md) connects all 16 implementation slices to the backlog.
+
+Published user and contributor guides: <https://turbokast.github.io/mythhelm/>.
 
 ## Planned stack
 
