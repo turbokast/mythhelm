@@ -231,3 +231,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Decision**: File backlog card MH-32
 - **Rationale**: docs-site-demos task 7: FR-3 follow-up recording for the shipped TUI
 - **Cards**: MH-32
+
+### D-43 — 2026-10-05: MH-8 → shipped (docs-site-demos)
+- **Type**: lifecycle-sync
+- **Decision**: MH-8 moved to shipped
+- **Rationale**: docs-site-demos finalized and merged
+- **Cards**: MH-8
+- **Evidence**: PR #148 (a1ae317); retrospective in specs/done/docs-site-demos/
