@@ -8,7 +8,7 @@ only: never edit or remove an entry. The format is in [`README.md`](README.md).
 
 - **Decision**: approved
 - **Date**: 2026-10-05
-- **Pull request**: pending
+- **Pull request**: #152
 - **Eval**: `implement-dco-retry-exception`
 - **Rationale**: Maintainer approved 2026-10-05, endorsing the recommendation: keeps implement consistent with the P-tui-slice-2 DCO exception.
 - **Source spec**: `tui-slice`
