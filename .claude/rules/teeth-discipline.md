@@ -20,7 +20,7 @@ A test, lint, hook or CI check that exists to catch a defect is unverified until
 
 ## Invariant evidence
 
-The normative invariant table and its rationale are in `knowledge/invariants.md`.
+The invariant reference and its rationale are in `knowledge/invariants.md`; Master Specification v2 §2 is the normative source.
 
 - **In `tasks.md`.** List every invariant the task can affect under `Invariants touched`, by ID with the spec section it relies on: `I09 (v2 §7.3: billing evidence stays typed and labelled)`. Name what the task does to keep it, not the invariant's title.
 - **In tests.** Name the test after the behaviour that keeps the invariant, and put the version-qualified ID in a comment beside the assertion or in the test name: `TestAdmissionBlocksUnknownBilling // I02 (v2 §2)`. The test must fail when the invariant is broken.
