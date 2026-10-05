@@ -106,7 +106,7 @@
 - **Spec deviations**: None to the contract. `navigation.yml` listed in Files but required no change; Governance mirror linked from `contributing.md` per design §2's seven-item nav. Review round touched two files outside Files with justification: root `GOVERNANCE.md` (one-line MAINTAINERS link made absolute — the mirror must stay byte-identical to root, so the broken relative link could only be fixed at the source) and `specs/in-progress/docs-site-demos/design.md` (one-line adapter-coverage wording fix matching the task-record fix).
 - **Files modified**: `docs/user-guide.md`, `docs/contributing.md`, `docs/limitations.md`, `docs/mirror/LICENSE.md`, `docs/mirror/SECURITY.md`, `docs/mirror/CHANGELOG.md`, `docs/mirror/GOVERNANCE.md`, `specs/in-progress/docs-site-demos/tasks.md`, `specs/in-progress/docs-site-demos/handoff.md`, plus review-round `GOVERNANCE.md` (absolute MAINTAINERS link) and `specs/in-progress/docs-site-demos/design.md` (adapter-coverage wording).
 
-### Task 3 — Pages build-and-deploy workflow
+### Task 3 — Pages build-and-deploy workflow ✅ COMPLETED
 
 - **Domain/agent**: release-engineer
 - **Budget**: standard
@@ -142,6 +142,10 @@
 - **Invariants touched**: I13 (§3.3: Pages is documentation hosting, never a runtime
   dependency — no repo test or binary fetches the site); §19.4 (pinned, least-privilege,
   fork-safe CI).
+- **Status**: ✅ Completed — Pages workflow (checks/build/deploy) and automation.md row move landed; PR #139.
+- **Implementation**: `checks` (mirror drift with refresh hint), `build` (inject + Jekyll + assert mirrors rendered), `deploy` (push-to-main only); 6/6 `uses:` pinned SHA + comment; `contents: read` top-level, `pages`/`id-token: write` on deploy only with why-comments, 0 `secrets.*`; actionlint exit 0; `Docs checks` green (run 37293185337); build green after Pages enablement: `Build docs site` pass 18s at https://github.com/turbokast/mythhelm/actions/runs/37294219848/job/111711576805 (run 37294219848, re-run on entry push). `docs/automation.md` moves the Pages row Deferred → Active; PR description carries the maintainer Pages-source + ruleset instructions. Commit b0c7277ddf2ccc648c6ac79eadd44f5dddcb4093.
+- **Spec deviations**: None. Entry + handoff written by the orchestrator from verified evidence (worker stopped at the Pages-disabled build failure, which needed the maintainer switch).
+- **Files modified**: `.github/workflows/docs.yml`, `docs/automation.md`, `specs/in-progress/docs-site-demos/tasks.md`, `specs/in-progress/docs-site-demos/handoff.md`.
 
 ### Task 4 — Demo tape, transcript and manifest ✅ COMPLETED
 
@@ -202,7 +206,7 @@
   all free: go1.27.1, git 2.43.0, vhs v0.12.1, python3 3.12.10, ffmpeg 6.1.1, ttyd 1.7.7.
 - **Files modified**: `docs/demos/demo.tape`, `docs/demos/demo.transcript.txt`, `docs/demos/normalize.sed`, `docs/demos/manifest.json`, `docs/demos/record.sh`, `docs/demos/README.md`, `specs/in-progress/docs-site-demos/tasks.md`, `specs/in-progress/docs-site-demos/handoff.md`.
 
-### Task 5 — Rendered demo GIF and embeds
+### Task 5 — Rendered demo GIF and embeds ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -228,6 +232,10 @@
 - **Invariants touched**: I09 (§13.4: the recording shows the binary's labels — the GIF
   renders the same taped run the transcript proves); I14 (§9.14: only demo behaviour with
   versioned qualifiers is shown).
+- **Status**: ✅ Completed — rendered demo GIF with README and user-guide embeds plus the site URL landed; PR #140.
+- **Implementation**: GIF (1080x620, 1027454 bytes, 8.64s) rendered via `record.sh --repin` in a throwaway worktree at the manifest pin (transcript regen byte-identical; tape/manifest/transcript untouched); identical captions name the tape + `record.sh` adjacent to each embed; site URL linked once. Frames inspected at t=2 (command typing) and t=4/6/8 (`=== SCRIPTED DEMO: done ===`, checks passed, diff). Commit 1a68d74e7d879fe9198e45b38efbeb5b1b0429ac.
+- **Spec deviations**: User-guide embed is page-relative (`demos/demo.gif`) vs the README's root-relative path so it resolves on the site and on GitHub. Review round added the `docs/index.md` home-page embed (same captioned embed): design §2 and Task 1's Files both assign it to Task 5 even though Task 5's own Files list omits the file.
+- **Files modified**: `docs/demos/demo.gif`, `README.md`, `docs/user-guide.md`, `specs/in-progress/docs-site-demos/tasks.md`, `specs/in-progress/docs-site-demos/handoff.md`, plus review-round `docs/index.md` (home-page embed per design §2).
 
 ### Task 6 — Recording honesty checks in CI
 

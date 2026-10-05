@@ -36,7 +36,7 @@ Captures an idea as the first document of a spec: `specs/unrefined/<name>/requir
    - Failure not reachable: the spec either binds its criteria to a path that can fail today or sequences behind the blocker; say which under Dependencies.
    - Optional second reader (advisory): when a vendor is available, run `/vendor-consult` with the `premise-ground` stage on the same claims (`knowledge/vendors.md`). Your verdicts govern; where the vendor disagrees, re-open the source before keeping yours. An `unavailable` result is recorded and skipped.
 5. **Gather engineering context.**
-   - `knowledge/invariants.md` and the master-spec sections the change touches (`docs/spec/master-spec.md`).
+   - `knowledge/invariants.md` and the current master-spec sections the change touches (resolve the revision through `docs/spec/README.md`).
    - `knowledge/domains.md`: the domains and agents the change will involve.
    - Decision records under `docs/decisions/` in the same area.
    - Specs in `specs/in-progress/` and `specs/todo/` that touch the same packages (possible conflicts), and in `specs/done/` that this extends or supersedes.

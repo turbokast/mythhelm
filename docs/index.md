@@ -13,6 +13,11 @@ native harnesses intact.
 > **Status: pre-alpha.** There is no usable release yet. See
 > [Limitations]({{ site.baseurl }}/limitations.html) for what is supported.
 
+## Scripted demo
+
+![Scripted demo recording](demos/demo.gif)
+*Honest recording of `mythhelm demo --check pass`, rendered from `docs/demos/demo.tape` — regenerate it with `docs/demos/record.sh`.*
+
 ## Start here
 
 - [User guide]({{ site.baseurl }}/user-guide.html): installation, quickstart and the scripted demo.

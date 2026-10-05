@@ -20,6 +20,7 @@ paths:
 - Never write product files through Bash: no redirects, `cp`, `sed -i`, interpreters or scripts, even when a command would get past `guard-product-write.sh`. A blocked product write is filed as a request, never retried in another spelling.
 - Build every draft from the current file through `pm.py stage`, never from an older copy. When an approval is reported stale, restage and refile; never patch the old draft by hand.
 - Check that each draft's diff is proportional to the change before filing it. A status flip that also moves unrelated cards is a defect in the draft.
+- Use the shared checks in every client; never treat the absence of a Claude hook as permission to bypass approval. Stage all six product files, use structured verbs for cards/logs and `draft-text objectives|readme|backlog-preamble` for prose, and validate the complete staged set before filing exact requests. Follow `.claude/skills/pm-sync-core/SKILL.md` §File a change for the commands.
 
 ## Records
 
@@ -28,6 +29,7 @@ paths:
 - Never delete a card. Close it as `shipped` or `dropped`, with a decision entry.
 - A card is `shipped` only when every spec it names is in `specs/done/` or `specs/archived/`. Until then it stays `implementing` with a `Half shipped` note.
 - Never hand-edit a score. Change its inputs with `pm.py rescore`; urgency always comes from the card's stage and the current stage.
+- When the current stage advances, rescore affected open cards with `pm.py rescore` and file those changes with the `objective-change` decision.
 
 ## Premise grounding
 

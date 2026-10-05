@@ -53,7 +53,7 @@ scripts/
 
 ## Domains and agents
 
-The domain map (`knowledge/domains.md`) routes work to agents by path. The map follows spec §19.1:
+The domain map (`knowledge/domains.md`) routes work to agents by path. The map follows Master Specification v2 §3 and the preserved Revision 1.1 §19.1 layout:
 
 | Domain | Paths | Implementing agent (model) |
 |---|---|---|
@@ -62,7 +62,7 @@ The domain map (`knowledge/domains.md`) routes work to agents by path. The map f
 | protocol | `protocol/`, `sdk/`, `examples/` | `go-implementer` (sonnet) |
 | tui | `internal/tui/`, `mods/` | `tui-implementer` (sonnet) |
 | release | `.github/`, `packaging/`, `Makefile`, `.goreleaser*`, the repository dotfiles (`.golangci.yml`, `.coderabbit.yaml`, `.editorconfig`, `.gitattributes`, `.gitignore`, `.shellcheckrc`), `docs/automation.md` | `release-engineer` (opus) |
-| docs | `docs/` except `docs/harness/` and `docs/automation.md`, `*.md` at root not listed elsewhere | `go-implementer` or the author's agent |
+| docs | `docs/` except `docs/harness/` and `docs/automation.md`, `mythhelm-synthesis/`, `*.md` at root not listed elsewhere | `go-implementer` or the author's agent |
 | harness | `.agents/`, `.grok/`, `.claude/`, `knowledge/`, `scripts/`, `docs/harness/`, `WORKFLOW.md`, `CLAUDE.md`, `AGENTS.md` | agent with harness configuration responsibility (`agent-config-editor` in Claude Code) |
 | product | `product/` | the session running the product skills, which drafts and files requests; a maintainer approves every change to `product/` |
 | orchestration | `orchestration/` | no agent edits it: its local state files are written only by their scripts (`delivery.py` for the delivery run, `approvals.py` for the approval queue); the tracked `README.md` belongs to `agent-config-editor` |

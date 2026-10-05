@@ -6,7 +6,7 @@ argument-hint: "[MH-<n>]"
 
 # Impact Review
 
-A shipped card promised something: a gate closer to passing, a risk retired, a user need met. There is no telemetry to read (spec §17.2), so the evidence is public: CI runs on `main`, evaluation results, the card's own acceptance evidence, and what users reported after it shipped. This skill gathers it, concludes, and records the conclusion in `product/decisions.md`.
+A shipped card promised something: a gate closer to passing, a risk retired, a user need met. Use public or explicitly supplied evidence: CI runs on `main`, evaluation results, the card's own acceptance evidence, and what users reported after it shipped. V2 essential local operational state is private; optional learning and telemetry need separate authority and are not automatically available to product review. This skill gathers authorised evidence, concludes, and records the conclusion in `product/decisions.md`.
 
 ## Input
 
@@ -26,7 +26,7 @@ A shipped card promised something: a gate closer to passing, a risk retired, a u
    - **CI**: `gh run list -R turbokast/mythhelm --branch main --workflow ci.yml --limit 30 --json conclusion,createdAt,url` since the ship date; any failures in the packages or jobs the spec touched (`gh run view <id> --log-failed`).
    - **Evaluations**: results the spec's acceptance evidence names (spec §18: native fidelity, fault injection, the release matrix) re-run or recorded since, where they exist in the repository.
    - **Reports**: `gh issue list -R turbokast/mythhelm --state all --search "<area terms> created:>=<ship date>"` and the card's own issue thread; the discussions query from `.claude/skills/synthesize-signals/SKILL.md`; recent entries in `product/signals.md` that name the card.
-   - **Gates**: for each gate the card names, whether its §18.7 pass condition is now closer, met or unchanged, with the test or record that shows it.
+   - **Gates**: for each gate the card names, whether its named revision's pass condition (v2 §18.3; historical Revision 1.1 §18.7) is closer, met or unchanged, with the test or record that shows it. Resolve current authority through `docs/spec/README.md`; preserve the source revision of shipped evidence.
 4. **Conclude** one of: `held` (the evidence supports the promise), `partial` (some of it; say which), `regressed` (evidence against it; link it) or `inconclusive` (not enough evidence; say what would settle it). Never conclude `held` from the absence of reports alone: absence of complaints is not evidence of use.
 5. **Propose follow-ups** where the evidence calls for them: a card for a regression or a gap, a rescore of a related card, or a way to measure what was inconclusive. Each is a one-line idea for `/triage`.
 6. **Present and file.** Show the evidence table and the conclusion; on confirmation, file an `impact-review` decision through §File a change (`.claude/skills/pm-sync-core/SKILL.md`): `decide --type impact-review --title "Impact of MH-<n>: <conclusion>" --decision "<conclusion and what it rests on>" --rationale "<the key evidence>" --cards MH-<n> --evidence "<links>"`.
