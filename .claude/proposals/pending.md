@@ -62,18 +62,6 @@ Add a dispatch step: before starting a task attempt, append the `run_start` row 
 
 Add to the implementation rules: a task may land an inert stub (rendered but unwired UI, uncalled helper reserved for later) only if its completion entry names the specific later task whose acceptance covers wiring it, quoting that task's acceptance line; the orchestrator verifies the named task exists and is not yet merged. Otherwise the task wires the stub, removes it, or escalates. A stub comment naming no task number fails review.
 
-## P-tui-slice-2 — Dispatch template requires signed-off worker commits
-
-- **Source spec**: `tui-slice`
-- **Type**: skill
-- **Target**: `.claude/skills/run-spec-dispatch/SKILL.md`
-- **Rationale**: Task 12's worker committed unsigned, breaking the required DCO gate on three consecutive heads; the fix needed a signoff rebase and force-push cycle. The dispatch template's commit rule ("Commit named paths only") never mentions sign-off, so every new worker rediscovers it through a red gate.
-- **Evidence**: PR #102 DCO failures on 2b78e3a/31b27e7/31b4548; fix commit 40ee90c; retrospective CI history.
-
-**Proposed change:**
-
-In the first-attempt template's Rules, change "Commit named paths only." to "Commit named paths only, signed off (`git commit -s`)." Add to the retry template's digest rules: a DCO failure is fixed by `git rebase --signoff` plus push, never by an empty sign-off commit. When the retry continues an open PR (branch checked out from `origin/<branch>`), the rebase rewrites published commits, so the push must be `git push --force-with-lease` — the narrow, explicitly named exception to the template's no-force-push rule for this case only. A retry without an open PR starts from `origin/main` and must not force-push.
-
 ## P-tui-slice-3 — Implementation skill carries the same DCO exception
 
 - **Source spec**: `tui-slice`
