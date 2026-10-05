@@ -4,7 +4,7 @@ How the product layer works and why it is shaped this way. The rules agents foll
 
 ## Where it sits
 
-The master spec (`docs/spec/master-spec.md`) says what MYTHHELM must be. `product/` decides the order in which to build it and records why. `specs/` says how each piece is built (`specs/README.md`). A card becomes a spec through `/create-spec MH-<n>`; the spec lifecycle then moves the card:
+The [specification index](../docs/spec/README.md) resolves the current normative design: [Master Specification v2](../mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md). `product/` decides the order in which to build it and records why. `specs/` says how each piece is built (`specs/README.md`). Historical specs and closed cards keep their named source revision; the [adoption map](../docs/spec/synthesis-adoption.md) explains reconciliation and W01–W16 coverage. A card becomes a spec through `/create-spec MH-<n>`; the spec lifecycle then moves the card:
 
 | Spec lifecycle event | Skill | Card status |
 |---|---|---|
@@ -18,30 +18,30 @@ Each transition is filed by `.claude/skills/pm-sync-core/SKILL.md` §Lifecycle s
 
 ## Objectives come from the spec
 
-`product/objectives.md` indexes three things from the master spec: the stages of §20 with their exit gates, the release gates G01 to G12 of §18.7, and the open-source commitments of §3. It adds one fact of its own, the current stage, because the score depends on it. The stage advances when its exit gate passes, which is a maintainer decision (`objective-change`).
+`product/objectives.md` indexes v2 stages S0–S6 (§18.1), release gates G01–G16 (§18.3), and commitments derived from §1. The current stage is a prioritisation focus, not a declaration that preceding gates passed. Adoption retains the existing stage 1 focus while S0 route qualification remains unproven. A stage change requires evidence and a maintainer decision (`objective-change`). S6 production delivery can proceed from S1 independently of adaptive S4/S5; stable version 1.0 is a release decision, not a stage number.
 
 ## Scoring
 
 Weighted shortest job first: `score = (value + urgency + risk) / effort`, each input 1 to 5, rounded half up to one decimal. The rubric is at the top of `product/backlog.md`.
 
 - **value** is user value for the product the spec describes.
-- **urgency** is derived from the stage: 5 for the current stage or earlier, 3 for the next, 2 for the one after, 1 beyond or `later`. Deriving it keeps time criticality tied to the spec's gated stages rather than to calendar dates, which §20.1 deliberately replaces. When the current stage advances, every open card's urgency changes, the `product` lint fails until `pm.py rescore` redrafts them, and the rescore is filed with the stage change.
+- **urgency** is derived from the stage: 5 for the current stage or earlier, 3 for the next, 2 for the one after, 1 beyond or `later`. This is a priority heuristic across v2 capability stages, not an execution dependency graph or a calendar. A stage advance changes affected urgencies, which explains the paired rescore in the [product rules](../.claude/rules/product-management.md#records).
 - **risk** is the risk the card retires: an invariant it enforces (`knowledge/invariants.md`) or an unproven boundary the spec depends on.
 - **effort** follows the size of comparable specs: about three tasks per point.
 
-The formula favours small jobs. A one-point card with modest value can outrank the slice in flight, which is the intent: cheap work that clears a gate should not wait behind an epic. A card that must wait for another says so in its Summary.
+The formula favours small jobs. A one-point card with modest value can outrank the slice in flight, which is the intent: cheap work that clears a gate should not wait behind an epic. Dependencies in a card's Summary/Notes and the adoption map still govern readiness. `pm.py next` ranks candidates; it does not certify that their prerequisites, native qualifications or implementation approvals are satisfied.
 
-## Evidence without telemetry
+## Operational evidence and optional learning
 
-MYTHHELM has no central telemetry and collects local metrics only when a user enables them (§17.2, commitment C5 in `product/objectives.md`). So there is no metrics file, and the evidence the layer uses is public:
+V2 §§5, 8 and 12 distinguish essential local operational state from optional learning. Admission, recovery, verification and truthful receipts require durable state even with learning off. Learning collection, historical backfill, exploration and external telemetry have separate authority; all are off by default. The product-planning layer does not ingest private operational data. Its evidence is public or explicitly supplied for that purpose:
 
 - **Signals**: GitHub issues, discussions and pull-request feedback, read with `gh` by `/synthesize-signals` and grouped into themes in `product/signals.md`.
-- **Impact**: CI history on `main`, evaluation and acceptance results the spec names (§18), and reports after a card shipped, gathered by `/impact-review` and recorded as an `impact-review` decision.
+- **Impact**: CI history on `main`, version-qualified evaluation and acceptance results (v2 §§13 and 18), and reports after a card shipped, gathered by `/impact-review` and recorded as an `impact-review` decision. Planned tests and vendor documentation are not passing qualification evidence.
 - **Health**: `/quarterly-review` reads the same sources over a quarter.
 
 ## The approval mechanism
 
-`.claude/hooks/guard-product-write.sh` and `scripts/orchestration/approvals.py` implement "agents propose, maintainers approve" for Claude Code sessions.
+`scripts/orchestration/approvals.py` provides shared request, signature and explicit `check-write` commands. The approval rule applies to every client; automatic interception of agent tool writes is currently limited to the Claude hook ([client support](../docs/harness/agent-support.md#unattended-delivery)). Other clients rely on the documented signed workflow and PR review; the script itself does not intercept arbitrary filesystem writes. `pm.py` creates scratch drafts without modifying `product/`. The [product rules](../.claude/rules/product-management.md#agents-propose-maintainers-approve) and [PM Sync Core procedure](../.claude/skills/pm-sync-core/SKILL.md#file-a-change) define staging, validation, filing and the narrowly scoped lifecycle preapproval described below.
 
 - **A request is a whole proposed file.** It records the SHA-256 of the file as it is (the base), of the proposed content (the result) and of the diff. A whole file rather than a patch keeps the approval decidable: the hook can compute exactly what a Write or Edit would leave and compare hashes.
 - **The approval binds base and result.** Binding the base means a change that lands between request and write (another session, another branch) makes the approval stale instead of being overwritten. Binding the result means an approval releases exactly the reviewed content: not a different edit, and not a deletion of the file.
@@ -58,6 +58,6 @@ Residuals, stated in the hook's header: the key is a file the same user can read
 
 ## Deliberately absent
 
-- No personas, business plans or revenue data: this is an open-source project with no sales funnel. Commitments come from spec §3.
+- No personas, business plans or revenue data: this is an open-source project with no sales funnel. Commitments come from v2 §1.
 - No standing lifecycle-sync exemption: mechanical status flips go through an approval like any change, because the ledger is only meaningful if every product write is in it. The one pre-approved class is time-boxed and explicit: while the maintainer's autonomy grant carries `--allow-pm-sync`, the granted session's specced → implementing → shipped moves of granted cards, their `lifecycle-sync` entries and the regenerated roadmap are released without a signature and recorded as `preapproved` rows (`knowledge/autonomy.md`).
 - No GitHub milestones or projects. The card is the plan of record and its issue is the public discussion; a second planning surface would drift from both.

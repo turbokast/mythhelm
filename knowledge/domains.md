@@ -1,6 +1,6 @@
 # Domains
 
-Every path in the repository belongs to one domain. The named agents are Claude Code role labels in specs; another client can use an equivalent role or perform a bounded task directly. The map follows the repository structure in spec §19.1 and the table in [`docs/harness/charter.md`](../docs/harness/charter.md) §Domains and agents, which also fixes the harness row.
+Every path in the repository belongs to one domain. The named agents are Claude Code role labels in specs; another client can use an equivalent role or perform a bounded task directly. The map follows the current architecture in Master Specification v2 §3 and the table in [`docs/harness/charter.md`](../docs/harness/charter.md) §Domains and agents, which also fixes the harness row.
 
 ---
 
@@ -16,7 +16,7 @@ The first matching row wins, top to bottom.
 | protocol | `protocol/`, `sdk/`, `examples/` | `go-implementer` |
 | release | `.github/`, `packaging/`, `Makefile`, `.goreleaser*`, `.golangci.yml`, `.coderabbit.yaml`, `.editorconfig`, `.gitattributes`, `.gitignore`, `.shellcheckrc`, `docs/automation.md` | `release-engineer` |
 | harness | `.agents/`, `.grok/`, `.claude/`, `knowledge/`, `scripts/`, `docs/harness/`, `WORKFLOW.md`, `CLAUDE.md`, `AGENTS.md` | `agent-config-editor` in Claude Code; equivalent harness editor in other clients |
-| docs | `docs/` (all but `docs/harness/` and `docs/automation.md`), `*.md` at the root not listed above | `go-implementer`, or the agent whose change the docs describe |
+| docs | `docs/` (all but `docs/harness/` and `docs/automation.md`), `mythhelm-synthesis/`, `*.md` at the root not listed above | `go-implementer`, or the agent whose change the docs describe |
 | product | `product/` | the session running the product skills ([`product/README.md`](../product/README.md)), which drafts and files requests; a maintainer approves every change to `product/` |
 | orchestration | `orchestration/` | no agent edits it: its local state files are written only by their scripts (`scripts/orchestration/delivery.py` for the delivery run, `approvals.py` for the approval queue); the tracked [`README.md`](../orchestration/README.md) belongs to `agent-config-editor` |
 | specs | `specs/` | the session running the lifecycle skills ([`specs/README.md`](../specs/README.md)) for `requirements.md`, `design.md` and `tasks.md`; the implementing agent for its own task's completion entry and scratchpad note |
@@ -49,4 +49,4 @@ Always-on rules load in every session. These load when a matching file is read o
 
 ## Package layout
 
-Spec §19.1 proposes the `internal/` packages (admission, routing, scheduler, supervisor, workers, workspace, integration, journal, billing, security, tui) and the top-level trees. The names are organisation, not an instruction to create empty packages: a package appears when a task gives it a working responsibility. The active spec's `design.md` lists the packages it creates.
+Master Specification v2 §3.2 describes the `internal/` responsibilities and the Revision 1.1 §19.1 layout proposes the packages (admission, routing, scheduler, supervisor, workers, workspace, integration, journal, billing, security, tui) and the top-level trees. The names are organisation, not an instruction to create empty packages: a package appears when a task gives it a working responsibility. The active spec's `design.md` lists the packages it creates.

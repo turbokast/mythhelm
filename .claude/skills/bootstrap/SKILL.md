@@ -27,7 +27,7 @@ A short orientation before task work, so the session starts from the project's a
    - `$ARGUMENTS` names one: look for `specs/*/<name>/`.
    - Otherwise list `specs/in-progress/` and `specs/todo/`, and match the task description to a spec directory.
    - When found, read `requirements.md`, `design.md`, `tasks.md` and `scratchpad.md`, and identify the next task whose heading lacks `✅ COMPLETED` and whose dependencies are complete.
-   - Read the master-spec sections (`docs/spec/master-spec.md`) that the task cites.
+   - Read `docs/spec/README.md`, then the master-spec sections in the revision the task cites. New product work uses v2; historical sections are not reinterpreted.
    - When `orchestration/INTENT.md` exists, run `scripts/orchestration/status.sh --no-fetch`: a delivery run in progress, and any autonomy grant this session holds, decide what to work on. Resume the run with `/deliver-backlog` rather than starting work beside it.
 5. **Confirm readiness** (escalation step when unclear). State in a few lines: the domains and agent, the invariants in play, the spec task and its acceptance checks, and any open questions from `scratchpad.md` that affect it. If the task is ambiguous after these reads, ask; in a non-interactive run, return the questions and stop.
 

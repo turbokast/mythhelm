@@ -21,7 +21,7 @@ Phase 1 of `/spec`, and the phase that decides the spec's quality. It reads; it 
 ## Steps
 
 1. **Read the normative context.**
-   - The master-spec sections the change implements or touches (`docs/spec/master-spec.md`; use its table of contents, read the sections, not the whole file). Note every MUST, invariant and gate that applies.
+   - The master-spec sections the change implements or touches (resolve the named revision through `docs/spec/README.md`; use its table of contents, read the sections, not the whole file). Note every MUST, invariant and gate that applies.
    - `knowledge/invariants.md`: the invariants the change can reach, and how a task cites them.
    - `knowledge/domains.md`: the domains and agents the paths will involve.
    - Decision records under `docs/decisions/` in the same area, so the spec does not re-argue a settled choice.

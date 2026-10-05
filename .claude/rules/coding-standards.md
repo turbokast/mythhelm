@@ -12,7 +12,7 @@
 
 - Fail fast on true errors. Never swallow an error or replace it with a default to keep going.
 - No defensive checks for inputs that cannot occur; validate at trust boundaries (user input, files, native agent output, plugin messages) and trust the types inside.
-- Unknown is never allowed: a missing, unparseable or unrecognised value in admission, billing, ownership or permission code blocks (invariant I02).
+- Unknown mandatory admission, entitlement, ownership or authority evidence blocks (v2 I02). Unknown remaining quota alone need not block an independently qualified stop-at-exhaustion route; never map it to zero or an invented allowance.
 
 ## Go
 
@@ -31,4 +31,4 @@ The Go rules load from `go-conventions.md` and `test-quality.md` when you read G
 
 ## Logging
 
-- Log what helps diagnose a failure: identifiers, counts, states and decisions. Never log prompts, source text, tokens or credentials (spec §12.7).
+- Log what helps diagnose a failure: identifiers, counts, states and decisions. Never log prompts, source text, tokens or credentials (v2 §§8.3–8.4).
