@@ -17,8 +17,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Task 6 adds transcript-freshness, manifest-revision and
-      # capability-qualifier steps here.
+          # Full history: the manifest-revision check needs the declared
+          # binary_commit present locally, whatever its age.
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
       - name: Check root-guide mirrors are fresh
         run: |
           fail=0
@@ -33,6 +37,72 @@ jobs:
               fail=1
             fi
           done
+          exit "$fail"
+      # The revision check runs before the transcript check so an unknown
+      # revision fails fast naming the revision (design §4 steps 2–3).
+      - name: Check manifest revision is present
+        run: |
+          commit="$(python3 -c 'import json; print(json.load(open("docs/demos/manifest.json", encoding="utf-8"))["recordings"][0]["binary_commit"])')"
+          if ! printf '%s' "$commit" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::manifest binary_commit '$commit' is not a 40-character hex revision"
+            exit 1
+          fi
+          if ! git cat-file -t "$commit" >/dev/null 2>&1; then
+            echo "::error::manifest binary_commit $commit is not present in the repo; re-record with docs/demos/record.sh --repin"
+            exit 1
+          fi
+      - name: Check demo transcript is fresh at the declared revision
+        run: |
+          commit="$(python3 -c 'import json; print(json.load(open("docs/demos/manifest.json", encoding="utf-8"))["recordings"][0]["binary_commit"])')"
+          parent="$(mktemp -d)"
+          trap 'git worktree remove --force "$parent/wt" 2>/dev/null; rmdir "$parent" 2>/dev/null || true' EXIT
+          git worktree add --detach "$parent/wt" "$commit"
+          # Build the binary from source at the declared revision (go build,
+          # never go run — design §3), re-run the §3 pipeline with the
+          # checked-in normalization, and diff against the checked-in transcript.
+          (cd "$parent/wt" || exit 1; go build -o /tmp/mythhelm-honesty ./cmd/mythhelm)
+          /tmp/mythhelm-honesty demo --check pass \
+            | sed -E -f docs/demos/normalize.sed > /tmp/honesty.transcript.txt
+          # The binary's own exit status, never sed's (design §3).
+          test "${PIPESTATUS[0]}" -eq 0
+          if ! diff /tmp/honesty.transcript.txt docs/demos/demo.transcript.txt; then
+            echo "::error::docs/demos/demo.transcript.txt drifts from a regen at $commit; re-record with docs/demos/record.sh"
+            exit 1
+          fi
+      - name: Check recording capabilities have passing qualifiers
+        run: |
+          commit="$(python3 -c 'import json; print(json.load(open("docs/demos/manifest.json", encoding="utf-8"))["recordings"][0]["binary_commit"])')"
+          parent="$(mktemp -d)"
+          trap 'git worktree remove --force "$parent/wt" 2>/dev/null; rmdir "$parent" 2>/dev/null || true' EXIT
+          git worktree add --detach "$parent/wt" "$commit"
+          python3 - docs/demos/manifest.json > /tmp/honesty.qualifiers <<'EOF'
+          import json, sys
+          manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+          pins = {rec["binary_commit"] for rec in manifest["recordings"]}
+          assert len(pins) == 1, "recordings name distinct revisions: %s" % sorted(pins)
+          for rec in manifest["recordings"]:
+              for cap in rec["capabilities"]:
+                  print("%s|%s|%s" % (rec["name"], cap["name"], cap["qualifier"]))
+          EOF
+          fail=0
+          while IFS='|' read -r recording capability qualifier || [ -n "$recording" ]; do
+            case "$qualifier" in
+              '' | *[!A-Za-z0-9_]*)
+                echo "::error::recording '$recording' capability '$capability' names qualifier '$qualifier', which is not a Go test name"
+                fail=1
+                continue
+                ;;
+            esac
+            # Never grep -q: quiet grep closes the pipe on first match and can
+            # SIGPIPE a passing go test run. A bare -run exits 0 even when the
+            # qualifier matches nothing, so the --- PASS line is the assertion.
+            if (cd "$parent/wt" || exit 1; set -o pipefail; go test -v -run "^${qualifier}$" -count=1 ./... | grep -E "^--- PASS: ${qualifier}" >/dev/null); then
+              echo "recording '$recording': qualifier $qualifier passed at $commit"
+            else
+              echo "::error::recording '$recording' capability '$capability' has no passing qualifier $qualifier at $commit"
+              fail=1
+            fi
+          done < /tmp/honesty.qualifiers
           exit "$fail"
 
   build:
