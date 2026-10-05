@@ -238,3 +238,38 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: docs-site-demos finalized and merged
 - **Cards**: MH-8
 - **Evidence**: PR #148 (a1ae317); retrospective in specs/done/docs-site-demos/
+
+### D-44 — 2026-10-05: MH-32 → specced (tui-tape-recording)
+- **Type**: lifecycle-sync
+- **Decision**: MH-32 moved to specced
+- **Rationale**: tui-tape-recording reached unrefined with grounded requirements
+- **Cards**: MH-32
+- **Evidence**: specs/unrefined/tui-tape-recording/requirements.md
+
+### D-45 — 2026-10-05: MH-20 → specced (strict-lint-set)
+- **Type**: lifecycle-sync
+- **Decision**: MH-20 moved to specced
+- **Rationale**: strict-lint-set reached unrefined with grounded requirements
+- **Cards**: MH-20
+- **Evidence**: specs/unrefined/strict-lint-set/requirements.md
+
+### D-46 — 2026-10-05: MH-18 → specced (version-numbering)
+- **Type**: lifecycle-sync
+- **Decision**: MH-18 moved to specced
+- **Rationale**: version-numbering reached unrefined with grounded requirements
+- **Cards**: MH-18
+- **Evidence**: specs/unrefined/version-numbering/requirements.md
+
+### D-47 — 2026-10-05: MH-19 → specced (release-tagging)
+- **Type**: lifecycle-sync
+- **Decision**: MH-19 moved to specced
+- **Rationale**: release-tagging reached unrefined with grounded requirements
+- **Cards**: MH-19
+- **Evidence**: specs/unrefined/release-tagging/requirements.md
+
+### D-48 — 2026-10-05: MH-8 Notes correction (docs-site-demos shipped record)
+- **Type**: lifecycle-sync
+- **Decision**: MH-8 Notes replaced with the shipped-state record
+- **Rationale**: The shipped sync left pre-ship guidance (remains specced against R1.1); the spec is done and reconciled (PR #146), so the card now records the shipped state and the MH-32 follow-up
+- **Cards**: MH-8
+- **Evidence**: PR #149 (176fead); specs/done/docs-site-demos/reconciliation.md
