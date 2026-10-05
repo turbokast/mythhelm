@@ -1,0 +1,8 @@
+# Jekyll configuration for the MYTHHELM docs site (GitHub Pages).
+# Site navigation lives in docs/_data/navigation.yml.
+title: MYTHHELM
+description: The open-source command deck for native coding agents.
+theme: minima
+plugins: []
+url: https://turbokast.github.io
+baseurl: /mythhelm
