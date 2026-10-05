@@ -8,7 +8,7 @@ only: never edit or remove an entry. The format is in [`README.md`](README.md).
 
 - **Decision**: approved
 - **Date**: 2026-10-05
-- **Pull request**: pending
+- **Pull request**: #153
 - **Eval**: `verify-ci-full-sha`
 - **Rationale**: Maintainer approved 2026-10-05, endorsing the recommendation: removes the false-pending trap at the call site.
 - **Source spec**: `openssf-badge`
