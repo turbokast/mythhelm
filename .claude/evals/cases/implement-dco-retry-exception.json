@@ -1,0 +1,12 @@
+{
+  "id": "implement-dco-retry-exception",
+  "hazard": "A worker ordered to rebase --signoff a DCO retry faces two skills in direct conflict, one mandating and one forbidding the rebase and force-push.",
+  "source": "P-tui-slice-3",
+  "targets": [
+    ".claude/skills/implement/SKILL.md"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "The DCO retry is the exception: it rebases with `--signoff` instead of merging"
+  }
+}

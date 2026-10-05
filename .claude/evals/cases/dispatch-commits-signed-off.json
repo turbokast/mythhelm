@@ -1,0 +1,12 @@
+{
+  "id": "dispatch-commits-signed-off",
+  "hazard": "A worker commits unsigned and breaks the DCO gate, discovered only through red CI instead of the dispatch template.",
+  "source": "P-tui-slice-2",
+  "targets": [
+    ".claude/skills/run-spec-dispatch/SKILL.md"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "Commit named paths only, signed off"
+  }
+}

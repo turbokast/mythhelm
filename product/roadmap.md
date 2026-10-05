@@ -7,26 +7,25 @@
 
 Cards with a spec, being specified or implemented.
 
-Nothing in flight.
+- **MH-32** TUI terminal recording (FR-3 follow-up) (specced, stage 1, score 8.0; spec `tui-tape-recording`)
+- **MH-20** Strictest practical lint set (specced, stage 1, score 5.0; spec `strict-lint-set`; [#115](https://github.com/turbokast/mythhelm/issues/115))
+- **MH-18** Adopt SemVer or CalVer for releases (specced, stage 1, score 4.0; spec `version-numbering`; [#113](https://github.com/turbokast/mythhelm/issues/113))
+- **MH-19** Tag every release in git (specced, stage 1, score 4.0; spec `release-tagging`; [#114](https://github.com/turbokast/mythhelm/issues/114))
 
 ## Next
 
 The five highest-scored cards without a spec in an earlier stage, the current stage or the next stage.
 
-- **MH-32** TUI terminal recording (FR-3 follow-up) (idea, stage 1, score 8.0)
 - **MH-10** Harness compatibility records and qualification registry (triaged, stage 0, score 5.0; [#31](https://github.com/turbokast/mythhelm/issues/31))
-- **MH-20** Strictest practical lint set (triaged, stage 1, score 5.0; [#115](https://github.com/turbokast/mythhelm/issues/115))
 - **MH-7** Release pipeline: GoReleaser archives, attestations and signatures (triaged, stage 1, score 4.3; [#28](https://github.com/turbokast/mythhelm/issues/28))
 - **MH-11** Windows process-tree ownership (triaged, stage 1, score 4.3; [#32](https://github.com/turbokast/mythhelm/issues/32))
+- **MH-12** Strict subscription-only qualification for Claude Code (triaged, stage 1, score 3.8; [#33](https://github.com/turbokast/mythhelm/issues/33))
+- **MH-22** Protected acceptance and a complete v2 one-agent workflow (triaged, stage 1, score 3.8; [#128](https://github.com/turbokast/mythhelm/issues/128))
 
 ## Later
 
 Every other open card, by score.
 
-- **MH-18** Adopt SemVer or CalVer for releases (triaged, stage 1, score 4.0; [#113](https://github.com/turbokast/mythhelm/issues/113))
-- **MH-19** Tag every release in git (triaged, stage 1, score 4.0; [#114](https://github.com/turbokast/mythhelm/issues/114))
-- **MH-12** Strict subscription-only qualification for Claude Code (triaged, stage 1, score 3.8; [#33](https://github.com/turbokast/mythhelm/issues/33))
-- **MH-22** Protected acceptance and a complete v2 one-agent workflow (triaged, stage 1, score 3.8; [#128](https://github.com/turbokast/mythhelm/issues/128))
 - **MH-17** Account profiles and exhaustion handoff (triaged, stage 2, score 3.7; [#82](https://github.com/turbokast/mythhelm/issues/82))
 - **MH-13** Contained execution profiles: restricted and inspect (triaged, stage 1, score 3.5; [#34](https://github.com/turbokast/mythhelm/issues/34))
 - **MH-3** Herdr bridge: single-pane experience with scoped status (triaged, stage 1, score 3.3; [#24](https://github.com/turbokast/mythhelm/issues/24))
