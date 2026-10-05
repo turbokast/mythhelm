@@ -8,7 +8,7 @@ only: never edit or remove an entry. The format is in [`README.md`](README.md).
 
 - **Decision**: approved
 - **Date**: 2026-10-05
-- **Pull request**: pending
+- **Pull request**: #151
 - **Eval**: `dispatch-commits-signed-off`
 - **Rationale**: Maintainer approved 2026-10-05, endorsing the recommendation: stops the repeated unsigned-commit red-gate cycle.
 - **Source spec**: `tui-slice`
