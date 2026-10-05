@@ -1,0 +1,16 @@
+# Site navigation: every G10 item reachable in one click.
+# Schema: `path` is relative to docs/ and names the page source.
+- name: Home
+  path: index.md
+- name: User guide
+  path: user-guide.md
+- name: Contributing
+  path: contributing.md
+- name: Security policy
+  path: mirror/SECURITY.md
+- name: Changelog
+  path: mirror/CHANGELOG.md
+- name: Licence
+  path: mirror/LICENSE.md
+- name: Limitations
+  path: limitations.md

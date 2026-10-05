@@ -26,7 +26,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Site scaffold: config, nav, layout, home
+### Task 1 — Site scaffold: config, nav, layout, home ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -56,6 +56,10 @@
   - `scripts/ci/check-public-hygiene.sh` passes.
 - **Test plan**: shell/YAML checks run locally; no Go tests (no Go files).
 - **Invariants touched**: I13 (§3.3: no MYTHHELM-owned network service; the scaffold links nowhere else).
+- **Status**: ✅ Completed — Jekyll scaffold (config, seven-route nav, layout override, home stub) landed; PR #124.
+- **Implementation**: Minima config with Pages `url`/`baseurl`; nav names all seven routes with `path` relative to `docs/` (the six non-home files land in Task 2); self-contained layout override with nav loop and build-revision footer; home stub links the guides and the repo. Commit 6bbe9fe3a6f9bdfa010a8cc3121749eb183ff53c.
+- **Spec deviations**: None.
+- **Files modified**: `docs/_config.yml`, `docs/_data/navigation.yml`, `docs/_layouts/default.html`, `docs/index.md`, `specs/in-progress/docs-site-demos/tasks.md`, `specs/in-progress/docs-site-demos/handoff.md`.
 
 ### Task 2 — Guide pages and root-guide mirrors
 

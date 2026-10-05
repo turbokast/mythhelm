@@ -8,7 +8,12 @@
 
 ## Task 1 — Site scaffold: config, nav, layout, home
 
-<!-- pending -->
+- **Produces**: `docs/` is the Jekyll source root; `_data/navigation.yml` is the nav (schema: `- name:`/`  path:` with `path` relative to `docs/`); `_layouts/default.html` overrides minima with a header nav loop and a `Rendered from commit {{ site.github.build_revision }}` footer; `index.md` home stub.
+- **Produces**: `_config.yml` sets `theme: minima`, `plugins: []`, `url: https://turbokast.github.io`, `baseurl: /mythhelm`; no `exclude:` (tapes ship as plain text per design §2).
+- **For Task 2**: the nav already names all seven routes — create the six missing files (`user-guide.md`, `contributing.md`, `limitations.md`, `mirror/SECURITY.md`, `mirror/CHANGELOG.md`, `mirror/LICENSE.md`) so the route loop prints nothing.
+- **For Task 2**: authored pages start with the §2 front matter block (`---` / `layout: default` / `title: …`); mirrors carry no front matter in the tree and live under `docs/mirror/` (never `_mirror/`).
+- **For Tasks 2–3**: the layout links nav entries as `{{ site.baseurl }}/{{ path | replace: '.md', '.html' }}`; keep nav `path` values as `.md` sources.
+- **For dependents**: keep every scaffold URL on `github.com/turbokast/mythhelm` or `*.github.io` (I13); the layout loads no external assets.
 
 ## Task 2 — Guide pages and root-guide mirrors
 
@@ -23,14 +28,16 @@
 - **Produces**: tape contract as shipped — `docs/demos/demo.tape` (header
   `Binary-Version: v0.0.0-20261005073052-e0ecdbc9554c` /
   `Binary-Commit: e0ecdbc9554c90da6ac61f6300b7cc836acae266` /
-  `VHS-Version: v0.12.1`; single `Type` line driving `/tmp/mythhelm-record demo
-  --check pass`), `docs/demos/demo.transcript.txt` (55 lines, 4 `SCRIPTED DEMO`
+  `VHS-Version: v0.12.1`; single `Type` line driving `TERM=dumb
+  /tmp/mythhelm-record demo --check pass`, then `Sleep 10s`),
+  `docs/demos/demo.transcript.txt` (55 lines, 4 `SCRIPTED DEMO`
   labels), `docs/demos/normalize.sed` (byte-identical to design §3),
   `docs/demos/manifest.json` (schema per design §3; demo entry with qualifier
   `TestDemoOfflineNoCredentials`), `docs/demos/record.sh` (build + regen +
-  `vhs` render + verify), `docs/demos/README.md` (record command + table).
+  `vhs` render + verify; refuses a checkout that mismatches the manifest pin
+  unless `--repin`), `docs/demos/README.md` (record command + table).
 - **For Task 5**: render with `docs/demos/record.sh` (never bare `vhs`); the
-  GIF is ~155 KB at 1080x620 and its caption must name `docs/demos/demo.tape`
+  GIF is ~160 KB at 1080x620 and its caption must name `docs/demos/demo.tape`
   and `docs/demos/record.sh`. `demo.gif` is yours to commit — this task
   rendered it as proof only.
 - **For Task 6**: `binary_commit e0ecdbc9…` rebuilds and the §3 pipeline
@@ -43,7 +50,11 @@
   tape, the transcript pipeline and `record.sh` — keep all three in sync.
   `vhs --version` prints `vhs version v0.12.1`; the manifest stores the bare
   `v0.12.1`. VHS v0.12.1 has no `Run` command, so tapes use `Type`+`Enter`.
-- **Deviations affecting later tasks**: none.
+  `TERM=dumb` is load-bearing (without it the demo launches the live TUI under
+  VHS's tty); `Wait+Screen` cannot see past the first screenful in VHS v0.12.1,
+  so completion waits are fixed `Sleep`s with margin.
+- **Deviations affecting later tasks**: review-round fixes — tape forces
+  linear output and sleeps for completion; `record.sh` gains `--repin`.
 
 ## Task 5 — Rendered demo GIF and embeds
 

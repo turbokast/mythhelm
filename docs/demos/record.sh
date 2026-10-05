@@ -5,7 +5,12 @@
 # verifies all three. A bare `vhs docs/demos/demo.tape` only renders the GIF
 # and is not the record command.
 #
-# Usage: docs/demos/record.sh
+# Usage: docs/demos/record.sh [--repin]
+#
+# Without flags the checkout must match the manifest's binary_commit: writing
+# fresh artifacts while a stale pin labels them is refused. With --repin (on
+# a clean tree) the script regenerates from the current checkout and moves the
+# manifest and tape-header pins to it.
 #
 # Needs only free tooling: go, git, python3, and a VHS install (vhs renders
 # through ffmpeg and ttyd). Install VHS from https://github.com/charmbracelet/vhs
@@ -13,6 +18,16 @@
 # https://github.com/tsl0922/ttyd; ffmpeg comes from the OS packages.
 
 set -euo pipefail
+
+REPIN=0
+if test "${1:-}" = "--repin"; then
+	REPIN=1
+	shift
+fi
+if test "$#" -gt 0; then
+	echo "record.sh: usage: docs/demos/record.sh [--repin]" >&2
+	exit 2
+fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
@@ -40,8 +55,14 @@ python3 --version
 
 pin="$(python3 -c 'import json;print(json.load(open("'"$MANIFEST"'"))["recordings"][0]["binary_commit"])')"
 head="$(git rev-parse HEAD)"
-if test "$head" != "$pin"; then
-	echo "record.sh: warning: checkout $head != manifest binary_commit $pin; re-pin the manifest and tape header with this run's outputs" >&2
+if test "$head" != "$pin" && test "$REPIN" -eq 0; then
+	echo "record.sh: checkout $head != manifest binary_commit $pin; refusing to write artifacts another revision labels" >&2
+	echo "record.sh: re-run with --repin to regenerate and move the pins (or check out $pin)" >&2
+	exit 1
+fi
+if test "$REPIN" -eq 1 && test -n "$(git status --porcelain)"; then
+	echo "record.sh: --repin needs a clean tree (pins must name a reproducible commit)" >&2
+	exit 1
 fi
 
 echo "record.sh: build the binary (go build, never go run)"
@@ -92,5 +113,25 @@ test "$want" = "$have" || {
 }
 # The render produced a GIF.
 test "$(file -b "$GIF" | cut -d, -f1)" = "GIF image data"
+
+if test "$REPIN" -eq 1; then
+	echo "record.sh: --repin: moving manifest and tape-header pins to $head"
+	ver="$("$BIN" version | sed -n '1s/^mythhelm //p')"
+	python3 - "$MANIFEST" "$head" "$ver" <<'EOF'
+import json, sys
+path, head, ver = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path, encoding="utf-8") as fh:
+    manifest = json.load(fh)
+for rec in manifest["recordings"]:
+    rec["binary_commit"] = head
+    rec["binary_version"] = ver
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(manifest, fh, indent=2)
+    fh.write("\n")
+print("record.sh: manifest re-pinned to %s (%s)" % (head, ver))
+EOF
+	sed -E "s|^# Binary-Version: .*|# Binary-Version: $ver|; s|^# Binary-Commit: .*|# Binary-Commit: $head|" "$TAPE" >"$tmp"
+	cat "$tmp" >"$TAPE"
+fi
 
 echo "record.sh: ok (binary, transcript, GIF verified)"

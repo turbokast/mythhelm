@@ -9,8 +9,15 @@ enforces, because GIF bytes are encoder-nondeterministic.
 ## Record command
 
 ```sh
-docs/demos/record.sh   # builds the binary, regenerates the transcript, renders the GIF, verifies all three
+docs/demos/record.sh            # builds the binary, regenerates the transcript, renders the GIF, verifies all three
+docs/demos/record.sh --repin    # regenerate from the current checkout and move the pins to it (clean tree only)
 ```
+
+Without flags the checkout must match the manifest's `binary_commit`;
+otherwise the script refuses to write artifacts another revision labels.
+After a re-record on new code, `--repin` moves the manifest and tape-header
+pins to the current commit — commit the regenerated artifacts and the moved
+pins together.
 
 The script runs from anywhere in the checkout. It needs only free tooling:
 `go`, `git`, `python3`, and VHS (`vhs` renders through `ffmpeg` and `ttyd`).

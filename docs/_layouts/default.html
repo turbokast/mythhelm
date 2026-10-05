@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% if page.title %}{{ page.title }} | {% endif %}{{ site.title }}</title>
+    <link rel="stylesheet" href="{{ '/assets/main.css' | relative_url }}">
+  </head>
+  <body>
+    <header>
+      <a href="{{ '/' | relative_url }}">{{ site.title }}</a>
+      <nav>
+        <ul>
+          {% for item in site.data.navigation %}
+          <li><a href="{{ site.baseurl }}/{{ item.path | replace: '.md', '.html' }}">{{ item.name }}</a></li>
+          {% endfor %}
+        </ul>
+      </nav>
+    </header>
+    <main>
+      {{ content }}
+    </main>
+    <footer>
+      <p>Rendered from commit {{ site.github.build_revision }}</p>
+    </footer>
+  </body>
+</html>
