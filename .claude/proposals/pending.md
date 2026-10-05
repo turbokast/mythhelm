@@ -50,18 +50,6 @@ Append a short entry: on Windows, atomic file replacement via rename can fail tr
 
 Add a dispatch step: before starting a task attempt, append the `run_start` row (once per spec run) and the task's `dispatch` row to `.claude/data/run-events.jsonl`; after the attempt ends, append the `return` row (and `merge` after the merge). A dispatch without its rows is incomplete. Before finalizing, the orchestrator may backfill rows for already-merged tasks only from authoritative records (merged PRs, merge commits). Backfilled rows must carry provenance marking them as reconstructed, and consumers must distinguish them from observed rows when computing attempt metrics and attribution. Use the schema's `null` and `unknown` values for unavailable attribution or results; never treat the generated `ts` as the original event time when that time cannot be recovered.
 
-## P-tui-slice-1 — Tasks name the owner of every stub they leave
-
-- **Source spec**: `tui-slice`
-- **Type**: skill
-- **Target**: `.claude/skills/implement/SKILL.md`
-- **Rationale**: Task 7 left the exit-options dialog inert with the comment "informational until a later task wires its rows", naming no task; no later task's acceptance covered wiring it, so the design §2 quit contract shipped broken and only the finalize review plus a human G09 session caught it. A stub whose owner is "some later task" is a seam no per-task review sees.
-- **Evidence**: `internal/tui/dialogs.go:96-99`; retrospective Deviations (review-found) and Acceptance AC-3.1 (partial); follow-up issue #106.
-
-**Proposed change:**
-
-Add to the implementation rules: a task may land an inert stub (rendered but unwired UI, uncalled helper reserved for later) only if its completion entry names the specific later task whose acceptance covers wiring it, quoting that task's acceptance line; the orchestrator verifies the named task exists and is not yet merged. Otherwise the task wires the stub, removes it, or escalates. A stub comment naming no task number fails review.
-
 ## P-tui-slice-2 — Dispatch template requires signed-off worker commits
 
 - **Source spec**: `tui-slice`
