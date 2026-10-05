@@ -7,7 +7,7 @@
 
 Cards with a spec, being specified or implemented.
 
-- **MH-8** Documentation site and scripted terminal demos (specced, stage 1, score 3.0; spec `docs-site-demos`; [#29](https://github.com/turbokast/mythhelm/issues/29))
+Nothing in flight.
 
 ## Next
 

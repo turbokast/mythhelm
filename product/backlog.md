@@ -194,18 +194,6 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Premise-grounded**: Confirmed: MH-2 is shipped as the historical TUI slice; README and issues #106/#107 record exit/detach gaps and limited human accessibility evidence. The remaining work does not reopen or relabel MH-2.
 - **Notes**: Requires durable core control and the v2 one-agent workflow for complete journey acceptance; pairs with MH-3 for Herdr. Value 4: core usability; risk 4: misleading lifecycle/hidden controls; effort 4: interaction and human evidence.
 
-### MH-8: Documentation site and scripted terminal demos
-- **Status**: specced
-- **Stage**: 1
-- **Gates**: G10
-- **Score**: 3.0 = (value 3 + urgency 5 + risk 1) / effort 3
-- **Spec**: `docs-site-demos`
-- **Issue**: [#29](https://github.com/turbokast/mythhelm/issues/29)
-- **Source**: Master Specification v2 §§1, 15, 17–18; W05/W16; historical issue #29
-- **Summary**: Published user and contributor guides extracted from the spec, and reproducible terminal recordings of the demo and TUI made with Charm VHS for the docs and README. The recordings depend on the TUI slice.
-- **Premise-grounded**: 2026-10-02 — 12 claims, 12 HOLDS, 0 PARTIAL, 0 UNVERIFIABLE; TUI recording sequences behind tui-slice (MH-2)
-- **Notes**: docs-site-demos remains specced against Revision 1.1. Review and reconcile its requirements/design before resuming implementation; do not silently reinterpret old section numbers. Demonstrate actual supported capabilities and distinguish S1 from the adaptive destination.
-
 ### MH-21: Canonical v2 contracts and durable supervisor migration
 - **Status**: triaged
 - **Stage**: 1
@@ -368,6 +356,18 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Source**: master spec §15 (visual language, mission view, responsive layouts, navigation, motion, accessibility, render model), §20.3 and §22.2 item 5
 - **Summary**: The polished focused TUI that Stage 1 requires, on top of the run pipeline the dogfood slice delivers: the mission view, responsive layouts down to the linear accessible mode, keyboard flows and event-driven motion. The dogfood slice deliberately defers it (its non-goal N1).
 - **Premise-grounded**: 2026-10-02 — run pipeline exists HOLDS; dogfood N1 defers TUI HOLDS; Stage 1 requires polished TUI HOLDS; §15 coverage HOLDS; §22.2 item 5 HOLDS; G09 HOLDS; Bubble Tea stack HOLDS; no TUI exists yet HOLDS
+
+### MH-8: Documentation site and scripted terminal demos
+- **Status**: shipped
+- **Stage**: 1
+- **Gates**: G10
+- **Score**: 3.0 = (value 3 + urgency 5 + risk 1) / effort 3
+- **Spec**: `docs-site-demos`
+- **Issue**: [#29](https://github.com/turbokast/mythhelm/issues/29)
+- **Source**: Master Specification v2 §§1, 15, 17–18; W05/W16; historical issue #29
+- **Summary**: Published user and contributor guides extracted from the spec, and reproducible terminal recordings of the demo and TUI made with Charm VHS for the docs and README. The recordings depend on the TUI slice.
+- **Premise-grounded**: 2026-10-02 — 12 claims, 12 HOLDS, 0 PARTIAL, 0 UNVERIFIABLE; TUI recording sequences behind tui-slice (MH-2)
+- **Notes**: docs-site-demos remains specced against Revision 1.1. Review and reconcile its requirements/design before resuming implementation; do not silently reinterpret old section numbers. Demonstrate actual supported capabilities and distinguish S1 from the adaptive destination.
 
 ### MH-9: OpenSSF Best Practices badge
 - **Status**: shipped
