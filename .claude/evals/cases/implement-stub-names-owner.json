@@ -7,6 +7,6 @@
   ],
   "grader": {
     "type": "must-match",
-    "pattern": "A stub comment naming no task number fails review"
+    "pattern": "completion entry names the specific later task whose acceptance covers wiring it, quoting that task's acceptance line; the orchestrator verifies the named task exists and is not yet merged"
   }
 }
