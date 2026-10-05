@@ -37,3 +37,20 @@ In Step 7's rules, append to the no-force-push sentence: "Exception: an open-PR 
 **Proposed change:**
 
 In the first-attempt template's Rules, change "Commit named paths only." to "Commit named paths only, signed off (`git commit -s`)." Add to the retry template's digest rules: a DCO failure is fixed by `git rebase --signoff` plus push, never by an empty sign-off commit. When the retry continues an open PR (branch checked out from `origin/<branch>`), the rebase rewrites published commits, so the push must be `git push --force-with-lease` — the narrow, explicitly named exception to the template's no-force-push rule for this case only. A retry without an open PR starts from `origin/main` and must not force-push.
+
+## P-tui-slice-1 — Tasks name the owner of every stub they leave
+
+- **Decision**: approved
+- **Date**: 2026-10-05
+- **Pull request**: #150
+- **Eval**: `implement-stub-names-owner`
+- **Rationale**: Maintainer approved 2026-10-05, endorsing the recommendation: closes the proven inert-stub seam cheaply.
+- **Source spec**: `tui-slice`
+- **Type**: skill
+- **Target**: `.claude/skills/implement/SKILL.md`
+- **Rationale**: Task 7 left the exit-options dialog inert with the comment "informational until a later task wires its rows", naming no task; no later task's acceptance covered wiring it, so the design §2 quit contract shipped broken and only the finalize review plus a human G09 session caught it. A stub whose owner is "some later task" is a seam no per-task review sees.
+- **Evidence**: `internal/tui/dialogs.go:96-99`; retrospective Deviations (review-found) and Acceptance AC-3.1 (partial); follow-up issue #106.
+
+**Proposed change:**
+
+Add to the implementation rules: a task may land an inert stub (rendered but unwired UI, uncalled helper reserved for later) only if its completion entry names the specific later task whose acceptance covers wiring it, quoting that task's acceptance line; the orchestrator verifies the named task exists and is not yet merged. Otherwise the task wires the stub, removes it, or escalates. A stub comment naming no task number fails review.
