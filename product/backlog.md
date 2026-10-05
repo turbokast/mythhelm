@@ -38,7 +38,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Score**: 8.0 = (value 2 + urgency 5 + risk 1) / effort 1
 - **Spec**: (none)
 - **Issue**: (none)
-- **Source**: master spec §14.9, §22.3; docs-site-demos FR-3/AC-3.2/AC-3.3 and design §5; specs/done/tui-slice/ (shipped 2026-10-04)
+- **Source**: historical R1.1 recording contract (master spec §§14.9, 22.3; docs-site-demos FR-3/AC-3.2/AC-3.3, design §5); current contract Master Specification v2 §15 via W05; TUI evidence in specs/done/tui-slice/ (shipped 2026-10-04)
 - **Summary**: Record the shipped TUI on tape: drive the mission view, responsive layouts down to linear mode and keyboard flows with the TUI's own verification status on screen, limited to exactly the covered tui-slice behaviour; ship the full tape with header pins, a manifest entry naming qualifying tests, and a normalized transcript per the docs-site-demos tape contract, never pane text as proof.
 
 ### MH-10: Harness compatibility records and qualification registry
