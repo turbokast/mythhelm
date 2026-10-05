@@ -70,7 +70,7 @@ Known limitations (G09 findings, see the record §5):
 
 ## Design
 
-The [master specification](docs/spec/master-spec.md) is the versioned design reference. It covers the architecture, invariants, adapter and billing contracts, the TUI and the staged roadmap. Concise user and contributor guides will be extracted from it as the software becomes real.
+The [master specification](docs/spec/master-spec.md) is the versioned design reference. It covers the architecture, invariants, adapter and billing contracts, the TUI and the staged roadmap. The user and contributor guides are available in [docs/user-guide.md](docs/user-guide.md) and [docs/contributing.md](docs/contributing.md).
 
 Published user and contributor guides: <https://turbokast.github.io/mythhelm/>.
 

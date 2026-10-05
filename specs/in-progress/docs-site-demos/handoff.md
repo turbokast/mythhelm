@@ -88,9 +88,8 @@
   honesty-register residual stands: transcript + manifest revision + review
   of the GIF in PR #140 is the GIF-to-tape binding). Tape, manifest and
   transcript are byte-untouched by this task, so every Task 4 pin still holds.
-- **For the orchestrator**: design §2 also wants the demo embed on the home
-  page (`docs/index.md`); Task 5's Files/acceptance scoped it out, so file a
-  one-line follow-up or fold it into a later task.
+- **For the orchestrator**: the review added the design §2 home-page demo
+  embed in `docs/index.md`; no follow-up is required.
 - **Traps**: the user-guide embed is page-relative (`demos/demo.gif`), the
   README embed root-relative (`docs/demos/demo.gif`) — keep both in sync
   with the caption if the artifact path ever moves.
