@@ -16,7 +16,7 @@ The format of a MYTHHELM spec, and the patterns that make one implementable with
 | `refinement-log.md` | `/refine-spec` | Assessment rounds and the changes each made. |
 | `plan.md` | `/spec-create-epic` | An epic's master plan; the only file in an epic directory. |
 
-The master spec (`docs/spec/master-spec.md`) is normative for every spec. Its IDs are the vocabulary for tagging: invariants `I01`–`I19` (restated in `knowledge/invariants.md`), release gates `G01`–`G12` (§18.7), audit dispositions such as `A30` (§2.2), and section numbers such as `§11.2`.
+Resolve the normative source through [`docs/spec/README.md`](../docs/spec/README.md) and name its revision in every new spec. New work targets Master Specification v2: invariants `I01`–`I25` (§2), gates `G01`–`G16` (§18.3), acceptance cases `AT-01`–`AT-48` (§18.2), and its section numbers. Existing specs retain their named Revision 1.1 vocabulary, including audit IDs such as `A30`; do not silently reinterpret old numeric references. Unfinished work needs reviewed reconciliation before implementation resumes.
 
 ---
 
@@ -25,7 +25,7 @@ The master spec (`docs/spec/master-spec.md`) is normative for every spec. Its ID
 ```markdown
 ## <Title> — Requirements
 
-> One paragraph: what ships and what it is a slice of. Normative source: docs/spec/master-spec.md; § numbers, I-IDs and G-IDs refer to it.
+> One paragraph: what ships and what it is a slice of. Normative source: mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md, version 2.0; § numbers, I-IDs, G-IDs and AT-IDs refer to it.
 
 ### Objectives
 
@@ -160,7 +160,7 @@ Each pattern is a defect shape that passes a casual review, and what catches it.
 
 ## Worked example
 
-A small single spec, shown in full, as `/spec` would leave it in `todo/`.
+A historical Revision 1.1 example, shown as `/spec` would leave it in `todo/`. Its source path, section numbers and A30 references remain pinned to Revision 1.1; use the v2 template above for new work.
 
 **requirements.md**
 

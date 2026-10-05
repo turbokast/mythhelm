@@ -1,6 +1,6 @@
 # Agent instructions
 
-MYTHHELM is an open-source command deck for native coding agents. Its planned stack is a Go core, Bubble Tea TUI, local SQLite state and a versioned plugin protocol. It is pre-alpha; read the relevant part of [`docs/spec/master-spec.md`](docs/spec/master-spec.md) before implementing product behavior.
+MYTHHELM is an open-source command deck for native coding agents. Its planned stack is a Go core, Bubble Tea TUI, local SQLite state and a versioned plugin protocol. It is pre-alpha; read the [specification index](docs/spec/README.md) and relevant sections of the current master before implementing product behavior.
 
 This file is the common entrypoint for every coding agent. [`WORKFLOW.md`](WORKFLOW.md) defines the development lifecycle and takes precedence over [`docs/harness/charter.md`](docs/harness/charter.md). Client-specific files such as [`CLAUDE.md`](CLAUDE.md) add only client integration details. No agent vendor is the default owner of work.
 

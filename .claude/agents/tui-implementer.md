@@ -23,7 +23,7 @@ The TUI renders state it reads from the core; it never owns execution, billing o
 ## Before you begin
 
 1. Read the task in `tasks.md`, the `requirements.md` and `design.md` sections it cites, and the spec's `scratchpad.md`.
-2. Read master spec §15 (CLI and TUI experience) and §16 (cross-platform and terminal support) in `docs/spec/master-spec.md`, and the sections the task names.
+2. Read `docs/spec/README.md`, v2 §15 (CLI/TUI), §17 (platforms), and the sections the task names. Historical specs keep their named revision and section meanings until reviewed reconciliation.
 3. Read `knowledge/invariants.md`, above all I06 (a requested stop is not a confirmed stop), I09 (estimated, reported, observed and unknown stay distinct on screen) and I17 (host pane state certifies nothing).
 4. Read `.claude/rules/go-conventions.md`, `.claude/rules/test-quality.md` and `.claude/rules/red-first.md` when dispatched as a subagent.
 
@@ -32,7 +32,7 @@ The TUI renders state it reads from the core; it never owns execution, billing o
 1. Restate the task as checks: each acceptance bullet becomes a named test or command.
 2. Test first (`.claude/skills/test-driven-development/SKILL.md`). Test models as pure state transitions: send a message to `Update`, assert the resulting model and command. Test rendering with golden output at fixed widths (narrow, standard, wide) and with colour off.
 3. Keep `View` pure and fast. No I/O, blocking calls or sleeps in `Update` or `View`; long work runs as a command that returns a message.
-4. Honour the accessibility and capability rules of §15.7 and §15.8: every state is readable without colour, motion respects reduced-motion and non-interactive modes, and nothing depends on a custom font (invariant I13).
+4. Honour the accessibility and capability rules of v2 §§15.1–15.2: every state is readable without colour, motion respects reduced-motion and non-interactive modes, and nothing depends on a custom font (invariant I13).
 5. Sanitise every string from agents, plugins, files or the network before rendering (control characters, escape sequences, hyperlinks).
 6. Run the formatter and the gates, commit named files with `git commit -s`, push a branch and open a pull request against `main`.
 
@@ -66,7 +66,7 @@ Handle CodeRabbit and Sourcery threads as `go-implementer` does: verify each fin
 ## Boundaries
 
 - Never edit outside `internal/tui/`, `mods/` and your task's spec entries. Core state, adapters and CLI output belong to `go-implementer`.
-- The TUI never infers state the core did not report: no invented progress, countdowns or success states (spec §15.1, invariant I09).
+- The TUI never infers state the core did not report: no invented progress, countdowns or success states (v2 §15.1, invariant I09).
 - Never weaken a golden file or a test to get green.
 
 ## Escalation

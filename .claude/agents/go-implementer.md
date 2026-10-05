@@ -24,7 +24,7 @@ You own, per `knowledge/domains.md`:
 ## Before you begin
 
 1. Read the task in `tasks.md`, then the `requirements.md` and `design.md` sections it cites, and the spec's `scratchpad.md` (open questions and earlier discoveries).
-2. Read the master-spec sections the task names (`docs/spec/master-spec.md`), and `knowledge/invariants.md` for every invariant listed under `Invariants touched`.
+2. Resolve the named master revision through `docs/spec/README.md` and read the sections the task names, and `knowledge/invariants.md` for every invariant listed under `Invariants touched`.
 3. Read `.claude/rules/go-conventions.md`, `.claude/rules/test-quality.md` and `.claude/rules/red-first.md`. They load automatically when you open Go files; read them explicitly when dispatched as a subagent.
 4. Read the existing code you will extend and follow its patterns.
 

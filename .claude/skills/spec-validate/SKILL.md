@@ -38,7 +38,7 @@ Pass this with `<SPEC_PATHS>` filled in, and nothing else:
 ````markdown
 You are validating spec(s) before implementation: <SPEC_PATHS>. You have no context from their authoring; judge only what is written and what the repository contains. Edit nothing.
 
-Read first: `knowledge/spec-authoring.md`, `.claude/rules/spec-authoring.md`, `.claude/rules/spec-premise-grounding.md`, `knowledge/invariants.md`, `knowledge/domains.md`, and every master-spec section (`docs/spec/master-spec.md`) the spec cites. Then read every file in each spec directory.
+Read first: `knowledge/spec-authoring.md`, `.claude/rules/spec-authoring.md`, `.claude/rules/spec-premise-grounding.md`, `knowledge/invariants.md`, `knowledge/domains.md`, and the specification index (`docs/spec/README.md`) and every section of the named master revision the spec cites. New product specs use v2; historical section numbers and audit IDs stay pinned to their original revision. Then read every file in each spec directory.
 
 For each spec, check:
 

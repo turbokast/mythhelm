@@ -24,7 +24,7 @@ Everything, read-only. Use it for:
 ## Before you begin
 
 1. Read `knowledge/invariants.md`, every time.
-2. Read the spec's `requirements.md`, `design.md` and the task, and the master-spec sections they cite (`docs/spec/master-spec.md`), above all §6 (architecture), §7 (lifecycle and persistence), §11 (workspaces) and §12 (security).
+2. Read the spec's `requirements.md`, `design.md` and the task, and the specification index (`docs/spec/README.md`) and the named master revision they cite. For v2, focus on §§3–6 (architecture, contracts, persistence and lifecycle), §§7–8 (native qualification/security) and §§10–13 (scheduling, verification and adaptation).
 3. List the changed files (`git diff --name-only <base>...HEAD`) and map each to its domain with `knowledge/domains.md`.
 4. Read the decision records under `docs/decisions/` that govern the areas touched.
 

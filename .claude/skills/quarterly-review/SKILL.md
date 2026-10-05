@@ -21,7 +21,7 @@ A short, evidence-first look back over a calendar quarter: is the current stage 
 ## Steps
 
 1. **Read** `product/objectives.md` (current stage and its exit gate), `python3 scripts/pm/pm.py list --json`, `product/decisions.md` and `product/signals.md` entries dated in the quarter, the specs that reached `specs/done/` in it (`git log --diff-filter=A --since=<start> --until=<end> --name-only -- specs/done/`), and `python3 scripts/pm/pm.py validate`.
-2. **Stage progress.** For each gate of the current stage's exit gate, list the open cards that name it and their statuses. A gate with no card is a gap to flag; a gate whose cards are all shipped needs its §18.7 evidence cited before it counts as passing.
+2. **Stage progress.** For each gate of the current stage's exit gate, list the open cards that name it and their statuses. A gate with no card is a gap to flag; a gate whose cards are all shipped still needs the named revision's evidence (v2 §18.3; historical Revision 1.1 §18.7) before it counts as passing. Resolve current authority through `docs/spec/README.md`; historical evidence does not automatically pass a clarified v2 gate.
 3. **Backlog health.** Counts by status; `idea` cards older than the quarter that were never triaged; open cards without an issue; cards whose score inputs predate a signal or impact review that bears on them; the spread of scores in the top ten.
 4. **Signals.** The quarter's themes and whether each led to a rescore, a card or a stated no-action.
 5. **Throughput.** Specs finished, cards shipped, `impact-review` conclusions in the quarter, and CI health on `main` (`gh run list -R turbokast/mythhelm --branch main --workflow ci.yml --created <start>..<end> --limit 200 --json conclusion`).

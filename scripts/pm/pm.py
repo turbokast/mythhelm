@@ -20,10 +20,11 @@
                               [--cards MH-1] --action TEXT [--id S-<n>] --out FILE
     pm.py [--root DIR] roadmap --out FILE
     pm.py [--root DIR] fmt --out FILE
+    pm.py [--root DIR] draft-text objectives|readme|backlog-preamble --from FILE --out FILE
     pm.py [--root DIR] stage DIR
 
 A change touching several files (a status flip, its decision entry and the redrafted
-roadmap) is drafted in a staging directory: `stage DIR` copies the five product
+roadmap) is drafted in a staging directory: `stage DIR` copies the product
 files there, and each later call reads them with --product-dir DIR and writes back
 with --out DIR/<file>. Each staged file that changed is then filed as one request.
 
@@ -70,8 +71,8 @@ import sys
 
 STATUSES = ("idea", "triaged", "specced", "implementing", "shipped", "dropped")
 OPEN_STATUSES = ("idea", "triaged", "specced", "implementing")
-STAGES = ("0", "1", "2", "3", "later")
-GATES = tuple("G%02d" % n for n in range(1, 13))
+STAGES = tuple(str(n) for n in range(7)) + ("later",)
+GATES = tuple("G%02d" % n for n in range(1, 17))
 REQUIRED_FIELDS = ("Status", "Stage", "Gates", "Score", "Spec", "Issue", "Source", "Summary")
 OPTIONAL_FIELDS = ("Premise-grounded", "Half shipped", "Notes")
 FIELDS = REQUIRED_FIELDS + OPTIONAL_FIELDS
@@ -95,7 +96,7 @@ SCORE = re.compile(r"^(\d+\.\d) = \(value ([1-5]) \+ urgency ([1-5]) \+ risk ([1
 ISSUE = re.compile(r"^\[#([1-9][0-9]*)\]\(https://github\.com/([A-Za-z0-9-]+/[A-Za-z0-9._-]+)/issues/([1-9][0-9]*)\)$")
 SPEC_NAME = re.compile(r"^`([a-z0-9][a-z0-9-]*)`$")
 CARD_ID = re.compile(r"^MH-([1-9][0-9]*)$")
-CURRENT_STAGE = re.compile(r"^> Current stage: ([0-3])\s*$", re.M)
+CURRENT_STAGE = re.compile(r"^> Current stage: (\S+)[ \t]*$", re.M)
 GH_LINK = re.compile(r"https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+/(issues|discussions|pull)/[1-9][0-9]*")
 EMPTY_OPEN = "No open cards."
 EMPTY_CLOSED = "No closed cards."
@@ -107,6 +108,7 @@ DECISIONS = "product/decisions.md"
 SIGNALS = "product/signals.md"
 OBJECTIVES = "product/objectives.md"
 ROADMAP = "product/roadmap.md"
+README = "product/README.md"
 
 
 class InputError(Exception):
@@ -162,11 +164,15 @@ def read_text(root, rel):
         raise InputError("cannot read %s: %s" % (rel, e.strerror or e)) from e
 
 
+def stage_from_text(text):
+    matches = CURRENT_STAGE.findall(text)
+    if len(matches) != 1 or matches[0] not in STAGES[:-1]:
+        raise InputError("%s requires exactly one '> Current stage: N' line, with N from 0 to 6" % OBJECTIVES)
+    return int(matches[0])
+
+
 def current_stage(root):
-    m = CURRENT_STAGE.search(read_text(root, OBJECTIVES))
-    if not m:
-        raise InputError("%s has no '> Current stage: N' line" % OBJECTIVES)
-    return int(m.group(1))
+    return stage_from_text(read_text(root, OBJECTIVES))
 
 
 def split_sections(text, path, headings, findings):
@@ -357,7 +363,7 @@ def check_card(c, bl, homes, stage, findings):
         findings.err(p, c.line_of("Stage"), "%s: stage %r is not one of %s" % (c.id, stage_v, ", ".join(STAGES)))
     gates = c.get("Gates")
     if gates is not None and parse_gates(gates) is None:
-        findings.err(p, c.line_of("Gates"), "%s: gates must be 'none' or G01-G12 in ascending order, comma-separated; got %r" % (c.id, gates))
+        findings.err(p, c.line_of("Gates"), "%s: gates must be 'none' or G01-G16 in ascending order, comma-separated; got %r" % (c.id, gates))
     sc = c.get("Score")
     if sc is not None:
         m = SCORE.match(sc)
@@ -689,7 +695,7 @@ def cmd_add(a):
     if a.stage not in STAGES:
         raise InputError("--stage must be one of %s" % ", ".join(STAGES))
     if parse_gates(a.gates) is None:
-        raise InputError("--gates must be 'none' or G01-G12 in ascending order, comma-separated")
+        raise InputError("--gates must be 'none' or G01-G16 in ascending order, comma-separated")
     ident = a.id or next_id(a.root, "MH")
     m = CARD_ID.match(ident)
     if not m or any(c.num == int(m.group(1)) for c in bl.cards):
@@ -797,6 +803,31 @@ def cmd_signal(a):
                                 "- **Suggested action**: %s" % a.action.strip()])
 
 
+def cmd_draft_text(a):
+    """Draft reviewed prose through the same outside-product write boundary.
+
+    Card and log mutations retain their structured verbs. An objective stage
+    change may temporarily need `rescore`; validate the entire set before filing.
+    """
+    try:
+        with open(a.source_file, encoding="utf-8") as f:
+            text = f.read()
+    except OSError as e:
+        raise InputError("cannot read draft source: %s" % (e.strerror or e)) from e
+    if a.document == "backlog-preamble":
+        bl, stage = load_backlog(a.root)
+        bl.preamble = text.splitlines()
+        draft_backlog(a, bl, stage)
+        return
+    path, title = (OBJECTIVES, "# Objectives") if a.document == "objectives" else (README, "# Product")
+    read_text(a.root, path)  # The draft is based on an existing, freshly staged file.
+    if not text.splitlines() or text.splitlines()[0] != title:
+        raise InputError("%s must start with %s" % (path, title))
+    if a.document == "objectives":
+        stage_from_text(text)
+    write_out(a.root, a.out, text.rstrip() + "\n")
+
+
 def parser():
     p = argparse.ArgumentParser(prog="pm.py", description=__doc__.split("\n")[0])
     p.add_argument("--root", default=None)
@@ -846,6 +877,10 @@ def parser():
         sg.add_argument("--" + f)
     sub.add_parser("roadmap").add_argument("--out", required=True)
     sub.add_parser("fmt").add_argument("--out", required=True)
+    dt = sub.add_parser("draft-text")
+    dt.add_argument("document", choices=("objectives", "readme", "backlog-preamble"))
+    dt.add_argument("--from", dest="source_file", required=True)
+    dt.add_argument("--out", required=True)
     sub.add_parser("stage").add_argument("dir")
     return p
 
@@ -873,7 +908,7 @@ def dispatch(a):
         print(next_id(a.root, a.kind))
         return 0
     writers = {"add": cmd_add, "set-status": cmd_set_status, "set": cmd_set, "rescore": cmd_rescore,
-               "decide": cmd_decide, "signal": cmd_signal}
+               "decide": cmd_decide, "signal": cmd_signal, "draft-text": cmd_draft_text}
     if a.cmd in writers:
         writers[a.cmd](a)
         return 0
@@ -883,9 +918,19 @@ def dispatch(a):
         if dest == product or dest.startswith(product + os.sep):
             raise InputError("the staging directory %s is inside product/" % a.dir)
         os.makedirs(dest, exist_ok=True)
-        for rel in (OBJECTIVES, BACKLOG, DECISIONS, SIGNALS, ROADMAP):
-            with open(os.path.join(dest, os.path.basename(rel)), "w", encoding="utf-8") as f:
-                f.write(read_text(a.root, rel))
+        copies = []
+        for rel in (OBJECTIVES, BACKLOG, DECISIONS, SIGNALS, ROADMAP, README):
+            target = os.path.join(dest, os.path.basename(rel))
+            # Check every destination before any copy: an existing symlink or
+            # hardlink may alias product/, and a scratch draft must not be lost.
+            if os.path.lexists(target):
+                raise InputError("staging target %s already exists; use a fresh staging directory" % target)
+            copies.append((target, read_text(a.root, rel)))
+        for target, text in copies:
+            # Refuse a destination that appeared after preflight as well.
+            fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o666)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(text)
         print("staged the product files in %s; draft with --product-dir %s --out %s/<file>" % (a.dir, a.dir, a.dir))
         return 0
     if a.cmd == "fmt":
