@@ -61,7 +61,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `docs/_config.yml`, `docs/_data/navigation.yml`, `docs/_layouts/default.html`, `docs/index.md`, `specs/in-progress/docs-site-demos/tasks.md`, `specs/in-progress/docs-site-demos/handoff.md`.
 
-### Task 2 — Guide pages and root-guide mirrors
+### Task 2 — Guide pages and root-guide mirrors ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -101,6 +101,10 @@
   honest lands in Task 6.
 - **Invariants touched**: I14 (§9.14: shipped TUI described truthfully with its limits;
   no unshipped capability advertised); I13 (§3.3: pages link to no MYTHHELM-owned service).
+- **Status**: ✅ Completed — guide pages and root-guide mirrors landed; PR #138.
+- **Implementation**: Three authored pages (user guide, contributing with anchored DCO/good-first-issue, limitations naming the TUI shipped) plus four `cp` byte mirrors; nav needed no edit (Task 1 pre-wired all seven routes; loop prints nothing). Commit 7898e7ea23b444c0b1f3256b815debcf1d073bc5.
+- **Spec deviations**: None. `navigation.yml` listed in Files but required no change; Governance mirror linked from `contributing.md` per design §2's seven-item nav.
+- **Files modified**: `docs/user-guide.md`, `docs/contributing.md`, `docs/limitations.md`, `docs/mirror/LICENSE.md`, `docs/mirror/SECURITY.md`, `docs/mirror/CHANGELOG.md`, `docs/mirror/GOVERNANCE.md`, `specs/in-progress/docs-site-demos/tasks.md`, `specs/in-progress/docs-site-demos/handoff.md`.
 
 ### Task 3 — Pages build-and-deploy workflow
 

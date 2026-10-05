@@ -17,7 +17,28 @@
 
 ## Task 2 — Guide pages and root-guide mirrors
 
-<!-- pending -->
+- **Produces**: `docs/user-guide.md` (install, quickstart, limitations pointer),
+  `docs/contributing.md` (governance summary, `## Contribution path` with DCO
+  + good-first-issue, PR conventions), `docs/limitations.md` (pre-alpha,
+  narrow adapters, TUI shipped with known limits), and `docs/mirror/` byte
+  mirrors of `LICENSE`, `SECURITY.md`, `CHANGELOG.md`, `GOVERNANCE.md` (no
+  front matter in the tree).
+- **For Task 3**: the nav route loop prints nothing (all seven routes exist);
+  mirrors render at `_site/mirror/{LICENSE,SECURITY,CHANGELOG,GOVERNANCE}.html`
+  after the §4 inject step. The inject titles are
+  `LICENSE|Security policy|Changelog|Governance`.
+- **For Task 5**: `docs/user-guide.md` is yours to extend with the demo GIF
+  embed + caption (anchored tape path + `record.sh`); the Quickstart section
+  already describes `mythhelm demo`, so embed near it.
+- **For Task 7**: the limitations TUI-status check re-run point is
+  `docs/limitations.md` (`tui.*shipped` ≥ 1, `tui.*planned` = 0) — keep any
+  TUI-adjacent line free of the word "planned".
+- **Traps**: `CONTRIBUTING.md` line 34 uses the word "provenance", so
+  `docs/contributing.md` rephrases that sentence; keep `provenance|sbom` out
+  of all Task 2 files. `navigation.yml` needed no edit — Task 1 pre-wired
+  every route.
+- **Deviations affecting later tasks**: none. Governance mirror is linked
+  from `contributing.md`, not the nav, per design §2.
 
 ## Task 3 — Pages build-and-deploy workflow
 
