@@ -32,14 +32,15 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 ## Open
 
 ### MH-32: TUI terminal recording (FR-3 follow-up)
-- **Status**: idea
+- **Status**: specced
 - **Stage**: 1
 - **Gates**: G10
 - **Score**: 8.0 = (value 2 + urgency 5 + risk 1) / effort 1
-- **Spec**: (none)
+- **Spec**: `tui-tape-recording`
 - **Issue**: (none)
 - **Source**: historical R1.1 recording contract (master spec §§14.9, 22.3; docs-site-demos FR-3/AC-3.2/AC-3.3, design §5); current contract Master Specification v2 §15 via W05; TUI evidence in specs/done/tui-slice/ (shipped 2026-10-04)
 - **Summary**: Record the shipped TUI on tape: drive the mission view, responsive layouts down to linear mode and keyboard flows with the TUI's own verification status on screen, limited to exactly the covered tui-slice behaviour; ship the full tape with header pins, a manifest entry naming qualifying tests, and a normalized transcript per the docs-site-demos tape contract, never pane text as proof.
+- **Premise-grounded**: 2026-10-05 — 8 claims, 6 HOLDS, 2 PARTIAL, 0 UNVERIFIABLE; R1.1 anchor PARTIAL (operative contract is docs-site-demos FR-3); v2 §15 via W05 PARTIAL (tape is this spec's evidence form); tui-slice AC-3.1/AC-6.2 partials excluded
 
 ### MH-10: Harness compatibility records and qualification registry
 - **Status**: triaged
@@ -53,14 +54,15 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: S0 blocker and first product prerequisite; currently subscription-only always blocks. Unknown mandatory entitlement/no-overage evidence blocks, while unknown remaining quota alone need not block an otherwise qualified stop-at-exhaustion route. No live usage or account changes are authorised by this card.
 
 ### MH-20: Strictest practical lint set
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 1
 - **Gates**: G10
 - **Score**: 5.0 = (value 3 + urgency 5 + risk 2) / effort 2
-- **Spec**: (none)
+- **Spec**: `strict-lint-set`
 - **Issue**: [#115](https://github.com/turbokast/mythhelm/issues/115)
 - **Source**: OpenSSF passing criterion warnings_strict (SUGGESTED); openssf-badge design §3; Master Specification v2 §§17–18; W16
 - **Summary**: The lint set is golangci-lint standard plus bodyclose, errorlint, gosec, misspell and nolintlint (verified in .golangci.yml) — solid but not maximal, so warnings_strict is Unmet. Evaluate and enable the strictest practical further linters and fix the resulting fallout.
+- **Premise-grounded**: 2026-10-05 — 7 claims, 6 HOLDS, 1 PARTIAL, 0 UNVERIFIABLE; v2 §§17-18/W16 PARTIAL (no explicit lint demand; W16 gates language carries it); warnings_strict Unmet + standard-plus-five config HOLDS
 
 ### MH-7: Release pipeline: GoReleaser archives, attestations and signatures
 - **Status**: triaged
@@ -85,24 +87,26 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: Qualify Windows process-tree ownership, cancellation, detach, filesystem and terminal combinations explicitly. Advertise only tested subsets; Unix tests do not establish Windows support.
 
 ### MH-18: Adopt SemVer or CalVer for releases
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 1
 - **Gates**: G10
 - **Score**: 4.0 = (value 2 + urgency 5 + risk 1) / effort 2
-- **Spec**: (none)
+- **Spec**: `version-numbering`
 - **Issue**: [#113](https://github.com/turbokast/mythhelm/issues/113)
 - **Source**: OpenSSF passing criterion version_semver (SUGGESTED); openssf-badge design §3; Master Specification v2 §§17–18; W16
 - **Summary**: No releases exist yet (verified: no git tags) and no version-numbering format is adopted, so version_semver is Unmet. Decide SemVer vs CalVer (with micro level for CalVer) and record it in the release process before MH-7 ships the first release.
+- **Premise-grounded**: 2026-10-05 — 8 claims, 6 HOLDS, 2 PARTIAL, 0 UNVERIFIABLE; no-format-adopted PARTIAL (CHANGELOG.md:6 claims SemVer, unexercised — decision is ratify-or-overturn); v2/W16 PARTIAL (no explicit scheme demand); version_semver Unmet + zero tags HOLDS
 
 ### MH-19: Tag every release in git
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 1
 - **Gates**: G10
 - **Score**: 4.0 = (value 2 + urgency 5 + risk 1) / effort 2
-- **Spec**: (none)
+- **Spec**: `release-tagging`
 - **Issue**: [#114](https://github.com/turbokast/mythhelm/issues/114)
 - **Source**: OpenSSF passing criterion version_tags (SUGGESTED); openssf-badge design §3; Master Specification v2 §§17–18; W16
 - **Summary**: No releases exist yet (verified: no git tags), so version_tags is Unmet. Establish the tag-per-release discipline (tag format, who tags, GoReleaser trigger) alongside the MH-7 release pipeline.
+- **Premise-grounded**: 2026-10-05 — 7 claims, 7 HOLDS, 0 PARTIAL, 0 UNVERIFIABLE; version_tags Unmet + zero tags HOLDS; W16 operator-action governance HOLDS; builds on MH-18 scheme, feeds MH-7
 
 ### MH-12: Strict subscription-only qualification for Claude Code
 - **Status**: triaged
@@ -367,7 +371,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Source**: Master Specification v2 §§1, 15, 17–18; W05/W16; historical issue #29
 - **Summary**: Published user and contributor guides extracted from the spec, and reproducible terminal recordings of the demo and TUI made with Charm VHS for the docs and README. The recordings depend on the TUI slice.
 - **Premise-grounded**: 2026-10-02 — 12 claims, 12 HOLDS, 0 PARTIAL, 0 UNVERIFIABLE; TUI recording sequences behind tui-slice (MH-2)
-- **Notes**: docs-site-demos remains specced against Revision 1.1. Review and reconcile its requirements/design before resuming implementation; do not silently reinterpret old section numbers. Demonstrate actual supported capabilities and distinguish S1 from the adaptive destination.
+- **Notes**: Shipped 2026-10-05 (PR #149): R1.1 requirements/design reconciled to v2 in specs/done/docs-site-demos/reconciliation.md (PR #146, D-27); full TUI tape continues as MH-32.
 
 ### MH-9: OpenSSF Best Practices badge
 - **Status**: shipped
