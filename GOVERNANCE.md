@@ -5,7 +5,7 @@ MYTHHELM is an open-source project hosted by the [TurboKast](https://github.com/
 ## Roles
 
 - **Contributors**: anyone who opens an issue, discussion or pull request.
-- **Maintainers**: listed in [MAINTAINERS.md](MAINTAINERS.md). They review and merge changes, triage issues, and cut releases.
+- **Maintainers**: listed in [MAINTAINERS.md](https://github.com/turbokast/mythhelm/blob/main/MAINTAINERS.md). They review and merge changes, triage issues, and cut releases.
 - **Lead maintainer**: breaks ties and holds release authority until the project has enough maintainers to share it.
 
 New maintainers are nominated by an existing maintainer after sustained, high-quality contribution. Nominations are accepted by lazy consensus among maintainers.
