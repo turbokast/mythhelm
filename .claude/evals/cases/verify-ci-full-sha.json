@@ -1,0 +1,12 @@
+{
+  "id": "verify-ci-full-sha",
+  "hazard": "finalize.py ci is passed a short SHA, gh matches zero runs, and a green main is misreported as verdict=pending, sending the operator down a re-wait loop.",
+  "source": "P-openssf-badge-1",
+  "targets": [
+    ".claude/skills/finalize-spec-verify-ci/SKILL.md"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "(?s)(?=.*does not match short SHAs)(?=.*full 40-character SHA)(?=.*git rev-parse)"
+  }
+}
