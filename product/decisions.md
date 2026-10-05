@@ -211,3 +211,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: The integrated product preserves deterministic pins and fixed P1, scoped learning consent and independent billing qualification. Signals inform experiments and cannot override these requirements.
 - **Cards**: MH-5,MH-16,MH-17,MH-26,MH-27
 - **Evidence**: product/signals.md S-2–S-4; v2 §§7, 9–10, 12–13
+
+### D-40 — 2026-10-05: Link the v2 adoption cards to their public issues
+- **Type**: card-add
+- **Decision**: Link MH-21–MH-30 to issues #127–#136 and regenerate the roadmap without changing scope, scores or lifecycle status.
+- **Rationale**: The backlog procedure creates public issues after the maintainer approves and the agent commits the cards; these links complete that required second step.
+- **Cards**: MH-21,MH-22,MH-23,MH-24,MH-25,MH-26,MH-27,MH-28,MH-29,MH-30
+- **Evidence**: Approved product adoption commit 6a837d3; PR #126; public issues #127–#136.

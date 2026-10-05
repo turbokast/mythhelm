@@ -9,9 +9,9 @@ During adoption review, `main` advanced to `3a33b0c`: PRs #122–#124 started an
 ## What changes in the product layer
 
 - [Objectives](../../product/objectives.md) derive S0–S6, G01–G16 and ten commitments from v2. Current stage remains 1 as a delivery focus, with outstanding S0 qualification explicitly blocking unsupported claims.
-- [Backlog](../../product/backlog.md) preserves the three shipped cards, updates all 17 existing open cards and adds MH-21–MH-30. Each new card has grounded premises, score rationale and prerequisites. Missing public issue links are filled through a second signed sync after approved cards are committed, as the backlog procedure requires.
-- [Decisions](../../product/decisions.md) D-26–D-39 record adoption, reconciliation, reprioritisation, the ten additions and the treatment of earlier signals. Earlier entries remain unchanged; D-28 gives each changed score.
-- [Roadmap](../../product/roadmap.md) is regenerated from the same staged backlog. Its ranked candidate list is not a claim that prerequisites or release gates passed.
+- [Backlog](../../product/backlog.md) preserves the three shipped cards, updates all 17 existing open cards and adds MH-21–MH-30. Each new card has grounded premises, score rationale and prerequisites. The new cards link to public issues #127–#136 through the signed follow-up sync D-40.
+- [Decisions](../../product/decisions.md) D-26–D-39 record adoption, reconciliation, reprioritisation, the ten additions and the treatment of earlier signals; D-40 records their public issue links. Earlier entries remain unchanged; D-28 gives each changed score.
+- [Roadmap](../../product/roadmap.md) is regenerated from the same approved backlog. Its ranked candidate list is not a claim that prerequisites or release gates passed.
 - Agent entrypoints and authoring guidance resolve the specification index. Historical Revision 1.1 specs, ADRs, closed cards and audit IDs keep their original meanings. MH-8 still reads `specced` in the product ledger; its in-progress `docs-site-demos` work needs reviewed v2 reconciliation when adoption takes effect.
 
 No existing card is marked shipped merely because its requirements appear in v2. Existing skills and signals do not mandate cheap-first models, kNN, keepalive calls, secret copying or identity rotation. Those suggestions either become bounded hypotheses or are excluded by the v2 contracts.

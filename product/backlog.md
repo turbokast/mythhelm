@@ -111,7 +111,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Gates**: G01, G03, G05, G06, G07
 - **Score**: 3.8 = (value 5 + urgency 5 + risk 5) / effort 4
 - **Spec**: (none)
-- **Issue**: (none)
+- **Issue**: [#128](https://github.com/turbokast/mythhelm/issues/128)
 - **Source**: Master Specification v2 §§4, 8, 10–11, 15; Implementation Plan W04; issues #72–#76
 - **Summary**: Extend the existing snapshot/check/review/apply flow to deterministic P1 with strict qualified admission, protected acceptance bound to exact revisions, finite repair/resource envelopes and truthful receipts. Preserve an unverified candidate when checks are unavailable; candidate edits cannot weaken its protected evaluator.
 - **Premise-grounded**: Confirmed: internal/admission/billing.go blocks subscription-only; the current dogfood check/apply flow and schema v1 do not implement v2 TaskRevision or policy pins. Issues #72–#76 record remaining receipt and recovery gaps; implementation must re-check each issue before duplicating a fix.
@@ -178,7 +178,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Gates**: G08, G09
 - **Score**: 3.3 = (value 4 + urgency 5 + risk 4) / effort 4
 - **Spec**: (none)
-- **Issue**: (none)
+- **Issue**: [#129](https://github.com/turbokast/mythhelm/issues/129)
 - **Source**: Master Specification v2 §§14–16; Implementation Plan W05; issues #106/#107; specs/done/tui-slice/retrospective.md
 - **Summary**: Finish detach, stop confirmation, recovery and review journeys on typed core controls, with keyboard-complete accessible output and human screen-reader evidence. Add safe declarative themes/keymaps and visible critical controls without making the S3 executable plugin protocol a prerequisite.
 - **Premise-grounded**: Confirmed: MH-2 is shipped as the historical TUI slice; README and issues #106/#107 record exit/detach gaps and limited human accessibility evidence. The remaining work does not reopen or relabel MH-2.
@@ -202,7 +202,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Gates**: G04, G16
 - **Score**: 3.0 = (value 5 + urgency 5 + risk 5) / effort 5
 - **Spec**: (none)
-- **Issue**: (none)
+- **Issue**: [#127](https://github.com/turbokast/mythhelm/issues/127)
 - **Source**: Master Specification v2 §§3–6; Implementation Plan W01/W03; ADRs 0003–0005 and 0007
 - **Summary**: Define revisioned task, event, policy and authority contracts, then migrate to one per-user supervisor with authenticated local control and global reservations. Preserve worker-owned processes and v1 evidence through explicit backup, drain/adopt/quarantine and restore; UI exit must not own execution.
 - **Premise-grounded**: Confirmed at eb349c2: internal/supervisor and ADR 0005 use per-run owners; internal/journal/migrations/0001_init.sql has no v2 task/policy tables. This is a migration, not an already delivered daemon.
@@ -214,7 +214,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Gates**: G07, G13
 - **Score**: 3.0 = (value 5 + urgency 3 + risk 4) / effort 4
 - **Spec**: (none)
-- **Issue**: (none)
+- **Issue**: [#130](https://github.com/turbokast/mythhelm/issues/130)
 - **Source**: Master Specification v2 §§4, 9–11; Implementation Plan W07
 - **Summary**: Add mandatory original context, immutable source manifests, exact/lexical retrieval and versioned task dependencies with selective invalidation. Interface checkpoints may unblock dependent construction while final acceptance still requires the exact integrated implementation; optional search failure falls back to originals.
 - **Premise-grounded**: Confirmed: schema v1 records runs/attempts/candidates but no task revisions, dependency graph or scoped retrieval index. Native transcripts and Markdown views must not become a second task authority.
@@ -226,7 +226,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Gates**: G13, G16
 - **Score**: 3.0 = (value 4 + urgency 3 + risk 5) / effort 4
 - **Spec**: (none)
-- **Issue**: (none)
+- **Issue**: [#131](https://github.com/turbokast/mythhelm/issues/131)
 - **Source**: Master Specification v2 §§5, 8–9, 12; Implementation Plan W13
 - **Summary**: Implement scoped export and dependency-aware retention, with explicit erasure through a quiescent validated ledger rewrite and recoverable swap. Rebuild derived stores, preserve active dependencies and report surviving backup/native/provider copies honestly.
 - **Premise-grounded**: Confirmed: schema v1 and current CLI dispatch have no v2 scoped export/erasure lifecycle; append-only audit rules require an explicit maintenance path rather than ordinary event deletion.
@@ -249,7 +249,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Gates**: G05, G14
 - **Score**: 2.5 = (value 4 + urgency 1 + risk 5) / effort 4
 - **Spec**: (none)
-- **Issue**: (none)
+- **Issue**: [#133](https://github.com/turbokast/mythhelm/issues/133)
 - **Source**: Master Specification v2 §§8, 10, 12–13; Implementation Plan W11
 - **Summary**: Register bounded experiments with protected evaluators, held-out splits, full lifecycle costs, foreground priority and reconciled preemption. Exploration defaults to zero; every auxiliary call needs the same billing and authority evidence as production work, and inconclusive results remain inconclusive.
 - **Premise-grounded**: Confirmed: no experiment executor or learning policy tables exist at eb349c2. Reuse the canonical run/attempt machinery; do not introduce an independent executor.
@@ -261,7 +261,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Gates**: G07, G15
 - **Score**: 2.5 = (value 4 + urgency 1 + risk 5) / effort 4
 - **Spec**: (none)
-- **Issue**: (none)
+- **Issue**: [#136](https://github.com/turbokast/mythhelm/issues/136)
 - **Source**: Master Specification v2 §§8, 11, 17–18; Implementation Plan W15
 - **Summary**: Deliver an exact verified release to an explicitly authorised destination with independent health evidence, idempotency or reconciliation and bounded rollback. Without deployment authority, retain a reviewable release-ready candidate and report the blocked effect; deployment stays off by default.
 - **Premise-grounded**: Confirmed: the product CLI exposes no deployment command or qualified destination adapter. This is optional future application behavior, not authority to deploy during planning.
@@ -273,7 +273,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Gates**: G14
 - **Score**: 2.3 = (value 4 + urgency 1 + risk 4) / effort 4
 - **Spec**: (none)
-- **Issue**: (none)
+- **Issue**: [#132](https://github.com/turbokast/mythhelm/issues/132)
 - **Source**: Master Specification v2 §§10, 12–13; Implementation Plan W10
 - **Summary**: Implement P1/P2/P4 and later qualified P3, with optional scoped learning collection, pre-assignment provenance and all-started outcome comparisons against direct-native and simpler baselines. Essential receipts work with learning off; missingness, failed runs and delayed regressions remain visible.
 - **Premise-grounded**: Confirmed: the current core has no policy/experiment/outcome schema or evaluation runner. Vendor capability descriptions and synthesis walkthroughs are design evidence, not measured product superiority.
@@ -285,7 +285,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Gates**: G02, G05, G14
 - **Score**: 2.2 = (value 5 + urgency 1 + risk 5) / effort 5
 - **Spec**: (none)
-- **Issue**: (none)
+- **Issue**: [#134](https://github.com/turbokast/mythhelm/issues/134)
 - **Source**: Master Specification v2 §§7, 12–13; Implementation Plan W12
 - **Summary**: Promote immutable runtime policies only through protected scoped evidence gates, pin active attempts, canary new assignments and roll back under registered rules. Qualify new model/harness combinations and compare a new single agent against whole pipelines; a simpler winner may replace the pipeline.
 - **Premise-grounded**: Confirmed: adaptive promotion is new work, with no runtime implementation or live efficacy evidence in the current repository. Executable updates remain reviewed software releases.
@@ -297,7 +297,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Gates**: G02, G05, G10, G12
 - **Score**: 2.2 = (value 4 + urgency 3 + risk 4) / effort 5
 - **Spec**: (none)
-- **Issue**: (none)
+- **Issue**: [#135](https://github.com/turbokast/mythhelm/issues/135)
 - **Source**: Master Specification v2 §§7, 14, 17; Implementation Plan W14; explicit UR-05/UR-06
 - **Summary**: Maintain owned independent tracks for OpenCode, Meta Muse Code, Kimi Code CLI, Cursor Agent CLI and Antigravity alongside MH-12 Claude Code and MH-4 Codex. Publish per-surface fidelity, billing, lifecycle, trust and OS/host evidence; blocked targets remain explicit product commitments with next tests.
 - **Premise-grounded**: Confirmed: internal/adapter contains claudecode and fake only; hosts/protocol/sdk packages are absent. No current native target has passed the full v2 included-only qualification contract.
