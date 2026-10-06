@@ -21,7 +21,7 @@
       "artifact": "docs/demos/tui.gif",
       "transcript": "docs/demos/tui.transcript.txt",
       "binary_version": "v0.0.0-20261006124821-179bba4ceae9",
-      "binary_commit": "179bba4ceae958f9591e9fedb056f70da59ce40c",
+      "binary_commit": "0000000000000000000000000000000000000000",
       "vhs_version": "v0.12.1",
       "capabilities": [
         {
