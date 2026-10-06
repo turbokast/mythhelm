@@ -7,6 +7,6 @@
   ],
   "grader": {
     "type": "must-match",
-    "pattern": "A dispatch without its rows is incomplete"
+    "pattern": "only when the run has none yet.*exactly one outcome row.*carries the attempt number.*`reconstructed` marker"
   }
 }
