@@ -33,7 +33,7 @@ Foreign changes in range: none.
 
 ## CI history
 
-- CI on PR #161 @07c1daf: infra, run cancelled — superseded by push aa2fe00 (same-minute re-push; the full workflow set ran success on aa2fe00).
+- CI on PR #161 @07c1daf: infra, run cancelled — superseded by push aa2fe00 (same-minute re-push; the full workflow set completed successfully on aa2fe00).
 - OSV-Scanner on PR #161 @07c1daf: infra, run cancelled — same superseding push; success on aa2fe00.
 - No failure+success on the same headSha: no nondeterministic failure. No fail/retry rows in the run-events log. `finalize.py verify` emitted no `note=history:` lines.
 
