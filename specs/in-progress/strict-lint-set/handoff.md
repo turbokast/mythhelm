@@ -32,7 +32,9 @@
 
 ## Task 5 — Core fallout D (workspace, journal)
 
-<!-- pending -->
+- **Produces**: `./internal/workspace/...` and `./internal/journal/...` clean under all five fallout trial linters (revive, perfsprint, modernize, gocritic, dupl — each exits 0 with the uncapped trial command) and under copyloopvar, usetesting and godot. Shipped: doc comments on `VerificationRow`/`CheckRow`, outdented `symbolic-ref` check in `BranchCommit`, `errors.New` in `applyBranch` (x2) and `InsertDeclaration`, `strconv.FormatBool` in the symbolic-destination subtest, `FieldsSeq` in `detachAndDisconnect`.
+- **For dependents**: Task 8's full-tree run covers these paths with zero findings expected from them. No `//nolint` was added, so no machine-checked-form debt. New comments carry trailing periods (godot stays clean).
+- **Deviations that change a later task's inputs**: none — no API, behavior, or file-list change; Task 8 needs nothing from this task beyond its merged green state.
 
 ## Task 6 — TUI fallout A (mission, model, views)
 
