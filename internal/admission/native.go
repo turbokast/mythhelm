@@ -187,7 +187,7 @@ func resolveDeclaration(ctx context.Context, req Request, evidence AuthEvidence)
 // invalid request, never a silent default.
 func parseDeclareEntitlement(raw string) (plan, extra string, err error) {
 	seen := map[string]string{}
-	for _, part := range strings.Split(raw, ",") {
+	for part := range strings.SplitSeq(raw, ",") {
 		key, value, ok := strings.Cut(strings.TrimSpace(part), "=")
 		if !ok || key == "" || value == "" {
 			return "", "", fmt.Errorf("%w: --declare-entitlement must be plan=<pro|max|team|enterprise>,extra-usage=disabled", ErrInvalid)

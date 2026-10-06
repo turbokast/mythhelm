@@ -103,6 +103,7 @@ type ProcSpec struct {
 // native process group.
 type StopSignal string
 
+// Stop ladder signals delivered to the native process group, in order.
 const (
 	StopInterrupt StopSignal = "interrupt" // SIGINT
 	StopTerminate StopSignal = "terminate" // SIGTERM
@@ -329,6 +330,7 @@ func (ProtocolCounters) observation() {}
 // established stay Unknown, never an optimistic default (§9.2).
 type Tri string
 
+// Capability values for a capability record.
 const (
 	Supported   Tri = "supported"
 	Unsupported Tri = "unsupported"

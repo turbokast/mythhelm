@@ -11,15 +11,16 @@ import (
 	"github.com/turbokast/mythhelm/internal/workspace"
 )
 
+// ProjectConfigTrustKind is the trust-grant kind for admitted project configuration digests.
 const ProjectConfigTrustKind = "project_config"
 
 // RepoIdentity is the real source checkout path bound to a config grant.
 func RepoIdentity(repo string) (string, error) {
-	real, err := filepath.EvalSymlinks(repo)
+	canonical, err := filepath.EvalSymlinks(repo)
 	if err != nil {
 		return "", fmt.Errorf("resolve repository identity: %w", err)
 	}
-	return filepath.Abs(real)
+	return filepath.Abs(canonical)
 }
 
 // HasTrust reports whether the local journal has a matching grant. An
