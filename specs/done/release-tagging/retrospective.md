@@ -42,11 +42,11 @@ Foreign changes in range: none.
 
 ## Effort
 
-dispatched=1 returned=1 failed=0; attempts 1 over 1 tasks; first-pass 0/1; review rounds 2; wall-clock 2026-10-06T17:31:08Z → 2026-10-06T18:04:22Z
+dispatched=1 returned=1 failed=0; attempts 1 over 1 tasks; first-pass 1/1; review rounds 2; wall-clock 2026-10-06T17:31:08Z → 2026-10-06T18:04:22Z
 
 | Task | Agent | Attempts | Review rounds | PR | Merged | First pass |
 |---|---|---|---|---|---|---|
-| 1 | go-implementer | 1 | 2 | #180 | yes | no |
+| 1 | go-implementer | 1 | 2 | #180 | yes | yes |
 
 ## Lessons
 
