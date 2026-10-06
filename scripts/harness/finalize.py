@@ -363,9 +363,17 @@ def pr_gate(slug, pr, required=PR_REVIEW_CHECKS):
     """(view, reasons, unknown) for what every pull request needs before it merges: open,
     not a draft, mergeable, its checks green, no unresolved thread, and nothing that must
     not be published in its title, body or added lines."""
+    # baseRefOid needs a newer gh than 2.45 offers, so ask for the base ref name
+    # (available everywhere) and resolve its OID through the REST API. A base
+    # that cannot be resolved degrades to "": callers needing it report that
+    # as a reason instead of crashing.
     view = json.loads(gh(["pr", "view", str(pr), "--json",
-                          "state,isDraft,mergeable,mergeStateStatus,baseRefOid,headRefOid,title,body,files,statusCheckRollup"],
+                          "state,isDraft,mergeable,mergeStateStatus,baseRefName,headRefOid,title,body,files,statusCheckRollup"],
                          repo=slug))
+    try:
+        view["baseRefOid"] = json.loads(gh(["api", "repos/%s/commits/%s" % (slug, view.get("baseRefName") or "main")]))["sha"]
+    except (Usage, ValueError, KeyError, TypeError):
+        view["baseRefOid"] = ""
     reasons, unknown = [], []
     if view.get("state") != "OPEN":
         reasons.append("state:%s" % view.get("state"))
