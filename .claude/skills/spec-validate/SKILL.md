@@ -22,14 +22,15 @@ Phase 4 of `/spec`. The author of a spec cannot review it: they read what they m
 
 1. **Resolve** each name with `scripts/harness/spec-lifecycle.sh resolve <name>` (`.claude/skills/spec-resolution/SKILL.md`).
 2. **Run the mechanical gate** yourself: `scripts/ci/lint-agent-harness.sh --only specs`. Keep its exit code and findings for the report; the validator judges what the lint cannot.
-3. **Dispatch** one validator for a single spec, or one for the whole epic (so it can check cross-spec consistency):
+3. **Dry-match embedded test selectors.** Collect every `go test … -run <selector>` command embedded in the spec's task text. For each, dry-match it against the tree that results from the task's merge — never against the base tree, since a task may introduce the selected test — and fail validation when it matches zero tests, naming the task and the selector. Follow `-run` semantics for slash-separated subtest selectors (e.g. `TestDecodeFixture/recorded`): `-list` matches top-level tests only, so a top-level match alone never counts for the full selector. Split the selector: match the top-level element with `-list`, and verify each subtest suffix statically against the `t.Run` names declared in the package's test files (go/parser, no execution). Never dry-match by running the selector (`-count=1` executes test bodies, including side effects). Fail closed: unparseable command extraction, a match error, a match timeout, a suffix matching no declared name, or a dynamically-named parent whose suffix cannot be checked statically blocks validation exactly like a zero-match selector.
+4. **Dispatch** one validator for a single spec, or one for the whole epic (so it can check cross-spec consistency):
 
    ```text
    Agent(subagent_type: "code-reviewer", description: "Validate spec <name>", prompt: <the prompt below, with the paths filled in>)
    ```
 
    Record `dispatched=1` before reading the result; a validator that returns nothing is `failed=1`, and no verdict is reported.
-4. **Optional second reviewer** (advisory): when a vendor is available, run `/vendor-consult` with the `spec-validate` stage on the spec files (`knowledge/vendors.md`). Open each of its findings at its anchor; a confirmed one joins the report tagged `[vendor]`, a rejected one is dropped with its reason. It never changes the verdict on its own and never gates; an `unavailable` result is recorded and skipped.
+5. **Optional second reviewer** (advisory): when a vendor is available, run `/vendor-consult` with the `spec-validate` stage on the spec files (`knowledge/vendors.md`). Open each of its findings at its anchor; a confirmed one joins the report tagged `[vendor]`, a rejected one is dropped with its reason. It never changes the verdict on its own and never gates; an `unavailable` result is recorded and skipped.
 
 ## Validator prompt
 
