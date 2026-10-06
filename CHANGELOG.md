@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenSSF Best Practices passing badge: assessment linked from the README; unmet SUGGESTED criteria tracked as MH-18/19/20 (#30)
 - Published documentation site: user guide, contributor guide, licence, security policy, changelog and limitations register, rebuilt on every merge to main (#139)
 - Scripted demo recording embedded in the README and the docs site, reproducible from the checked-in tape via docs/demos/record.sh (#140)
+- Scripted TUI recording embedded in the README and the user guide, reproducible from the checked-in tape via docs/demos/record.sh (#164)
 
 ### Security
 

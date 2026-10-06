@@ -15,6 +15,9 @@ docs/demos/record.sh --repin    # regenerate from the current checkout and move 
 
 Without flags the checkout must match the manifest's `binary_commit`;
 otherwise the script refuses to write artifacts another revision labels.
+Note the squash-merge trap: pins name the pre-commit HEAD, so after a merge
+no checkout matches and plain `record.sh` always refuses — re-record with
+`--repin` on a clean main tip instead.
 After a re-record on new code, `--repin` moves the manifest and tape-header
 pins to the current commit — commit the regenerated artifacts and the moved
 pins together.
@@ -64,5 +67,9 @@ each shown capability:
 
 Normalization (`docs/demos/normalize.sed`) covers temp paths, `run_`/`att_`
 ULIDs, both worker/native pid shapes, 40-hex SHAs (with the stable
-empty-evidence sha256 protected verbatim) and 12-hex evidence prefixes. The
-transcript keeps the binary's own `SCRIPTED DEMO` labels verbatim.
+empty-evidence sha256 protected verbatim) and 12-hex evidence prefixes, plus
+the TUI rules: 20-hex truncated snapshot SHAs, live-sampled `goal:`/`run
+state:`/`admission:` values (`<LIVE-SAMPLE>`), the race-window
+`receipt.written` event line (deleted) and the `next-after` cursor
+(`<LIVE-CURSOR>`). Label names stay verbatim; only sampled values normalize.
+The transcript keeps the binary's own `SCRIPTED DEMO` labels verbatim.
