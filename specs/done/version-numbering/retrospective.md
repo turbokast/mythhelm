@@ -36,6 +36,7 @@ Foreign changes in range: none.
 - CI on PR #161 @07c1daf: infra, run cancelled — superseded by push aa2fe00 (same-minute re-push; the full workflow set completed successfully on aa2fe00).
 - OSV-Scanner on PR #161 @07c1daf: infra, run cancelled — same superseding push; success on aa2fe00.
 - No failure+success on the same headSha: no nondeterministic failure. No fail/retry rows in the run-events log. `finalize.py verify` emitted no `note=history:` lines.
+- Post-finalize main @051f718: real, TestCheckTimeoutKillsGroup failed on windows-latest (check child survived process-group kill) — nondeterministic Windows spawn-vs-kill race: the 200ms check timeout could fire before the nested -race grandchild materialized, so taskkill /T snapshotted a tree without it. Fixed by gating the kill on a grandchild readiness signal (kill fires only after the grandchild proves it exists; 3s delayed write + 5s watch preserves the fails-on-missed-kill property).
 
 ## Effort
 
