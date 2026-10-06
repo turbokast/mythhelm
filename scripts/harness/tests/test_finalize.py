@@ -641,7 +641,7 @@ class PublishCheckTests(GhBase):
 
 class PrGateBaseTests(GhBase):
     VIEW = {"state": "OPEN", "isDraft": False, "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
-            "baseRefName": "main", "headRefOid": "0123abc", "title": "docs(spec): finalize demo",
+            "baseRefName": "docs/demo-base", "headRefOid": "0123abc", "title": "docs(spec): finalize demo",
             "body": "Finalize the demo spec.", "files": [], "statusCheckRollup": []}
 
     def gate(self):
@@ -649,13 +649,21 @@ class PrGateBaseTests(GhBase):
 
     def test_base_oid_resolved_through_rest(self):
         self.serve(pr_view_7=dict(self.VIEW), api_graphql_7=threads(), pr_diff_7="",
-                   **{"api_repos/acme/demo/commits/main": {"sha": "b" * 40}})
+                   **{"api_repos/acme/demo/commits/docs%2Fdemo-base": {"sha": "b" * 40}})
         view, reasons, _ = self.gate()
         self.assertEqual(view["baseRefOid"], "b" * 40)
         self.assertEqual(reasons, [])
 
     def test_unresolvable_base_degrades_to_empty(self):
         self.serve(pr_view_7=dict(self.VIEW), api_graphql_7=threads(), pr_diff_7="")
+        view, reasons, _ = self.gate()
+        self.assertEqual(view["baseRefOid"], "")
+        self.assertEqual(reasons, [])
+
+    def test_missing_base_ref_stays_unresolved(self):
+        view = dict(self.VIEW)
+        del view["baseRefName"]
+        self.serve(pr_view_7=view, api_graphql_7=threads(), pr_diff_7="")
         view, reasons, _ = self.gate()
         self.assertEqual(view["baseRefOid"], "")
         self.assertEqual(reasons, [])

@@ -52,6 +52,7 @@ import os
 import re
 import sys
 import time
+from urllib.parse import quote
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -371,8 +372,9 @@ def pr_gate(slug, pr, required=PR_REVIEW_CHECKS):
                           "state,isDraft,mergeable,mergeStateStatus,baseRefName,headRefOid,title,body,files,statusCheckRollup"],
                          repo=slug))
     if not view.get("baseRefOid"):
+        base_ref = view.get("baseRefName") or ""
         try:
-            view["baseRefOid"] = json.loads(gh(["api", "repos/%s/commits/%s" % (slug, view.get("baseRefName") or "main")]))["sha"]
+            view["baseRefOid"] = json.loads(gh(["api", "repos/%s/commits/%s" % (slug, quote(base_ref, safe=""))]))["sha"] if base_ref else ""
         except (Usage, ValueError, KeyError, TypeError):
             view["baseRefOid"] = ""
     reasons, unknown = [], []
