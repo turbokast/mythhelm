@@ -206,7 +206,7 @@
 - **Files modified**: `internal/tui/history.go`, `internal/tui/motion_test.go`, `internal/tui/nav.go`, `internal/tui/nav_test.go`, `internal/tui/tools.go`, `internal/tui/viewmodel/viewmodel_test.go`, `specs/in-progress/strict-lint-set/tasks.md`, `specs/in-progress/strict-lint-set/handoff.md`.
 - **Red baseline** (pre-fix trial output over `./internal/tui/...`, golangci-lint v2.13.2, uncapped flags): revive exit 1, 5 hits on task-7 paths — `history.go:1 package-comments`, `motion_test.go:456 unused-parameter m`, `nav.go:132,147 redefines max`, `tools.go:11 blank-imports`; modernize exit 1, 4 hits — `motion_test.go:78 stringsseq`, `motion_test.go:846 rangeint`, `nav_test.go:273 rangeint`, `viewmodel_test.go:522 errorsastype`; gocritic/perfsprint/dupl/copyloopvar/usetesting/godot exit 0. Post-fix: all eight greps for exactly the 6 paths print nothing, each run exits 0. (Task 6's entry counted 6 revive hits here; the full-tree run shows 5 — no other task touches these files, so the 6 was a miscount.)
 
-### Task 8 — Enable the strict set + enforce the time budget
+### Task 8 — Enable the strict set + enforce the time budget ✅ COMPLETED
 
 - **Domain/agent**: release-engineer
 - **Budget**: standard
@@ -225,3 +225,9 @@
   - `scripts/ci/check-public-hygiene.sh` passes (a hygiene violation in a touched file fails the script).
 - **Test plan**: config grep checks; full local lint + full test suite, both timed; green CI lint job on the PR.
 - **Invariants touched**: None (config-only enablement on a clean tree; no product behavior changes).
+- **Status**: ✅ Completed — strict set of eight linters enabled with the 5-minute CI lint-job budget enforced; zero findings on the clean tree; PR #177.
+- **Implementation**: Eight names added to `.golangci.yml` enable (no new settings, no new exclusions); `timeout-minutes: 5` on the lint job only; automation row names the eight; scratchpad Q1 records the budget. Full-tree lint `0 issues` in 5.08s real; `go test -race ./...` green (247.2s). Commit 9274b11.
+- **Spec deviations**: scratchpad.md Q1 answered with "5 minutes (maintainer checkpoint 2026-10-06)" — checkpoint-sanctioned bookkeeping under NFR-1 itself, which requires the agreed number in the spec record (scratchpad Q1); the dispatch names this edit explicitly.
+- **Files modified**: `.golangci.yml`, `.github/workflows/ci.yml`, `docs/automation.md`, `specs/in-progress/strict-lint-set/tasks.md`, `specs/in-progress/strict-lint-set/handoff.md`, `specs/in-progress/strict-lint-set/scratchpad.md`.
+- **CI evidence**: https://github.com/turbokast/mythhelm/actions/runs/37500309996/job/112395533401 — lint job green in 44s vs the 5-minute budget (NFR-1 referee leg).
+- **Verification** (post-change, golangci-lint v2.13.2): `golangci-lint run ./...` → `0 issues`, exit 0, real 5.08s (design §5 measured ~6.2s cold pre-fix). Teeth: reverting the `review.go:151` fix to `fmt.Errorf` trips perfsprint (`error-format`); restored → `0 issues`. Pre-edit red leg: all eight enable-block greps printed 0, no `timeout-minutes` in ci.yml, no names on the automation row.
