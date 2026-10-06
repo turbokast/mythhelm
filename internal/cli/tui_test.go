@@ -179,7 +179,7 @@ func accessibleTrailer(t *testing.T, out string) int64 {
 func accessibleEventSeqs(t *testing.T, out string) []int64 {
 	t.Helper()
 	var seqs []int64
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		rest, ok := strings.CutPrefix(line, "event ")
 		if !ok {
 			continue
@@ -484,8 +484,7 @@ func TestInvalidModesExit2(t *testing.T) {
 			if !errors.Is(err, caps.ErrInvalidMode) {
 				t.Fatalf("resolve(%q) error = %v, want caps.ErrInvalidMode", args, err)
 			}
-			var usage usageError
-			if !errors.As(err, &usage) {
+			if _, ok := errors.AsType[usageError](err); !ok {
 				t.Fatalf("resolve(%q) error = %T, want a usageError", args, err)
 			}
 		}
@@ -927,8 +926,7 @@ func TestWaitForRunJournaledSeesJournaledRun(t *testing.T) {
 	f := newAccessibleFixture(t)
 	runID := ids.New("run")
 	f.addRun(runID, "executing", strings.Repeat("0", 64))
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	done := make(chan error, 1)
 	go func() {
 		done <- waitForRunJournaled(ctx, f.dir, runID)

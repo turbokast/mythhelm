@@ -148,7 +148,7 @@ func writeReviewPlain(ctx context.Context, w io.Writer, j *journal.Journal, r su
 	}
 	base, commit := reviewString(candidate, "base_rev"), reviewString(candidate, "commit")
 	if !revisionID.MatchString(base) || !revisionID.MatchString(commit) {
-		return fmt.Errorf("receipt has an invalid candidate revision")
+		return errors.New("receipt has an invalid candidate revision")
 	}
 	attempt, err := j.LatestAttempt(ctx, runID)
 	if err != nil {

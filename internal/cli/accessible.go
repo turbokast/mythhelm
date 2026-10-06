@@ -1,4 +1,4 @@
-// Linear screen-reader renderer: the --accessible output mode.
+// Package cli includes the linear screen-reader renderer: the --accessible output mode.
 //
 // RunAccessible streams one view-model snapshot's state labels followed by
 // the run's journaled events in run_sequence order, then follows live until
@@ -12,6 +12,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -65,7 +66,7 @@ const defaultAccessiblePoll = 500 * time.Millisecond
 // return an error with no trailer.
 func RunAccessible(ctx context.Context, cfg AccessibleConfig) error {
 	if cfg.Out == nil {
-		return fmt.Errorf("accessible: no output writer")
+		return errors.New("accessible: no output writer")
 	}
 	poll := cfg.Poll
 	if poll <= 0 {

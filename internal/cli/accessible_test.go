@@ -502,7 +502,7 @@ func TestAccessibleResumeFromCursor(t *testing.T) {
 	runID := ids.New("run")
 	f.addRun(runID, "executing", strings.Repeat("0", 64))
 	const extra = 5
-	for i := 0; i < accessiblePageSize+extra-1; i++ {
+	for i := range accessiblePageSize + extra - 1 {
 		f.append(runID, "attempt.progress", fmt.Sprintf(`{"assistant_turns":%d}`, i+1), nil)
 	}
 	total := int64(accessiblePageSize + extra)
@@ -549,7 +549,7 @@ func TestAccessibleOverPageNoFollow(t *testing.T) {
 	runID := ids.New("run")
 	f.addRun(runID, "executing", strings.Repeat("0", 64))
 	const extra = 5
-	for i := 0; i < accessiblePageSize+extra; i++ {
+	for i := range accessiblePageSize + extra {
 		f.append(runID, "attempt.progress", fmt.Sprintf(`{"assistant_turns":%d}`, i+1), nil)
 	}
 	// A short poll that survives several live ticks must still yield exactly

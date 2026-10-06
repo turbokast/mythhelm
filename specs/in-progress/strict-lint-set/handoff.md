@@ -20,7 +20,9 @@
 
 ## Task 3 — Core fallout B (cli)
 
-<!-- pending -->
+- **Produces**: `./internal/cli/...` clean under all five fallout trial linters (revive, perfsprint, modernize, gocritic, dupl — each exits 0 with the uncapped trial command). Shipped: `Package cli` rewords in `accessible.go`/`tui.go`, `ExitOK` const-block comment, `errors.New` in `accessible.go`/`review.go`, `AsType` in `exit.go`/`tui_test.go`, `range N` in `accessible_test.go`, `SplitSeq` in `runs_test.go`/`tui_test.go`, `t.Context` in `TestWaitForRunJournaledSeesJournaledRun`.
+- **For dependents**: Task 8's full-tree run covers these paths with zero findings expected from them. No `//nolint` was added, so no machine-checked-form debt. New comments carry trailing periods (godot stays clean). The package now carries three `Package cli` file comments (dispatch, accessible, tui) — legal and revive-clean.
+- **Deviations that change a later task's inputs**: none — no API, behavior, or file-list change; Task 8 needs nothing from this task beyond its merged green state.
 
 ## Task 4 — Core fallout C (supervisor, workers)
 

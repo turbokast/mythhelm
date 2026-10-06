@@ -121,7 +121,7 @@ func decodeRunRows(t *testing.T, stdout string) []runRowLine {
 		t.Fatalf("stdout does not end in a newline: %q", stdout)
 	}
 	var out []runRowLine
-	for _, line := range strings.Split(strings.TrimSuffix(stdout, "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSuffix(stdout, "\n"), "\n") {
 		dec := json.NewDecoder(strings.NewReader(line))
 		dec.DisallowUnknownFields()
 		var row runRowLine
