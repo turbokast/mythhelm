@@ -38,7 +38,7 @@ go run ./cmd/mythhelm demo
 *Honest recording of `mythhelm demo --check pass`, rendered from `docs/demos/demo.tape` — regenerate it with `docs/demos/record.sh`.*
 
 ![Scripted TUI recording](demos/tui.gif)
-*Honest recording of the TUI driving `mythhelm demo --check pass`, rendered from `docs/demos/tui.tape` — regenerate it with `docs/demos/record.sh`.*
+*Honest recording of the TUI driving `mythhelm demo --check pass`, rendered from `docs/demos/tui.tape` — regenerate it with `docs/demos/record.sh` from the pinned revision (`docs/demos/manifest.json`), or with `docs/demos/record.sh --repin` from a clean tree.*
 
 To check what your machine still needs for a real run, use the read-only
 prerequisite report. It writes nothing and prints no credential values:

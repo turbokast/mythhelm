@@ -39,7 +39,7 @@ Try it with no credentials and no network at runtime: `go run ./cmd/mythhelm dem
 *Honest recording of `mythhelm demo --check pass`, rendered from `docs/demos/demo.tape` — regenerate it with `docs/demos/record.sh`.*
 
 ![Scripted TUI recording](docs/demos/tui.gif)
-*Honest recording of the TUI driving `mythhelm demo --check pass`, rendered from `docs/demos/tui.tape` — regenerate it with `docs/demos/record.sh`.*
+*Honest recording of the TUI driving `mythhelm demo --check pass`, rendered from `docs/demos/tui.tape` — regenerate it with `docs/demos/record.sh` from the pinned revision (`docs/demos/manifest.json`), or with `docs/demos/record.sh --repin` from a clean tree.*
 
 ## TUI status
 
