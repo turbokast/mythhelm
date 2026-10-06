@@ -12,7 +12,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Tag-discipline records (ADR + release-process section)
+### Task 1 — Tag-discipline records (ADR + release-process section) ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -30,3 +30,6 @@
   - `scripts/ci/check-public-hygiene.sh` passes (a hygiene violation in either file fails the script).
 - **Test plan**: anchored `grep`/template checks run locally; read-only `gh api` for the observed settings record; MH-7 cites this discipline in its own spec.
 - **Invariants touched**: None (prose records only: no code, no tags created — tagging stays an explicit operator action per W16, and the assessment stays Unmet until the operator flips it).
+- **Implementation**: ADR 0010 records lightweight-tags-only-by-release-publication with the finalize-spec-tag mechanism and unsigned rationale; docs/release-process.md gains the Tag discipline section with format, operator-publishes, ruleset record, trigger contract and pre-release rule. All 50 local probes pass; hygiene clean. Commit c34a922.
+- **Spec deviations**: None.
+- **Files modified**: `docs/decisions/0010-release-tag-discipline.md`, `docs/release-process.md`, `specs/in-progress/release-tagging/tasks.md`, `specs/in-progress/release-tagging/handoff.md`.
