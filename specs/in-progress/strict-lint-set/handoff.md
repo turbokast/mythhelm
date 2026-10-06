@@ -14,7 +14,9 @@
 
 ## Task 2 — Core fallout A (adapter, admission, integration)
 
-<!-- pending -->
+- **Produces**: `./internal/adapter/...`, `./internal/admission/...` and `./internal/integration/...` clean under all five fallout trial linters (revive, gocritic, perfsprint, modernize, dupl — each exits 0 with the uncapped trial command). Shipped: doc comments on `StopInterrupt`/`Tri` blocks, `NativeConfigTrustKind`, the three billing aliases, the `ProjectConfigFile` block, `ProjectConfigTrustKind`, `CheckResult`/`Verification`/`RunChecksWithOptions`; `canonical` rename in `RepoIdentity`; start-error `switch` in `runCheck`; `errors.New` in `parseChanged`; `strings.Cut`/`errors.AsType` in `billing.go` and `SplitSeq` in `native.go`.
+- **For dependents**: Task 8's full-tree run covers these paths with zero findings expected from them. No `//nolint` was added, so no machine-checked-form debt. New comments carry trailing periods (godot stays clean).
+- **Deviations that change a later task's inputs**: none — no API, behavior, or file-list change; Task 8 needs nothing from this task beyond its merged green state.
 
 ## Task 3 — Core fallout B (cli)
 

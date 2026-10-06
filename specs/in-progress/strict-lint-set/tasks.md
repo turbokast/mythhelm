@@ -40,7 +40,7 @@
 - **Files modified**: `adapters/claudecode/decode_test.go`, `adapters/claudecode/launch.go`, `adapters/claudecode/launch_test.go`, `adapters/claudecode/probe.go`, `adapters/claudecode/probe_test.go`, `adapters/claudecode/settings.go`, `adapters/fake/fake_test.go`, `specs/in-progress/strict-lint-set/tasks.md`, `specs/in-progress/strict-lint-set/handoff.md`.
 - **Red baseline** (pre-fix trial output over `./adapters/...`, golangci-lint v2.13.2, uncapped flags): revive exit 1, 5 issues — `probe.go:28 exported const AdapterID`, `probe.go:41 exported func New`, `probe_test.go:183 redefines-builtin-id cap`, `settings.go:148 redefines-builtin-id real`, `fake_test.go:432 empty-block`; modernize exit 1, 8 issues — `decode_test.go:23 stringsseq`, `decode_test.go:44 newexpr i64`, `decode_test.go:291,298 rangeint`, `launch.go:132 stringscut`, `launch_test.go:93 errorsastype`, `launch_test.go:257 stringsseq`, `probe_test.go:290 stditerators`; gocritic/perfsprint/dupl exit 0. Post-fix: all five exit 0.
 
-### Task 2 — Core fallout A (adapter, admission, integration)
+### Task 2 — Core fallout A (adapter, admission, integration) ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard (mechanical comment/rename/simplify fallout across 7 files; no new abstraction; 5 acceptance items)
@@ -62,6 +62,11 @@
   - `scripts/ci/check-public-hygiene.sh` passes (a hygiene violation in a touched file fails the script).
 - **Test plan**: trial-command red→green per linter; package tests + full build; existing-set regression run.
 - **Invariants touched**: None (behavior-preserving lint fallout; package tests + build prove no behavior change).
+- **Status**: ✅ Completed — core-A tree lints clean under revive, gocritic, perfsprint and modernize with behavior preserved; PR #171.
+- **Implementation**: 17 findings fixed at source across the 7 files (11 doc comments incl. 3 const-block comments, 1 builtin-shadow rename, 1 if-else→switch, 1 Errorf→errors.New, 3 modernize simplifications); no `//nolint` added. All five trial commands exit 0; `go test -race` on the three trees and `go build ./...` pass. Commit 7271b80.
+- **Spec deviations**: None.
+- **Files modified**: `internal/adapter/adapter.go`, `internal/admission/billing.go`, `internal/admission/native.go`, `internal/admission/projectconfig.go`, `internal/admission/trust.go`, `internal/integration/candidate.go`, `internal/integration/verify.go`, `specs/in-progress/strict-lint-set/tasks.md`, `specs/in-progress/strict-lint-set/handoff.md`.
+- **Red baseline** (pre-fix trial output over `./internal/adapter/... ./internal/admission/... ./internal/integration/...`, golangci-lint v2.13.2, uncapped flags): revive exit 1, 12 issues — `adapter.go:107 StopInterrupt block`, `adapter.go:333 Supported block`, `billing.go:16 NativeConfigTrustKind`, `billing.go:18 AuthEvidence`, `billing.go:19 Declaration`, `billing.go:20 BillingPosture`, `projectconfig.go:23 ProjectConfigFile block`, `trust.go:14 ProjectConfigTrustKind`, `trust.go:18 redefines-builtin-id real`, `verify.go:24 CheckResult`, `verify.go:34 Verification`, `verify.go:51 RunChecksWithOptions`; gocritic exit 1, 1 issue — `verify.go:123 ifElseChain`; perfsprint exit 1, 1 issue — `candidate.go:137 Errorf`; modernize exit 1, 3 issues — `billing.go:62 stringscut`, `billing.go:133 errorsastype`, `native.go:190 stringsseq`; dupl exit 0. Post-fix: all five exit 0.
 
 ### Task 3 — Core fallout B (cli)
 
