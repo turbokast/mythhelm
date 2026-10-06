@@ -27,13 +27,13 @@ func BranchCommit(ctx context.Context, userRepo, branch string) (string, error) 
 	if err := CheckBranch(ctx, userRepo, branch); err != nil {
 		return "", err
 	}
-	if _, err := Git(ctx, userRepo, true, "symbolic-ref", "--quiet", "refs/heads/"+branch); err == nil {
+	_, err := Git(ctx, userRepo, true, "symbolic-ref", "--quiet", "refs/heads/"+branch)
+	if err == nil {
 		return "", fmt.Errorf("%w: symbolic destination %s", ErrBranchExists, branch)
-	} else {
-		var gitErr *GitError
-		if !errors.As(err, &gitErr) || gitErr.ExitCode != 1 {
-			return "", err
-		}
+	}
+	var gitErr *GitError
+	if !errors.As(err, &gitErr) || gitErr.ExitCode != 1 {
+		return "", err
 	}
 	out, err := Git(ctx, userRepo, true, "rev-parse", "--verify", "--quiet", "--end-of-options", "refs/heads/"+branch)
 	if err != nil {
@@ -68,7 +68,7 @@ func applyBranch(ctx context.Context, userRepo, workspace, candidateRef, branch,
 	fetchGit func(context.Context, string, bool, ...string) ([]byte, error)) error {
 	id, ok := strings.CutPrefix(candidateRef, "refs/mythhelm/candidates/")
 	if !ok || !candidateRefID.MatchString(id) || !revisionID.MatchString(candidateCommit) {
-		return fmt.Errorf("invalid candidate ref or commit")
+		return errors.New("invalid candidate ref or commit")
 	}
 	commit, err := BranchCommit(ctx, userRepo, branch)
 	if err != nil {
@@ -85,7 +85,7 @@ func applyBranch(ctx context.Context, userRepo, workspace, candidateRef, branch,
 	}
 	got, err := Git(ctx, workspace, false, "rev-parse", "--verify", candidateRef+"^{commit}")
 	if err != nil || strings.TrimSpace(string(got)) != candidateCommit {
-		return fmt.Errorf("candidate ref does not match frozen commit")
+		return errors.New("candidate ref does not match frozen commit")
 	}
 	// Import objects without updating any ref. A fetch destination refspec
 	// can fast-forward a branch created concurrently after our preflight,

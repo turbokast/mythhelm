@@ -63,12 +63,14 @@ type CandidateRow struct {
 	Partial                                       bool
 }
 
+// VerificationRow is a completed verification's projection with its checks.
 type VerificationRow struct {
 	ID, RunID, CandidateCommit, ConfigSHA256, Result string
 	StartedAt, FinishedAt                            time.Time
 	Checks                                           []CheckRow
 }
 
+// CheckRow is one check's projected result within a verification.
 type CheckRow struct {
 	Name, Status, EvidencePath, EvidenceSHA256 string
 	Argv                                       []string

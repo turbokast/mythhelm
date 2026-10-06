@@ -3,10 +3,10 @@ package workspace
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -45,7 +45,7 @@ func TestApplyRefusesReflogShorthand(t *testing.T) {
 
 func TestApplyRefusesSymbolicDestination(t *testing.T) {
 	for _, concurrent := range []bool{false, true} {
-		t.Run(fmt.Sprint(concurrent), func(t *testing.T) {
+		t.Run(strconv.FormatBool(concurrent), func(t *testing.T) {
 			repo, clone, ref, candidate := applyFixture(t)
 			plant := func() { applyGit(t, repo, "symbolic-ref", "refs/heads/destination", "refs/heads/untouched") }
 			if !concurrent {
