@@ -12,7 +12,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Version-numbering records (ADR + release-process scheme)
+### Task 1 — Version-numbering records (ADR + release-process scheme) ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -30,3 +30,7 @@
   - `scripts/ci/check-public-hygiene.sh` passes (a hygiene violation in either new file fails the script).
 - **Test plan**: anchored `grep`/template checks run locally; the scheme's consumers (MH-19, MH-7) cite these records in their own specs.
 - **Invariants touched**: None (prose records only: no code, no advertised capability — the first release demonstrates the scheme later, and the assessment stays Unmet until the operator flips it).
+- **Status**: ✅ Completed — SemVer 2.0.0 ratified in ADR 0009 with the scheme section in docs/release-process.md; PR #161.
+- **Implementation**: ADR follows the decisions README template with the three AC-1.1 rationale elements, the CHANGELOG.md:6 cite and releases-only scope; release-process.md carries the scheme examples and MH-19/MH-7 ownership with pipeline sections deferred to MH-7. Commit 07c1daf.
+- **Spec deviations**: None.
+- **Files modified**: `docs/decisions/0009-version-numbering-scheme.md`, `docs/release-process.md`, `specs/in-progress/version-numbering/tasks.md`, `specs/in-progress/version-numbering/handoff.md`.
