@@ -4,7 +4,10 @@ Scripted, reproducible terminal recordings of MYTHHELM, made with
 [Charm VHS](https://github.com/charmbracelet/vhs). Every recording ships its
 tape (the commands), its rendered artifact, and a normalized transcript of the
 taped commands' stdout — the transcript is the reproducibility proof CI
-enforces, because GIF bytes are encoder-nondeterministic.
+enforces, because GIF bytes are encoder-nondeterministic. The TUI transcript
+is the exception: interactive bytes can never byte-match a re-run, so it
+comes from companion linear-mode runs of the same binary (with stderr
+merged), not from the taped takes themselves.
 
 ## Record command
 
