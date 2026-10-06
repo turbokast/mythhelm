@@ -11,6 +11,24 @@
       "capabilities": [
         {"name": "offline scripted run", "qualifier": "TestDemoOfflineNoCredentials"}
       ]
+    },
+    {
+      "name": "tui",
+      "tape": "docs/demos/tui.tape",
+      "artifact": "docs/demos/tui.gif",
+      "transcript": "docs/demos/tui.transcript.txt",
+      "binary_version": "v0.0.0-20261005073052-e0ecdbc9554c",
+      "binary_commit": "e0ecdbc9554c90da6ac61f6300b7cc836acae266",
+      "vhs_version": "v0.12.1",
+      "capabilities": [
+        {"name": "mission view", "qualifier": "TestMissionShowsRequiredFacts"},
+        {"name": "keyboard flows", "qualifier": "TestKeyFlows"},
+        {"name": "command palette", "qualifier": "TestPaletteSearchable"},
+        {"name": "context help", "qualifier": "TestHelpFullNames"},
+        {"name": "responsive layouts", "qualifier": "TestLayoutBreakpoints"},
+        {"name": "revision-attached verification", "qualifier": "TestVerificationMismatchLabelsRevisions"},
+        {"name": "linear accessible stream", "qualifier": "TestAccessibleOrderedStream"}
+      ]
     }
   ]
 }
