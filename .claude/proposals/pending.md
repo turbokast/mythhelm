@@ -61,3 +61,15 @@ Add a dispatch step: before starting a task attempt, append the `run_start` row 
 **Proposed change:**
 
 In the Spec deviations rule, add: a review-round addition that stays inside the task's Files list and is consistent with the design is still named, one line each, marked consistent (e.g. "- Added the Contents:write permission qualification in review round 1 (consistent with design §3)"). None. is reserved for a task whose merged diff the worker's own commits fully describe.
+
+## P-strict-lint-set-1 — gate parallel run-spec waves on FD headroom
+
+- **Source spec**: `strict-lint-set`
+- **Type**: skill
+- **Target**: `.claude/skills/run-spec-dispatch/SKILL.md`
+- **Rationale**: A 6-worker parallel wave exhausted the box's file descriptors (EMFILE) mid-run, killing 2 attempts outright and forcing 4 orchestrator cancels; recovery meant serializing and re-dispatching over ~2 hours (6 failed attempts total). Parallel subagents each running Go builds/tests multiply FD pressure far past one worker. A pre-dispatch headroom check would have serialized the wave before it collapsed.
+- **Evidence**: run-events fail rows (tasks 2+4, environmental) and lost rows (tasks 1+3, then 1+2) 11:54–12:00Z; clean serial recovery from 13:55Z; specs/done/strict-lint-set/retrospective.md CI history and Effort sections (dispatched=14 returned=8 failed=6).
+
+**Proposed change:**
+
+Add a dispatch-gating step: before launching more than one worker, compare current FD usage against the box limit (Linux: /proc/sys/fs/file-nr vs file-max; other platforms: a conservative worker cap); when headroom is below a per-worker budget the skill names, dispatch serially instead of in parallel and record the decision in the run-events detail. A wave already dispatched that hits EMFILE cancels to one worker, as happened here.
