@@ -518,8 +518,7 @@ func TestLoadCorruptReceipt(t *testing.T) {
 		if err == nil {
 			t.Fatal("Load with syntactically invalid receipt succeeded, want error")
 		}
-		var syntax *json.SyntaxError
-		if !errors.As(err, &syntax) {
+		if _, ok := errors.AsType[*json.SyntaxError](err); !ok {
 			t.Errorf("Load err = %v, want the JSON syntax failure", err)
 		}
 	})

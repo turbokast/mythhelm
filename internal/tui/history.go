@@ -1,4 +1,4 @@
-// History search (design §13, D17): journal-replay search over the full
+// Package tui history search (design §13, D17): journal-replay search over the full
 // event stream. The live stream tail on screen shows at most the pane's
 // visible rows, while history stays complete because search replays the
 // journal from zero with a caller-side filter — never a bounded memory

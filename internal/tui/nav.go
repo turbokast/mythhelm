@@ -129,28 +129,28 @@ func (m *Model) paletteKey(key string, msg tea.KeyMsg) {
 
 // appendKeyInput appends one keypress to an overlay input, honouring the rune
 // bound. Alt combinations and non-printable keys contribute nothing.
-func appendKeyInput(s, key string, msg tea.KeyMsg, max int) string {
+func appendKeyInput(s, key string, msg tea.KeyMsg, limit int) string {
 	if msg.Alt {
 		return s
 	}
 	switch {
 	case key == " ":
-		return appendBounded(s, " ", max)
+		return appendBounded(s, " ", limit)
 	case msg.Type == tea.KeyRunes:
-		return appendBounded(s, string(msg.Runes), max)
+		return appendBounded(s, string(msg.Runes), limit)
 	default:
 		return s
 	}
 }
 
-// appendBounded appends add to s up to max runes.
-func appendBounded(s, add string, max int) string {
-	if max < 1 {
+// appendBounded appends add to s up to limit runes.
+func appendBounded(s, add string, limit int) string {
+	if limit < 1 {
 		return s
 	}
 	out := []rune(s)
 	for _, r := range add {
-		if len(out) >= max {
+		if len(out) >= limit {
 			break
 		}
 		out = append(out, r)
