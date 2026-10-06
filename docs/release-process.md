@@ -14,7 +14,7 @@ Scope is release versions only; dev strings such as unstamped-build markers are 
 
 Tag format is `v<semver>` carrying the scheme above, with dotted pre-release markers (MH-19 discipline, [ADR 0010](decisions/0010-release-tag-discipline.md)). Valid examples are `v0.1.0` and `v1.2.3-rc.1`. Invalid examples are `0.1.0` (missing `v`), `v1.2` (incomplete SemVer) and `v1.2.3-rc1` (undotted marker, invalid per project convention, though bare SemVer would allow it; the convention is stricter than the specification and never mistaken for it).
 
-The operator-publishes mechanism applies: only the operator creates release tags, and only the operator publishes. The maintainer holding release authority publishes the release, which creates the tag, never by hand and never via `git tag` by hand. Required permission is release write (release-write); tag creation rides the release write. Publishing runs `gh release edit vX.Y.Z --draft=false --target <merge>`, the finalize-spec-tag flow, where publishing the draft creates the tag at the merge.
+The operator-publishes mechanism applies: only the operator creates release tags, and only the operator publishes. The maintainer holding release authority publishes the release, which creates the tag, never by hand and never via `git tag` by hand. Required permission is release write (release-write: the Contents: write access that covers release publication — GitHub exposes no separate release permission); tag creation rides the release write. Publishing runs `gh release edit vX.Y.Z --draft=false --target <merge>`, the finalize-spec-tag flow, where publishing the draft creates the tag at the merge.
 
 Observed settings are read-only and unchanged by this task. Command run on 2026-10-06 (read-only, settings unchanged):
 
@@ -27,4 +27,4 @@ The listed `Protect main` ruleset is the observed baseline. Any ruleset or tag-p
 
 Trigger contract for MH-7 to implement: Pushing a release tag starts the release pipeline, with publication creating `vX.Y.Z` at the target merge and the tag push matching the `v*` filter triggering the pipeline. No release artifact ships without its tag, since the pipeline requires tag context. Failure rule: a pipeline run from a malformed or unauthorized tag fails closed with no partial release, where non-matching tags never match the trigger filter and an aborted run publishes nothing.
 
-Release scope for tagging: every published release including pre-releases gets a tag, with the dotted marker rule above; drafts are never tagged, since a draft is not a release.
+Release scope for tagging: every published release including pre-releases gets a tag, with the dotted marker rule above; drafts are never tagged, since a draft is not a release. A pre-release draft is marked as a prerelease before publishing, so the published RC carries GitHub's prerelease flag and never appears as stable.
