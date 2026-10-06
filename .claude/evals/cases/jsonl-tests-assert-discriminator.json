@@ -7,6 +7,6 @@
   ],
   "grader": {
     "type": "must-match",
-    "pattern": "must assert the `type` discriminator value.*of each emitted object"
+    "pattern": "must assert the `type` discriminator value \\(or the schema's equivalent routing field\\) of each emitted object"
   }
 }
