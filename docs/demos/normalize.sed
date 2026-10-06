@@ -7,3 +7,9 @@ s#e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855#<EMPTY_SHA256
 s#[0-9a-f]{40}#<SHA40>#g
 s#<EMPTY_SHA256>#e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855#g
 s#evidence/[0-9a-f]{12}/#evidence/<SHA12>/#g
+s#snapshot: [0-9a-f]{20}\.\.\. \(truncated\)#snapshot: <SHA20>... (truncated)#g
+s#^goal: (unknown|Demo task)$#goal: <LIVE-SAMPLE>#
+s#^run state: (created|admission) \(reason: none\)$#run state: <LIVE-SAMPLE> (reason: none)#
+s#^admission: (unknown|adapter builtin/fake 0\.1\.0 \(scripted-child-process \(ndjson\)\); qualified: false; paid continuation: not-applicable)$#admission: <LIVE-SAMPLE>#
+/^event [0-9]+: receipt\.written$/d
+s#^next-after: (21|22)$#next-after: <LIVE-CURSOR>#

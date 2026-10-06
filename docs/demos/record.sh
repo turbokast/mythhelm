@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # record.sh: the documented record command for the MYTHHELM terminal
-# recordings (docs-site-demos, FR-2/FR-4). It builds the binary, regenerates
-# the demo transcript, renders the demo GIF from the checked-in tape, and
-# verifies all three. A bare `vhs docs/demos/demo.tape` only renders the GIF
-# and is not the record command.
+# recordings (docs-site-demos, FR-2/FR-4; tui-tape-recording, FR-1/FR-2). It
+# builds the binary, regenerates every manifest recording's transcript,
+# renders every GIF from its checked-in tape, and verifies all of them. A
+# bare `vhs docs/demos/demo.tape` only renders one GIF and is not the record
+# command.
 #
 # Usage: docs/demos/record.sh [--repin]
 #
-# Without flags the checkout must match the manifest's binary_commit: writing
+# Without flags the checkout must match every manifest binary_commit: writing
 # fresh artifacts while a stale pin labels them is refused. With --repin (on
 # a clean tree) the script regenerates from the current checkout and moves the
 # manifest and tape-header pins to it.
@@ -34,11 +35,8 @@ cd "$ROOT"
 
 DEMOS="docs/demos"
 BIN="/tmp/mythhelm-record"
-TAPE="$DEMOS/demo.tape"
-TRANSCRIPT="$DEMOS/demo.transcript.txt"
 SED="$DEMOS/normalize.sed"
 MANIFEST="$DEMOS/manifest.json"
-GIF="$DEMOS/demo.gif"
 
 for tool in go git vhs python3; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
@@ -53,12 +51,23 @@ git --version
 vhs --version
 python3 --version
 
-pin="$(python3 -c 'import json;print(json.load(open("'"$MANIFEST"'"))["recordings"][0]["binary_commit"])')"
+# Recordings come from the manifest: names drive the per-recording loop, and
+# each recording carries its own tape/artifact/transcript paths and pins.
+names="$(python3 -c 'import json;print(" ".join(r["name"] for r in json.load(open("'"$MANIFEST"'"))["recordings"]))')"
+field() { # field <name> <key>: one manifest value for one recording
+	python3 -c 'import json,sys;m=json.load(open("'"$MANIFEST"'"));print([r for r in m["recordings"] if r["name"]==sys.argv[1]][0][sys.argv[2]])' "$1" "$2"
+}
+
 head="$(git rev-parse HEAD)"
-if test "$head" != "$pin" && test "$REPIN" -eq 0; then
-	echo "record.sh: checkout $head != manifest binary_commit $pin; refusing to write artifacts another revision labels" >&2
-	echo "record.sh: re-run with --repin to regenerate and move the pins (or check out $pin)" >&2
-	exit 1
+if test "$REPIN" -eq 0; then
+	for n in $names; do
+		pin="$(field "$n" binary_commit)"
+		if test "$head" != "$pin"; then
+			echo "record.sh: checkout $head != $n binary_commit $pin; refusing to write artifacts another revision labels" >&2
+			echo "record.sh: re-run with --repin to regenerate and move the pins (or check out $pin)" >&2
+			exit 1
+		fi
+	done
 fi
 if test "$REPIN" -eq 1 && test -n "$(git status --porcelain)"; then
 	echo "record.sh: --repin needs a clean tree (pins must name a reproducible commit)" >&2
@@ -66,15 +75,19 @@ if test "$REPIN" -eq 1 && test -n "$(git status --porcelain)"; then
 fi
 if test "$REPIN" -eq 0; then
 	# Recording inputs: Go sources, the module files, the normalization
-	# script, the tape, and every go:embed asset baked into the binary
-	# (extend this list when adding an embed directive).
+	# script, every recording's tape, and every go:embed asset baked into
+	# the binary (extend this list when adding an embed directive).
+	tapes=()
+	for n in $names; do
+		tapes+=("$(field "$n" tape)")
+	done
 	recording_dirt="$(git status --porcelain -- \
-		'*.go' 'go.mod' 'go.sum' "$SED" "$TAPE" \
+		'*.go' 'go.mod' 'go.sum' "$SED" "${tapes[@]}" \
 		'adapters/fake/scenarios/*.json' \
 		'internal/journal/migrations/*.sql' \
 		'mods/themes/*.toml')"
 	if test -n "$recording_dirt"; then
-		echo "record.sh: uncommitted build or recording inputs could make the output disagree with pin $pin" >&2
+		echo "record.sh: uncommitted build or recording inputs could make the output disagree with the pins" >&2
 		echo "record.sh: commit them or re-run with --repin to regenerate and move the pins" >&2
 		exit 1
 	fi
@@ -83,32 +96,108 @@ fi
 echo "record.sh: build the binary (go build, never go run)"
 go build -o "$BIN" ./cmd/mythhelm
 
-echo "record.sh: regenerate the transcript"
-tmp="$(mktemp)"
-trap 'rm -f "$tmp"' EXIT
-"$BIN" demo --check pass | sed -E -f "$SED" >"$tmp"
-# The binary's own exit status, never sed's: without this a failing binary
-# still yields a zero pipeline status from sed and masks the failure.
-test "${PIPESTATUS[0]}" -eq 0
-if test -f "$TRANSCRIPT" && cmp -s "$tmp" "$TRANSCRIPT"; then
-	echo "record.sh: transcript unchanged"
-else
-	cp "$tmp" "$TRANSCRIPT"
-	echo "record.sh: transcript written to $TRANSCRIPT"
-fi
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT
 
-echo "record.sh: render the GIF from the checked-in tape"
-vhs "$TAPE"
+# regen_transcript <name> <out>: run one recording's transcript pipeline.
+# Per-name functions, never manifest commands: the manifest is data the
+# checks parse, not executable content (tui-tape-recording D9).
+regen_transcript() {
+	case "$1" in
+	demo)
+		"$BIN" demo --check pass | sed -E -f "$SED" >"$2"
+		# The binary's own exit status, never sed's: without this a failing
+		# binary still yields a zero pipeline status from sed and masks the
+		# failure.
+		test "${PIPESTATUS[0]}" -eq 0
+		;;
+	tui)
+		# Linear-mode outputs driven alongside the interactive takes: the
+		# interactive bytes are escape- and timing-dependent and can never
+		# byte-match a re-run. Each take is its own pipeline with its own
+		# PIPESTATUS assertion — one brace-group pipeline would expose only
+		# the last take's status and mask the first take's failure.
+		TERM=dumb "$BIN" demo --check pass 2>&1 | sed -E -f "$SED" >"$tmpdir/tui.t1"
+		test "${PIPESTATUS[0]}" -eq 0
+		"$BIN" demo --check pass --accessible 2>&1 | sed -E -f "$SED" >"$tmpdir/tui.t2"
+		test "${PIPESTATUS[0]}" -eq 0
+		{
+			echo "=== take: linear (TERM=dumb) ==="
+			cat "$tmpdir/tui.t1"
+			echo "=== take: accessible (--accessible) ==="
+			cat "$tmpdir/tui.t2"
+		} >"$2"
+		;;
+	*)
+		echo "record.sh: recording '$1' has no transcript pipeline; add one here (never in the manifest)" >&2
+		exit 2
+		;;
+	esac
+}
+
+echo "record.sh: regenerate the transcripts"
+for n in $names; do
+	transcript="$(field "$n" transcript)"
+	regen_transcript "$n" "$tmpdir/$n.transcript"
+	if test -f "$transcript" && cmp -s "$tmpdir/$n.transcript" "$transcript"; then
+		echo "record.sh: $n transcript unchanged"
+	else
+		cp "$tmpdir/$n.transcript" "$transcript"
+		echo "record.sh: $n transcript written to $transcript"
+	fi
+done
+
+# Every manifest VHS pin matches the installed renderer: checked before any
+# render, so a mismatch never leaves GIFs written by the wrong renderer.
+have="$(vhs --version | sed -E 's/.*(v[0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+for n in $names; do
+	want="$(field "$n" vhs_version)"
+	test "$want" = "$have" || {
+		echo "record.sh: $n vhs_version $want != installed $have; re-pin the manifest and tape header" >&2
+		exit 1
+	}
+done
+
+echo "record.sh: render the GIFs from the checked-in tapes"
+for n in $names; do
+	vhs "$(field "$n" tape)"
+done
 
 echo "record.sh: verify"
-# Determinism: the pipeline re-run from the same binary must byte-match the
-# transcript just written.
-"$BIN" demo --check pass | sed -E -f "$SED" >"$tmp"
-test "${PIPESTATUS[0]}" -eq 0
-diff "$tmp" "$TRANSCRIPT"
-# The transcript keeps the binary's own labels verbatim (I09).
-test "$(grep -c 'SCRIPTED DEMO' "$TRANSCRIPT")" -ge 4
-# The manifest parses, and its declared revision is a commit in this repo (I07).
+for n in $names; do
+	transcript="$(field "$n" transcript)"
+	# Determinism: the pipeline re-run from the same binary must byte-match
+	# the transcript just written.
+	regen_transcript "$n" "$tmpdir/$n.verify"
+	diff "$tmpdir/$n.verify" "$transcript"
+done
+# The transcripts keep the binary's own labels verbatim (I09). The demo keeps
+# its floor; the tui counts are exact — with two takes emitting more than any
+# single-take floor, a floor cannot discriminate a deleted label line.
+assert_labels() { # assert_labels <name> <transcript>
+	case "$1" in
+	demo)
+		test "$(grep -c 'SCRIPTED DEMO' "$2")" -ge 4
+		;;
+	tui)
+		test "$(grep -c 'SCRIPTED DEMO' "$2")" -eq 8
+		test "$(grep -c '^goal: ' "$2")" -eq 1
+		test "$(grep -c '^run state: ' "$2")" -eq 1
+		test "$(grep -c '^attempt' "$2")" -eq 7
+		test "$(grep -c '^candidate: ' "$2")" -eq 1
+		test "$(grep -c '^next action: ' "$2")" -eq 1
+		test "$(grep -c '^actions: ' "$2")" -eq 1
+		;;
+	*)
+		echo "record.sh: recording '$1' has no label assertions; add them here" >&2
+		exit 2
+		;;
+	esac
+}
+for n in $names; do
+	assert_labels "$n" "$(field "$n" transcript)"
+done
+# The manifest parses, and its declared revisions are commits in this repo (I07).
 python3 - "$MANIFEST" <<'EOF'
 import json, subprocess, sys
 with open(sys.argv[1], encoding="utf-8") as fh:
@@ -119,15 +208,16 @@ for rec in manifest["recordings"]:
     subprocess.run(["git", "cat-file", "-e", commit], check=True)
     print("record.sh: manifest revision %s (%s) is present" % (commit, rec["name"]))
 EOF
-# The manifest's VHS pin matches the renderer that just ran.
-want="$(python3 -c 'import json;print(json.load(open("'"$MANIFEST"'"))["recordings"][0]["vhs_version"])')"
-have="$(vhs --version | sed -E 's/.*(v[0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
-test "$want" = "$have" || {
-	echo "record.sh: manifest vhs_version $want != installed $have; re-pin the manifest and tape header" >&2
-	exit 1
-}
-# The render produced a GIF.
-test "$(file -b "$GIF" | cut -d, -f1)" = "GIF image data"
+# Every tape validates and names exactly one Output (multiple Outputs render
+# only the last, silently — the assertion keeps a stray second Output from
+# shipping), and every render produced a GIF.
+for n in $names; do
+	tape="$(field "$n" tape)"
+	artifact="$(field "$n" artifact)"
+	vhs validate "$tape"
+	test "$(grep -c '^Output ' "$tape")" -eq 1
+	test "$(file -b "$artifact" | cut -d, -f1)" = "GIF image data"
+done
 
 if test "$REPIN" -eq 1; then
 	echo "record.sh: --repin: moving manifest and tape-header pins to $head"
@@ -145,8 +235,11 @@ with open(path, "w", encoding="utf-8") as fh:
     fh.write("\n")
 print("record.sh: manifest re-pinned to %s (%s)" % (head, ver))
 EOF
-	sed -E "s|^# Binary-Version: .*|# Binary-Version: $ver|; s|^# Binary-Commit: .*|# Binary-Commit: $head|" "$TAPE" >"$tmp"
-	cat "$tmp" >"$TAPE"
+	for n in $names; do
+		tape="$(field "$n" tape)"
+		sed -E "s|^# Binary-Version: .*|# Binary-Version: $ver|; s|^# Binary-Commit: .*|# Binary-Commit: $head|" "$tape" >"$tmpdir/repin"
+		cat "$tmpdir/repin" >"$tape"
+	done
 fi
 
-echo "record.sh: ok (binary, transcript, GIF verified)"
+echo "record.sh: ok (binary, transcripts, GIFs verified)"

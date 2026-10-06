@@ -1,0 +1,116 @@
+=== take: linear (TERM=dumb) ===
+
+=== SCRIPTED DEMO: example repository ===
+working in <TMPDIR>/mythhelm-demo-repo-XXX (removed afterwards)
+
+=== SCRIPTED DEMO: run ===
+run run_XXX: created
+run: admission
+admission decided: adapter builtin/fake 0.1.0 (scripted-child-process (ndjson))
+  SCRIPTED: fake adapter, no real agent, no inference, no network
+  snapshot: <SHA40> (branch main, selected by HEAD)
+  execution profile: trusted-host, not contained: native tools and checks run with your host authority
+  billing: local-scripted (qualified: false)
+snapshot: <SHA40> cloned to <TMPDIR>/mythhelm-demo-state-XXX/runs/run_XXX/workspace
+run: executing
+attempt att_XXX: launch intent recorded
+attempt: launching
+attempt: worker pid NNN, native pid NNN
+attempt: running
+native session fake-happy, model none (scripted)
+progress: 1 assistant turns, tool uses {"Write":1} (native-reported)
+protocol counters: malformed 0, oversized 0, invalid utf-8 0, depth exceeded 0
+native exit: exit code 0; result success
+attempt: process group gone; unresolved descendants []
+attempt: succeeded_native
+candidate.frozen
+run: verifying
+verification: started
+check demo: passed
+verification: passed
+run: ready_for_review
+receipt.written
+result: ready_for_review; exit 0 
+
+=== SCRIPTED DEMO: review ===
+Run: run_XXX
+State: ready_for_review
+Task: Demo task
+Candidate: <SHA40>
+
+Flags:
+  none
+Checks:
+  demo: passed (evidence: <TMPDIR>/mythhelm-demo-state-XXX/runs/run_XXX/evidence/<SHA12>/demo.log; sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855)
+
+Candidate diff:
+diff --git a/demo.txt b/demo.txt
+new file mode 100644
+index 0000000..9766475
+--- /dev/null
++++ b/demo.txt
+@@ -0,0 +1 @@
++ok
+
+=== SCRIPTED DEMO: done ===
+state in <TMPDIR>/mythhelm-demo-state-XXX was removed afterwards
+=== take: accessible (--accessible) ===
+
+=== SCRIPTED DEMO: example repository ===
+working in <TMPDIR>/mythhelm-demo-repo-XXX (removed afterwards)
+
+=== SCRIPTED DEMO: run ===
+goal: <LIVE-SAMPLE>
+run state: <LIVE-SAMPLE> (reason: none)
+attempt: none recorded
+candidate: none recorded
+verification: waiting
+progress: unknown
+admission: <LIVE-SAMPLE>
+next action: wait for admission to decide
+actions: none available
+event 1: run run_XXX: created
+event 2: run: admission
+event 3: admission decided: adapter builtin/fake 0.1.0 (scripted-child-process (ndjson)); SCRIPTED: fake adapter, no real agent, no inference, no network; snapshot: <SHA20>... (truncated)
+event 4: snapshot: <SHA40> cloned to <TMPDIR>/mythhelm-demo-state-XXX/runs/run_XXX/workspace
+event 5: run: executing
+event 6: attempt att_XXX: launch intent recorded
+event 7: attempt: launching
+event 8: attempt: worker pid NNN, native pid NNN
+event 9: attempt: running
+event 10: native session fake-happy, model none (scripted)
+event 11: progress: 1 assistant turns, tool uses {"Write":1} (native-reported)
+event 12: protocol counters: malformed 0, oversized 0, invalid utf-8 0, depth exceeded 0
+event 13: native exit: exit code 0; result success
+event 14: attempt: process group gone; unresolved descendants []
+event 15: attempt: succeeded_native
+event 16: candidate.frozen
+event 17: run: verifying
+event 18: verification: started
+event 19: check demo: passed
+event 20: verification: passed
+event 21: run: ready_for_review
+next-after: <LIVE-CURSOR>
+
+=== SCRIPTED DEMO: review ===
+Run: run_XXX
+State: ready_for_review
+Task: Demo task
+Candidate: <SHA40>
+
+Flags:
+  none
+Checks:
+  demo: passed (evidence: <TMPDIR>/mythhelm-demo-state-XXX/runs/run_XXX/evidence/<SHA12>/demo.log; sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855)
+
+Candidate diff:
+diff --git a/demo.txt b/demo.txt
+new file mode 100644
+index 0000000..9766475
+--- /dev/null
++++ b/demo.txt
+@@ -0,0 +1 @@
++ok
+
+=== SCRIPTED DEMO: done ===
+state in <TMPDIR>/mythhelm-demo-state-XXX was removed afterwards
