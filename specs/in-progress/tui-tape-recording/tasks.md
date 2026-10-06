@@ -38,7 +38,7 @@
 - **Spec deviations**: None to the contract. `docs/demos/demo.tape` is outside Files: header-pin lines only (one-revision re-record moves every tape's pins per design §4/D3; the acceptance's header-only leg verifies no other line changed).
 - **Files modified**: `docs/demos/tui.tape`, `docs/demos/tui.transcript.txt`, `docs/demos/manifest.json`, `docs/demos/record.sh`, `docs/demos/normalize.sed`, `docs/demos/demo.tape`, `specs/in-progress/tui-tape-recording/tasks.md`, `specs/in-progress/tui-tape-recording/handoff.md`, `specs/in-progress/tui-tape-recording/scratchpad.md`.
 
-### Task 2 — Rendered TUI GIF and embeds
+### Task 2 — Rendered TUI GIF and embeds ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -58,6 +58,10 @@
   - `scripts/ci/check-public-hygiene.sh` passes.
 - **Test plan**: `file`/`stat`/anchored `grep`; visual spot-check of the rendered GIF per the item above.
 - **Invariants touched**: I09 (v2 §2: the GIF renders the same taped run the transcript proves); I14 (v2 §2: only met tui-slice acceptance appears as working — no exit-dialog rows, no history search).
+- **Status**: ✅ Completed — TUI GIF rendered via record.sh and embedded with provenance captions in the README, user guide and demos README; PR #164.
+- **Implementation**: `record.sh --repin` on the clean origin/main tip (3m37s, VHS v0.12.1): tui.gif 2922664 bytes / 81.4s / 1650x620, both transcripts byte-identical, pins → 179bba4 (`v0.0.0-20261006124821-179bba4ceae9`), `len(pins) == 1`; frame spot-check t=6 mission view + `verified d3aef41`/`demo: passed`, t=27 rung change with in-frame `120`, t=73.7 `--accessible` labels + events. Commit 6a5feaf46ea82f4d696164a0be963f899db0ad05.
+- **Spec deviations**: `docs/demos/manifest.json`, `docs/demos/demo.tape`, `docs/demos/tui.tape` outside Files (pin lines only): plain `record.sh` refuses at every committed state (pins name the pre-commit HEAD, so no commit satisfies HEAD==pin after a squash-merge), hence `--repin` on the main tip; pins name main commit 179bba4, also repairing main's red revision check. `demo.gif` restored byte-identical and excluded (task-1 precedent). Demos README demo-row pin refreshed to 179bba4 in the same table edit (stale since task 1's re-record).
+- **Files modified**: `docs/demos/tui.gif`, `README.md`, `docs/user-guide.md`, `docs/demos/README.md`, `docs/demos/manifest.json`, `docs/demos/demo.tape`, `docs/demos/tui.tape`, `specs/in-progress/tui-tape-recording/tasks.md`, `specs/in-progress/tui-tape-recording/handoff.md`, `specs/in-progress/tui-tape-recording/scratchpad.md`.
 
 ### Task 3 — Recording-honesty-check generalization in CI
 
