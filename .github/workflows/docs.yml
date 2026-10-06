@@ -40,26 +40,36 @@ jobs:
           exit "$fail"
       # The revision check runs before the transcript check so an unknown
       # revision fails fast naming the revision (design §4 steps 2–3).
-      - name: Check manifest revision is present
+      - name: Check manifest revisions are present
         run: |
-          commit="$(python3 -c 'import json; print(json.load(open("docs/demos/manifest.json", encoding="utf-8"))["recordings"][0]["binary_commit"])')"
-          if ! printf '%s' "$commit" | grep -Eq '^[0-9a-f]{40}$'; then
-            echo "::error::manifest binary_commit '$commit' is not a 40-character hex revision"
-            exit 1
-          fi
-          if ! git cat-file -t "$commit" >/dev/null 2>&1; then
-            echo "::error::manifest binary_commit $commit is not present in the repo; re-record with docs/demos/record.sh --repin"
-            exit 1
-          fi
-      - name: Check demo transcript is fresh at the declared revision
+          python3 - docs/demos/manifest.json > /tmp/honesty.revisions <<'EOF'
+          import json, sys
+          manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+          for rec in manifest["recordings"]:
+              print("%s|%s" % (rec["name"], rec["binary_commit"]))
+          EOF
+          fail=0
+          while IFS='|' read -r recording commit || [ -n "$recording" ]; do
+            if ! printf '%s' "$commit" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "::error::recording '$recording' binary_commit '$commit' is not a 40-character hex revision"
+              fail=1
+              continue
+            fi
+            if ! git cat-file -t "$commit" >/dev/null 2>&1; then
+              echo "::error::recording '$recording' binary_commit $commit is not present in the repo; re-record with docs/demos/record.sh --repin"
+              fail=1
+            fi
+          done < /tmp/honesty.revisions
+          exit "$fail"
+      - name: Check recording transcripts are fresh at the declared revision
         run: |
           commit="$(python3 -c 'import json; print(json.load(open("docs/demos/manifest.json", encoding="utf-8"))["recordings"][0]["binary_commit"])')"
           parent="$(mktemp -d)"
           trap 'git worktree remove --force "$parent/wt" 2>/dev/null; rmdir "$parent" 2>/dev/null || true' EXIT
           git worktree add --detach "$parent/wt" "$commit"
           # Build the binary from source at the declared revision (go build,
-          # never go run — design §3), re-run the §3 pipeline with the
-          # checked-in normalization, and diff against the checked-in transcript.
+          # never go run — design §3), re-run each recording's pipeline with
+          # the checked-in normalization, and diff against the checked-in transcript.
           (cd "$parent/wt" || exit 1; go build -o /tmp/mythhelm-honesty ./cmd/mythhelm)
           /tmp/mythhelm-honesty demo --check pass \
             | sed -E -f docs/demos/normalize.sed > /tmp/honesty.transcript.txt
@@ -67,6 +77,27 @@ jobs:
           test "${PIPESTATUS[0]}" -eq 0
           if ! diff /tmp/honesty.transcript.txt docs/demos/demo.transcript.txt; then
             echo "::error::docs/demos/demo.transcript.txt drifts from a regen at $commit; re-record with docs/demos/record.sh"
+            exit 1
+          fi
+          # The tui takes (tui-tape-recording design §3): linear-mode outputs
+          # driven alongside the interactive takes. Each take is its own
+          # pipeline with its own PIPESTATUS assertion — one brace-group
+          # pipeline would expose only the last take's status and mask the
+          # first take's failure.
+          TERM=dumb /tmp/mythhelm-honesty demo --check pass 2>&1 \
+            | sed -E -f docs/demos/normalize.sed > /tmp/honesty.tui.t1
+          test "${PIPESTATUS[0]}" -eq 0
+          /tmp/mythhelm-honesty demo --check pass --accessible 2>&1 \
+            | sed -E -f docs/demos/normalize.sed > /tmp/honesty.tui.t2
+          test "${PIPESTATUS[0]}" -eq 0
+          {
+            echo "=== take: linear (TERM=dumb) ==="
+            cat /tmp/honesty.tui.t1
+            echo "=== take: accessible (--accessible) ==="
+            cat /tmp/honesty.tui.t2
+          } > /tmp/honesty.tui.transcript.txt
+          if ! diff /tmp/honesty.tui.transcript.txt docs/demos/tui.transcript.txt; then
+            echo "::error::docs/demos/tui.transcript.txt drifts from a regen at $commit; re-record with docs/demos/record.sh"
             exit 1
           fi
       - name: Check recording capabilities have passing qualifiers
