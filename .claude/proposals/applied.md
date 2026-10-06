@@ -88,3 +88,20 @@ In Step 1, change the command template to use a full SHA and add the warning: "P
 **Proposed change:**
 
 Add to the decomposition steps, after task Files lists are drafted: "Coverage pass: for every sentence in design.md that states what a user sees (page text, labels, placeholders, error wording), name the task whose Files list contains the file carrying that text. A user-visible claim with no owning task is a gap: assign it to a task's Files or record it as an explicit follow-up with its card or issue. The finalize review re-checks this mapping."
+
+## P-dogfood-slice-3 — Windows atomic-replace retry pattern in knowledge
+
+- **Decision**: approved
+- **Date**: 2026-10-06
+- **Pull request**: pending
+- **Eval**: n/a
+- **Rationale**: maintainer approved via deliver-backlog checkpoint 2026-10-06
+- **Source spec**: `dogfood-slice`
+- **Type**: knowledge
+- **Target**: `knowledge/execution.md`
+- **Rationale**: Two main-CI failures (one CI failure class seen twice) shared one mechanism: on Windows, an atomic file replacement (`rename` over the destination) intermittently fails with `Access is denied` when a parallel reader/observer holds the file, failing the whole `Go (windows-latest)` job. The fix (retry transient sharing violations, #55) is product-side, but every future task touching atomic file writes on Windows needs the pattern up front; otherwise each task rediscovers it through a red main.
+- **Evidence**: retrospective CI history (runs 36842187196, 36844977281; `writing worker.json: rename …: Access is denied`); fix PR #55; Task 13 identity-retry files.
+
+**Proposed change:**
+
+Append a short entry: on Windows, atomic file replacement via rename can fail transiently with a sharing violation when another handle is open; product code that replaces identity/state files must retry transient sharing violations with backoff (fail closed on persistent errors), and tests that write-then-immediately-replace files should expect the retry path. Cite the worker.json incident as the example.
