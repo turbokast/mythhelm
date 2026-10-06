@@ -68,7 +68,7 @@
 - **Files modified**: `internal/adapter/adapter.go`, `internal/admission/billing.go`, `internal/admission/native.go`, `internal/admission/projectconfig.go`, `internal/admission/trust.go`, `internal/integration/candidate.go`, `internal/integration/verify.go`, `specs/in-progress/strict-lint-set/tasks.md`, `specs/in-progress/strict-lint-set/handoff.md`.
 - **Red baseline** (pre-fix trial output over `./internal/adapter/... ./internal/admission/... ./internal/integration/...`, golangci-lint v2.13.2, uncapped flags): revive exit 1, 12 issues — `adapter.go:107 StopInterrupt block`, `adapter.go:333 Supported block`, `billing.go:16 NativeConfigTrustKind`, `billing.go:18 AuthEvidence`, `billing.go:19 Declaration`, `billing.go:20 BillingPosture`, `projectconfig.go:23 ProjectConfigFile block`, `trust.go:14 ProjectConfigTrustKind`, `trust.go:18 redefines-builtin-id real`, `verify.go:24 CheckResult`, `verify.go:34 Verification`, `verify.go:51 RunChecksWithOptions`; gocritic exit 1, 1 issue — `verify.go:123 ifElseChain`; perfsprint exit 1, 1 issue — `candidate.go:137 Errorf`; modernize exit 1, 3 issues — `billing.go:62 stringscut`, `billing.go:133 errorsastype`, `native.go:190 stringsseq`; dupl exit 0. Post-fix: all five exit 0.
 
-### Task 3 — Core fallout B (cli)
+### Task 3 — Core fallout B (cli) ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard (mechanical comment/rename/simplify fallout across 7 files; no new abstraction; 5 acceptance items)
@@ -90,6 +90,11 @@
   - `scripts/ci/check-public-hygiene.sh` passes (a hygiene violation in a touched file fails the script).
 - **Test plan**: trial-command red→green per linter; package tests + full build; existing-set regression run.
 - **Invariants touched**: None (behavior-preserving lint fallout; package tests + build prove no behavior change).
+- **Status**: ✅ Completed — cli tree lints clean under revive, perfsprint and modernize with behavior preserved; PR #172.
+- **Implementation**: 12 findings fixed at source across the 7 files (2 package comments, 1 const-block comment, 2 Errorf→errors.New, 2 range-over-int, 2 SplitSeq, 2 AsType, 1 t.Context); no `//nolint` added. All five trial commands exit 0; `go test -race ./internal/cli/...` and `go build ./...` pass. Commit 0353796.
+- **Spec deviations**: None.
+- **Files modified**: `internal/cli/accessible.go`, `internal/cli/accessible_test.go`, `internal/cli/exit.go`, `internal/cli/review.go`, `internal/cli/runs_test.go`, `internal/cli/tui.go`, `internal/cli/tui_test.go`, `specs/in-progress/strict-lint-set/tasks.md`, `specs/in-progress/strict-lint-set/handoff.md`.
+- **Red baseline** (pre-fix trial output over `./internal/cli/...`, golangci-lint v2.13.2, uncapped flags): revive exit 1, 3 issues — `accessible.go:1 package-comments`, `exit.go:19 exported ExitOK block`, `tui.go:1 package-comments`; perfsprint exit 1, 2 issues — `accessible.go:68 Errorf`, `review.go:151 Errorf`; modernize exit 1, 7 issues — `accessible_test.go:505,552 rangeint`, `exit.go:78 errorsastype`, `runs_test.go:124 stringsseq`, `tui_test.go:182 stringsseq`, `tui_test.go:488 errorsastype`, `tui_test.go:930 testingcontext`; gocritic/dupl exit 0. Post-fix: all five exit 0.
 
 ### Task 4 — Core fallout C (supervisor, workers)
 
