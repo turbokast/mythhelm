@@ -25,6 +25,7 @@ type Prefs struct {
 // ColourLevel is the resolved colour capability. The zero value suppresses.
 type ColourLevel int
 
+// Colour levels from suppressed to full.
 const (
 	ColourNever ColourLevel = iota
 	ColourBasic
@@ -34,6 +35,7 @@ const (
 // MotionLevel is the resolved motion capability. The zero value suppresses.
 type MotionLevel int
 
+// Motion levels from suppressed to full.
 const (
 	MotionOff MotionLevel = iota
 	MotionReduced
@@ -43,6 +45,7 @@ const (
 // IconSet is the resolved icon capability. The zero value suppresses.
 type IconSet int
 
+// Icon sets from ASCII-only to unicode.
 const (
 	IconsASCII IconSet = iota
 	IconsUnicode

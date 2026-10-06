@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/turbokast/mythhelm/internal/tui/caps"
@@ -188,7 +189,7 @@ func (m *Model) agentsLines(width int) []line {
 	}
 	c := m.cfg.Caps
 	n := m.snap.Attempt.AttemptNumber
-	head := laneLetter(n) + " " + laneDotGlyph(c) + " attempt " + fmt.Sprint(n) + "  " +
+	head := laneLetter(n) + " " + laneDotGlyph(c) + " attempt " + strconv.FormatInt(n, 10) + "  " +
 		laneAdapter(m.snap) + " / " + cellOrUnknown(m.snap.Run.ExecutionProfile)
 	out = append(out, line{text: head, colour: m.cfg.Tokens.Text})
 	out = append(out, line{text: "  " + m.activityText()})
@@ -216,11 +217,12 @@ func (m *Model) activityText() string {
 // labelled absence, plus verification against its checked revision (I07).
 func (m *Model) detailLines(width int) []line {
 	out := []line{m.paneHeader(paneDetail, "SELECTED CHANGE"), {text: m.ruleLine(width)}}
-	if m.snap.Candidate == nil {
+	switch {
+	case m.snap.Candidate == nil:
 		out = append(out, line{text: "no candidate frozen yet"})
-	} else if m.diffErr != nil {
+	case m.diffErr != nil:
 		out = append(out, line{text: "diff unavailable: " + cell(m.diffErr.Error())})
-	} else {
+	default:
 		rows := m.diff.Render(width, m.cfg.Caps, m.cfg.Tokens)
 		if m.diff.Truncated && len(rows) > 0 {
 			// The in-pane counts footer is replaced by the full-width
@@ -314,7 +316,7 @@ func (m *Model) nativeExitText() string {
 		return "unknown"
 	}
 	if n.ExitCode != nil {
-		return fmt.Sprint(*n.ExitCode)
+		return strconv.Itoa(*n.ExitCode)
 	}
 	if n.Signal != nil && *n.Signal != "" {
 		return "signal " + cell(*n.Signal)

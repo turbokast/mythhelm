@@ -221,7 +221,7 @@ var revisionRE = regexp.MustCompile(`^[0-9a-fA-F]{40,64}$`)
 // does: plain git diff of base to commit over the attempt workspace.
 func defaultLoadDiff(ctx context.Context, ws, base, commit string) (Diff, error) {
 	if !revisionRE.MatchString(base) || !revisionRE.MatchString(commit) {
-		return Diff{}, fmt.Errorf("tui: invalid candidate revision")
+		return Diff{}, errors.New("tui: invalid candidate revision")
 	}
 	out, err := workspace.Git(ctx, ws, false, "diff", "--no-color", "--no-ext-diff", "--no-textconv", base, commit) //nolint:misspell // Git's flag is --no-color.
 	if err != nil {
@@ -430,10 +430,7 @@ func (m *Model) viewColumns(l layout, cols []column) string {
 	if m.showNotice(l) {
 		chrome += 2
 	}
-	bodyH := m.height - chrome
-	if bodyH < 1 {
-		bodyH = 1
-	}
+	bodyH := max(m.height-chrome, 1)
 	for i := range cols {
 		if cols[i].width == 0 {
 			cols[i].width = widths[i]
@@ -474,14 +471,14 @@ func columnWidths(width, n int) []int {
 // joinColumns pads each pane's rows to its width, styles them, and joins the
 // rowtuple with separators. Short panes pad with blank rows.
 func joinColumns(c caps.Caps, cols []column, sep string) []string {
-	max := 0
+	tallest := 0
 	for _, col := range cols {
-		if len(col.rows) > max {
-			max = len(col.rows)
+		if len(col.rows) > tallest {
+			tallest = len(col.rows)
 		}
 	}
-	out := make([]string, 0, max)
-	for i := 0; i < max; i++ {
+	out := make([]string, 0, tallest)
+	for i := range tallest {
 		parts := make([]string, 0, len(cols))
 		for _, col := range cols {
 			ln := line{}
@@ -495,14 +492,14 @@ func joinColumns(c caps.Caps, cols []column, sep string) []string {
 	return out
 }
 
-// capLines caps rows at max with a labelled marker row when rows are dropped.
-func capLines(rows []line, max int, c caps.Caps, colour string) []line {
-	if max < 1 {
-		max = 1
+// capLines caps rows at limit with a labelled marker row when rows are dropped.
+func capLines(rows []line, limit int, c caps.Caps, colour string) []line {
+	if limit < 1 {
+		limit = 1
 	}
-	if len(rows) <= max {
+	if len(rows) <= limit {
 		return rows
 	}
-	marker := line{text: ellGlyph(c) + fmt.Sprintf(" and %d more lines", len(rows)-max+1), colour: colour}
-	return append(rows[:max-1], marker)
+	marker := line{text: ellGlyph(c) + fmt.Sprintf(" and %d more lines", len(rows)-limit+1), colour: colour}
+	return append(rows[:limit-1], marker)
 }
