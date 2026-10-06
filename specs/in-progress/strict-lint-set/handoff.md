@@ -44,7 +44,9 @@
 
 ## Task 7 — TUI fallout B (nav, tools, tests)
 
-<!-- pending -->
+- **Produces**: the 6 tui-B paths clean under all five fallout trial linters (revive, modernize, gocritic, perfsprint, dupl — file-scoped grep of the uncapped trial output prints nothing) and under copyloopvar, usetesting and godot (0 issues). Shipped: `Package tui` reword in `history.go`, `_` bind in the esc-case check in `motion_test.go`, `limit` in `appendKeyInput`/`appendBounded`, a justifying comment on the first blank import in `tools.go`, `SplitSeq` in `segments`, `for range 3` in `motion_test.go`/`nav_test.go`, `AsType` in `viewmodel_test.go`.
+- **For dependents**: Task 8's full-tree run covers these paths with zero findings expected from them. No `//nolint` was added, so no machine-checked-form debt. New comments carry trailing periods (godot stays clean). The package now carries five `Package tui` file comments (tools, dialogs, live, motion, history) — legal and revive-clean. Revive's blank-imports rule requires the justifying comment only on the first of a contiguous blank group, so the single comment on the bubbles pin covers all four pins.
+- **Deviations that change a later task's inputs**: none — no API, behavior, or file-list change; Task 8 needs nothing from this task beyond its merged green state.
 
 ## Task 8 — Enable the strict set + enforce the time budget
 

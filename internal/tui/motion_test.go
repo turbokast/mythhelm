@@ -75,7 +75,7 @@ func stripANSISequences(s string) string {
 // join panes with the bar glyph, so a pane's row is a mid-line segment.
 func segments(view string) []string {
 	var out []string
-	for _, row := range strings.Split(stripANSISequences(view), "\n") {
+	for row := range strings.SplitSeq(stripANSISequences(view), "\n") {
 		parts := strings.Split(row, "│")
 		if len(parts) == 1 {
 			parts = strings.Split(row, "|")
@@ -453,7 +453,7 @@ func TestArrivalInterruptible(t *testing.T) {
 		{"q opens exit options", runeMsg("q"), func(m *Model) bool { return m.dialog == dialogExitOptions }},
 		{"tab moves focus", specialMsg(tea.KeyTab), func(m *Model) bool { return m.focusPane == paneAgents }},
 		{"enter opens details", specialMsg(tea.KeyEnter), func(m *Model) bool { return m.focusPane == paneDetail }},
-		{"esc clears the arrival", specialMsg(tea.KeyEsc), func(m *Model) bool { return true }},
+		{"esc clears the arrival", specialMsg(tea.KeyEsc), func(_ *Model) bool { return true }},
 	}
 	for _, tc := range keys {
 		t.Run(tc.name, func(t *testing.T) {
@@ -843,7 +843,7 @@ func TestNoPermanentLoop(t *testing.T) {
 		t.Errorf("settled motion still pends: %+v", m.motion)
 	}
 	// After the settle, silence: further frames schedule nothing.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		var cmd tea.Cmd
 		m, cmd = motionFrame(t, m)
 		if cmd != nil {

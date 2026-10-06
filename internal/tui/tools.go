@@ -8,7 +8,7 @@
 package tui
 
 import (
-	_ "github.com/charmbracelet/bubbles"
+	_ "github.com/charmbracelet/bubbles" // Pin: hold as a direct requirement per the package comment.
 	_ "github.com/charmbracelet/bubbletea"
 	_ "github.com/charmbracelet/lipgloss"
 	_ "github.com/mattn/go-isatty"

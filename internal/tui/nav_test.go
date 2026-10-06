@@ -270,7 +270,7 @@ func TestEscapeNeverQuits(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			m := tc.apply(flowModel(t))
-			for i := 0; i < 3; i++ {
+			for i := range 3 {
 				var cmd tea.Cmd
 				m, cmd = pressKey(t, m, specialMsg(tea.KeyEsc))
 				if cmd != nil {
