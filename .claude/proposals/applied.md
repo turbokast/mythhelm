@@ -93,7 +93,7 @@ Add to the decomposition steps, after task Files lists are drafted: "Coverage pa
 
 - **Decision**: approved
 - **Date**: 2026-10-06
-- **Pull request**: pending
+- **Pull request**: #193
 - **Eval**: `dispatch-emits-run-events-rows`
 - **Rationale**: maintainer approved via deliver-backlog checkpoint 2026-10-06
 - **Source spec**: `dogfood-slice`
