@@ -96,7 +96,7 @@
 - **Files modified**: `internal/cli/accessible.go`, `internal/cli/accessible_test.go`, `internal/cli/exit.go`, `internal/cli/review.go`, `internal/cli/runs_test.go`, `internal/cli/tui.go`, `internal/cli/tui_test.go`, `specs/in-progress/strict-lint-set/tasks.md`, `specs/in-progress/strict-lint-set/handoff.md`.
 - **Red baseline** (pre-fix trial output over `./internal/cli/...`, golangci-lint v2.13.2, uncapped flags): revive exit 1, 3 issues — `accessible.go:1 package-comments`, `exit.go:19 exported ExitOK block`, `tui.go:1 package-comments`; perfsprint exit 1, 2 issues — `accessible.go:68 Errorf`, `review.go:151 Errorf`; modernize exit 1, 7 issues — `accessible_test.go:505,552 rangeint`, `exit.go:78 errorsastype`, `runs_test.go:124 stringsseq`, `tui_test.go:182 stringsseq`, `tui_test.go:488 errorsastype`, `tui_test.go:930 testingcontext`; gocritic/dupl exit 0. Post-fix: all five exit 0.
 
-### Task 4 — Core fallout C (supervisor, workers)
+### Task 4 — Core fallout C (supervisor, workers) ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard (mechanical comment/rename/simplify fallout across 7 files; no new abstraction; 5 acceptance items)
@@ -118,6 +118,11 @@
   - `scripts/ci/check-public-hygiene.sh` passes (a hygiene violation in a touched file fails the script).
 - **Test plan**: trial-command red→green per linter; package tests + full build; existing-set regression run. Files include `*_unix.go`: also `GOOS=windows go vet ./...` and `GOOS=darwin go vet ./...` per the gates header.
 - **Invariants touched**: None (behavior-preserving lint fallout; package tests + build prove no behavior change).
+- **Status**: ✅ Completed — supervisor/workers trees lint clean under revive, gocritic, dupl and modernize with behavior preserved; PR #173.
+- **Implementation**: 13 findings fixed at source across the 7 files (2 const-block doc comments, 2 drain-loop binds, 1 appendAssign own-slice assignment, 1 shared test helper covering the dupl pair, 1 SplitSeq, 2 range-over-int, 1 promoted-field literal, 1 new(expr) covering both newexpr diagnostics); no `//nolint` added. All five trial commands exit 0; `go test -race` on the two trees and `go build ./...` pass. Commit c4ae48c.
+- **Spec deviations**: None.
+- **Files modified**: `internal/supervisor/apply_test.go`, `internal/supervisor/faults_test.go`, `internal/supervisor/pipeline_test.go`, `internal/supervisor/recover.go`, `internal/supervisor/state.go`, `internal/workers/proc_unix.go`, `internal/workers/worker.go`, `specs/in-progress/strict-lint-set/tasks.md`, `specs/in-progress/strict-lint-set/handoff.md`.
+- **Red baseline** (pre-fix trial output over `./internal/supervisor/... ./internal/workers/...`, golangci-lint v2.13.2, uncapped flags): revive exit 1, 4 issues — `faults_test.go:468 empty-block`, `state.go:23 exported RunCreated block`, `state.go:61 exported AttemptLaunchIntentRecorded block`, `worker.go:508 empty-block`; gocritic exit 1, 1 issue — `pipeline_test.go:121 appendAssign`; dupl exit 1, 2 issues — `apply_test.go:186-202` / `faults_test.go:680-696` record-apply helper pair; modernize exit 1, 6 issues — `faults_test.go:243 stringsseq`, `faults_test.go:326,1120 rangeint`, `recover.go:45 embedlit`, `proc_unix.go:39 newexpr`, `worker.go:968 newexpr`; perfsprint exit 0. Post-fix: all five exit 0. Reverting the appendAssign hunk re-trips gocritic (exit 1); restored exits 0.
 
 ### Task 5 — Core fallout D (workspace, journal)
 

@@ -26,7 +26,9 @@
 
 ## Task 4 — Core fallout C (supervisor, workers)
 
-<!-- pending -->
+- **Produces**: `./internal/supervisor/...` and `./internal/workers/...` clean under all five fallout trial linters (revive, gocritic, dupl, modernize, perfsprint — each exits 0 with the uncapped trial command) and under copyloopvar, usetesting and godot. Shipped: doc comments on the `RunState`/`AttemptState` const blocks, `_ = ob` drain-loop binds in `faults_test.go` and the worker abort path, own-slice `appendAssign` in the pipeline fixture, a shared `recordApplyEvent` helper behind `recordApplyIntent`/`recordApplyCompleted`, plus `SplitSeq`, two range-over-int, a promoted-field `RecoveryOutcome` literal and `new(pid)` in unix `nativeGroup`.
+- **For dependents**: Task 8's full-tree run covers these paths with zero findings expected from them. No `//nolint` was added, so no machine-checked-form debt. New comments carry trailing periods (godot stays clean). The `newexpr` fix touched only the unix `nativeGroup` definition — that cleared the `worker.go:968` call-site diagnostic too, so the call site still dispatches per OS and Windows still gets a nil pgid.
+- **Deviations that change a later task's inputs**: none — no API, behavior, or file-list change; Task 8 needs nothing from this task beyond its merged green state.
 
 ## Task 5 — Core fallout D (workspace, journal)
 
