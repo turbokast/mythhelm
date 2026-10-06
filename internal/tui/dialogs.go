@@ -1,5 +1,5 @@
-// Confirmation handling (design §10): explicit labelled modal dialog prompts
-// over the injected Actions seam. Every destructive action confirms only
+// Package tui confirmation handling (design §10): explicit labelled modal
+// dialog prompts over the injected Actions seam. Every destructive action confirms only
 // through its labelled button with initial focus on Cancel, so no single
 // accidental keypress confirms (AC-3.3, I03); Esc cancels every prompt with
 // no call made.
@@ -199,7 +199,7 @@ func (m *Model) dialogLines() []line {
 		return m.withDialogErr(m.applyLines())
 	case dialogDone:
 		rows := []line{{text: cell(m.resultTitle), colour: m.cfg.Tokens.Text}}
-		for _, b := range strings.Split(cell(m.resultBody), "\n") {
+		for b := range strings.SplitSeq(cell(m.resultBody), "\n") {
 			rows = append(rows, line{text: b})
 		}
 		return append(rows, line{text: "Enter or Esc dismisses", colour: m.cfg.Tokens.TextMuted})

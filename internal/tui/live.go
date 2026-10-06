@@ -1,5 +1,5 @@
-// Live render loop (design §13): the bounded live channel, the 200 ms
-// coalesced poll tick, viewport virtualisation for notice lines, and the
+// Package tui live render loop (design §13): the bounded live channel, the
+// 200 ms coalesced poll tick, viewport virtualisation for notice lines, and the
 // channel pump the program joins on quit. Live journaled events arrive
 // through LiveFeed's non-blocking channel and are folded advisory; the
 // poll tick replays dropped events from the journal with a fresh Load,
@@ -127,13 +127,13 @@ func (m *Model) drainNotices(at time.Time) {
 }
 
 // noticeRows renders the synthetic notice events as attention lines,
-// virtualised to a tail of at most max rows: the most recent notices stay
+// virtualised to a tail of at most limit rows: the most recent notices stay
 // visible with a leading marker counting the dropped older ones. Only the
-// shown tail is decoded, so a render costs O(max) however many notices the
+// shown tail is decoded, so a render costs O(limit) however many notices the
 // session retained. A nil result renders nothing, so empty models are
 // byte-identical to before.
-func (m *Model) noticeRows(max int) []line {
-	if max < 1 || len(m.notices) == 0 {
+func (m *Model) noticeRows(limit int) []line {
+	if limit < 1 || len(m.notices) == 0 {
 		return nil
 	}
 	decode := func(ev journal.Event) line {
@@ -146,19 +146,19 @@ func (m *Model) noticeRows(max int) []line {
 		}
 		return line{text: "notice: " + cell(text), colour: m.cfg.Tokens.Attention}
 	}
-	if len(m.notices) <= max {
+	if len(m.notices) <= limit {
 		all := make([]line, 0, len(m.notices))
 		for _, ev := range m.notices {
 			all = append(all, decode(ev))
 		}
 		return all
 	}
-	if max == 1 {
+	if limit == 1 {
 		return []line{decode(m.notices[len(m.notices)-1])}
 	}
-	tail := m.notices[len(m.notices)-max+1:]
-	rows := make([]line, 0, max)
-	dropped := len(m.notices) - max + 1
+	tail := m.notices[len(m.notices)-limit+1:]
+	rows := make([]line, 0, limit)
+	dropped := len(m.notices) - limit + 1
 	rows = append(rows, line{
 		text:   ellGlyph(m.cfg.Caps) + fmt.Sprintf(" and %d more notices", dropped),
 		colour: m.cfg.Tokens.TextMuted,

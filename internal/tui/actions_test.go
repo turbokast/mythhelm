@@ -45,7 +45,7 @@ func (f *fakeActions) actions() Actions {
 			f.stopRun = runID
 			return f.stopRet, f.stopErr
 		},
-		Recover: func(_ context.Context, runID string, _ supervisor.Hooks) (supervisor.RecoveryOutcome, error) {
+		Recover: func(_ context.Context, _ string, _ supervisor.Hooks) (supervisor.RecoveryOutcome, error) {
 			f.recovers++
 			return f.recOut, f.recErr
 		},
@@ -201,7 +201,7 @@ func TestStopLabelsRequested(t *testing.T) {
 	// pending label when the late success arrives (I06).
 	release := make(chan struct{})
 	slow := Actions{
-		Stop: func(ctx context.Context, runID string) (string, error) {
+		Stop: func(ctx context.Context, _ string) (string, error) {
 			select {
 			case <-release:
 				return "stop_requested", nil
@@ -261,7 +261,7 @@ func TestActionRunsOffLoop(t *testing.T) {
 	release := make(chan struct{})
 	started := make(chan struct{})
 	acts := Actions{
-		Stop: func(ctx context.Context, runID string) (string, error) {
+		Stop: func(ctx context.Context, _ string) (string, error) {
 			close(started)
 			select {
 			case <-release:
@@ -415,7 +415,7 @@ func TestApplyShowsExactEffects(t *testing.T) {
 	// An empty branch surfaces in place with no call made.
 	m = actionModel(t, fullCaps, richSnapshot(), fakes.actions())
 	m = openPaletteSelection(t, m, "appl")
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		m, _ = pressKey(t, m, specialMsg(tea.KeyTab))
 	}
 	m = confirmDialog(t, m)

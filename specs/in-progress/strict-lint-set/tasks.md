@@ -150,7 +150,7 @@
 - **Files modified**: `internal/workspace/apply.go`, `internal/workspace/apply_test.go`, `internal/workspace/snapshot.go`, `internal/journal/declarations.go`, `internal/journal/projections.go`, `specs/in-progress/strict-lint-set/tasks.md`, `specs/in-progress/strict-lint-set/handoff.md`.
 - **Red baseline** (pre-fix trial output over `./internal/workspace/... ./internal/journal/...`, golangci-lint v2.13.2, uncapped flags): revive exit 1, 3 issues — `projections.go:66 VerificationRow`, `projections.go:72 CheckRow`, `apply.go:32 indent-error-flow`; perfsprint exit 1, 4 issues — `declarations.go:46 Errorf`, `apply.go:71 Errorf`, `apply.go:88 Errorf`, `apply_test.go:48 Sprint`; modernize exit 1, 1 issue — `snapshot.go:57 stringsseq`; gocritic/dupl exit 0. Post-fix: all five exit 0.
 
-### Task 6 — TUI fallout A (mission, model, views)
+### Task 6 — TUI fallout A (mission, model, views) ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: standard (mechanical comment/rename/simplify fallout across 8 files; no new abstraction; 5 acceptance items)
@@ -173,6 +173,11 @@
   - `scripts/ci/check-public-hygiene.sh` passes (a hygiene violation in a touched file fails the script).
 - **Test plan**: trial-command red→green per linter (file-scoped grep with pre-fix hits as the non-empty leg); package tests + full build; existing-set regression run.
 - **Invariants touched**: None (behavior-preserving lint fallout; package tests + build prove no behavior change).
+- **Status**: ✅ Completed — tui-A paths lint clean under revive, gocritic, perfsprint and modernize with behavior preserved; PR #175.
+- **Implementation**: 22 findings fixed at source across the 8 files (3 package-comment rewords, 3 const-block comments, 2 builtin-shadow renames in diff.go, 3 max→limit/tallest renames, 3 unused runID binds, 1 if-else→switch, 1 FormatInt, 1 Itoa, 1 Errorf→errors.New, 1 SplitSeq, 1 range-over-int, 1 max clamp, 1 proactive range-over-tallest); no `//nolint` added. All five trial greps for the 8 paths print nothing; `go test -race ./internal/tui/...` and `go build ./...` pass. Commit c4fa746.
+- **Spec deviations**: None.
+- **Files modified**: `internal/tui/actions_test.go`, `internal/tui/caps/caps.go`, `internal/tui/dialogs.go`, `internal/tui/diff.go`, `internal/tui/live.go`, `internal/tui/mission.go`, `internal/tui/model.go`, `internal/tui/motion.go`, `specs/in-progress/strict-lint-set/tasks.md`, `specs/in-progress/strict-lint-set/handoff.md`.
+- **Red baseline** (pre-fix trial output over `./internal/tui/...`, golangci-lint v2.13.2, uncapped flags): revive exit 1, 15 hits on task-6 paths — `actions_test.go:48,204,264 unused-parameter runID`, `caps.go:29,38,47 exported const blocks`, `dialogs.go:1 package-comments`, `diff.go:197,348 redefines new`, `live.go:1 package-comments`, `live.go:135 redefines max`, `model.go:477,480,499,501 redefines max`, `motion.go:1 package-comments` (6 more on Task 7 paths); gocritic exit 1, 1 issue — `mission.go:219 ifElseChain`; perfsprint exit 1, 3 issues — `mission.go:191 FormatInt`, `mission.go:317 Itoa`, `model.go:224 Errorf`; modernize exit 1, 3 hits on task-6 paths — `actions_test.go:418 rangeint`, `dialogs.go:202 stringsseq`, `model.go:434 minmax` (4 more on Task 7 paths); dupl exit 0. Post-fix: all five greps for exactly the 8 paths print nothing; copyloopvar/usetesting/godot report 0 issues on the tree.
 
 ### Task 7 — TUI fallout B (nav, tools, tests)
 

@@ -1,5 +1,5 @@
-// Truthful motion moments (design §11): the §15.6 applicable subset with
-// its truth rules plus reduced-motion collapse. Every moment renders only
+// Package tui truthful motion moments (design §11): the §15.6 applicable
+// subset with its truth rules plus reduced-motion collapse. Every moment renders only
 // recorded state — arrival never delays first paint, dispatch shows running
 // only after the launch acknowledgement is consumed, the live pulse never
 // delays counters, the delivery reveal shows the recorded outcome, waiting

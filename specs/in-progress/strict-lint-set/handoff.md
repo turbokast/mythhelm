@@ -38,7 +38,9 @@
 
 ## Task 6 — TUI fallout A (mission, model, views)
 
-<!-- pending -->
+- **Produces**: the 8 tui-A paths clean under all five fallout trial linters (revive, gocritic, perfsprint, modernize, dupl — file-scoped grep of the uncapped trial output prints nothing) and under copyloopvar, usetesting and godot (0 issues tree-wide). Shipped: `Package tui` rewords in `dialogs.go`/`live.go`/`motion.go`, const-block comments in `caps.go`, `oldPath`/`newPath` in `diff.go`, `limit` in `noticeRows`/`capLines`, `tallest` + `range` in `joinColumns`, `_` runID binds in `actions_test.go`, `switch` in `detailLines`, `FormatInt`/`Itoa` in `mission.go`, `errors.New` and `max` clamp in `model.go`, `SplitSeq` in `dialogs.go`, `for range 3` in `actions_test.go`.
+- **For dependents**: Task 8's full-tree run covers these paths with zero findings expected from them. No `//nolint` was added, so no machine-checked-form debt. New comments carry trailing periods (godot stays clean). The package now carries four `Package tui` file comments (tools, dialogs, live, motion) plus history.go once Task 7 lands — legal and revive-clean. The `joinColumns` loop was converted to `range` proactively with the `max` rename so no new modernize hit appears.
+- **Deviations that change a later task's inputs**: none — no API, behavior, or file-list change; Task 8 needs nothing from this task beyond its merged green state.
 
 ## Task 7 — TUI fallout B (nav, tools, tests)
 

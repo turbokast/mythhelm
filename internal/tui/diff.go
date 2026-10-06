@@ -194,8 +194,8 @@ func (p *diffParser) parse(lines []string) error {
 				return err
 			}
 			p.openFile()
-			old, new := splitDiffGit(strings.TrimPrefix(line, "diff --git "))
-			p.current.OldPath, p.current.NewPath = old, new
+			oldPath, newPath := splitDiffGit(strings.TrimPrefix(line, "diff --git "))
+			p.current.OldPath, p.current.NewPath = oldPath, newPath
 			p.current.Header = append(p.current.Header, DiffLine{Kind: DiffFileBoundary, Text: line})
 		case strings.HasPrefix(line, "@@"):
 			m := hunkHeader.FindStringSubmatch(line)
@@ -345,7 +345,7 @@ func isDiffMeta(line string) bool {
 // splitDiffGit splits the paths after "diff --git ". Paths carry a/ and b/
 // prefixes; the split is on the last " b/ " boundary, so only a path
 // containing " b/" itself mis-splits.
-func splitDiffGit(rest string) (old, new string) {
+func splitDiffGit(rest string) (oldPath, newPath string) {
 	if i := strings.LastIndex(rest, ` "b/`); i >= 0 {
 		return stripABPrefix(rest[:i]), stripABPrefix(rest[i+1:])
 	}
