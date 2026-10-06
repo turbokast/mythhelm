@@ -240,7 +240,7 @@ func truncateBeforeExit(t *testing.T, f fixture, d admission.Decision) {
 		t.Fatal(err)
 	}
 	var prefix []byte
-	for _, line := range bytes.Split(raw, []byte("\n")) {
+	for line := range bytes.SplitSeq(raw, []byte("\n")) {
 		if len(line) == 0 {
 			continue
 		}
@@ -323,7 +323,7 @@ func TestRecoverNeverRelaunchesNative(t *testing.T) {
 	f := newFixture(t)
 	d, _, wait := seedLaunch(t, f, "count-launches")
 	wait()
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if code, _, stderr := f.run(t, "recover", d.RunID); code != 5 {
 			t.Fatalf("recover %d: %s", code, stderr)
 		}
@@ -465,7 +465,8 @@ func TestMalformedDeepOversizedBadUTF8Bounded(t *testing.T) {
 				<-sampleStopped
 				t.Fatal(err)
 			}
-			for range sess.Observations() {
+			for ob := range sess.Observations() {
+				_ = ob
 			}
 			<-sess.Done()
 			close(sampleDone)
@@ -679,20 +680,7 @@ func TestRecoverListsOrphansInNativeLaunchWindow(t *testing.T) {
 
 func recordApplyCompleted(t *testing.T, f fixture, runID, branch, commit string) {
 	t.Helper()
-	j := f.journal(t)
-	payload, err := json.Marshal(map[string]string{"branch": branch, "target_repo": f.onlyRun(t).SourceRepo, "candidate_commit": commit})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := j.Append(t.Context(), journal.Event{SchemaVersion: journal.EnvelopeVersion, EventID: ids.New("evt"),
-		RunID: runID, ProducerID: ids.New("sup"), ProducerSequence: 1, Generation: 1,
-		ObservedAt: time.Now().UTC(), Type: "apply.completed", Payload: payload}, nil); err != nil {
-		t.Fatal(err)
-	}
-	p := supervisor.NewProducer(ids.New("sup"), 1)
-	if err := supervisor.TransitionRun(t.Context(), j, runID, supervisor.RunCompleted, "", p); err != nil {
-		t.Fatal(err)
-	}
+	recordApplyEvent(t, f, runID, branch, commit, "apply.completed", supervisor.RunCompleted)
 }
 
 func breakWorkspace(t *testing.T, f fixture, attemptID string) {
@@ -1117,7 +1105,7 @@ func TestRecoverApplyIsIdempotent(t *testing.T) {
 	}
 	_, sha := receiptFileSHA(t, filepath.Join(f.state, "runs", runID, "receipt.json"))
 	events := len(f.events(t, runID))
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if code, _, stderr := f.run(t, "recover", runID); code != 0 {
 			t.Fatalf("recover %d exit %d: %s", i, code, stderr)
 		}

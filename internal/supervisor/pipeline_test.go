@@ -118,7 +118,8 @@ func (f fixture) command(ctx context.Context, args ...string) *exec.Cmd {
 	env := slices.DeleteFunc(os.Environ(), func(kv string) bool {
 		return strings.HasPrefix(kv, "MYTHHELM_HOME=") || strings.HasPrefix(kv, "HOME=") || strings.HasPrefix(kv, "XDG_CONFIG_HOME=")
 	})
-	cmd.Env = append(env, cliEnv+"=1", "MYTHHELM_HOME="+f.state, "HOME="+f.home, "XDG_CONFIG_HOME="+f.home)
+	env = append(env, cliEnv+"=1", "MYTHHELM_HOME="+f.state, "HOME="+f.home, "XDG_CONFIG_HOME="+f.home)
+	cmd.Env = env
 	cmd.WaitDelay = 10 * time.Second
 	return cmd
 }

@@ -36,7 +36,7 @@ func nativeAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{Setpgid: true}
 }
 
-func nativeGroup(pid int) *int { return &pid }
+func nativeGroup(pid int) *int { return new(pid) }
 
 var unixSignals = map[adapter.StopSignal]unix.Signal{
 	adapter.StopInterrupt: unix.SIGINT,
