@@ -157,10 +157,13 @@ func TestCheckTimeoutKillsGroup(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
-		defer cancel()
+		// Cancel only on observed readiness: when ready never arrives the
+		// 30s check timeout stays the kill trigger, and the explicit
+		// readiness assertion below fails the test as inconclusive.
 		deadline := time.Now().Add(25 * time.Second)
 		for time.Now().Before(deadline) {
 			if _, err := os.Stat(ready); err == nil {
+				cancel()
 				return
 			}
 			time.Sleep(10 * time.Millisecond)
