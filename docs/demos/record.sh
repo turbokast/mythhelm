@@ -147,6 +147,17 @@ for n in $names; do
 	fi
 done
 
+# Every manifest VHS pin matches the installed renderer: checked before any
+# render, so a mismatch never leaves GIFs written by the wrong renderer.
+have="$(vhs --version | sed -E 's/.*(v[0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+for n in $names; do
+	want="$(field "$n" vhs_version)"
+	test "$want" = "$have" || {
+		echo "record.sh: $n vhs_version $want != installed $have; re-pin the manifest and tape header" >&2
+		exit 1
+	}
+done
+
 echo "record.sh: render the GIFs from the checked-in tapes"
 for n in $names; do
 	vhs "$(field "$n" tape)"
@@ -197,15 +208,6 @@ for rec in manifest["recordings"]:
     subprocess.run(["git", "cat-file", "-e", commit], check=True)
     print("record.sh: manifest revision %s (%s) is present" % (commit, rec["name"]))
 EOF
-# Every manifest VHS pin matches the renderer that just ran.
-have="$(vhs --version | sed -E 's/.*(v[0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
-for n in $names; do
-	want="$(field "$n" vhs_version)"
-	test "$want" = "$have" || {
-		echo "record.sh: $n vhs_version $want != installed $have; re-pin the manifest and tape header" >&2
-		exit 1
-	}
-done
 # Every tape validates and names exactly one Output (multiple Outputs render
 # only the last, silently — the assertion keeps a stray second Output from
 # shipping), and every render produced a GIF.
