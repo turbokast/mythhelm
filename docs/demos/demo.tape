@@ -10,8 +10,8 @@
 # A bare `vhs docs/demos/demo.tape` renders the GIF but is not the record
 # command: it skips the build, the transcript regen and the verify pass.
 #
-# Binary-Version: v0.0.0-20261006120359-09fb91081cf7
-# Binary-Commit: 09fb91081cf71d96e3f75b9144241872fc4d70e0
+# Binary-Version: v0.0.0-20261006124821-179bba4ceae9
+# Binary-Commit: 179bba4ceae958f9591e9fedb056f70da59ce40c
 # VHS-Version: v0.12.1
 
 Output docs/demos/demo.gif

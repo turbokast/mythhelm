@@ -38,6 +38,9 @@ Try it with no credentials and no network at runtime: `go run ./cmd/mythhelm dem
 ![Scripted demo recording](docs/demos/demo.gif)
 *Honest recording of `mythhelm demo --check pass`, rendered from `docs/demos/demo.tape` — regenerate it with `docs/demos/record.sh`.*
 
+![Scripted TUI recording](docs/demos/tui.gif)
+*Honest recording of the TUI driving `mythhelm demo --check pass`, rendered from `docs/demos/tui.tape` — regenerate it with `docs/demos/record.sh` from the pinned revision (`docs/demos/manifest.json`), or with `docs/demos/record.sh --repin` from a clean tree.*
+
 ## TUI status
 
 Supported now (evidence: [G09 record](docs/tui-slice-g09-evidence.md); unrecorded combinations are experimental per I14):

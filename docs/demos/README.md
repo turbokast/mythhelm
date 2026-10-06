@@ -28,15 +28,8 @@ command: it skips the build, the transcript regen and the verify pass.
 
 | Recording | Tape | Artifact | Transcript | Binary revision | VHS |
 |---|---|---|---|---|---|
-| demo | `docs/demos/demo.tape` | `docs/demos/demo.gif` | `docs/demos/demo.transcript.txt` | `e0ecdbc9554c90da6ac61f6300b7cc836acae266` | v0.12.1 |
-| tui (planned) | `docs/demos/tui.tape` (scaffold, drives nothing yet) | planned | planned | — | — |
-
-The TUI recording is planned, not recorded: `docs/demos/tui.tape` is a
-comment-only scaffold with no `Run` lines, and there is no TUI manifest entry
-or rendered artifact yet. The follow-up tape lands on the shipped TUI slice
-(`specs/done/tui-slice/`: mission view, responsive layouts, keyboard flows),
-limited to exactly that covered behaviour, and keeps the demo tape's
-contract (tape header pins, manifest entry, normalized transcript).
+| demo | `docs/demos/demo.tape` | `docs/demos/demo.gif` | `docs/demos/demo.transcript.txt` | `179bba4ceae958f9591e9fedb056f70da59ce40c` | v0.12.1 |
+| tui | `docs/demos/tui.tape` | `docs/demos/tui.gif` | `docs/demos/tui.transcript.txt` | `179bba4ceae958f9591e9fedb056f70da59ce40c` | v0.12.1 |
 
 The demo tape drives `mythhelm demo --check pass` end to end against the fake
 adapter with local-scripted billing: no network, no paid credentials. Its
@@ -46,6 +39,28 @@ rendered from and the qualifying test for each shown capability:
 | Capability shown | Qualifying test |
 |---|---|
 | offline scripted run | `TestDemoOfflineNoCredentials` (`internal/cli/demo_test.go`) |
+
+The TUI tape drives the same scenario inside the shipped TUI slice
+(`specs/done/tui-slice/`): the mission view at 140 columns, the responsive
+ladder rung by rung (120, 90, 70 columns — each a fresh launch, since the TUI
+owns all input while it runs and a rung change cannot be typed mid-session),
+the keyboard flows (arrows, `/` filter, `:` palette, `?` help,
+`Enter`/`Escape`), and the linear `--accessible` stream as the closing take.
+Scope is exactly the met tui-slice acceptance: the inert exit-dialog rows
+(issue #106) and the unwired history search never appear as working
+behaviour — `q` is never pressed, only `ctrl+c` quits. Its manifest entry
+declares the exact binary revision rendered from and the qualifying test for
+each shown capability:
+
+| Capability shown | Qualifying test |
+|---|---|
+| mission view | `TestMissionShowsRequiredFacts` (`internal/tui/model_test.go`) |
+| keyboard flows | `TestKeyFlows` (`internal/tui/nav_test.go`) |
+| command palette | `TestPaletteSearchable` (`internal/tui/nav_test.go`) |
+| context help | `TestHelpFullNames` (`internal/tui/nav_test.go`) |
+| responsive layouts | `TestLayoutBreakpoints` (`internal/tui/layout_test.go`) |
+| revision-attached verification | `TestVerificationMismatchLabelsRevisions` (`internal/tui/model_test.go`) |
+| linear accessible stream | `TestAccessibleOrderedStream` (`internal/cli/accessible_test.go`) |
 
 Normalization (`docs/demos/normalize.sed`) covers temp paths, `run_`/`att_`
 ULIDs, both worker/native pid shapes, 40-hex SHAs (with the stable

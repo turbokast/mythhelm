@@ -14,7 +14,9 @@
 
 ## Task 2 — Rendered TUI GIF and embeds
 
-<!-- pending -->
+- **Produces**: `docs/demos/tui.gif` (2.8 MB, 81.4s, rendered by `record.sh --repin` from the Task 1 tape directives); README + user-guide embeds with captions naming `docs/demos/tui.tape` + `docs/demos/record.sh`; demos README with recorded TUI row + 7 design §6 capability rows. Pins moved to `179bba4ceae958f9591e9fedb056f70da59ce40c` (`v0.0.0-20261006124821-179bba4ceae9`), both recordings, `len(pins) == 1`; tape directives and transcripts byte-identical to Task 1.
+- **For dependents**: pins now name a main commit, so `git cat-file` / worktree-at-pin work on main and any PR branch (this repaired main's red revision check). Task 3's probes run against pin 179bba4. Plain `record.sh` (no flags) refuses at every committed state — the next re-record must use `--repin` on a clean tree (see scratchpad).
+- **Deviations that change a later task's inputs**: pin value is 179bba4, not Task 1's 09fb9108 — affects Task 3's recorded revision evidence only; the contract (paths, pipelines, label counts, qualifiers) is unchanged.
 
 ## Task 3 — Recording-honesty-check generalization in CI
 
