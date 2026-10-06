@@ -88,3 +88,20 @@ In Step 1, change the command template to use a full SHA and add the warning: "P
 **Proposed change:**
 
 Add to the decomposition steps, after task Files lists are drafted: "Coverage pass: for every sentence in design.md that states what a user sees (page text, labels, placeholders, error wording), name the task whose Files list contains the file carrying that text. A user-visible claim with no owning task is a gap: assign it to a task's Files or record it as an explicit follow-up with its card or issue. The finalize review re-checks this mapping."
+
+## P-dogfood-slice-1 — JSONL acceptance tests assert the type discriminator
+
+- **Decision**: approved
+- **Date**: 2026-10-06
+- **Pull request**: pending
+- **Eval**: `jsonl-tests-assert-discriminator`
+- **Rationale**: maintainer approved via deliver-backlog checkpoint 2026-10-06
+- **Source spec**: `dogfood-slice`
+- **Type**: skill
+- **Target**: `.claude/skills/test-driven-development/SKILL.md`
+- **Rationale**: Task 13's `TestReviewJSONLSingleObject` passed while `review --format jsonl` omitted the required `"type":"receipt"` field, because the test asserted object shape but not the discriminator. The spec-wide review found the same class twice more (demo #70, doctor #71). A gate passed a defect the review found; the red-first discipline needs a discriminator rule so envelope tests pin the contract that routers and consumers match on.
+- **Evidence**: retrospective Acceptance AC-1.3/AC-8.2 (partial); review findings at `internal/cli/review.go:62`, `internal/cli/demo.go:49`, `internal/cli/doctor.go:51`; follow-up issues #69, #70, #71.
+
+**Proposed change:**
+
+Add to the skill's test-writing rules: every acceptance test covering a JSONL or envelope output must assert the `type` discriminator value (or the schema's equivalent routing field) of each emitted object, not just that output parses or has the right shape. A test named `*JSONL*` / `*Envelope*` without a discriminator assertion is incomplete.
