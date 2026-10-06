@@ -7,6 +7,6 @@
   ],
   "grader": {
     "type": "must-match",
-    "pattern": "only when the run has none yet.*exactly one outcome row.*carries the attempt number.*`reconstructed` marker"
+    "pattern": "the task's `dispatch` row.*`run_start` row first, but only when the run has none yet.*`return` when a report arrived, `fail` or `lost` otherwise.*`merge` row after the merge.*carries the attempt number.*`reconstructed` marker.*exclude `reconstructed`-marked rows"
   }
 }
