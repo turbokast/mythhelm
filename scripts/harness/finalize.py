@@ -370,10 +370,11 @@ def pr_gate(slug, pr, required=PR_REVIEW_CHECKS):
     view = json.loads(gh(["pr", "view", str(pr), "--json",
                           "state,isDraft,mergeable,mergeStateStatus,baseRefName,headRefOid,title,body,files,statusCheckRollup"],
                          repo=slug))
-    try:
-        view["baseRefOid"] = json.loads(gh(["api", "repos/%s/commits/%s" % (slug, view.get("baseRefName") or "main")]))["sha"]
-    except (Usage, ValueError, KeyError, TypeError):
-        view["baseRefOid"] = ""
+    if not view.get("baseRefOid"):
+        try:
+            view["baseRefOid"] = json.loads(gh(["api", "repos/%s/commits/%s" % (slug, view.get("baseRefName") or "main")]))["sha"]
+        except (Usage, ValueError, KeyError, TypeError):
+            view["baseRefOid"] = ""
     reasons, unknown = [], []
     if view.get("state") != "OPEN":
         reasons.append("state:%s" % view.get("state"))
