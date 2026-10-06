@@ -7,6 +7,6 @@
   ],
   "grader": {
     "type": "must-match",
-    "pattern": "dry-match it against the tree that results from the task's merge"
+    "pattern": "resolve the selector statically.*naming the task and the selector"
   }
 }
