@@ -19,6 +19,7 @@ import (
 	"github.com/turbokast/mythhelm/internal/workspace"
 )
 
+// ProjectConfigFile is the admitted configuration file name.
 const (
 	ProjectConfigFile = "mythhelm.toml"
 	maxProjectConfig  = 1 << 20

@@ -21,6 +21,7 @@ import (
 
 const maxEvidence = 1 << 20
 
+// CheckResult is the recorded outcome of one admitted check.
 type CheckResult struct {
 	Name           string   `json:"name"`
 	Argv           []string `json:"argv"`
@@ -31,6 +32,7 @@ type CheckResult struct {
 	EvidenceSHA256 string   `json:"evidence_sha256,omitempty"`
 }
 
+// Verification is the recorded outcome of running the admitted checks.
 type Verification struct {
 	CandidateCommit string        `json:"candidate_commit"`
 	ConfigSHA256    string        `json:"config_sha256"`
@@ -48,6 +50,8 @@ func RunChecks(ctx context.Context, cand Candidate, cfg admission.ProjectConfig,
 	return RunChecksWithOptions(ctx, cand, cfg, env, false)
 }
 
+// RunChecksWithOptions executes the admitted check list like RunChecks,
+// continuing past an unavailable check when keepGoing is set.
 func RunChecksWithOptions(ctx context.Context, cand Candidate, cfg admission.ProjectConfig, env []string, keepGoing bool) (Verification, error) {
 	v := Verification{CandidateCommit: cand.Commit, StartedAt: time.Now().UTC()}
 	if cand.Workspace == "" || cand.Commit == "" || len(cand.Commit) < 12 {
@@ -120,13 +124,14 @@ func runCheck(ctx context.Context, dir, evidenceDir string, check admission.Chec
 	setProcessGroup(cmd)
 	err = cmd.Start()
 	_ = pipeWrite.Close()
-	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
+	switch {
+	case errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist):
 		_ = pipeRead.Close()
 		r.Status = "unavailable"
-	} else if err != nil {
+	case err != nil:
 		_ = pipeRead.Close()
 		return r, fmt.Errorf("start check %s: %w", check.Name, err)
-	} else {
+	default:
 		waitDone, pipeDone := make(chan error, 1), make(chan error, 1)
 		go func() { waitDone <- cmd.Wait() }()
 		go func() { _, readErr := io.Copy(&output, pipeRead); pipeDone <- readErr }()

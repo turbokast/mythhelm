@@ -134,7 +134,7 @@ func parseChanged(raw []byte) ([]ChangedPath, error) {
 	for i := 0; i+1 < len(parts) && len(parts[i]) > 0; i += 2 {
 		meta := strings.Fields(strings.TrimPrefix(string(parts[i]), ":"))
 		if len(meta) != 5 || len(parts[i+1]) == 0 {
-			return nil, fmt.Errorf("malformed diff-tree entry")
+			return nil, errors.New("malformed diff-tree entry")
 		}
 		id := meta[3]
 		if meta[4] == "D" {

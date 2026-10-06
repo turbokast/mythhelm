@@ -13,10 +13,16 @@ import (
 	"github.com/turbokast/mythhelm/internal/security"
 )
 
+// NativeConfigTrustKind is the trust-grant kind for native configuration digests.
 const NativeConfigTrustKind = "native_config"
 
+// AuthEvidence is the native login evidence admission evaluates.
 type AuthEvidence = claudecode.AuthEvidence
+
+// Declaration is an entitlement declaration row from the journal.
 type Declaration = journal.DeclarationRow
+
+// BillingPosture is the billing route admission recorded (§6.2, FR-4).
 type BillingPosture = adapter.BillingPosture
 
 // ResolveBilling never upgrades a user declaration into verified entitlement
@@ -59,11 +65,10 @@ func ResolveCredentialEnv(parent []string, strip, oauthOptIn bool, passthrough [
 	var found []string
 	var oauth string // opaque complete env entry; never decoded or persisted
 	for _, kv := range parent {
-		sep := strings.IndexByte(kv, '=')
-		if sep < 0 {
+		name, _, ok := strings.Cut(kv, "=")
+		if !ok {
 			continue
 		}
-		name := kv[:sep]
 		if !slices.ContainsFunc(names, func(n string) bool { return strings.EqualFold(name, n) }) {
 			continue
 		}
@@ -129,8 +134,7 @@ func NativeAdmissionError(err error) error {
 	if errors.Is(err, claudecode.ErrCapability) {
 		return &BlockedError{Code: "native_capability_unavailable", Capability: true, Action: err.Error()}
 	}
-	var blocked *adapter.BlockedError
-	if errors.As(err, &blocked) {
+	if blocked, ok := errors.AsType[*adapter.BlockedError](err); ok {
 		return &BlockedError{Code: blocked.Code, Field: blocked.Field, Action: blocked.Action}
 	}
 	return err
