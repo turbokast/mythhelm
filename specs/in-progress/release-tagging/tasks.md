@@ -33,3 +33,4 @@
 - **Implementation**: ADR 0010 records lightweight-tags-only-by-release-publication with the finalize-spec-tag mechanism and unsigned rationale; docs/release-process.md gains the Tag discipline section with format, operator-publishes, ruleset record, trigger contract and pre-release rule. All 50 local probes pass; hygiene clean. Commit c34a922.
 - **Spec deviations**: None.
 - **Files modified**: `docs/decisions/0010-release-tag-discipline.md`, `docs/release-process.md`, `specs/in-progress/release-tagging/tasks.md`, `specs/in-progress/release-tagging/handoff.md`.
+- **Status**: ✅ Completed — ADR 0010 and the Tag discipline section recorded with operator-publishes, ruleset record, trigger contract and pre-release rule; hygiene clean; PR #180.
