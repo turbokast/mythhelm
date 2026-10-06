@@ -54,7 +54,7 @@ func detachAndDisconnect(ctx context.Context, dst, oid string) error {
 	if err != nil {
 		return err
 	}
-	for _, name := range strings.Fields(string(remotes)) {
+	for name := range strings.FieldsSeq(string(remotes)) {
 		if _, err := Git(ctx, dst, false, "remote", "remove", name); err != nil {
 			return err
 		}

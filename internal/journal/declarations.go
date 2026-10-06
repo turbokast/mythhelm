@@ -43,7 +43,7 @@ func (j *Journal) CurrentDeclaration(ctx context.Context, adapterID, identityRef
 // against direct competing current inserts and concurrent declarations.
 func InsertDeclaration(ctx context.Context, tx *sql.Tx, d DeclarationRow) error {
 	if d.AdapterID == "" || len(d.IdentityRef) != 64 || !slices.Contains([]string{"pro", "max", "team", "enterprise"}, d.PlanClass) || d.ExtraUsage != "disabled" || d.DeclaredAt.IsZero() {
-		return fmt.Errorf("journal: invalid entitlement declaration")
+		return errors.New("journal: invalid entitlement declaration")
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE declarations SET superseded_at=? WHERE adapter_id=? AND identity_ref=? AND superseded_at IS NULL`, formatTime(d.DeclaredAt), d.AdapterID, d.IdentityRef); err != nil {
 		return fmt.Errorf("journal: superseding entitlement declaration: %w", err)
