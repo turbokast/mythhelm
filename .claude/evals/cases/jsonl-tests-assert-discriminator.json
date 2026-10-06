@@ -7,6 +7,6 @@
   ],
   "grader": {
     "type": "must-match",
-    "pattern": "must assert the `type` discriminator value"
+    "pattern": "must assert the `type` discriminator value.*of each emitted object"
   }
 }
