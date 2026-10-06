@@ -180,9 +180,9 @@ func TestWindowsClaudecodeExit7(t *testing.T) {
 	if !errors.Is(err, ErrCapability) {
 		t.Fatalf("Windows must refuse before launching, got %v", err)
 	}
-	cap := New().Capabilities(adapter.Probe{OS: "windows", Version: "2.1.284"})
-	if cap.Platform.ProcessTreeOwnership != adapter.Unsupported || cap.Billing.IncludedOnlySupported != adapter.Unsupported {
-		t.Fatalf("unsupported facts = %+v", cap)
+	caps := New().Capabilities(adapter.Probe{OS: "windows", Version: "2.1.284"})
+	if caps.Platform.ProcessTreeOwnership != adapter.Unsupported || caps.Billing.IncludedOnlySupported != adapter.Unsupported {
+		t.Fatalf("unsupported facts = %+v", caps)
 	}
 }
 
@@ -287,8 +287,7 @@ func TestApiKeyHelperBlocks(t *testing.T) {
 func TestClaudeJSONAccountDataNeverDecoded(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	typ := reflect.TypeFor[claudeJSON]()
-	for i := 0; i < typ.NumField(); i++ {
-		f := typ.Field(i)
+	for f := range typ.Fields() {
 		if f.Name != "MCPServers" && f.Name != "Projects" {
 			t.Fatalf("account field in narrow decode struct: %s", f.Name)
 		}

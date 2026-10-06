@@ -25,6 +25,7 @@ import (
 	"github.com/turbokast/mythhelm/internal/security"
 )
 
+// AdapterID identifies the Claude Code native adapter in descriptors and records.
 const AdapterID = "builtin/claudecode"
 const maxProbeOutput = 1 << 20
 
@@ -38,6 +39,7 @@ type claudeAdapter struct {
 	hashes map[binaryKey]string
 }
 
+// New returns a Claude Code adapter with an empty executable digest cache.
 func New() adapter.Adapter { return &claudeAdapter{hashes: make(map[binaryKey]string)} }
 func (*claudeAdapter) Descriptor() adapter.Descriptor {
 	return adapter.Descriptor{ID: AdapterID, Version: "0.1.0", Harness: "claude-code", Surface: "native-cli-structured (print, stream-json)"}

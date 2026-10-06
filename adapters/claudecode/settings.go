@@ -145,8 +145,8 @@ func inventorySettings(home, workspace, configDir, claudeJSONPath, managed strin
 			}
 			// Native per-project keys may use the canonical workspace path.
 			paths := []string{workspace}
-			if real, e := filepath.EvalSymlinks(workspace); e == nil && real != workspace {
-				paths = append(paths, real)
+			if canonical, e := filepath.EvalSymlinks(workspace); e == nil && canonical != workspace {
+				paths = append(paths, canonical)
 			}
 			for _, path := range paths {
 				if err = manifest.addMCP(src.name+":project", cfg.Projects[path].MCPServers); err != nil {

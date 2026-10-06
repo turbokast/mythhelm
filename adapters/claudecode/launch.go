@@ -129,8 +129,8 @@ func childEnv(base, passthrough []string, attemptID string) ([]string, error) {
 	filtered := make([]string, 0, len(base))
 	for _, kv := range base {
 		name := kv
-		if i := strings.IndexByte(kv, '='); i >= 0 {
-			name = kv[:i]
+		if before, _, ok := strings.Cut(kv, "="); ok {
+			name = before
 		}
 		switch name {
 		case envAttemptID, envNoAutoUpdate, envStartupFailures:

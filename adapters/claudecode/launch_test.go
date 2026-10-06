@@ -89,8 +89,7 @@ func (p *stubProc) Wait() adapter.NativeExit {
 	if err == nil {
 		return adapter.NativeExit{Code: 0}
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		return adapter.NativeExit{Code: exitErr.ExitCode()}
 	}
 	return adapter.NativeExit{Code: -1, Err: err}
@@ -254,7 +253,7 @@ func TestCINeverPassesLiveTag(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, line := range strings.Split(string(raw), "\n") {
+		for line := range strings.SplitSeq(string(raw), "\n") {
 			if strings.Contains(line, "-tags") && strings.Contains(line, "live") {
 				t.Fatalf("%s passes the live tag: %q (the canary consumes the maintainer's allowance)", path, line)
 			}

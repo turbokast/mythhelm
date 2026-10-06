@@ -429,7 +429,8 @@ func waitStarted(t *testing.T, s adapter.Session) {
 	for ob := range s.Observations() {
 		if _, ok := ob.(adapter.SessionStarted); ok {
 			go func() {
-				for range s.Observations() {
+				for ob := range s.Observations() {
+					_ = ob
 				}
 			}()
 			return
