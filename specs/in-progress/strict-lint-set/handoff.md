@@ -50,4 +50,6 @@
 
 ## Task 8 — Enable the strict set + enforce the time budget
 
-<!-- pending -->
+- **Produces**: `.golangci.yml` enables the eight strict linters (revive, gocritic, perfsprint, dupl, modernize, copyloopvar, usetesting, godot) atop the existing five, with no new settings and no new exclusions; the CI `golangci-lint` job carries `timeout-minutes: 5` (ci.yml:74, that job only); `docs/automation.md`'s golangci-lint row names all eight; scratchpad Q1 records "5 minutes (maintainer checkpoint 2026-10-06)". Full-tree `golangci-lint run ./...` reports `0 issues` (5.08s real locally); `go test -race ./...` green.
+- **For dependents**: none — last task. For finalize-spec: the prepared `warnings_strict` → Met text lives in design §6 and verbatim in the PR #177 description (reviewer confirms the paste before merge); the operator fills `<CI-RUN-URL>` with the green CI run URL at assessment-flip time. The AC-2.2 escape hatch was not used — zero new exclusions.
+- **Deviations that change a later task's inputs**: none — the scratchpad Q1 answer is spec-record bookkeeping under NFR-1 itself, not a task-input change.

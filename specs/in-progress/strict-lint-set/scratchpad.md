@@ -6,7 +6,7 @@
 
 | # | Question | Default in this spec | Owner / blocks |
 |---|---|---|---|
-| 1 | What CI-time budget (minutes) does the lint job get? | Set by the maintainer at the spec checkpoint from the §5 measurements (local baseline ~3.6s, full set ~6.2s cold); Task 8 enforces it. No default number — inventing one would be project policy. | Maintainer at checkpoint / blocks Task 8's timeout value only |
+| 1 | What CI-time budget (minutes) does the lint job get? | Set by the maintainer at the spec checkpoint from the §5 measurements (local baseline ~3.6s, full set ~6.2s cold); Task 8 enforces it. No default number — inventing one would be project policy. **Answer: 5 minutes (maintainer checkpoint 2026-10-06).** | Maintainer at checkpoint / blocks Task 8's timeout value only |
 
 Requirements Q1–Q4 were all resolved during design (see design §7 D1–D7): curated shortlist with per-linter verdicts; local v2.13.2 trials; justification in spec record + PR description; config + per-domain fallout split.
 
@@ -19,3 +19,5 @@ Requirements Q1–Q4 were all resolved during design (see design §7 D1–D7): c
 - New comments are written with trailing periods (godot is clean today and stays so).
 
 ## Discoveries
+
+- Task 8 (2026-10-06): full eight-linter set reports `0 issues` on the merged tree in 5.08s real locally (design §5 measured ~6.2s cold pre-fix) — the AC-2.2 escape hatch was not needed, zero new exclusions. NFR-1 budget: 5 minutes (maintainer checkpoint 2026-10-06), enforced via `timeout-minutes` on the lint job.
