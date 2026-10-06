@@ -88,3 +88,20 @@ In Step 1, change the command template to use a full SHA and add the warning: "P
 **Proposed change:**
 
 Add to the decomposition steps, after task Files lists are drafted: "Coverage pass: for every sentence in design.md that states what a user sees (page text, labels, placeholders, error wording), name the task whose Files list contains the file carrying that text. A user-visible claim with no owning task is a gap: assign it to a task's Files or record it as an explicit follow-up with its card or issue. The finalize review re-checks this mapping."
+
+## P-dogfood-slice-4 — run-spec dispatch emits complete run-events rows
+
+- **Decision**: approved
+- **Date**: 2026-10-06
+- **Pull request**: pending
+- **Eval**: `dispatch-emits-run-events-rows`
+- **Rationale**: maintainer approved via deliver-backlog checkpoint 2026-10-06
+- **Source spec**: `dogfood-slice`
+- **Type**: skill
+- **Target**: `.claude/skills/run-spec-dispatch/SKILL.md`
+- **Rationale**: `.claude/data/run-events.jsonl` starts mid-spec (first row 2026-09-30T23:20:49Z, tasks 14–20 only; no `run_start` row), so the retrospective's wall-clock start is unknown and tasks 1–13 have no dispatch/return/attempt attribution. Dispatches happened without logging them. The dispatch procedure should require emitting the run-events rows it owns, so effort data exists for every task.
+- **Evidence**: retrospective Effort section; `.claude/data/run-events.jsonl` row range vs the 20 merged task PRs (#7–#67).
+
+**Proposed change:**
+
+Add a dispatch step: before starting a task attempt, append the `run_start` row (once per spec run) and the task's `dispatch` row to `.claude/data/run-events.jsonl`; after the attempt ends, append the `return` row (and `merge` after the merge). A dispatch without its rows is incomplete. Before finalizing, the orchestrator may backfill rows for already-merged tasks only from authoritative records (merged PRs, merge commits). Backfilled rows must carry provenance marking them as reconstructed, and consumers must distinguish them from observed rows when computing attempt metrics and attribution. Use the schema's `null` and `unknown` values for unavailable attribution or results; never treat the generated `ts` as the original event time when that time cannot be recovered.

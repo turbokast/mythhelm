@@ -38,18 +38,6 @@ Add a validation step: collect every `go test … -run <selector>` command embed
 
 Append a short entry: on Windows, atomic file replacement via rename can fail transiently with a sharing violation when another handle is open; product code that replaces identity/state files must retry transient sharing violations with backoff (fail closed on persistent errors), and tests that write-then-immediately-replace files should expect the retry path. Cite the worker.json incident as the example.
 
-## P-dogfood-slice-4 — run-spec dispatch emits complete run-events rows
-
-- **Source spec**: `dogfood-slice`
-- **Type**: skill
-- **Target**: `.claude/skills/run-spec-dispatch/SKILL.md`
-- **Rationale**: `.claude/data/run-events.jsonl` starts mid-spec (first row 2026-09-30T23:20:49Z, tasks 14–20 only; no `run_start` row), so the retrospective's wall-clock start is unknown and tasks 1–13 have no dispatch/return/attempt attribution. Dispatches happened without logging them. The dispatch procedure should require emitting the run-events rows it owns, so effort data exists for every task.
-- **Evidence**: retrospective Effort section; `.claude/data/run-events.jsonl` row range vs the 20 merged task PRs (#7–#67).
-
-**Proposed change:**
-
-Add a dispatch step: before starting a task attempt, append the `run_start` row (once per spec run) and the task's `dispatch` row to `.claude/data/run-events.jsonl`; after the attempt ends, append the `return` row (and `merge` after the merge). A dispatch without its rows is incomplete. Before finalizing, the orchestrator may backfill rows for already-merged tasks only from authoritative records (merged PRs, merge commits). Backfilled rows must carry provenance marking them as reconstructed, and consumers must distinguish them from observed rows when computing attempt metrics and attribution. Use the schema's `null` and `unknown` values for unavailable attribution or results; never treat the generated `ts` as the original event time when that time cannot be recovered.
-
 ## P-release-tagging-1 — completion entries name review-round clarifications as deviations
 
 - **Source spec**: `release-tagging`
