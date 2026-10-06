@@ -13,7 +13,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Adapters fallout (revive, modernize)
+### Task 1 — Adapters fallout (revive, modernize) ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard (mechanical comment/rename/simplify fallout across 7 files; no new abstraction; 5 acceptance items)
@@ -34,6 +34,11 @@
   - `scripts/ci/check-public-hygiene.sh` passes (a hygiene violation in a touched file fails the script).
 - **Test plan**: trial-command red→green per linter; package tests + full build; existing-set regression run.
 - **Invariants touched**: None (behavior-preserving lint fallout in adapter code; package tests + build prove no behavior change).
+- **Status**: ✅ Completed — adapters tree lints clean under revive and modernize with behavior preserved; PR #170.
+- **Implementation**: 13 findings fixed at source across the 7 files (2 doc comments, 2 builtin-shadow renames, 1 empty-block bind, 8 modernize simplifications); no `//nolint` added. All five trial commands exit 0; `go test -race ./adapters/...` and `go build ./...` pass. Commit 3863cad.
+- **Spec deviations**: None.
+- **Files modified**: `adapters/claudecode/decode_test.go`, `adapters/claudecode/launch.go`, `adapters/claudecode/launch_test.go`, `adapters/claudecode/probe.go`, `adapters/claudecode/probe_test.go`, `adapters/claudecode/settings.go`, `adapters/fake/fake_test.go`, `specs/in-progress/strict-lint-set/tasks.md`, `specs/in-progress/strict-lint-set/handoff.md`.
+- **Red baseline** (pre-fix trial output over `./adapters/...`, golangci-lint v2.13.2, uncapped flags): revive exit 1, 5 issues — `probe.go:28 exported const AdapterID`, `probe.go:41 exported func New`, `probe_test.go:183 redefines-builtin-id cap`, `settings.go:148 redefines-builtin-id real`, `fake_test.go:432 empty-block`; modernize exit 1, 8 issues — `decode_test.go:23 stringsseq`, `decode_test.go:44 newexpr i64`, `decode_test.go:291,298 rangeint`, `launch.go:132 stringscut`, `launch_test.go:93 errorsastype`, `launch_test.go:257 stringsseq`, `probe_test.go:290 stditerators`; gocritic/perfsprint/dupl exit 0. Post-fix: all five exit 0.
 
 ### Task 2 — Core fallout A (adapter, admission, integration)
 

@@ -20,7 +20,7 @@ func loadFixture(t *testing.T, name string) [][]byte {
 		t.Fatal(err)
 	}
 	var frames [][]byte
-	for _, line := range strings.Split(string(raw), "\n") {
+	for line := range strings.SplitSeq(string(raw), "\n") {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
@@ -41,7 +41,7 @@ func decodeAll(frames [][]byte) []adapter.Observation {
 	return out
 }
 
-func i64(n int64) *int64 { return &n }
+func i64(n int64) *int64 { return new(n) }
 
 func TestDecodeFixture(t *testing.T) {
 	t.Parallel()
@@ -288,14 +288,14 @@ func TestDecodeOverflowIsProtocolError(t *testing.T) {
 	t.Parallel()
 	d := newStreamDecoder()
 	var obs []adapter.Observation
-	for i := 0; i < 101; i++ {
+	for range 101 {
 		obs = append(obs, d.decode([]byte(`{"type":`))...)
 	}
 	if len(obs) != 1 || obs[0] != (adapter.NativeError{Class: "protocol_error"}) {
 		t.Fatalf("101 malformed frames = %+v, want one protocol_error", obs)
 	}
 	d2 := newStreamDecoder()
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		if obs := d2.decode([]byte(`{"type":`)); len(obs) != 0 {
 			t.Fatalf("100 malformed frames must stay silent, got %+v", obs)
 		}
