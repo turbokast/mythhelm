@@ -15,6 +15,7 @@ import (
 // ExitCode is a process exit status with the §15.10 meaning.
 type ExitCode int
 
+// Exit codes for command outcomes (§15.10).
 const (
 	ExitOK         ExitCode = 0   // command or deliverable succeeded
 	ExitInternal   ExitCode = 1   // unexpected error (design §11)
@@ -74,8 +75,7 @@ func exitCode(err error) ExitCode {
 
 // errorCategory is the JSON error category of err (§15.10, design §10).
 func errorCategory(err error) string {
-	var outcome *outcomeError
-	if errors.As(err, &outcome) {
+	if outcome, ok := errors.AsType[*outcomeError](err); ok {
 		return outcome.category
 	}
 	return categories[exitCode(err)]

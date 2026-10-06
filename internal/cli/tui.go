@@ -1,8 +1,8 @@
-// Launch wiring for run, demo and review (design §2): the presentation
-// flags (--colour plus alias, --motion, --icons, --accessible, --after),
-// the launch rule choosing linear, accessible or TUI output, TTY detection
-// through the tuiDeps seam, and the supervisor-backed Actions the TUI
-// palette acts through (design §10).
+// Package cli wires launch for run, demo and review (design §2): the
+// presentation flags (--colour plus alias, --motion, --icons, --accessible,
+// --after), the launch rule choosing linear, accessible or TUI output, TTY
+// detection through the tuiDeps seam, and the supervisor-backed Actions the
+// TUI palette acts through (design §10).
 package cli
 
 import (
