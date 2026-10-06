@@ -51,6 +51,10 @@
         {
           "name": "linear accessible stream",
           "qualifier": "TestAccessibleOrderedStream"
+        },
+        {
+          "name": "probe capability",
+          "qualifier": "TestDoesNotExist"
         }
       ]
     }
