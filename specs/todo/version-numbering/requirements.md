@@ -1,7 +1,5 @@
 ## Version Numbering — Requirements
 
-> Unrefined. Run /refine-spec version-numbering before /spec.
-
 > Decides the project's release version-numbering scheme — Semantic Versioning or Calendar Versioning with a micro level — and records it where the release process will honor it, before MH-7 ships the first release. Closes the OpenSSF `version_semver` (SUGGESTED) gap. Normative source: mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md, version 2.0; § numbers, I-IDs, G-IDs and AT-IDs refer to it. Historical Revision 1.1 pins (§19.3, §19.4) keep their original meaning per docs/spec/README.md.
 
 ## Context
@@ -15,10 +13,10 @@
   - `version_semver` SUGGESTED, answered Unmet, tracked in MH-18/issue #113: HOLDS (`specs/done/openssf-badge/design.md:29`).
   - No releases exist: HOLDS — `git tag -l` returns zero tags.
   - No version-numbering format adopted: PARTIAL — `CHANGELOG.md:6` already claims "this project adheres to Semantic Versioning" (Keep-a-Changelog boilerplate), but the claim is unexercised (zero releases) and recorded in no release process (none exists). The decision is ratify-or-overturn, not greenfield.
-  - Current contract v2 §§17–18 via W16: PARTIAL — v2 names no versioning scheme; W16 governs release/tag/publish as explicit operator actions (`MYTHHELM_Implementation_Plan.md:213-221`). The scheme demand comes from the OpenSSF criterion, executed through the W16 release language.
+  - Current contract v2 §§17–18 via W16: PARTIAL — v2 names no versioning scheme; W16 governs release/tag/publish as explicit operator actions (`mythhelm-synthesis/MYTHHELM_Implementation_Plan.md:213-221`). The scheme demand comes from the OpenSSF criterion, executed through the W16 release language.
   - Decision must land before MH-7's first release: HOLDS as a sequencing constraint — MH-7 is triaged with no spec; its Summary is a tag-triggered GoReleaser pipeline and its Notes reserve tags to operator action.
-  - No spec covers MH-18: HOLDS — `MH-18` appears in `specs/` only as the openssf-badge follow-up pointer (`specs/done/openssf-badge/tasks.md:53`, `handoff.md` Task 2, retrospective acceptance); `spec-lifecycle.sh resolve version-numbering` finds nothing.
-  - Gap is open and closable today: HOLDS — criterion Unmet; no release-process record exists to contradict; `mythhelm version` prints an unstamped `devel` on a bare checkout.
+  - MH-18 is covered by this spec: HOLDS — re-grounded 2026-10-06: card specced with `Spec: version-numbering` (`product/backlog.md:89-94`); `MH-18` appears in `specs/` as the openssf-badge follow-up pointer (`specs/done/openssf-badge/tasks.md:53`, `handoff.md` Task 2, retrospective acceptance), the `specs/*/release-tagging/` cross-references (which build on this decision), and this spec. (At create-spec time on 2026-10-05 no spec covered it; `spec-lifecycle.sh resolve version-numbering` found nothing.)
+  - Gap is open and closable today: HOLDS — criterion Unmet; no release-process record exists to contradict; `mythhelm version` prints an unstamped `devel` on a bare checkout (`internal/buildinfo/buildinfo.go:43`, default `Version = "devel"` when unstamped).
 
 ### Objectives
 
@@ -50,9 +48,9 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 - **AC-2.1** [W16] The adopted scheme, with an example version string, shall be recorded in the release-process location MH-7 will implement, so MH-7's spec can cite it instead of re-deciding.
 - **AC-2.2** [G10] The record shall name MH-19 as the owner of the tag format and mechanics carrying the scheme, and MH-7 as the pipeline implementing both.
 
-### FR-3 — Assessment evidence prepared (§19.3, G10)
+### FR-3 — Assessment evidence prepared (§19.3 Revision 1.1, G10)
 
-- **AC-3.1** [§19.3] The spec record shall carry the new `version_semver` justification text citing the scheme record, ready for the operator to paste once the first release demonstrates it.
+- **AC-3.1** [§19.3 Revision 1.1] The spec record shall carry the new `version_semver` justification text citing the scheme record, ready for the operator to paste once the first release demonstrates it.
 - **AC-3.2** [G10] Until the operator flips the assessment, the live badge shall remain passing; this spec shall not edit the assessment itself.
 
 ## Non-Functional Requirements
@@ -77,8 +75,8 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 
 - **Builds on: `openssf-badge` (MH-9, `specs/done/openssf-badge/`, shipped 2026-10-04)** — the `version_semver` Unmet record (design §3) and the card-per-Unmet mechanism (FR-3).
 - **Feeds into: MH-7 (release pipeline, triaged, unspecced)** — MH-7 implements this scheme; this decision lands first.
-- **Feeds into: MH-19 (tag discipline, triaged, unspecced)** — MH-19's tag format carries this scheme; MH-19 builds on this decision (delivery dependency recorded).
-- **Supersedes**: nothing (the CHANGELOG line is reconciled, not superseded). **Conflicts**: none known; `specs/todo/` and `specs/in-progress/` are empty.
+- **Feeds into: MH-19 (tag discipline, specced as `specs/*/release-tagging/`, `product/backlog.md:100-105`)** — MH-19's tag format carries this scheme; MH-19 builds on this decision (delivery dependency recorded).
+- **Supersedes**: nothing (the CHANGELOG line is reconciled, not superseded). **Conflicts**: none known; `specs/todo/tui-tape-recording/` (moved 2026-10-06; touches `docs/demos/`, embeds, `docs.yml`, `docs/automation.md` — disjoint from this spec's files), `specs/*/release-tagging/` (builds on this spec's scheme decision — consistent, no conflict) and `specs/*/strict-lint-set/` (disjoint, no MH-18/MH-19 mention) were checked; `specs/in-progress/` and `specs/unfinalized/` are empty.
 
 ## Impacted components
 

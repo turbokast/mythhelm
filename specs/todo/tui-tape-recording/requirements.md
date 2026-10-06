@@ -1,7 +1,5 @@
 ## TUI Tape Recording — Requirements
 
-> Unrefined. Run /refine-spec tui-tape-recording before /spec.
-
 > Records the shipped TUI slice on a checked-in VHS tape with header pins, a manifest entry and a normalized transcript. A slice of the docs-site-demos FR-3 follow-up. Normative source: mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md, version 2.0; § numbers, I-IDs, G-IDs and AT-IDs refer to it. Historical Revision 1.1 pins (§14.9, §22.3, §15) keep their original meaning per docs/spec/README.md.
 
 ## Context
@@ -41,25 +39,25 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 
 ### FR-1 — Full TUI tape (docs-site-demos FR-3, v2 §15, W05, G10)
 
-- **AC-1.1** [FR-3/AC-3.1] When a contributor runs the documented record command, the checked-in TUI tape shall regenerate the TUI recording transcript-reproducibly — the same commands, outputs and exit codes — from scripted fixtures with no paid credentials and no network access.
+- **AC-1.1** [FR-3/AC-3.1, W05 journey evidence, v2 §15.2] When a contributor runs the documented record command, the checked-in TUI tape shall regenerate the TUI recording transcript-reproducibly — the same commands, outputs and exit codes — from scripted fixtures with no paid credentials and no network access.
 - **AC-1.2** [AC-3.2/I14] The tape shall drive the mission view, the responsive layout ladder down to the linear accessible mode, and the keyboard flows (arrows, `/` filter, `:` palette, `?` help, `Enter`/`Escape`), and shall show nothing outside the met tui-slice acceptance; the inert exit-dialog rows (issue #106) and the unwired history search shall not appear as working behaviour.
 - **AC-1.3** [AC-3.3/I17] The recording shall show the TUI's own verification status bound to its candidate revision on screen; it shall not present terminal text or pane status as proof of completion.
 
 ### FR-2 — Tape keeps the honesty contract (AC-4.1/AC-4.2, I07, I14)
 
-- **AC-2.1** [AC-4.1/I07] The tape header shall declare `Binary-Version:`, `Binary-Commit:` and `VHS-Version:` pins; the manifest entry shall declare the same binary revision, and CI shall fail a recording whose artifacts drift from a regen at the declared revision.
+- **AC-2.1** [AC-4.1/I07] The tape header shall declare `Binary-Version:`, `Binary-Commit:` and `VHS-Version:` pins; the manifest entry shall declare the same binary revision, and CI shall fail a recording whose transcript drifts from a regen at the declared revision (transcript only per N2 — the rendered artifact is bound by human review, not byte-compare).
 - **AC-2.2** [AC-4.2/I14] The manifest entry shall name every shown capability and the versioned test result qualifying each one; CI shall fail a recording whose declaration is missing a qualifier for a shown, unmarked capability, and shall pass only qualifiers that pass at the declared revision.
-- **AC-2.3** [AC-2.1 analog] A normalized transcript shall sit beside the tape; the record command shall regenerate it from the same binary and the verify pass shall byte-match a re-run, with the binary's own labels kept verbatim (I09).
+- **AC-2.3** [AC-2.1 analog, I09] A normalized transcript shall sit beside the tape; the record command shall regenerate it from the same binary and the verify pass shall byte-match a re-run, with the binary's own labels kept verbatim (I09).
 
 ### FR-3 — Recording is published (design §5 claim, G10)
 
 - **AC-3.1** [§15.2 journey evidence] The docs site shall embed the rendered TUI recording with a provenance caption naming the tape and the record command, in the user guide beside the demo recording.
-- **AC-3.2** [AC-2.3 analog] The README demos section and `docs/demos/README.md` shall list the TUI recording with its tape, artifact, transcript and pinned revisions; no "planned" wording shall remain where the recording now exists.
+- **AC-3.2** [AC-2.3 analog, G10] The README beside the demo embed and `docs/demos/README.md` shall list the TUI recording with its tape, artifact, transcript and pinned revisions; no "planned" wording shall remain where the recording now exists.
 
 ## Non-Functional Requirements
 
-- **NFR-1** [NFR-2 analog] The full record command shall complete in under 10 minutes on Linux using free tooling only (`go`, `git`, `python3`, pinned VHS); the implementing task records the measured time.
-- **NFR-2** [D5 analog] If the rendered artifact exceeds ~5 MB, the implementer reports back and a smaller format becomes a follow-up; the tape still merges.
+- **NFR-1** [NFR-2 analog, W16] The full record command shall complete in under 10 minutes on Linux using free tooling only (`go`, `git`, `python3`, pinned VHS); the implementing task records the measured time.
+- **NFR-2** [D5 analog, G10] If the rendered artifact exceeds ~5 MB, the implementer reports back and a smaller format becomes a follow-up; the tape still merges.
 
 ## Definition of Done
 
@@ -71,10 +69,10 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 ## Open Questions
 
 1. **Rendered artifact filename and format?** Blocks tape content and embeds. Options: (a) `docs/demos/tui.gif` per D4 side-by-side + D5 GIF-in-tree; (b) MP4/WebM if the TUI loop exceeds the ~5 MB GIF budget. Default: (a). Until the follow-up renders one, no filename is referenced from `docs/` or `README.md` (I14; the Task 7 handoff cited a grep check for this, but no such check exists in `.github/workflows/docs.yml` or `record.sh` — drift to confirm or drop in /spec).
-2. **Does driving the TUI need a binary fixture or flag?** Blocks task scoping (a core-domain task joins if so). Options: (a) VHS keystrokes against the existing launch paths including linear/plain modes, no code change; (b) a minimal determinism/scripted-session fixture in the TUI or CLI. No default yet — /spec investigates against `internal/tui/` and the launch matrix.
+2. **Does driving the TUI need a binary fixture or flag?** Blocks task scoping (a tui- or core-domain task joins if so, per the fixture's path: `internal/tui/` is tui, `cmd/` is core). Options: (a) VHS keystrokes against the existing launch paths including linear/plain modes, no code change; (b) a minimal determinism/scripted-session fixture in the TUI or CLI. No default yet — /spec investigates against `internal/tui/` and the launch matrix.
 3. **One declared revision for all recordings?** Blocks manifest design. Options: (a) re-record demo and TUI together at one new commit, keeping the `len(pins) == 1` assertion in `docs.yml:82`; (b) per-recording pins with a check change. Default: (a) — weakening a shipped honesty check needs its own rationale.
 4. **What is the TUI transcript?** Blocks FR-2 transcript design. Options: (a) normalized stdout of the taped commands with `normalize.sed` extended for TUI escape sequences; (b) the keystroke script plus a final-state dump (linear/plain rendering) as the stable proof; (c) linear-mode outputs driven alongside the interactive takes. No default yet — /spec investigates against VHS output behaviour.
-5. **Which pages carry the embed?** Blocks FR-3. Options: (a) user-guide Quickstart beside the demo embed plus the README demos section; (b) a dedicated demos page. Default: (a), matching the AC-2.3 precedent.
+5. **Which pages carry the embed?** Blocks FR-3. Options: (a) user-guide Quickstart beside the demo embed plus the README beside the demo embed; (b) a dedicated demos page. Default: (a), matching the AC-2.3 precedent.
 
 ## Dependencies
 
@@ -90,4 +88,4 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 - `docs/user-guide.md` + `README.md` (docs domain): TUI recording embeds with provenance captions.
 - `docs/demos/record.sh`, `docs/demos/normalize.sed` (docs domain): generalize beyond the demo recording (tape/transcript selection, transcript normalization for TUI output).
 - `.github/workflows/docs.yml` (release domain): generalize the revision and transcript checks from `recordings[0]`/demo-command to each recording.
-- Possible `internal/tui/` or `cmd/` fixture (core domain, read-only unless Open Q2 says otherwise): only if the tape cannot drive the shipped UI deterministically.
+- Possible `internal/tui/` fixture (tui domain) or `cmd/` fixture (core domain), read-only unless Open Q2 says otherwise: only if the tape cannot drive the shipped UI deterministically.

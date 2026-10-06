@@ -1,8 +1,6 @@
 ## Release Tagging — Requirements
 
-> Unrefined. Run /refine-spec release-tagging before /spec.
-
-> Establishes the tag-per-release discipline — tag format, who tags, and the GoReleaser trigger contract — alongside the MH-7 release pipeline and before the first release. Closes the OpenSSF `version_tags` (SUGGESTED) gap. Normative source: mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md, version 2.0; § numbers, I-IDs, G-IDs and AT-IDs refer to it. Historical Revision 1.1 pins (§19.3, §19.4) keep their original meaning per docs/spec/README.md.
+> Establishes the tag-per-release discipline — tag format, who tags, and the GoReleaser trigger contract — alongside the MH-7 release pipeline and before the first release. Closes the OpenSSF `version_tags` (SUGGESTED) gap. Normative source: mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md, version 2.0; § numbers, I-IDs, G-IDs and AT-IDs refer to it. W-IDs refer to the waves in mythhelm-synthesis/MYTHHELM_Implementation_Plan.md. The Historical Revision 1.1 pin (§19.3) keeps its original meaning per docs/spec/README.md.
 
 ## Context
 
@@ -12,11 +10,11 @@
 - **Work**: Define the tag format carrying MH-18's numbering scheme, record operator-only tagging per W16, and define the tag→pipeline trigger contract MH-7 implements. This spec creates no tags (nothing to release yet) and flips no assessment; it records the discipline and prepares the justification.
 - **Grounding verdicts** (2026-10-05, main @ 176fead):
   - Issue #114 describes this gap and names MH-19: HOLDS (read 2026-10-05; labels documentation, enhancement; no comments).
-  - `version_tags` SUGGESTED, answered Unmet, tracked in MH-19/issue #114: HOLDS (`specs/done/openssf-badge/design.md:30`).
+  - `version_tags` SUGGESTED, answered Unmet, tracked in MH-19/issue #114: HOLDS (`specs/*/openssf-badge/design.md:30`).
   - No releases and no git tags: HOLDS — `git tag -l` returns zero tags.
-  - Current contract v2 §§17–18 via W16: HOLDS — W16 rules that "Release/tag/publish remains an explicit operator action" (`MYTHHELM_Implementation_Plan.md:220`), which governs the who-tags half directly; the per-release rule comes from the OpenSSF criterion.
-  - Discipline lands alongside MH-7: HOLDS as a constraint — MH-7 is triaged with no spec and tag-triggered per its Summary; `.github/workflows/` holds 13 files, none a release pipeline.
-  - No spec covers MH-19: HOLDS — `MH-19` appears in `specs/` only as the openssf-badge follow-up pointer and the `version-numbering` seam note; `spec-lifecycle.sh resolve release-tagging` finds nothing.
+  - Current contract v2 §§17–18 via W16: HOLDS — W16 rules that "Release/tag/publish remains an explicit operator action" (`mythhelm-synthesis/MYTHHELM_Implementation_Plan.md:219`), which governs the who-tags half directly; the per-release rule comes from the OpenSSF criterion.
+  - Discipline lands alongside MH-7: HOLDS as a constraint — MH-7 is triaged with no spec and tag-triggered per its Summary; `.github/workflows/` holds 14 files (`ls .github/workflows/`: ci, codeql, dco, dependency-review, docs, labeler, lock, osv-scanner, pr-title, release-drafter, scorecard, stale, welcome, zizmor), none a release pipeline.
+  - MH-19 is covered by this spec: HOLDS — re-grounded 2026-10-06: card specced with `Spec: release-tagging` (`product/backlog.md:100-105`); `MH-19` appears in `specs/` as the openssf-badge follow-up pointer, the `specs/*/version-numbering/` seam notes (which name MH-19 as the tag-format owner), one incidental analogy in `specs/*/strict-lint-set/refinement-log.md:22` ("the MH-18/MH-19 rounds" — historical log, no overlap), and this spec. (At create-spec time on 2026-10-05 no spec covered it; `spec-lifecycle.sh resolve release-tagging` found nothing.)
   - Gap is open and the discipline is writable today: HOLDS — criterion Unmet; no discipline record exists; scheme input comes from MH-18 (delivery dependency recorded).
 
 ### Objectives
@@ -41,7 +39,7 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 ### FR-1 — Tag format defined (G10, W16)
 
 - **AC-1.1** [G10] The discipline shall define the tag format string — prefix, the MH-18 scheme it carries, and annotated/lightweight/signature expectations — with one valid and one invalid example.
-- **AC-1.2** [W16] The format shall be implementable by a tag-triggered GoReleaser pipeline without re-deciding (MH-7 cites it).
+- **AC-1.2** [W16] The format shall be implementable by a tag-triggered GoReleaser pipeline without re-deciding: the record shall state the trigger using only the terms already fixed in MH-7's card Summary (tag-triggered, GoReleaser; `product/backlog.md:67-76`), adding no undesigned pipeline detail per N2. (Forward trace to MH-7's citation lives with the L81 dependency; it is MH-7's acceptance, not this spec's check.)
 
 ### FR-2 — Tagging is an explicit operator action (W16, G10)
 
@@ -78,10 +76,10 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 
 ## Dependencies
 
-- **Builds on: `openssf-badge` (MH-9, `specs/done/openssf-badge/`, shipped 2026-10-04)** — the `version_tags` Unmet record (design §3) and the card-per-Unmet mechanism (FR-3).
-- **Builds on: MH-18 (`version-numbering`, unrefined)** — the tag format carries the MH-18 scheme (delivery dependency recorded; specifying runs ahead, building waits for the scheme decision).
-- **Feeds into: MH-7 (release pipeline, triaged, unspecced)** — MH-7 implements this discipline; the discipline lands first.
-- **Supersedes**: none. **Conflicts**: none known; `specs/todo/` and `specs/in-progress/` are empty.
+- **Builds on: `openssf-badge` (MH-9, `specs/*/openssf-badge/`, shipped 2026-10-04)** — the `version_tags` Unmet record (design §3) and the card-per-Unmet mechanism (FR-3).
+- **Builds on: MH-18 (`specs/todo/version-numbering/`, moved 2026-10-06)** — the tag format carries the MH-18 scheme (delivery dependency recorded; specifying runs ahead, building waits for the scheme decision).
+- **Feeds into: MH-7 (release pipeline, triaged, unspecced)** — MH-7 implements this discipline; the discipline lands first. Forward trace: MH-7's spec will cite this discipline as its fixed input (AC-1.2's consumer); that citation is MH-7's acceptance, checkable only once MH-7 is specced.
+- **Supersedes**: none. **Conflicts**: none known; `specs/todo/` holds `tui-tape-recording/` (touches `docs/demos/`, embeds, `docs.yml`, `docs/automation.md` — disjoint from this spec's files) and `version-numbering/` (the builds-on parent — consistent, no conflict), `specs/*/strict-lint-set/` is disjoint (no substantive MH-19 overlap — one incidental refinement-log mention per the L17 enumeration), and `specs/in-progress/` and `specs/unfinalized/` are empty.
 
 ## Impacted components
 

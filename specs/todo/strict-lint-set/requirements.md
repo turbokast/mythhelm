@@ -1,8 +1,6 @@
 ## Strict Lint Set — Requirements
 
-> Unrefined. Run /refine-spec strict-lint-set before /spec.
-
-> Evaluates further golangci-lint linters past the current standard-plus-five set, enables the strictest practical ones, and fixes the resulting fallout at source. Closes the OpenSSF `warnings_strict` (SUGGESTED) gap. Normative source: mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md, version 2.0; § numbers, I-IDs, G-IDs and AT-IDs refer to it. Historical Revision 1.1 pins (§19.3, §19.4) keep their original meaning per docs/spec/README.md.
+> Evaluates further golangci-lint linters past the current standard-plus-five set, enables the strictest practical ones, and fixes the resulting fallout at source. Closes the OpenSSF `warnings_strict` (SUGGESTED) gap. Normative source: mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md, version 2.0; § numbers, I-IDs, G-IDs and AT-IDs refer to it. W-IDs refer to the waves in mythhelm-synthesis/MYTHHELM_Implementation_Plan.md. The Historical Revision 1.1 pin (§19.3) keeps its original meaning per docs/spec/README.md.
 
 ## Context
 
@@ -15,9 +13,9 @@
   - `warnings_strict` SUGGESTED, answered Unmet, tracked in MH-20/issue #115: HOLDS (`specs/done/openssf-badge/design.md:31`, recorded 2026-10-04 at `badge_level == passing` per `specs/done/openssf-badge/design.md:39`).
   - Lint set is standard plus bodyclose, errorlint, gosec, misspell, nolintlint: HOLDS (`.golangci.yml`, exact enable list; one test-scoped G204 exclusion).
   - Current contract v2 §§17–18 via W16: PARTIAL — v2 §17 covers platforms/distribution and §18 delivery/acceptance with no explicit lint demand; W16 requires running "applicable Go formatting/tidy/shared repository gates for code changes" (`MYTHHELM_Implementation_Plan.md:219`). The strictness demand comes from the OpenSSF criterion, executed through the W16 gates language.
-  - No spec covers MH-20: HOLDS — `MH-20` appears in `specs/` only as the openssf-badge follow-up pointer (card filing recorded in `specs/done/openssf-badge/tasks.md:52-53`); `spec-lifecycle.sh resolve strict-lint-set` finds nothing.
-  - Gap is open and trials are runnable today: HOLDS — criterion Unmet today; `go` 1.27.1 installed locally, golangci-lint installable free; CI enforces the set via `golangci/golangci-lint-action` v9.3.0 (`.github/workflows/ci.yml:70-81`).
-  - Assessment lives outside the repo; flipping it is an operator action: HOLDS — bestpractices.dev project 15212, verified live during openssf-badge (`specs/done/openssf-badge/tasks.md:53`).
+  - MH-20 is covered by this spec: HOLDS — re-grounded 2026-10-06: card specced with `Spec: strict-lint-set` (`product/backlog.md:56-61`); `MH-20` appears in `specs/` as the openssf-badge follow-up pointer (card filing recorded in `specs/done/openssf-badge/tasks.md:52-53`) and this spec. (At create-spec time on 2026-10-05 no spec covered it; `spec-lifecycle.sh resolve strict-lint-set` found nothing.)
+  - Gap is open and trials are runnable today: HOLDS — criterion Unmet today; `go` 1.27.1 installed locally, golangci-lint installable free; CI enforces the set via `golangci/golangci-lint-action` v9.3.0 (`.github/workflows/ci.yml:69-83`: job opens L69, binary pin v2.13.2 at L83).
+  - Assessment lives outside the repo; flipping it is an operator action: HOLDS — bestpractices.dev project 15212, verified live during openssf-badge (`specs/done/openssf-badge/tasks.md:31-32`).
 
 ### Objectives
 
@@ -32,7 +30,7 @@
 | N1 | Flipping the assessment on bestpractices.dev. | FR-3 of openssf-badge: justification text + evidence are prepared and reviewed here; the live assessment stays passing throughout. |
 | N2 | Linters needing paid tooling, accounts or network access. | I13 analog: contributor gates stay free and offline-runnable. |
 | N3 | Silver-tier or other beyond-passing criteria. | G10: no passing-tier answer regresses; the badge stays passing. |
-| N4 | Rewrites or refactors beyond what the findings require. | Fallout fixes are minimal and behaviour-preserving; anything larger becomes a follow-up. |
+| N4 | Rewrites or refactors beyond what the findings require. | Fallout fixes are minimal and behaviour-preserving (G10: nothing beyond the findings ships under this gate); anything larger becomes a follow-up. |
 
 ## Functional Requirements
 
@@ -41,27 +39,27 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 ### FR-1 — Candidates evaluated by trial (W16, G10)
 
 - **AC-1.1** [W16] For every linter evaluated, the spec record shall name the linter, the exact golangci-lint version trial-run, the command, the finding count on the current tree, and the verdict (enable or reject with reason).
-- **AC-1.2** [W16] A linter shall be enabled only when its trial shows true findings worth fixing at an acceptable false-positive and CI-time cost; a rejected candidate shall record which cost disqualified it.
+- **AC-1.2** [W16] A linter shall be enabled only when its trial shows true findings worth fixing at a false-positive and CI-time cost the trial matrix records per candidate and the maintainer accepts at the spec checkpoint; a rejected candidate shall record which cost disqualified it.
 
 ### FR-2 — Strictest practical set enabled (W16, G10)
 
 - **AC-2.1** [W16] `.golangci.yml` shall enable the evaluated winners, and `golangci-lint run ./...` at the CI-pinned version shall report zero findings on the tree.
 - **AC-2.2** [W16] When a newly enabled linter cannot apply to a path, the config shall scope the exclusion to that path with a dated rationale comment; no new whole-tree exclusion shall exist.
-- **AC-2.3** [G10] The CI `golangci-lint` job shall be green with the new set on Linux, macOS and Windows.
+- **AC-2.3** [G10] The CI `golangci-lint` job shall be green with the new set on its runner (`ubuntu-latest`, `.github/workflows/ci.yml:73`); multi-OS green stays covered by the Definition of Done.
 
 ### FR-3 — Fallout fixed at source (W16)
 
 - **AC-3.1** [W16] Every finding from the newly enabled linters shall be fixed in the flagged code; each remaining `//nolint` for those linters shall name its reason in the machine-checked form nolintlint enforces.
 - **AC-3.2** [W16] Fallout fixes shall keep every existing test passing with no behaviour change beyond what the finding requires; any fix that cannot stay behaviour-preserving shall become a follow-up issue instead of a deviation.
 
-### FR-4 — Assessment evidence prepared (§19.3, G10)
+### FR-4 — Assessment evidence prepared (§19.3 Revision 1.1, G10)
 
-- **AC-4.1** [§19.3] The spec record shall carry the new `warnings_strict` justification text citing the enabled set (config reference) and the green CI run, ready for the operator to paste into the assessment.
+- **AC-4.1** [§19.3 Revision 1.1] The spec record shall carry the new `warnings_strict` justification text citing the enabled set (config reference) and the green CI run, ready for the operator to paste into the assessment.
 - **AC-4.2** [G10] Until the operator flips the assessment, the live badge shall remain passing; this spec shall not edit the assessment itself.
 
 ## Non-Functional Requirements
 
-- **NFR-1** [W16] The CI lint job with the new set shall complete within the workflow's existing job budget on all three runners; the implementing task records the measured times.
+- **NFR-1** [W16] The CI lint job with the new set shall complete on its CI runner within the checkpoint-agreed budget: the spec checkpoint records the agreed budget as a number of minutes in the spec record (scratchpad Q1) before run-spec, the implementer enforces it in-tree (`timeout-minutes` on the lint job — absent today: `grep -n "timeout" .github/workflows/ci.yml` returns no hits, checked 2026-10-06), and the named check compares the measured job time against the recorded budget; Task 8 reads the number from the approval record. No minute budget pre-exists, so the spec checkpoint sets it from the trial measurements.
 - **NFR-2** [I13 analog] Every enabled linter shall run offline with free tooling; a contributor reproduces the CI verdict with a documented local command.
 
 ## Definition of Done
@@ -73,7 +71,7 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 
 ## Open Questions
 
-1. **Which linters are candidates, and what makes one "practical"?** Blocks FR-1. Options: (a) enable-all-then-trim trial over the full golangci-lint catalogue; (b) a curated shortlist (e.g. revive, gocritic, perfsprint, testpackage, dupl) trial-run one by one. No default yet — /spec runs the trials and lets the findings decide.
+1. **Which linters are candidates, and what makes one "practical"?** Blocks FR-1. Options: (a) enable-all-then-trim trial over the full golangci-lint catalogue; (b) a curated shortlist (e.g. revive, gocritic, perfsprint, testpackage, dupl) trial-run one by one. Default: (b) — bounded trial and fallout volume; (a) rejected as the default for unbounded sweep size. /spec enumerates the shortlist; enable/reject verdicts stay maintainer-checkpoint decisions per AC-1.2.
 2. **How are trials run reproducibly?** Blocks FR-1. Options: (a) locally installed golangci-lint v2.13.2, the binary version CI pins (`.github/workflows/ci.yml` lint job; v9.3.0 is the action version); (b) trial CI runs on the spec branch. Default: (a), with (b) as the referee.
 3. **Where does the prepared justification text live?** Blocks FR-4. Options: (a) the spec record (scratchpad/retrospective) plus the task PR description; (b) a docs note beside the badge link. Default: (a) — the assessment is external, so no tree file can hold its live state.
 4. **Fallout that spans domains?** Blocks task scoping. Options: (a) one config task plus per-domain fallout tasks joined by dependencies; (b) a single task when fallout is small and single-domain. Default: (a) per the one-domain-per-task rule; /spec decides from the trial spread.
@@ -81,7 +79,7 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 ## Dependencies
 
 - **Builds on: `openssf-badge` (MH-9, `specs/done/openssf-badge/`, shipped 2026-10-04)** — the `warnings_strict` Unmet record (design §3), the card-per-Unmet mechanism (FR-3), and the live-assessment verification precedent.
-- **Supersedes**: none. **Conflicts**: none known; `specs/todo/` and `specs/in-progress/` are empty. Fallout fixes coordinate by package at /spec time.
+- **Supersedes**: none. **Conflicts**: none known; `specs/todo/version-numbering/` and `specs/todo/release-tagging/` (moved 2026-10-06) reciprocally name this spec as disjoint, `specs/todo/tui-tape-recording/` was checked and is disjoint by subject (no golangci-lint/MH-20 overlap — zero hits for either string; the only non-actionlint "lint" hit is the disjointness note itself at `specs/todo/tui-tape-recording/design.md:126`, which reciprocates), `specs/refined/` holds only this spec, and `specs/unrefined/`, `specs/in-progress/`, `specs/unfinalized/` and `specs/archived/` are empty. Fallout fixes coordinate by package (design §4 assigns every file to exactly one task).
 
 ## Impacted components
 
