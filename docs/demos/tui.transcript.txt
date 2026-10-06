@@ -114,3 +114,4 @@ index 0000000..9766475
 
 === SCRIPTED DEMO: done ===
 state in <TMPDIR>/mythhelm-demo-state-XXX was removed afterwards
+STALE-TRANSCRIPT PROBE LINE
