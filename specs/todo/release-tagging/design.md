@@ -18,7 +18,7 @@
 
 Tag object type (Q1-c): lightweight, as created by release publication. The established publish flow yields lightweight tags; provenance lives on the artifacts (SLSA/cosign per the MH-7 plan) and tagger identity in the GitHub push record — not in tag objects. No GPG/SSH tag signing: no key infrastructure exists, and artifact-level signatures already cover authenticity.
 
-The format is implementable by a tag-triggered GoReleaser pipeline without re-deciding (AC-1.2): GoReleaser consumes the pushed tag name; the `v*` trigger filter matches exactly this shape.
+The format is implementable by a tag-triggered GoReleaser pipeline without re-deciding (AC-1.2): GoReleaser consumes the pushed tag name; the `v*` trigger filter selects tag-push candidates and the pipeline validates the pushed name against this shape before publishing (a bare `v*` glob alone admits malformed tags, so the format check is the gate, not the glob).
 
 ### 3. Tagging is an explicit operator action (FR-2, W16, G10)
 
@@ -69,7 +69,7 @@ release ships.
 |---|---|
 | G10 tag-per-release | Not yet met: zero tags exist. This spec records the discipline; the first release demonstrates it under MH-7. |
 | `version_tags` → Met | Prepared, not flipped: justification text in §6, operator action post-first-tagged-release (N3). |
-| Format conditional on MH-18's scheme | The `v<semver>` shape assumes the checkpoint confirms SemVer. If the maintainer overturns to CalVer at MH-18's checkpoint, this spec's format follows the overturned scheme before either builds (both checkpoints run together; the pair is reviewed as one). |
+| Format conditional on MH-18's scheme | Resolved at the spec checkpoint (both approved together): the checkpoint confirmed SemVer with no overturn, so the format is `v<semver>` unconditionally and no CalVer follow exists. The pre-checkpoint conditional survives in git history. |
 | Trigger/pipeline behaviors | Required here, implemented by MH-7: stated as behaviors, not workflow YAML (N2 binds — nothing assumes undesigned pipeline details). |
 | Tag-protection settings | Observed, not changed: the implementer records current state read-only; any ruleset/tag-protection change is an operator action. |
 

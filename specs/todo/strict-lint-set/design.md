@@ -19,18 +19,20 @@ golangci-lint run --no-config --enable-only <L> --max-issues-per-linter 0 --max-
 
 Verdicts stay maintainer-checkpoint decisions per AC-1.2; the table below is /spec's recommendation:
 
-| Linter | Findings | Files | Verdict | Reason |
-|---|---|---|---|---|
-| revive | 48 | 28 | enable | True: `exported` + `package-comments` (docs) plus `redefines-builtin-id`, `unused-parameter`, `empty-block` (substantive). Cost acceptable, all behavior-preserving. |
-| gocritic | 3 | 3 | enable | True, including one real `appendAssign` bug pattern (`cmd.Env = append(env, …)`); two `ifElseChain` style fixes. Trivial. |
-| perfsprint | 10 | 8 | enable | True mechanical (`Errorf`→`errors.New`, `Sprint`→`strconv`); auto-fixable. |
-| dupl | 2 | 2 | enable | True test-helper duplication (17-line helper across two supervisor test files); dedupe cheap. |
-| modernize | 32 | 21 | enable | True mechanical simplifications (`strings.Cut`, `errors.As`→`AsType`, range-over-int, `t.Context`); auto-fixable. |
-| copyloopvar | 0 | 0 | enable | Clean; pure prevention at zero fallout cost. |
-| usetesting | 0 | 0 | enable | Clean; pure prevention at zero fallout cost. |
-| godot | 0 | 0 | enable | Clean; pure prevention (new comments written with periods). |
-| testpackage | 39 | 39 | reject | Converting 39 files to `_test` packages guts load-bearing white-box access (tui model fields, cli internals); the cost disqualifies it. |
-| err113 | 101 | 43 | reject | Hoisting 101 contextual call-site errors (including test sentinels) to package statics fights the errorlint-governed style and hurts locality; the cost disqualifies it. |
+| Linter | Findings | Files | Time | Verdict | Reason |
+|---|---|---|---|---|---|
+| revive | 48 | 28 | 0.5s | enable | True: `exported` + `package-comments` (docs) plus `redefines-builtin-id`, `unused-parameter`, `empty-block` (substantive). Cost acceptable, all behavior-preserving. |
+| gocritic | 3 | 3 | 1.3s | enable | True, including one real `appendAssign` bug pattern (`cmd.Env = append(env, …)`); two `ifElseChain` style fixes. Trivial. |
+| perfsprint | 10 | 8 | 0.6s | enable | True mechanical (`Errorf`→`errors.New`, `Sprint`→`strconv`); auto-fixable. |
+| dupl | 2 | 2 | 0.4s | enable | True test-helper duplication (17-line helper across two supervisor test files); dedupe cheap. |
+| modernize | 32 | 21 | 0.7s | enable | True mechanical simplifications (`strings.Cut`, `errors.As`→`AsType`, range-over-int, `t.Context`); auto-fixable. |
+| copyloopvar | 0 | 0 | 0.4s | enable | Clean; pure prevention at zero fallout cost. |
+| usetesting | 0 | 0 | 0.7s | enable | Clean; pure prevention at zero fallout cost. |
+| godot | 0 | 0 | 0.5s | enable | Clean; pure prevention (new comments written with periods). |
+| testpackage | 39 | 39 | 0.4s | reject | Converting 39 files to `_test` packages guts load-bearing white-box access (tui model fields, cli internals); the cost disqualifies it. |
+| err113 | 101 | 43 | 0.7s | reject | Hoisting 101 contextual call-site errors (including test sentinels) to package statics fights the errorlint-governed style and hurts locality; the cost disqualifies it. |
+
+Time is wall-clock per trial on the spec machine 2026-10-06 (single runs, warm cache); it shows no candidate is slow — the enabled eight sum to ~5s locally, so the checkpoint's NFR-1 budget binds on CI overhead, not linter cost. CI stays the referee per Q2-b.
 
 Combined run with all eight winners (`-c` trial config = current file + 8 names, same uncapped flags): exactly 95 issues (2+3+32+10+48; the three clean linters contribute 0 — per-linter sums match, so no cross-linter interaction), 47 files, ~6.2s elapsed cold (~1.2s warm cache) vs ~3.6s baseline. Full output kept out-of-tree (`/tmp/trial-full.txt`, session scratch); the matrix above is the spec record (AC-1.1).
 
