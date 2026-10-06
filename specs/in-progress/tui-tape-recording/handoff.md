@@ -20,4 +20,6 @@
 
 ## Task 3 — Recording-honesty-check generalization in CI
 
-<!-- pending -->
+- **Produces**: Generalized `checks` job — per-recording revision loop (`Check manifest revisions are present`, fails naming recording + revision); one combined transcript step (`Check recording transcripts are fresh at the declared revision`: one worktree/build at the pin, byte-identical demo lines, §3 tui takes with per-take `PIPESTATUS`); qualifiers step byte-unchanged. `docs/automation.md` Docs-site row carries the per-recording sentence; `Charm VHS demo GIFs` is Active.
+- **For dependents**: terminal task — no dependents. A future recording must add a per-name pipeline branch in `docs.yml` next to the demo/tui blocks (D9 analog: the manifest stays data, never commands); `len(pins) == 1` still asserted in the qualifiers step, so re-records stay single-revision via `record.sh --repin` on the main tip.
+- **Deviations that change a later task's inputs**: none (the combined-step choice is internal to `docs.yml`; the contract — paths, pipelines, label counts, qualifiers — is unchanged).
