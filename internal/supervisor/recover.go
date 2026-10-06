@@ -42,7 +42,7 @@ func RecoverWithHooks(ctx context.Context, j *journal.Journal, runID string, h H
 	if err != nil {
 		return RecoveryOutcome{}, err
 	}
-	out := RecoveryOutcome{Outcome: Outcome{RunID: runID, State: RunState(row.State), Reason: row.Reason}}
+	out := RecoveryOutcome{RunID: runID, State: RunState(row.State), Reason: row.Reason}
 	dir := filepath.Join(j.StateDir(), "runs", runID)
 	release, err := AcquireOwner(dir)
 	if err != nil {

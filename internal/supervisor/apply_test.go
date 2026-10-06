@@ -183,7 +183,7 @@ func TestApplyRefusesInvalidRefName(t *testing.T) {
 	}
 }
 
-func recordApplyIntent(t *testing.T, f fixture, runID, branch, commit string) {
+func recordApplyEvent(t *testing.T, f fixture, runID, branch, commit, eventType string, state supervisor.RunState) {
 	t.Helper()
 	j := f.journal(t)
 	payload, err := json.Marshal(map[string]string{"branch": branch, "target_repo": f.onlyRun(t).SourceRepo, "candidate_commit": commit})
@@ -192,13 +192,18 @@ func recordApplyIntent(t *testing.T, f fixture, runID, branch, commit string) {
 	}
 	if err := j.Append(t.Context(), journal.Event{SchemaVersion: journal.EnvelopeVersion, EventID: ids.New("evt"),
 		RunID: runID, ProducerID: ids.New("sup"), ProducerSequence: 1, Generation: 1,
-		ObservedAt: time.Now().UTC(), Type: "apply.intent_recorded", Payload: payload}, nil); err != nil {
+		ObservedAt: time.Now().UTC(), Type: eventType, Payload: payload}, nil); err != nil {
 		t.Fatal(err)
 	}
 	p := supervisor.NewProducer(ids.New("sup"), 1)
-	if err := supervisor.TransitionRun(t.Context(), j, runID, supervisor.RunApplying, "", p); err != nil {
+	if err := supervisor.TransitionRun(t.Context(), j, runID, state, "", p); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func recordApplyIntent(t *testing.T, f fixture, runID, branch, commit string) {
+	t.Helper()
+	recordApplyEvent(t, f, runID, branch, commit, "apply.intent_recorded", supervisor.RunApplying)
 }
 
 func TestApplyRetryBlocksConflictingBranch(t *testing.T) {

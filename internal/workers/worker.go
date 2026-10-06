@@ -505,7 +505,8 @@ func (w *worker) abort(ctx context.Context, sp *spool, sess adapter.Session, out
 	w.log.Error("aborting the attempt", "err", cause)
 	// The session reaps the native only after its observations are taken.
 	go func() {
-		for range sess.Observations() {
+		for ob := range sess.Observations() {
+			_ = ob
 		}
 	}()
 	out.aborted = true

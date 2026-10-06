@@ -19,6 +19,7 @@ import (
 // RunState is a run's lifecycle state (design §4).
 type RunState string
 
+// Run lifecycle states in design §4's machine.
 const (
 	RunCreated        RunState = "created"
 	RunAdmission      RunState = "admission"
@@ -57,6 +58,7 @@ var runTransitions = map[RunState][]RunState{
 // waiting_native and waiting_approval are never entered (N10).
 type AttemptState string
 
+// Attempt lifecycle states in design §4's chain.
 const (
 	AttemptLaunchIntentRecorded AttemptState = "launch_intent_recorded"
 	AttemptLaunching            AttemptState = "launching"
