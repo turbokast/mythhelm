@@ -35,6 +35,8 @@ python3 scripts/harness/runspec.py event --spec <spec> --kind dispatch --task <N
 
 Each result then gets one `return` event (a report arrived), or `fail`, or `lost` (nothing came back). Before consuming a batch's results print `dispatched=N returned=M failed=K`, and name the tasks when `M + K < N`: a worker that died returns nothing, and "found nothing" must never be confused with "never ran" (`.claude/rules/agent-behavioral-posture.md` §5).
 
+Before starting a task attempt, append the task's `dispatch` row — and the `run_start` row first, but only when the run has none yet (the normal run-spec flow already records one). After the attempt ends, append exactly one outcome row: `return` when a report arrived, `fail` or `lost` otherwise — plus the `merge` row after the merge. Every `dispatch` and outcome row carries the attempt number. A dispatch without its rows is incomplete. Before finalizing, the orchestrator may backfill rows for already-merged tasks only when authoritative evidence supports each specific event and, for a `dispatch` or outcome row, its attempt number: a merged PR or merge commit establishes the merge, but not by itself a prior dispatch or outcome, or the attempt number for either row. Backfilled rows must carry a `reconstructed` marker in the event detail, and the generated `ts` is never the original event time when that time cannot be recovered. Consumers (including the retrospective author) must exclude `reconstructed`-marked rows from attempt metrics and attribution, reporting them separately. Use the schema's `null` and `unknown` values for unavailable attribution or results.
+
 ## Template: first attempt
 
 ```text
