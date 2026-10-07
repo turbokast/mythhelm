@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.1] - 2026-10-06
+
 ### Added
 
 - Headless supervised runs: mythhelm run admits a task file, supervises one Claude Code (or scripted fake) attempt under worker ownership, and records a receipt (#20)
