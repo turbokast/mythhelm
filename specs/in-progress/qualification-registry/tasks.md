@@ -194,7 +194,7 @@
   - `TestDoctorQualificationEmptyHonest` in `internal/cli/doctor_test.go` (extra test): pins the design §6 empty-read rule (existing but unseeded dir reads `(no records)`/`[]`, never null), for which the acceptance names no test.
 - **Files modified**: `internal/cli/doctor.go`, `internal/cli/doctor_test.go`, `specs/in-progress/qualification-registry/tasks.md`, `specs/in-progress/qualification-registry/handoff.md`, `specs/in-progress/qualification-registry/scratchpad.md`.
 
-### Task 7 — End-to-end packaged-binary tests
+### Task 7 — End-to-end packaged-binary tests ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -208,6 +208,10 @@
   - `TestE2EDeclaredUnaffected`: the built binary's user-declared dogfood path still admits exactly as before this spec (no exit-code or label change).
 - **Test plan**: Build `cmd/mythhelm` once per package run; temp `MYTHHELM_HOME`; assert stdout, stderr and exit codes.
 - **Invariants touched**: I02 (v2 §7.3: end-to-end blocking preserved); I13 (no credentials in e2e).
+- **Status**: ✅ Completed — packaged-binary e2e pins the seeded doctor listing, the strict exit-3 refusal and the admitting declared run; PR #206.
+- **Implementation**: Declared e2e drives `run --adapter claudecode --billing subscription-declared` against a fixture `claude` script (init with `apiKeySource: none` + success result); the fake adapter cannot take declared billing (`billing_posture_mismatch`), and the fixture skips on Windows where the probe refuses by design. Strict/declared parity vs a pre-spec base binary verified identical. Commit fcb3732.
+- **Spec deviations**: None.
+- **Files modified**: `tests/e2e/qualification_test.go`, `specs/in-progress/qualification-registry/tasks.md`, `specs/in-progress/qualification-registry/handoff.md`, `specs/in-progress/qualification-registry/scratchpad.md`.
 
 ### Task 8 — User guide and ADR-0011
 
