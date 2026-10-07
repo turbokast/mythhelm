@@ -70,7 +70,7 @@
   - `TestEnsureSeededFailureWrapsJournalError` in `internal/qualify/seed_test.go` (extra test): pins the Produces parenthetical "seed failure returns the journal error wrapped", for which the acceptance names no test.
 - **Files modified**: `internal/journal/migrations/0002_qualification.sql`, `internal/journal/journal.go`, `internal/journal/journal_test.go`, `internal/journal/qualification.go`, `internal/journal/qualification_test.go`, `internal/journal/qualification_revisions_test.go`, `internal/qualify/seed.go`, `internal/qualify/seed_test.go`, `specs/in-progress/qualification-registry/tasks.md`, `specs/in-progress/qualification-registry/handoff.md`, `specs/in-progress/qualification-registry/scratchpad.md`.
 
-### Task 3 — Registry open/query/record and drift invalidation
+### Task 3 — Registry open/query/record and drift invalidation ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (several abstractions: registry, drift, consult matching, digest derivation; 13 acceptance items)
@@ -98,6 +98,10 @@
   - `TestOpenReadOnlyVersionMismatchErrors`: `OpenReadOnly` on a database with a newer `user_version` returns the wrapped `ErrSchemaTooNew`; doctor keys `unavailable` off it.
 - **Test plan**: Temp state dirs; hex-dump comparison for read-only test; table tests for drift field coverage.
 - **Invariants touched**: I20 (v2 §7.1: invalidation is a new revision, old evidence preserved); I09 (v2 §7.3: empty registry reads empty, never zero rows); A30 lineage (read-only open cannot mutate).
+- **Status**: ✅ Completed — `qualify.Registry` with read-write/read-only opens, lookup/list/record, stable-match consult, pure drift check and drift invalidation; PR #202.
+- **Implementation**: Record derives empty digests, refuses tampered ones and defaults zero fields to unknown; Lookup/List decode via DecodeRecord and verify digests recompute; InvalidateOnDrift derives from the current row with audit markers. Commit 4875031.
+- **Spec deviations**: None.
+- **Files modified**: `internal/qualify/registry.go`, `internal/qualify/drift.go`, `internal/qualify/registry_test.go`, `internal/qualify/drift_test.go`, `specs/in-progress/qualification-registry/tasks.md`, `specs/in-progress/qualification-registry/handoff.md`, `specs/in-progress/qualification-registry/scratchpad.md`.
 
 ### Task 4 — Admission consults the registry
 

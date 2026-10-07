@@ -26,7 +26,13 @@
 
 ## Task 3 — Registry open/query/record and drift invalidation
 
-<!-- pending -->
+- **Produces**: `qualify.Open` (migrates, never seeds), `qualify.OpenReadOnly`, `(*Registry).Close/Lookup/List/Record/Consult/InvalidateOnDrift`, `qualify.CheckDrift(DriftInput)`, `qualify.ConfigDigestOf`, `qualify.IsMissing/IsSchemaMismatch`, `qualify.ErrNotFound/ErrSchemaMismatch`. Exactly the design §4 API; no additions or renames.
+- **For dependents**: `Record` ignores `Revision` (stores current+1), clears `SupersededAt`, defaults zero fields to unknown markers, derives an empty `Digest`, and refuses a non-empty digest that does not recompute over the stored content. Mutating a record therefore requires clearing `Digest` (or recomputing over the revision `Record` will assign); `SchemaVersion` is preserved as passed.
+- **For dependents**: `Lookup`/`List` decode via `DecodeRecord` and verify the digest recomputes — a tampered row errors (`qualify: stored record digest mismatch`), never a coerced record. `List` sorts by harness, surface, then key hash. One corrupt row fails the whole `List`.
+- **For dependents**: `Consult` tries the exact key, else the unique stable-identity match (Harness, Surface, OS, Arch, TrustProfile, EntitlementClass, AdapterProtocol); zero → `ErrNotFound`, several → `qualify: ambiguous stable match: ...`. Unknown-pinned digests never drift; unobserved digests fail closed against an established pin. Reasons name the snake_case field.
+- **For dependents**: `InvalidateOnDrift` reads only `rec.Key` — the new revision derives from the current row (stale-safe), affected columns drop to `NotProven` (`Unknown` stays) with an `ev_drift_invalidation` marker preserving reason + prior ids, progress becomes `blocked`. Unknown keys read `ErrNotFound`; empty reasons are refused.
+- **For dependents**: `OpenReadOnly` on a missing dir names the dir (`IsMissing`); version-0 files and older/newer versions wrap `ErrSchemaMismatch` (newer keeps `ErrSchemaTooNew` in the chain); an existing dir without a database reads as an empty registry and writes nothing. A missing table wraps `ErrSchemaMismatch` from both `List` and `Lookup`.
+- **Deviations that change a later task's inputs**: none.
 
 ## Task 4 — Admission consults the registry
 
