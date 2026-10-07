@@ -36,7 +36,7 @@
 - **Status**: ✅ Completed — `internal/qualify` ships the v2 record model, honest-label scales and canonical digest/decode contract; PR #200.
 - **Implementation**: Decode validates the Progress/Verdict/DatumLabel/Capability scales with field-naming errors and applies missing→`unknown` defaults (I09); digests are SHA-256 over canonical JSON minus Digest/SupersededAt. Goldens oracle-verified with `sha256sum`. Commit 21ad65d.
 - **Spec deviations**: None.
-- **Files modified**: `internal/qualify/qualify.go`, `internal/qualify/qualify_test.go`, `specs/todo/qualification-registry/tasks.md`, `specs/todo/qualification-registry/handoff.md`, `specs/todo/qualification-registry/scratchpad.md`.
+- **Files modified**: `internal/qualify/qualify.go`, `internal/qualify/qualify_test.go`, `specs/in-progress/qualification-registry/tasks.md`, `specs/in-progress/qualification-registry/handoff.md`, `specs/in-progress/qualification-registry/scratchpad.md`.
 
 ### Task 2 — SQLite migration 0002 and seven-harness seed
 

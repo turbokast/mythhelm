@@ -95,6 +95,16 @@ func TestKeyHashDeterministic(t *testing.T) {
 	if qualify.KeyHash(mutated) == qualify.KeyHash(fixedKey(t)) {
 		t.Error("KeyHash unchanged after mutating one key field, want a different hash")
 	}
+
+	// Empty fields hash as the decoded "unknown" marker, so a hand-built
+	// key and its decoded form agree.
+	blank := fixedKey(t)
+	blank.ModelSnapshot = ""
+	explicit := fixedKey(t)
+	explicit.ModelSnapshot = "unknown"
+	if qualify.KeyHash(blank) != qualify.KeyHash(explicit) {
+		t.Error("KeyHash(blank field) != KeyHash(\"unknown\"), want identical hashes")
+	}
 }
 
 // fixedRecordJSON returns a fixed blocked record in canonical JSON form.
@@ -205,7 +215,7 @@ func TestDigestRecomputes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeRecord(fixed record): %v", err)
 	}
-	const golden = "sha256:ee5372fd7e1761957b21ba52045508ac4bc23ed9adbe378aa3f668354a62408a"
+	const golden = "sha256:f5c7702a987d17f824427f3471ad1599c8886284127dc8690468f89a396aa90f"
 	got, err := qualify.CanonicalDigest(rec)
 	if err != nil {
 		t.Fatalf("CanonicalDigest: %v", err)
@@ -232,6 +242,61 @@ func TestDigestRecomputes(t *testing.T) {
 	}
 	if again != got {
 		t.Error("CanonicalDigest follows the Digest field, want content-only coverage")
+	}
+}
+
+// TestDigestStableAcrossEquivalentForms pins hash agreement between the
+// forms DecodeRecord treats as identical: nil versus empty collections,
+// and empty versus "unknown" free-text fields. A hand-built record and
+// its decoded round-trip hash identically.
+func TestDigestStableAcrossEquivalentForms(t *testing.T) {
+	t.Parallel()
+
+	rec, err := qualify.DecodeRecord(fixedRecordJSON())
+	if err != nil {
+		t.Fatalf("DecodeRecord(fixed record): %v", err)
+	}
+	rec.Capabilities = nil
+
+	// The sparse twin: nil collections and empty free-text fields.
+	sparse := rec
+	sparse.Fidelity.Evidence = nil
+	sparse.Quota.Source = ""
+	sparse.Key.TrustProfile = ""
+	sparseDigest, err := qualify.CanonicalDigest(sparse)
+	if err != nil {
+		t.Fatalf("CanonicalDigest(sparse): %v", err)
+	}
+
+	// The explicit twin: the forms DecodeRecord would produce.
+	explicit := rec
+	explicit.Fidelity.Evidence = []qualify.Evidence{}
+	explicit.Capabilities = map[string]qualify.Capability{}
+	explicit.Quota.Source = "unknown"
+	explicit.Key.TrustProfile = "unknown"
+	explicitDigest, err := qualify.CanonicalDigest(explicit)
+	if err != nil {
+		t.Fatalf("CanonicalDigest(explicit): %v", err)
+	}
+	if sparseDigest != explicitDigest {
+		t.Errorf("sparse digest = %q, explicit digest = %q, want identical", sparseDigest, explicitDigest)
+	}
+
+	// The decoded round-trip of the sparse form agrees as well.
+	raw, err := json.Marshal(sparse)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	decoded, err := qualify.DecodeRecord(raw)
+	if err != nil {
+		t.Fatalf("DecodeRecord(sparse): %v", err)
+	}
+	roundTrip, err := qualify.CanonicalDigest(decoded)
+	if err != nil {
+		t.Fatalf("CanonicalDigest(decoded sparse): %v", err)
+	}
+	if roundTrip != explicitDigest {
+		t.Errorf("decoded round-trip digest = %q, want %q", roundTrip, explicitDigest)
 	}
 }
 

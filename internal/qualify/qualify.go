@@ -124,8 +124,11 @@ type Capability struct {
 }
 
 // KeyHash returns the hex SHA-256 over the canonical JSON of k. Every
-// store caller derives key hashes through this function.
+// store caller derives key hashes through this function. Empty fields
+// hash as "unknown", exactly as DecodeRecord would default them, so a
+// hand-built key and its decoded form hash identically.
 func KeyHash(k Key) string {
+	k = normalizeKeyForHash(k)
 	raw, err := json.Marshal(k)
 	if err != nil {
 		// Unreachable: Key holds only strings, which always marshal.
@@ -137,15 +140,26 @@ func KeyHash(k Key) string {
 
 // CanonicalDigest recomputes the record's content digest (NFR-2):
 // "sha256:<hex>" over the canonical JSON of r minus Digest and
-// SupersededAt. An out-of-scale enum value returns an error naming the
-// offending field.
+// SupersededAt (the two carriage fields are absent from the hashed
+// bytes, not zeroed). An out-of-scale enum value returns an error
+// naming the offending field. Nil collections and empty free-text
+// fields hash as their decoded forms, so equivalent records agree.
 func CanonicalDigest(r Record) (string, error) {
 	if err := validateRecord(r); err != nil {
 		return "", err
 	}
-	r.Digest = ""
-	r.SupersededAt = nil
+	r = normalizeForHash(r)
 	raw, err := json.Marshal(r)
+	if err != nil {
+		return "", fmt.Errorf("qualify: canonical record JSON: %w", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return "", fmt.Errorf("qualify: canonical record JSON: %w", err)
+	}
+	delete(m, "digest")
+	delete(m, "superseded_at")
+	raw, err = json.Marshal(m)
 	if err != nil {
 		return "", fmt.Errorf("qualify: canonical record JSON: %w", err)
 	}
@@ -285,6 +299,60 @@ func setUnknown(s *string) {
 	if *s == "" {
 		*s = unknownString
 	}
+}
+
+// normalizeKeyForHash returns k with every empty field set to "unknown",
+// matching what DecodeRecord would default. KeyHash hashes this form so
+// hand-built and decoded keys agree.
+func normalizeKeyForHash(k Key) Key {
+	setUnknown(&k.Harness)
+	setUnknown(&k.Surface)
+	setUnknown(&k.ExecutableDigest)
+	setUnknown(&k.AdapterProtocol)
+	setUnknown(&k.OS)
+	setUnknown(&k.Arch)
+	setUnknown(&k.ProviderEndpoint)
+	setUnknown(&k.ModelSnapshot)
+	setUnknown(&k.EffortSettings)
+	setUnknown(&k.AuthCategory)
+	setUnknown(&k.ConfigDigest)
+	setUnknown(&k.TrustProfile)
+	setUnknown(&k.WorkspaceClass)
+	setUnknown(&k.EntitlementClass)
+	return k
+}
+
+// normalizeForHash returns r with the non-enum canonicalization
+// DecodeRecord applies: nil Evidence slices and a nil Capabilities map
+// become empty, and empty free-text fields become "unknown". Enum
+// validation runs before this (CanonicalDigest validates first), so
+// out-of-scale values still error instead of hashing silently.
+func normalizeForHash(r Record) Record {
+	r.Key = normalizeKeyForHash(r.Key)
+	for _, c := range []*Column{&r.Fidelity, &r.Entitlement, &r.Lifecycle} {
+		if c.Evidence == nil {
+			c.Evidence = []Evidence{}
+		}
+		for i := range c.Evidence {
+			e := &c.Evidence[i]
+			setUnknown(&e.Source)
+			setUnknown(&e.Suite)
+			setUnknown(&e.Uncertainty)
+		}
+	}
+	if r.Capabilities == nil {
+		r.Capabilities = map[string]Capability{}
+	}
+	for name, c := range r.Capabilities {
+		setUnknown(&c.Evidence)
+		setUnknown(&c.Scope)
+		r.Capabilities[name] = c
+	}
+	setUnknown(&r.Quota.Quantity)
+	setUnknown(&r.Quota.Unit)
+	setUnknown(&r.Quota.Scope)
+	setUnknown(&r.Quota.Source)
+	return r
 }
 
 // defaultColumn defaults an empty verdict and its evidence entries.
