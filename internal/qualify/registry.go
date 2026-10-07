@@ -126,7 +126,7 @@ func (r *Registry) Lookup(ctx context.Context, k Key) (Record, error) {
 // never a silently partial truth.
 func (r *Registry) List(ctx context.Context) ([]Record, error) {
 	if r.journal == nil {
-		return nil, nil
+		return []Record{}, nil
 	}
 	rows, err := r.journal.ListCurrentQualificationRecords(ctx)
 	if err != nil {

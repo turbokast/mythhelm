@@ -146,6 +146,9 @@ func TestOpenReadOnlyWritesNothing(t *testing.T) {
 	if len(recs) != 0 {
 		t.Fatalf("List over a fresh dir = %d records, want empty", len(recs))
 	}
+	if recs == nil {
+		t.Error("List over a fresh dir is nil, want an empty slice (serializes as [])")
+	}
 	if err := reg.Record(ctx, Record{}); err == nil {
 		t.Error("Record on a read-only registry succeeded, want an error (read-only open cannot mutate)")
 	}
