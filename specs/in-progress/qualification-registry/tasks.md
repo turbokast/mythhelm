@@ -12,7 +12,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — qualify record types and scales
+### Task 1 — qualify record types and scales ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -33,6 +33,10 @@
   - `TestColumnIndependence`: a record with fidelity `proven`, entitlement `not-proven` and lifecycle `unknown` round-trips through JSON with each column verdict preserved; no column's value changes another (AC-1.2).
 - **Test plan**: Table tests over the scales; golden JSON fixtures for the digest test.
 - **Invariants touched**: I09 (v2 §7.3: absent values stay `unknown`); I20 (v2 §7.1: revisions content-addressed); I14 (v2 §7.2: scales for honest labels).
+- **Status**: ✅ Completed — `internal/qualify` ships the v2 record model, honest-label scales and canonical digest/decode contract; PR #200.
+- **Implementation**: Decode validates the Progress/Verdict/DatumLabel/Capability scales with field-naming errors and applies missing→`unknown` defaults (I09); digests are SHA-256 over canonical JSON minus Digest/SupersededAt. Goldens oracle-verified with `sha256sum`. Commit 21ad65d.
+- **Spec deviations**: None.
+- **Files modified**: `internal/qualify/qualify.go`, `internal/qualify/qualify_test.go`, `specs/in-progress/qualification-registry/tasks.md`, `specs/in-progress/qualification-registry/handoff.md`, `specs/in-progress/qualification-registry/scratchpad.md`.
 
 ### Task 2 — SQLite migration 0002 and seven-harness seed
 
