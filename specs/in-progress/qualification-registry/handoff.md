@@ -61,7 +61,10 @@
 
 ## Task 7 — End-to-end packaged-binary tests
 
-<!-- pending -->
+- **Produces**: `tests/e2e/qualification_test.go` with `TestE2EDoctorShowsSevenRecords` (seeded home → JSONL `qualification.records` holds the seven v2 §7.2 harnesses, claude-code blocked, six planned, Task 6 per-record shape), `TestE2EStrictStillBlocked` (packaged `run --adapter claudecode --billing subscription-only` → exit 3, `run.result` reason `entitlement_qualification_unavailable`), `TestE2EDeclaredUnaffected` (packaged declared run against a fixture `claude` → exit 0, `ready_for_review`). No production code changed.
+- **For dependents**: the declared e2e's fixture native (`installFakeClaude`: `--version` → `2.1.284 (Claude Code)`, `auth status` → max/firstParty JSON, launch → init with `apiKeySource: none` + success result) plus `childEnvWithPath`/`runBin` are reusable for any later packaged claudecode run; Task 9's e2e needs only the fake adapter, not this fixture. The fixture skips on Windows (probe refuses by design).
+- **For dependents**: "as before this spec" was verified by running both scenarios against a base binary built from the pre-spec commit — strict exit 3 + reason and declared exit 0 + `ready_for_review` identical on both; a launch-broken fixture ends the declared run `failed`, and `doctor` on an unseeded home reports zero records, so all three tests discriminate.
+- **Deviations that change a later task's inputs**: none.
 
 ## Task 8 — User guide and ADR-0011
 
