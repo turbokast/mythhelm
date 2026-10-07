@@ -21,12 +21,13 @@
 - **Files**:
   - `internal/qualify/qualify.go`
   - `internal/qualify/qualify_test.go`
-- **Produces**: `qualify.Progress` (+ 7 constants), `qualify.Verdict` (`Proven`, `NotProven`, `Unknown`), `qualify.DatumLabel` (+ 5 constants), `qualify.Key`, `qualify.Evidence`, `qualify.Column`, `qualify.Record`, `qualify.Capability`; `qualify.Datum{Quantity, Label, Unit, Scope, Source, At}`; `qualify.KeyHash(k Key) string` (hex sha256 over canonical Key JSON); `qualify.CanonicalDigest(r Record) (string, error)` — recomputes `sha256:<hex>` over canonical JSON minus Digest/SupersededAt, error naming the offending field on an out-of-scale enum value; `qualify.DecodeRecord(data []byte) (Record, error)` — decodes canonical JSON with missing→`"unknown"` defaults; syntax errors name the offset, out-of-scale enum values name the offending field.
+- **Produces**: `qualify.Progress` (+ 7 constants), `qualify.Verdict` (`Proven`, `NotProven`, `Unknown`), `qualify.DatumLabel` (+ 5 constants), `qualify.Key`, `qualify.Evidence`, `qualify.Column`, `qualify.Record`, `qualify.Capability`; `qualify.Datum{Quantity, Label, Unit, Scope, Source, At}`; `qualify.KeyHash(k Key) string` (hex sha256 over canonical Key JSON); all structs with explicit snake_case `json` tags; `qualify.CanonicalDigest(r Record) (string, error)` — recomputes `sha256:<hex>` over canonical JSON minus Digest/SupersededAt, error naming the offending field on an out-of-scale enum value; `qualify.DecodeRecord(data []byte) (Record, error)` — decodes canonical JSON with missing→`"unknown"` defaults; syntax errors name the offset, out-of-scale enum values name the offending field.
 - **Acceptance**:
   - `TestProgressScaleMatchesV2`: the seven progress constants equal the v2 §4.2 words in order; renaming one fails the test.
   - `TestOutOfScaleEnumRejected`: a record with `Progress: "approved"` returns an error naming `Progress`, and never coerces to a passing value.
   - `TestDigestRecomputes`: `CanonicalDigest` of a fixed record equals its golden `sha256:<hex>`; flipping one byte of the record changes the digest.
   - `TestKeyHashDeterministic`: `KeyHash` of a fixed key equals its golden hex; changing one field changes it; every store caller derives key hashes only through it.
+  - `TestCanonicalJSONUsesSnakeCase`: marshaling a fixed record contains `"model_snapshot"` and no `"ModelSnapshot"`; `DecodeRecord` of JSON missing `model_snapshot` yields `"unknown"` for the field.
   - `TestMissingReadsUnknown`: `DecodeRecord` of JSON missing `model_snapshot` carries `"unknown"`, never `""` treated as established or `0`; truncated JSON returns an error naming the offset; an out-of-scale enum returns an error naming the field.
   - `TestDatumDefaults`: `DecodeRecord` of JSON missing `quota` and evidence `label`/`source` yields `DatumUnknown` labels and `"unknown"` quantity/unit/scope/source; an out-of-scale datum label returns an error naming the field.
   - `TestColumnIndependence`: a record with fidelity `proven`, entitlement `not-proven` and lifecycle `unknown` round-trips through JSON with each column verdict preserved; no column's value changes another (AC-1.2).
@@ -50,18 +51,18 @@
 - **Produces**: `func (j *Journal) InsertQualificationRecord(ctx context.Context, keyHash string, revision int, digest, recordJSON string) error`; `func (j *Journal) CurrentQualificationRecord(ctx context.Context, keyHash string) (recordJSON string, revision int, err error)` (absent → `journal: qualification record: %w` wrapping `ErrNotFound`); `func (j *Journal) ListCurrentQualificationRecords(ctx context.Context) (records []string, err error)`; `qualify.SeedV1() []Record` (seven blocked/planned records with NextTest, platform-filled); `qualify.EnsureSeeded(ctx context.Context, j *journal.Journal) error` (records the seed when the table is empty, else no-op; seed failure returns the journal error wrapped). One import direction: `qualify` imports `journal`, never the reverse.
 - **Acceptance**:
   - `TestMigration0002Applies`: a database at `user_version=1` opens at version 2 with the table present; the migration file `0001_init.sql` is byte-identical to `main` (hash check); `SchemaVersion == 2` and a fresh `Open` reports `user_version` `"2"`; `OpenReadOnly` opens the migrated database without `ErrSchemaTooNew`.
-  - `TestRecordRevisionImmutability`: inserting revision 2 for a key leaves revision 1 bytes unchanged, `Current-` returns revision 2, and both rows' digests recompute via `qualify.CanonicalDigest`; NFR-2 holds.
+  - `TestRecordRevisionImmutability`: inserting revision 2 for a key leaves revision 1's `record_json` and digest unchanged (excluding the `superseded_at` metadata the insert sets), `Current-` returns revision 2, and both rows' digests recompute via `qualify.CanonicalDigest`; NFR-2 holds.
   - `TestInsertRefusesInvalid`: empty `keyHash`, empty `digest`, empty `recordJSON` or `revision < 1` each return `journal: invalid qualification record` and write nothing.
   - `TestAbsentIsNotFound`: `Current-` on an unknown key returns `ErrNotFound`, never a zero record.
   - `TestSeedHasSevenHarnesses`: `SeedV1` returns exactly the seven v2 §7.2 harness ids, every record `blocked` or `planned` (none `fixture-tested` or better); at least one record is `blocked`, and every `blocked` record carries a `NextTest` matching `<step>; authority: <grant>` with both halves non-empty.
-  - `TestEnsureSeededIdempotent`: `EnsureSeeded` on an empty table records seven; on a non-empty table leaves every row untouched (hash comparison); calling twice records once.
+  - `TestEnsureSeededIdempotent`: `EnsureSeeded` on an empty table records seven; on a complete table leaves every row untouched (hash comparison); it completes a partial seed (3 of 7 rows) to seven; two concurrent calls leave exactly seven (race detector on).
 - **Test plan**: Temp-dir SQLite databases via `journal.Open`; golden `user_version` assertions; failure injection by tampering digests.
 - **Invariants touched**: I20 (v2 §5.2: additive migration, old revisions immutable); I09 (v2 §7.3: absence is `ErrNotFound`, not zero); I23 (v2 §5.1: ledger owns the state).
 
 ### Task 3 — Registry open/query/record and drift invalidation
 
 - **Domain/agent**: go-implementer
-- **Budget**: complex (several abstractions: registry, drift, consult matching, digest derivation; 11 acceptance items)
+- **Budget**: complex (several abstractions: registry, drift, consult matching, digest derivation; 13 acceptance items)
 - **Depends on**: Task 2
 - **Change**: Add the `qualify.Registry` with read-write and read-only opens, lookup/list/record, the pure drift check and drift invalidation, so admission and doctor consult one versioned source. `Lookup`/`List` decode stored JSON exclusively via `qualify.DecodeRecord` (Task 1).
 - **Files**:
@@ -69,17 +70,19 @@
   - `internal/qualify/drift.go`
   - `internal/qualify/registry_test.go`
   - `internal/qualify/drift_test.go`
-- **Produces**: `qualify.Open(ctx context.Context, dir string) (*Registry, error)` (migrates; never seeds); `qualify.OpenReadOnly(ctx context.Context, dir string) (*Registry, error)`; `(*Registry).Close() error`; `(*Registry).Lookup(ctx context.Context, k Key) (Record, error)` (absent → `qualify.ErrNotFound`); `(*Registry).List(ctx) ([]Record, error)` (harness, surface order); `(*Registry).Record(ctx, Record) error`; `(*Registry).Consult(ctx context.Context, observed Key) (rec Record, drifted bool, reason string, err error)`; `qualify.CheckDrift(qualify.DriftInput) (bool, string)`; `qualify.ConfigDigestOf(digests map[string]string) string`; `qualify.IsMissing(err error) bool`; `(*Registry).InvalidateOnDrift(ctx, Record, string) error`; `qualify.ErrNotFound`.
+- **Produces**: `qualify.Open(ctx context.Context, dir string) (*Registry, error)` (migrates; never seeds); `qualify.OpenReadOnly(ctx context.Context, dir string) (*Registry, error)`; `(*Registry).Close() error`; `(*Registry).Lookup(ctx context.Context, k Key) (Record, error)` (absent → `qualify.ErrNotFound`); `(*Registry).List(ctx) ([]Record, error)` (harness, surface order); `(*Registry).Record(ctx, Record) error`; `(*Registry).Consult(ctx context.Context, observed Key) (rec Record, drifted bool, reason string, err error)`; `qualify.CheckDrift(qualify.DriftInput) (bool, string)`; `qualify.ConfigDigestOf(digests map[string]string) string`; `qualify.IsMissing(err error) bool`; `qualify.ErrSchemaMismatch`; `qualify.IsSchemaMismatch(err error) bool`; `(*Registry).InvalidateOnDrift(ctx, Record, string) error`; `qualify.ErrNotFound`.
 - **Acceptance**:
   - `TestOpenMigratesWithoutSeeding`: opening a fresh temp state dir migrates the table and `List` reports empty; only `EnsureSeeded` adds records.
   - `TestConsultMatchesStableIgnoresDigests`: `Consult` with an observed key whose digests drifted from the recorded one returns the record with `drifted=true` and a reason naming the field; an unknown harness returns `ErrNotFound`; two stable matches return `qualify: ambiguous stable match: ...`.
   - `TestConfigDigestOfDeterministic`: the same digests map inserted in two orders yields the identical `"sha256:<hex>"`; changing one value changes it.
   - `TestOpenReadOnlyWritesNothing`: `OpenReadOnly` on a fresh dir migrates and seeds nothing — directory hash unchanged — and `List` reports empty without error.
-  - `TestOpenReadOnlyMissingDirErrors`: `OpenReadOnly` on a nonexistent dir returns an error naming the dir (doctor keys `unavailable` off it); `List` against a database without the table returns `qualify: qualification table missing: ...`.
+  - `TestOpenReadOnlyMissingDirErrors`: `OpenReadOnly` on a nonexistent dir returns an error naming the dir (doctor keys `unavailable` off it); `List` against a database without the table returns an `ErrSchemaMismatch`-wrapping error.
+  - `TestOpenReadOnlyZeroVersionErrors`: a database file with `user_version=0` returns an error, never an empty registry.
   - `TestLookupRoundTrip`: `Record` then `Lookup` returns revision 1 with a recomputing digest (a passed-in `Revision: 99` is ignored and stored as 1); lookup of an unknown key returns `ErrNotFound`.
   - `TestRecordRefusesTamperedDigest`: recording a record whose `Digest` does not recompute returns `qualify: record digest mismatch: ...` and writes nothing.
+  - `TestRecordRefusesEvidenceFreeProven`: a record with an entitlement column `proven` but empty evidence returns `qualify: proven verdict without evidence: entitlement` and writes nothing.
   - `TestDriftDetectsBinaryAndConfigChange`: changed `ExecutableDigest` and changed `ConfigDigest` each report drifted with a reason naming the field; identical digests report clean.
-  - `TestInvalidateResetsColumns`: `InvalidateOnDrift` stores a new revision with affected columns `Unknown`/`NotProven`, progress `blocked`, and the reason preserved; the old revision's row is byte-identical.
+  - `TestInvalidateResetsColumns`: `InvalidateOnDrift` stores a new revision with affected columns `Unknown`/`NotProven`, progress `blocked`, and the reason preserved; the old revision's `record_json` and digest are unchanged (excluding `superseded_at`).
   - `TestRegistryLookupLatency`: cold `Lookup` on a temp-dir registry completes in under 1 s (NFR-1); a variant wrapping `Lookup` with a 1.5 s injected delay exceeds the bound and fails, proving the test discriminates.
   - `TestOpenReadOnlyVersionMismatchErrors`: `OpenReadOnly` on a database with a newer `user_version` returns the wrapped `ErrSchemaTooNew`; doctor keys `unavailable` off it.
 - **Test plan**: Temp state dirs; hex-dump comparison for read-only test; table tests for drift field coverage.
@@ -88,19 +91,21 @@
 ### Task 4 — Admission consults the registry
 
 - **Domain/agent**: go-implementer
-- **Budget**: standard (11 small verdict-mapping items; several fold into one table test)
+- **Budget**: standard (13 small verdict-mapping items; several fold into one table test)
 - **Depends on**: Task 3, Task 5 (the agreement test consumes `RecordDraft`)
 - **Change**: Add `ResolveQualification` and call it from `decideClaudeCode` after `AuthStatus` and before billing, so eligibility comes from versioned records while strict subscription-only keeps blocking under the fixtures-only default.
 - **Files**:
   - `internal/admission/qualify.go`
   - `internal/admission/admission.go`
   - `internal/admission/qualify_test.go`
-- **Produces**: `admission.ResolveQualification(ctx context.Context, reg *qualify.Registry, probe adapter.Probe, manifest adapter.ConfigManifest, evidence claudecode.AuthEvidence, billing string) (admission.Eligibility, error)` (nil reg counts as absent record); `admission.Eligibility{Verdict, Reason, Record}`; `admission.EligibilityVerdict` (`Eligible`, `Blocked`, `Unsupported`).
+- **Produces**: `admission.ResolveQualification(ctx context.Context, reg *qualify.Registry, probe adapter.Probe, manifest adapter.ConfigManifest, evidence claudecode.AuthEvidence, billing string, profile string) (admission.Eligibility, error)` (nil reg counts as absent record); `admission.Eligibility{Verdict, Reason, Record}`; `admission.EligibilityVerdict` (`Eligible`, `Blocked`, `Unsupported`).
 - **Acceptance**:
   - `TestNoRecordBlocks`: unknown probe identity with `--billing subscription-only` yields `Blocked` with reason `no_qualification_record`, never `Eligible`.
   - `TestNonLiveRecordBlocksStrict`: a `fixture-tested` record with `not-proven` entitlement yields `Blocked` with reason `entitlement_not_proven` for `--billing subscription-only`.
   - `TestAmbiguousMatchBlocks`: two stable matches yield `Blocked` with reason `ambiguous_qualification_match` for `--billing subscription-only`.
-  - `TestUnsupportedSurfaceMapsUnsupported`: a record with `Progress == unsupported`, or a harness outside the seven v2 §7.2 ids, yields `Unsupported` (exit 7).
+  - `TestUnsupportedSurfaceMapsUnsupported`: a record with `Progress == unsupported`, or a harness outside the seven v2 §7.2 ids, yields `Unsupported` (exit 7) under every billing mode including `subscription-declared`.
+  - `TestExpiredEvidenceIgnored`: a `proven` column whose only evidence has past `Expiry` counts as `not-proven` for the consult; unexpired evidence still qualifies.
+  - `TestConsultSchemaMismatchMapsAbsent`: a v1-schema database maps to absent record (strict `Blocked`, declared `Eligible`), letting the run reach the supervisor migration; a permission-denied registry still errors.
   - `TestDeclaredUnaffectedByMissingRecord`: with `--billing subscription-declared`, a missing or non-live record yields `Eligible` (record attached when present); the dogfood path never blocks on the registry.
   - `TestUnknownQuotaAdmitsStopAtExhaustion`: a record with `stop_at_exhaustion: supported` capability and `Quota` unknown-datum yields `Eligible` with the quantity labelled `unknown` (AC-3.3); without the marker it stays `Blocked`.
   - `TestRegistryUnreadableErrors`: a registry whose directory exists but is unreadable (permissions) yields `qualify: registry unavailable: %w`, never silent eligibility.
@@ -127,7 +132,7 @@
   - `TestEvidenceCoversAT03Routes`: evidence covers implementer, planner, reviewer, summary, router, child and experiment routes; deleting one route from `routes.json` fails the test.
   - `TestNoHiddenPaidAuxiliary`: the inventory asserts no paid auxiliary per route; a fixture variant adding one fails the test.
   - `TestRecordDraftRefusesOtherKeys`: a key with another harness or surface returns `ErrNotFirstRoute` (`errors.Is`) and no record; same harness+surface with different digests passes.
-  - `TestEvidencePerformsNoLiveCall`: with `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` poisoned to unroutable `http://127.0.0.1:9` and `HOME` pointed at an empty temp dir, `EntitlementEvidence` returns output byte-identical to the unpoisoned run — any network call fails fast (connection refused) and any secret read sees nothing, so identical output proves neither happened.
+  - `TestEvidencePerformsNoLiveCall`: `go list -deps` on the test's own package shows no `net`/`net/http` membership (no socket API reachable, so no direct connection is possible); additionally, with proxies poisoned to unroutable `http://127.0.0.1:9` and `HOME` at an empty temp dir, output is byte-identical. Either leg failing fails the test.
   - `TestDraftRecordsThroughRegistry`: `RecordDraft` output round-trips through `Registry.Record`/`Lookup` with a recomputing digest.
   - `TestDraftQuotaLabelledUnknown`: `RecordDraft`'s `Quota` is the unknown Datum (`Quantity`/`Unit`/`Scope`/`Source` `"unknown"`, `Label` `DatumUnknown`); every evidence entry carries a non-empty `Source`.
   - `TestCompatibilityNoteAnchored`: the first 10 lines of `adapters/claudecode/COMPATIBILITY.md` name the qualification registry as the queryable record and the file as the per-harness view; removing the note fails the test.
@@ -145,8 +150,8 @@
   - `internal/cli/doctor.go`
   - `internal/cli/doctor_test.go`
 - **Acceptance**:
-  - `TestDoctorShowsQualification`: with a seeded temp state dir, plain output holds one line per record matching `^<harness> × <surface>: <progress> \(fidelity <v>, entitlement <v>, lifecycle <v>\)$` anchored to the qualification section.
-  - `TestDoctorQualificationJSONL`: `--format jsonl` parses to one object whose `qualification` map carries progress, columns, evidence revisions and drift triggers per record.
+  - `TestDoctorShowsQualification`: with a seeded temp state dir, plain output holds one line per record matching `^<harness> × <surface>: <progress> \(fidelity <v>, entitlement <v>, lifecycle <v>\) \[evidence <n> revs, latest <ev-id>; drift <clean|reason>\]$` anchored to the qualification section.
+  - `TestDoctorQualificationJSONL`: `--format jsonl` parses to one object whose `qualification` map carries, per record, `progress`, per-column `verdict` + `evidence` ids, `evidence_revisions` and `drift_triggers`; a record missing any field fails the test.
   - `TestDoctorQualificationUnavailableHonest`: with no state dir, the section reads `unavailable (<reason>)`, exit stays 0, and no rows are fabricated.
   - `TestDoctorStillWritesNothing`: against a seeded non-empty temp state dir, warm one read-only open first (a WAL reader may create `-shm`/`-wal` sidecars on first touch), then assert the SHA-256 of every file is unchanged across the run; a variant that writes a marker file into the dir fails the test (read-only guard with a red variant).
 - **Test plan**: `cli.Main` tests with temp `MYTHHELM_HOME`; golden anchored section match; hash-before/after for read-only.

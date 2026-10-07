@@ -151,15 +151,16 @@ type Capability struct {
 ```
 
 `Digest` is `sha256:<hex>` over the canonical JSON of the record minus
-`Digest`/`SupersededAt`. Failure case: constructors return an error naming
-the offending field when an enum value is outside its scale; unknown enum
-input never coerces to a passing value. Decoding is one named function so
-every reader shares the defaulting rule:
+`Digest`/`SupersededAt`. All structs carry explicit snake_case `json` tags
+(`model_snapshot`, `evidence`, …); canonical JSON uses them. Failure case:
+constructors return an error naming the offending field when an enum value
+is outside its scale; unknown enum input never coerces to a passing value.
+Decoding is one named function so every reader shares the defaulting rule:
 
 ```go
 // DecodeRecord decodes canonical record JSON, applying missing→"unknown"
-// defaults recursively (Datum fields, Evidence Label/Source, Quota).
-// Syntax errors name the offset; out-of-scale enum values name
+// defaults recursively (Key fields, Datum fields, Evidence Label/Source,
+// Quota). Syntax errors name the offset; out-of-scale enum values name
 // the offending field.
 func DecodeRecord(data []byte) (Record, error)
 ```
@@ -235,8 +236,11 @@ first admitted run honestly show no records (O1's seven are readable from
 the first admission on).
 
 ```go
-// EnsureSeeded records SeedV1() when the table is empty, else does nothing.
-// A seed failure returns the journal error, wrapped.
+// EnsureSeeded inserts the SeedV1() records missing from the table with
+// per-key INSERT OR IGNORE, then verifies seven current rows. It completes
+// partial seeds (a partial failure never blocks a later call) and is safe
+// under concurrent first runs (conflicts ignored, count verified). Fewer
+// than seven afterwards returns the journal error, wrapped.
 func EnsureSeeded(ctx context.Context, j *journal.Journal) error
 ```
 
@@ -251,12 +255,23 @@ func Open(ctx context.Context, dir string) (*Registry, error)
 
 // OpenReadOnly opens without migrating or seeding; used by doctor.
 // Failure cases: missing dir → error (qualify: state dir ...: ...);
-// unreadable DB or version mismatch → the journal error, wrapped;
-// dir exists with no database (journal.ErrNoDatabase) → an empty registry
-// whose List returns []. It stats the dir itself because
-// journal.OpenReadOnly reports ErrNoDatabase for a missing dir and a
-// missing file alike (internal/journal/projections.go:350-354).
+// dir exists with no database file → an empty registry whose List returns
+// []; database file present but version 0 (journal.ErrNoDatabase on an
+// existing file) → error, never mistaken for empty; version mismatch or
+// unreadable DB → the journal error, wrapped. It stats the dir and the
+// database file itself because journal.OpenReadOnly reports ErrNoDatabase
+// for a missing dir, a missing file and a version-0 file alike
+// (internal/journal/projections.go:350-354, 366-368).
 func OpenReadOnly(ctx context.Context, dir string) (*Registry, error)
+
+// ErrSchemaMismatch marks a registry database whose schema this binary
+// cannot read (older or newer user_version, or a missing table).
+var ErrSchemaMismatch = errors.New("qualify: schema mismatch")
+
+// IsSchemaMismatch reports errors.Is(err, ErrSchemaMismatch).
+// OpenReadOnly wraps journal version errors and List wraps a missing
+// table with this sentinel.
+func IsSchemaMismatch(err error) bool
 
 func (r *Registry) Close() error // Close only; errors are returned, never hidden
 
@@ -283,6 +298,10 @@ func (r *Registry) List(ctx context.Context) ([]Record, error)
 // Record stores rec as revision current+1 (1 for a new key), ignoring
 // rec.Revision; callers never pick revisions. InvalidateOnDrift likewise
 // stores current+1. All key hashes derive through qualify.KeyHash.
+// Record rejects a column valued Proven with empty Evidence
+// (qualify: proven verdict without evidence: <column>).
+// Single-writer: concurrent same-key Records collide on the primary key
+// and fail closed; callers must not retry blindly.
 func (r *Registry) Record(ctx context.Context, rec Record) error
 
 // Record stores a new revision, superseding the current one for its key.
@@ -332,8 +351,10 @@ Admission consult (`internal/admission/qualify.go`, AC-5.1):
 // remaining quota alone does not block an otherwise qualified
 // stop-at-exhaustion route (v2 §7.3, I02). A nil registry (missing dir or
 // database per IsMissing) counts as absent record; evidence is the
-// AuthStatus result, since the consult point follows it.
-func ResolveQualification(ctx context.Context, reg *qualify.Registry, probe adapter.Probe, manifest adapter.ConfigManifest, evidence claudecode.AuthEvidence, billing string) (Eligibility, error)
+// AuthStatus result, since the consult point follows it. profile is the
+// consented execution profile name (d.Profile.Name); the resolver cannot
+// see the owning decision, so the caller passes it.
+func ResolveQualification(ctx context.Context, reg *qualify.Registry, probe adapter.Probe, manifest adapter.ConfigManifest, evidence claudecode.AuthEvidence, billing string, profile string) (Eligibility, error)
 
 type Eligibility struct {
     Verdict EligibilityVerdict // Eligible, Blocked, Unsupported (v2 §4.2)
@@ -353,10 +374,17 @@ const (
 `decideClaudeCode` opens the registry with `qualify.OpenReadOnly`
 (`internal/admission/admission.go:307-310` area, after `AuthStatus` at lines
 300-306 so provider and account class are known, before `ResolveBilling` at
-line 311). A missing dir or database (`qualify.IsMissing`) maps to a nil
-registry, which `ResolveQualification` treats as absent record; any other
-open error fails the admission (`qualify: registry unavailable: %w`). The
-consult never migrates or seeds — admission writes nothing.
+line 311) and passes `d.Profile.Name` as `profile`. A missing dir or
+database (`qualify.IsMissing`) or an unreadable schema
+(`qualify.IsSchemaMismatch`: older/newer `user_version`, missing table)
+maps to a nil registry, which `ResolveQualification` treats as absent
+record — a v1 database genuinely holds no qualification records, so this
+is honest, and it lets existing users reach the supervisor, which migrates
+and seeds on the admitted run. Permission, IO and corruption errors fail
+the admission (`qualify: registry unavailable: %w`). The consult never
+migrates or seeds — admission writes nothing. (`doctor`, unlike admission,
+reports every `OpenReadOnly`/`List` error as `unavailable`, never as
+empty.)
 
 `ResolveQualification` builds the observed `Key` field-by-field:
 
@@ -372,7 +400,7 @@ consult never migrates or seeds — admission writes nothing.
 | EffortSettings | `"none"` |
 | AuthCategory | `evidence.AuthMethod + "/" + evidence.SubscriptionType` (e.g. `"claude.ai/max"`) |
 | ConfigDigest | `qualify.ConfigDigestOf(manifest.Digests)` |
-| TrustProfile | `d.Profile.Name` (the consented execution profile, `internal/admission/admission.go:195`) |
+| TrustProfile | `profile` param (the caller passes `d.Profile.Name`, the consented execution profile, `internal/admission/admission.go:195`) |
 | WorkspaceClass | `"local-checkout"` |
 | EntitlementClass | `"included-plan"` |
 
@@ -380,14 +408,18 @@ At the consult point only `claudecode.Manifest` exists
 (`internal/admission/native.go:33`), so the conversion follows the
 `admission.go:321` pattern. Matching runs through `Registry.Consult`: exact
 key, else the unique stable-identity match for drift comparison. Drifted →
-`Blocked` with the drift reason (AC-4.1 path). For `subscription-only`:
-absent record → `Blocked` with `no_qualification_record` (never eligible by
-default); ambiguous stable match (Consult error) → `Blocked` with
-`ambiguous_qualification_match`; found but non-live record → `Blocked` with
-`entitlement_not_proven` (or the column-specific reason); record with
-`Progress == unsupported`, or a harness outside the seven v2 §7.2 ids →
-`Unsupported` (exit 7). For `subscription-declared` and `local-scripted` →
-`Eligible`, attaching the record when one exists. The stop-at-exhaustion property (AC-3.3) is the
+`Blocked` with the drift reason (AC-4.1 path). Evidence with `Expiry` set
+and past is ignored (treated as absent); a `proven` verdict with no
+unexpired supporting evidence counts as `not-proven` for the consult.
+Records with `Progress == unsupported`, or harnesses outside the seven v2
+§7.2 ids, map to `Unsupported` (exit 7) under every billing mode — the
+declared bypass covers missing or merely non-live records only. Otherwise,
+for `subscription-only`: absent record → `Blocked` with
+`no_qualification_record` (never eligible by default); ambiguous stable
+match (Consult error) → `Blocked` with `ambiguous_qualification_match`;
+found but non-live record → `Blocked` with `entitlement_not_proven` (or
+the column-specific reason). For `subscription-declared` and
+`local-scripted` → `Eligible`, attaching the record when one exists. The stop-at-exhaustion property (AC-3.3) is the
 `stop_at_exhaustion` entry of the record's `Capabilities` map (`supported`
 plus its evidence); AC-3.3's unknown quantity is `Record.Quota` with
 `Quantity`/`Label` unknown. A `Blocked`/`Unsupported` verdict becomes
@@ -449,7 +481,12 @@ dir. An `OpenReadOnly`/`List` error (missing dir, unreadable or
 version-mismatched DB, missing table) → `"status": "unavailable (<reason>)"`,
 never an error exit and never fabricated rows (I09). An existing but
 unseeded dir reads as an empty record list — honestly no records yet, since
-doctor never seeds. Plain output adds one
+doctor never seeds. Plain output shows one line per record:
+`<harness> × <surface>: <progress> (fidelity <v>, entitlement <v>,
+lifecycle <v>) [evidence <n> revs, latest <ev-id>; drift <state>]`, where
+`<state>` is `clean` or the drift reason. JSONL carries, per record,
+`progress`, per-column `verdict` + `evidence` ids, `evidence_revisions`
+and `drift_triggers`. Plain output adds one
 line per record: `<harness> × <surface>: <progress> (fidelity <v>,
 entitlement <v>, lifecycle <v>)`. JSONL carries the same map. Doctor stays
 read-only: `OpenReadOnly` migrates and seeds nothing (AC-12.2 lineage).
