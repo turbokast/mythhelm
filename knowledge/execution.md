@@ -58,3 +58,7 @@ All under `.claude/data/`, gitignored except the schemas:
 | `stop-gate-<session>.json`, `stop-gate-override-<session>.json`, `stop-gate-audit.jsonl` | the main checkout | the Stop hook and `gatelib.py override` |
 
 The main checkout's copy outlives every linked worktree, so anything that must survive a worktree's removal is written there.
+
+## Windows atomic-replace retry
+
+On Windows, atomic file replacement via rename can fail transiently with a sharing violation (`Access is denied`) when another handle on the file is open — e.g. a parallel reader or observer. Product code that replaces identity or state files must retry transient sharing violations with backoff, and fail closed on persistent errors. Tests that write and then immediately replace a file should expect the retry path. Example: the `worker.json` incident red-lit the `Go (windows-latest)` job twice before the retry fix landed (dogfood-slice retrospective CI history; fix PR #55).

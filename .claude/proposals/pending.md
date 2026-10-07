@@ -3,18 +3,6 @@
 Proposals awaiting a maintainer's decision. The format, the id scheme and the rules for appending are in [`README.md`](README.md). New proposals go at the end of this file.
 
 
-## P-dogfood-slice-3 — Windows atomic-replace retry pattern in knowledge
-
-- **Source spec**: `dogfood-slice`
-- **Type**: knowledge
-- **Target**: `knowledge/execution.md`
-- **Rationale**: Two main-CI failures (one CI failure class seen twice) shared one mechanism: on Windows, an atomic file replacement (`rename` over the destination) intermittently fails with `Access is denied` when a parallel reader/observer holds the file, failing the whole `Go (windows-latest)` job. The fix (retry transient sharing violations, #55) is product-side, but every future task touching atomic file writes on Windows needs the pattern up front; otherwise each task rediscovers it through a red main.
-- **Evidence**: retrospective CI history (runs 36842187196, 36844977281; `writing worker.json: rename …: Access is denied`); fix PR #55; Task 13 identity-retry files.
-
-**Proposed change:**
-
-Append a short entry: on Windows, atomic file replacement via rename can fail transiently with a sharing violation when another handle is open; product code that replaces identity/state files must retry transient sharing violations with backoff (fail closed on persistent errors), and tests that write-then-immediately-replace files should expect the retry path. Cite the worker.json incident as the example.
-
 ## P-dogfood-slice-4 — run-spec dispatch emits complete run-events rows
 
 - **Source spec**: `dogfood-slice`
