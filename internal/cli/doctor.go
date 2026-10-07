@@ -18,6 +18,7 @@ import (
 
 	"github.com/turbokast/mythhelm/adapters/claudecode"
 	"github.com/turbokast/mythhelm/internal/buildinfo"
+	"github.com/turbokast/mythhelm/internal/qualify"
 	"github.com/turbokast/mythhelm/internal/security"
 	"github.com/turbokast/mythhelm/internal/statedir"
 )
@@ -56,15 +57,16 @@ func runDoctor(args []string, stdio Stdio) error {
 // doctorReport is every fact AC-12.1 names. Unknown measurements stay
 // explicit strings; credential values never enter it.
 type doctorReport struct {
-	Type     string         `json:"type"`
-	Mythhelm map[string]any `json:"mythhelm"`
-	Git      map[string]any `json:"git"`
-	Claude   map[string]any `json:"claude"`
-	CredEnv  []string       `json:"credential_env_names"`
-	Settings map[string]any `json:"native_settings"`
-	Sandbox  map[string]any `json:"sandbox"`
-	StateDir map[string]any `json:"state_dir"`
-	Terminal map[string]any `json:"terminal"`
+	Type          string         `json:"type"`
+	Mythhelm      map[string]any `json:"mythhelm"`
+	Git           map[string]any `json:"git"`
+	Claude        map[string]any `json:"claude"`
+	CredEnv       []string       `json:"credential_env_names"`
+	Settings      map[string]any `json:"native_settings"`
+	Sandbox       map[string]any `json:"sandbox"`
+	StateDir      map[string]any `json:"state_dir"`
+	Terminal      map[string]any `json:"terminal"`
+	Qualification map[string]any `json:"qualification"`
 }
 
 func diagnose(env []string) doctorReport {
@@ -82,6 +84,7 @@ func diagnose(env []string) doctorReport {
 		Terminal: map[string]any{"TERM": termEnv("TERM"), "COLORTERM": termEnv("COLORTERM"),
 			"NO_COLOR": os.Getenv("NO_COLOR") != "", "TERM_PROGRAM": termEnv("TERM_PROGRAM"), //nolint:misspell // NO_COLOR is the standard variable name.
 			"stdout_terminal": termOut, "stderr_terminal": termErr},
+		Qualification: qualificationFacts(),
 	}
 }
 
@@ -192,6 +195,137 @@ func stateFacts() map[string]any {
 	return map[string]any{"path": dir, "status": "present", "type": kind, "mode": fmt.Sprintf("%O", fi.Mode().Perm())}
 }
 
+// qualificationFacts reads the versioned qualification records through a
+// read-only registry open (AC-5.3): the same map feeds plain and JSONL
+// output. Every failure — an unresolvable state dir, a missing dir, an
+// unreadable or version-mismatched database, a missing table — reads as
+// unavailable with its reason, never an error exit and never fabricated
+// rows (I09). An existing but unseeded dir reads as an empty record list:
+// doctor never seeds.
+func qualificationFacts() map[string]any {
+	dir, err := statedir.Resolve()
+	if err != nil {
+		return map[string]any{"status": "unavailable (" + err.Error() + ")"}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), doctorProbeTimeout)
+	defer cancel()
+	reg, err := qualify.OpenReadOnly(ctx, dir)
+	if err != nil {
+		return map[string]any{"status": "unavailable (" + err.Error() + ")"}
+	}
+	defer func() { _ = reg.Close() }()
+	recs, err := reg.List(ctx)
+	if err != nil {
+		return map[string]any{"status": "unavailable (" + err.Error() + ")"}
+	}
+	out := make([]any, 0, len(recs))
+	for _, rec := range recs {
+		out = append(out, qualificationRecord(rec))
+	}
+	return map[string]any{"records": out}
+}
+
+// qualificationRecord renders one registry record for the doctor report:
+// identity, progress, per-column verdicts with their evidence ids, the
+// current revision count, the pinned drift triggers and the drift state.
+func qualificationRecord(rec qualify.Record) map[string]any {
+	return map[string]any{
+		"harness":            rec.Key.Harness,
+		"surface":            rec.Key.Surface,
+		"progress":           string(rec.Progress),
+		"fidelity":           qualificationColumn(rec.Fidelity),
+		"entitlement":        qualificationColumn(rec.Entitlement),
+		"lifecycle":          qualificationColumn(rec.Lifecycle),
+		"evidence_revisions": rec.Revision,
+		"latest_evidence":    latestEvidenceID(rec),
+		"drift_triggers": map[string]any{
+			"executable_digest": rec.Key.ExecutableDigest,
+			"config_digest":     rec.Key.ConfigDigest,
+		},
+		"drift":     qualificationDrift(rec),
+		"next_test": rec.NextTest,
+	}
+}
+
+// qualificationColumn renders one column verdict with its evidence ids. The
+// id list is never nil, so JSONL carries [] rather than null when a column
+// has no evidence.
+func qualificationColumn(col qualify.Column) map[string]any {
+	ids := make([]string, 0, len(col.Evidence))
+	for _, e := range col.Evidence {
+		ids = append(ids, e.ID)
+	}
+	return map[string]any{"verdict": string(col.Verdict), "evidence": ids}
+}
+
+// qualificationDrift reports the record's drift state against unobserved
+// digests: doctor performs no live probe. Pins still unknown read clean —
+// nothing pinned can drift (I09) — while established pins read unobserved
+// with the pin, failing closed instead of claiming a pinned build is still
+// present.
+func qualificationDrift(rec qualify.Record) string {
+	if _, reason := qualify.CheckDrift(qualify.DriftInput{Record: rec}); reason != "" {
+		return reason
+	}
+	return "clean"
+}
+
+// latestEvidenceID names the most recent evidence across the three columns
+// by At (a zero At sorts oldest; column order breaks ties), or "none" when
+// the record carries no evidence.
+func latestEvidenceID(rec qualify.Record) string {
+	latest := ""
+	var latestAt time.Time
+	found := false
+	for _, col := range []qualify.Column{rec.Fidelity, rec.Entitlement, rec.Lifecycle} {
+		for _, e := range col.Evidence {
+			if !found || e.At.After(latestAt) {
+				latest, latestAt, found = e.ID, e.At, true
+			}
+		}
+	}
+	if !found {
+		return "none"
+	}
+	return latest
+}
+
+// qualificationPlain renders the qualification section: a header plus one
+// line per record, or one honest line when the registry is unavailable or
+// holds no records yet.
+func qualificationPlain(q map[string]any) []string {
+	if status, ok := q["status"].(string); ok {
+		return []string{"qualification: " + status}
+	}
+	recs, _ := q["records"].([]any)
+	if len(recs) == 0 {
+		return []string{"qualification: (no records)"}
+	}
+	lines := []string{"qualification:"}
+	for _, item := range recs {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("%s × %s: %s (fidelity %s, entitlement %s, lifecycle %s) [evidence %d revs, latest %s; drift %s]",
+			m["harness"], m["surface"], m["progress"],
+			columnVerdict(m["fidelity"]), columnVerdict(m["entitlement"]), columnVerdict(m["lifecycle"]),
+			m["evidence_revisions"], m["latest_evidence"], m["drift"]))
+	}
+	return lines
+}
+
+// columnVerdict reads one rendered column's verdict, defaulting to unknown
+// when the report map does not carry one.
+func columnVerdict(v any) string {
+	if m, ok := v.(map[string]any); ok {
+		if s, ok := m["verdict"].(string); ok {
+			return s
+		}
+	}
+	return "unknown"
+}
+
 func termEnv(name string) string {
 	if v := os.Getenv(name); v != "" {
 		return v
@@ -275,6 +409,7 @@ func writeDoctorPlain(w io.Writer, r doctorReport) error {
 		"state dir: " + state,
 		"terminal: TERM=" + fmt.Sprint(r.Terminal["TERM"]) + " stdout_terminal=" + fmt.Sprint(r.Terminal["stdout_terminal"]),
 	}
+	lines = append(lines, qualificationPlain(r.Qualification)...)
 	for _, line := range lines {
 		if _, err := fmt.Fprintln(w, cell(line)); err != nil {
 			return err
