@@ -96,7 +96,7 @@ func TestPragmasApplied(t *testing.T) {
 		"foreign_keys": "1",
 		"synchronous":  "2",
 		"busy_timeout": "5000",
-		"user_version": "1",
+		"user_version": "2",
 	} {
 		var got string
 		if err := conn.QueryRowContext(t.Context(), "PRAGMA "+pragma).Scan(&got); err != nil {
