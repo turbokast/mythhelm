@@ -229,7 +229,7 @@
 - **Test plan**: No Go test asserts prose; each acceptance item is a recorded shell command with a failing counterfactual (absent file or text before the change). The completion entry cites each command's exit-0 output.
 - **Invariants touched**: None (docs only; the mechanism tasks keep I14/I20 — this task describes, not changes, behavior).
 
-### Task 9 — Production registry seeding on admitted runs
+### Task 9 — Production registry seeding on admitted runs ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -245,3 +245,7 @@
   - `TestE2EFreshHomeSeedsOnRun`: the built binary against a fresh temp home runs `run --adapter fake --billing local-scripted` (per the `tests/e2e/run_test.go` helper pattern) with no test-side seeding, after which `doctor --format jsonl` lists seven records.
 - **Test plan**: Temp state dirs for the unit items; packaged-binary e2e with `MYTHHELM_HOME` pointed at a fresh temp dir.
 - **Invariants touched**: I14 (v2 §7.2: the seven honest labels exist from the first admission); I02 lineage (state init fail-closed).
+- **Status**: ✅ Completed — the supervisor seeds the seven registry records on the first admitted run and fails closed through `persistence_unavailable` when seeding fails; PR #208.
+- **Implementation**: `Run` calls `qualify.EnsureSeeded` after `journal.Open`, before the run dir exists; the idempotent seed leaves later runs untouched and admission refusals seed nothing. Unit legs cancel pre-spawn (no native); the e2e drives a full fake run then `doctor`. Commit 69d34b0.
+- **Spec deviations**: None.
+- **Files modified**: `internal/supervisor/pipeline.go`, `internal/supervisor/pipeline_test.go`, `tests/e2e/qualification_seed_test.go`, `specs/in-progress/qualification-registry/tasks.md`, `specs/in-progress/qualification-registry/handoff.md`, `specs/in-progress/qualification-registry/scratchpad.md`.
