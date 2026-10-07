@@ -40,7 +40,11 @@
 
 ## Task 5 — First-route authorised-test evidence (claudecode)
 
-<!-- pending -->
+- **Produces**: `claudecode.EntitlementEvidence() []qualify.Evidence` (7 offline-fixture entries, one per AT-03 route, from the embedded `testdata/qualification/routes.json`; deterministic, no live call, no reads); `claudecode.RecordDraft(qualify.Key) (qualify.Record, error)` (fixture-tested record: entitlement proven with the evidence, fidelity/lifecycle unknown, stop_at_exhaustion unknown, unknown-datum quota, NextTest naming the authorised live suite, digest computed at revision 1); `claudecode.ErrNotFirstRoute`. Exactly the design §5 API; no additions or renames.
+- **For dependents**: the refusal predicate is `Harness == "claude-code" && Surface == "native-cli-structured (print, stream-json)"` (digests ignored), tracking `New().Descriptor()` — build the Task 4 agreement key per the design §4 table and it passes; anything else returns `ErrNotFirstRoute` (`errors.Is`) with the zero record.
+- **For dependents**: `RecordDraft` output stores into a fresh registry as revision 1 with its digest intact; re-recording a mutated draft needs `Digest` cleared first (Task 3's stale-digest refusal). Evidence ids are `ev_at03_<route>`; each `Suite` is `claudecode-at03-fixtures-<native>` where `<native>` is the inventory's `native_version` (2.1.284); every `Uncertainty` carries its route's passing condition plus the paid-continuation-unknown caveat.
+- **For dependents**: `COMPATIBILITY.md` now opens with the registry note (first 10 lines) stating parseable `surface`/`native`/`progress` facts pinned against `RecordDraft`; editing the note, the inventory's `native_version` or the evidence `Suite` format fails `TestCompatibilityFactsMatchDraft` until all three agree.
+- **Deviations that change a later task's inputs**: none (the `TestEvidencePerformsNoLiveCall` static-leg mechanism change is test-only; the shipped API and behaviour match the design).
 
 ## Task 6 — doctor qualification section
 

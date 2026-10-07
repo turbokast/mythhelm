@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "authority": "AT-03 authorised-test route inventory (synthetic fixtures until MH-12)",
+  "surface": "native-cli-structured (print, stream-json)",
+  "native_version": "2.1.284",
+  "routes": [
+    {
+      "route": "implementer",
+      "passing_condition": "included-only implementer run completes with no paid auxiliary invoked",
+      "auxiliary_inventory": ["read", "edit", "bash"],
+      "paid_auxiliary": []
+    },
+    {
+      "route": "planner",
+      "passing_condition": "included-only planner run completes with no paid auxiliary invoked",
+      "auxiliary_inventory": ["read", "glob"],
+      "paid_auxiliary": []
+    },
+    {
+      "route": "reviewer",
+      "passing_condition": "included-only reviewer run completes with no paid auxiliary invoked",
+      "auxiliary_inventory": ["read", "diff"],
+      "paid_auxiliary": []
+    },
+    {
+      "route": "summary",
+      "passing_condition": "included-only summary run completes with no paid auxiliary invoked",
+      "auxiliary_inventory": ["read"],
+      "paid_auxiliary": []
+    },
+    {
+      "route": "router",
+      "passing_condition": "included-only router run completes with no paid auxiliary invoked",
+      "auxiliary_inventory": ["read", "glob"],
+      "paid_auxiliary": []
+    },
+    {
+      "route": "child",
+      "passing_condition": "included-only child run completes with no paid auxiliary invoked",
+      "auxiliary_inventory": ["task-spawn", "read"],
+      "paid_auxiliary": []
+    },
+    {
+      "route": "experiment",
+      "passing_condition": "included-only experiment run completes with no paid auxiliary invoked",
+      "auxiliary_inventory": ["bash", "read"],
+      "paid_auxiliary": []
+    }
+  ]
+}

@@ -1,5 +1,10 @@
 # Claude Code adapter compatibility
 
+> The qualification registry (`internal/qualify`) is the queryable record;
+> this file is the per-harness view for Claude Code. Fixture facts:
+> surface="native-cli-structured (print, stream-json)" native="2.1.284"
+> progress="fixture-tested" (synthetic until MH-12).
+
 One record per harness × surface × native version × OS × entitlement class ×
 security profile (master spec §9.14). Status values are `planned`,
 `documented-candidate`, `fixture-tested`, `live-qualified`, `experimental`,
