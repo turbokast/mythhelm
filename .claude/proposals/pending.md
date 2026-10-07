@@ -2,17 +2,6 @@
 
 Proposals awaiting a maintainer's decision. The format, the id scheme and the rules for appending are in [`README.md`](README.md). New proposals go at the end of this file.
 
-## P-dogfood-slice-2 — Spec validation executes embedded test selectors
-
-- **Source spec**: `dogfood-slice`
-- **Type**: skill
-- **Target**: `.claude/skills/spec-validate/SKILL.md`
-- **Rationale**: The Task 20 text told the maintainer to run `go test -run TestLiveCanary`, but the test is named `TestLiveClaudeCanary`, so the documented command silently ran nothing. A wrong command in task text wastes a human session and erodes trust in the spec. Validation should execute (or dry-list) every `go test -run` selector embedded in task text and fail when a selector matches zero tests.
-- **Evidence**: issue #60 (fixed by the dogfood candidate itself); Task 20 Spec deviations in `specs/done/dogfood-slice/tasks.md`.
-
-**Proposed change:**
-
-Add a validation step: collect every `go test … -run <selector>` command embedded in the spec's task text; for each, dry-match it against the tree that results from the task's merge and fail validation when it matches zero tests, naming the task and the selector. Never validate against the base tree: a task may introduce the selected test, so base-tree matching would reject valid tasks before implementation. Follow `-run` semantics for slash-separated subtest selectors (e.g. `TestDecodeFixture/recorded`): `-list` matches top-level tests only, so a top-level match alone must not count as a match for the full selector. Split the selector: match the top-level element with `-list`, and verify each subtest suffix statically against the `t.Run` names declared in the package's test files (go/parser, no execution). Never dry-match by running the selector (`-count=1` executes test bodies, including side effects). Fail closed: unparseable command extraction, a match error, a match timeout, a suffix matching no declared name, or a dynamically-named parent whose suffix cannot be checked statically blocks validation exactly like a zero-match selector.
 
 ## P-dogfood-slice-3 — Windows atomic-replace retry pattern in knowledge
 
