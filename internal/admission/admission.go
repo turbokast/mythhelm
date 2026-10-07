@@ -304,6 +304,36 @@ func decideClaudeCode(ctx context.Context, req Request, d Decision) (Decision, e
 		return Decision{}, NativeAdmissionError(err)
 	}
 	d.NativeAuth = &evidence
+	// The qualification consult follows AuthStatus, so provider and account
+	// class are known, and precedes billing: registry eligibility (this
+	// route is qualified) comes before the billing posture (this run's
+	// funding), and either can block (D7). The consult never migrates or
+	// seeds; admission writes nothing.
+	reg, err := OpenQualificationRegistry(ctx, req.StateDir)
+	if err != nil {
+		return Decision{}, err
+	}
+	if reg != nil {
+		defer func() { _ = reg.Close() }()
+	}
+	elig, err := ResolveQualification(ctx, reg, d.Probe,
+		adapter.ConfigManifest{Digests: manifest.Digests}, evidence, req.Billing, d.Profile.Name)
+	if err != nil {
+		return Decision{}, err
+	}
+	switch elig.Verdict {
+	case Eligible:
+	case Blocked:
+		return Decision{}, &BlockedError{Code: elig.Reason,
+			Field:  d.Adapter.Harness + " × " + d.Adapter.Surface,
+			Action: "run 'mythhelm doctor' to inspect the qualification records"}
+	case Unsupported:
+		return Decision{}, &BlockedError{Code: elig.Reason, Capability: true,
+			Field:  d.Adapter.Harness + " × " + d.Adapter.Surface,
+			Action: "this surface is marked unsupported; run 'mythhelm doctor' for details"}
+	default:
+		return Decision{}, fmt.Errorf("admission: unknown qualification verdict %q", elig.Verdict)
+	}
 	decl, err := resolveDeclaration(ctx, req, evidence)
 	if err != nil {
 		return Decision{}, err
