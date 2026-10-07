@@ -105,6 +105,7 @@ Add to the decomposition steps, after task Files lists are drafted: "Coverage pa
 **Proposed change:**
 
 Add to the skill's test-writing rules: every acceptance test covering a JSONL or envelope output must assert the `type` discriminator value (or the schema's equivalent routing field) of each emitted object, not just that output parses or has the right shape. A test named `*JSONL*` / `*Envelope*` without a discriminator assertion is incomplete.
+
 ## P-dogfood-slice-2 — Spec validation executes embedded test selectors
 
 - **Decision**: approved
