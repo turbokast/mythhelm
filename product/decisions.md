@@ -280,3 +280,24 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: tui-tape-recording reached done
 - **Cards**: MH-32
 - **Evidence**: PR #187 (finalize, merged 08daa78); main green at 08daa78
+
+### D-53 — 2026-10-07: MH-18 → shipped (version-numbering)
+- **Type**: lifecycle-sync
+- **Decision**: MH-18 moved to shipped
+- **Rationale**: version-numbering reached done
+- **Cards**: MH-18
+- **Evidence**: PR #182 (finalize, merged 051f7189); main green at 25b8b8d
+
+### D-54 — 2026-10-07: MH-19 → shipped (release-tagging)
+- **Type**: lifecycle-sync
+- **Decision**: MH-19 moved to shipped
+- **Rationale**: release-tagging reached done
+- **Cards**: MH-19
+- **Evidence**: PR #185 (finalize, merged dee9160); main green at dee9160
+
+### D-55 — 2026-10-07: MH-20 → shipped (strict-lint-set)
+- **Type**: lifecycle-sync
+- **Decision**: MH-20 moved to shipped
+- **Rationale**: strict-lint-set reached done
+- **Cards**: MH-20
+- **Evidence**: finalize PR #189, main green at 3ed673f
