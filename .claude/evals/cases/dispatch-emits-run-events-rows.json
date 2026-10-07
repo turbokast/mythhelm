@@ -1,0 +1,12 @@
+{
+  "id": "dispatch-emits-run-events-rows",
+  "hazard": "Task attempts run without run-events rows, so the retrospective cannot attribute attempts or compute wall-clock effort.",
+  "source": "P-dogfood-slice-4",
+  "targets": [
+    ".claude/skills/run-spec-dispatch/SKILL.md"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "the task's `dispatch` row.*`run_start` row first, but only when the run has none yet.*`return` when a report arrived, `fail` or `lost` otherwise.*`merge` row after the merge.*carries the attempt number.*`reconstructed` marker.*exclude `reconstructed`-marked rows"
+  }
+}

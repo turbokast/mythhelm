@@ -1,0 +1,12 @@
+{
+  "id": "jsonl-tests-assert-discriminator",
+  "hazard": "A JSONL acceptance test passes while the output omits the type discriminator, because the test asserts shape but not the routing field.",
+  "source": "P-dogfood-slice-1",
+  "targets": [
+    ".claude/skills/test-driven-development/SKILL.md"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "must assert the `type` discriminator value \\(or the schema's equivalent routing field\\) of each emitted object"
+  }
+}
