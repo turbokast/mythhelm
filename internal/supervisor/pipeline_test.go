@@ -991,6 +991,102 @@ func TestInterruptBeforeWorkerSpawnNeverLaunchesNative(t *testing.T) {
 	}
 }
 
+// TestRunSeedsRegistry runs the supervisor twice against one fresh state
+// dir with admitted fake decisions (cancelled before the worker spawns,
+// so no native launches): the first run seeds the seven v2 §7.2 records
+// and the second records none (I14: the seven honest labels exist from
+// the first admission).
+func TestRunSeedsRegistry(t *testing.T) {
+	f := newFixture(t)
+	decide := func() admission.Decision {
+		t.Helper()
+		d, err := admission.Decide(t.Context(), admission.Request{
+			StateDir: f.state, Repo: f.repo, TaskFile: f.task,
+			Adapter: admission.AdapterFake, Billing: admission.BillingLocalScripted,
+			ExecutionProfile: admission.ProfileTrustedHost, Env: os.Environ(),
+			NoChecks: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	cancelledRun := func(d admission.Decision) {
+		t.Helper()
+		interrupts := make(chan os.Signal, 1)
+		interrupts <- os.Interrupt
+		out, err := supervisor.Run(t.Context(), d, supervisor.Hooks{Interrupt: interrupts})
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		if out.State != supervisor.RunCancelled {
+			t.Fatalf("run state = %s, want cancelled", out.State)
+		}
+	}
+	currentRecords := func() int {
+		t.Helper()
+		rows, err := f.journal(t).ListCurrentQualificationRecords(t.Context())
+		if err != nil {
+			t.Fatalf("ListCurrentQualificationRecords: %v", err)
+		}
+		return len(rows)
+	}
+	cancelledRun(decide())
+	if got := currentRecords(); got != 7 {
+		t.Fatalf("current qualification records after the first run = %d, want 7", got)
+	}
+	cancelledRun(decide())
+	if got := currentRecords(); got != 7 {
+		t.Fatalf("current qualification records after the second run = %d, want 7 (no new rows)", got)
+	}
+}
+
+// TestSeedFailureFailsClosed drops the qualification table out from under
+// the supervisor after admission: the run must fail through
+// persistence_unavailable instead of running unseeded, admitting nothing.
+func TestSeedFailureFailsClosed(t *testing.T) {
+	f := newFixture(t)
+	d, err := admission.Decide(t.Context(), admission.Request{
+		StateDir: f.state, Repo: f.repo, TaskFile: f.task,
+		Adapter: admission.AdapterFake, Billing: admission.BillingLocalScripted,
+		ExecutionProfile: admission.ProfileTrustedHost, Env: os.Environ(),
+		NoChecks: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Migrate the database the supervisor will open, then drop the table
+	// out from under it: the open succeeds (user_version=2) and only the
+	// seed fails.
+	migrate, err := journal.Open(t.Context(), f.state)
+	if err != nil {
+		t.Fatalf("journal.Open: %v", err)
+	}
+	if err := migrate.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db := rawDB(t, f.state)
+	if _, err := db.Exec("DROP TABLE qualification_records"); err != nil {
+		t.Fatalf("DROP TABLE qualification_records: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	interrupts := make(chan os.Signal, 1)
+	interrupts <- os.Interrupt
+	out, err := supervisor.Run(t.Context(), d, supervisor.Hooks{Interrupt: interrupts})
+	if err == nil {
+		t.Fatalf("Run on an unseedable database reached state %s; want persistence_unavailable", out.State)
+	}
+	var blocked *admission.BlockedError
+	if !errors.As(err, &blocked) || blocked.Code != "persistence_unavailable" {
+		t.Fatalf("Run error = %v, want persistence_unavailable", err)
+	}
+	if rows := f.runs(t); len(rows) != 0 {
+		t.Fatalf("recorded runs = %d, want 0: the failed run admitted nothing", len(rows))
+	}
+}
+
 func TestCtrlCOnceStopsAndExits130(t *testing.T) {
 	t.Parallel()
 	requireSignals(t)

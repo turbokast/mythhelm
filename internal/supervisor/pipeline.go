@@ -18,6 +18,7 @@ import (
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/integration"
 	"github.com/turbokast/mythhelm/internal/journal"
+	"github.com/turbokast/mythhelm/internal/qualify"
 	"github.com/turbokast/mythhelm/internal/statedir"
 	"github.com/turbokast/mythhelm/internal/workers"
 	"github.com/turbokast/mythhelm/internal/workspace"
@@ -117,6 +118,12 @@ func Run(ctx context.Context, d admission.Decision, h Hooks) (Outcome, error) {
 		return Outcome{}, unavailable(err)
 	}
 	defer func() { _ = j.Close() }()
+	// The first admitted run seeds the seven v2 §7.2 records; refused
+	// runs never reach Run and seed nothing. A seed failure fails the
+	// run closed: no admission without its honest labels (I14).
+	if err := qualify.EnsureSeeded(ctx, j); err != nil {
+		return Outcome{}, unavailable(err)
+	}
 	if err := os.MkdirAll(d.RunDir, 0o700); err != nil {
 		return Outcome{}, unavailable(err)
 	}
