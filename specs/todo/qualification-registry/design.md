@@ -197,11 +197,19 @@ package boundary so the import direction stays one-way — `qualify` imports
 func (j *Journal) InsertQualificationRecord(ctx context.Context, keyHash string, revision int, digest, recordJSON string) error
 func (j *Journal) CurrentQualificationRecord(ctx context.Context, keyHash string) (recordJSON string, revision int, err error)
 func (j *Journal) ListCurrentQualificationRecords(ctx context.Context) (records []string, err error)
+
+// InsertQualificationRecordIfAbsent inserts the row only when no
+// (key_hash, revision) row exists, in a single INSERT OR IGNORE
+// statement; it never supersedes. It reports whether it inserted.
+func (j *Journal) InsertQualificationRecordIfAbsent(ctx context.Context, keyHash string, revision int, digest, recordJSON string) (inserted bool, err error)
 ```
 
 `Insert-` refuses empty `keyHash`/`digest`/`recordJSON` or `revision < 1`
 (`journal: invalid qualification record`) and otherwise supersedes the
-previous current row for the key inside its own transaction. Digest
+previous current row for the key inside its own transaction.
+`Insert-IfAbsent` applies the same input validation, then the single
+non-superseding write; concurrent same-key callers are serialized by
+the statement, exactly one inserting. Digest
 verification lives in `qualify`: `Registry.Record` recomputes via
 `CanonicalDigest` and refuses tampering (`qualify: record digest
 mismatch: ...`). `Current-` returns `ErrNotFound` wrapped as
@@ -217,8 +225,8 @@ for the local platform, each `ProgressBlocked` or `ProgressPlanned` (never
 `fixture-tested` or better) with `NextTest` naming the concrete first
 evidence step and its authority, in the form `<step>; authority: <who
 grants it>`. Seeding runs only through `EnsureSeeded`
-against a database whose table is empty — never at import time, never on
-plain `Open`, never rewriting existing rows. The fixture-tested first-route
+— never at import time, never on plain `Open`, never rewriting existing
+rows. The fixture-tested first-route
 record exists only
 behind `RecordDraft` plus its registry round-trip tests (Task 5) until
 MH-12: this spec ships no production writer of proven records, so no
@@ -237,11 +245,12 @@ first admitted run honestly show no records (O1's seven are readable from
 the first admission on).
 
 ```go
-// EnsureSeeded inserts the SeedV1() records missing from the table with
-// per-key INSERT OR IGNORE, then verifies seven current rows. It completes
-// partial seeds (a partial failure never blocks a later call) and is safe
-// under concurrent first runs (conflicts ignored, count verified). Fewer
-// than seven afterwards returns the journal error, wrapped.
+// EnsureSeeded inserts the SeedV1() records missing from the table via
+// per-key InsertQualificationRecordIfAbsent, then verifies seven current
+// rows. It completes partial seeds (a partial failure never blocks a
+// later call) and is safe under concurrent first runs (the single
+// statement serializes same-key inserts; count verified). Fewer than
+// seven afterwards returns the journal error, wrapped.
 func EnsureSeeded(ctx context.Context, j *journal.Journal) error
 ```
 
