@@ -161,7 +161,7 @@
   - `TestEvidencePerformsNoLiveCall` static leg (test mechanism, not behaviour): the acceptance prescribes transitive `go list -deps` showing no `net` membership, but the task's Produces forces `adapters/claudecode → internal/qualify → internal/journal`, and the merged journal builds `file:` DSNs with `net/url` while the SQLite driver links `net` transitively — unsatisfiable by any correct implementation. The test asserts the package's direct imports contain no `net`/`net/http` plus the transitive absence of `net/http`, and keeps the behavioural leg (poisoned proxies, empty HOME, byte-identical output) verbatim; both legs verified failing when violated.
 - **Files modified**: `adapters/claudecode/qualify.go`, `adapters/claudecode/qualify_test.go`, `adapters/claudecode/testdata/qualification/routes.json`, `adapters/claudecode/COMPATIBILITY.md`, `specs/in-progress/qualification-registry/tasks.md`, `specs/in-progress/qualification-registry/handoff.md`, `specs/in-progress/qualification-registry/scratchpad.md`.
 
-### Task 6 — doctor qualification section
+### Task 6 — doctor qualification section ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -177,6 +177,11 @@
   - `TestDoctorStillWritesNothing`: against a seeded non-empty temp state dir, warm one read-only open first (a WAL reader may create `-shm`/`-wal` sidecars on first touch), then assert the SHA-256 of every file is unchanged across the run; a variant that writes a marker file into the dir fails the test (read-only guard with a red variant).
 - **Test plan**: `cli.Main` tests with temp `MYTHHELM_HOME`; golden anchored section match; hash-before/after for read-only.
 - **Invariants touched**: I09 (v2 §7.3: missing reads `unavailable`/`unknown`); I13 lineage (doctor needs no credentials); A30 lineage (read-only doctor).
+- **Status**: ✅ Completed — `doctor` shows the qualification section in plain and JSONL via a read-only registry open, with honest unavailable/empty reads; PR #204.
+- **Implementation**: One `Qualification` map feeds both outputs; drift runs `CheckDrift` against unobserved digests (unknown pins read clean, established pins read unobserved, fail-closed). Red-first: display tests failed pre-change; a dropped-drift-slot mutant failed the plain tests. Commit 2415894.
+- **Spec deviations**:
+  - `TestDoctorQualificationEmptyHonest` in `internal/cli/doctor_test.go` (extra test): pins the design §6 empty-read rule (existing but unseeded dir reads `(no records)`/`[]`, never null), for which the acceptance names no test.
+- **Files modified**: `internal/cli/doctor.go`, `internal/cli/doctor_test.go`, `specs/in-progress/qualification-registry/tasks.md`, `specs/in-progress/qualification-registry/handoff.md`, `specs/in-progress/qualification-registry/scratchpad.md`.
 
 ### Task 7 — End-to-end packaged-binary tests
 
