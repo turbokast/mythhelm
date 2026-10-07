@@ -44,7 +44,10 @@
 
 ## Task 6 — doctor qualification section
 
-<!-- pending -->
+- **Produces**: `doctor` `qualification` section in plain (`qualification:` header + one `<harness> × <surface>: <progress> (fidelity <v>, entitlement <v>, lifecycle <v>) [evidence <n> revs, latest <ev-id>; drift <state>]` line per record, last in the output) and JSONL (`qualification: {"records": [...]}` per-record objects with `harness`, `surface`, `progress`, per-column `verdict` + `evidence` ids, `evidence_revisions` (= current revision), `latest_evidence`, `drift_triggers` (`executable_digest`, `config_digest`), `drift`, `next_test`). Unavailable → `qualification: unavailable (<reason>)` / `{"status": "unavailable (<reason>)"}`, exit 0; existing-but-unseeded → `(no records)` / `{"records": []}`.
+- **For dependents**: doctor reads via `qualify.OpenReadOnly` + `List` only (10 s bound), never migrates or seeds; every `OpenReadOnly`/`List` error maps to `unavailable`, never empty and never an error exit.
+- **For dependents**: plain `drift` state runs `CheckDrift` against unobserved digests — unknown pins read `clean`, established pins read `<field> unobserved (pinned ...)`; `latest_evidence` is the max-`At` evidence id across columns (`none` when empty). Task 7 asserts seven records from JSONL `qualification.records`; Task 8 documents the `^<harness> × <surface>:` plain shape.
+- **Deviations that change a later task's inputs**: none (extra `TestDoctorQualificationEmptyHonest` pins the design §6 empty read; no production shape beyond the design).
 
 ## Task 7 — End-to-end packaged-binary tests
 
