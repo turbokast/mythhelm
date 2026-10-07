@@ -103,7 +103,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `internal/qualify/registry.go`, `internal/qualify/drift.go`, `internal/qualify/registry_test.go`, `internal/qualify/drift_test.go`, `specs/in-progress/qualification-registry/tasks.md`, `specs/in-progress/qualification-registry/handoff.md`, `specs/in-progress/qualification-registry/scratchpad.md`.
 
-### Task 4 — Admission consults the registry
+### Task 4 — Admission consults the registry ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard (14 small verdict-mapping items; several fold into one table test)
@@ -131,6 +131,14 @@
   - `TestDriftedRecordBlocks`: a record whose pinned digest differs from the probe yields `Blocked` with a drift reason (AC-4.1 path through admission).
 - **Test plan**: `cli.Main` tests with temp state dirs for the end-to-end items; direct unit tests for verdict mapping; existing admission tests must pass unchanged.
 - **Invariants touched**: I02 (v2 §7.3: unknown mandatory evidence blocks); I15 (v2 §7.3: strict stays blocked without proof); I07 lineage (admission evidence bound to the probed candidate).
+- **Status**: ✅ Completed — `decideClaudeCode` consults the registry through `ResolveQualification` after `AuthStatus`, with strict verdict mapping and the early return preserved; PR #205.
+- **Implementation**: Strict admits only live-qualified + proven entitlement (unexpired evidence) + supported stop marker; declared admits missing/non-live with the record attached; unsupported refuses every mode (exit 7). Drifted strict consults block with the drift reason; the consult never migrates or seeds. Commit afdea11.
+- **Spec deviations**:
+  - `admission.OpenQualificationRegistry` (exported, not in Produces): the acceptance's open-mapping tests (missing/v1 → absent, unreadable → `qualify: registry unavailable`) cannot run through `Decide`, whose earlier trust-journal open fails first on the same database; the helper carries exactly the specified mapping.
+  - Refusal codes `stop_at_exhaustion_unproven` and `qualification_unsupported` are this task's choice where the acceptance pins the verdict but no code.
+  - Declared/local-scripted admit drifted and ambiguous consults (Eligible, record attached when unique); the design's "only" is read as contrasting unsupported records, per the acceptance's "the dogfood path never blocks on the registry".
+  - The harness-outside-seven guard is implemented but unreachable today (observed harness is the claudecode descriptor constant; `Consult` pins the record harness); unknown billing modes return `ErrInvalid` instead of consulting.
+- **Files modified**: `internal/admission/qualify.go`, `internal/admission/admission.go`, `internal/admission/qualify_test.go`, `specs/in-progress/qualification-registry/tasks.md`, `specs/in-progress/qualification-registry/handoff.md`, `specs/in-progress/qualification-registry/scratchpad.md`.
 
 ### Task 5 — First-route authorised-test evidence (claudecode) ✅ COMPLETED
 

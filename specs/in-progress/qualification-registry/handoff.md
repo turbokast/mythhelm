@@ -36,7 +36,12 @@
 
 ## Task 4 — Admission consults the registry
 
-<!-- pending -->
+- **Produces**: `admission.ResolveQualification(ctx, reg, probe, manifest, evidence, billing, profile) (Eligibility, error)` (nil reg counts as absent), `admission.Eligibility{Verdict, Reason, Record}`, `admission.EligibilityVerdict` (`Eligible`/`Blocked`/`Unsupported`), plus `admission.OpenQualificationRegistry(ctx, dir)` (missing/schema-mismatch → nil registry, other open failures → `qualify: registry unavailable`); `decideClaudeCode` consults after `AuthStatus`, mapping `Blocked`→exit 3 and `Unsupported`→exit 7 `*BlockedError`.
+- **For dependents**: strict admits only live-qualified + entitlement proven (≥1 unexpired evidence) + `stop_at_exhaustion` supported (unexpired); unknown `Quota` never blocks. Non-live progress maps to `entitlement_not_proven` even when the column reads proven (AC-2.3); missing/expired/unsupported marker maps to `stop_at_exhaustion_unproven`.
+- **For dependents**: declared/local-scripted admit missing, non-live, drifted and ambiguous consults (record attached when unique); only `qualification_unsupported` (unsupported progress or harness outside the seven) refuses every mode. Drifted strict consults block with the CheckDrift reason text; unknown billing modes return `ErrInvalid`.
+- **For dependents**: `Eligibility.Reason` is empty when `Eligible`; `Record` is attached whenever one record was consulted (nil for absent/ambiguous/pre-consult). Ambiguity is detected by Consult's `ambiguous stable match` message (no sentinel); a rewording fails `TestAmbiguousMatchBlocks` loudly.
+- **For dependents**: the consult never migrates or seeds; the strict early return in `Decide` still fires first, so strict consult-blocks are unit-tested only until MH-12 removes it. Seed records (surface/trust `unknown`) never stable-match a real probe.
+- **Deviations that change a later task's inputs**: Task 7's declared e2e must expect exit 7 + `qualification_unsupported` only with a stable-matching unsupported record seeded; Task 9 note — a v1 database still fails at admission's earlier trust-journal open before the consult, so "v1 maps to absent" holds for the consult entry, not end-to-end through `Decide`.
 
 ## Task 5 — First-route authorised-test evidence (claudecode)
 
