@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/turbokast/mythhelm/internal/qualify"
 )
@@ -456,6 +457,85 @@ func TestDoctorQualificationJSONL(t *testing.T) {
 		if err := checkQualificationRecord(mut); err == nil {
 			t.Errorf("checkQualificationRecord accepts a record missing %v", path)
 		}
+	}
+}
+
+// TestDoctorQualificationEvidenceAndDrift covers what the seed-only
+// entrypoint tests cannot: a record carrying evidence at different
+// timestamps with established digests renders the newest evidence id
+// and the unobserved-drift text in both plain and JSONL output.
+func TestDoctorQualificationEvidenceAndDrift(t *testing.T) {
+	// Not parallel: points MYTHHELM_HOME at a seeded temp state dir.
+	dir := stateHome(t)
+	seedQualification(t, dir)
+
+	reg, err := qualify.Open(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := qualify.SeedV1()[0]
+	rec.Key.ExecutableDigest = "sha256:" + strings.Repeat("a", 64)
+	rec.Key.ConfigDigest = "sha256:" + strings.Repeat("b", 64)
+	rec.Fidelity = qualify.Column{
+		Verdict: qualify.Proven,
+		Evidence: []qualify.Evidence{{
+			ID: "ev_older", Method: "offline-fixture", Suite: "doctor",
+			Result: "pass", Label: qualify.Observed, Source: "test",
+			At: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		}},
+	}
+	rec.Entitlement = qualify.Column{
+		Verdict: qualify.Proven,
+		Evidence: []qualify.Evidence{{
+			ID: "ev_newer", Method: "offline-fixture", Suite: "doctor",
+			Result: "pass", Label: qualify.Observed, Source: "test",
+			At: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+		}},
+	}
+	rec.Digest = ""
+	if err := reg.Record(t.Context(), rec); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := runMain("doctor")
+	if code != 0 {
+		t.Fatalf("plain exit %d, stderr %q", code, stderr)
+	}
+	matched := false
+	for _, l := range qualificationLines(t, stdout) {
+		if strings.HasPrefix(l, "claude-code × ") &&
+			strings.Contains(l, "latest ev_newer") &&
+			strings.Contains(l, "executable_digest unobserved (pinned sha256:"+strings.Repeat("a", 64)+")") {
+			matched = true
+		}
+	}
+	if !matched {
+		t.Errorf("no plain claude-code line names ev_newer with the unobserved-drift text:\n%s", stdout)
+	}
+
+	code, stdout, stderr = runMain("doctor", "--format", "jsonl")
+	if code != 0 {
+		t.Fatalf("jsonl exit %d, stderr %q", code, stderr)
+	}
+	var rep map[string]any
+	if err := json.Unmarshal([]byte(stdout), &rep); err != nil {
+		t.Fatalf("doctor jsonl: %v\n%s", err, stdout)
+	}
+	qual := rep["qualification"].(map[string]any)
+	matched = false
+	for _, item := range qual["records"].([]any) {
+		m := item.(map[string]any)
+		drift, _ := m["drift"].(string)
+		if m["harness"] == "claude-code" && m["latest_evidence"] == "ev_newer" &&
+			strings.Contains(drift, "executable_digest unobserved (pinned sha256:") {
+			matched = true
+		}
+	}
+	if !matched {
+		t.Errorf("no jsonl claude-code record names ev_newer with the unobserved-drift text: %q", stdout)
 	}
 }
 
