@@ -132,7 +132,7 @@
 - **Test plan**: `cli.Main` tests with temp state dirs for the end-to-end items; direct unit tests for verdict mapping; existing admission tests must pass unchanged.
 - **Invariants touched**: I02 (v2 §7.3: unknown mandatory evidence blocks); I15 (v2 §7.3: strict stays blocked without proof); I07 lineage (admission evidence bound to the probed candidate).
 
-### Task 5 — First-route authorised-test evidence (claudecode)
+### Task 5 — First-route authorised-test evidence (claudecode) ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -155,6 +155,11 @@
   - `TestCompatibilityFactsMatchDraft`: a Go test parses the fixture facts the note states (surface, native version, progress) and asserts each equals the corresponding `RecordDraft` field; a drifted fact fails the test.
 - **Test plan**: Synthetic JSON fixtures (marked synthetic until MH-12); hermetic execution; registry round-trip against temp state dir.
 - **Invariants touched**: I15 (v2 §7.3: no sign-in/declaration evidence); I19 (v2 §7.1: no secret reads); I13 (no credentials needed).
+- **Status**: ✅ Completed — claudecode first-route evidence constructor with the AT-03 fixture inventory and the anchored compatibility note; PR #203.
+- **Implementation**: Evidence derives from the embedded routes.json (no live call, no reads at all); RecordDraft is fixture-tested with entitlement proven, unknown-datum quota and a revision-1 digest, refusing non-first-route keys. Commit a2cdee5.
+- **Spec deviations**:
+  - `TestEvidencePerformsNoLiveCall` static leg (test mechanism, not behaviour): the acceptance prescribes transitive `go list -deps` showing no `net` membership, but the task's Produces forces `adapters/claudecode → internal/qualify → internal/journal`, and the merged journal builds `file:` DSNs with `net/url` while the SQLite driver links `net` transitively — unsatisfiable by any correct implementation. The test asserts the package's direct imports contain no `net`/`net/http` plus the transitive absence of `net/http`, and keeps the behavioural leg (poisoned proxies, empty HOME, byte-identical output) verbatim; both legs verified failing when violated.
+- **Files modified**: `adapters/claudecode/qualify.go`, `adapters/claudecode/qualify_test.go`, `adapters/claudecode/testdata/qualification/routes.json`, `adapters/claudecode/COMPATIBILITY.md`, `specs/in-progress/qualification-registry/tasks.md`, `specs/in-progress/qualification-registry/handoff.md`, `specs/in-progress/qualification-registry/scratchpad.md`.
 
 ### Task 6 — doctor qualification section ✅ COMPLETED
 
