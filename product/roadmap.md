@@ -7,23 +7,22 @@
 
 Cards with a spec, being specified or implemented.
 
-Nothing in flight.
+- **MH-10** Harness compatibility records and qualification registry (specced, stage 0, score 5.0; spec `qualification-registry`; [#31](https://github.com/turbokast/mythhelm/issues/31))
 
 ## Next
 
 The five highest-scored cards without a spec in an earlier stage, the current stage or the next stage.
 
-- **MH-10** Harness compatibility records and qualification registry (triaged, stage 0, score 5.0; [#31](https://github.com/turbokast/mythhelm/issues/31))
 - **MH-7** Release pipeline: GoReleaser archives, attestations and signatures (triaged, stage 1, score 4.3; [#28](https://github.com/turbokast/mythhelm/issues/28))
 - **MH-11** Windows process-tree ownership (triaged, stage 1, score 4.3; [#32](https://github.com/turbokast/mythhelm/issues/32))
 - **MH-12** Strict subscription-only qualification for Claude Code (triaged, stage 1, score 3.8; [#33](https://github.com/turbokast/mythhelm/issues/33))
 - **MH-22** Protected acceptance and a complete v2 one-agent workflow (triaged, stage 1, score 3.8; [#128](https://github.com/turbokast/mythhelm/issues/128))
+- **MH-17** Account profiles and exhaustion handoff (triaged, stage 2, score 3.7; [#82](https://github.com/turbokast/mythhelm/issues/82))
 
 ## Later
 
 Every other open card, by score.
 
-- **MH-17** Account profiles and exhaustion handoff (triaged, stage 2, score 3.7; [#82](https://github.com/turbokast/mythhelm/issues/82))
 - **MH-13** Contained execution profiles: restricted and inspect (triaged, stage 1, score 3.5; [#34](https://github.com/turbokast/mythhelm/issues/34))
 - **MH-3** Herdr bridge: single-pane experience with scoped status (triaged, stage 1, score 3.3; [#24](https://github.com/turbokast/mythhelm/issues/24))
 - **MH-4** Codex native adapter and included-only qualification (triaged, stage 1, score 3.3; [#25](https://github.com/turbokast/mythhelm/issues/25))
