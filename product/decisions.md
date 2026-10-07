@@ -273,3 +273,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: The shipped sync left pre-ship guidance (remains specced against R1.1); the spec is done and reconciled (PR #146), so the card now records the shipped state and the MH-32 follow-up
 - **Cards**: MH-8
 - **Evidence**: PR #149 (176fead); specs/done/docs-site-demos/reconciliation.md
+
+### D-51 — 2026-10-06: MH-32 → shipped (tui-tape-recording)
+- **Type**: lifecycle-sync
+- **Decision**: MH-32 moved to shipped
+- **Rationale**: tui-tape-recording reached done
+- **Cards**: MH-32
+- **Evidence**: PR #187 (finalize, merged 08daa78); main green at 08daa78

@@ -7,7 +7,6 @@
 
 Cards with a spec, being specified or implemented.
 
-- **MH-32** TUI terminal recording (FR-3 follow-up) (specced, stage 1, score 8.0; spec `tui-tape-recording`)
 - **MH-20** Strictest practical lint set (specced, stage 1, score 5.0; spec `strict-lint-set`; [#115](https://github.com/turbokast/mythhelm/issues/115))
 - **MH-18** Adopt SemVer or CalVer for releases (specced, stage 1, score 4.0; spec `version-numbering`; [#113](https://github.com/turbokast/mythhelm/issues/113))
 - **MH-19** Tag every release in git (specced, stage 1, score 4.0; spec `release-tagging`; [#114](https://github.com/turbokast/mythhelm/issues/114))

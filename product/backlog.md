@@ -31,17 +31,6 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 
 ## Open
 
-### MH-32: TUI terminal recording (FR-3 follow-up)
-- **Status**: specced
-- **Stage**: 1
-- **Gates**: G10
-- **Score**: 8.0 = (value 2 + urgency 5 + risk 1) / effort 1
-- **Spec**: `tui-tape-recording`
-- **Issue**: (none)
-- **Source**: historical R1.1 recording contract (master spec §§14.9, 22.3; docs-site-demos FR-3/AC-3.2/AC-3.3, design §5); current contract Master Specification v2 §15 via W05; TUI evidence in specs/done/tui-slice/ (shipped 2026-10-04)
-- **Summary**: Record the shipped TUI on tape: drive the mission view, responsive layouts down to linear mode and keyboard flows with the TUI's own verification status on screen, limited to exactly the covered tui-slice behaviour; ship the full tape with header pins, a manifest entry naming qualifying tests, and a normalized transcript per the docs-site-demos tape contract, never pane text as proof.
-- **Premise-grounded**: 2026-10-05 — 8 claims, 6 HOLDS, 2 PARTIAL, 0 UNVERIFIABLE; R1.1 anchor PARTIAL (operative contract is docs-site-demos FR-3); v2 §15 via W05 PARTIAL (tape is this spec's evidence form); tui-slice AC-3.1/AC-6.2 partials excluded
-
 ### MH-10: Harness compatibility records and qualification registry
 - **Status**: triaged
 - **Stage**: 0
@@ -383,3 +372,14 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Source**: master spec §19.3, §19.4 and the G10 public-release gate of §18.7
 - **Summary**: Complete the OpenSSF Best Practices questionnaire for the passing level and show the badge in the README, recording any criterion the project does not yet meet as its own card.
 - **Premise-grounded**: 2026-10-02 — C1 HOLDS; C2 HOLDS; C3 HOLDS; C4 HOLDS; C5 PARTIAL; C6 HOLDS (external); C7 PROCEDURE
+
+### MH-32: TUI terminal recording (FR-3 follow-up)
+- **Status**: shipped
+- **Stage**: 1
+- **Gates**: G10
+- **Score**: 8.0 = (value 2 + urgency 5 + risk 1) / effort 1
+- **Spec**: `tui-tape-recording`
+- **Issue**: (none)
+- **Source**: historical R1.1 recording contract (master spec §§14.9, 22.3; docs-site-demos FR-3/AC-3.2/AC-3.3, design §5); current contract Master Specification v2 §15 via W05; TUI evidence in specs/done/tui-slice/ (shipped 2026-10-04)
+- **Summary**: Record the shipped TUI on tape: drive the mission view, responsive layouts down to linear mode and keyboard flows with the TUI's own verification status on screen, limited to exactly the covered tui-slice behaviour; ship the full tape with header pins, a manifest entry naming qualifying tests, and a normalized transcript per the docs-site-demos tape contract, never pane text as proof.
+- **Premise-grounded**: 2026-10-05 — 8 claims, 6 HOLDS, 2 PARTIAL, 0 UNVERIFIABLE; R1.1 anchor PARTIAL (operative contract is docs-site-demos FR-3); v2 §15 via W05 PARTIAL (tape is this spec's evidence form); tui-slice AC-3.1/AC-6.2 partials excluded
