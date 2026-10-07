@@ -230,7 +230,8 @@ Production seeding trigger (Task 9): the supervisor calls
 `qualify.EnsureSeeded` after `journal.Open` in `Run`
 (`internal/supervisor/pipeline.go:109-116`), so the first admitted run seeds
 the seven records; refused runs seed nothing. Seeding is idempotent
-(empty-table only) and a seed failure fails the run through the existing
+(inserts only missing rows; a complete table is untouched) and a seed
+failure fails the run through the existing
 `persistence_unavailable` path — state init is fail-closed. Reads before the
 first admitted run honestly show no records (O1's seven are readable from
 the first admission on).
@@ -411,6 +412,8 @@ key, else the unique stable-identity match for drift comparison. Drifted →
 `Blocked` with the drift reason (AC-4.1 path). Evidence with `Expiry` set
 and past is ignored (treated as absent); a `proven` verdict with no
 unexpired supporting evidence counts as `not-proven` for the consult.
+A capability with `Expiry` set and past counts as `unknown` for the
+consult, whatever its `Value` claims.
 Records with `Progress == unsupported`, or harnesses outside the seven v2
 §7.2 ids, map to `Unsupported` (exit 7) under every billing mode — the
 declared bypass covers missing or merely non-live records only. Otherwise,
@@ -515,7 +518,7 @@ read-only: `OpenReadOnly` migrates and seeds nothing (AC-12.2 lineage).
 | ID | Decision | Rationale |
 |---|---|---|
 | D1 | Records live in `mythhelm.db` (new table), not versioned files | v2 §5.1: the canonical ledger owns orchestration state; ADR-0003 settles SQLite; one writer, one backup story. Files would be a second competing store (I23). Carries ADR-0011 in the docs task. |
-| D2 | Lazy Go seed via `EnsureSeeded`, not in migration SQL | Migration SQL must stay deterministic and platform-neutral; the seed depends on `runtime.GOOS/GOARCH` and probe facts. Seeding is idempotent (empty-table only), triggered explicitly by the supervisor on admitted runs. |
+| D2 | Lazy Go seed via `EnsureSeeded`, not in migration SQL | Migration SQL must stay deterministic and platform-neutral; the seed depends on `runtime.GOOS/GOARCH` and probe facts. Seeding is idempotent (inserts only missing rows, completing partial seeds), triggered explicitly by the supervisor on admitted runs. |
 | D3 | Per-column `proven\|not-proven\|unknown`, separate from the §4.2 progress scale | AC-1.2 verdicts answer "is this column established"; progress answers "how far along is this surface". Conflating them reintroduces the pass-in-one-implies-another error v2 §7.1 forbids. |
 | D4 | Drift check is pure (`CheckDrift`); invalidation is an explicit write | Lets admission and tests compare without side effects; every invalidation is a deliberate new revision with its reason preserved (I20). |
 | D5 | `doctor` section, not a new `mythhelm qualification` verb | AC-5.3's Q4 default: doctor already owns truthful read-only environment reporting; a verb with write ambitions would need its own admission story. |

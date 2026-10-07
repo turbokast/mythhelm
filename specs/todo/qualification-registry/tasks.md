@@ -48,7 +48,7 @@
   - `internal/journal/qualification_test.go`
   - `internal/qualify/seed.go`
   - `internal/qualify/seed_test.go`
-- **Produces**: `func (j *Journal) InsertQualificationRecord(ctx context.Context, keyHash string, revision int, digest, recordJSON string) error`; `func (j *Journal) CurrentQualificationRecord(ctx context.Context, keyHash string) (recordJSON string, revision int, err error)` (absent → `journal: qualification record: %w` wrapping `ErrNotFound`); `func (j *Journal) ListCurrentQualificationRecords(ctx context.Context) (records []string, err error)`; `qualify.SeedV1() []Record` (seven blocked/planned records with NextTest, platform-filled); `qualify.EnsureSeeded(ctx context.Context, j *journal.Journal) error` (records the seed when the table is empty, else no-op; seed failure returns the journal error wrapped). One import direction: `qualify` imports `journal`, never the reverse.
+- **Produces**: `func (j *Journal) InsertQualificationRecord(ctx context.Context, keyHash string, revision int, digest, recordJSON string) error`; `func (j *Journal) CurrentQualificationRecord(ctx context.Context, keyHash string) (recordJSON string, revision int, err error)` (absent → `journal: qualification record: %w` wrapping `ErrNotFound`); `func (j *Journal) ListCurrentQualificationRecords(ctx context.Context) (records []string, err error)`; `qualify.SeedV1() []Record` (seven blocked/planned records with NextTest, platform-filled); `qualify.EnsureSeeded(ctx context.Context, j *journal.Journal) error` (records the seed rows missing from the table — no-op when complete, completes partial seeds; seed failure returns the journal error wrapped). One import direction: `qualify` imports `journal`, never the reverse.
 - **Acceptance**:
   - `TestMigration0002Applies`: a database at `user_version=1` opens at version 2 with the table present; the migration file `0001_init.sql` is byte-identical to `main` (hash check); `SchemaVersion == 2` and a fresh `Open` reports `user_version` `"2"`; `OpenReadOnly` opens the migrated database without `ErrSchemaTooNew`.
   - `TestRecordRevisionImmutability`: inserting revision 2 for a key leaves revision 1's `record_json` and digest unchanged (excluding the `superseded_at` metadata the insert sets), `Current-` returns revision 2, and both rows' digests recompute via `qualify.CanonicalDigest`; NFR-2 holds.
@@ -91,7 +91,7 @@
 ### Task 4 — Admission consults the registry
 
 - **Domain/agent**: go-implementer
-- **Budget**: standard (13 small verdict-mapping items; several fold into one table test)
+- **Budget**: standard (14 small verdict-mapping items; several fold into one table test)
 - **Depends on**: Task 3, Task 5 (the agreement test consumes `RecordDraft`)
 - **Change**: Add `ResolveQualification` and call it from `decideClaudeCode` after `AuthStatus` and before billing, so eligibility comes from versioned records while strict subscription-only keeps blocking under the fixtures-only default.
 - **Files**:
@@ -105,6 +105,7 @@
   - `TestAmbiguousMatchBlocks`: two stable matches yield `Blocked` with reason `ambiguous_qualification_match` for `--billing subscription-only`.
   - `TestUnsupportedSurfaceMapsUnsupported`: a record with `Progress == unsupported`, or a harness outside the seven v2 §7.2 ids, yields `Unsupported` (exit 7) under every billing mode including `subscription-declared`.
   - `TestExpiredEvidenceIgnored`: a `proven` column whose only evidence has past `Expiry` counts as `not-proven` for the consult; unexpired evidence still qualifies.
+  - `TestExpiredCapabilityIgnored`: a `stop_at_exhaustion` capability with past `Expiry` counts as `unknown` for the consult even when `Value` is `supported`; an unexpired one still qualifies.
   - `TestConsultSchemaMismatchMapsAbsent`: a v1-schema database maps to absent record (strict `Blocked`, declared `Eligible`), letting the run reach the supervisor migration; a permission-denied registry still errors.
   - `TestDeclaredUnaffectedByMissingRecord`: with `--billing subscription-declared`, a missing or non-live record yields `Eligible` (record attached when present); the dogfood path never blocks on the registry.
   - `TestUnknownQuotaAdmitsStopAtExhaustion`: a record with `stop_at_exhaustion: supported` capability and `Quota` unknown-datum yields `Eligible` with the quantity labelled `unknown` (AC-3.3); without the marker it stays `Blocked`.
