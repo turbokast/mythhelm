@@ -89,6 +89,38 @@ In Step 1, change the command template to use a full SHA and add the warning: "P
 
 Add to the decomposition steps, after task Files lists are drafted: "Coverage pass: for every sentence in design.md that states what a user sees (page text, labels, placeholders, error wording), name the task whose Files list contains the file carrying that text. A user-visible claim with no owning task is a gap: assign it to a task's Files or record it as an explicit follow-up with its card or issue. The finalize review re-checks this mapping."
 
+## P-dogfood-slice-1 — JSONL acceptance tests assert the type discriminator
+
+- **Decision**: approved
+- **Date**: 2026-10-06
+- **Pull request**: #190
+- **Eval**: `jsonl-tests-assert-discriminator`
+- **Rationale**: maintainer approved via deliver-backlog checkpoint 2026-10-06
+- **Source spec**: `dogfood-slice`
+- **Type**: skill
+- **Target**: `.claude/skills/test-driven-development/SKILL.md`
+- **Rationale**: Task 13's `TestReviewJSONLSingleObject` passed while `review --format jsonl` omitted the required `"type":"receipt"` field, because the test asserted object shape but not the discriminator. The spec-wide review found the same class twice more (demo #70, doctor #71). A gate passed a defect the review found; the red-first discipline needs a discriminator rule so envelope tests pin the contract that routers and consumers match on.
+- **Evidence**: retrospective Acceptance AC-1.3/AC-8.2 (partial); review findings at `internal/cli/review.go:62`, `internal/cli/demo.go:49`, `internal/cli/doctor.go:51`; follow-up issues #69, #70, #71.
+
+**Proposed change:**
+
+Add to the skill's test-writing rules: every acceptance test covering a JSONL or envelope output must assert the `type` discriminator value (or the schema's equivalent routing field) of each emitted object, not just that output parses or has the right shape. A test named `*JSONL*` / `*Envelope*` without a discriminator assertion is incomplete.
+## P-dogfood-slice-2 — Spec validation executes embedded test selectors
+
+- **Decision**: approved
+- **Date**: 2026-10-06
+- **Pull request**: #191
+- **Eval**: `spec-validate-dry-matches-selectors`
+- **Rationale**: maintainer approved via deliver-backlog checkpoint 2026-10-06
+- **Source spec**: `dogfood-slice`
+- **Type**: skill
+- **Target**: `.claude/skills/spec-validate/SKILL.md`
+- **Rationale**: The Task 20 text told the maintainer to run `go test -run TestLiveCanary`, but the test is named `TestLiveClaudeCanary`, so the documented command silently ran nothing. A wrong command in task text wastes a human session and erodes trust in the spec. Validation should execute (or dry-list) every `go test -run` selector embedded in task text and fail when a selector matches zero tests.
+- **Evidence**: issue #60 (fixed by the dogfood candidate itself); Task 20 Spec deviations in `specs/done/dogfood-slice/tasks.md`.
+
+**Proposed change:**
+
+Add a validation step: collect every `go test … -run <selector>` command embedded in the spec's task text; for each, dry-match it against the tree that results from the task's merge and fail validation when it matches zero tests, naming the task and the selector. Never validate against the base tree: a task may introduce the selected test, so base-tree matching would reject valid tasks before implementation. Follow `-run` semantics for slash-separated subtest selectors (e.g. `TestDecodeFixture/recorded`): `-list` matches top-level tests only, so a top-level match alone must not count as a match for the full selector. Split the selector: match the top-level element with `-list`, and verify each subtest suffix statically against the `t.Run` names declared in the package's test files (go/parser, no execution). Never dry-match by running the selector (`-count=1` executes test bodies, including side effects). Fail closed: unparseable command extraction, a match error, a match timeout, a suffix matching no declared name, or a dynamically-named parent whose suffix cannot be checked statically blocks validation exactly like a zero-match selector.
 ## P-dogfood-slice-3 — Windows atomic-replace retry pattern in knowledge
 
 - **Decision**: approved

@@ -1,0 +1,12 @@
+{
+  "id": "spec-validate-dry-matches-selectors",
+  "hazard": "A task ships a go test -run selector that matches zero tests, and the documented verification command silently runs nothing.",
+  "source": "P-dogfood-slice-2",
+  "targets": [
+    ".claude/skills/spec-validate/SKILL.md"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "resolve the selector statically.*naming the task and the selector"
+  }
+}
