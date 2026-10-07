@@ -1023,21 +1023,40 @@ func TestRunSeedsRegistry(t *testing.T) {
 			t.Fatalf("run state = %s, want cancelled", out.State)
 		}
 	}
-	currentRecords := func() int {
+	currentRecords := func() []string {
 		t.Helper()
 		rows, err := f.journal(t).ListCurrentQualificationRecords(t.Context())
 		if err != nil {
 			t.Fatalf("ListCurrentQualificationRecords: %v", err)
 		}
-		return len(rows)
+		return rows
+	}
+	// totalRows counts every qualification row, superseded or not: new
+	// revisions superseding the seed would show up here even while the
+	// current list still holds seven.
+	totalRows := func() int {
+		t.Helper()
+		var n int
+		if err := rawDB(t, f.state).QueryRowContext(t.Context(),
+			`SELECT count(*) FROM qualification_records`).Scan(&n); err != nil {
+			t.Fatalf("count qualification_records: %v", err)
+		}
+		return n
 	}
 	cancelledRun(decide())
-	if got := currentRecords(); got != 7 {
-		t.Fatalf("current qualification records after the first run = %d, want 7", got)
+	before := currentRecords()
+	if len(before) != 7 {
+		t.Fatalf("current qualification records after the first run = %d, want 7", len(before))
+	}
+	if got := totalRows(); got != 7 {
+		t.Fatalf("qualification rows after the first run = %d, want 7", got)
 	}
 	cancelledRun(decide())
-	if got := currentRecords(); got != 7 {
-		t.Fatalf("current qualification records after the second run = %d, want 7 (no new rows)", got)
+	if after := currentRecords(); !slices.Equal(after, before) {
+		t.Fatalf("current qualification records changed on the second run:\nbefore: %q\nafter: %q", before, after)
+	}
+	if got := totalRows(); got != 7 {
+		t.Fatalf("qualification rows after the second run = %d, want 7 (no new revisions)", got)
 	}
 }
 
