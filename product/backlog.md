@@ -32,14 +32,15 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 ## Open
 
 ### MH-10: Harness compatibility records and qualification registry
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 0
 - **Gates**: G02, G05, G07, G12
 - **Score**: 5.0 = (value 5 + urgency 5 + risk 5) / effort 3
-- **Spec**: (none)
+- **Spec**: `qualification-registry`
 - **Issue**: [#31](https://github.com/turbokast/mythhelm/issues/31)
 - **Source**: Master Specification v2 §§4, 7–8, 14, 17–18; W01/W02/W14; historical issue #31
 - **Summary**: Create a versioned seven-harness qualification registry with independent fidelity, entitlement, lifecycle/trust and platform/host evidence, drift triggers and next tests for blocked routes. Prove a credible first included-only route through authorised tests; neither subscription sign-in nor a user declaration establishes no paid continuation.
+- **Premise-grounded**: 2026-10-07 — subscription-only blocks HOLDS; probe HOLDS; no registry HOLDS; seven-harness HOLDS; issue section refs PARTIAL (v2 governs); no live usage authorised HOLDS
 - **Notes**: S0 blocker and first product prerequisite; currently subscription-only always blocks. Unknown mandatory entitlement/no-overage evidence blocks, while unknown remaining quota alone need not block an otherwise qualified stop-at-exhaustion route. No live usage or account changes are authorised by this card.
 
 ### MH-7: Release pipeline: GoReleaser archives, attestations and signatures

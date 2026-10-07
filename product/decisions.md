@@ -301,3 +301,9 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: strict-lint-set reached done
 - **Cards**: MH-20
 - **Evidence**: finalize PR #189, main green at 3ed673f
+
+### D-56 — 2026-10-07: MH-10 → specced (qualification-registry)
+- **Type**: lifecycle-sync
+- **Decision**: MH-10 moved to specced
+- **Rationale**: qualification-registry reached unrefined
+- **Cards**: MH-10
