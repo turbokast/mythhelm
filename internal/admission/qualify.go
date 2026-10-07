@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/turbokast/mythhelm/adapters/claudecode"
@@ -56,11 +55,6 @@ var knownHarnesses = map[string]bool{
 	"antigravity": true,
 }
 
-// ambiguousMatchText is Registry.Consult's ambiguity report, which carries no
-// sentinel; the consult detects it by this text, pinned by
-// TestAmbiguousMatchBlocks so a rewording fails loudly.
-const ambiguousMatchText = "ambiguous stable match"
-
 // ResolveQualification maps a probed native identity plus the registry to an
 // eligibility verdict. A nil registry (missing dir or database, or an
 // unreadable schema) counts as an absent record; evidence is the AuthStatus
@@ -97,7 +91,7 @@ func ResolveQualification(ctx context.Context, reg *qualify.Registry, probe adap
 	switch {
 	case errors.Is(err, qualify.ErrNotFound):
 		return absent, nil
-	case err != nil && strings.Contains(err.Error(), ambiguousMatchText):
+	case err != nil && errors.Is(err, qualify.ErrAmbiguousMatch):
 		if strict {
 			return Eligibility{Verdict: Blocked, Reason: reasonAmbiguousMatch}, nil
 		}

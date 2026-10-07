@@ -510,6 +510,8 @@ func TestConsultMatchesStableIgnoresDigests(t *testing.T) {
 		t.Fatal("Consult with two stable matches succeeded, want the ambiguous-match error")
 	} else if !strings.Contains(err.Error(), "qualify: ambiguous stable match:") {
 		t.Errorf("Consult ambiguous = %v, want the ambiguous-match error", err)
+	} else if !errors.Is(err, ErrAmbiguousMatch) {
+		t.Errorf("Consult ambiguous = %v, want ErrAmbiguousMatch in the chain", err)
 	}
 }
 

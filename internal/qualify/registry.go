@@ -20,6 +20,12 @@ var (
 	// Absence is not a zero record (I09).
 	ErrNotFound = errors.New("qualify: no record for key")
 
+	// ErrAmbiguousMatch reports a consult with several stable-identity
+	// matches. It is a sentinel (not a message to substring-match) because
+	// stored-row errors interpolate free-form digest text that could name
+	// the ambiguity report.
+	ErrAmbiguousMatch = errors.New("qualify: ambiguous stable match")
+
 	// ErrSchemaMismatch marks a registry database whose schema this binary
 	// cannot read (older or newer user_version, or a missing table).
 	ErrSchemaMismatch = errors.New("qualify: schema mismatch")
@@ -57,13 +63,19 @@ func Open(ctx context.Context, dir string) (*Registry, error) {
 // journal.OpenReadOnly reports ErrNoDatabase for a missing dir, a missing
 // file and a version-0 file alike. An existing dir with no database file
 // yields an empty registry whose List returns []; a present but version-0
-// file errors, never mistaken for empty.
+// file errors, never mistaken for empty. A path that exists but is not a
+// directory errors likewise, on every platform.
 func OpenReadOnly(ctx context.Context, dir string) (*Registry, error) {
-	if _, err := os.Stat(dir); err != nil {
+	if fi, err := os.Stat(dir); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("qualify: state dir %s: %w", dir, errMissing)
 		}
 		return nil, fmt.Errorf("qualify: state dir %s: %w", dir, err)
+	} else if !fi.IsDir() {
+		// A file as dir must fail loudly on every platform: without this,
+		// the database stat below yields ENOTDIR on Linux but ENOENT on
+		// Windows, which would read as a missing (empty) registry there.
+		return nil, fmt.Errorf("qualify: state dir %s is not a directory", dir)
 	}
 	path := filepath.Join(dir, journal.DBName)
 	if _, err := os.Stat(path); err != nil {
@@ -275,8 +287,8 @@ func (r *Registry) Consult(ctx context.Context, observed Key) (rec Record, drift
 		drifted, reason := CheckDrift(DriftInput{Record: found, ExecutableDigest: observed.ExecutableDigest, ConfigDigest: observed.ConfigDigest})
 		return found, drifted, reason, nil
 	default:
-		return Record{}, false, "", fmt.Errorf("qualify: ambiguous stable match: %d records for %s/%s",
-			len(matches), norm.Harness, norm.Surface)
+		return Record{}, false, "", fmt.Errorf("%w: %d records for %s/%s",
+			ErrAmbiguousMatch, len(matches), norm.Harness, norm.Surface)
 	}
 }
 

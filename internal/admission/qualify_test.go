@@ -362,6 +362,38 @@ func TestAmbiguousMatchBlocks(t *testing.T) {
 	}
 }
 
+func TestTamperedDigestNeverAmbiguous(t *testing.T) {
+	// A tampered digest can carry arbitrary text — including text naming the
+	// ambiguity report — because the digest field is free-form and only
+	// checked by recomputation. The consult must surface the corruption as a
+	// registry error under every billing mode, never classify it as an
+	// ambiguous match (which would admit declared runs).
+	dir := t.TempDir()
+	probe, manifest, evidence := fixtureProbe(), fixtureManifest(), fixtureEvidence()
+	rec := liveRecord(observedKey(probe, manifest, evidence, admission.ProfileTrustedHost), liveEvidence(true), liveStop(true))
+	rec.Digest = "sha256: tampered digest carrying the ambiguous stable match text"
+	raw, err := json.Marshal(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j, err := journal.Open(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := j.InsertQualificationRecord(t.Context(), qualify.KeyHash(rec.Key), 1, rec.Digest, string(raw)); err != nil {
+		_ = j.Close()
+		t.Fatal(err)
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reg := openRegistry(t, dir)
+	for _, billing := range []string{admission.BillingSubscriptionOnly, admission.BillingSubscriptionDeclared} {
+		_, err := admission.ResolveQualification(t.Context(), reg, probe, manifest, evidence, billing, admission.ProfileTrustedHost)
+		requireUnavailable(t, err)
+	}
+}
+
 func TestUnsupportedSurfaceMapsUnsupported(t *testing.T) {
 	reg := openRegistry(t, t.TempDir())
 	probe, manifest, evidence := fixtureProbe(), fixtureManifest(), fixtureEvidence()
@@ -374,6 +406,13 @@ func TestUnsupportedSurfaceMapsUnsupported(t *testing.T) {
 		if elig.Record == nil {
 			t.Fatalf("unsupported consult under %s attached no record", billing)
 		}
+	}
+
+	// The CLI leg below needs the claudecode probe, which refuses Windows
+	// by design (process_tree_ownership unsupported); the resolve() legs
+	// above keep covering the mapping on every platform.
+	if runtime.GOOS == "windows" {
+		t.Skip("claudecode probe refuses Windows; the CLI leg cannot run there")
 	}
 
 	// An unsupported record blocks the declared run as a capability refusal.
@@ -768,6 +807,13 @@ func TestDeclaredUnaffectedByMissingRecord(t *testing.T) {
 	requireVerdict(t, attached, admission.Eligible, "")
 	if attached.Record == nil {
 		t.Fatal("declared non-live consult attached no record")
+	}
+
+	// The Decide legs below need the claudecode probe, which refuses Windows
+	// by design (process_tree_ownership unsupported); the resolve() legs
+	// above keep covering the mapping on every platform.
+	if runtime.GOOS == "windows" {
+		t.Skip("claudecode probe refuses Windows; the Decide legs cannot run there")
 	}
 
 	// The declared dogfood path admits with no registry at all.
