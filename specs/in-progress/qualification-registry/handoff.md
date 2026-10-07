@@ -17,7 +17,12 @@
 
 ## Task 2 — SQLite migration 0002 and seven-harness seed
 
-<!-- pending -->
+- **Produces**: migration `0002_qualification.sql` (`qualification_records(key_hash, revision, digest, record_json, recorded_at, superseded_at)`, PK `(key_hash, revision)`, partial unique index on current rows); `SchemaVersion == 2`. `(*Journal).InsertQualificationRecord` (supersedes in-transaction), `CurrentQualificationRecord` (absent → `journal: qualification record: %w` over `ErrNotFound`), `ListCurrentQualificationRecords` (key-hash order), `InsertQualificationRecordIfAbsent` (single INSERT OR IGNORE, reports inserted); invalid input → `journal: invalid qualification record`, nothing written. `qualify.SeedV1() []Record` (seven v2 §7.2 records: claude-code blocked, six planned; platform-filled keys; recomputing digests); `qualify.EnsureSeeded(ctx, j) error` (inserts missing rows, verifies per-key, wraps journal errors). Exactly the design §3 API; no renames.
+- **For dependents**: the journal stores opaque strings — digest discipline is the caller's. `Registry.Record` must set `rec.Digest = CanonicalDigest(rec)` before marshal and store revision current+1 (seed rows are revision 1, `SchemaVersion: 2`).
+- **For dependents**: `EnsureSeeded` never overwrites: present keys stay byte-identical whatever their content; rerun after a partial failure completes the seed. Concurrent first runs are safe (statement-serialised).
+- **For dependents**: every `EnsureSeeded` failure wraps the journal error (`qualify: seeding qualification records: %w` / `qualify: verifying qualification seed: %w`); a shortfall surfaces as wrapped `ErrNotFound` for the missing key.
+- **For dependents**: import direction is one-way (`qualify` → `journal`). Journal-internal tests cannot import `qualify` (Go rejects the cycle) — digest-asserting journal tests live in external `package journal_test` (see `qualification_revisions_test.go`).
+- **Deviations that change a later task's inputs**: none.
 
 ## Task 3 — Registry open/query/record and drift invalidation
 

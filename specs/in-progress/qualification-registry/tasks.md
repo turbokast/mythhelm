@@ -38,7 +38,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `internal/qualify/qualify.go`, `internal/qualify/qualify_test.go`, `specs/in-progress/qualification-registry/tasks.md`, `specs/in-progress/qualification-registry/handoff.md`, `specs/in-progress/qualification-registry/scratchpad.md`.
 
-### Task 2 — SQLite migration 0002 and seven-harness seed
+### Task 2 — SQLite migration 0002 and seven-harness seed ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (persistence schema + migration)
@@ -63,6 +63,12 @@
   - `TestInsertIfAbsentNoOverwrite`: on an absent key `InsertQualificationRecordIfAbsent` returns `inserted=true` and the row reads back; on a present key it returns `inserted=false` with the existing row byte-identical (hash comparison) and no new revision; invalid input returns `journal: invalid qualification record` like `Insert-`.
 - **Test plan**: Temp-dir SQLite databases via `journal.Open`; golden `user_version` assertions; failure injection by tampering digests.
 - **Invariants touched**: I20 (v2 §5.2: additive migration, old revisions immutable); I09 (v2 §7.3: absence is `ErrNotFound`, not zero); I23 (v2 §5.1: ledger owns the state).
+- **Status**: ✅ Completed — migration 0002 with the qualification_records table, journal row helpers and the lazy seven-harness seed; PR #201.
+- **Implementation**: Insert supersedes the previous current row in its own transaction; IfAbsent is a single INSERT OR IGNORE, so concurrent seeds serialise on the statement. EnsureSeeded inserts missing seed rows then reads each seed key back through Current, wrapping journal errors; a complete table is byte-identical afterwards. Seed: claude-code blocked, six planned, platform-filled keys, every digest recomputes. Commit 60b83fd.
+- **Spec deviations**:
+  - `internal/journal/qualification_revisions_test.go` (extra file, not in Files): Go rejects the qualify import in an internal journal test (`import cycle not allowed in test`, probed), so TestRecordRevisionImmutability lives in external `package journal_test` with a read-only row-inspection helper. No production impact.
+  - `TestEnsureSeededFailureWrapsJournalError` in `internal/qualify/seed_test.go` (extra test): pins the Produces parenthetical "seed failure returns the journal error wrapped", for which the acceptance names no test.
+- **Files modified**: `internal/journal/migrations/0002_qualification.sql`, `internal/journal/journal.go`, `internal/journal/journal_test.go`, `internal/journal/qualification.go`, `internal/journal/qualification_test.go`, `internal/journal/qualification_revisions_test.go`, `internal/qualify/seed.go`, `internal/qualify/seed_test.go`, `specs/in-progress/qualification-registry/tasks.md`, `specs/in-progress/qualification-registry/handoff.md`, `specs/in-progress/qualification-registry/scratchpad.md`.
 
 ### Task 3 — Registry open/query/record and drift invalidation
 
