@@ -23,3 +23,5 @@
 - `journal.OpenReadOnly` reports `ErrNoDatabase` for a missing dir and a missing file alike (`internal/journal/projections.go:350-354`); `qualify.OpenReadOnly` stats the dir itself to tell them apart.
 
 ## Discoveries
+
+- Task 1 (PR #200): the progress scale holds no `unknown`, so `DecodeRecord` treats a missing `Progress` as a field-naming validation error rather than defaulting it; every other scale defaults missing input to its unknown value. Digest/key goldens were oracle-checked with `sha256sum` over the exact canonical bytes. No store callers exist yet: Tasks 2–3 must route key hashes through `qualify.KeyHash` and stored-JSON reads through `qualify.DecodeRecord`.
