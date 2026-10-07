@@ -177,10 +177,14 @@ func TestE2EStrictStillBlocked(t *testing.T) {
 }
 
 // installFakeClaude writes an executable `claude` fixture answering
-// --version and `auth status` from baked-in fixture values, and any other
-// argv (the native launch) with a minimal successful stream-json session:
-// an init frame on the subscription route (apiKeySource none, per AC-4.4)
-// then a success result. It performs no live call and reads no secret.
+// --version and `auth status` from baked-in fixture values, and the native
+// launch with a minimal successful stream-json session: an init frame on
+// the subscription route (apiKeySource none, per AC-4.4) then a success
+// result. The launch leg validates the adapter's fixed argv (Argv in
+// adapters/claudecode/launch.go) before emitting the stream, permitting
+// the optional --allowedTools tail, and exits nonzero on anything else,
+// so the test fails if the binary ever misconstructs the native command.
+// It performs no live call and reads no secret.
 // It returns the directory to prepend to PATH.
 func installFakeClaude(t *testing.T, configDir string) string {
 	t.Helper()
@@ -196,6 +200,14 @@ func installFakeClaude(t *testing.T, configDir string) string {
 		"if [ \"$1\" = \"auth\" ] && [ \"$2\" = \"status\" ]; then\n" +
 		"    printf '%s\\n' '{\"loggedIn\":true,\"authMethod\":\"claude.ai\",\"apiProvider\":\"firstParty\",\"subscriptionType\":\"max\",\"configDirectory\":\"" + configDir + "\",\"orgId\":\"org-e2e-declared-unaffected\"}'\n" +
 		"    exit 0\n" +
+		"fi\n" +
+		"if [ \"$1\" != \"-p\" ] || [ \"$2\" != \"--output-format\" ] || [ \"$3\" != \"stream-json\" ] || [ \"$4\" != \"--verbose\" ] || [ \"$5\" != \"--input-format\" ] || [ \"$6\" != \"text\" ] || [ \"$7\" != \"--permission-mode\" ] || [ \"$8\" != \"acceptEdits\" ] || [ \"$9\" != \"--permission-prompts\" ] || [ \"${10}\" != \"none\" ]; then\n" +
+		"    printf '%s\\n' 'unexpected claude arguments' >&2\n" +
+		"    exit 2\n" +
+		"fi\n" +
+		"if [ \"$#\" -gt 10 ] && { [ \"${11}\" != \"--allowedTools\" ] || [ \"$#\" -lt 12 ]; }; then\n" +
+		"    printf '%s\\n' 'unexpected claude arguments' >&2\n" +
+		"    exit 2\n" +
 		"fi\n" +
 		"printf '%s\\n' '{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"sess-e2e-declared\",\"apiKeySource\":\"none\",\"model\":\"e2e-fixture\",\"claude_code_version\":\"2.1.284\",\"permissionMode\":\"acceptEdits\"}'\n" +
 		"printf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false}'\n" +
