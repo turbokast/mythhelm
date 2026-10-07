@@ -2,18 +2,6 @@
 
 Proposals awaiting a maintainer's decision. The format, the id scheme and the rules for appending are in [`README.md`](README.md). New proposals go at the end of this file.
 
-## P-dogfood-slice-1 — JSONL acceptance tests assert the type discriminator
-
-- **Source spec**: `dogfood-slice`
-- **Type**: skill
-- **Target**: `.claude/skills/test-driven-development/SKILL.md`
-- **Rationale**: Task 13's `TestReviewJSONLSingleObject` passed while `review --format jsonl` omitted the required `"type":"receipt"` field, because the test asserted object shape but not the discriminator. The spec-wide review found the same class twice more (demo #70, doctor #71). A gate passed a defect the review found; the red-first discipline needs a discriminator rule so envelope tests pin the contract that routers and consumers match on.
-- **Evidence**: retrospective Acceptance AC-1.3/AC-8.2 (partial); review findings at `internal/cli/review.go:62`, `internal/cli/demo.go:49`, `internal/cli/doctor.go:51`; follow-up issues #69, #70, #71.
-
-**Proposed change:**
-
-Add to the skill's test-writing rules: every acceptance test covering a JSONL or envelope output must assert the `type` discriminator value (or the schema's equivalent routing field) of each emitted object, not just that output parses or has the right shape. A test named `*JSONL*` / `*Envelope*` without a discriminator assertion is incomplete.
-
 ## P-dogfood-slice-2 — Spec validation executes embedded test selectors
 
 - **Source spec**: `dogfood-slice`

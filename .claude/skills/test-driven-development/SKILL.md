@@ -58,6 +58,8 @@ for _, tt := range tests {
 }
 ```
 
+Every acceptance test covering a JSONL or envelope output must assert the `type` discriminator value (or the schema's equivalent routing field) of each emitted object, not just that the output parses or has the right shape. A test named `*JSONL*` / `*Envelope*` without a discriminator assertion is incomplete.
+
 ### 2. Verify red: watch it fail
 
 ```bash
