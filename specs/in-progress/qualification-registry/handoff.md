@@ -68,7 +68,9 @@
 
 ## Task 8 — User guide and ADR-0011
 
-<!-- pending -->
+- **Produces**: `docs/decisions/0011-qualification-registry-store.md` (ADR-0011, accepted: registry table in `mythhelm.db` via migration 0002, versioned files rejected per I23, ADR-0003 migration policy) and a `## Doctor` section in `docs/user-guide.md` (qualification output: one `<harness> × <surface>:` line per record, `unavailable (<reason>)` / `(no records)` honest reads, `--format jsonl` `qualification.records`). No production code changed.
+- **For dependents**: the guide describes only shipped behavior — it promises no seeding trigger (Task 9 owns that). A task changing the plain line shape must update the guide example, which is pinned against Task 6's `qualLine` regex.
+- **Deviations that change a later task's inputs**: none.
 
 ## Task 9 — Production registry seeding on admitted runs
 

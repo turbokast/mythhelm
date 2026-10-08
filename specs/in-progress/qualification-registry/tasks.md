@@ -213,7 +213,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `tests/e2e/qualification_test.go`, `specs/in-progress/qualification-registry/tasks.md`, `specs/in-progress/qualification-registry/handoff.md`, `specs/in-progress/qualification-registry/scratchpad.md`.
 
-### Task 8 — User guide and ADR-0011
+### Task 8 — User guide and ADR-0011 ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -228,6 +228,10 @@
   - `sed -n '/^## Doctor/,/^## /p' docs/user-guide.md | grep -q "× .*fidelity"`: the user guide's `## Doctor` section documents the qualification output with a plain-format example line matching Task 6's `^<harness> × <surface>:` shape. Exits non-zero before the change (no such section).
 - **Test plan**: No Go test asserts prose; each acceptance item is a recorded shell command with a failing counterfactual (absent file or text before the change). The completion entry cites each command's exit-0 output.
 - **Invariants touched**: None (docs only; the mechanism tasks keep I14/I20 — this task describes, not changes, behavior).
+- **Status**: ✅ Completed — ADR-0011 records the registry store decision and the user guide documents the `doctor` qualification section; PR #207.
+- **Implementation**: ADR follows the decisions README template with accepted status and all three headings; the guide's example line matches Task 6's anchored `qualLine` regex. Commit a65a141.
+- **Spec deviations**: None.
+- **Files modified**: `docs/decisions/0011-qualification-registry-store.md`, `docs/user-guide.md`, `specs/in-progress/qualification-registry/tasks.md`, `specs/in-progress/qualification-registry/handoff.md`, `specs/in-progress/qualification-registry/scratchpad.md`.
 
 ### Task 9 — Production registry seeding on admitted runs ✅ COMPLETED
 
