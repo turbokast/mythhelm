@@ -21,9 +21,13 @@ admission now consults the registry and fails closed:
 - `ResolveBilling` admits `subscription-only` only on an eligible consult of a
   live-qualified record whose entitlement evidence and stop-at-exhaustion
   capability are unexpired at admission. It ignores any declaration. Every
-  other case blocks with exit 3.
+  other qualification outcome blocks with exit 3; an operational error such
+  as an unreadable registry is returned as an error and takes its normal CLI
+  exit mapping, not exit 3.
 - The consult matches exactly on authentication category, provider endpoint,
-  workspace class, effort settings and model snapshot. An absent record blocks
+  workspace class, effort settings and model snapshot, and also on harness,
+  surface, OS, architecture, trust profile, entitlement class and adapter
+  protocol. An absent record blocks
   (`no_qualification_record`), a fixture-only or unproven entitlement blocks
   (`entitlement_not_proven`), an unproven stop capability blocks
   (`stop_at_exhaustion_unproven`), several matching records block

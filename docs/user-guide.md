@@ -84,8 +84,9 @@ the receipt and `mythhelm runs`.
 **`--billing subscription-only` (strict).** The run is admitted only when the
 qualification registry holds a live-qualified record for this exact route, and
 that record's entitlement evidence and stop-at-exhaustion capability are both
-unexpired at admission. Anything else blocks with exit code 3 and a reason in
-the output:
+unexpired at admission. Any other qualification outcome blocks with exit code 3 and a reason in
+the output (an operational error, such as an unreadable registry, instead uses
+its normal exit code):
 
 - `no_qualification_record`: the registry has no record for this route.
 - `entitlement_not_proven`: the record is not live-qualified (for example it is
@@ -99,7 +100,8 @@ the output:
 
 Strict ignores any entitlement declaration. A matching record admits only on an
 exact match of the route's authentication category, provider endpoint, workspace
-class, effort settings and model snapshot. No live-qualified record has been
+class, effort settings and model snapshot, together with its harness, surface,
+OS, architecture, trust profile, entitlement class and adapter protocol. No live-qualified record has been
 recorded yet, so every strict run blocks today.
 
 **`--billing subscription-declared`.** For personal use, you declare your plan
