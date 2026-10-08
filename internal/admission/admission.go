@@ -186,9 +186,6 @@ func Decide(ctx context.Context, req Request) (Decision, error) {
 		return Decision{}, err
 	}
 	d.Task = task
-	if req.Billing == BillingSubscriptionOnly {
-		return Decision{}, strictBillingBlock()
-	}
 	if err := checkCapabilityFlags(req); err != nil {
 		return Decision{}, err
 	}
@@ -315,6 +312,12 @@ func decideClaudeCode(ctx context.Context, req Request, d Decision) (Decision, e
 	}
 	if reg != nil {
 		defer func() { _ = reg.Close() }()
+		// Gaps are assessed at consult time, never stored in a record; a
+		// missing registry has no consult to qualify and skips the check.
+		if gaps := claudecode.GapSources(claudecode.UnresolvedSources); req.Billing == BillingSubscriptionOnly && len(gaps) > 0 {
+			return Decision{}, &BlockedError{Code: reasonEntitlementUnp, Field: "missing-source:" + gaps[0],
+				Action: "the effective managed policy has a source MYTHHELM cannot inventory; see ADR-0002"}
+		}
 	}
 	elig, err := ResolveQualification(ctx, reg, d.Probe,
 		adapter.ConfigManifest{Digests: manifest.Digests}, evidence, req.Billing, d.Profile.Name)
@@ -338,7 +341,7 @@ func decideClaudeCode(ctx context.Context, req Request, d Decision) (Decision, e
 	if err != nil {
 		return Decision{}, err
 	}
-	posture, err := ResolveBilling(ctx, req.Billing, evidence, decl)
+	posture, err := ResolveBilling(ctx, req.Billing, evidence, decl, elig)
 	if err != nil {
 		return Decision{}, err
 	}

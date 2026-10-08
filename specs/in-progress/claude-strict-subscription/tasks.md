@@ -77,7 +77,7 @@
 - **Spec deviations**: Evidence `Suite` is `live-qualify:<executable-digest>` instead of `<native-version>` because the `LiveRecord` signature carries no version. Red-first was observed as compile failure of the tests before `auxiliary.go` existed.
 - **Files modified**: `adapters/claudecode/auxiliary.go`, `adapters/claudecode/auxiliary_test.go`, `adapters/claudecode/live_qualify_test.go`, `adapters/claudecode/testdata/qualification/live-shapes.json`, `adapters/claudecode/COMPATIBILITY.md`, `specs/in-progress/claude-strict-subscription/tasks.md`, `specs/in-progress/claude-strict-subscription/handoff.md`.
 
-### Task 3 — Strict admission flip with closed matching
+### Task 3 — Strict admission flip with closed matching ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (billing decision + persistence-adjacent matching)
@@ -114,6 +114,10 @@
   - MH-10's `TestStrictStillBlocksEndToEnd` (in `qualify_test.go`, this task's file) is updated in place, not renamed: same missing-registry setup pinning `no_qualification_record`; the old pre-probe reason appears nowhere in the file.
 - **Test plan**: `cli.Main` and direct consult tests with temp state dirs and constructed live records; update MH-10 guard tests in place (including the e2e guard in this task's Files, re-pinned to the consult reason). Re-ground every MH-10 stable-match fixture against shipped MH-10 at implementation (`TestConsultMatchesStableIgnoresDigests`, `TestAmbiguousMatchBlocks`, `TestResolveQualificationFindsRecordDraft`, `TestDriftedRecordBlocks`): where two records differ on a newly-exact dimension, update the fixture to cover both the still-ambiguous and the narrowed case (record as deviation if behavior differs from design).
 - **Invariants touched**: I15 (v2 §7.3: strict passes only on proof); I02 (v2 §7.3: unknown mandatory evidence blocks); I07 (evidence bound to the exact probed candidate); I20 (v2 §7.1: invalidation is a new revision).
+- **Status**: ✅ Completed — strict admission flip, gap gate, `DriftError`, `InvalidateByHash` and exact non-drift-dimension matching landed; PR #220.
+- **Implementation**: `Decide` early return removed; `decideClaudeCode` gap-blocks strict only when a registry is present, then `ResolveQualification` (strict drift returns `Blocked` plus a `*DriftError`); `ResolveBilling` strict admits only `Eligible` on a live-qualified, proven record. Commit 079c06d.
+- **Spec deviations**: `TestStrictAlwaysBlocksRetired` has no test of its own (checked by searching for the old name); `TestDeclaredIgnoresGaps` pins `Decide` level, with the binary covered by `TestE2EDeclaredUnaffected`; `TestRegistryUnreadableStillFailsClosed` cannot prove ordering against the gap gate because the trust-journal open fails first; the `seedStable` fixture now carries the five exact dimensions (design behaviour, no deviation).
+- **Files modified**: `adapters/claudecode/auth_test.go`, `internal/admission/admission.go`, `internal/admission/billing.go`, `internal/admission/billing_test.go`, `internal/admission/qualify.go`, `internal/admission/qualify_test.go`, `internal/qualify/registry.go`, `internal/qualify/registry_test.go`, `tests/e2e/qualification_test.go`, `specs/in-progress/claude-strict-subscription/tasks.md`, `specs/in-progress/claude-strict-subscription/handoff.md`.
 
 ### Task 4 — Drift-invalidation writer on the run path
 

@@ -1,7 +1,6 @@
 package admission_test
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -18,9 +17,9 @@ import (
 
 	"github.com/turbokast/mythhelm/adapters/claudecode"
 	"github.com/turbokast/mythhelm/internal/admission"
-	"github.com/turbokast/mythhelm/internal/cli"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
+	"github.com/turbokast/mythhelm/internal/qualify"
 	"github.com/turbokast/mythhelm/internal/statedir"
 )
 
@@ -39,32 +38,67 @@ func blocked(t *testing.T, err error, code string) {
 	}
 }
 
-func TestStrictSubscriptionOnlyAlwaysBlocks(t *testing.T) {
-	t.Setenv("MYTHHELM_STATE_DIR", t.TempDir())
+func TestResolveBillingStrictDefenseInDepth(t *testing.T) {
+	t.Parallel()
 	e := evidence("test-identity", "test-config")
-	_, err := admission.ResolveBilling(context.Background(), "subscription-only", e, declaration(e))
-	blocked(t, err, "entitlement_qualification_unavailable")
-	task := filepath.Join(t.TempDir(), "task.md")
-	if err := os.WriteFile(task, []byte("# test"), 0o600); err != nil {
-		t.Fatal(err)
+	live := liveRecord(qualify.Key{}, liveEvidence(true), liveStop(true))
+	notLive := live
+	notLive.Progress = qualify.ProgressFixtureTested
+	unproven := live
+	unproven.Entitlement.Verdict = qualify.NotProven
+	expiredEvidence := liveRecord(qualify.Key{}, liveEvidence(false), liveStop(true))
+	expiredStop := liveRecord(qualify.Key{}, liveEvidence(true), liveStop(false))
+	noStop := live
+	noStop.Capabilities = nil
+	for _, tc := range []struct {
+		name string
+		elig admission.Eligibility
+	}{
+		{"zero eligibility", admission.Eligibility{}},
+		{"blocked verdict", admission.Eligibility{Verdict: admission.Blocked, Reason: "no_qualification_record"}},
+		{"unsupported verdict", admission.Eligibility{Verdict: admission.Unsupported}},
+		{"eligible without a record", admission.Eligibility{Verdict: admission.Eligible}},
+		{"eligible on a record that is not live-qualified", admission.Eligibility{Verdict: admission.Eligible, Record: &notLive}},
+		{"eligible on an unproven entitlement", admission.Eligibility{Verdict: admission.Eligible, Record: &unproven}},
+		{"eligible after the entitlement evidence expired", admission.Eligibility{Verdict: admission.Eligible, Record: &expiredEvidence}},
+		{"eligible after the stop capability expired", admission.Eligibility{Verdict: admission.Eligible, Record: &expiredStop}},
+		{"eligible without a stop capability", admission.Eligibility{Verdict: admission.Eligible, Record: &noStop}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := admission.ResolveBilling(context.Background(), "subscription-only", e, declaration(e), tc.elig)
+			blocked(t, err, "entitlement_qualification_unavailable")
+		})
 	}
-	var out, diagnostics bytes.Buffer
-	code := cli.Main([]string{"run", "--adapter", "claudecode", "--billing", "subscription-only", "--task-file", task, "--execution-profile", "trusted-host", "--non-interactive", "--no-checks", "--format", "jsonl"}, cli.Stdio{In: strings.NewReader(""), Out: &out, Err: &diagnostics})
-	if code != int(cli.ExitBlocked) || !strings.Contains(out.String(), `"reason":"entitlement_qualification_unavailable"`) {
-		t.Fatalf("strict CLI = %d, %s, %s", code, &out, &diagnostics)
+	if _, err := admission.ResolveBilling(context.Background(), "subscription-only", e, nil, admission.Eligibility{Verdict: admission.Eligible, Record: &live}); err != nil {
+		t.Fatalf("eligible live-qualified proven record blocked: %v", err)
+	}
+}
+func TestDeclaredLabelsUnchanged(t *testing.T) {
+	t.Parallel()
+	e := evidence("test-identity", "test-config")
+	live := liveRecord(qualify.Key{}, liveEvidence(true), liveStop(true))
+	for _, elig := range []admission.Eligibility{{}, {Verdict: admission.Eligible}, {Verdict: admission.Eligible, Record: &live}} {
+		p, err := admission.ResolveBilling(context.Background(), "subscription-declared", e, declaration(e), elig)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p.Qualified || p.PaidContinuation != "unknown" || p.G05 != "not-passed" || p.PaidContinuationUserDeclaration != "disabled" {
+			t.Fatalf("declared posture with eligibility %+v = %+v, want the unverified labels", elig, p)
+		}
 	}
 }
 func TestDeclaredPostureLabelledUnqualified(t *testing.T) {
 	t.Parallel()
 	e := evidence("test-identity", "test-config")
-	p, err := admission.ResolveBilling(context.Background(), "subscription-declared", e, declaration(e))
+	p, err := admission.ResolveBilling(context.Background(), "subscription-declared", e, declaration(e), admission.Eligibility{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if p.Mode != "subscription-declared" || p.Qualified || p.PaidContinuation != "unknown" || p.G05 != "not-passed" || p.PaidContinuationUserDeclaration != "disabled" || p.EntitlementClass != "included-plan" {
 		t.Fatalf("dishonest or missing posture: %+v", p)
 	}
-	_, err = admission.ResolveBilling(context.Background(), "subscription-declared", e, nil)
+	_, err = admission.ResolveBilling(context.Background(), "subscription-declared", e, nil, admission.Eligibility{})
 	blocked(t, err, "entitlement_declaration_required")
 }
 func TestAPIKeyEnvBlocksNamesOnly(t *testing.T) {
@@ -109,7 +143,7 @@ func TestBillingMismatchNeedsNativeSetup(t *testing.T) {
 	t.Parallel()
 	e := evidence("test-identity", "test-config")
 	e.AuthMethod = "console"
-	_, err := admission.ResolveBilling(context.Background(), "subscription-declared", e, declaration(e))
+	_, err := admission.ResolveBilling(context.Background(), "subscription-declared", e, declaration(e), admission.Eligibility{})
 	blocked(t, err, "needs_native_setup")
 	if !strings.Contains(err.Error(), "/login") {
 		t.Fatalf("missing native setup action: %v", err)

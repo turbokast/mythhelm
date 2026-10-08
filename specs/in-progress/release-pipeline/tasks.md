@@ -69,7 +69,7 @@
   - Pin-age re-check done as the hand-off requires: GoReleaser v2.18.2 (2026-09-17), goreleaser-action v7.2.3 (2026-06-27), cosign-installer v4.1.2 (2026-05-06), cosign v3.1.3 (2026-08-05), attest v4.2.2 (2026-08-06) are all older than 7 days. Dates come from the Go module proxy and tag commit dates.
 - **Files modified**: `.github/workflows/release.yml`, `.github/release-drafter.yml`, `docs/automation.md`, `specs/in-progress/release-pipeline/tasks.md`, `specs/in-progress/release-pipeline/handoff.md`.
 
-### Task 3 — Test-tag dry-run workflow
+### Task 3 — Test-tag dry-run workflow ✅ COMPLETED
 
 - **Domain/agent**: release-engineer
 - **Budget**: standard
@@ -88,6 +88,14 @@
   - The last step uploads `dist/` via pinned `actions/upload-artifact` with `retention-days: 7` (anchored; deleting the step fails its grep — the short-lived artifact Task 6 downloads).
 - **Test plan**: Static checks + `actionlint` + the PR's CI. The workflow itself runs in Task 6 (operator pushes the first `test/*` tag); this task only lands the file.
 - **Invariants touched**: I03 (v2 §8.3: the dry run holds no publishing authority by construction — no environment, no secret).
+- **Status**: ✅ Completed — `.github/workflows/release-dry-run.yml` runs a snapshot build, matrix and payload assertions and a cosign sign/verify roundtrip on `test/*` tags, with no publish path; PR #218.
+- **Implementation**: Single job, top-level `permissions: {}`, job `contents: read` + `id-token: write`; syft, go-licenses and cosign are installed with `go install` at pinned versions, then goreleaser-action `v7.2.3` (`f06c13b6…`) at CLI `v2.18.2`. Static checks only: `actionlint@v1.7.12` exit 0, anchored greps clean, hygiene gate pass. Commit a81bd62.
+- **Spec deviations**:
+  - syft is `v1.52.0`, not Task 1's `v1.54.1`: the hand-off requires a syft install step and a pin-age re-check, and v1.54.1 (2026-10-06) is under the 7-day cooldown; v1.52.0 (2026-09-17) is the newest release at least 7 days old (v1.53.0 and v1.54.0 were 6d23h and 6d19h old on 2026-10-08).
+  - cosign is installed via `go install github.com/sigstore/cosign/v3/cmd/cosign@v3.1.3` (2026-08-05), not `cosign-installer` at v3.0.6: the installer SHA cannot be resolved from this session (repo outside its scope) and pins are never taken from memory. Task 2 needs the same decision.
+  - The goreleaser-action `v7.2.3` age was not checkable here (repo outside session scope); the pin is kept as Task 1 recorded it. GoReleaser `v2.18.2` is 21 days old.
+  - Added `GORELEASER_CURRENT_TAG=v0.0.0` so a non-semver `test/*` tag cannot break snapshot version resolution; unverified until Task 6.
+- **Files modified**: `.github/workflows/release-dry-run.yml`, `specs/in-progress/release-pipeline/tasks.md`, `specs/in-progress/release-pipeline/handoff.md`.
 
 ### Task 4 — CI validation of the release config ✅ COMPLETED
 

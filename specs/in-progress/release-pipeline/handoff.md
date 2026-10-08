@@ -26,7 +26,9 @@
 
 ## Task 3 — Test-tag dry-run workflow
 
-<!-- pending -->
+- **Produces**: `.github/workflows/release-dry-run.yml` as designed: trigger `push.tags: ['test/*']`, job `dry-run`, no environment or secret, `timeout-minutes: 60`; uploads `dist/` as the artifact named `dist` with 7-day retention (archives, SBOMs, `checksums.txt`, `checksums.txt.sigstore.json`).
+- **For dependents (Tasks 2, 5, 6)**: tool pins chosen under the 7-day cooldown on 2026-10-08: syft `v1.52.0`, cosign `v3.1.3`, go-licenses `v2.0.1`, all by `go install`; syft `v1.54.1` was too new. Task 2 should use the same install shape and re-check ages.
+- **For Task 6**: the cosign verify identity is `https://github.com/<repo>/.github/workflows/release-dry-run.yml@refs/tags/test/<name>`. The workflow first runs at Task 6; if snapshot version resolution fails on the `test/*` tag, check the `GORELEASER_CURRENT_TAG` hedge.
 
 ## Task 4 — CI validation of the release config
 

@@ -148,25 +148,33 @@ func TestE2EDoctorShowsSevenRecords(t *testing.T) {
 }
 
 // TestE2EStrictStillBlocked runs the packaged binary's strict claudecode
-// path: it still refuses with entitlement_qualification_unavailable,
-// exit 3, exactly as before this spec.
+// path against a fixture native and a missing registry: it still refuses,
+// exit 3, now with the consult's no_qualification_record (a missing registry
+// skips the source-gap check, so the pin holds before and after the gap
+// resolves).
 func TestE2EStrictStillBlocked(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the claudecode probe refuses Windows by design")
+	}
 	e := newEnv(t)
-	dir := t.TempDir()
-	task := filepath.Join(dir, "task.md")
-	if err := os.WriteFile(task, []byte("# e2e strict still blocked\n"), 0o600); err != nil {
+	repo, digest := mkRepo(t, e, t.TempDir(), "pass")
+	configDir := filepath.Join(e.home, "claude-config")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	code, stdout, stderr := run(t, e, dir, "run",
-		"--adapter", "claudecode", "--billing", "subscription-only",
-		"--task-file", task, "--execution-profile", "trusted-host",
-		"--non-interactive", "--no-checks", "--format", "jsonl")
+	fakeDir := installFakeClaude(t, configDir)
+	env := append(childEnvWithPath(t, e, fakeDir), "MYTHHELM_HOME="+filepath.Join(e.home, "absent-state"))
+	code, stdout, stderr := runBin(t, env, repo, mythhelmBin, "run",
+		"--task-file", "task.md", "--adapter", "claudecode",
+		"--billing", "subscription-only", "--execution-profile", "trusted-host",
+		"--non-interactive", "--trust-project-config", "sha256:"+digest,
+		"--strip-credential-env", "--format", "jsonl")
 	if code != 3 {
 		t.Fatalf("strict run exit %d, want 3; stderr %q\nstdout:\n%s", code, stderr, stdout)
 	}
 	_, res := runResultOf(t, stdout)
-	if res["reason"] != "entitlement_qualification_unavailable" {
-		t.Errorf("run.result reason = %v, want entitlement_qualification_unavailable", res["reason"])
+	if res["reason"] != "no_qualification_record" {
+		t.Errorf("run.result reason = %v, want no_qualification_record", res["reason"])
 	}
 	if res["exit_code"] != float64(3) {
 		t.Errorf("run.result exit_code = %v, want 3", res["exit_code"])
