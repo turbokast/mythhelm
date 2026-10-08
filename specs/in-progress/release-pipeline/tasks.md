@@ -35,7 +35,7 @@
 - **Spec deviations**: Acceptance bullet 1 reworded per the orchestrator's binding decision: GoReleaser v2.18.2 exits 0 on a config without the `version: 2` header and only warns (`only version: 2 configuration files are supported, yours is version: 0`), so the bullet now asserts that measured behaviour instead of failure. `design.md` still says a v1-style config is refused; that sentence is stale for v2.18.2 and is outside this task's Files, left for the orchestrator. `scratchpad.md` also gained a Discoveries note about the same finding (added by an earlier attempt).
 - **Files modified**: `.goreleaser.yml`, `.gitignore`, `specs/in-progress/release-pipeline/tasks.md`, `specs/in-progress/release-pipeline/handoff.md`, `specs/in-progress/release-pipeline/scratchpad.md`.
 
-### Task 2 — Tag-triggered release workflow with protected publishing
+### Task 2 — Tag-triggered release workflow with protected publishing ✅ COMPLETED
 
 - **Domain/agent**: release-engineer
 - **Budget**: complex (security primitives: OIDC keyless signing, publishing credentials, protected environment)
@@ -61,6 +61,13 @@
   - `docs/automation.md`: the GoReleaser, attest-build-provenance, cosign keyless and go-licenses-notices rows appear under Active with the tag trigger and the new workflow/config named; the Deferred table no longer lists them; the Homebrew and macOS-x64 rows stay Deferred; the fork-PR principle reads in the present tense. Each leg anchored; the pre-change wording fails the new greps.
 - **Test plan**: Static checks above + `actionlint` + the PR's CI (`zizmor`, `Docs checks` for the release-drafter edit). Behavioural proof is Task 6; the first real release (operator, N2) proves upload + attest-to-release.
 - **Invariants touched**: I03 (v2 §8.3: tag text cannot grant publishing — the format gate + environment approval stand between a tag and publish); I13 (no paid service, no new secret — NFR-2).
+- **Status**: ✅ Completed — `release.yml` validates the tag, then builds, signs, uploads and attests only from the `release` environment; the limitations footer and the four automation rows are wired; PR #217.
+- **Implementation**: Single job on `v*` tags; tag-format step first, then notices, syft, GoReleaser, cosign `--bundle` sign, `gh release upload`, attest over checksums + archives. Pins: cosign-installer v4.1.2 (`6f9f1778`), cosign CLI v3.1.3, attest-build-provenance v4.2.2 (`4d101475`), syft v1.52.0. Static checks all pass; `grep -n 'secrets\.'` shows only `secrets.GITHUB_TOKEN` at the GoReleaser step (`GITHUB_TOKEN`) and the upload step (`GH_TOKEN`), both in the `release` job. Commit 15529cc.
+- **Spec deviations**:
+  - syft install step added before GoReleaser: the Task 1 hand-off found the `sboms` stanza shells out to `syft`, which the spec predates.
+  - syft pinned at v1.52.0 (2026-09-17), not the hand-off's v1.54.1: v1.54.1 (2026-10-06) and v1.54.0 (2026-10-01) are inside the 7-day cooldown.
+  - Pin-age re-check done as the hand-off requires: GoReleaser v2.18.2 (2026-09-17), goreleaser-action v7.2.3 (2026-06-27), cosign-installer v4.1.2 (2026-05-06), cosign v3.1.3 (2026-08-05), attest v4.2.2 (2026-08-06) are all older than 7 days. Dates come from the Go module proxy and tag commit dates.
+- **Files modified**: `.github/workflows/release.yml`, `.github/release-drafter.yml`, `docs/automation.md`, `specs/in-progress/release-pipeline/tasks.md`, `specs/in-progress/release-pipeline/handoff.md`.
 
 ### Task 3 — Test-tag dry-run workflow
 
