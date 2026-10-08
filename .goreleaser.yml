@@ -1,0 +1,59 @@
+version: 2
+
+project_name: mythhelm
+
+builds:
+  - id: mythhelm
+    main: ./cmd/mythhelm
+    binary: mythhelm
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      # N4 (release-pipeline requirements): no macOS x64 runner exists, so the
+      # pair is untested and not advertised (I14).
+      - goos: darwin
+        goarch: amd64
+    ldflags:
+      - -s -w
+      - -X github.com/turbokast/mythhelm/internal/buildinfo.Version={{.Version}}
+      - -X github.com/turbokast/mythhelm/internal/buildinfo.Commit={{.FullCommit}}
+
+archives:
+  - id: mythhelm
+    ids:
+      - mythhelm
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - LICENSE
+      - NOTICE
+      - third_party_licenses/
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+sboms:
+  - artifacts: archive
+    documents:
+      - "{{ .ArtifactName }}.sbom.json"
+    cmd: syft
+    args: ["$artifact", "--output", "spdx-json=$document"]
+
+changelog:
+  disable: true
+
+release:
+  mode: keep-existing
