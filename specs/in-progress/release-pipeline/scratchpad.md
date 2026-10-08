@@ -21,3 +21,5 @@
 - Q1/Q2/Q3 answered 2026-10-07 (refinement-log.md): matrix linux/amd64+arm64, darwin/arm64, windows/amd64+arm64; `release` env exists (required reviewer + `v*` tag policy); `test/*` operator-owned.
 
 ## Discoveries
+
+- Task 1 (attempt 2): GoReleaser v2.18.2 `goreleaser check` exits 0 on a config without the `version: 2` header (it prints "only version: 2 configuration files are supported, yours is version: 0" as a warning and still reports "1 configuration file(s) validated"), so Task 1's negative acceptance bullet cannot hold as written. All other Task 1 acceptance bullets pass with the committed `.goreleaser.yml`, with syft v1.54.1 installed. Decision needed: reword the bullet (for example assert the warning text) or drop the negative leg.
