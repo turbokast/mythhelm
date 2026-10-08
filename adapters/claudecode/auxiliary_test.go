@@ -352,6 +352,7 @@ func extractSection(doc, heading string) string {
 // grant.
 type observationScan struct {
 	started                             adapter.SessionStarted
+	result                              adapter.Result
 	sawStarted, sawResult, sawRateLimit bool
 }
 
@@ -363,6 +364,7 @@ func scanObservations(obs <-chan adapter.Observation) observationScan {
 			scan.started = ob
 			scan.sawStarted = true
 		case adapter.Result:
+			scan.result = ob
 			scan.sawResult = true
 		case adapter.NativeError:
 			scan.sawRateLimit = scan.sawRateLimit || ob.Class == "rate_limit"
@@ -383,6 +385,14 @@ func TestScanObservations(t *testing.T) {
 			name: "session start with result is a completed run",
 			obs:  []adapter.Observation{started, adapter.Result{}},
 			want: observationScan{started: started, sawStarted: true, sawResult: true},
+		},
+		{
+			name: "error result is retained so the completion gate can reject it",
+			obs:  []adapter.Observation{started, adapter.Result{IsError: true, Subtype: "error_during_execution"}},
+			want: observationScan{
+				started: started, sawStarted: true, sawResult: true,
+				result: adapter.Result{IsError: true, Subtype: "error_during_execution"},
+			},
 		},
 		{
 			name: "missing session start leaves the inventory unassessed",

@@ -4,6 +4,7 @@ package claudecode
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -95,8 +96,9 @@ func TestLiveQualifyEntitlement(t *testing.T) {
 	}
 	scan := scanObservations(sess.Observations())
 	<-sess.Done()
-	if !scan.sawResult || scan.sawRateLimit {
-		t.Fatalf("session did not complete on the included plan: result=%v rate_limit=%v", scan.sawResult, scan.sawRateLimit)
+	if !scan.sawResult || scan.result.IsError || scan.sawRateLimit {
+		t.Fatalf("session did not complete on the included plan: result=%v is_error=%v rate_limit=%v",
+			scan.sawResult, scan.result.IsError, scan.sawRateLimit)
 	}
 
 	if !scan.sawStarted {
@@ -108,7 +110,8 @@ func TestLiveQualifyEntitlement(t *testing.T) {
 			continue
 		}
 		routes[i].Funding = "included"
-		routes[i].Evidence = "live-qualify:" + probe.Version
+		routes[i].Evidence = fmt.Sprintf("live-qualify:%s result=ok rate_limit=none extra_usage=%s purchased_credits=%s",
+			probe.Version, cfg.ExtraUsage, cfg.PurchasedCredits)
 	}
 	key := firstRouteFixtureKey()
 	key.ExecutableDigest = "sha256:" + probe.SHA256
