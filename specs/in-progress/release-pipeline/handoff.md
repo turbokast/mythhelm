@@ -17,7 +17,12 @@
 
 ## Task 2 — Tag-triggered release workflow with protected publishing
 
-<!-- pending -->
+- **Produces**: `.github/workflows/release.yml` — trigger `push.tags: ['v*']`; single job `release` with `environment: release`, `timeout-minutes: 60`, `contents`/`id-token`/`attestations: write`; cosign bundle `dist/checksums.txt.sigstore.json` uploaded with `gh release upload`; attestations over `dist/checksums.txt`, `dist/*.tar.gz`, `dist/*.zip`. Also the `docs/limitations.md` footer in `.github/release-drafter.yml` and the four Active rows in `docs/automation.md`.
+- **Pins for Tasks 3–4**: GoReleaser `v2.18.2`; goreleaser-action `v7.2.3` (`f06c13b6…`); cosign-installer `v4.1.2` (`6f9f17788090df1f26f669e9d70d6ae9567deba6`) with `cosign-release: v3.1.3`; syft `v1.52.0` (v1.54.x was inside the 7-day cooldown on 2026-10-08).
+- **For dependents**: Task 3 installs syft the same way (`go install github.com/anchore/syft/cmd/syft@v1.52.0`, then add `$(go env GOPATH)/bin` to `$GITHUB_PATH`) and runs the go-licenses step before GoReleaser. Task 4 needs the notices step only.
+- **For dependents**: the dry run needs the same cosign-installer pin; Task 3 should reuse it rather than re-resolve.
+- **For Task 5**: the bundle is `checksums.txt.sigstore.json`; the re-run procedure re-uploads it with `gh release upload --clobber` and re-attests the same three subject globs.
+
 
 ## Task 3 — Test-tag dry-run workflow
 
