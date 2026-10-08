@@ -79,7 +79,9 @@
   - `TestEvidenceGoldensRoundTrip`: the five goldens decode, re-encode byte-identical, and carry `schema_version: 2`.
   - `TestOutOfScaleEnumsRejected`: a `DesignDecision` with disposition `"approved"` and an `Observation` with kind `"agent"` each fail naming the field, never coerced.
   - `TestRoutingDecisionPreservesUncertainty`: a golden with scores absent and `uncertainty` set round-trips with uncertainty intact and no zero scores invented (I09).
+  - `TestRoutingDecisionRejectsNonFiniteFloats`: NaN and ±Inf in `Scores` values or `SelectionProbability` each fail `Validate` naming the field; finite values pass.
   - `TestArtifactRequiresContentIdentity`: an empty SHA256 fails naming the field, as do non-hexadecimal and wrong-length values; exactly 64 lowercase hex chars pass; `ValidUntil` absent omits from JSON (never zero time).
+  - `TestArtifactSizeBytesPresence`: `size_bytes` null and missing each fail naming the field; `size_bytes: 0` passes and round-trips as 0 (zero-byte artifacts valid; null never read as 0).
 - **Test plan**: Golden round-trips via `loadGolden`; enum table tests; absence-vs-zero assertions on optional fields.
 - **Invariants touched**: I09 (v2 §2: uncertainty preserved, absence never zero); I20 (v2 §2: `DesignDecision` revisions ordered via `Supersedes`); I07 lineage (v2 §2: `Verification` is the sole attestation shape).
 
@@ -105,6 +107,7 @@
   - `TestAliasesDecodeIdentically`: the manifest golden decodes as both `ContextManifest` and `Handoff`, the grant golden as both `Grant` and `EffectIntent`, with equal digests.
   - `TestReservationUnknownQuantity`: the reservation golden's `"unknown"` quantity decodes and round-trips; empty quantity fails naming the field.
   - `TestOpenStringsValidatedNonEmpty`: empty `DeliveryDisposition`, `Reservation.Status` and `Experiment.Disposition` each fail naming the field (D6: open but never empty).
+  - `TestExperimentRejectsNonFiniteSplits`: NaN and ±Inf in `Splits` values fail `Validate` naming the field; finite splits pass.
 - **Test plan**: Golden round-trips via `loadGolden`; alias digest equality; enum/open-string table tests.
 - **Invariants touched**: I09 (v2 §2: unknown stated explicitly, never empty); I20 (v2 §2: `PolicyVersion` immutability fields); I03 (v2 §2: `Grant` is the authority shape; strict decode).
 
@@ -187,7 +190,7 @@
   - `TestSupportMatrixMatchesEvidence`: the matrix lists exactly the 14 records, 3 lifecycle tables, error catalogue, envelope and frame limits (adding a deliverable without a matrix row fails) and contains zero `live-qualified` claims (AC-9.2).
   - `TestContractHasNoNetworkDependency`: `go list -deps ./internal/v2contract` contains no `net` or `modernc.org/sqlite` line; importing either in non-test code fails the test (NFR-4).
   - `TestUnknownAuthorityKeyRejected`: the invalid `Grant` fails `Decode` naming the unknown key (AC-9.1).
-  - `TestNullMeasurementsRejected`: the invalid `Reservation`/`Artifact` fail naming the field; null is never read as `0` or `""` (AC-9.1; I09).
+  - `TestNullMeasurementsRejected`: the invalid `Reservation`/`Artifact` fail naming the field, and null is never read as `0` or `""` (AC-9.1; I09).
   - `TestTOMLTagsRoundTrip`: the TOML golden decodes via `BurntSushi/toml` with unknown keys rejected and re-encodes with identical keys (AC-1.1, AC-9.1).
   - `TestFixturesCarryNoSecrets`: every golden's decoded string values contain no `sk-`/`secret`/`token`/`apiKey` hit (values walked, not keys; NFR-4).
 - **Test plan**: Matrix parsed from `SUPPORT.md` and compared to the deliverable list; `go list` subprocess test; invalid-fixture table tests; TOML round-trip.

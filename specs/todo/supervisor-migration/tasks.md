@@ -40,7 +40,7 @@
 - **Files**:
   - `internal/journal/journal.go`
   - `internal/journal/append_v2_test.go`
-- **Produces**: `Append` v2 acceptance phased by `migration_state`
+- **Produces**: `Append` v2 acceptance phased by `migration_state`; unexported tx-scoped `appendTx(ctx, tx, ev, project)` core that `Append` delegates to and the Import step calls inside `Mutate`
 - **Acceptance**:
   - `TestAppendAcceptsV2PostMigration`: a valid `v2contract.Envelope` appends post-`imported` with supervisor-allocated `run_sequence`; duplicates ack with nil error by `event_id`, gaps and stale generations rejected via the stream-1 sentinels.
   - `TestAppendAcceptsMigrationOwnedAtDrained`: `migration.quarantined` and `migration.imported` envelopes append at phase `drained`.
@@ -65,6 +65,7 @@
   - `TestImportReadyForReviewStaysCandidate`: legacy `ready_for_review` with unverified evidence imports as `candidate` TaskState; a variant promoting to `accepted` fails the test.
   - `TestImportTwiceConflicts`: re-importing returns `revision_conflict` and writes nothing new.
   - `TestImportCorruptV1Refuses`: a v1 row failing v1 decode returns `invalid_contract`; nothing is reinterpreted.
+  - `TestImportRollsBackAtomically`: when the `migration.imported` append fails (injected ledger fault), `ImportRun` returns `persistence_unavailable` and the caller's transaction rolls back all three writes — no v2 rows, no import marker and no envelope remain.
 - **Test plan**: fixture v1 state dirs; golden `TaskRevision` JSON per posture word.
 - **Invariants touched**: I15 (v2 §2: declared posture never promoted); I07 (acceptance needs independent evidence); I09 (unverified stays unverified); I12 (no replay of effects).
 

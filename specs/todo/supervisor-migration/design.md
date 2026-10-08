@@ -96,7 +96,8 @@ type ImportOptions struct {
 // imported); invalid_contract (v1 row fails v1 decode — never reinterpreted,
 // AC-7.5); persistence_unavailable (ledger I/O). It writes the v2 rows and
 // the import marker, and appends a v2 Envelope of type migration.imported
-// recording the import.
+// recording the import via the transaction-scoped append path (§7), so all
+// three writes share the caller's transaction.
 func ImportRun(ctx context.Context, tx *sql.Tx, runID string) (v2contract.TaskRevision, error)
 
 // ImportResult reports one imported run for the preview/receipt.
@@ -259,9 +260,16 @@ allocating `run_sequence` as before. Late observations on old generations
 retain as quarantined evidence at most (AC-4.2 behavior, enforced at this
 call site).
 
-No signature change: `Append` keeps its signature; a duplicate `event_id` acks
-with nil error and no append (`ErrDuplicateEvent` is not a failure, per v2c
-`CheckDuplicate`). The remaining v2 validation errors map to catalogue codes
+No signature change: `Append` keeps its signature; Task 2 factors its
+transaction-scoped core into an unexported `appendTx(ctx, tx, ev, project)`
+that `Append` calls after `BeginTx`. The Import step's envelope writes —
+quarantine envelopes from the `DrainReport` and per-run `migration.imported`
+— call `appendTx` inside their `Mutate` transactions, so v2 rows, import
+marker and envelope commit or roll back together. Calling db-level `Append`
+from inside `Mutate` would contend with the open transaction (`Append` runs
+its own `BeginTx`, `journal.go:285`) and is forbidden. A duplicate
+`event_id` acks with nil error and no append (`ErrDuplicateEvent` is not a
+failure, per v2c `CheckDuplicate`). The remaining v2 validation errors map to catalogue codes
 at the `Append` boundary, where `Append` wraps each stream-1 sentinel into a
 `ControlError` whose code name matches the sentinel (`invalid_contract`,
 `ownership_unresolved` for generation quarantine decisions). There is no

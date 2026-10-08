@@ -138,6 +138,10 @@ func Decode[T Validator](data []byte) (T, error)
 // Digest returns "sha256:<hex>" over the canonical JSON encoding of v
 // (encoding/json marshal of the struct; declaration order is deterministic).
 // No field exclusions: no v2 record carries its own digest (D5).
+// Digest keeps its string-only contract: encoding/json cannot marshal NaN
+// or ±Inf, so the record Validates below reject non-finite floats
+// (RoutingDecision.Scores, SelectionProbability, Experiment.Splits) and
+// Digest never receives them.
 func Digest(v any) string
 ```
 
@@ -219,6 +223,10 @@ type RoutingDecision struct {
     OverrideProvenance   string            `json:"override_provenance,omitempty" toml:"override_provenance,omitempty"`
 }
 
+// RoutingDecision.Validate rejects NaN and ±Inf in Scores values and in
+// SelectionProbability (encoding/json cannot marshal them, so they must
+// fail validation before Digest, §2.2).
+
 // DesignDisposition is proposed | accepted | superseded. Never confused with
 // route ranking (v2 §4.1).
 type DesignDisposition string
@@ -241,7 +249,7 @@ type Artifact struct {
     ArtifactID     string    `json:"artifact_id" toml:"artifact_id"` // repository-scoped opaque ID
     RepoID         string    `json:"repo_id" toml:"repo_id"`
     SHA256         string    `json:"sha256" toml:"sha256"` // exactly 64 lowercase hex chars; Validate rejects empty, non-hex and wrong-length values
-    SizeBytes      int64     `json:"size_bytes" toml:"size_bytes"`
+    SizeBytes      *int64    `json:"size_bytes" toml:"size_bytes"` // Validate rejects nil (missing/null); 0 is a valid zero-byte size
     MediaType      string    `json:"media_type" toml:"media_type"`
     ProducerID     string    `json:"producer_id" toml:"producer_id"`
     Snapshot       GitObject `json:"snapshot" toml:"snapshot"`
@@ -379,6 +387,9 @@ type Experiment struct {
     Evidence      []string          `json:"evidence" toml:"evidence"`
     Disposition   string            `json:"disposition" toml:"disposition"` // open string (D6)
 }
+
+// Experiment.Validate rejects NaN and ±Inf in Splits values (same
+// non-finite rule as RoutingDecision, §2.2).
 ```
 
 Immutability (AC-1.2) is structural: `TaskRevision.Revision`, `PolicyVersion.Version`, `DesignDecision.Revision` are required `>= 1`, and `Digest` differs across revisions (tested). The no-in-place-rewrite enforcement at rest belongs to the ledger (specs 2–3); this package provides the revision fields, the digest, and the rule in one place.
@@ -671,7 +682,7 @@ OQ-9 is decided here (D7): the `journal` table stores both versions; envelope `s
 - `envelope.golden.json` — a v2 envelope shaped like the §4.3 example.
 - `error.golden.json` — a `ControlError` with all fields set.
 - `invalid/unknown_authority_key.json` — a `Grant` with an unknown key: `Decode[Grant]` fails naming the key (AC-9.1 malformed/unknown authority keys).
-- `invalid/null_measurement.json` — a `Reservation` with `"quantity": null` and an `Artifact` with `"size_bytes": null`: both rejected (decode/validate error naming the field), never read as `0` or `""` (AC-9.1 null measurements; I09). The honest unknown is the explicit string `"unknown"`, which the `reservation` golden uses; optional numerics use pointer fields where absence is meaningful.
+- `invalid/null_measurement.json` — a `Reservation` with `"quantity": null` and an `Artifact` with `"size_bytes": null`: both rejected (decode/validate error naming the field), never read as `0` or `""` (AC-9.1 null measurements; I09). The honest unknown is the explicit string `"unknown"`, which the `reservation` golden uses; optional numerics use pointer fields where absence is meaningful. `size_bytes: 0` is valid (zero-byte artifacts exist) and round-trips as 0; the pointer distinguishes it from null, which is rejected.
 - `policy_version.golden.toml` — TOML golden proving the `toml` tags (AC-1.1, AC-9.1); decoded with `BurntSushi/toml` (already required, no new dependency).
 - ID/sequence round-trips (AC-9.1): `ids.New("run")`-shaped synthetic IDs survive JSON round-trips; `int64` sequences survive `1<<53` boundary values (encoded as JSON numbers, decoded exactly; a test pins `9223372036854775807`).
 
