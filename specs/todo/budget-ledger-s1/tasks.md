@@ -42,12 +42,13 @@
 - **Files**:
   - `internal/billing/normalize.go` (`Normalize`, `SplitUsage`, first-route mapping row)
   - `internal/billing/normalize_test.go`
-- **Produces**: `billing.Normalize(rs []Reading, applied map[EventID]bool) (Normalized, error)`, `billing.SplitUsage(route string, u adapter.TokenUsage) ScopeTotal`
+- **Produces**: `billing.Normalize(rs []Reading, expected []string, applied map[EventID]bool) (Normalized, error)`, `billing.SplitUsage(route string, u adapter.TokenUsage) ScopeTotal`
 - **Acceptance**:
   - `TestNormalizeNewestCumulativeWins`: two cumulatives for one (scope, unit, source) yield the newest value; asserting the older fails. Command: `go test ./internal/billing/ -run TestNormalize`. Fails before: `Normalize` absent.
   - `TestNormalizeDeltaAppliedOnce`: a delta with (producer, sequence) already in `applied` is skipped; removing the skip double-counts and fails. Fails before: `Normalize` absent.
+  - `TestNormalizePreBaselineDeltaSkipped`: an unapplied delta with observation time at or before the baseline cumulative's is skipped as already covered; summing it fails. Fails before: `Normalize` absent.
   - `TestNormalizeIdentityLessDeltaEstimated`: a delta with `HasIdentity=false` lands `Estimated` and is never summed into an exact total; asserting `Reported` fails. Fails before: `Normalize` absent.
-  - `TestNormalizeMissingScopeUnknown`: input missing a scope marks it unknown with nil total while other scopes keep values; a zero total fails. Fails before: `Normalize` absent.
+  - `TestNormalizeMissingScopeUnknown`: an expected scope with no readings marks it unknown with nil total while other scopes keep values; a zero total fails. Fails before: `Normalize` absent.
   - `TestNormalizeRejectsMalformedReadings`: empty scope/unit/source, or both/neither of Cumulative/Delta set, returns `ErrReadingShape` naming the index; silent acceptance fails. Fails before: `Normalize` absent.
   - `TestSplitUsageUnmappedCombinedOnly`: an unknown route returns the combined total with all components nil; any non-nil component fails. `TestSplitUsageFirstRouteSplits`: the first-route mapping row (keyed by adapter harness ID, the key Task 3 passes) exposes non-overlapping components citing fixture evidence. Fails before: `SplitUsage` absent.
 - **Test plan**: Table tests over inline readings; cross-(scope, unit, source) mismatch cases included so unlike buckets never merge.

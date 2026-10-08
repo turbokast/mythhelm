@@ -1,4 +1,4 @@
-# Budget Ledger S1 — Scratchpad
+## Budget Ledger S1 — Scratchpad
 
 > Open questions and research from authoring. Each implementing task reads this file when it starts and adds an entry under Discoveries when it finishes.
 

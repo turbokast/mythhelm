@@ -1,4 +1,4 @@
-# Budget Ledger S1 — Design
+## Budget Ledger S1 — Design
 
 > S1 slice of MH-16: typed usage observations, counter normalization, coupled
 > quota reservations, finite run envelopes, completion reserves and exhaustion
@@ -280,12 +280,15 @@ type ScopeTotal struct {
 type Normalized struct{ Scopes map[string]ScopeTotal }
 
 // Normalize applies AC-2.1: match on (scope, unit, source); newest cumulative
-// is the baseline; apply only deltas whose (producer, sequence) is not yet
-// applied; identity-less deltas land as Estimated, never summed exact.
-// Missing scope input marks that scope unknown and keeps the rest (AC-2.2).
+// is the baseline; apply only unapplied deltas with At strictly after the
+// baseline's At — deltas at or before it are already covered and skipped,
+// so no delta is counted twice. Deltas carry (producer, sequence) identity:
+// already-applied ones are skipped; identity-less deltas land as Estimated,
+// never summed exact. expected names the scopes the caller requires; an
+// expected scope with no readings marks unknown and keeps the rest (AC-2.2).
 // A reading with an empty scope, unit or source, or with both/neither of
 // Cumulative/Delta set, returns ErrReadingShape naming the reading index.
-func Normalize(rs []Reading, applied map[EventID]bool) (Normalized, error)
+func Normalize(rs []Reading, expected []string, applied map[EventID]bool) (Normalized, error)
 type EventID struct{ Producer string; Sequence int64 }
 var ErrReadingShape = errors.New("billing: malformed reading")
 ```
@@ -307,7 +310,8 @@ handles only `state_changed`/`launched`/`native_session` today;
 Task 3 adds the `native_result` case: on it, build `Reading`s from
 `usage_native_reported` (label
 Reported) and `retail_equivalent_estimate_usd` (label Estimated, unit
-`USD`, scope `retail-equivalent`), `Normalize`, and insert rows in the same
+`USD`, scope `retail-equivalent`), `Normalize` with the expected scope set
+(the token scopes plus `retail-equivalent`), and insert rows in the same
 `Append` transaction. Null/absent usage and cost project to `unknown`
 quantities, never 0 (I09). AC-1.3: no cross-bucket aggregation anywhere —
 one row per (scope, unit, source); the receipt renders rows, never a summed
