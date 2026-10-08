@@ -13,7 +13,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Effective-configuration inventory
+### Task 1 — Effective-configuration inventory ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -41,6 +41,10 @@
   - `TestInventoryLiveSignalsAlwaysUnknown`: every fixture yields `ExtraUsage: "unknown"` and `PurchasedCredits: "unknown"` — static inputs carry no live signal; only the live suite assesses them.
 - **Test plan**: Synthetic JSON fixtures (marked synthetic); hermetic execution; table tests over managed-source shapes.
 - **Invariants touched**: I02 (v2 §7.3: unknown mandatory sources listed, never assumed); I19 (v2 §7.1: no secret reads); I09 (v2 §7.3: gaps are explicit unknowns).
+- **Status**: ✅ Completed — effective-configuration inventory, gap assessment and `Manifest.EnabledPlugins` collection landed; PR #215.
+- **Implementation**: `InventoryEffective` is pure over probe, manifest and auth evidence; `PolicySummary.Digest` is sha256 over the JSON of the `managed*` manifest digests (sorted keys), `Sources` the sorted `managed*` names. A non-absolute executable, or an auth method other than a logged-in `claude.ai`, returns an `ErrCapability`-wrapped error. Commit 9274b4b.
+- **Spec deviations**: None.
+- **Files modified**: `adapters/claudecode/effective.go`, `adapters/claudecode/effective_test.go`, `adapters/claudecode/settings.go`, `adapters/claudecode/settings_test.go`, `adapters/claudecode/testdata/effective/none.json`, `adapters/claudecode/testdata/effective/file.json`, `adapters/claudecode/testdata/effective/file-gap.json`, `specs/in-progress/claude-strict-subscription/tasks.md`, `specs/in-progress/claude-strict-subscription/handoff.md`, `specs/in-progress/claude-strict-subscription/scratchpad.md`.
 
 ### Task 2 — Auxiliary inventory and live evidence constructors
 
