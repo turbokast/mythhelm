@@ -37,7 +37,7 @@ Add a dispatch-gating step: before launching more than one worker, (1) read the 
 
 **Proposed change:**
 
-Append to the MH-12 card scope: the spec must (1) decide seed/live coexistence (supersede, migrate or align seed keys) with a seam test proving a consult reads a seeded-then-recorded record; (2) gate the consult on evidence method/labels so user-declared evidence alone never proves a live column; (3) read Record.Quota at consult so a zero quantity cannot admit; (4) refresh NextTest on invalidation; (5) pin Consult (Lookup+List+drift) latency, not just Lookup; (6) pass the Consult-returned record, not the observed key, into InvalidateOnDrift.
+Append to the MH-12 card scope: the spec must (1) decide seed/live coexistence (supersede, migrate or align seed keys) with a seam test proving a consult reads a seeded-then-recorded record; (2) gate the consult on evidence method/labels so user-declared evidence alone never proves a live column; (3) require ResolveQualification to return Blocked for subscription-only when Record.Quota.Quantity is zero, while preserving AC-3.3 for an unknown quota; (4) refresh NextTest on invalidation; (5) pin Consult (Lookup+List+drift) latency, not just Lookup; (6) pass the Consult-returned record, not the observed key, into InvalidateOnDrift.
 
 ## P-qualification-registry-2 — Pin the AC-4.2 trust-before-consult ordering with a test
 

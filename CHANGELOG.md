@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - mythhelm doctor qualification section: per-harness progress, columns, evidence revisions and drift triggers in plain and JSONL output (#204)
-- Admission consults the qualification registry: strict subscription-only runs block with qualification reasons instead of blanket refusal (#205)
+- Strict subscription-only runs now consult the qualification registry first and report qualification reasons (inspectable via mythhelm doctor); admission still refuses until included-only entitlements are verifiable (#205)
 
 ## [0.0.1] - 2026-10-06
 
