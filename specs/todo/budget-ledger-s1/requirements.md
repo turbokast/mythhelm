@@ -42,7 +42,7 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 - **AC-1.1** [§7.3, I09] When native usage output is ingested, the system shall record each quantity with its unit, scope, source, timestamp and one label of `reported | observed | estimated | user-declared | unknown`.
 - **AC-1.2** [§7.3, I09] If a quantity is missing, then the system shall record it as `unknown`, never `0`, `passed` or `verified`.
 - **AC-1.3** [§7.3] The system shall not aggregate unlike allowance buckets into a single fictitious tokens, currency or hours-remaining figure.
-- **AC-1.4** [§7.3, I09] Native retail estimates shall be stored in the receipt and shown only as estimates in receipts and CLI run output, never as invoices or actual subscription charges; TUI surfaces are unchanged in S1.
+- **AC-1.4** [§7.3, I09] Native retail estimates shall be stored in the receipt and shown only as estimates in receipts and CLI run output, never as invoices or actual subscription charges, preserving the native decimal value exactly (no floating-point rounding); TUI surfaces are unchanged in S1.
 
 ### FR-2 — Counter normalization (AT-13, §7.3)
 

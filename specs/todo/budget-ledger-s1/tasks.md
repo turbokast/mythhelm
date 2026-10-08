@@ -49,7 +49,8 @@
   - `TestNormalizePreBaselineDeltaSkipped`: an unapplied delta with observation time at or before the baseline cumulative's is skipped as already covered; summing it fails. Fails before: `Normalize` absent.
   - `TestNormalizeIdentityLessDeltaEstimated`: a delta with `HasIdentity=false` lands `Estimated` and is never summed into an exact total; asserting `Reported` fails. Fails before: `Normalize` absent.
   - `TestNormalizeMissingScopeUnknown`: an expected scope with no readings marks it unknown with nil total while other scopes keep values; a zero total fails. Fails before: `Normalize` absent.
-  - `TestNormalizeRejectsMalformedReadings`: empty scope/unit/source, or both/neither of Cumulative/Delta set, returns `ErrReadingShape` naming the index; silent acceptance fails. Fails before: `Normalize` absent.
+  - `TestNormalizeRejectsMalformedReadings`: empty scope/unit/source, both/neither of Cumulative/Delta set, or non-decimal quantity text, returns `ErrReadingShape` naming the index; silent acceptance fails. Fails before: `Normalize` absent.
+  - `TestNormalizeDecimalExact`: a `retail-equivalent` USD cumulative of `0.37` normalizes to exactly `0.37`, and decimal deltas sum exactly (`0.10` + `0.27` = `0.37`); any rounded or float-derived text fails. Fails before: `Normalize` absent.
   - `TestSplitUsageUnmappedCombinedOnly`: an unknown route returns the combined total with all components nil; any non-nil component fails. `TestSplitUsageFirstRouteSplits`: the first-route mapping row (keyed by adapter harness ID, the key Task 3 passes) exposes non-overlapping components citing fixture evidence. Fails before: `SplitUsage` absent.
 - **Test plan**: Table tests over inline readings; cross-(scope, unit, source) mismatch cases included so unlike buckets never merge.
 - **Invariants touched**: I09 (v2 §7.3: missing is unknown, never zero; identity-less deltas estimated, AC-2.1/AC-2.2).

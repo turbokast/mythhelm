@@ -263,19 +263,25 @@ func ClearBucket(ctx context.Context, tx *sql.Tx, bucket string) error
 
 ```go
 // Reading is one ingested counter value. Exactly one of Cumulative / Delta
-// is set; nil members are unreported, never zero (I09).
+// is set; nil members are unreported, never zero (I09). Quantities are
+// exact decimal text — the same representation as qualify.Datum.Quantity,
+// the decoder's CostUSD literal (decode.go:338-352) and the §2 storage
+// TEXT — so a USD estimate such as 0.37 passes through verbatim. Token
+// counts arrive as integer decimal text, converted losslessly from
+// adapter.TokenUsage's *int64 fields at the ingest seam; non-decimal
+// quantity text is malformed.
 type Reading struct {
     Scope, Unit, Source string
     At time.Time
-    Cumulative, Delta *int64
+    Cumulative, Delta *string
     Producer string
     Sequence int64
     HasIdentity bool
 }
 type ScopeTotal struct {
-    Total *int64 // nil renders as "unknown"
+    Total *string // exact decimal text; nil renders as "unknown"
     Label qualify.DatumLabel
-    Components map[string]*int64 // output, cache_read, cache_creation, reasoning; nil member = unknown
+    Components map[string]*string // output, cache_read, cache_creation, reasoning; nil member = unknown
 }
 type Normalized struct{ Scopes map[string]ScopeTotal }
 
@@ -286,8 +292,11 @@ type Normalized struct{ Scopes map[string]ScopeTotal }
 // already-applied ones are skipped; identity-less deltas land as Estimated,
 // never summed exact. expected names the scopes the caller requires; an
 // expected scope with no readings marks unknown and keeps the rest (AC-2.2).
-// A reading with an empty scope, unit or source, or with both/neither of
-// Cumulative/Delta set, returns ErrReadingShape naming the reading index.
+// Deltas sum with exact decimal addition — scale-aligned integer
+// arithmetic, never float64 — and a baseline cumulative passes its literal
+// through unchanged. A reading with an empty scope, unit or source, with
+// both/neither of Cumulative/Delta set, or with non-decimal quantity text,
+// returns ErrReadingShape naming the reading index.
 func Normalize(rs []Reading, expected []string, applied map[EventID]bool) (Normalized, error)
 type EventID struct{ Producer string; Sequence int64 }
 var ErrReadingShape = errors.New("billing: malformed reading")
@@ -301,7 +310,9 @@ components. Every other route records the combined total only with all
 components nil (unknown). The caller is Task 3's `native_result` projection;
 it passes `adm.Adapter.Harness` from the journaled admission record (the
 same field the receipt reads at `receipt.go:168`), so the key Task 3 passes
-is exactly the key Task 2's row is filed under. The native-overlap caveat
+is exactly the key Task 2's row is filed under. `SplitUsage` converts the
+`*int64` token fields to integer decimal text losslessly (nil stays
+nil/unknown); no float64 appears on the path. The native-overlap caveat
 (v2 §7.3: cache/reasoning/output may overlap) is why unmapped stays combined.
 
 Ingest seam: `projectWorkerEvent` (`internal/supervisor/ingest.go:155`)
@@ -309,8 +320,10 @@ handles only `state_changed`/`launched`/`native_session` today;
 `native_result` is spooled (allowlist `ingest.go:33-37`) but unprojected.
 Task 3 adds the `native_result` case: on it, build `Reading`s from
 `usage_native_reported` (label
-Reported) and `retail_equivalent_estimate_usd` (label Estimated, unit
-`USD`, scope `retail-equivalent`), `Normalize` with the expected scope set
+Reported, integer decimal text) and `retail_equivalent_estimate_usd`
+(label Estimated, unit `USD`, scope `retail-equivalent`, carrying the
+native `CostUSD` decimal literal verbatim with its unit preserved through
+storage and receipts), `Normalize` with the expected scope set
 (the token scopes plus `retail-equivalent`), and insert rows in the same
 `Append` transaction. Null/absent usage and cost project to `unknown`
 quantities, never 0 (I09). AC-1.3: no cross-bucket aggregation anywhere —
@@ -659,7 +672,8 @@ Mapping reuses the existing outcome path (`runExit`,
 ## 10. Tests and CI
 
 - Unit: table-driven per package (`Normalize` matrices incl. identity-less
-  deltas, missing scopes, unmapped components, malformed readings;
+  deltas, missing scopes, unmapped components, malformed readings,
+  decimal-exact totals;
   `ResolveCeilings` layer precedence incl. negative-field-unset; `Deadline`
   with quiescent vs still-running spans; `RetrySchedule`/`EvaluateBucket`
   reset/unknown paths incl. clearing; `RemainderCoversReserve` boundary).
