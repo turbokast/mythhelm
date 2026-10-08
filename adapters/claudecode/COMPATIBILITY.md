@@ -70,3 +70,21 @@ subscription-only eligibility.
   design (exit 7); Q6 open (single observation: only local hook/system frames
   preceded `init`, zero inference tokens); native transcripts persist outside
   MYTHHELM; `auth status` treated as possibly networked.
+
+## Live record
+
+The first-route live record is built by `LiveRecord` from an assessed
+effective configuration and the auxiliary route inventory, and recorded by
+the env-gated live suite (`live_qualify_test.go`, `//go:build live`,
+`MYTHHELM_LIVE_QUALIFY=1`). Its evidence method is `authorised-live`.
+
+- **Status**: not yet recorded. The suite is compiled and skip-verified only;
+  the grant run is the Task 7 maintainer run of spec
+  claude-strict-subscription, executed explicitly and never automated or run
+  in CI.
+- **Scope**: the inventoried bare configuration (the seven AT-03 routes).
+  Configurations with plugins or MCP servers keep `unknown` funding on those
+  routes and stay blocked.
+- **Refused as incomplete**: any managed-policy gap, any route with `unknown`
+  funding, extra usage not `disabled`, purchased credits other than
+  `non-consumable` or `plan-granted`.

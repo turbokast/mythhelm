@@ -15,7 +15,10 @@
 
 ## Task 2 — Auxiliary inventory and live evidence constructors
 
-<!-- pending -->
+- **Produces**: `claudecode.AuxiliaryRoute{Name, Funding, Evidence}`, `InventoryAuxiliary`, `LiveRecord`, `ErrEvidenceIncomplete` (`adapters/claudecode/auxiliary.go`); `testdata/qualification/live-shapes.json`; `## Live record` in `COMPATIBILITY.md`; `live_qualify_test.go` (`-tags live`, `MYTHHELM_LIVE_QUALIFY=1`).
+- **For dependents**: `LiveRecord` reuses `ErrNotFirstRoute` and the `RecordDraft` predicate (harness and surface only). Evidence `Suite` is `live-qualify:<executable-digest>`. The record's capabilities are `credential-precedence`, `managed-policy`, `extra-usage`, `purchased-credits` and `stop_at_exhaustion`.
+- **For Task 7**: the live suite needs `MYTHHELM_LIVE_STATE_DIR`, `MYTHHELM_LIVE_EXTRA_USAGE` and `MYTHHELM_LIVE_PURCHASED_CREDITS` (maintainer account observations). It was never grant-run; expect to adjust it on first execution.
+- **Trap**: only the seven AT-03 routes can be `included`; configs with plugins or MCP servers keep `unknown` routes and `LiveRecord` refuses them.
 
 ## Task 3 — Strict admission flip with closed matching
 
@@ -27,7 +30,11 @@
 
 ## Task 4 — Drift-invalidation writer on the run path
 
-<!-- pending -->
+- **Produces**: `persistDriftInvalidation(ctx, stateDir, err, diag) error` in `internal/cli/run.go`, returning `err` unchanged; it writes only for a `*admission.DriftError`.
+- **For dependents (Tasks 5, 7)**: no strict `cli.Main` run reaches it while the gap stays open (Q-15), so the end-to-end drifted variant (`qualification_drifted`) cannot be driven from the binary until Q1 empties `UnresolvedSources`; test it at consult level.
+- **For dependents**: each blocked strict run on a still-drifted record appends another invalidation revision, because drift is judged from the key's pinned digests, which an invalidation does not change. Add a skip for an already-invalidated record if growth matters.
+- **Trap**: `qualify.Open` read-write runs migrations; the writer opens the registry only after a drift block, which implies the database exists.
+
 
 ## Task 5 — Declared guards and strict end-to-end
 
@@ -35,7 +42,8 @@
 
 ## Task 6 — Strict billing user documentation
 
-<!-- pending -->
+- **Produces**: `## Billing` in `docs/user-guide.md` and `docs/decisions/0012-strict-subscription-admission.md` (accepted).
+- **For dependents (Q1, Task 7)**: the guide says no live-qualified record exists and every strict run blocks today, and ADR-0012 says strict blocks until a live-qualified record is committed. Update both statements when Q1 and Task 7 land.
 
 ## Task 7 — Maintainer live qualification run
 

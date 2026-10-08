@@ -1,0 +1,13 @@
+{
+  "synthetic": true,
+  "note": "Synthetic LiveRecord input shapes; no live observation. Real evidence is recorded only by the maintainer-run live suite.",
+  "cases": [
+    {"name": "proven-record", "extra_usage": "disabled", "purchased_credits": "non-consumable", "funding": "included", "gaps": [], "key_mutation": "none", "expect": "live-qualified"},
+    {"name": "drifted-executable", "extra_usage": "disabled", "purchased_credits": "non-consumable", "funding": "included", "gaps": [], "key_mutation": "executable-digest", "expect": "live-qualified"},
+    {"name": "drifted-config", "extra_usage": "disabled", "purchased_credits": "non-consumable", "funding": "included", "gaps": [], "key_mutation": "config-digest", "expect": "live-qualified"},
+    {"name": "purchased-non-consumable", "extra_usage": "disabled", "purchased_credits": "non-consumable", "funding": "included", "gaps": [], "key_mutation": "none", "expect": "live-qualified"},
+    {"name": "purchased-plan-granted", "extra_usage": "disabled", "purchased_credits": "plan-granted", "funding": "included", "gaps": [], "key_mutation": "none", "expect": "live-qualified"},
+    {"name": "purchased-separately-purchased", "extra_usage": "disabled", "purchased_credits": "separately-purchased", "funding": "included", "gaps": [], "key_mutation": "none", "expect": "incomplete"},
+    {"name": "purchased-unknown", "extra_usage": "disabled", "purchased_credits": "unknown", "funding": "included", "gaps": [], "key_mutation": "none", "expect": "incomplete"}
+  ]
+}

@@ -46,7 +46,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `adapters/claudecode/effective.go`, `adapters/claudecode/effective_test.go`, `adapters/claudecode/settings.go`, `adapters/claudecode/settings_test.go`, `adapters/claudecode/testdata/effective/none.json`, `adapters/claudecode/testdata/effective/file.json`, `adapters/claudecode/testdata/effective/file-gap.json`, `specs/in-progress/claude-strict-subscription/tasks.md`, `specs/in-progress/claude-strict-subscription/handoff.md`, `specs/in-progress/claude-strict-subscription/scratchpad.md`.
 
-### Task 2 — Auxiliary inventory and live evidence constructors
+### Task 2 — Auxiliary inventory and live evidence constructors ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (live suite + several constructors)
@@ -72,6 +72,10 @@
   - `TestAuxiliaryBareInstallEmitsOnlyAT03`: zero plugins and no MCP servers yield exactly the seven AT-03 routes — no `plugin:*` route, no `mcp:` route; a phantom zero-count route fails the test.
 - **Test plan**: Unit tests always run; `live_qualify_test.go` carries `//go:build live` and an env gate (MH-10 canary pattern); fixtures pin both purchased-credit outcomes.
 - **Invariants touched**: I15 (v2 §7.3: proof across the whole funding tree); I04 (allowance consumed only under explicit grant); I13 (contributor tests need no credentials).
+- **Status**: ✅ Completed — auxiliary route inventory, `LiveRecord` gate/assemble constructor, live-shapes fixture, COMPATIBILITY live-record section and the env-gated live suite landed; the live grant leg was compiled (`go vet -tags live`) and skip-verified only, not executed (Task 7 maintainer run); PR #219.
+- **Implementation**: `LiveRecord` also refuses empty credential precedence and any unassessed AT-03 route; `stop_at_exhaustion` carries `Evidence: "documented-mechanism"` (the capability field is a string, so the entitlement column keeps exactly one `authorised-live` entry). The live suite builds the key from the fixture key plus probe digest, and marks only the seven AT-03 routes `included` after one completed session. Commit 2da8a1c.
+- **Spec deviations**: Evidence `Suite` is `live-qualify:<executable-digest>` instead of `<native-version>` because the `LiveRecord` signature carries no version. Red-first was observed as compile failure of the tests before `auxiliary.go` existed.
+- **Files modified**: `adapters/claudecode/auxiliary.go`, `adapters/claudecode/auxiliary_test.go`, `adapters/claudecode/live_qualify_test.go`, `adapters/claudecode/testdata/qualification/live-shapes.json`, `adapters/claudecode/COMPATIBILITY.md`, `specs/in-progress/claude-strict-subscription/tasks.md`, `specs/in-progress/claude-strict-subscription/handoff.md`.
 
 ### Task 3 — Strict admission flip with closed matching ✅ COMPLETED
 
@@ -115,7 +119,7 @@
 - **Spec deviations**: `TestStrictAlwaysBlocksRetired` has no test of its own (checked by searching for the old name); `TestDeclaredIgnoresGaps` pins `Decide` level, with the binary covered by `TestE2EDeclaredUnaffected`; `TestRegistryUnreadableStillFailsClosed` cannot prove ordering against the gap gate because the trust-journal open fails first; the `seedStable` fixture now carries the five exact dimensions (design behaviour, no deviation).
 - **Files modified**: `adapters/claudecode/auth_test.go`, `internal/admission/admission.go`, `internal/admission/billing.go`, `internal/admission/billing_test.go`, `internal/admission/qualify.go`, `internal/admission/qualify_test.go`, `internal/qualify/registry.go`, `internal/qualify/registry_test.go`, `tests/e2e/qualification_test.go`, `specs/in-progress/claude-strict-subscription/tasks.md`, `specs/in-progress/claude-strict-subscription/handoff.md`.
 
-### Task 4 — Drift-invalidation writer on the run path
+### Task 4 — Drift-invalidation writer on the run path ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -132,6 +136,10 @@
   - `TestRestoredStateReadmitsOnlyAfterRetest`: after invalidation, restoring the matching config still blocks until a new revision re-proves it (no silent re-admission).
 - **Test plan**: `cli.Main` tests with temp state dirs and seeded drifted records; hash-before/after for write discipline.
 - **Invariants touched**: I20 (v2 §7.1: invalidation is a new revision); I06 lineage (refusal path never lifts the block it reports).
+- **Status**: ✅ Completed — `persistDriftInvalidation` stores an invalidation revision when strict admission blocks on drift, best-effort and never masking the block; PR #224.
+- **Implementation**: `run.go` calls `persistDriftInvalidation(ctx, stateDir, err, stderr)` after each `Decide` error (default, TUI, accessible); it `errors.As`es a `*DriftError`, calls `InvalidateByHash`, logs a persist failure to stderr and returns the original error. Seam tests feed it the real `*DriftError` from `ResolveQualification` on seeded drifted records. Commit 9c49d39.
+- **Spec deviations**: The Test plan's `cli.Main` strict-drift legs are held until Q1 resolves (Q-15 keeps the gap open, so the gap gate blocks before any consult); drift, persist-failure and restore legs are proven at the seam instead. `cli.Main` covers only the reachable non-drift blocks (`no_qualification_record` on a missing registry, gap-gate `entitlement_not_proven` on a present one). `TestNonDriftBlocksWriteNothing` proves `ambiguous_qualification_match` with a synthetic block. Also changed `specs/in-progress/claude-strict-subscription/scratchpad.md` for the Discoveries note.
+- **Files modified**: `internal/cli/run.go`, `internal/cli/run_drift_test.go`, `specs/in-progress/claude-strict-subscription/tasks.md`, `specs/in-progress/claude-strict-subscription/handoff.md`, `specs/in-progress/claude-strict-subscription/scratchpad.md`.
 
 ### Task 5 — Declared guards and strict end-to-end
 
@@ -150,7 +158,7 @@
 - **Test plan**: Build `cmd/mythhelm` once per package run; temp `MYTHHELM_HOME`; golden comparisons for the declared path.
 - **Invariants touched**: I15 (v2 §7.3: declared stays unverified); I02 (v2 §7.3: end-to-end blocking preserved).
 
-### Task 6 — Strict billing user documentation
+### Task 6 — Strict billing user documentation ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -165,6 +173,10 @@
   - `grep -q "Status: accepted" docs/decisions/0012-strict-subscription-admission.md && grep -q "ADR-0002" docs/decisions/0012-strict-subscription-admission.md && grep -q "early return" docs/decisions/0012-strict-subscription-admission.md`: ADR-0012 records the flip (early return removed, consult fails closed) and stales ADR-0002 item 1. Exits non-zero before the change (file absent).
 - **Test plan**: No Go test asserts prose; each item is a recorded shell command with a failing counterfactual (absent section before the change).
 - **Invariants touched**: None (docs only; Task 3 keeps I15/I02 — this task describes, not changes, behavior).
+- **Status**: ✅ Completed — `## Billing` in the user guide documents strict and declared postures, and ADR-0012 records the flip and stales ADR-0002 item 1; PR #223.
+- **Implementation**: Prose only, describing Task 3's merged `ResolveBilling`/`ResolveQualification`. The three acceptance greps exited non-zero before the change (1, 1, 2) and 0 after. Commit 057b743.
+- **Spec deviations**: None.
+- **Files modified**: `docs/user-guide.md`, `docs/decisions/0012-strict-subscription-admission.md`, `specs/in-progress/claude-strict-subscription/tasks.md`, `specs/in-progress/claude-strict-subscription/handoff.md`.
 
 ### Task 7 — Maintainer live qualification run
 

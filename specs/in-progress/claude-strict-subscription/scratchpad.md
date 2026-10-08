@@ -22,3 +22,4 @@
 ## Discoveries
 
 - Task 1: the manifest carries `managed*` digests only for sources actually present on disk, so `PolicySummary.Sources` is empty on a bare host and `Gaps` still lists the unresolved sources; gap assessment never depends on the manifest.
+- Task 4: with the gap open (Q-15), a registry-present strict run returns a plain `*BlockedError` at the gap gate (`decideClaudeCode`, `GapSources(claudecode.UnresolvedSources)`) before `ResolveQualification`, and with no registry there is no record to drift, so no `*DriftError` reaches `executeRun` through `cli.Main`. The drift legs are proven at the seam with the real `*DriftError` from a consult; the `cli.Main` legs wait for Q1.

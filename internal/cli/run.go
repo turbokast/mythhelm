@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/turbokast/mythhelm/internal/admission"
+	"github.com/turbokast/mythhelm/internal/qualify"
 	"github.com/turbokast/mythhelm/internal/statedir"
 	"github.com/turbokast/mythhelm/internal/supervisor"
 )
@@ -97,6 +98,7 @@ func runRun(args []string, stdio Stdio) error {
 	case launchTUI:
 		d, err := admission.Decide(context.Background(), req)
 		if err != nil {
+			err = persistDriftInvalidation(context.Background(), stateDir, err, stdio.Err)
 			return finish(newRenderer("plain", stdio), supervisor.Outcome{}, err)
 		}
 		out, err := runLiveTUI(stdio, prodTUIDeps, stateDir, d.RunID, opts,
@@ -107,6 +109,7 @@ func runRun(args []string, stdio Stdio) error {
 	case launchAccessible:
 		d, err := admission.Decide(context.Background(), req)
 		if err != nil {
+			err = persistDriftInvalidation(context.Background(), stateDir, err, stdio.Err)
 			return finish(newRenderer("plain", stdio), supervisor.Outcome{}, err)
 		}
 		// No finish: the stream's next-after trailer is its last line,
@@ -118,8 +121,35 @@ func runRun(args []string, stdio Stdio) error {
 		return err
 	default:
 		out, err := executeRun(r, req)
+		err = persistDriftInvalidation(context.Background(), stateDir, err, stdio.Err)
 		return finish(r, out, err)
 	}
+}
+
+// persistDriftInvalidation stores an invalidation revision for the record a
+// strict admission blocked as drifted, so restoring the matching
+// configuration cannot silently re-admit it without a new proof (I20). It is
+// best-effort: a persist failure is logged to diag and never replaces the
+// block, and it returns err unchanged whatever happens (I06). Any other
+// error, drift under a non-strict mode included, writes nothing.
+func persistDriftInvalidation(ctx context.Context, stateDir string, err error, diag io.Writer) error {
+	drift, ok := errors.AsType[*admission.DriftError](err)
+	if !ok {
+		return err
+	}
+	if perr := invalidateDrifted(ctx, stateDir, drift); perr != nil {
+		_, _ = fmt.Fprintf(diag, "mythhelm run: could not record the drift invalidation for key %s: %v\n", drift.KeyHash, perr)
+	}
+	return err
+}
+
+func invalidateDrifted(ctx context.Context, stateDir string, drift *admission.DriftError) error {
+	reg, err := qualify.Open(ctx, stateDir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = reg.Close() }()
+	return reg.InvalidateByHash(ctx, drift.KeyHash, drift.Reason)
 }
 
 // executeRun admits req and supervises its one native attempt, streaming
