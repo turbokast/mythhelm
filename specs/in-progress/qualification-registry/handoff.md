@@ -74,4 +74,7 @@
 
 ## Task 9 — Production registry seeding on admitted runs
 
-<!-- pending -->
+- **Produces**: `supervisor.Run` calls `qualify.EnsureSeeded` after `journal.Open` (before the run dir exists); seed failure returns `persistence_unavailable` and admits nothing. Exactly the design §3 trigger; no new API.
+- **For dependents**: every `Run` (`run` and demo paths; `recover` reattaches without calling `Run`) now ensures the seven seed rows first — later specs can rely on the seed existing wherever a run was admitted, and must keep `Run`'s pre-admission path migration-safe (the trigger runs on the just-opened journal).
+- **For dependents**: `admission.Decide` alone creates no database — tests staging an unseedable state must `journal.Open` (to migrate) before tampering, then drop/close via raw SQL.
+- **Deviations that change a later task's inputs**: none.
