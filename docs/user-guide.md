@@ -56,7 +56,7 @@ registry:
 
 ```text
 qualification:
-claude-code × native-cli-structured (print, stream-json): blocked (fidelity unknown, entitlement not-proven, lifecycle unknown) [evidence 1 revs, latest none; drift clean]
+claude-code × unknown: blocked (fidelity unknown, entitlement unknown, lifecycle unknown) [evidence 1 revs, latest none; drift clean]
 ```
 
 Each line reads `<harness> × <surface>: <progress> (fidelity <v>,
