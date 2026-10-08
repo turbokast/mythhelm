@@ -104,12 +104,20 @@ cosign verify-blob \
 
 GoReleaser publishes the release before the cosign and attestation steps run, so a failure in a later step leaves a published release without its bundle or attestation. Check what is missing with `gh release view "$TAG" --repo turbokast/mythhelm` (is `checksums.txt.sigstore.json` listed?) and `gh attestation verify`. Then recover from the failed run:
 
-1. Re-run the failed job from the Actions UI, with the same tag, and approve the `release` environment again. The job signs `checksums.txt` again, uploads the bundle and re-attests the same subjects: `dist/checksums.txt`, `dist/*.tar.gz` and `dist/*.zip`.
-2. The workflow's upload step does not overwrite. If the bundle is already on the release, that step stops the re-run before the attestation; remove the stale bundle first, then re-run:
+1. Remove the GoReleaser assets from the release first: the five archives, their `.sbom.json` files and `checksums.txt`. `.goreleaser.yml` sets `release.mode: keep-existing` without replacing existing artifacts, so the re-run's GoReleaser step does not replace the published assets; it collides with them and fails. The bundle is handled in step 2.
+
+   ```bash
+   for a in $(gh release view "$TAG" --repo turbokast/mythhelm --json assets --jq '.assets[].name' | grep -v '^checksums.txt.sigstore.json$'); do
+     gh release delete-asset "$TAG" "$a" --yes --repo turbokast/mythhelm
+   done
+   ```
+
+2. The workflow's upload step does not overwrite either. If the bundle is already on the release, that step stops the re-run before the attestation; remove the stale bundle too:
 
    ```bash
    gh release delete-asset "$TAG" checksums.txt.sigstore.json --yes --repo turbokast/mythhelm
    ```
 
    A bundle is only valid when the release workflow signed it (check 3 pins that identity). When the workflow produced a replacement bundle outside the failed step, upload it over the old one with `gh release upload "$TAG" checksums.txt.sigstore.json --clobber --repo turbokast/mythhelm`.
-3. Re-run the three verify checks above. The first real release exercises this procedure for the first time; record any difference here.
+3. Re-run the failed job from the Actions UI, with the same tag, and approve the `release` environment again. The job rebuilds and uploads the GoReleaser assets, signs `checksums.txt` again, uploads the bundle and re-attests the same subjects: `dist/checksums.txt`, `dist/*.tar.gz` and `dist/*.zip`.
+4. Re-run the three verify checks above. The first real release exercises this procedure for the first time; record any difference here.
