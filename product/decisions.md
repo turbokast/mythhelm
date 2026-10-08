@@ -321,3 +321,24 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: Six-provider workflow research plus validator-satisfying GitHub anchors; maintainer approved filing all 8
 - **Cards**: MH-12,MH-15,MH-16,MH-4,MH-5,MH-21,MH-29,MH-10
 - **Evidence**: https://github.com/openai/codex/issues/24777,https://github.com/anthropics/claude-code/issues/56687
+
+### D-77 — 2026-10-08: MH-10 → shipped (qualification-registry)
+- **Type**: lifecycle-sync
+- **Decision**: MH-10 moved to shipped
+- **Rationale**: qualification-registry reached done/; finalize PR #211 merged as bcfaf12; main CI green
+- **Cards**: MH-10
+- **Evidence**: PR #211, main bcfaf12 CI green
+
+### D-78 — 2026-10-08: MH-7 → implementing (release-pipeline)
+- **Type**: lifecycle-sync
+- **Decision**: MH-7 moved to implementing
+- **Rationale**: release-pipeline in-progress; tasks 1-4 merged (#216,#217,#218,#221), task 5 in review (#222)
+- **Cards**: MH-7
+- **Evidence**: PRs #216,#217,#218,#221,#222
+
+### D-79 — 2026-10-08: MH-12 → implementing (claude-strict-subscription)
+- **Type**: lifecycle-sync
+- **Decision**: MH-12 moved to implementing
+- **Rationale**: claude-strict-subscription in-progress; 5 tasks merged (#215,#219,#220,#223,#224), T5/T7 held per Q-15
+- **Cards**: MH-12
+- **Evidence**: PRs #215,#219,#220,#223,#224
