@@ -30,7 +30,11 @@
 
 ## Task 4 — Drift-invalidation writer on the run path
 
-<!-- pending -->
+- **Produces**: `persistDriftInvalidation(ctx, stateDir, err, diag) error` in `internal/cli/run.go`, returning `err` unchanged; it writes only for a `*admission.DriftError`.
+- **For dependents (Tasks 5, 7)**: no strict `cli.Main` run reaches it while the gap stays open (Q-15), so the end-to-end drifted variant (`qualification_drifted`) cannot be driven from the binary until Q1 empties `UnresolvedSources`; test it at consult level.
+- **For dependents**: each blocked strict run on a still-drifted record appends another invalidation revision, because drift is judged from the key's pinned digests, which an invalidation does not change. Add a skip for an already-invalidated record if growth matters.
+- **Trap**: `qualify.Open` read-write runs migrations; the writer opens the registry only after a drift block, which implies the database exists.
+
 
 ## Task 5 — Declared guards and strict end-to-end
 
