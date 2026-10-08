@@ -35,7 +35,8 @@
 
 ## Task 6 — Strict billing user documentation
 
-<!-- pending -->
+- **Produces**: `## Billing` in `docs/user-guide.md` and `docs/decisions/0012-strict-subscription-admission.md` (accepted).
+- **For dependents (Q1, Task 7)**: the guide says no live-qualified record exists and every strict run blocks today, and ADR-0012 says strict blocks until a live-qualified record is committed. Update both statements when Q1 and Task 7 land.
 
 ## Task 7 — Maintainer live qualification run
 
