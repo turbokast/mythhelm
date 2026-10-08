@@ -51,6 +51,9 @@ jobs:
           test "$(find dist -maxdepth 1 -name 'mythhelm_*.tar.gz' | wc -l)" -eq 3
           test "$(find dist -maxdepth 1 -name 'mythhelm_*.zip' | wc -l)" -eq 2
           test "$(find dist -maxdepth 1 -name 'mythhelm_*.sbom.json' | wc -l)" -eq 5
+          for sbom in dist/mythhelm_*.sbom.json; do
+            jq -e '.spdxVersion | strings | startswith("SPDX-")' "$sbom" > /dev/null
+          done
           for pair in linux_amd64 linux_arm64 darwin_arm64 windows_amd64 windows_arm64; do
             test "$(find dist -maxdepth 1 -name "mythhelm_*_${pair}.*" ! -name '*.sbom.json' | wc -l)" -eq 1
           done
