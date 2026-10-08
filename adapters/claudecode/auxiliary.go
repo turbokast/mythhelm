@@ -131,6 +131,16 @@ func LiveRecord(key qualify.Key, cfg EffectiveConfig, aux []AuxiliaryRoute) (qua
 	return rec, nil
 }
 
+func checkFunding(cfg EffectiveConfig) error {
+	if cfg.ExtraUsage != "disabled" {
+		return fmt.Errorf("extra usage %q, want disabled", cfg.ExtraUsage)
+	}
+	if cfg.PurchasedCredits != "non-consumable" && cfg.PurchasedCredits != "plan-granted" {
+		return fmt.Errorf("purchased credits %q not established as non-paid", cfg.PurchasedCredits)
+	}
+	return nil
+}
+
 func checkAssessed(cfg EffectiveConfig, aux []AuxiliaryRoute) error {
 	if len(cfg.CredentialPrecedence) == 0 {
 		return errors.New("no credential precedence established")
@@ -138,11 +148,8 @@ func checkAssessed(cfg EffectiveConfig, aux []AuxiliaryRoute) error {
 	if len(cfg.ManagedPolicy.Gaps) > 0 {
 		return fmt.Errorf("managed-policy gaps %v", cfg.ManagedPolicy.Gaps)
 	}
-	if cfg.ExtraUsage != "disabled" {
-		return fmt.Errorf("extra usage %q, want disabled", cfg.ExtraUsage)
-	}
-	if cfg.PurchasedCredits != "non-consumable" && cfg.PurchasedCredits != "plan-granted" {
-		return fmt.Errorf("purchased credits %q not established as non-paid", cfg.PurchasedCredits)
+	if err := checkFunding(cfg); err != nil {
+		return err
 	}
 	have := map[string]bool{}
 	for _, r := range aux {

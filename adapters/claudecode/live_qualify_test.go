@@ -79,6 +79,10 @@ func TestLiveQualifyEntitlement(t *testing.T) {
 	}
 	cfg.ExtraUsage = os.Getenv("MYTHHELM_LIVE_EXTRA_USAGE")
 	cfg.PurchasedCredits = os.Getenv("MYTHHELM_LIVE_PURCHASED_CREDITS")
+	if err := checkFunding(cfg); err != nil {
+		t.Fatalf("MYTHHELM_LIVE_EXTRA_USAGE=%q MYTHHELM_LIVE_PURCHASED_CREDITS=%q: %v",
+			cfg.ExtraUsage, cfg.PurchasedCredits, err)
+	}
 
 	lp, err := a.Prepare(ctx, adapter.PrepareInput{
 		Workdir:   workdir,

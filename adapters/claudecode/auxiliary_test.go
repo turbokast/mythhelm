@@ -433,3 +433,30 @@ func TestScanObservations(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckFundingNamesTheOffendingInput(t *testing.T) {
+	cases := []struct {
+		name, extra, credits, wantErr string
+	}{
+		{"disabled and non-consumable", "disabled", "non-consumable", ""},
+		{"disabled and plan-granted", "disabled", "plan-granted", ""},
+		{"extra usage typo", "disbled", "non-consumable", `extra usage "disbled"`},
+		{"extra usage unset", "", "plan-granted", `extra usage ""`},
+		{"credits typo", "disabled", "non-consumble", `purchased credits "non-consumble"`},
+		{"credits unset", "disabled", "", `purchased credits ""`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := checkFunding(EffectiveConfig{ExtraUsage: c.extra, PurchasedCredits: c.credits})
+			if c.wantErr == "" {
+				if err != nil {
+					t.Fatalf("checkFunding = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), c.wantErr) {
+				t.Fatalf("checkFunding = %v, want error containing %s", err, c.wantErr)
+			}
+		})
+	}
+}
