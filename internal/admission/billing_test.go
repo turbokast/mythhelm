@@ -41,9 +41,15 @@ func blocked(t *testing.T, err error, code string) {
 func TestResolveBillingStrictDefenseInDepth(t *testing.T) {
 	t.Parallel()
 	e := evidence("test-identity", "test-config")
-	live := &qualify.Record{Progress: qualify.ProgressLiveQualified, Entitlement: qualify.Column{Verdict: qualify.Proven}}
-	notLive := &qualify.Record{Progress: qualify.ProgressFixtureTested, Entitlement: qualify.Column{Verdict: qualify.Proven}}
-	unproven := &qualify.Record{Progress: qualify.ProgressLiveQualified, Entitlement: qualify.Column{Verdict: qualify.NotProven}}
+	live := liveRecord(qualify.Key{}, liveEvidence(true), liveStop(true))
+	notLive := live
+	notLive.Progress = qualify.ProgressFixtureTested
+	unproven := live
+	unproven.Entitlement.Verdict = qualify.NotProven
+	expiredEvidence := liveRecord(qualify.Key{}, liveEvidence(false), liveStop(true))
+	expiredStop := liveRecord(qualify.Key{}, liveEvidence(true), liveStop(false))
+	noStop := live
+	noStop.Capabilities = nil
 	for _, tc := range []struct {
 		name string
 		elig admission.Eligibility
@@ -52,8 +58,11 @@ func TestResolveBillingStrictDefenseInDepth(t *testing.T) {
 		{"blocked verdict", admission.Eligibility{Verdict: admission.Blocked, Reason: "no_qualification_record"}},
 		{"unsupported verdict", admission.Eligibility{Verdict: admission.Unsupported}},
 		{"eligible without a record", admission.Eligibility{Verdict: admission.Eligible}},
-		{"eligible on a record that is not live-qualified", admission.Eligibility{Verdict: admission.Eligible, Record: notLive}},
-		{"eligible on an unproven entitlement", admission.Eligibility{Verdict: admission.Eligible, Record: unproven}},
+		{"eligible on a record that is not live-qualified", admission.Eligibility{Verdict: admission.Eligible, Record: &notLive}},
+		{"eligible on an unproven entitlement", admission.Eligibility{Verdict: admission.Eligible, Record: &unproven}},
+		{"eligible after the entitlement evidence expired", admission.Eligibility{Verdict: admission.Eligible, Record: &expiredEvidence}},
+		{"eligible after the stop capability expired", admission.Eligibility{Verdict: admission.Eligible, Record: &expiredStop}},
+		{"eligible without a stop capability", admission.Eligibility{Verdict: admission.Eligible, Record: &noStop}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -61,15 +70,15 @@ func TestResolveBillingStrictDefenseInDepth(t *testing.T) {
 			blocked(t, err, "entitlement_qualification_unavailable")
 		})
 	}
-	if _, err := admission.ResolveBilling(context.Background(), "subscription-only", e, nil, admission.Eligibility{Verdict: admission.Eligible, Record: live}); err != nil {
+	if _, err := admission.ResolveBilling(context.Background(), "subscription-only", e, nil, admission.Eligibility{Verdict: admission.Eligible, Record: &live}); err != nil {
 		t.Fatalf("eligible live-qualified proven record blocked: %v", err)
 	}
 }
 func TestDeclaredLabelsUnchanged(t *testing.T) {
 	t.Parallel()
 	e := evidence("test-identity", "test-config")
-	live := &qualify.Record{Progress: qualify.ProgressLiveQualified, Entitlement: qualify.Column{Verdict: qualify.Proven}}
-	for _, elig := range []admission.Eligibility{{}, {Verdict: admission.Eligible}, {Verdict: admission.Eligible, Record: live}} {
+	live := liveRecord(qualify.Key{}, liveEvidence(true), liveStop(true))
+	for _, elig := range []admission.Eligibility{{}, {Verdict: admission.Eligible}, {Verdict: admission.Eligible, Record: &live}} {
 		p, err := admission.ResolveBilling(context.Background(), "subscription-declared", e, declaration(e), elig)
 		if err != nil {
 			t.Fatal(err)

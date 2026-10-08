@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/turbokast/mythhelm/adapters/claudecode"
 	"github.com/turbokast/mythhelm/internal/adapter"
@@ -28,15 +29,17 @@ type BillingPosture = adapter.BillingPosture
 
 // ResolveBilling never upgrades a user declaration into verified entitlement
 // or overage prevention. Strict subscription-only admits only on an eligible
-// consult of a live-qualified record with a proven entitlement (I15/G05); it
-// ignores any declaration.
+// consult of a live-qualified record whose entitlement evidence and stop
+// capability are still unexpired at this call, since the consult may be older
+// (I15/G05); it ignores any declaration.
 func ResolveBilling(ctx context.Context, mode string, evidence AuthEvidence, decl *Declaration, elig Eligibility) (BillingPosture, error) {
 	if err := ctx.Err(); err != nil {
 		return BillingPosture{}, err
 	}
 	if mode == BillingSubscriptionOnly {
 		rec := elig.Record
-		if elig.Verdict != Eligible || rec == nil || rec.Progress != qualify.ProgressLiveQualified || rec.Entitlement.Verdict != qualify.Proven {
+		now := time.Now()
+		if elig.Verdict != Eligible || rec == nil || rec.Progress != qualify.ProgressLiveQualified || !columnProven(rec.Entitlement, now) || !stopSupported(rec.Capabilities, now) {
 			return BillingPosture{}, strictBillingBlock()
 		}
 		return BillingPosture{Mode: mode, CredentialProvenance: "native-login", EntitlementClass: "included-plan", EntitlementSource: "registry:live-qualified", PaidContinuation: "prevented", Qualified: true, G05: "passed"}, nil
