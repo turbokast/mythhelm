@@ -307,3 +307,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Decision**: MH-10 moved to specced
 - **Rationale**: qualification-registry reached unrefined
 - **Cards**: MH-10
+
+### D-62 — 2026-10-08: File S-10..S-14 account-switcher signals; rescore MH-17 and MH-16 at triage
+- **Type**: signal-triage
+- **Decision**: File all five themes as signal entries S-10 through S-14, and hand the accepted rescore suggestions (MH-17 scope evidence from S-10, S-13, S-14; MH-16 feasibility evidence from S-12; S-11 as MH-17 spec constraints) to /backlog triage. S-5..S-9 were reserved by an abandoned stage that failed validation and were never filed.
+- **Rationale**: Maintainer confirmed all five themes 2026-10-08 after competitive research across 200+ distinct sources. S-4 already covers the core need via MH-17; the new entries extend it with a ranked landscape, failure constraints, usage mechanisms, multi-CLI precedent, and the undocumented Design-pinning gap.
+- **Cards**: MH-17,MH-16,MH-5
+- **Evidence**: S-10,S-11,S-12,S-13,S-14
