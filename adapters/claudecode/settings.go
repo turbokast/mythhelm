@@ -25,11 +25,12 @@ const maxSettingsSources = 256
 // Manifest retains configuration digests and execution metadata, never native
 // commands, endpoint URLs, env values, account data or credential values.
 type Manifest struct {
-	Digests       map[string]string `json:"digests"`
-	Digest        string            `json:"digest"`
-	Hooks         int               `json:"hooks"`
-	MCPServers    []string          `json:"mcp_servers"`
-	RequiresTrust bool              `json:"requires_trust"`
+	Digests        map[string]string `json:"digests"`
+	Digest         string            `json:"digest"`
+	Hooks          int               `json:"hooks"`
+	MCPServers     []string          `json:"mcp_servers"`
+	EnabledPlugins []string          `json:"enabled_plugins"`
+	RequiresTrust  bool              `json:"requires_trust"`
 }
 
 // claudeJSON deliberately has no session or account fields (AC-4.6).
@@ -104,7 +105,7 @@ func configRoots(home string, env []string) (configDir, claudeJSONPath, managed 
 }
 
 func inventorySettings(home, workspace, configDir, claudeJSONPath, managed string, blobs map[string][]byte) (Manifest, error) {
-	manifest := Manifest{Digests: map[string]string{}, MCPServers: []string{}}
+	manifest := Manifest{Digests: map[string]string{}, MCPServers: []string{}, EnabledPlugins: []string{}}
 	if !filepath.IsAbs(home) || !filepath.IsAbs(workspace) || !filepath.IsAbs(configDir) {
 		return Manifest{}, settingsError("config_root")
 	}
@@ -214,9 +215,12 @@ func inventorySettings(home, workspace, configDir, claudeJSONPath, managed strin
 			if err = manifest.addMCP(src.name, cfg.ManagedMCPServers); err != nil {
 				return Manifest{}, err
 			}
-			for _, enabled := range cfg.EnabledPlugins {
+			for name, enabled := range cfg.EnabledPlugins {
 				if enabled {
 					manifest.RequiresTrust = true
+					if !slices.Contains(manifest.EnabledPlugins, name) {
+						manifest.EnabledPlugins = append(manifest.EnabledPlugins, name)
+					}
 				}
 			}
 		}
@@ -225,6 +229,7 @@ func inventorySettings(home, workspace, configDir, claudeJSONPath, managed strin
 	}
 	manifest.RequiresTrust = manifest.RequiresTrust || manifest.Hooks > 0 || len(manifest.MCPServers) > 0
 	slices.Sort(manifest.MCPServers)
+	slices.Sort(manifest.EnabledPlugins)
 	encoded, err := json.Marshal(manifest.Digests)
 	if err != nil {
 		return Manifest{}, settingsError("manifest")
