@@ -47,6 +47,33 @@ prerequisite report. It writes nothing and prints no credential values:
 go run ./cmd/mythhelm doctor
 ```
 
+## Doctor
+
+`mythhelm doctor` is a read-only prerequisite report: it writes nothing,
+creates no state and prints no credential values. Its last section,
+`qualification:`, lists one line per harness record in the qualification
+registry:
+
+```text
+qualification:
+claude-code × native-cli-structured (print, stream-json): blocked (fidelity unknown, entitlement not-proven, lifecycle unknown) [evidence 1 revs, latest none; drift clean]
+```
+
+Each line reads `<harness> × <surface>: <progress> (fidelity <v>,
+entitlement <v>, lifecycle <v>) [evidence <n> revs, latest <ev-id>; drift
+<state>]`: the qualification progress (`planned`, `blocked`, `unsupported`
+and the other honest labels), the three independent column verdicts
+(`proven`, `not-proven` or `unknown`), how many evidence revisions the
+record holds, the latest evidence id, and the drift state (`clean`, or the
+reason the pinned binary or configuration no longer matches).
+
+When the state directory cannot be read the section says so instead of
+guessing — `qualification: unavailable (<reason>)` — and an existing but
+still empty registry reads `qualification: (no records)`. With
+`--format jsonl` the same records appear under `qualification.records`,
+each with its progress, per-column verdicts and evidence ids, evidence
+revision count, drift triggers and next test.
+
 ## Limitations
 
 The [limitations register]({{ site.baseurl }}/limitations.html) lists what is
