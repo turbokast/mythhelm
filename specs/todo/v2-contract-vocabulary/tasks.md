@@ -1,0 +1,190 @@
+## V2 Contract Vocabulary — Tasks
+
+### Dependencies
+
+- Epic: `specs/*/v2-contracts-supervisor/plan.md` (this spec is stream 1; no prerequisite specs). Consumed by `supervisor-service` (record types, error codes), `supervisor-migration` (table/contract shapes, `Envelope`, OQ-9 decision), `supervised-stop-recover` (lifecycle tables, error codes); MH-22 adopts `TaskRevision` verbatim. No spec starts implementation before this one ships its contracts.
+- Order is contract-first: Task 1 ships the kernel every later task builds against. Runnable sets: {2, 3, 4, 5, 6, 7} after 1 (disjoint Files, may run in parallel); {8} after {2, 3, 4, 5, 6, 7}. No two tasks share a file.
+- Coverage: this spec has no end-user surface (no CLI/TUI/migration); developer-visible strings are owned by Task 5 (`ErrIllegalTransition` wording) and Task 6 (`ControlError.Error` wording).
+- **Gates for every task.** `gofmt -w` on touched Go files first, then from the tree root `gofmt -l .` (must print nothing), `go vet ./...`, `go test -race ./...`, `go mod tidy -diff` (must print nothing), and `scripts/ci/check-public-hygiene.sh`, run via `scripts/harness/gate.sh` per `.claude/skills/quality-gates/SKILL.md`. A task is not complete because files exist or an agent reported success; cite the runner output. No OS-specific files, so no cross-`GOOS` vet.
+- **Completion convention.** Append ` ✅ COMPLETED` to the heading, keep every original field, and add `Status` (`✅ Completed — …; PR #<n>`), `Implementation` (at most 3 lines, plus the commit SHA), `Spec deviations` (`None`, or each deviation with its reason) and `Files modified`. Every task appends a scratchpad note under Discoveries.
+- **Commits.** Every commit is signed off (`git commit -s`, DCO). No ADR lands with these tasks (design D11: no billing/persistence/process-ownership change; the contract-freeze ADR belongs to `supervisor-service`).
+
+---
+
+## Implementation Tasks
+
+### Task 1 — Package kernel: scales, claims, strict decode, digest, limits
+
+- **Domain/agent**: go-implementer
+- **Budget**: standard
+- **Depends on**: None
+- **Change**: Create `internal/v2contract` with `SchemaVersion`, the NFR-1 limit constants, the §4.2 vocabularies, the generic strict `Decode`/`Digest` codec and shared shapes, so every later task builds on one exact kernel.
+- **Files**:
+  - `internal/v2contract/v2contract.go` (package doc, `SchemaVersion`, limit constants, `CheckFrameLimits`, `GitObject`, `Budget`, `RevisionRef`)
+  - `internal/v2contract/scales.go` (`Capability`, `Progress`, `Eligibility`, `ScaleValue`, `Claim[T]`)
+  - `internal/v2contract/codec.go` (`Validator`, `Decode[T]`, `Digest`)
+  - `internal/v2contract/scales_test.go`
+  - `internal/v2contract/codec_test.go` (also holds the `loadGolden` helper later tasks' tests reuse)
+- **Produces**: `v2contract.SchemaVersion == 2`; `MaxFrameBytes == 1<<20`, `MaxNestingDepth == 64`, `MaxArtifactRefs == 128`; `v2contract.CheckFrameLimits(encodedLen, depth, refs int) error`; `v2contract.GitObject{Format, Value}`; `v2contract.Budget{Name, Limit, Unit}`; `v2contract.RevisionRef{Kind, ID, Revision, Digest}`; `v2contract.Capability` (`supported|unsupported|unknown`), `v2contract.Progress` (7 §4.2 words), `v2contract.Eligibility` (`eligible|blocked|unsupported`), each with `Valid() bool`; `v2contract.Claim[T ScaleValue]{Value, Evidence, Scope, ExpiresAt}` with `Validate() error`; `v2contract.Validator` (`Validate() error`); `v2contract.Decode[T Validator](data []byte) (T, error)` (unknown fields rejected, then `Validate`); `v2contract.Digest(v any) string` (`sha256:<hex>` over canonical JSON).
+- **Acceptance**:
+  - `TestScalesMatchMasterWords`: the three scales equal the v2 §4.2 words exactly, and equal the `qualify` package's scale words (D3 pin); renaming one word fails the test.
+  - `TestClaimRequiresEvidenceScopeExpiry`: a `Claim[Capability]` with empty evidence or scope fails `Validate` naming the field; an out-of-scale value fails naming the value.
+  - `TestDecodeRejectsUnknownField`: decoding into a kernel struct with an unknown key fails naming the key; truncated JSON fails naming the offset.
+  - `TestDigestGolden`: `Digest` of a fixed struct equals its golden `sha256:<hex>` (oracle-checked with `sha256sum` over the exact bytes); flipping one byte changes the digest.
+  - `TestFrameLimitsExact`: the three constants equal `1<<20`, `64`, `128`; `CheckFrameLimits` accepts the boundary values and rejects each over-limit dimension naming it.
+- **Test plan**: Table tests over the scales; golden digest via `sha256sum`; boundary table for limits.
+- **Invariants touched**: I09 (v2 §2: unknown stays distinct from zero/empty); I20 (v2 §2: digests content-addressed); I14 (v2 §2: honest-label scales).
+
+### Task 2 — Execution records: Run, TaskRevision, Attempt
+
+- **Domain/agent**: go-implementer
+- **Budget**: standard
+- **Depends on**: Task 1
+- **Change**: Add the execution records with strict validation and golden fixtures, so the ledger vocabulary (and MH-22's verbatim `TaskRevision` adoption) has its core types.
+- **Files**:
+  - `internal/v2contract/records_execution.go`
+  - `internal/v2contract/records_execution_test.go`
+  - `internal/v2contract/testdata/records/run.golden.json`
+  - `internal/v2contract/testdata/records/task_revision.golden.json`
+  - `internal/v2contract/testdata/records/attempt.golden.json`
+- **Produces**: `v2contract.Run`, `v2contract.TaskRevision`, `v2contract.Attempt` (design §3, exact fields) with value-receiver `Validate() error` (schema_version == 2, IDs non-empty, `TaskRevision.Revision >= 1`).
+- **Acceptance**:
+  - `TestExecutionGoldensRoundTrip`: the three goldens decode, re-encode byte-identical, and carry `schema_version: 2`; a golden with `schema_version: 1` fails to decode.
+  - `TestTaskRevisionRejectsZeroRevision`: `Revision: 0` fails `Validate` naming `revision`.
+  - `TestRevisionDigestsDiffer`: two revisions of one task have different `Digest` values; identical bytes have equal digests (AC-1.2 structural pin).
+  - `TestRecordTagsAreSnakeCase`: marshaling each record contains `"run_id"`/`"task_id"`/`"attempt_id"` and no `"RunID"`/`"TaskID"`/`"AttemptID"`.
+  - `TestMissingIDsRejected`: empty `RunID`/`TaskID`/`AttemptID` each fail `Validate` naming the field, never defaulted.
+- **Test plan**: Golden round-trips via the Task 1 `loadGolden` helper; table tests for validation; synthetic IDs via `ids.New`.
+- **Invariants touched**: I20 (v2 §2: revisions required, digests differ); I09 (v2 §2: missing IDs rejected, never zero); I23 (v2 §5.1: records shaped for the single canonical ledger).
+
+### Task 3 — Decision and evidence records
+
+- **Domain/agent**: go-implementer
+- **Budget**: complex (7 files; one mechanical pattern across 5 record shapes)
+- **Depends on**: Task 1
+- **Change**: Add `RoutingDecision`, `DesignDecision`, `Artifact`, `Observation` and `Verification` with strict validation and golden fixtures.
+- **Files**:
+  - `internal/v2contract/records_evidence.go`
+  - `internal/v2contract/records_evidence_test.go`
+  - `internal/v2contract/testdata/records/routing_decision.golden.json`
+  - `internal/v2contract/testdata/records/design_decision.golden.json`
+  - `internal/v2contract/testdata/records/artifact.golden.json`
+  - `internal/v2contract/testdata/records/observation.golden.json`
+  - `internal/v2contract/testdata/records/verification.golden.json`
+- **Produces**: `v2contract.RoutingDecision`, `v2contract.DesignDecision` (+ `DesignDisposition` `proposed|accepted|superseded`), `v2contract.Artifact`, `v2contract.Observation` (+ `ObservationKind` `controller|tool|native`), `v2contract.Verification` (design §3, exact fields) with value-receiver `Validate() error`.
+- **Acceptance**:
+  - `TestEvidenceGoldensRoundTrip`: the five goldens decode, re-encode byte-identical, and carry `schema_version: 2`.
+  - `TestOutOfScaleEnumsRejected`: a `DesignDecision` with disposition `"approved"` and an `Observation` with kind `"agent"` each fail naming the field, never coerced.
+  - `TestRoutingDecisionPreservesUncertainty`: a golden with scores absent and `uncertainty` set round-trips with uncertainty intact and no zero scores invented (I09).
+  - `TestArtifactRequiresContentIdentity`: empty `SHA256` fails naming the field; `ValidUntil` absent omits from JSON (never zero time).
+- **Test plan**: Golden round-trips via `loadGolden`; enum table tests; absence-vs-zero assertions on optional fields.
+- **Invariants touched**: I09 (v2 §2: uncertainty preserved, absence never zero); I20 (v2 §2: `DesignDecision` revisions ordered via `Supersedes`); I07 lineage (v2 §2: `Verification` is the sole attestation shape).
+
+### Task 4 — Coordination records
+
+- **Domain/agent**: go-implementer
+- **Budget**: complex (8 files; one mechanical pattern across 6 record shapes)
+- **Depends on**: Task 1
+- **Change**: Add `ContextManifest`/`Handoff`, `Message`, `Grant`/`EffectIntent`, `Reservation`, `PolicyVersion` and `Experiment` with strict validation and golden fixtures.
+- **Files**:
+  - `internal/v2contract/records_coordination.go`
+  - `internal/v2contract/records_coordination_test.go`
+  - `internal/v2contract/testdata/records/context_manifest.golden.json`
+  - `internal/v2contract/testdata/records/message.golden.json`
+  - `internal/v2contract/testdata/records/grant.golden.json`
+  - `internal/v2contract/testdata/records/reservation.golden.json` (uses `"quantity": "unknown"`)
+  - `internal/v2contract/testdata/records/policy_version.golden.json`
+  - `internal/v2contract/testdata/records/experiment.golden.json`
+- **Produces**: `v2contract.ContextManifest` (+ `type Handoff = ContextManifest`), `v2contract.Message` (+ open `DeliveryDisposition`), `v2contract.Grant` (+ `type EffectIntent = Grant`; `Use` `standing|one_use`), `v2contract.Reservation` (open `Status`), `v2contract.PolicyVersion`, `v2contract.Experiment` (design §3, exact fields) with value-receiver `Validate() error`.
+- **Acceptance**:
+  - `TestCoordinationGoldensRoundTrip`: the six goldens decode, re-encode byte-identical, and carry `schema_version: 2`.
+  - `TestGrantUseEnumClosed`: `Use: "permanent"` fails naming `use`; `standing` and `one_use` pass.
+  - `TestAliasesDecodeIdentically`: the manifest golden decodes as both `ContextManifest` and `Handoff`, the grant golden as both `Grant` and `EffectIntent`, with equal digests.
+  - `TestReservationUnknownQuantity`: the reservation golden's `"unknown"` quantity decodes and round-trips; empty quantity fails naming the field.
+  - `TestOpenStringsValidatedNonEmpty`: empty `DeliveryDisposition`, `Reservation.Status` and `Experiment.Disposition` each fail naming the field (D6: open but never empty).
+- **Test plan**: Golden round-trips via `loadGolden`; alias digest equality; enum/open-string table tests.
+- **Invariants touched**: I09 (v2 §2: unknown stated explicitly, never empty); I20 (v2 §2: `PolicyVersion` immutability fields); I03 (v2 §2: `Grant` is the authority shape; strict decode).
+
+### Task 5 — Machine-checkable lifecycles
+
+- **Domain/agent**: go-implementer
+- **Budget**: standard
+- **Depends on**: Task 1
+- **Change**: Add the v2 §6.1–§6.2 state types with exact transition tables, the terminal-entry guard and the reconcile-identity guard, so illegal transitions fail in code with names.
+- **Files**:
+  - `internal/v2contract/lifecycle.go`
+  - `internal/v2contract/lifecycle_test.go`
+- **Produces**: `v2contract.RunState` (+ 15 constants), `v2contract.TaskState` (+ 10), `v2contract.AttemptState` (+ 12); `v2contract.ErrIllegalTransition`; `v2contract.CheckRunTransition(from, to, saved RunState) error`; `v2contract.CheckTaskTransition(from, to, saved TaskState) error`; `v2contract.CheckAttemptTransition(from, to AttemptState) error`; `v2contract.IsTerminalRunState(s RunState) bool`; `v2contract.CheckTerminalEntry(to RunState, ownershipResolved bool) error`; `v2contract.CheckReconcileIdentity(oldLaunchID, newLaunchID string) error`.
+- **Acceptance**:
+  - `TestRunTableMatchesSpec`: every §6.1 row's allowed pairs pass (including `planning`/`integrating`, absent from v1); `created→verifying`, `completed→executing`, terminal exits and unknown states fail with the from→to pair named.
+  - `TestTaskTableMatchesSpec`: every §6.2 task row's allowed pairs pass; `accepted→ready`, `pending→accepted` and unknown states fail named.
+  - `TestAttemptTableMatchesSpec`: every §6.2 attempt row's allowed pairs pass (including `reserved` entry and `waiting_native↔waiting_approval` movement); `running→reserved`, terminal exits and unknown states fail named.
+  - `TestBlockedResumeRequiresSaved`: `blocked→executing` with `saved=executing` passes; with `saved=verifying` fails; `blocked→stopping` needs no saved phase (D8).
+  - `TestTerminalEntryRefusesUnresolved`: `completed`/`cancelled`/`failed` with `ownershipResolved=false` fail; with `true` pass; nonterminal targets ignore the flag (AC-2.2).
+  - `TestReconcileRequiresSameLaunch`: mismatched launch IDs fail; equal IDs pass (AC-2.3).
+- **Test plan**: Tables transcribed from design §4.1 (each row: allowed set + sampled forbidden pairs); guard table tests.
+- **Invariants touched**: I06 (v2 §2: terminal entry fenced on resolved ownership); I12 (v2 §2: same-launch reconcile); G04 (v2 §18.3: lifecycle gate tables).
+
+### Task 6 — Error catalogue and adapter mapping
+
+- **Domain/agent**: go-implementer
+- **Budget**: standard
+- **Depends on**: Task 1
+- **Change**: Add the 24-code catalogue with default dispositions, the rank-ordered widening check, `ControlError` and the namespaced adapter mapping.
+- **Files**:
+  - `internal/v2contract/errors.go`
+  - `internal/v2contract/errors_test.go`
+  - `internal/v2contract/testdata/error.golden.json`
+- **Produces**: `v2contract.Code` (+ 24 constants, design §5) with `Valid() bool` and `DefaultDisposition() Disposition`; `v2contract.Disposition` (+ 5 constants); `v2contract.ControlError` (design §5, exact fields) with `Error() string` (`"v2contract: <code>: <next_action>"`) and pointer-receiver `Validate() error` (code in catalogue; disposition rank ≤ default; detail keys namespaced); `v2contract.MapAdapterFailure(code Code, owner, operationID, namespace string, cause error) *ControlError`.
+- **Acceptance**:
+  - `TestCatalogueHas24Codes`: the constant set equals the §4.5 list exactly; a 25th code or a renamed code fails the test.
+  - `TestDefaultDispositions`: all 24 code→disposition mappings equal design §5's table.
+  - `TestValidateRejectsWidenedDisposition`: `entitlement_ineligible` with `bounded_transient` fails; the default passes; a lower rank (e.g. `never` for `tool_failed`) passes (D9).
+  - `TestValidateRejectsUnnamespacedDetail`: a `Detail` key without `/` fails naming the key; `adapter/claudecode/cause` passes.
+  - `TestMapAdapterFailure`: the mapped error carries the given code, its default disposition, `Detail` key `<namespace>/cause`, and `Error()` in the exact shape; code (not message) is what a transition switch matches.
+  - `TestErrorGoldenRoundTrip`: the golden decodes via `Decode[*ControlError]`, re-encodes byte-identical, and omits absent `revision`.
+- **Test plan**: Set-equality test for the catalogue; full 24-row disposition table; golden round-trip.
+- **Invariants touched**: I03 (v2 §2: adapter detail grants no authority; dispositions never widen); G04 (v2 §18.3: code-driven transitions).
+
+### Task 7 — Event v2 envelope and sequence validators
+
+- **Domain/agent**: go-implementer
+- **Budget**: standard
+- **Depends on**: Task 1
+- **Change**: Add the v2 `Envelope` mirroring `journal.Event` plus pure sequence/duplicate/generation validators in `Append`'s check order, deciding OQ-9's contract side.
+- **Files**:
+  - `internal/v2contract/envelope.go`
+  - `internal/v2contract/envelope_test.go`
+  - `internal/v2contract/testdata/envelope.golden.json`
+- **Produces**: `v2contract.Envelope` (design §6, exact fields; `Payload` `toml:"-"`) with value-receiver `Validate() error` (schema_version == 2; sequences/generation ≥ 0; payload a JSON object); `v2contract.ErrDuplicateEvent`, `v2contract.ErrSequenceGap`, `v2contract.ErrStaleGeneration`; `v2contract.CheckSequence(last, got int64) error`; `v2contract.CheckDuplicate(seen bool) error`; `v2contract.CheckGeneration(current, got int64) error`.
+- **Acceptance**:
+  - `TestEnvelopeGoldenRoundTrip`: the §4.3-shaped golden decodes, re-encodes byte-identical; `schema_version: 1` fails; non-object payload fails.
+  - `TestEnvelopeMirrorsJournalEvent`: the JSON tag sets of `Envelope` and `journal.Event` are equal field-for-field (spec-3 `Append` extension stays mechanical); any drift fails.
+  - `TestCheckSequence`: `last+1` passes; equal, regressed, or skipped sequences fail with `ErrSequenceGap` (a re-sent sequence with a new event_id is a gap, not a duplicate — matching `Append`).
+  - `TestCheckDuplicateAndGeneration`: `seen=true` yields `ErrDuplicateEvent`; older generation yields `ErrStaleGeneration` (quarantine at most, AC-4.2); current/newer generations pass.
+  - `TestInt64SequencePrecision`: `9223372036854775807` sequences survive a JSON round-trip exactly (AC-9.1 sequence round-trips).
+- **Test plan**: Golden round-trip; reflection tag-set comparison against `journal.Event` (test-only import); validator table tests incl. boundary int64.
+- **Invariants touched**: I23 (v2 §5.1: envelope shaped for the single canonical ledger); I12 (v2 §2: stale generations quarantined, never accepted).
+
+### Task 8 — Support matrix, hermeticity, and invalid-case evidence
+
+- **Domain/agent**: go-implementer
+- **Budget**: standard
+- **Depends on**: Task 2, Task 3, Task 4, Task 5, Task 6, Task 7
+- **Change**: Publish the support matrix with a consistency test, pin contract hermeticity, and cover malformed/unknown keys, null measurements and TOML tags with fixtures.
+- **Files**:
+  - `internal/v2contract/SUPPORT.md`
+  - `internal/v2contract/contract_test.go`
+  - `internal/v2contract/testdata/invalid/unknown_authority_key.json`
+  - `internal/v2contract/testdata/invalid/null_measurement.json`
+  - `internal/v2contract/testdata/policy_version.golden.toml`
+- **Produces**: `SUPPORT.md` (one row per deliverable: `fixture-tested` with test names, or `blocked`; zero `live-qualified` claims).
+- **Acceptance**:
+  - `TestSupportMatrixMatchesEvidence`: the matrix lists exactly the 14 records, 3 lifecycle tables, error catalogue, envelope and frame limits (adding a deliverable without a matrix row fails) and contains zero `live-qualified` claims (AC-9.2).
+  - `TestContractHasNoNetworkDependency`: `go list -deps ./internal/v2contract` contains no `net` or `modernc.org/sqlite` line; importing either in non-test code fails the test (NFR-4).
+  - `TestUnknownAuthorityKeyRejected`: the invalid `Grant` fails `Decode` naming the unknown key (AC-9.1).
+  - `TestNullMeasurementsRejected`: the invalid `Reservation`/`Artifact` fail naming the field; null is never read as `0` or `""` (AC-9.1; I09).
+  - `TestTOMLTagsRoundTrip`: the TOML golden decodes via `BurntSushi/toml` with unknown keys rejected and re-encodes with identical keys (AC-1.1, AC-9.1).
+  - `TestFixturesCarryNoSecrets`: every golden's decoded string values contain no `sk-`/`secret`/`token`/`apiKey` hit (values walked, not keys; NFR-4).
+- **Test plan**: Matrix parsed from `SUPPORT.md` and compared to the deliverable list; `go list` subprocess test; invalid-fixture table tests; TOML round-trip.
+- **Invariants touched**: I14 (v2 §2: versioned evidence, honest support states); I13 (v2 §2: no network service, no credentials); I09 (v2 §2: nulls rejected, never zero).
