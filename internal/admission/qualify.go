@@ -38,7 +38,21 @@ const (
 	reasonAmbiguousMatch = "ambiguous_qualification_match"
 	reasonStopUnproven   = "stop_at_exhaustion_unproven"
 	reasonUnsupported    = "qualification_unsupported"
+	reasonDrifted        = "qualification_drifted"
 )
+
+// DriftError reports a drift block with the data needed to persist the
+// invalidation: the matched record's key hash, which the caller cannot
+// rebuild from the decision. It unwraps to the *BlockedError, so exit
+// mapping is unchanged.
+type DriftError struct {
+	Blocked *BlockedError
+	KeyHash string
+	Reason  string
+}
+
+func (e *DriftError) Error() string { return e.Blocked.Error() + ": drift " + e.Reason }
+func (e *DriftError) Unwrap() error { return e.Blocked }
 
 // stopAtExhaustion is the AC-3.3 capability: exhaustion reliably waits or
 // stops rather than charges.
@@ -66,7 +80,9 @@ var knownHarnesses = map[string]bool{
 // blocks, and a found record admits only when live-qualified with a proven
 // entitlement (supported by unexpired evidence) and a supported
 // stop-at-exhaustion marker; unknown quota alone never blocks (AC-3.3).
-// Drifted records block with the drift reason. For subscription-declared and
+// A drifted record blocks strict with code qualification_drifted: the
+// eligibility is Blocked and the error is a *DriftError naming the field and
+// the matched record's key hash. For subscription-declared and
 // local-scripted, missing and non-live records admit with the record attached
 // when one exists; only an unsupported surface refuses under every mode.
 func ResolveQualification(ctx context.Context, reg *qualify.Registry, probe adapter.Probe, manifest adapter.ConfigManifest, evidence claudecode.AuthEvidence, billing string, profile string) (Eligibility, error) {
@@ -104,7 +120,11 @@ func ResolveQualification(ctx context.Context, reg *qualify.Registry, probe adap
 	}
 	if drifted {
 		if strict {
-			return Eligibility{Verdict: Blocked, Reason: reason, Record: &rec}, nil
+			blocked := &BlockedError{Code: reasonDrifted,
+				Field:  observed.Harness + " × " + observed.Surface,
+				Action: "run 'mythhelm doctor' to inspect the qualification records"}
+			return Eligibility{Verdict: Blocked, Reason: reasonDrifted, Record: &rec},
+				&DriftError{Blocked: blocked, KeyHash: qualify.KeyHash(rec.Key), Reason: reason}
 		}
 		return Eligibility{Verdict: Eligible, Record: &rec}, nil
 	}

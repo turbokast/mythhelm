@@ -19,7 +19,11 @@
 
 ## Task 3 — Strict admission flip with closed matching
 
-<!-- pending -->
+- **Produces**: `admission.DriftError{Blocked, KeyHash, Reason}` with `Unwrap`; `(*qualify.Registry).InvalidateByHash`; `ResolveBilling(ctx, mode, evidence, decl, elig)`; `Consult` exact on AuthCategory, ProviderEndpoint, WorkspaceClass, EffortSettings, ModelSnapshot.
+- **For dependents (Task 4)**: strict drift is returned by `ResolveQualification` itself as `(Eligibility{Blocked, "qualification_drifted"}, *DriftError)`; `Decide` passes it up, so use `errors.As` for `*DriftError` in `run.go`.
+- **For dependents (Tasks 5, 7)**: the gap gate in `decideClaudeCode` runs only with a non-nil registry; a state dir that exists without a database is a present, empty registry and gap-blocks pre-Q1. Use a nonexistent dir for the missing-registry case.
+- **For dependents (Task 5)**: a strict run with `--declare-entitlement` still sets `Decision.Declaration`; unreachable pre-Q1, so decide whether strict should skip it.
+- **Q1 rewrites**: `TestStrictGapBlocksEndToEnd` and `TestDeclaredIgnoresGaps` skip once the gap list is empty; Q1's PR replaces them with the post-Q1 admit proofs.
 
 ## Task 4 — Drift-invalidation writer on the run path
 
