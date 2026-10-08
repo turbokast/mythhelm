@@ -6,7 +6,7 @@ Every automated check, bot and housekeeping job in this repository, what it does
 
 - **Nothing requires a paid service.** Every automation here runs on GitHub's free features for public repositories, open-source tools inside GitHub Actions, or a SaaS free plan for open source. If an integration stops being free, it is removed, not paid for.
 - **Third-party SaaS stays advisory.** AI reviewers and other hosted services may comment, but they are never a required status check and never approve or block a merge on their own. Required checks run in GitHub Actions from pinned, auditable code.
-- **Fork pull requests get no secrets.** Workflows that run PR code use `pull_request` with a read-only token. `pull_request_target` is used only by jobs that never check out or execute PR code (labelling, greeting). Publishing credentials will live only in tag-triggered, environment-protected release jobs.
+- **Fork pull requests get no secrets.** Workflows that run PR code use `pull_request` with a read-only token. `pull_request_target` is used only by jobs that never check out or execute PR code (labelling, greeting). Publishing credentials live only in tag-triggered, environment-protected release jobs.
 - **Least privilege, pinned.** Top-level `permissions` is read-only or empty; each job asks for what it needs with a comment saying why. Every action is pinned to a full commit SHA with a `# vX.Y.Z` comment, and [zizmor](https://docs.zizmor.sh/) audits the workflows on every change.
 - **Merge-queue ready.** Every workflow that produces a required check also triggers on `merge_group`. PR-only checks skip in the queue, and GitHub counts a skipped required check as passing.
 
@@ -40,6 +40,10 @@ Every automated check, bot and housekeeping job in this repository, what it does
 | Stale | Marks issues stale after 60 days and closes 14 days later; PRs after 30 and 14. Exempt: `security`, `good first issue`, `help wanted`, `decision`, `needs-triage`. | weekly, manual | `.github/workflows/stale.yml` | GitHub-native |
 | Lock threads | Locks closed issues and PRs after 90 days of inactivity. | weekly, manual | `.github/workflows/lock.yml` | OSS-in-Actions |
 | Welcome | Greets first-time issue and PR authors, pointing to CONTRIBUTING.md and the DCO. | issue opened, PR opened (`pull_request_target`, no checkout) | `.github/workflows/welcome.yml` | GitHub-native |
+| GoReleaser (OSS) | Builds the five-pair archive matrix (darwin/amd64 excluded) with `checksums.txt` and a per-archive SPDX SBOM. Pinned CLI and action; syft installed at a pin for the SBOM. The `test/*` run is a snapshot that publishes nothing. | tag `v*` (publishes, `release` environment); tag `test/*` (dry run) | `.goreleaser.yml`, `.github/workflows/release.yml` | OSS-in-Actions |
+| `actions/attest-build-provenance` | SLSA build-provenance attestations over `checksums.txt` and the release archives, verified with `gh attestation verify`. | tag `v*` | `.github/workflows/release.yml` | GitHub-native |
+| cosign keyless | Signs `checksums.txt` into a `.sigstore.json` bundle uploaded to the release, via GitHub OIDC; no stored keys. | tag `v*` | `.github/workflows/release.yml` | OSS-in-Actions |
+| go-licenses notices | `go-licenses save ./cmd/mythhelm` generates the third-party licence notices shipped in every release archive. | tag `v*` | `.github/workflows/release.yml` | OSS-in-Actions |
 | Release drafter | Keeps a draft release up to date, grouped by PR-title type and labels. Version bump: `feat` or `enhancement` = minor, a `!` title or `breaking-change` label = major, otherwise patch; `semver:major`/`semver:minor` labels override. `skip-changelog` excludes a PR. A maintainer publishes. | push to `main` only | `.github/workflows/release-drafter.yml`, `.github/release-drafter.yml` | OSS-in-Actions |
 | CodeRabbit | AI review with summary, `assertive` profile, path-specific instructions (supply chain, spec invariants I01-I19, harness), plus golangci-lint, gitleaks, actionlint, shellcheck, markdownlint and yamllint. Never requests changes. Needs the maintainer to install the app. | PR | `.coderabbit.yaml` | Free-plan SaaS (advisory) |
 | Sourcery | AI review. It has no repository config file for GitHub review; settings live in the Sourcery dashboard (see below). Needs the maintainer to install the app. | PR | Sourcery dashboard | Free-plan SaaS (advisory) |
@@ -66,11 +70,7 @@ Each deferred item has a trigger that activates it. Add it in the PR that meets 
 | Automation | What it will do | Activation trigger | Tier |
 |---|---|---|---|
 | ClusterFuzzLite | Continuous Go fuzzing of parsers on PRs and a schedule. | First parser or protocol code | OSS-in-Actions |
-| GoReleaser (OSS) | Cross-platform archives, checksums and SBOM. | First release | OSS-in-Actions |
-| `actions/attest-build-provenance` | SLSA build-provenance attestations for release artifacts. | First release | GitHub-native |
-| cosign keyless | Sigstore signatures for checksums and archives via GitHub OIDC; no stored keys. | First release | OSS-in-Actions |
 | Homebrew, Scoop, winget, AUR | Package-manager publishing. Tap and repository tokens live only in a tag-triggered job bound to a protected `release` environment; never reachable from PRs. | First release | OSS-in-Actions |
-| go-licenses notices | Generates the third-party licence notices shipped in release archives (`go-licenses save`/`report`). | First release | OSS-in-Actions |
 | macOS x64 runner | Adds an Intel macOS leg to the Go matrix; `macos-latest` covers arm64 today. | First release | GitHub-native |
 | benchstat benchmarks | Benchmarks on PRs compared with `main` using benchstat. | First performance-sensitive code | OSS-in-Actions |
 | harden-runner | Egress auditing, then blocking, for workflow runners. | Next PR, once `ci.yml` settles | OSS-in-Actions |

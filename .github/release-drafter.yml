@@ -72,3 +72,7 @@ template: |
   ## Contributors
 
   $CONTRIBUTORS
+
+  ## Known limitations
+
+  See [docs/limitations.md](https://github.com/turbokast/mythhelm/blob/main/docs/limitations.md) for what this release does not do yet.
