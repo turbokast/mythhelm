@@ -314,3 +314,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: Maintainer confirmed all five themes 2026-10-08 after competitive research across 200+ distinct sources. S-4 already covers the core need via MH-17; the new entries extend it with a ranked landscape, failure constraints, usage mechanisms, multi-CLI precedent, and the undocumented Design-pinning gap.
 - **Cards**: MH-17,MH-16,MH-5
 - **Evidence**: S-10,S-11,S-12,S-13,S-14
+
+### D-64 — 2026-10-08: Cloud-agent provider signals triaged (8 signals)
+- **Type**: signal-triage
+- **Decision**: Record 8 cloud-agent support signals; 4 new-card ideas to /triage, 3 scope questions open, MH-16 rescore evidence noted
+- **Rationale**: Six-provider workflow research plus validator-satisfying GitHub anchors; maintainer approved filing all 8
+- **Cards**: MH-12,MH-15,MH-16,MH-4,MH-5,MH-21,MH-29,MH-10
+- **Evidence**: https://github.com/openai/codex/issues/24777,https://github.com/anthropics/claude-code/issues/56687
