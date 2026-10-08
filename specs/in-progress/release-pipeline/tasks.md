@@ -89,7 +89,7 @@
 - **Test plan**: Static checks + `actionlint` + the PR's CI. The workflow itself runs in Task 6 (operator pushes the first `test/*` tag); this task only lands the file.
 - **Invariants touched**: I03 (v2 §8.3: the dry run holds no publishing authority by construction — no environment, no secret).
 
-### Task 4 — CI validation of the release config
+### Task 4 — CI validation of the release config ✅ COMPLETED
 
 - **Domain/agent**: release-engineer
 - **Budget**: standard
@@ -101,9 +101,16 @@
   - The `workflows` job contains a `go-licenses save ./cmd/mythhelm` step at the CI pin (v2.0.1, same line shape as the `licenses` job) followed by a `goreleaser check` step via the Task 1 action pin + CLI version (each anchored; deleting either fails its grep).
   - Every added `uses:` line matches `@[0-9a-f]{40} # v`; no new job is added (`grep -c '^  [a-z-]*:$' .github/workflows/ci.yml` is unchanged from `main` — the `CI OK` needs list is untouched, so no maintainer ruleset update is needed).
   - `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12` passes; the PR's full CI (`CI OK`, `zizmor`) is green, with the new steps visible in the `Lint workflows` job log (paste the job URL in the entry).
-  - Red check: temporarily breaking `.goreleaser.yml` (e.g. deleting `version: 2`) in a scratch checkout makes the new steps fail — verified by running the same two commands locally, cited in the entry (a check that cannot fail proves nothing).
+  - Red check: in a scratch copy of `.goreleaser.yml` with the `version: 2` header deleted, `grep -qx 'version: 2'` exits 1 (the CI header-assertion step fails), while `goreleaser check` still exits 0 and only warns — so the header is asserted with the grep, not left to `check`; the same grep on the real file exits 0. Both outcomes are cited in the entry (a check that cannot fail proves nothing).
 - **Test plan**: Static greps + local red/green run of the two commands + the PR's CI.
 - **Invariants touched**: None (CI-only: no shipped behaviour changes; the release jobs keep I03/I13 per Task 2).
+- **Status**: ✅ Completed — the CI `workflows` job now generates the licence notices, asserts the `version: 2` header and runs `goreleaser check` at the Task 1 pins; no job added; PR #221.
+- **Implementation**: Steps added after `actionlint` in the `workflows` job: go-licenses v2.0.1 `save`, `grep -qx 'version: 2' .goreleaser.yml`, `goreleaser-action` v7.2.3 (`f06c13b6…`) with CLI v2.18.2 `args: check`. Pins are the ones `release.yml` uses, all older than 7 days per Task 2's re-check (CLI 2026-09-17, action 2026-06-27); syft is not needed by `check`. Commit 13dd3c6.
+- **Spec deviations**:
+  - The red-check acceptance bullet was amended, as the orchestrator directed: `goreleaser check` v2.18.2 exits 0 on a headerless config (warning only), so the criterion now asserts the header with a grep. Measured: headerless scratch copy → grep exit 1, `goreleaser check --config` exit 0 with the `yours is version: 0` warning; real file → grep exit 0, `check` exit 0.
+  - Added a header-assertion step (beyond the two steps the Acceptance names) so the amended red check is enforced in CI.
+  - The job's `setup-go` input changed from `go-version: stable` to `go-version-file: go.mod` so go-licenses and GoReleaser run on the module toolchain, as `release.yml` does. `go-licenses save` could not run in this local session (stdlib "no module info" error); the PR's `Lint workflows` log is its proof.
+- **Files modified**: `.github/workflows/ci.yml`, `specs/in-progress/release-pipeline/tasks.md`, `specs/in-progress/release-pipeline/handoff.md`.
 
 ### Task 5 — Pipeline operator and verify documentation
 

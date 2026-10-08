@@ -30,7 +30,8 @@
 
 ## Task 4 — CI validation of the release config
 
-<!-- pending -->
+- **Produces**: three steps in the CI `workflows` job (`.github/workflows/ci.yml`): go-licenses `save`, a `version: 2` header grep, and `goreleaser check` via the Task 1 action and CLI pins. No new job; the `CI OK` needs list is unchanged.
+- **For dependents**: the job's `setup-go` now reads `go-version-file: go.mod`. Task 5 can describe CI as validating the config on every PR; the header is enforced by the grep because `goreleaser check` only warns.
 
 ## Task 5 — Pipeline operator and verify documentation
 
