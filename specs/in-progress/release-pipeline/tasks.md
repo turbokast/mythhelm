@@ -120,7 +120,7 @@
   - The job's `setup-go` input changed from `go-version: stable` to `go-version-file: go.mod` so go-licenses and GoReleaser run on the module toolchain, as `release.yml` does. `go-licenses save` could not run in this local session (stdlib "no module info" error); the PR's `Lint workflows` log is its proof.
 - **Files modified**: `.github/workflows/ci.yml`, `specs/in-progress/release-pipeline/tasks.md`, `specs/in-progress/release-pipeline/handoff.md`.
 
-### Task 5 — Pipeline operator and verify documentation
+### Task 5 — Pipeline operator and verify documentation ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -137,6 +137,10 @@
   - `scripts/ci/check-public-hygiene.sh` passes; the PR's `Docs checks` job is green.
 - **Test plan**: Anchored greps + hygiene script + the PR's docs job. No Go test asserts prose; each item cites the command and its pre-change failure (absent section).
 - **Invariants touched**: None (prose only; I09/I14 compliance lives in the mechanism tasks — the matrix and `unknown` renderings this section describes).
+- **Status**: ✅ Completed — `docs/release-process.md` gained the `## Pipeline` section (trigger, matrix, publish flow, three verify commands with the tamper leg, dry-run procedure, re-run procedure) and the intro now names the pipeline; PR #222.
+- **Implementation**: Each acceptance bullet was grepped inside `sed -n '/^## Pipeline/,/^## /p'` (all absent before the change, which had no section); `## Scheme` and `## Tag discipline` are unchanged (diff hunks: intro line 3, appended block). The dry-run verify block uses the dry-run workflow identity. Commit 9f23f0f.
+- **Spec deviations**: The re-run procedure deletes a stale bundle (`gh release delete-asset`) before the job re-run, because `release.yml`'s upload step has no `--clobber`; `gh release upload --clobber` is documented for replacing a bundle the workflow produced. Untested until the first real release.
+- **Files modified**: `docs/release-process.md`, `specs/in-progress/release-pipeline/tasks.md`, `specs/in-progress/release-pipeline/handoff.md`.
 
 ### Task 6 — Operator dry run on a test tag
 
