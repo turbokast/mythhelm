@@ -94,7 +94,7 @@ func TestLiveQualifyEntitlement(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 	var started adapter.SessionStarted
-	var sawResult, sawRateLimit bool
+	var sawStarted, sawResult, sawRateLimit bool
 	for ob := range sess.Observations() {
 		switch ob := ob.(type) {
 		case adapter.SessionStarted:
@@ -110,6 +110,9 @@ func TestLiveQualifyEntitlement(t *testing.T) {
 		t.Fatalf("session did not complete on the included plan: result=%v rate_limit=%v", sawResult, sawRateLimit)
 	}
 
+	if !sawStarted {
+		t.Fatal("no session-start observation: the plugin and MCP inventory is unassessed")
+	}
 	routes := InventoryAuxiliary(manifest, started)
 	for i := range routes {
 		if strings.HasPrefix(routes[i].Name, "plugin:") || strings.HasPrefix(routes[i].Name, "mcp:") {

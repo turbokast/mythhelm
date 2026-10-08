@@ -49,6 +49,41 @@ func TestAuxiliaryCoversAT03(t *testing.T) {
 	}
 }
 
+// I02 (v2 §2): a session-reported MCP server no manifest entry names is an
+// unassessed route, compared by identity rather than count.
+func TestAuxiliaryFlagsSessionMCPAbsentFromManifest(t *testing.T) {
+	t.Parallel()
+	m := Manifest{MCPServers: []string{"user:files", "project:search"}}
+	cases := []struct {
+		name    string
+		session []adapter.MCPServer
+		want    []string
+	}{
+		{name: "all session servers named by the manifest", session: []adapter.MCPServer{{Name: "files"}, {Name: "search"}}},
+		{name: "unnamed server beside named ones", session: []adapter.MCPServer{{Name: "files"}, {Name: "rogue"}}, want: []string{"mcp-session:rogue"}},
+		{name: "same count different identity", session: []adapter.MCPServer{{Name: "files"}, {Name: "other"}}, want: []string{"mcp-session:other"}},
+		{name: "suffix is not identity", session: []adapter.MCPServer{{Name: "iles"}}, want: []string{"mcp-session:iles"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var got []string
+			for _, r := range InventoryAuxiliary(m, adapter.SessionStarted{MCPServers: tc.session}) {
+				if r.Name != "mcp:unknown" {
+					continue
+				}
+				if r.Funding != "unknown" {
+					t.Errorf("route %+v funding, want unknown", r)
+				}
+				got = append(got, r.Evidence)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("mcp:unknown evidence = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestAT03NamesMatchFixtureInventory(t *testing.T) {
 	var names []string
 	for _, r := range embeddedRoutes.Routes {

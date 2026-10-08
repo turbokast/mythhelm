@@ -3,7 +3,9 @@ package claudecode
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/adapter"
@@ -34,7 +36,9 @@ type AuxiliaryRoute struct {
 // surface. Static inputs prove no funding, so every route is "unknown"; only
 // the authorised live suite assesses it. A bare install yields exactly the
 // AT-03 routes. Plugins the session reports beyond the manifest's named ones
-// collapse to one plugin:unknown route.
+// collapse to one plugin:unknown route; an MCP server the session reports that
+// no manifest entry names becomes an mcp:unknown route (I02 (v2 §2): an
+// unassessed route never counts as funded).
 func InventoryAuxiliary(m Manifest, s adapter.SessionStarted) []AuxiliaryRoute {
 	routes := make([]AuxiliaryRoute, 0, len(at03Names)+len(m.EnabledPlugins)+len(m.MCPServers)+1)
 	for _, name := range at03Names {
@@ -49,7 +53,20 @@ func InventoryAuxiliary(m Manifest, s adapter.SessionStarted) []AuxiliaryRoute {
 	for _, server := range m.MCPServers {
 		routes = append(routes, AuxiliaryRoute{Name: "mcp:" + server, Funding: fundingUnknown, Evidence: "unknown"})
 	}
+	for _, server := range s.MCPServers {
+		if !manifestNamesMCP(m, server.Name) {
+			routes = append(routes, AuxiliaryRoute{Name: "mcp:unknown", Funding: fundingUnknown, Evidence: "mcp-session:" + server.Name})
+		}
+	}
 	return routes
+}
+
+// manifestNamesMCP reports whether a manifest entry (source:name) names the
+// session's native server name.
+func manifestNamesMCP(m Manifest, native string) bool {
+	return slices.ContainsFunc(m.MCPServers, func(entry string) bool {
+		return strings.HasSuffix(entry, ":"+native)
+	})
 }
 
 // LiveRecord builds the live-qualified first-route record from assessed
