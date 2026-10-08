@@ -31,7 +31,7 @@ Release scope for tagging: every published release including pre-releases gets a
 
 ## Pipeline
 
-Pushing a tag that matches `v*` starts `.github/workflows/release.yml`. The operator creates release tags only by publishing the draft release (see Tag discipline). A hand-pushed tag matching `v*` still triggers the workflow and queues for `release` environment approval; once approved, the job's first step rejects any name that is not `v<semver>` with dotted pre-release markers, before checkout or any build.
+Pushing a tag that matches `v*` starts `.github/workflows/release.yml`. The operator creates release tags only by publishing the draft release (see Tag discipline). A hand-pushed tag matching `v*` still triggers the workflow and queues for `release` environment approval; once approved, the job's first step rejects any name that does not match `v<major>.<minor>.<patch>` (no leading zeroes) optionally followed by `-` and two or more dot-separated alphanumeric pre-release identifiers, before checkout or any build. The check does not apply SemVer's leading-zero rule to numeric pre-release identifiers, so `v1.2.3-rc.01` passes it.
 
 ### What a release builds
 
@@ -102,12 +102,12 @@ cosign verify-blob \
 
 ### Re-run after a late-step failure
 
-GoReleaser publishes the release before the cosign and attestation steps run, so a failure in a later step leaves a published release without its bundle or attestation. Check what is missing with `gh release view "$TAG" --repo turbokast/mythhelm` (is `checksums.txt.sigstore.json` listed?) and `gh attestation verify`. Then recover from the failed run:
+GoReleaser publishes the release before the cosign and attestation steps run, so a failure in a later step leaves a published release without its bundle or attestation. Check what is missing with `gh release view "$TAG" --repo turbokast/mythhelm` (is `checksums.txt.sigstore.json` listed?) and `gh attestation verify "$ARCHIVE" --repo turbokast/mythhelm`. Then recover from the failed run:
 
 1. Remove the GoReleaser assets from the release first: the five archives, their `.sbom.json` files and `checksums.txt`. `.goreleaser.yml` sets `release.mode: keep-existing` without replacing existing artifacts, so the re-run's GoReleaser step does not replace the published assets; it collides with them and fails. The bundle is handled in step 2.
 
    ```bash
-   for a in $(gh release view "$TAG" --repo turbokast/mythhelm --json assets --jq '.assets[].name' | grep -v '^checksums.txt.sigstore.json$'); do
+   for a in $(gh release view "$TAG" --repo turbokast/mythhelm --json assets --jq '.assets[].name' | grep -E '^(mythhelm_.*\.(tar\.gz|zip|sbom\.json)|checksums\.txt)$'); do
      gh release delete-asset "$TAG" "$a" --yes --repo turbokast/mythhelm
    done
    ```
