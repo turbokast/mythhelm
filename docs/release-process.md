@@ -31,7 +31,7 @@ Release scope for tagging: every published release including pre-releases gets a
 
 ## Pipeline
 
-Pushing a tag that matches `v*` starts `.github/workflows/release.yml`. The operator creates that tag only by publishing the draft release (see Tag discipline); the workflow never runs from a hand-pushed tag, because its first step rejects any name that is not `v<semver>` with dotted pre-release markers.
+Pushing a tag that matches `v*` starts `.github/workflows/release.yml`. The operator creates release tags only by publishing the draft release (see Tag discipline). A hand-pushed tag matching `v*` still triggers the workflow and queues for `release` environment approval; once approved, the job's first step rejects any name that is not `v<semver>` with dotted pre-release markers, before checkout or any build.
 
 ### What a release builds
 
@@ -88,7 +88,7 @@ sha256sum -c --ignore-missing checksums.txt   # expected: FAILED, exit 1
 
 `.github/workflows/release-dry-run.yml` runs on tags matching `test/*` and publishes nothing: it has no environment, no secret and read-only repository access. The operator pushes the tag at the pull request head or at `main`, for example `test/2026-10-08-mh7`. The run builds a snapshot of the same matrix, checks the archives, SBOMs and notices payload, signs `checksums.txt` with cosign and verifies the bundle, then uploads `dist/` as the artifact `dist` (7-day retention). Attestation does not run in the dry run, so check 2 does not apply to it.
 
-To verify a dry-run artifact, download it with `gh run download <run-id> --name dist` into an empty directory. The bundle's signing identity is the dry-run workflow, so check 3 uses the dry-run identity (set `TAG` to the full test tag, including `test/`). Delete the test tag afterwards.
+To verify a dry-run artifact, download it with `gh run download <run-id> --name dist --dir dist`, run from an empty working directory. The bundle's signing identity is the dry-run workflow, so check 3 uses the dry-run identity (set `TAG` to the full test tag, including `test/`). Delete the test tag afterwards.
 
 ```bash
 TAG=test/YYYY-MM-DD-mh7
