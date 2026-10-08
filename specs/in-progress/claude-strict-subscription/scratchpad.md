@@ -20,3 +20,5 @@
 - Current native docs were not re-fetched at /spec time; Task 2/7 confirm field semantics against installed `claude --version` output and current docs before recording live evidence.
 
 ## Discoveries
+
+- Task 1: the manifest carries `managed*` digests only for sources actually present on disk, so `PolicySummary.Sources` is empty on a bare host and `Gaps` still lists the unresolved sources; gap assessment never depends on the manifest.

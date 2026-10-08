@@ -1,0 +1,7 @@
+{
+  "synthetic": true,
+  "note": "Synthetic fixture: native login, no managed settings source inventoried.",
+  "probe": {"executable": "/opt/synthetic/claude", "version": "0.0.0", "sha256": "0000", "os": "linux", "arch": "amd64", "compatibility": "synthetic"},
+  "manifest": {"digests": {"user": "aa11"}, "digest": "bb22", "hooks": 0, "mcp_servers": [], "enabled_plugins": [], "requires_trust": true},
+  "auth": {"logged_in": true, "auth_method": "claude.ai", "api_provider": "firstParty", "subscription_type": "max", "identity_ref": "synthetic-identity"}
+}

@@ -1,0 +1,7 @@
+{
+  "synthetic": true,
+  "note": "Synthetic fixture: managed file, managed MCP and a managed fragment inventoried; remote-cached and MDM policy cannot be (the gap).",
+  "probe": {"executable": "/opt/synthetic/claude", "version": "0.0.0", "sha256": "0000", "os": "linux", "arch": "amd64", "compatibility": "synthetic"},
+  "manifest": {"digests": {"user": "aa11", "managed": "cc33", "managed_mcp": "ee55", "managed_fragment_6": "ff66"}, "digest": "dd44", "hooks": 0, "mcp_servers": ["managed_mcp:synthetic-server"], "enabled_plugins": [], "requires_trust": true},
+  "auth": {"logged_in": true, "auth_method": "claude.ai", "api_provider": "firstParty", "subscription_type": "max", "identity_ref": "synthetic-identity"}
+}
