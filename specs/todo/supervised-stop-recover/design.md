@@ -254,11 +254,14 @@ func RecordAdmissionPinned(ctx context.Context, j *journal.Journal, runID, taskI
 
 // PinnedAdmission returns the admission-pinned ladder version and expected
 // nonce digest for attemptID from its latest attempt.admission_pinned
-// event. Failure cases: invalid_contract (unknown attempt, or an attempt
-// admitted before pinning, which has no such event);
-// persistence_unavailable (ledger I/O). Task 1; consumed verbatim by
-// Tasks 2/3/4.
-func PinnedAdmission(ctx context.Context, db *sql.DB, attemptID string) (ladderVersion, nonceSHA256 string, err error)
+// event, read via j.Events over the same *journal.Journal store that
+// RecordAdmissionPinned writes — there is no separate database binding,
+// so a recorded pin is always visible to the lookup (control imports
+// journal; journal has no control edge, so no cycle). Failure cases:
+// invalid_contract (unknown attempt, or an attempt admitted before
+// pinning, which has no such event); persistence_unavailable (ledger
+// I/O). Task 1; consumed verbatim by Tasks 2/3/4.
+func PinnedAdmission(ctx context.Context, j *journal.Journal, runID, attemptID string) (ladderVersion, nonceSHA256 string, err error)
 
 // CurrentGeneration reports this supervisor's boot generation from the
 // stream-2 lock-file metadata for dir (svc§3). Failure cases: no live lock
