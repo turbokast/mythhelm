@@ -346,3 +346,80 @@ func extractSection(doc, heading string) string {
 	body, _, _ := strings.Cut(rest, "\n## ")
 	return body
 }
+
+// observationScan is what the live entitlement leg learns from a session's
+// observation stream. It lives here, untagged, so the scan runs without the
+// grant.
+type observationScan struct {
+	started                             adapter.SessionStarted
+	sawStarted, sawResult, sawRateLimit bool
+}
+
+func scanObservations(obs <-chan adapter.Observation) observationScan {
+	var scan observationScan
+	for ob := range obs {
+		switch ob := ob.(type) {
+		case adapter.SessionStarted:
+			scan.started = ob
+			scan.sawStarted = true
+		case adapter.Result:
+			scan.sawResult = true
+		case adapter.NativeError:
+			scan.sawRateLimit = scan.sawRateLimit || ob.Class == "rate_limit"
+		}
+	}
+	return scan
+}
+
+func TestScanObservations(t *testing.T) {
+	t.Parallel()
+	started := adapter.SessionStarted{SessionID: "s1", PluginCount: 2}
+	tests := []struct {
+		name string
+		obs  []adapter.Observation
+		want observationScan
+	}{
+		{
+			name: "session start with result is a completed run",
+			obs:  []adapter.Observation{started, adapter.Result{}},
+			want: observationScan{started: started, sawStarted: true, sawResult: true},
+		},
+		{
+			name: "missing session start leaves the inventory unassessed",
+			obs:  []adapter.Observation{adapter.Result{}},
+			want: observationScan{sawResult: true},
+		},
+		{
+			name: "rate-limit error is recorded alongside a result",
+			obs:  []adapter.Observation{started, adapter.NativeError{Class: "rate_limit"}, adapter.Result{}},
+			want: observationScan{started: started, sawStarted: true, sawResult: true, sawRateLimit: true},
+		},
+		{
+			name: "other error class is not a rate limit",
+			obs:  []adapter.Observation{started, adapter.NativeError{Class: "auth"}},
+			want: observationScan{started: started, sawStarted: true},
+		},
+		{
+			name: "later error does not clear an earlier rate limit",
+			obs:  []adapter.Observation{adapter.NativeError{Class: "rate_limit"}, adapter.NativeError{Class: "auth"}},
+			want: observationScan{sawRateLimit: true},
+		},
+		{
+			name: "empty stream observes nothing",
+			want: observationScan{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ch := make(chan adapter.Observation, len(tt.obs))
+			for _, ob := range tt.obs {
+				ch <- ob
+			}
+			close(ch)
+			if got := scanObservations(ch); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("scan = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
