@@ -12,7 +12,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — GoReleaser configuration for the five-pair matrix
+### Task 1 — GoReleaser configuration for the five-pair matrix ✅ COMPLETED
 
 - **Domain/agent**: release-engineer
 - **Budget**: complex (cross-platform behaviour: five OS/arch pairs from one runner)
@@ -22,7 +22,7 @@
   - `.gitignore` (ignore the generated notices directory)
 - **Produces**: `.goreleaser.yml` contract — build `id: mythhelm`, `main: ./cmd/mythhelm`; archives `{{ .Name }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}` (tar.gz, zip on windows) containing the binary, `LICENSE`, `NOTICE`, `third_party_licenses/`; `checksums.txt`; `<archive>.sbom.json` (SPDX); ldflags `-X …/buildinfo.Version={{.Version}} -X …/buildinfo.Commit={{.FullCommit}}`; `release.mode: keep-existing`. Plus the exact GoReleaser CLI + `goreleaser-action` versions recorded in the completion entry (newest seen v2.18.2 / v7.2.3, re-checked at implementation; OSS `goreleaser` distribution, never Pro).
 - **Acceptance**:
-  - `go install github.com/goreleaser/goreleaser/v2@<pin>` (documented install path) then `goreleaser check` exits 0; a config with the `version: 2` header removed fails the same command.
+  - `go install github.com/goreleaser/goreleaser/v2@<pin>` (documented install path) then `goreleaser check` exits 0; a config with the `version: 2` header removed still exits 0 but prints the `only version: 2 configuration files are supported, yours is version: 0` warning (measured on v2.18.2 — the header is warned on, not refused).
   - After `go run github.com/google/go-licenses/v2@v2.0.1 save ./cmd/mythhelm --save_path=third_party_licenses` (Task 1 uses the CI pin from `.github/workflows/ci.yml:120`), `goreleaser release --snapshot --clean --skip=publish` exits 0 and `dist/` contains the five required archives for linux/amd64, linux/arm64, darwin/arm64, windows/amd64 and windows/arm64, plus `checksums.txt` and five `.sbom.json` files; GoReleaser metadata such as `artifacts.json` is allowed; `ls dist/ | grep -c darwin_amd64` prints 0 (N4 exclusion) while deleting the `ignore` entry would produce that pair.
   - Unpacking the linux/amd64 archive yields the `mythhelm` binary, `LICENSE`, `NOTICE` and a non-empty `third_party_licenses/`; `./mythhelm version` prints a version containing `SNAPSHOT` (an unstamped build would print `devel`).
   - Every `dist/*.sbom.json` contains `spdxVersion` (SPDX per design D9); `sha256sum -c dist/checksums.txt` passes from `dist/`.
@@ -30,6 +30,10 @@
   - The config names the matrix explicitly with the darwin/amd64 `ignore` citing N4, `CGO_ENABLED=0`, the `buildinfo` ldflags paths, `sboms: [{artifacts: archive}]` and `release.mode: keep-existing` — each anchored by grep; removing any fails its check.
 - **Test plan**: Local runs only (no workflow dispatch — dispatch is a publishing action). Commands above, run in order; paste the `dist/` listing and the `version` output in the entry.
 - **Invariants touched**: I14 (v2 §17.1: the matrix names exactly the five supported pairs, darwin/amd64 excluded as untested); I13 (v2 §1.2 UR-01: OSS distribution, no paid tool).
+- **Status**: ✅ Completed — `.goreleaser.yml` builds the five-pair matrix with checksums, per-archive SPDX SBOMs and licence payloads, and the local snapshot run passes every acceptance bullet; PR #PRNUM.
+- **Implementation**: Pins: GoReleaser CLI `v2.18.2` (OSS, `go install github.com/goreleaser/goreleaser/v2@v2.18.2`), `goreleaser-action` `v7.2.3` (`f06c13b6b1a9625abc9e6e439d9c05a8f2190e94`), syft `v1.54.1` (`go install github.com/anchore/syft/cmd/syft@v1.54.1`; the `sboms` stanza shells out to `syft`, so Tasks 2–4 workflows must install it at this pin). The 7-day cooldown on these releases could not be checked from this session (release dates unreachable), so the pins are the newest tags seen. Snapshot run, `dist/`: five archives (`mythhelm_0.0.0-SNAPSHOT-59eed44_{linux_amd64,linux_arm64,darwin_arm64}.tar.gz`, `…_{windows_amd64,windows_arm64}.zip`), five `.sbom.json`, `checksums.txt`, `artifacts.json`, `metadata.json`, `config.yaml`; `grep -c darwin_amd64` 0; `sha256sum -c` all OK; `./mythhelm version` printed `mythhelm 0.0.0-SNAPSHOT-59eed44` / `go: go1.27.1` / `platform: linux/amd64`. Commits 25a0f28, 59eed44 and the completion commit on this branch.
+- **Spec deviations**: Acceptance bullet 1 reworded per the orchestrator's binding decision: GoReleaser v2.18.2 exits 0 on a config without the `version: 2` header and only warns (`only version: 2 configuration files are supported, yours is version: 0`), so the bullet now asserts that measured behaviour instead of failure. `design.md` still says a v1-style config is refused; that sentence is stale for v2.18.2 and is outside this task's Files, left for the orchestrator. `scratchpad.md` also gained a Discoveries note about the same finding (added by an earlier attempt).
+- **Files modified**: `.goreleaser.yml`, `.gitignore`, `specs/in-progress/release-pipeline/tasks.md`, `specs/in-progress/release-pipeline/handoff.md`, `specs/in-progress/release-pipeline/scratchpad.md`.
 
 ### Task 2 — Tag-triggered release workflow with protected publishing
 
