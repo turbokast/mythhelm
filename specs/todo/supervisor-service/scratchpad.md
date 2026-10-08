@@ -1,4 +1,4 @@
-# Supervisor Service — Scratchpad
+## Supervisor Service — Scratchpad
 
 Seeded at `/spec`. Every implementing task appends its notes below the line;
 nothing above it is edited except OQ verdicts.

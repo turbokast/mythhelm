@@ -1,4 +1,4 @@
-# Supervisor Migration — Design
+## Supervisor Migration — Design
 
 Normative source: mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md, version 2.0.
 Consumes `specs/*/v2-contract-vocabulary/design.md` (cited `v2c§N`) and
@@ -95,7 +95,8 @@ type ImportOptions struct {
 // Mutate transaction. Failure cases: revision_conflict (run already
 // imported); invalid_contract (v1 row fails v1 decode — never reinterpreted,
 // AC-7.5); persistence_unavailable (ledger I/O). It writes the v2 rows and
-// the import marker, and appends a v2 Envelope recording the import.
+// the import marker, and appends a v2 Envelope of type migration.imported
+// recording the import.
 func ImportRun(ctx context.Context, tx *sql.Tx, runID string) (v2contract.TaskRevision, error)
 
 // ImportResult reports one imported run for the preview/receipt.
@@ -117,8 +118,10 @@ projections.
 Migration holds an exclusive migration lock for its whole run: it reuses
 `control.AcquireInstance` semantics — while migration runs, the service writer
 does not start, and new legacy admissions are refused (the admission path
-checks `migration_state.phase` and returns `ownership_unresolved` once past
-`previewed`). The 4 `AcquireOwner` sites drain in dependency order:
+returns `ownership_unresolved` while the migration lock is held or
+`migration_state.phase` is past `previewed`; the lock covers the pre-backup
+quiesce, during which no phase row is written yet). The 4 `AcquireOwner`
+sites drain in dependency order:
 
 1. `cli/apply.go:67`, `cli/tui.go:185` (interactive writers): refused first —
    apply during migration returns `ownership_unresolved` naming the phase.
@@ -136,27 +139,36 @@ type DrainReport struct {
     Quarantined []string `json:"quarantined"` // run IDs quarantined with evidence refs
 }
 
-// Drain stops new admissions and drains the 4 legacy owner sites.
-// Failure cases: ownership_unresolved (a site still holds a lock past its
-// deadline — migration aborts, nothing half-adopted); persistence_unavailable.
+// Drain stops new admissions (via the held migration lock) and quiesces the
+// 4 legacy owner sites, returning each run's outcome in the report. Drain
+// writes no ledger row: in-flight runs finish their admitted work, so the
+// backup taken next contains every accepted legacy write. Quarantine and
+// adopt outcomes are persisted after the backup from the DrainReport (see
+// §6). Failure cases: ownership_unresolved (a site still holds a lock past
+// its deadline — migration aborts, nothing half-adopted);
+// persistence_unavailable.
 func Drain(ctx context.Context, db *sql.DB) (DrainReport, error)
 ```
 
 Quarantine representation (D4): a v2 `Envelope` of type
 `migration.quarantined` per run, carrying the run ID, the last known launch
 identity and the evidence refs — ledger-native, so stream 4 reconciles it
-with the same machinery as any quarantined attempt. No service writer starts
-until `Drain` returns with zero held locks; a test asserts this by holding a
-run lock during migration and observing refusal.
+with the same machinery as any quarantined attempt. The Import step persists
+these envelopes from the `DrainReport` immediately after the backup, inside
+its `Mutate` transactions. No service writer starts until `Drain` returns
+with zero held locks; a test asserts this by holding a run lock during
+migration and observing refusal.
 
 ## 5. Backup, restore, downgrade refusal (v2 §5.2; AC-7.4)
 
 Backup reuses the `VACUUM INTO` mechanism (`journal.go:226`): a full,
-consistent copy written before any migration write, beside a sidecar JSON file
-recording schema version, build version, digest and timestamp. Restore copies
-back and re-opens read-only first; the restore procedure is tested end to end
-(write v1 fixture → backup → migrate → restore → byte-identical v1
-projections). Downgrade refusal extends the existing `ErrSchemaTooNew` path:
+consistent copy written after the drain quiesce and before any migration
+write — every accepted legacy write, including in-flight completions, is in
+the copy — beside a sidecar JSON file recording schema version, build
+version, digest and timestamp. Restore copies back and re-opens read-only
+first; the restore procedure is tested end to end (write v1 fixture → drain
+→ backup → migrate → restore → byte-identical v1 projections including the
+drained completions). Downgrade refusal extends the existing `ErrSchemaTooNew` path:
 `Open` already refuses newer schemas without writing (`journal.go:108-170`);
 migration additionally refuses to run when `migration_state` names a newer
 schema or build, returning `schema_too_new` (default disposition
@@ -191,8 +203,11 @@ drain, schema steps 0003→0004, backup target) as plain text and `--format
 jsonl`; it opens the database read-only, takes no agent credentials, performs
 no network I/O, and writes nothing — the NFR-4 hermeticity half stream 1
 deferred here (v2c honesty register). `migrate --apply` runs
-Backup → Drain → Import → Adopt (phase `adopted`, service starts owning the
-ledger) and prints a receipt. `--apply` without a prior `--preview` in the
+Drain → Backup → Import → Adopt (phase `adopted`, service starts owning the
+ledger) and prints a receipt: quiesce first so the backup contains every
+accepted legacy write, then the backup, then — with phase `drained`
+recorded — the quarantine envelopes (from the `DrainReport`) and the
+imports, then adoption. `--apply` without a prior `--preview` in the
 same invocation previews first and requires `--yes` to proceed.
 
 ```go
@@ -210,10 +225,14 @@ type Plan struct {
 // It must not take credentials, touch the network, or write.
 func PreviewPlan(ctx context.Context, db *sql.DB) (Plan, error)
 
-// Apply executes Backup → Drain → Import → Adopt. Failure cases: as the
-// step functions; on step failure the phase row names the failed step and
-// --apply is resumable (completed steps are idempotent by import markers
-// and lock state, never by replaying effects, I12).
+// Apply executes Drain → Backup → Import → Adopt. Drain quiesces without
+// writing; Backup copies the quiesced ledger; Import records phase
+// `drained`, persists the quarantine envelopes from the DrainReport,
+// imports every run, then records `imported`; Adopt records `adopted`.
+// Failure cases: as the step functions; on step failure the phase row
+// names the failed step and --apply is resumable (completed steps are
+// idempotent by import markers and lock state, never by replaying
+// effects, I12).
 func Apply(ctx context.Context, db *sql.DB, plan preview.Plan) (DrainReport, error)
 ```
 
@@ -226,14 +245,19 @@ package-granular, so the planner cannot share `internal/migrate` with the
 
 ## 7. Append v2 acceptance (v2 §4.3; OQ-9)
 
-Implements stream 1's OQ-9 decision (v2c D7): `Append` accepts envelopes with
-`schema_version == 2` post-migration (phase `imported` or later), validating
-through the stream-1 pure validators in `Append`'s check order — `event_id`
-duplicate (`CheckDuplicate`), generation (`CheckGeneration`), sequence
-(`CheckSequence`) — then allocating `run_sequence` as before. Pre-migration,
-`schema_version == 2` is still rejected (unknown critical payloads cannot be
-silently stored). Late observations on old generations retain as quarantined
-evidence at most (AC-4.2 behavior, enforced at this call site).
+Implements stream 1's OQ-9 decision (v2c D7): one phase rule for v2
+envelopes at `Append`. Before phase `drained`, `schema_version == 2` is
+rejected outright (unknown critical payloads cannot be silently stored).
+At phase `drained` (post-backup, Import step running), `Append` accepts
+only migration-owned envelopes — type `migration.quarantined` and
+`migration.imported` — which the Import step appends. At phase `imported`
+or later, ordinary `schema_version == 2` envelopes are accepted too. Every
+accepted envelope validates through the stream-1 pure validators in
+`Append`'s check order — `event_id` duplicate (`CheckDuplicate`),
+generation (`CheckGeneration`), sequence (`CheckSequence`) — then
+allocating `run_sequence` as before. Late observations on old generations
+retain as quarantined evidence at most (AC-4.2 behavior, enforced at this
+call site).
 
 No signature change: `Append` keeps its signature; a duplicate `event_id` acks
 with nil error and no append (`ErrDuplicateEvent` is not a failure, per v2c

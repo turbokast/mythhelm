@@ -1,4 +1,4 @@
-# Supervisor Service — Design
+## Supervisor Service — Design
 
 Normative source: mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md, version 2.0.
 Consumes `specs/*/v2-contract-vocabulary/design.md` verbatim; citations below use `v2c§N`
@@ -76,12 +76,22 @@ var (
     ErrRootConflict = errors.New("control: supervisor active under another root")
 )
 
-// AcquireInstance takes the per-user instance lock under dir (the resolved
-// state root) and holds it until release is called or the process exits.
-// Failure cases: ErrInstanceHeld (lock held); ErrRootConflict (lock metadata
-// names a different root); I/O errors from lock-file creation.
-// The lock file records {root, pid, started_at, generation}; a live lock on a
-// different root is a conflict, never a second authority (AC-5.4).
+// LockPath returns the stable per-user, per-host instance-lock path. It is
+// derived from the OS user identity and host — never from dir — so it is
+// identical for every MYTHHELM_HOME and never lives under the resolved
+// state root. A lock under the selectable root would let two roots hold
+// two locks and silently run two authorities.
+func LockPath() (string, error)
+
+// AcquireInstance takes the per-user instance lock at LockPath() and holds
+// it until release is called or the process exits. While holding the lock
+// it compares dir (the resolved state root, canonicalised) against the
+// root recorded in the lock metadata.
+// Failure cases: ErrInstanceHeld (lock held by a live supervisor on this
+// root); ErrRootConflict (lock metadata names a different root); I/O
+// errors from lock-file creation.
+// The lock file records {root, pid, started_at, generation}; a live lock
+// on a different root is a conflict, never a second authority (AC-5.4).
 func AcquireInstance(dir string) (release func(), err error)
 ```
 
@@ -185,11 +195,12 @@ by re-marshalling.
 ## 6. Idempotent intents (v2 §3.2; AC-5.2; OQ-11)
 
 ```go
-// Intent is one control mutation. OperationID is client-chosen idempotency
-// key; ExpectedRevision is the ledger revision the client read.
+// Intent is one control mutation. It embeds the stream-1 v2 §4.2 request
+// envelope (operation_id, object identity, expected_revision, controller
+// generation where applicable); this spec defines none of those fields
+// itself.
 type Intent struct {
-    OperationID      string          `json:"operation_id"`
-    ExpectedRevision int64           `json:"expected_revision"`
+    v2contract.RequestEnvelope
     Method           string          `json:"method"`
     Params           json.RawMessage `json:"params"`
     CapabilityToken  string          `json:"capability_token,omitempty"`
@@ -215,8 +226,13 @@ type Handler func(ctx context.Context, peer Peer, intent Intent) (Result, error)
 // ledger row keyed by operation_id is read in the mutation transaction; an
 // identical repeat (same method + params digest) returns the stored Result
 // without re-executing; a reused ID with different args returns
-// revision_conflict without executing. Failure cases: as Handler, plus
-// invalid_contract for malformed intents.
+// revision_conflict without executing. Concurrent duplicates are serialised
+// by atomically claiming operation_id (insert-if-absent in the operations
+// ledger) before Handler runs: at most one claimant executes, the losers
+// return the winner's stored Result, and Handler runs at most once per
+// operation_id (I12). Failure cases: as Handler, plus invalid_contract
+// for malformed intents (including an envelope that fails
+// RequestEnvelope.Validate).
 func Execute(ctx context.Context, h Handler, peer Peer, intent Intent) (Result, error)
 ```
 
@@ -333,8 +349,10 @@ unfiltered.
   128/129 refs.
 - Platform tests: `unix` socket + peer-auth tests run on linux/darwin;
   Windows pipe tests run on the Windows runner; filesystem/process/detach
-  tests (lock adoption after kill, lazy spawn, no surviving child after client
-  exit) run per advertised OS/arch with `CGO_ENABLED=0`.
+  tests (lock adoption after kill, lazy spawn, and supervisor availability after
+  client exit) run per advertised OS/arch with `CGO_ENABLED=0`. The detach test
+  confirms that the supervisor remains alive and serves a new control request
+  after the client exits.
 - `internal/control/SUPPORT.md` publishes one support-matrix row per
   deliverable (`fixture-tested` or `blocked`; no `live-qualified` claims),
   following the v2c§7.2 precedent; a test asserts the matrix lists exactly the

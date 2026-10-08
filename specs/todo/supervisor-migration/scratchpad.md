@@ -1,4 +1,4 @@
-# Supervisor Migration — Scratchpad
+## Supervisor Migration — Scratchpad
 
 Seeded at spec creation. Every task appends its discoveries; nothing here
 overrides `design.md` — conflicts go back to the designer.

@@ -1,4 +1,4 @@
-# V2 Contract Vocabulary — Design
+## V2 Contract Vocabulary — Design
 
 Normative source: mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md, version 2.0.
 
@@ -62,6 +62,28 @@ type RevisionRef struct {
     Revision int    `json:"revision" toml:"revision"` // >= 1
     Digest   string `json:"digest,omitempty" toml:"digest,omitempty"`
 }
+
+// Validate rejects a Kind outside {"artifact", "contract"} (naming the
+// value), an empty ID, and a Revision below 1. TaskRevision.Validate
+// calls it for every dependency.
+func (r RevisionRef) Validate() error
+
+// RequestEnvelope is the v2 §4.2 envelope every mutating control request
+// carries: the client-chosen idempotency key, the target object identity,
+// the ledger revision the client read, and the controller generation where
+// applicable (absent omits it, I09). Stream 2's Intent embeds this shape;
+// no consumer redefines these fields.
+type RequestEnvelope struct {
+    OperationID      string `json:"operation_id" toml:"operation_id"`
+    Object           string `json:"object,omitempty" toml:"object,omitempty"`
+    ExpectedRevision int64  `json:"expected_revision" toml:"expected_revision"`
+    Generation       *int64 `json:"generation,omitempty" toml:"generation,omitempty"`
+}
+
+// Validate requires a non-empty OperationID and a non-negative
+// ExpectedRevision. Object and Generation are carried opaquely: they are
+// required where the owning method defines them ("where applicable").
+func (r RequestEnvelope) Validate() error
 ```
 
 IDs are opaque strings (v2 §4.2): validated non-empty only. No prefix check — a prefix check would make prefixes authority, which §4.2 forbids.
@@ -98,7 +120,7 @@ type Claim[T ScaleValue] struct {
     ExpiresAt *time.Time `json:"expires_at,omitempty" toml:"expires_at,omitempty"`
 }
 
-func (c Claim[T]) Validate() error // Value in-scale (naming the value), Evidence and Scope non-empty
+func (c Claim[T]) Validate() error // Value in-scale (naming the value), Evidence and Scope non-empty, ExpiresAt non-nil and non-zero (v2 §4.2: every value travels with evidence, scope and expiry)
 ```
 
 ### 2.2 Strict decode and digest
@@ -146,7 +168,8 @@ type Run struct {
 
 ```go
 // TaskRevision is immutable once dispatched (I20): a material change is a new
-// Revision, never an edit. MH-22 adopts this shape verbatim.
+// Revision, never an edit. MH-22 adopts this shape verbatim. Validate runs
+// RevisionRef.Validate on every dependency before accepting the task.
 type TaskRevision struct {
     SchemaVersion          int           `json:"schema_version" toml:"schema_version"`
     TaskID                 string        `json:"task_id" toml:"task_id"`
@@ -217,7 +240,7 @@ type Artifact struct {
     SchemaVersion  int       `json:"schema_version" toml:"schema_version"`
     ArtifactID     string    `json:"artifact_id" toml:"artifact_id"` // repository-scoped opaque ID
     RepoID         string    `json:"repo_id" toml:"repo_id"`
-    SHA256         string    `json:"sha256" toml:"sha256"` // hex content identity
+    SHA256         string    `json:"sha256" toml:"sha256"` // exactly 64 lowercase hex chars; Validate rejects empty, non-hex and wrong-length values
     SizeBytes      int64     `json:"size_bytes" toml:"size_bytes"`
     MediaType      string    `json:"media_type" toml:"media_type"`
     ProducerID     string    `json:"producer_id" toml:"producer_id"`
@@ -426,18 +449,23 @@ const (
 var ErrIllegalTransition = errors.New("v2contract: illegal transition")
 
 // CheckRunTransition enforces the v2 §6.1 table. saved is the phase recorded
-// when from == blocked; resuming to any other phase is illegal (the runtime
-// that wrote saved owns its validity; the contract checks to == saved).
+// when from == blocked; resuming to any other phase is illegal, and saved
+// must itself be an eligible saved phase (a nonterminal phase with a
+// →blocked edge in the table below). The caller revalidates the blocker,
+// authority and revisions before resuming (master §6.1: "never resume from
+// a remembered enum alone"); the contract checks to == saved plus
+// saved-eligibility.
 func CheckRunTransition(from, to, saved RunState) error
 
-// CheckTaskTransition enforces the v2 §6.2 task table; saved as above.
+// CheckTaskTransition enforces the v2 §6.2 task table; saved as above,
+// with the task-table eligible set.
 func CheckTaskTransition(from, to, saved TaskState) error
 
 // CheckAttemptTransition enforces the v2 §6.2 attempt table (no saved phase).
 func CheckAttemptTransition(from, to AttemptState) error
 ```
 
-Tables, transcribed exactly from v2 §6.1–§6.2 (the `blocked` row's "saved eligible phase" is the `to == saved` rule; D8):
+Tables, transcribed exactly from v2 §6.1–§6.2 (the `blocked` row's "saved eligible phase" is the `to == saved` rule plus saved-eligibility; D8). Eligible saved phases are exactly the nonterminal phases with a →blocked edge: Run `{admission, planning, executing, integrating, verifying, ready_for_review, applying, recovering}`; Task `{pending, ready, running, candidate, verifying}`. A `saved` outside its set (terminal, unknown, or edge-less like `stopping`) fails even when `to == saved`.
 
 - Run: `created→{admission}`; `admission→{planning, executing, blocked, failed}`; `planning→{executing, blocked, failed}`; `executing→{integrating, verifying, planning, blocked, failed}`; `integrating→{verifying, executing, blocked, failed}`; `verifying→{ready_for_review, executing, blocked, failed}`; `ready_for_review→{applying, blocked, completed, cancelled}`; `applying→{completed, blocked, failed, interrupted}`; `blocked→{stopping, cancelled, failed}` plus `to == saved`; any nonterminal active phase `→{stopping, interrupted}`; `stopping→{cancelled, interrupted}`; `interrupted→{recovering}`; `recovering→{<reconciled active phase>, ready_for_review, blocked, cancelled, failed, interrupted}` (the reconciled phase is runtime-chosen; the contract accepts any nonterminal active phase); terminal `→{}`.
 - Task: `pending→{ready, blocked, cancelled, superseded}`; `ready→{running, blocked, cancelled, superseded}`; `running→{candidate, ready, blocked, failed, cancelled, superseded}`; `candidate→{verifying, ready, blocked, cancelled, superseded}`; `verifying→{accepted, ready, blocked, failed, cancelled, superseded}`; `blocked→{failed, cancelled, superseded}` plus `to == saved`; `accepted→{superseded}`; terminal `→{}`.
@@ -601,7 +629,8 @@ type Envelope struct {
 
 func (e Envelope) Validate() error
 // schema_version == 2; EventID/RunID/ProducerID/Type non-empty; sequences and
-// generation >= 0; Payload valid JSON object. Event-type vocabulary is open
+// generation >= 0; ObservedAt non-zero (an omitted observed_at fails, never
+// decodes as year 1); Payload valid JSON object. Event-type vocabulary is open
 // (D6): unknown critical types cannot be ignored, which is an ingestion
 // behavior in spec 3, not a closed enum here.
 ```
@@ -672,7 +701,7 @@ No CLI, no TUI, no migrations in this spec: no `cli.Main`, e2e, or live tests. T
 | D5 | `Digest` covers the full canonical JSON with no field exclusions | No v2 record carries its own digest (unlike `qualify.Record`'s `Digest`/`SupersededAt`), so exclusions would be dead complexity. If a self-digest field is ever added, the golden tests fail until exclusions are specified. |
 | D6 | Open strings (validated non-empty) for `DeliveryDisposition`, `Reservation.Status`, `Experiment.Disposition`, event `Type` | The master spec does not enumerate these vocabularies; inventing a closed enum risks mismatch with the runtime specs that own them. Documented values guide; the owning spec may tighten. |
 | D7 | OQ-9: same `journal` table, v2 accepted post-migration (default (a)) | Matches v2 §5.2 ("Decode historical event v1 separately. Write v2 for new payload contracts") and reuses `Append`'s allocation/fencing. The alternative (reject v2 until migration completes, then a flag day) complicates the migration tasks without narrowing any invariant. Implemented by `supervisor-migration`. |
-| D8 | `blocked`-resume checks `to == saved`, not saved-phase eligibility | Only the runtime knows which phase the entity actually occupied; the contract checks consistency (target equals the recorded saved phase), the sole writer owns validity. An eligibility enum here would duplicate runtime knowledge and drift. |
+| D8 | `blocked`-resume checks `to == saved` plus saved-phase eligibility; the runtime revalidates blocker, authority and revisions | The contract owns what the tables decide: target equals the recorded saved phase, and saved is a phase that could have blocked (master §6.1 "Saved eligible phase"). Only the runtime knows which phase the entity actually occupied and whether the blocker still holds, so the caller revalidates those before resuming (master §6.1: "never resume from a remembered enum alone"); the stream-4 caller test for that revalidation is assigned in the honesty register. |
 | D9 | Authored per-code default dispositions with rank-ordered widening check | v2 §4.5 requires a disposition per mapping but assigns none; without defaults, "never widens authority" is untestable. The rank order (never < user < reconciliation < cooldown < bounded-transient) makes widening machine-checkable in `Validate`. |
 | D10 | One generic `Decode[T Validator]` instead of 14 per-type decode functions | The `qualify.DecodeRecord` precedent covers one type; 14 copies would be boilerplate with 14 chances to diverge. The generic is one strict path, tested once plus per-type `Validate` tests. |
 | D11 | No ADR in this spec | Nothing here changes billing, persistence, process ownership, or a frozen public contract: these are internal Go types. v2 §19 freezes a public protocol only after implementations exercise it — the freeze ADR belongs to `supervisor-service`. |
@@ -686,6 +715,7 @@ No CLI, no TUI, no migrations in this spec: no `cli.Main`, e2e, or live tests. T
 | NFR-1 "malformed mandatory frames stop the affected integration" | Partially met: constants + `CheckFrameLimits` ship here; enforcement call sites are specs 2–4 (no runtime exists in this spec to stop). |
 | NFR-4 "migration preview" hermeticity | Deferred to `supervisor-migration`, which owns the preview surface; this spec pins contract-validation hermeticity only. |
 | AC-2.3 "never relaunch by replay" enforcement | Partially met: same-launch check + reconcile-only dispositions ship; launch-path enforcement is `supervisor-service`/`supervised-stop-recover` behavior. |
+| Blocked-resume blocker revalidation (master §6.1) | Caller duty, assigned to stream 4 (`supervised-stop-recover`): it revalidates blocker, authority and revisions before resuming and ships the caller-level test (stale blocker refused); this spec checks `to == saved` plus saved-eligibility only (D8). |
 | AC-4.1 supervisor-side allocation behavior | Already holds for v1 in `Append` (`journal.go:318-322`); the v2 acceptance extension is a `supervisor-migration` task consuming this spec. |
 | AC-9.2 `live-qualified` rows | None claimed: nothing here has run against a live supervisor; unresolved auth/OS facts stay `blocked`. |
 

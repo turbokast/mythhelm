@@ -20,15 +20,17 @@
 - **Depends on**: None
 - **Change**: Create `internal/v2contract` with `SchemaVersion`, the NFR-1 limit constants, the §4.2 vocabularies, the generic strict `Decode`/`Digest` codec and shared shapes, so every later task builds on one exact kernel.
 - **Files**:
-  - `internal/v2contract/v2contract.go` (package doc, `SchemaVersion`, limit constants, `CheckFrameLimits`, `GitObject`, `Budget`, `RevisionRef`)
+  - `internal/v2contract/v2contract.go` (package doc, `SchemaVersion`, limit constants, `CheckFrameLimits`, `GitObject`, `Budget`, `RevisionRef`, `RequestEnvelope`)
   - `internal/v2contract/scales.go` (`Capability`, `Progress`, `Eligibility`, `ScaleValue`, `Claim[T]`)
   - `internal/v2contract/codec.go` (`Validator`, `Decode[T]`, `Digest`)
   - `internal/v2contract/scales_test.go`
   - `internal/v2contract/codec_test.go` (also holds the `loadGolden` helper later tasks' tests reuse)
-- **Produces**: `v2contract.SchemaVersion == 2`; `MaxFrameBytes == 1<<20`, `MaxNestingDepth == 64`, `MaxArtifactRefs == 128`; `v2contract.CheckFrameLimits(encodedLen, depth, refs int) error`; `v2contract.GitObject{Format, Value}`; `v2contract.Budget{Name, Limit, Unit}`; `v2contract.RevisionRef{Kind, ID, Revision, Digest}`; `v2contract.Capability` (`supported|unsupported|unknown`), `v2contract.Progress` (7 §4.2 words), `v2contract.Eligibility` (`eligible|blocked|unsupported`), each with `Valid() bool`; `v2contract.Claim[T ScaleValue]{Value, Evidence, Scope, ExpiresAt}` with `Validate() error`; `v2contract.Validator` (`Validate() error`); `v2contract.Decode[T Validator](data []byte) (T, error)` (unknown fields rejected, then `Validate`); `v2contract.Digest(v any) string` (`sha256:<hex>` over canonical JSON).
+- **Produces**: `v2contract.SchemaVersion == 2`; `MaxFrameBytes == 1<<20`, `MaxNestingDepth == 64`, `MaxArtifactRefs == 128`; `v2contract.CheckFrameLimits(encodedLen, depth, refs int) error`; `v2contract.GitObject{Format, Value}`; `v2contract.Budget{Name, Limit, Unit}`; `v2contract.RevisionRef{Kind, ID, Revision, Digest}` with `Validate() error`; `v2contract.RequestEnvelope{OperationID, Object, ExpectedRevision, Generation}` with `Validate() error`; `v2contract.Capability` (`supported|unsupported|unknown`), `v2contract.Progress` (7 §4.2 words), `v2contract.Eligibility` (`eligible|blocked|unsupported`), each with `Valid() bool`; `v2contract.Claim[T ScaleValue]{Value, Evidence, Scope, ExpiresAt}` with `Validate() error` (expiry required); `v2contract.Validator` (`Validate() error`); `v2contract.Decode[T Validator](data []byte) (T, error)` (unknown fields rejected, then `Validate`); `v2contract.Digest(v any) string` (`sha256:<hex>` over canonical JSON).
 - **Acceptance**:
   - `TestScalesMatchMasterWords`: the three scales equal the v2 §4.2 words exactly, and equal the `qualify` package's scale words (D3 pin); renaming one word fails the test.
-  - `TestClaimRequiresEvidenceScopeExpiry`: a `Claim[Capability]` with empty evidence or scope fails `Validate` naming the field; an out-of-scale value fails naming the value.
+  - `TestClaimRequiresEvidenceScopeExpiry`: a `Claim[Capability]` with empty evidence or scope fails `Validate` naming the field; an out-of-scale value fails naming the value; nil `ExpiresAt` and zero `ExpiresAt` each fail naming `expires_at`.
+  - `TestRevisionRefValidate`: `Kind: "other"` fails naming `kind`; `Revision: 0` fails naming `revision`; empty `ID` fails naming `id`; a valid ref passes.
+  - `TestRequestEnvelopeRequiresIdentity`: empty `OperationID` fails; negative `ExpectedRevision` fails; absent `Object`/`Generation` pass; a valid envelope passes (N1 envelope).
   - `TestDecodeRejectsUnknownField`: decoding into a kernel struct with an unknown key fails naming the key; truncated JSON fails naming the offset.
   - `TestDigestGolden`: `Digest` of a fixed struct equals its golden `sha256:<hex>` (oracle-checked with `sha256sum` over the exact bytes); flipping one byte changes the digest.
   - `TestFrameLimitsExact`: the three constants equal `1<<20`, `64`, `128`; `CheckFrameLimits` accepts the boundary values and rejects each over-limit dimension naming it.
@@ -47,10 +49,11 @@
   - `internal/v2contract/testdata/records/run.golden.json`
   - `internal/v2contract/testdata/records/task_revision.golden.json`
   - `internal/v2contract/testdata/records/attempt.golden.json`
-- **Produces**: `v2contract.Run`, `v2contract.TaskRevision`, `v2contract.Attempt` (design §3, exact fields) with value-receiver `Validate() error` (schema_version == 2, IDs non-empty, `TaskRevision.Revision >= 1`).
+- **Produces**: `v2contract.Run`, `v2contract.TaskRevision`, `v2contract.Attempt` (design §3, exact fields) with value-receiver `Validate() error` (schema_version == 2, IDs non-empty, `TaskRevision.Revision >= 1`, every dependency via `RevisionRef.Validate`).
 - **Acceptance**:
   - `TestExecutionGoldensRoundTrip`: the three goldens decode, re-encode byte-identical, and carry `schema_version: 2`; a golden with `schema_version: 1` fails to decode.
   - `TestTaskRevisionRejectsZeroRevision`: `Revision: 0` fails `Validate` naming `revision`.
+  - `TestTaskRevisionValidatesDependencies`: a dependency with `Kind: "other"` or `Revision: 0` fails `Validate` naming the dependency field; valid dependencies pass.
   - `TestRevisionDigestsDiffer`: two revisions of one task have different `Digest` values; identical bytes have equal digests (AC-1.2 structural pin).
   - `TestRecordTagsAreSnakeCase`: marshaling each record contains `"run_id"`/`"task_id"`/`"attempt_id"` and no `"RunID"`/`"TaskID"`/`"AttemptID"`.
   - `TestMissingIDsRejected`: empty `RunID`/`TaskID`/`AttemptID` each fail `Validate` naming the field, never defaulted.
@@ -76,7 +79,7 @@
   - `TestEvidenceGoldensRoundTrip`: the five goldens decode, re-encode byte-identical, and carry `schema_version: 2`.
   - `TestOutOfScaleEnumsRejected`: a `DesignDecision` with disposition `"approved"` and an `Observation` with kind `"agent"` each fail naming the field, never coerced.
   - `TestRoutingDecisionPreservesUncertainty`: a golden with scores absent and `uncertainty` set round-trips with uncertainty intact and no zero scores invented (I09).
-  - `TestArtifactRequiresContentIdentity`: empty `SHA256` fails naming the field; `ValidUntil` absent omits from JSON (never zero time).
+  - `TestArtifactRequiresContentIdentity`: an empty SHA256 fails naming the field, as do non-hexadecimal and wrong-length values; exactly 64 lowercase hex chars pass; `ValidUntil` absent omits from JSON (never zero time).
 - **Test plan**: Golden round-trips via `loadGolden`; enum table tests; absence-vs-zero assertions on optional fields.
 - **Invariants touched**: I09 (v2 §2: uncertainty preserved, absence never zero); I20 (v2 §2: `DesignDecision` revisions ordered via `Supersedes`); I07 lineage (v2 §2: `Verification` is the sole attestation shape).
 
@@ -119,7 +122,7 @@
   - `TestRunTableMatchesSpec`: every §6.1 row's allowed pairs pass (including `planning`/`integrating`, absent from v1); `created→verifying`, `completed→executing`, terminal exits and unknown states fail with the from→to pair named.
   - `TestTaskTableMatchesSpec`: every §6.2 task row's allowed pairs pass; `accepted→ready`, `pending→accepted` and unknown states fail named.
   - `TestAttemptTableMatchesSpec`: every §6.2 attempt row's allowed pairs pass (including `reserved` entry and `waiting_native↔waiting_approval` movement); `running→reserved`, terminal exits and unknown states fail named.
-  - `TestBlockedResumeRequiresSaved`: `blocked→executing` with `saved=executing` passes; with `saved=verifying` fails; `blocked→stopping` needs no saved phase (D8).
+  - `TestBlockedResumeRequiresSaved`: `blocked→executing` with `saved=executing` passes; with `saved=verifying` fails; `blocked→stopping` needs no saved phase (D8); `blocked→completed` with `saved=completed` fails (saved ineligible); `saved` unknown, terminal or edge-less (e.g. `stopping`) fails even when `to == saved`.
   - `TestTerminalEntryRefusesUnresolved`: `completed`/`cancelled`/`failed` with `ownershipResolved=false` fail; with `true` pass; nonterminal targets ignore the flag (AC-2.2).
   - `TestReconcileRequiresSameLaunch`: mismatched launch IDs fail; equal IDs pass (AC-2.3).
 - **Test plan**: Tables transcribed from design §4.1 (each row: allowed set + sampled forbidden pairs); guard table tests.
@@ -156,9 +159,10 @@
   - `internal/v2contract/envelope.go`
   - `internal/v2contract/envelope_test.go`
   - `internal/v2contract/testdata/envelope.golden.json`
-- **Produces**: `v2contract.Envelope` (design §6, exact fields; `Payload` `toml:"-"`) with value-receiver `Validate() error` (schema_version == 2; sequences/generation ≥ 0; payload a JSON object); `v2contract.ErrDuplicateEvent`, `v2contract.ErrSequenceGap`, `v2contract.ErrStaleGeneration`; `v2contract.CheckSequence(last, got int64) error`; `v2contract.CheckDuplicate(seen bool) error`; `v2contract.CheckGeneration(current, got int64) error`.
+- **Produces**: `v2contract.Envelope` (design §6, exact fields; `Payload` `toml:"-"`) with value-receiver `Validate() error` (schema_version == 2; IDs/type non-empty; sequences/generation ≥ 0; `ObservedAt` non-zero; payload a JSON object); `v2contract.ErrDuplicateEvent`, `v2contract.ErrSequenceGap`, `v2contract.ErrStaleGeneration`; `v2contract.CheckSequence(last, got int64) error`; `v2contract.CheckDuplicate(seen bool) error`; `v2contract.CheckGeneration(current, got int64) error`.
 - **Acceptance**:
   - `TestEnvelopeGoldenRoundTrip`: the §4.3-shaped golden decodes, re-encodes byte-identical; `schema_version: 1` fails; non-object payload fails.
+  - `TestEnvelopeRejectsMissingObservedAt`: envelope JSON without `observed_at` fails `Validate` naming `observed_at`; the zero time is never accepted.
   - `TestEnvelopeMirrorsJournalEvent`: the JSON tag sets of `Envelope` and `journal.Event` are equal field-for-field (spec-3 `Append` extension stays mechanical); any drift fails.
   - `TestCheckSequence`: `last+1` passes; equal, regressed, or skipped sequences fail with `ErrSequenceGap` (a re-sent sequence with a new event_id is a gap, not a duplicate — matching `Append`).
   - `TestCheckDuplicateAndGeneration`: `seen=true` yields `ErrDuplicateEvent`; older generation yields `ErrStaleGeneration` (quarantine at most, AC-4.2); current/newer generations pass.

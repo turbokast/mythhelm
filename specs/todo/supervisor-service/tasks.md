@@ -47,9 +47,10 @@
   - `internal/control/lock_unix.go`
   - `internal/control/lock_windows.go`
   - `internal/control/lock_test.go`
-- **Produces**: `control.AcquireInstance(dir string) (release func(), err error)`, `control.ErrInstanceHeld`, `control.ErrRootConflict`
+- **Produces**: `control.LockPath() (string, error)`, `control.AcquireInstance(dir string) (release func(), err error)`, `control.ErrInstanceHeld`, `control.ErrRootConflict`
 - **Acceptance**:
   - `TestSecondInstanceHeld`: a second `AcquireInstance` on the same dir returns `ErrInstanceHeld` while the first is held; passes only after the first releases.
+  - `TestLockPathIndependentOfRoot`: `LockPath()` is identical for two different roots and lives under neither root; a lock path derived from the state root fails the test.
   - `TestRootConflictRefused`: with a live lock under root A, acquiring under root B returns `ErrRootConflict`, never a second authority; a variant that acquires succeeds-then-fails this test.
   - `TestStaleLockAdoptedWithGenerationBump`: after the holder process is killed, a new acquirer succeeds and records a higher generation; a test double that reuses the old generation fails.
 - **Test plan**: temp state dirs; kill a real holder subprocess for the stale test; build-tagged lock files vetted with cross-`GOOS` vet.
@@ -137,6 +138,8 @@
 - **Produces**: `control.Intent`, `control.Result`, `control.Handler`, `control.Execute(ctx context.Context, h Handler, peer Peer, intent Intent) (Result, error)`, `control.Mutate(ctx context.Context, db *sql.DB, fn func(tx *sql.Tx) error) error`, `control.Server`, `control.NewServer(handlers map[string]Handler) *Server`, `control.Server.Register(method string, h Handler) error`, `control.Server.Dispatch(ctx context.Context, peer Peer, intent Intent) (Result, error)`, `control.StatusHandler(db *sql.DB) Handler`, `control.AssignHandler(db *sql.DB) Handler`, `control.MintToken(ctx context.Context, db *sql.DB, attemptID string) (token string, err error)`, `control.CheckToken(ctx context.Context, db *sql.DB, token, attemptID string) error`
 - **Acceptance**:
   - `TestIdenticalRepeatReplays`: executing the same intent twice runs the handler once and returns byte-identical results; a handler run-count of 2 fails.
+  - `TestConcurrentDuplicateExecutesOnce`: concurrent `Execute` calls with the same `operation_id` run the handler exactly once and every caller receives the same stored `Result` (I12; run with `-race`).
+  - `TestIntentEmbedsRequestEnvelope`: `control.Intent` embeds `v2contract.RequestEnvelope` (wire `operation_id`/`expected_revision` preserved); an intent whose envelope fails `Validate` returns `invalid_contract` without running the handler.
   - `TestReusedIDWithDifferentArgsConflicts`: same `operation_id` with different params returns `revision_conflict` and the handler does not run.
   - `TestStaleExpectedRevisionConflicts`: an intent with an older `expected_revision` returns `revision_conflict`.
   - `TestMutateIsOneTransaction`: a handler that fails midway leaves no event, projection or outbox row (all-or-nothing observed in the tables).
@@ -180,7 +183,7 @@
   - `TestReleaseIntentViaExecute`: a `release` intent through `Dispatch` flips the reservation to `released`; release evidence is recorded.
   - `TestHeartbeatIntentViaExecute`: a `heartbeat` intent through `Dispatch` refreshes `heartbeat_at` on a held reservation.
   - `TestReadIntentFiltersForeignRepos`: a `read` intent through `Dispatch` returns only in-scope rows — filtered-out repos contribute 0 to counts and no names.
-- **Test plan**: temp state roots; packaged-binary e2e for lazy spawn and status output; detach test asserts no surviving child after the client exits.
+- **Test plan**: temp state roots; packaged-binary e2e for lazy spawn and status output; detach test asserts that the supervisor remains alive and serves a new control request after the client exits.
 - **Invariants touched**: I05 (v2 §2: host+resource keying, bounds prevent work); I09 (v2 §2: unknown quantities distinct from zero); I06 (v2 §2: client exit transfers nothing — detach test).
 
 ### Task 7 — Topology ADR and support matrix

@@ -1,4 +1,4 @@
-# V2 Contract Vocabulary — Scratchpad
+## V2 Contract Vocabulary — Scratchpad
 
 > Open questions and research from authoring. Each implementing task reads this file when it starts and adds an entry under Discoveries when it finishes.
 
