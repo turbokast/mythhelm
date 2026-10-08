@@ -93,8 +93,12 @@ type ImportOptions struct {
 
 // ImportRun imports one legacy run as a one-task v2 run inside the caller's
 // Mutate transaction. Failure cases: revision_conflict (run already
-// imported); invalid_contract (v1 row fails v1 decode — never reinterpreted,
-// AC-7.5); persistence_unavailable (ledger I/O). It writes the v2 rows and
+// imported, or the stored migration.imported envelope for the generated
+// event_id differs from the incoming envelope — the import-marker layer
+// compares envelopes before treating a duplicate event_id as idempotent,
+// and a mismatch aborts before anything commits); invalid_contract (v1 row
+// fails v1 decode — never reinterpreted, AC-7.5);
+// persistence_unavailable (ledger I/O). It writes the v2 rows and
 // the import marker, and appends a v2 Envelope of type migration.imported
 // recording the import via the transaction-scoped append path (§7), so all
 // three writes share the caller's transaction.

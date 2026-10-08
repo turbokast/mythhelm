@@ -64,6 +64,7 @@
   - `TestImportPreservesIDsPostureEvidence`: a v1 run with known IDs imports with identical run/attempt IDs, `subscription-declared` posture copied verbatim (never verified), and v1 journal rows untouched.
   - `TestImportReadyForReviewStaysCandidate`: legacy `ready_for_review` with unverified evidence imports as `candidate` TaskState; a variant promoting to `accepted` fails the test.
   - `TestImportTwiceConflicts`: re-importing returns `revision_conflict` and writes nothing new.
+  - `TestImportEventIDReuseConflicts`: an existing journal envelope with the same `event_id` but different contents returns `revision_conflict` and commits no v2 rows, import marker or envelope.
   - `TestImportCorruptV1Refuses`: a v1 row failing v1 decode returns `invalid_contract`; nothing is reinterpreted.
   - `TestImportRollsBackAtomically`: when the `migration.imported` append fails (injected ledger fault), `ImportRun` returns `persistence_unavailable` and the caller's transaction rolls back all three writes — no v2 rows, no import marker and no envelope remain.
 - **Test plan**: fixture v1 state dirs; golden `TaskRevision` JSON per posture word.
