@@ -1,6 +1,6 @@
 # Release process
 
-How MYTHHELM versions, tags and ships releases. The pipeline sections land with MH-7; this revision records only the version-numbering scheme the pipeline will implement.
+How MYTHHELM versions, tags and ships releases. The scheme below is implemented by the release pipeline described in the Pipeline section at the end of this document.
 
 ## Scheme
 
@@ -28,3 +28,88 @@ The listed `Protect main` ruleset is the observed baseline. Any ruleset or tag-p
 Trigger contract for MH-7 to implement: Pushing a release tag starts the release pipeline, with publication creating `vX.Y.Z` at the target merge and the tag push matching the `v*` filter triggering the pipeline. No release artifact ships without its tag, since the pipeline requires tag context. Failure rule: a pipeline run from a malformed or unauthorized tag fails closed with no partial release, where non-matching tags never match the trigger filter and an aborted run publishes nothing.
 
 Release scope for tagging: every published release including pre-releases gets a tag, with the dotted marker rule above; drafts are never tagged, since a draft is not a release. A pre-release draft is marked as a prerelease before publishing, so the published RC carries GitHub's prerelease flag and never appears as stable.
+
+## Pipeline
+
+Pushing a tag that matches `v*` starts `.github/workflows/release.yml`. The operator creates that tag only by publishing the draft release (see Tag discipline); the workflow never runs from a hand-pushed tag, because its first step rejects any name that is not `v<semver>` with dotted pre-release markers.
+
+### What a release builds
+
+GoReleaser builds a five-pair matrix: linux/amd64, linux/arm64, darwin/arm64, windows/amd64 and windows/arm64. darwin/amd64 is excluded. Each pair yields one archive (`.tar.gz` for linux and darwin, `.zip` for windows) holding the binary, `LICENSE`, `NOTICE` and `third_party_licenses/`, plus a per-archive SPDX SBOM (`<archive>.sbom.json`). The release also carries `checksums.txt` and its cosign bundle, `checksums.txt.sigstore.json`.
+
+The job runs in the `release` environment. Observed state (Q2, settings unchanged by this document): the environment has a required reviewer and a `v*` tag deployment policy, so the job waits for approval and no other ref can start it.
+
+### Operator publish flow
+
+1. Check that the release-drafter draft names the intended version and notes.
+2. Publish the draft, which creates the tag at the merge:
+
+   ```bash
+   gh release edit vX.Y.Z --draft=false --target <merge>
+   ```
+
+   Never create the tag with `git tag`.
+3. Approve the pending `release` environment deployment on the `Release` workflow run.
+4. When the run is green, the release has the five archives, five SBOMs, `checksums.txt` and `checksums.txt.sigstore.json`, and build-provenance attestations over `checksums.txt`, `dist/*.tar.gz` and `dist/*.zip`.
+
+### Verify a release
+
+Download the assets, then run the three checks from the download directory. Set `TAG` to the release tag (for example `v1.2.3`) and `ARCHIVE` to the archive you downloaded.
+
+```bash
+TAG=vX.Y.Z
+ARCHIVE=mythhelm_X.Y.Z_linux_amd64.tar.gz
+gh release download "$TAG" --repo turbokast/mythhelm --pattern "$ARCHIVE" --pattern checksums.txt --pattern checksums.txt.sigstore.json
+
+# 1. Checksum
+sha256sum -c --ignore-missing checksums.txt
+
+# 2. Build-provenance attestation
+gh attestation verify "$ARCHIVE" --repo turbokast/mythhelm
+
+# 3. Cosign signature over checksums.txt
+cosign verify-blob \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity "https://github.com/turbokast/mythhelm/.github/workflows/release.yml@refs/tags/$TAG" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+```
+
+Check 1 and check 3 together prove the archive matches a checksum list that the release workflow signed.
+
+Tamper leg: append a byte to the archive and run check 1 again; `sha256sum -c` reports `FAILED` and exits non-zero. `gh attestation verify` on the modified archive also fails.
+
+```bash
+printf x >> "$ARCHIVE"
+sha256sum -c --ignore-missing checksums.txt   # expected: FAILED, exit 1
+```
+
+### Dry run on a test tag
+
+`.github/workflows/release-dry-run.yml` runs on tags matching `test/*` and publishes nothing: it has no environment, no secret and read-only repository access. The operator pushes the tag at the pull request head or at `main`, for example `test/2026-10-08-mh7`. The run builds a snapshot of the same matrix, checks the archives, SBOMs and notices payload, signs `checksums.txt` with cosign and verifies the bundle, then uploads `dist/` as the artifact `dist` (7-day retention). Attestation does not run in the dry run, so check 2 does not apply to it.
+
+To verify a dry-run artifact, download it with `gh run download <run-id> --name dist` into an empty directory. The bundle's signing identity is the dry-run workflow, so check 3 uses the dry-run identity (set `TAG` to the full test tag, including `test/`). Delete the test tag afterwards.
+
+```bash
+TAG=test/YYYY-MM-DD-mh7
+(cd dist && sha256sum -c checksums.txt)
+cosign verify-blob \
+  --bundle dist/checksums.txt.sigstore.json \
+  --certificate-identity "https://github.com/turbokast/mythhelm/.github/workflows/release-dry-run.yml@refs/tags/$TAG" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  dist/checksums.txt
+```
+
+### Re-run after a late-step failure
+
+GoReleaser publishes the release before the cosign and attestation steps run, so a failure in a later step leaves a published release without its bundle or attestation. Check what is missing with `gh release view "$TAG" --repo turbokast/mythhelm` (is `checksums.txt.sigstore.json` listed?) and `gh attestation verify`. Then recover from the failed run:
+
+1. Re-run the failed job from the Actions UI, with the same tag, and approve the `release` environment again. The job signs `checksums.txt` again, uploads the bundle and re-attests the same subjects: `dist/checksums.txt`, `dist/*.tar.gz` and `dist/*.zip`.
+2. The workflow's upload step does not overwrite. If the bundle is already on the release, that step stops the re-run before the attestation; remove the stale bundle first, then re-run:
+
+   ```bash
+   gh release delete-asset "$TAG" checksums.txt.sigstore.json --yes --repo turbokast/mythhelm
+   ```
+
+   A bundle is only valid when the release workflow signed it (check 3 pins that identity). When the workflow produced a replacement bundle outside the failed step, upload it over the old one with `gh release upload "$TAG" checksums.txt.sigstore.json --clobber --repo turbokast/mythhelm`.
+3. Re-run the three verify checks above. The first real release exercises this procedure for the first time; record any difference here.
