@@ -174,7 +174,7 @@ func AuthStatus(ctx context.Context, p adapter.Probe, env []string, workdir stri
 		ConfigDirectory  string `json:"configDirectory"`
 		OrgID            string `json:"orgId"`
 	}
-	if !validObject(raw) || json.Unmarshal(raw, &status) != nil || !status.LoggedIn || status.AuthMethod != "claude.ai" || status.APIProvider != "firstParty" || !slices.Contains([]string{"pro", "max", "team", "enterprise"}, status.SubscriptionType) || !safeConfigDirectory(status.ConfigDirectory) || status.OrgID == "" || len(status.OrgID) > 256 {
+	if !validObject(raw) || json.Unmarshal(raw, &status) != nil || !status.LoggedIn || status.AuthMethod != "claude.ai" || status.APIProvider != "firstParty" || !slices.Contains(subscriptionTypes, status.SubscriptionType) || !safeConfigDirectory(status.ConfigDirectory) || status.OrgID == "" || len(status.OrgID) > 256 {
 		return AuthEvidence{}, authSetupError()
 	}
 	// A length-prefixed pair prevents ambiguous account/config concatenations.

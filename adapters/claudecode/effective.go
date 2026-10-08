@@ -53,6 +53,8 @@ func GapSources(unresolved []string) []string {
 	return gaps
 }
 
+var subscriptionTypes = []string{"pro", "max", "team", "enterprise"}
+
 // InventoryEffective builds the effective configuration from a probe,
 // manifest and auth evidence. It makes no live call and reads no secret. A gap
 // is returned as data, never as an error.
@@ -60,7 +62,7 @@ func InventoryEffective(p adapter.Probe, m Manifest, ev AuthEvidence) (Effective
 	if !filepath.IsAbs(p.Executable) {
 		return EffectiveConfig{}, fmt.Errorf("%w: native_executable_not_absolute", ErrCapability)
 	}
-	if !ev.LoggedIn || ev.AuthMethod != "claude.ai" {
+	if !ev.LoggedIn || ev.AuthMethod != "claude.ai" || ev.APIProvider != "firstParty" || !slices.Contains(subscriptionTypes, ev.SubscriptionType) {
 		return EffectiveConfig{}, fmt.Errorf("%w: credential_route_unrecognised", ErrCapability)
 	}
 	managed := map[string]string{}

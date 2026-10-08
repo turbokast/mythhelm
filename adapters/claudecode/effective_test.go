@@ -36,6 +36,10 @@ func loadEffective(t *testing.T, name string) effectiveFixture {
 	if !f.Synthetic {
 		t.Fatalf("%s: fixture is not marked synthetic", name)
 	}
+	// A rooted path without a volume is relative on Windows, where InventoryEffective refuses it.
+	if f.Probe.Executable, err = filepath.Abs(f.Probe.Executable); err != nil {
+		t.Fatal(err)
+	}
 	return f
 }
 
@@ -137,6 +141,30 @@ func TestInventoryRefusesUnknownAuthMethod(t *testing.T) { // I02 (v2 §7.3)
 	cfg, err := claudecode.InventoryEffective(f.Probe, f.Manifest, f.Auth)
 	if !errors.Is(err, claudecode.ErrCapability) || len(cfg.CredentialPrecedence) != 0 {
 		t.Fatalf("got %+v, %v; want ErrCapability and no precedence", cfg, err)
+	}
+}
+
+func TestInventoryRefusesUnqualifiedAuthEvidence(t *testing.T) { // I02 (v2 §7.3): unknown billing posture blocks
+	t.Parallel()
+	tests := []struct {
+		name   string
+		mutate func(*claudecode.AuthEvidence)
+	}{
+		{name: "third-party provider is refused", mutate: func(a *claudecode.AuthEvidence) { a.APIProvider = "bedrock" }},
+		{name: "empty provider is refused", mutate: func(a *claudecode.AuthEvidence) { a.APIProvider = "" }},
+		{name: "unknown subscription type is refused", mutate: func(a *claudecode.AuthEvidence) { a.SubscriptionType = "free" }},
+		{name: "empty subscription type is refused", mutate: func(a *claudecode.AuthEvidence) { a.SubscriptionType = "" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := loadEffective(t, "none")
+			tt.mutate(&f.Auth)
+			cfg, err := claudecode.InventoryEffective(f.Probe, f.Manifest, f.Auth)
+			if !errors.Is(err, claudecode.ErrCapability) || len(cfg.CredentialPrecedence) != 0 {
+				t.Fatalf("got %+v, %v; want ErrCapability and no precedence", cfg, err)
+			}
+		})
 	}
 }
 
