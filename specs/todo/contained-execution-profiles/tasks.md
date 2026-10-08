@@ -77,8 +77,9 @@
   an in-memory map-backed `Registry` double (no SQLite — the worker path
   must never need it).
 - **Invariants touched**: I09 (v2 §2: unknown combinations stay `ok == false`,
-  never a zero-value supported record); I14 (v2 §2: every claim carries
-  name, version and owner).
+  never a zero-value supported record); I14 (v2 §2: every evidence record
+  carries version and owner for its nested claims, each with name and
+  version).
 
 ### Task 2 — Linux boundary mechanism
 
@@ -86,9 +87,10 @@
 - **Budget**: complex (syscalls, namespaces, cross-platform probe)
 - **Depends on**: Task 1
 - **Change**: Implement the Linux provider: `ProbeLinux` availability check
-  and `EnterLinux` (user+mount namespaces, read-only `/` remount, read-write
-  or read-only workdir bind, tmpfs `/tmp` and scratch `$HOME` with auth
-  binds, `NO_NEW_PRIVS`), so contained launches get a real native/outer
+  (trial unshare plus the mount/remount/tmpfs setup) and `EnterLinux`
+  (user+mount namespaces, read-only `/` remount, read-write or read-only
+  workdir bind, tmpfs `/tmp` and scratch `$HOME` with auth binds,
+  capability drop, `NO_NEW_PRIVS`), so contained launches get a real native/outer
   boundary (design §2.2, D2). `enter_linux.go` is Linux-only by filename
   suffix (the repo's `proc_linux.go` convention); `enter_other.go` carries
   the `//go:build !linux` stubs (the `orphan_other.go` convention) so
@@ -112,6 +114,10 @@
     available, else `Supported == false` with a non-empty `Reason` naming
     the missing capability; a probe that returns supported with an empty
     version fails.
+  - `TestProbeLinuxRejectsUnavailableSetup`: when user namespaces are
+    available but a required mount, remount, or tmpfs operation is denied,
+    `ProbeLinux` reports `Supported == false` with a non-empty `Reason`;
+    reporting support fails the test.
   - `TestPolicyRejectsWholeHomeBind`: `PolicyFor` with an `AuthBind` whose
     source is `$HOME` itself (or `/`) returns an error; a single-file bind
     is accepted, and removing the check makes the test fail.
@@ -121,6 +127,11 @@
     with `$OUTSIDE/pwned` absent and `$WORKDIR/ok` present; the
     same spec with `ReadOnly` set leaves `$WORKDIR/ok` absent too; running
     the spec uncontained creates `$OUTSIDE/pwned`, proving the fixture bites.
+  - `TestEnterLinuxDropsCapabilities` (linux-only, skips elsewhere): a
+    `ContainSpec` with a read-only workdir reports empty `CapEff` and
+    `CapPrm` in `/proc/self/status`, and remounting the workdir read-write
+    fails; the same spec run uncontained reports non-empty capabilities,
+    proving the fixture bites.
   - `TestEnterLinuxBindsAuthFile` (linux-only, skips elsewhere; AC-7.1
     positive clause): a `ContainSpec` whose policy carries one `AuthBind`
     from a temp secret file to `$HOME/token` runs `cat $HOME/token` and

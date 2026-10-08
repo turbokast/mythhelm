@@ -91,7 +91,10 @@ Per-platform native, no container dependency (Q1, D2). The worker spawns
 - Filesystem: bind-remount `/` read-only inside the mount namespace (host
   unaffected); bind `Workdir` read-write (`restricted`) or read-only remount
   (`inspect`, Q2); fresh tmpfs `/tmp`; scratch tmpfs `$HOME` carrying only
-  the admitted auth binds (§2.6). `NO_NEW_PRIVS` via prctl.
+  the admitted auth binds (§2.6). After setup and before exec, drop all
+  capabilities (empty effective and permitted sets) so the native cannot
+  remount; `NO_NEW_PRIVS` via prctl additionally blocks setuid privilege
+  gain.
 - Process: existing `Setpgid` ownership plus the user namespace (contained
   processes hold no capabilities outside it, so no signalling or ptracing
   host siblings) and the stop ladder unchanged (I06, I18).
@@ -353,7 +356,7 @@ MH-22 consumes: receipt `execution_bundle.boundary` and
 | ID | Decision | Rationale |
 |---|---|---|
 | D1 | Boundary attaches in the worker via a `__contain` re-exec, not in-worker syscalls or wrapper scripts | Go cannot run mount setup between fork and exec; a re-exec keeps one spawn site (`launcher.Launch`) and one spec envelope, matching the `__worker` pattern (ADR-0004) |
-| D2 | Linux = user+mount namespaces, RO `/` remount, RW binds, `NO_NEW_PRIVS`; no bubblewrap/container dependency | Q1 per-platform native; the RO-remount design needs no Landlock dependency and probes with one unshare |
+| D2 | Linux = user+mount namespaces, RO `/` remount, RW binds, cap-drop + `NO_NEW_PRIVS`; no bubblewrap/container dependency | Q1 per-platform native; the RO-remount design needs no Landlock dependency and probes with a trial unshare plus the mount/remount/tmpfs setup |
 | D3 | Network v1 = filtering CONNECT proxy + pinned env; direct egress disclosed, not blocked | Destination-aware blocking needs netns plumbing or eBPF, both out of reach unprivileged; v2 §7.4 explicitly allows refuse-where-unavailable, and a pinned proxy is still an enforced, testable pin |
 | D4 | macOS/Windows v1 = precise refusal, not best-effort containment | No readily usable native boundary (`sandbox-exec` deprecated surface, Job Objects are limits not isolation); NFR-1 blesses refuse-with-blocker over fake enforcement |
 | D5 | `inspect` = same provider, `ReadOnly` policy | Q2 shared mechanism; one evidence set, one adversarial suite |
