@@ -31,24 +31,12 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 
 ## Open
 
-### MH-10: Harness compatibility records and qualification registry
-- **Status**: specced
-- **Stage**: 0
-- **Gates**: G02, G05, G07, G12
-- **Score**: 5.0 = (value 5 + urgency 5 + risk 5) / effort 3
-- **Spec**: `qualification-registry`
-- **Issue**: [#31](https://github.com/turbokast/mythhelm/issues/31)
-- **Source**: Master Specification v2 §§4, 7–8, 14, 17–18; W01/W02/W14; historical issue #31
-- **Summary**: Create a versioned seven-harness qualification registry with independent fidelity, entitlement, lifecycle/trust and platform/host evidence, drift triggers and next tests for blocked routes. Prove a credible first included-only route through authorised tests; neither subscription sign-in nor a user declaration establishes no paid continuation.
-- **Premise-grounded**: 2026-10-07 — subscription-only blocks HOLDS; probe HOLDS; no registry HOLDS; seven-harness HOLDS; issue section refs PARTIAL (v2 governs); no live usage authorised HOLDS
-- **Notes**: S0 blocker and first product prerequisite; currently subscription-only always blocks. Unknown mandatory entitlement/no-overage evidence blocks, while unknown remaining quota alone need not block an otherwise qualified stop-at-exhaustion route. No live usage or account changes are authorised by this card.
-
 ### MH-7: Release pipeline: GoReleaser archives, attestations and signatures
-- **Status**: triaged
+- **Status**: implementing
 - **Stage**: 1
 - **Gates**: G01, G10
 - **Score**: 4.3 = (value 4 + urgency 5 + risk 4) / effort 3
-- **Spec**: (none)
+- **Spec**: `release-pipeline`
 - **Issue**: [#28](https://github.com/turbokast/mythhelm/issues/28)
 - **Source**: Master Specification v2 §§1, 17–18; W16; historical issue #28
 - **Summary**: A tag-triggered release that builds cross-platform archives with GoReleaser, checksums and an SBOM, build-provenance attestations, keyless signatures and licence notices, publishing from a protected environment only. It turns the Stage 1 binary into something users can install and verify.
@@ -66,11 +54,11 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: Qualify Windows process-tree ownership, cancellation, detach, filesystem and terminal combinations explicitly. Advertise only tested subsets; Unix tests do not establish Windows support.
 
 ### MH-12: Strict subscription-only qualification for Claude Code
-- **Status**: triaged
+- **Status**: implementing
 - **Stage**: 1
 - **Gates**: G02, G05, G07
 - **Score**: 3.8 = (value 5 + urgency 5 + risk 5) / effort 4
-- **Spec**: (none)
+- **Spec**: `claude-strict-subscription`
 - **Issue**: [#33](https://github.com/turbokast/mythhelm/issues/33)
 - **Source**: Master Specification v2 §§7–8; W02/W14; historical issue #33
 - **Summary**: Entitlement and overage-prevention evidence that lets strict subscription-only admission pass for Claude Code instead of blocking. The dogfood slice ships only a user-declared, never-verified posture (its non-goal N8); this card earns the strict one (I15).
@@ -340,6 +328,18 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Source**: master spec §19.3, §19.4 and the G10 public-release gate of §18.7
 - **Summary**: Complete the OpenSSF Best Practices questionnaire for the passing level and show the badge in the README, recording any criterion the project does not yet meet as its own card.
 - **Premise-grounded**: 2026-10-02 — C1 HOLDS; C2 HOLDS; C3 HOLDS; C4 HOLDS; C5 PARTIAL; C6 HOLDS (external); C7 PROCEDURE
+
+### MH-10: Harness compatibility records and qualification registry
+- **Status**: shipped
+- **Stage**: 0
+- **Gates**: G02, G05, G07, G12
+- **Score**: 5.0 = (value 5 + urgency 5 + risk 5) / effort 3
+- **Spec**: `qualification-registry`
+- **Issue**: [#31](https://github.com/turbokast/mythhelm/issues/31)
+- **Source**: Master Specification v2 §§4, 7–8, 14, 17–18; W01/W02/W14; historical issue #31
+- **Summary**: Create a versioned seven-harness qualification registry with independent fidelity, entitlement, lifecycle/trust and platform/host evidence, drift triggers and next tests for blocked routes. Prove a credible first included-only route through authorised tests; neither subscription sign-in nor a user declaration establishes no paid continuation.
+- **Premise-grounded**: 2026-10-07 — subscription-only blocks HOLDS; probe HOLDS; no registry HOLDS; seven-harness HOLDS; issue section refs PARTIAL (v2 governs); no live usage authorised HOLDS
+- **Notes**: S0 blocker and first product prerequisite; currently subscription-only always blocks. Unknown mandatory entitlement/no-overage evidence blocks, while unknown remaining quota alone need not block an otherwise qualified stop-at-exhaustion route. No live usage or account changes are authorised by this card.
 
 ### MH-18: Adopt SemVer or CalVer for releases
 - **Status**: shipped

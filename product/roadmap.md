@@ -7,24 +7,23 @@
 
 Cards with a spec, being specified or implemented.
 
-- **MH-10** Harness compatibility records and qualification registry (specced, stage 0, score 5.0; spec `qualification-registry`; [#31](https://github.com/turbokast/mythhelm/issues/31))
+- **MH-7** Release pipeline: GoReleaser archives, attestations and signatures (implementing, stage 1, score 4.3; spec `release-pipeline`; [#28](https://github.com/turbokast/mythhelm/issues/28))
+- **MH-12** Strict subscription-only qualification for Claude Code (implementing, stage 1, score 3.8; spec `claude-strict-subscription`; [#33](https://github.com/turbokast/mythhelm/issues/33))
 
 ## Next
 
 The five highest-scored cards without a spec in an earlier stage, the current stage or the next stage.
 
-- **MH-7** Release pipeline: GoReleaser archives, attestations and signatures (triaged, stage 1, score 4.3; [#28](https://github.com/turbokast/mythhelm/issues/28))
 - **MH-11** Windows process-tree ownership (triaged, stage 1, score 4.3; [#32](https://github.com/turbokast/mythhelm/issues/32))
-- **MH-12** Strict subscription-only qualification for Claude Code (triaged, stage 1, score 3.8; [#33](https://github.com/turbokast/mythhelm/issues/33))
 - **MH-22** Protected acceptance and a complete v2 one-agent workflow (triaged, stage 1, score 3.8; [#128](https://github.com/turbokast/mythhelm/issues/128))
 - **MH-17** Account profiles and exhaustion handoff (triaged, stage 2, score 3.7; [#82](https://github.com/turbokast/mythhelm/issues/82))
+- **MH-13** Contained execution profiles: restricted and inspect (triaged, stage 1, score 3.5; [#34](https://github.com/turbokast/mythhelm/issues/34))
+- **MH-3** Herdr bridge: single-pane experience with scoped status (triaged, stage 1, score 3.3; [#24](https://github.com/turbokast/mythhelm/issues/24))
 
 ## Later
 
 Every other open card, by score.
 
-- **MH-13** Contained execution profiles: restricted and inspect (triaged, stage 1, score 3.5; [#34](https://github.com/turbokast/mythhelm/issues/34))
-- **MH-3** Herdr bridge: single-pane experience with scoped status (triaged, stage 1, score 3.3; [#24](https://github.com/turbokast/mythhelm/issues/24))
 - **MH-4** Codex native adapter and included-only qualification (triaged, stage 1, score 3.3; [#25](https://github.com/turbokast/mythhelm/issues/25))
 - **MH-16** Quota observations and the budget ledger (triaged, stage 1, score 3.3; [#37](https://github.com/turbokast/mythhelm/issues/37))
 - **MH-23** Complete TUI intervention, accessibility and safe declarative themes (triaged, stage 1, score 3.3; [#129](https://github.com/turbokast/mythhelm/issues/129))
