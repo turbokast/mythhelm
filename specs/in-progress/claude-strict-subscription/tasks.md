@@ -46,7 +46,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `adapters/claudecode/effective.go`, `adapters/claudecode/effective_test.go`, `adapters/claudecode/settings.go`, `adapters/claudecode/settings_test.go`, `adapters/claudecode/testdata/effective/none.json`, `adapters/claudecode/testdata/effective/file.json`, `adapters/claudecode/testdata/effective/file-gap.json`, `specs/in-progress/claude-strict-subscription/tasks.md`, `specs/in-progress/claude-strict-subscription/handoff.md`, `specs/in-progress/claude-strict-subscription/scratchpad.md`.
 
-### Task 2 — Auxiliary inventory and live evidence constructors
+### Task 2 — Auxiliary inventory and live evidence constructors ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (live suite + several constructors)
@@ -72,6 +72,10 @@
   - `TestAuxiliaryBareInstallEmitsOnlyAT03`: zero plugins and no MCP servers yield exactly the seven AT-03 routes — no `plugin:*` route, no `mcp:` route; a phantom zero-count route fails the test.
 - **Test plan**: Unit tests always run; `live_qualify_test.go` carries `//go:build live` and an env gate (MH-10 canary pattern); fixtures pin both purchased-credit outcomes.
 - **Invariants touched**: I15 (v2 §7.3: proof across the whole funding tree); I04 (allowance consumed only under explicit grant); I13 (contributor tests need no credentials).
+- **Status**: ✅ Completed — auxiliary route inventory, `LiveRecord` gate/assemble constructor, live-shapes fixture, COMPATIBILITY live-record section and the env-gated live suite landed; the live grant leg was compiled (`go vet -tags live`) and skip-verified only, not executed (Task 7 maintainer run); PR #219.
+- **Implementation**: `LiveRecord` also refuses empty credential precedence and any unassessed AT-03 route; `stop_at_exhaustion` carries `Evidence: "documented-mechanism"` (the capability field is a string, so the entitlement column keeps exactly one `authorised-live` entry). The live suite builds the key from the fixture key plus probe digest, and marks only the seven AT-03 routes `included` after one completed session. Commit 2da8a1c.
+- **Spec deviations**: Evidence `Suite` is `live-qualify:<executable-digest>` instead of `<native-version>` because the `LiveRecord` signature carries no version. Red-first was observed as compile failure of the tests before `auxiliary.go` existed.
+- **Files modified**: `adapters/claudecode/auxiliary.go`, `adapters/claudecode/auxiliary_test.go`, `adapters/claudecode/live_qualify_test.go`, `adapters/claudecode/testdata/qualification/live-shapes.json`, `adapters/claudecode/COMPATIBILITY.md`, `specs/in-progress/claude-strict-subscription/tasks.md`, `specs/in-progress/claude-strict-subscription/handoff.md`.
 
 ### Task 3 — Strict admission flip with closed matching ✅ COMPLETED
 

@@ -15,7 +15,10 @@
 
 ## Task 2 — Auxiliary inventory and live evidence constructors
 
-<!-- pending -->
+- **Produces**: `claudecode.AuxiliaryRoute{Name, Funding, Evidence}`, `InventoryAuxiliary`, `LiveRecord`, `ErrEvidenceIncomplete` (`adapters/claudecode/auxiliary.go`); `testdata/qualification/live-shapes.json`; `## Live record` in `COMPATIBILITY.md`; `live_qualify_test.go` (`-tags live`, `MYTHHELM_LIVE_QUALIFY=1`).
+- **For dependents**: `LiveRecord` reuses `ErrNotFirstRoute` and the `RecordDraft` predicate (harness and surface only). Evidence `Suite` is `live-qualify:<executable-digest>`. The record's capabilities are `credential-precedence`, `managed-policy`, `extra-usage`, `purchased-credits` and `stop_at_exhaustion`.
+- **For Task 7**: the live suite needs `MYTHHELM_LIVE_STATE_DIR`, `MYTHHELM_LIVE_EXTRA_USAGE` and `MYTHHELM_LIVE_PURCHASED_CREDITS` (maintainer account observations). It was never grant-run; expect to adjust it on first execution.
+- **Trap**: only the seven AT-03 routes can be `included`; configs with plugins or MCP servers keep `unknown` routes and `LiveRecord` refuses them.
 
 ## Task 3 — Strict admission flip with closed matching
 
