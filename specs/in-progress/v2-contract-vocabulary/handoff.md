@@ -4,7 +4,8 @@
 > dependent tasks need: what it produced (the API and files as shipped), what a later task must
 > know, and any deviation that changes a later task's inputs. `/run-spec` puts the sections of a
 > task's dependencies into that task's dispatch prompt. Open questions and research stay in
-> `scratchpad.md`.
+> `scratchpad.md`. Keep each section within 20 lines (`runspec.py` truncates longer sections);
+> prioritise the shipped API and deviations that change later inputs.
 
 ## Task 1 — Package kernel: scales, claims, strict decode, digest, limits
 
