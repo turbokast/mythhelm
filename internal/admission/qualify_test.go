@@ -360,6 +360,26 @@ func TestAmbiguousMatchBlocks(t *testing.T) {
 	if permissive.Verdict != admission.Eligible || permissive.Record != nil {
 		t.Fatalf("declared ambiguous consult = (%s, %+v), want (eligible, nil)", permissive.Verdict, permissive.Record)
 	}
+
+	// Narrowed: a third record on another account class is not a candidate
+	// for this identity, so the same two records stay ambiguous, while an
+	// observed identity on the third record's class matches it alone.
+	other := key
+	other.AuthCategory = "claude.ai/pro"
+	other.ExecutableDigest = "sha256:" + strings.Repeat("4", 64)
+	rec := liveRecord(other, liveEvidence(true), liveStop(true))
+	rec.Progress = qualify.ProgressBlocked
+	rec.NextTest = "fixture; authority: test"
+	storeRecord(t, reg, rec)
+	stillAmbiguous := resolve(t, reg, probe, manifest, evidence, admission.BillingSubscriptionOnly, admission.ProfileTrustedHost)
+	requireVerdict(t, stillAmbiguous, admission.Blocked, "ambiguous_qualification_match")
+	pro := evidence
+	pro.SubscriptionType = "pro"
+	narrowed, drift := resolveDrift(t, reg, probe, manifest, pro)
+	requireVerdict(t, narrowed, admission.Blocked, "qualification_drifted")
+	if narrowed.Record == nil || narrowed.Record.Key.AuthCategory != "claude.ai/pro" || drift.KeyHash != qualify.KeyHash(other) {
+		t.Fatalf("narrowed consult matched %+v (hash %s), want the pro record", narrowed.Record, drift.KeyHash)
+	}
 }
 
 func TestTamperedDigestNeverAmbiguous(t *testing.T) {
@@ -637,9 +657,10 @@ func TestResolveQualificationFindsRecordDraft(t *testing.T) {
 
 	// Drifting the fixture digest consults the same record as drifted.
 	probe.SHA256 = strings.Repeat("e", 64)
-	drifted := resolve(t, reg, probe, manifest, evidence, admission.BillingSubscriptionOnly, admission.ProfileTrustedHost)
-	if drifted.Verdict != admission.Blocked || !strings.Contains(drifted.Reason, "executable_digest") {
-		t.Fatalf("drifted draft consult = (%s, %q), want (blocked, executable_digest …)", drifted.Verdict, drifted.Reason)
+	drifted, drift := resolveDrift(t, reg, probe, manifest, evidence)
+	requireVerdict(t, drifted, admission.Blocked, "qualification_drifted")
+	if !strings.Contains(drift.Reason, "executable_digest") {
+		t.Fatalf("drifted draft reason %q, want it to name executable_digest", drift.Reason)
 	}
 }
 
@@ -649,9 +670,10 @@ func TestDriftedRecordBlocks(t *testing.T) {
 	key := observedKey(probe, manifest, evidence, admission.ProfileTrustedHost)
 	storeRecord(t, reg, liveRecord(key, liveEvidence(true), liveStop(true)))
 	probe.SHA256 = strings.Repeat("f", 64)
-	drifted := resolve(t, reg, probe, manifest, evidence, admission.BillingSubscriptionOnly, admission.ProfileTrustedHost)
-	if drifted.Verdict != admission.Blocked || !strings.Contains(drifted.Reason, "executable_digest") {
-		t.Fatalf("drifted consult = (%s, %q), want (blocked, executable_digest …)", drifted.Verdict, drifted.Reason)
+	drifted, drift := resolveDrift(t, reg, probe, manifest, evidence)
+	requireVerdict(t, drifted, admission.Blocked, "qualification_drifted")
+	if !strings.Contains(drift.Reason, "executable_digest") {
+		t.Fatalf("drifted reason %q, want it to name executable_digest", drift.Reason)
 	}
 	if drifted.Record == nil {
 		t.Fatal("drifted consult attached no record")
@@ -661,9 +683,10 @@ func TestDriftedRecordBlocks(t *testing.T) {
 	storeRecord(t, configured, liveRecord(key, liveEvidence(true), liveStop(true)))
 	probe.SHA256 = fixtureSHA256
 	manifest.Digests["project"] = strings.Repeat("0", 64)
-	driftedConfig := resolve(t, configured, probe, manifest, evidence, admission.BillingSubscriptionOnly, admission.ProfileTrustedHost)
-	if driftedConfig.Verdict != admission.Blocked || !strings.Contains(driftedConfig.Reason, "config_digest") {
-		t.Fatalf("config-drifted consult = (%s, %q), want (blocked, config_digest …)", driftedConfig.Verdict, driftedConfig.Reason)
+	driftedConfig, configDrift := resolveDrift(t, configured, probe, manifest, evidence)
+	requireVerdict(t, driftedConfig, admission.Blocked, "qualification_drifted")
+	if !strings.Contains(configDrift.Reason, "config_digest") {
+		t.Fatalf("config-drift reason %q, want it to name config_digest", configDrift.Reason)
 	}
 }
 
@@ -755,8 +778,9 @@ func writeTask(t *testing.T) string {
 	return task
 }
 
-// seedStable stores one record carrying the Decide fixture's stable identity
-// with unestablished digests, so the consult matches it without drift.
+// seedStable stores one record carrying the Decide fixture's identity (every
+// non-drift dimension exact) with unestablished digests, so the consult
+// matches it without drift.
 func seedStable(t *testing.T, dir string, progress qualify.Progress) {
 	t.Helper()
 	desc := claudecode.New().Descriptor()
@@ -772,6 +796,11 @@ func seedStable(t *testing.T, dir string, progress qualify.Progress) {
 			ConfigDigest:     "unknown",
 			TrustProfile:     admission.ProfileTrustedHost,
 			EntitlementClass: "included-plan",
+			ProviderEndpoint: "first-party-subscription",
+			ModelSnapshot:    "unknown",
+			EffortSettings:   "none",
+			AuthCategory:     "claude.ai/max",
+			WorkspaceClass:   "local-checkout",
 		},
 		Progress:     progress,
 		Fidelity:     unknownColumn(),
@@ -834,16 +863,25 @@ func TestDeclaredUnaffectedByMissingRecord(t *testing.T) {
 	}
 }
 
+// strictCLI runs the packaged strict claudecode path through cli.Main against
+// a fake native and the registry state at stateDir.
+func strictCLI(t *testing.T, world decideWorld, stateDir string) (code int, out, diagnostics string) {
+	t.Helper()
+	t.Setenv("MYTHHELM_HOME", stateDir)
+	t.Chdir(world.repo)
+	var stdout, stderr bytes.Buffer
+	code = cli.Main([]string{"run", "--adapter", "claudecode", "--billing", "subscription-only", "--task-file", world.task, "--execution-profile", "trusted-host", "--non-interactive", "--no-checks", "--strip-credential-env", "--format", "jsonl"}, cli.Stdio{In: strings.NewReader(""), Out: &stdout, Err: &stderr})
+	return code, stdout.String(), stderr.String()
+}
+
 func TestStrictStillBlocksEndToEnd(t *testing.T) {
-	t.Setenv("MYTHHELM_HOME", t.TempDir())
-	task := filepath.Join(t.TempDir(), "task.md")
-	if err := os.WriteFile(task, []byte("# test"), 0o600); err != nil {
-		t.Fatal(err)
+	if runtime.GOOS == "windows" {
+		t.Skip("claudecode probe refuses Windows; the strict path cannot run there")
 	}
-	var out, diagnostics bytes.Buffer
-	code := cli.Main([]string{"run", "--adapter", "claudecode", "--billing", "subscription-only", "--task-file", task, "--execution-profile", "trusted-host", "--non-interactive", "--no-checks", "--format", "jsonl"}, cli.Stdio{In: strings.NewReader(""), Out: &out, Err: &diagnostics})
-	if code != int(cli.ExitBlocked) || !strings.Contains(out.String(), `"reason":"entitlement_qualification_unavailable"`) {
-		t.Fatalf("strict CLI = %d, %s, %s", code, &out, &diagnostics)
+	world := newDecideWorld(t)
+	code, out, diagnostics := strictCLI(t, world, missingStateDir(t))
+	if code != int(cli.ExitBlocked) || !strings.Contains(out, `"reason":"no_qualification_record"`) {
+		t.Fatalf("strict CLI = %d, %s, %s", code, out, diagnostics)
 	}
 }
 
@@ -861,4 +899,221 @@ func restrictDir(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) }) //nolint:gosec // G302: the fixture dir must be traversable again for TempDir removal
+}
+
+// resolveDrift runs the strict consult expecting a drift refusal: the
+// *DriftError the consult returns and the eligibility behind it.
+func resolveDrift(t *testing.T, reg *qualify.Registry, probe adapter.Probe, manifest adapter.ConfigManifest, evidence admission.AuthEvidence) (admission.Eligibility, *admission.DriftError) {
+	t.Helper()
+	elig, err := admission.ResolveQualification(t.Context(), reg, probe, manifest, evidence, admission.BillingSubscriptionOnly, admission.ProfileTrustedHost)
+	drift, ok := errors.AsType[*admission.DriftError](err)
+	if !ok {
+		t.Fatalf("drifted consult error = %v, want a *DriftError", err)
+	}
+	return elig, drift
+}
+
+// strictLiveRegistry returns a state dir whose registry holds a live-qualified,
+// entitlement-proven record for the exact key the world's fake native observes.
+func strictLiveRegistry(t *testing.T, world decideWorld) string {
+	t.Helper()
+	probed, err := admission.Decide(t.Context(), world.request(t.TempDir()))
+	if err != nil {
+		t.Fatalf("declared Decide to observe the key: %v", err)
+	}
+	key := observedKey(probed.Probe, probed.Proposal.Manifest, *probed.NativeAuth, probed.Profile.Name)
+	dir := t.TempDir()
+	reg := openRegistry(t, dir)
+	storeRecord(t, reg, liveRecord(key, liveEvidence(true), liveStop(true)))
+	if err := reg.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// missingStateDir is a state dir that does not exist, so the consult sees a
+// missing registry (an existing dir without a database reads as an empty,
+// present one).
+func missingStateDir(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "absent")
+}
+
+func strictRequest(world decideWorld, stateDir string) admission.Request {
+	req := world.request(stateDir)
+	req.Billing = admission.BillingSubscriptionOnly
+	req.DeclareEntitlement = ""
+	return req
+}
+
+func TestStrictAdmitsLiveProven(t *testing.T) {
+	reg := openRegistry(t, t.TempDir())
+	probe, manifest, evidence := fixtureProbe(), fixtureManifest(), fixtureEvidence()
+	storeRecord(t, reg, liveRecord(observedKey(probe, manifest, evidence, admission.ProfileTrustedHost), liveEvidence(true), liveStop(true)))
+	elig := resolve(t, reg, probe, manifest, evidence, admission.BillingSubscriptionOnly, admission.ProfileTrustedHost)
+	requireVerdict(t, elig, admission.Eligible, "")
+
+	// A passed declaration never reaches the strict posture (I15).
+	posture, err := admission.ResolveBilling(t.Context(), admission.BillingSubscriptionOnly, evidence, &admission.Declaration{PlanClass: "max", ExtraUsage: "disabled"}, elig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := admission.BillingPosture{Mode: admission.BillingSubscriptionOnly, CredentialProvenance: "native-login", EntitlementClass: "included-plan", EntitlementSource: "registry:live-qualified", PaidContinuation: "prevented", PaidContinuationUserDeclaration: "", Qualified: true, G05: "passed"}
+	if posture != want {
+		t.Fatalf("strict posture = %+v, want %+v", posture, want)
+	}
+
+	// The same key one account class away is another identity, never admitted.
+	pro := evidence
+	pro.SubscriptionType = "pro"
+	absent := resolve(t, reg, probe, manifest, pro, admission.BillingSubscriptionOnly, admission.ProfileTrustedHost)
+	requireVerdict(t, absent, admission.Blocked, "no_qualification_record")
+}
+
+func TestStrictGapBlocksEndToEnd(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("claudecode probe refuses Windows; the strict path cannot run there")
+	}
+	if len(claudecode.GapSources(claudecode.UnresolvedSources)) == 0 {
+		t.Skip("the source gap is resolved; the post-resolution strict proof owns this path")
+	}
+	world := newDecideWorld(t)
+	dir := strictLiveRegistry(t, world)
+	code, out, diagnostics := strictCLI(t, world, dir)
+	if code != int(cli.ExitBlocked) || !strings.Contains(out, `"reason":"entitlement_not_proven"`) || !strings.Contains(out+diagnostics, "missing-source:managed-remote-cache") {
+		t.Fatalf("strict gap CLI = %d, %s, %s", code, out, diagnostics)
+	}
+}
+
+func TestStrictConsultReasonsDirect(t *testing.T) {
+	probe, manifest, evidence := fixtureProbe(), fixtureManifest(), fixtureEvidence()
+	key := observedKey(probe, manifest, evidence, admission.ProfileTrustedHost)
+
+	empty := openRegistry(t, t.TempDir())
+	requireVerdict(t, resolve(t, empty, probe, manifest, evidence, admission.BillingSubscriptionOnly, admission.ProfileTrustedHost), admission.Blocked, "no_qualification_record")
+
+	for _, tc := range []struct {
+		name   string
+		mutate func(*qualify.Record)
+	}{
+		{"fixture-only evidence does not prove entitlement", func(r *qualify.Record) {
+			r.Progress = qualify.ProgressFixtureTested
+			r.Entitlement.Evidence[0].Method = "offline-fixture"
+		}},
+		{"live record with an unproven entitlement column", func(r *qualify.Record) {
+			r.Entitlement = qualify.Column{Verdict: qualify.NotProven, Evidence: []qualify.Evidence{}}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := openRegistry(t, t.TempDir())
+			rec := liveRecord(key, liveEvidence(true), liveStop(true))
+			tc.mutate(&rec)
+			rec.NextTest = "run the authorised live suite; authority: maintainer live-test grant"
+			storeRecord(t, reg, rec)
+			elig := resolve(t, reg, probe, manifest, evidence, admission.BillingSubscriptionOnly, admission.ProfileTrustedHost)
+			requireVerdict(t, elig, admission.Blocked, "entitlement_not_proven")
+		})
+	}
+
+	drifted := openRegistry(t, t.TempDir())
+	storeRecord(t, drifted, liveRecord(key, liveEvidence(true), liveStop(true)))
+	probe.SHA256 = strings.Repeat("f", 64)
+	elig, _ := resolveDrift(t, drifted, probe, manifest, evidence)
+	requireVerdict(t, elig, admission.Blocked, "qualification_drifted")
+}
+
+func TestDriftErrorUnwraps(t *testing.T) {
+	reg := openRegistry(t, t.TempDir())
+	probe, manifest, evidence := fixtureProbe(), fixtureManifest(), fixtureEvidence()
+	key := observedKey(probe, manifest, evidence, admission.ProfileTrustedHost)
+	storeRecord(t, reg, liveRecord(key, liveEvidence(true), liveStop(true)))
+	probe.SHA256 = strings.Repeat("f", 64)
+	_, drift := resolveDrift(t, reg, probe, manifest, evidence)
+	if drift.Blocked == nil || drift.Blocked.Code != "qualification_drifted" {
+		t.Fatalf("drift block = %+v, want code qualification_drifted", drift.Blocked)
+	}
+	if drift.KeyHash != qualify.KeyHash(key) || !strings.Contains(drift.Reason, "executable_digest") {
+		t.Fatalf("drift = (%s, %q), want the matched record's hash and an executable_digest reason", drift.KeyHash, drift.Reason)
+	}
+	var err error = drift
+	if blocked, ok := errors.AsType[*admission.BlockedError](err); !ok || blocked != drift.Blocked {
+		t.Fatalf("errors.As BlockedError = (%v, %v), want the drift block", blocked, ok)
+	}
+	if again, ok := errors.AsType[*admission.DriftError](fmt.Errorf("wrapped: %w", err)); !ok || again != drift {
+		t.Fatal("errors.As does not find the DriftError through a wrap")
+	}
+}
+
+func TestDeclaredIgnoresGaps(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("claudecode probe refuses Windows; the Decide legs cannot run there")
+	}
+	if len(claudecode.GapSources(claudecode.UnresolvedSources)) == 0 {
+		t.Skip("the source gap is resolved; there is no gap to ignore")
+	}
+	world := newDecideWorld(t)
+	dir := strictLiveRegistry(t, world)
+	decided, err := admission.Decide(t.Context(), world.request(dir))
+	if err != nil {
+		t.Fatalf("declared Decide with a gap-bearing config and a present registry: %v", err)
+	}
+	posture := decided.Proposal.Billing
+	if posture.Mode != admission.BillingSubscriptionDeclared || posture.Qualified || posture.G05 != "not-passed" || posture.PaidContinuation != "unknown" {
+		t.Fatalf("declared posture = %+v, want the unchanged unverified labels", posture)
+	}
+}
+
+func TestStrictDeclarationOnlyEvidenceBlocks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("claudecode probe refuses Windows; the Decide legs cannot run there")
+	}
+	// Sign-in-only evidence: no registry at all. A missing registry skips the
+	// gap check, so the pin holds before and after the source gap resolves.
+	world := newDecideWorld(t)
+	_, err := admission.Decide(t.Context(), strictRequest(world, missingStateDir(t)))
+	blocked(t, err, "no_qualification_record")
+
+	// Declaration-only evidence: a present registry whose record was never
+	// live-tested stays entitlement_not_proven at the consult.
+	probe, manifest, evidence := fixtureProbe(), fixtureManifest(), fixtureEvidence()
+	reg := openRegistry(t, t.TempDir())
+	rec := liveRecord(observedKey(probe, manifest, evidence, admission.ProfileTrustedHost), liveEvidence(true), liveStop(true))
+	rec.Progress = qualify.ProgressFixtureTested
+	rec.Entitlement.Evidence[0].Method = "offline-fixture"
+	rec.NextTest = "run the authorised live suite; authority: maintainer live-test grant"
+	storeRecord(t, reg, rec)
+	requireVerdict(t, resolve(t, reg, probe, manifest, evidence, admission.BillingSubscriptionOnly, admission.ProfileTrustedHost), admission.Blocked, "entitlement_not_proven")
+}
+
+func TestEarlyReturnGone(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("claudecode probe refuses Windows; the Decide legs cannot run there")
+	}
+	world := newDecideWorld(t)
+	_, err := admission.Decide(t.Context(), strictRequest(world, missingStateDir(t)))
+	b, ok := errors.AsType[*admission.BlockedError](err)
+	if !ok || b.Code != "no_qualification_record" || b.Field == "--billing subscription-only" {
+		t.Fatalf("strict Decide with a missing registry = %v, want the consult's no_qualification_record", err)
+	}
+}
+
+func TestRegistryUnreadableStillFailsClosed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("claudecode probe refuses Windows; the Decide legs cannot run there")
+	}
+	world := newDecideWorld(t)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, journal.DBName), []byte("this is not a database file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := admission.Decide(t.Context(), strictRequest(world, dir))
+	if err == nil {
+		t.Fatal("strict Decide over an unreadable registry admitted")
+	}
+	// The trust journal and the consult open the same database, so the
+	// failure surfaces from whichever reads it first; either way it is an
+	// admission error, never the gap gate's block.
+	if _, isBlocked := errors.AsType[*admission.BlockedError](err); isBlocked {
+		t.Fatalf("unreadable registry mapped to a block (%v), want an admission error that outranks the gap gate", err)
+	}
 }

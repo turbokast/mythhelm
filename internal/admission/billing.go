@@ -10,6 +10,7 @@ import (
 	"github.com/turbokast/mythhelm/adapters/claudecode"
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/journal"
+	"github.com/turbokast/mythhelm/internal/qualify"
 	"github.com/turbokast/mythhelm/internal/security"
 )
 
@@ -26,13 +27,19 @@ type Declaration = journal.DeclarationRow
 type BillingPosture = adapter.BillingPosture
 
 // ResolveBilling never upgrades a user declaration into verified entitlement
-// or overage prevention. Strict subscription-only is unavailable (I15/G05).
-func ResolveBilling(ctx context.Context, mode string, evidence AuthEvidence, decl *Declaration) (BillingPosture, error) {
+// or overage prevention. Strict subscription-only admits only on an eligible
+// consult of a live-qualified record with a proven entitlement (I15/G05); it
+// ignores any declaration.
+func ResolveBilling(ctx context.Context, mode string, evidence AuthEvidence, decl *Declaration, elig Eligibility) (BillingPosture, error) {
 	if err := ctx.Err(); err != nil {
 		return BillingPosture{}, err
 	}
 	if mode == BillingSubscriptionOnly {
-		return BillingPosture{}, strictBillingBlock()
+		rec := elig.Record
+		if elig.Verdict != Eligible || rec == nil || rec.Progress != qualify.ProgressLiveQualified || rec.Entitlement.Verdict != qualify.Proven {
+			return BillingPosture{}, strictBillingBlock()
+		}
+		return BillingPosture{Mode: mode, CredentialProvenance: "native-login", EntitlementClass: "included-plan", EntitlementSource: "registry:live-qualified", PaidContinuation: "prevented", Qualified: true, G05: "passed"}, nil
 	}
 	if mode != BillingSubscriptionDeclared {
 		return BillingPosture{}, fmt.Errorf("%w: Claude Code requires --billing subscription-declared or subscription-only", ErrInvalid)
@@ -53,7 +60,7 @@ func ResolveBilling(ctx context.Context, mode string, evidence AuthEvidence, dec
 }
 
 func strictBillingBlock() error {
-	return &BlockedError{Code: "entitlement_qualification_unavailable", Field: "--billing subscription-only", Action: "MYTHHELM cannot yet verify an included-only entitlement, so strict subscription-only never admits a run"}
+	return &BlockedError{Code: "entitlement_qualification_unavailable", Field: "--billing subscription-only", Action: "strict subscription-only admits only a live-qualified record with a proven entitlement for this exact route"}
 }
 
 // ResolveCredentialEnv previews child-only credential-route removals. It

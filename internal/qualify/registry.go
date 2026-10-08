@@ -257,8 +257,9 @@ func evidenceFreeProven(rec Record) string {
 
 // Consult finds the record for an observed identity: exact key first, else
 // the unique stable-identity match (Harness, Surface, OS, Arch,
-// TrustProfile, EntitlementClass, AdapterProtocol — pinned digests and
-// snapshots ignored) for drift comparison. Zero matches read ErrNotFound;
+// TrustProfile, EntitlementClass, AdapterProtocol) that also agrees exactly
+// on AuthCategory, ProviderEndpoint, WorkspaceClass, EffortSettings and
+// ModelSnapshot — only the pinned digests may differ, for drift comparison. Zero matches read ErrNotFound;
 // several stable matches refuse as ambiguous. drifted reports CheckDrift on
 // the matched record.
 func (r *Registry) Consult(ctx context.Context, observed Key) (rec Record, drifted bool, reason string, err error) {
@@ -292,9 +293,9 @@ func (r *Registry) Consult(ctx context.Context, observed Key) (rec Record, drift
 	}
 }
 
-// stableMatch reports whether stored carries the same stable identity as the
-// normalised observed key: the seven non-drift dimensions equal, pinned
-// digests and snapshots ignored.
+// stableMatch reports whether stored carries the same identity as the
+// normalised observed key: every non-drift dimension equal, the two pinned
+// digests ignored.
 func stableMatch(observed, stored Key) bool {
 	return observed.Harness == stored.Harness &&
 		observed.Surface == stored.Surface &&
@@ -302,7 +303,35 @@ func stableMatch(observed, stored Key) bool {
 		observed.Arch == stored.Arch &&
 		observed.TrustProfile == stored.TrustProfile &&
 		observed.EntitlementClass == stored.EntitlementClass &&
-		observed.AdapterProtocol == stored.AdapterProtocol
+		observed.AdapterProtocol == stored.AdapterProtocol &&
+		observed.AuthCategory == stored.AuthCategory &&
+		observed.ProviderEndpoint == stored.ProviderEndpoint &&
+		observed.WorkspaceClass == stored.WorkspaceClass &&
+		observed.EffortSettings == stored.EffortSettings &&
+		observed.ModelSnapshot == stored.ModelSnapshot
+}
+
+// InvalidateByHash stores an invalidation revision for the current record
+// with the given key hash, for callers that hold the hash of a consulted
+// record but not its key. An unknown hash reads "qualify: unknown key hash"
+// and a row that does not decode returns the decode error; it never creates
+// a record.
+func (r *Registry) InvalidateByHash(ctx context.Context, keyHash, reason string) error {
+	if r.readOnly || r.journal == nil {
+		return errReadOnly
+	}
+	stored, _, err := r.journal.CurrentQualificationRecord(ctx, keyHash)
+	if errors.Is(err, journal.ErrNotFound) {
+		return fmt.Errorf("qualify: unknown key hash: %s", keyHash)
+	}
+	if err != nil {
+		return r.mapReadError(err)
+	}
+	rec, err := decodeStored(stored)
+	if err != nil {
+		return err
+	}
+	return r.InvalidateOnDrift(ctx, rec, reason)
 }
 
 // invalidationEvidenceID is the marker entry replacing invalidated column

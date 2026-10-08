@@ -689,3 +689,153 @@ func TestRegistryLookupLatency(t *testing.T) {
 		t.Error("Lookup with a 1.5 s injected delay completed within the bound; the latency assertion cannot discriminate")
 	}
 }
+
+// TestConsultRequiresNonDriftDimensions pins the MH-12 narrowing: a record
+// differing from the observed key in any one of the five newly exact
+// dimensions is not matched (ErrNotFound), never a clean cross-key match,
+// while a digest-only difference still stable-matches as drift.
+func TestConsultRequiresNonDriftDimensions(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	reg, _ := openRegistry(t)
+	rec := testRecord("claude-code")
+	if err := reg.Record(ctx, rec); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		mutate func(*Key)
+	}{
+		{"auth category differs", func(k *Key) { k.AuthCategory = "claude.ai/pro" }},
+		{"provider endpoint differs", func(k *Key) { k.ProviderEndpoint = "unknown" }},
+		{"workspace class differs", func(k *Key) { k.WorkspaceClass = "container" }},
+		{"effort settings differ", func(k *Key) { k.EffortSettings = "high" }},
+		{"model snapshot differs", func(k *Key) { k.ModelSnapshot = "2026-10-01-claude-opus-4-7" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			observed := rec.Key
+			tc.mutate(&observed)
+			observed.ExecutableDigest = driftExecOther
+			if _, _, _, err := reg.Consult(ctx, observed); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("Consult = %v, want ErrNotFound", err)
+			}
+		})
+	}
+
+	digestOnly := rec.Key
+	digestOnly.ExecutableDigest = driftExecOther
+	if _, drifted, _, err := reg.Consult(ctx, digestOnly); err != nil || !drifted {
+		t.Fatalf("digest-only difference = (drifted %v, %v), want a drifted stable match", drifted, err)
+	}
+}
+
+// TestConsultNarrowsAmbiguity pins both sides of the narrowing for two
+// records that share the stable set: they stay ambiguous when they agree on
+// the five exact dimensions, and resolve to the one that matches when they
+// differ on one.
+func TestConsultNarrowsAmbiguity(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	reg, _ := openRegistry(t)
+	first := testRecord("claude-code")
+	second := first
+	second.Key.ExecutableDigest = driftExecOther
+	if err := reg.Record(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.Record(ctx, second); err != nil {
+		t.Fatal(err)
+	}
+	observed := first.Key
+	observed.ExecutableDigest = "sha256:" + strings.Repeat("e", 64)
+	if _, _, _, err := reg.Consult(ctx, observed); !errors.Is(err, ErrAmbiguousMatch) {
+		t.Fatalf("same exact dimensions = %v, want ErrAmbiguousMatch", err)
+	}
+
+	other := first
+	other.Key.AuthCategory = "claude.ai/pro"
+	other.Key.ExecutableDigest = "sha256:" + strings.Repeat("9", 64)
+	if err := reg.Record(ctx, other); err != nil {
+		t.Fatal(err)
+	}
+	observed.AuthCategory = "claude.ai/pro"
+	found, drifted, _, err := reg.Consult(ctx, observed)
+	if err != nil || found.Key != other.Key || !drifted {
+		t.Fatalf("narrowed consult = (%+v, drifted %v, %v), want the single pro record as drifted", found.Key, drifted, err)
+	}
+}
+
+// TestInvalidateByHashRoundTrip pins I20: invalidating by key hash stores a
+// reset revision for the current record; an unknown hash errors and writes
+// nothing.
+func TestInvalidateByHashRoundTrip(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	reg, dir := openRegistry(t)
+	rec := testRecord("claude-code")
+	rec.Progress = ProgressLiveQualified
+	rec.Entitlement = Column{Verdict: Proven, Evidence: []Evidence{testEvidence("ev_live")}}
+	if err := reg.Record(ctx, rec); err != nil {
+		t.Fatal(err)
+	}
+	hash := KeyHash(rec.Key)
+
+	if err := reg.InvalidateByHash(ctx, hash, "executable_digest drifted"); err != nil {
+		t.Fatalf("InvalidateByHash: %v", err)
+	}
+	got, err := reg.Lookup(ctx, rec.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Revision != 2 || got.Progress != ProgressBlocked || got.Entitlement.Verdict != NotProven {
+		t.Fatalf("invalidated = rev %d, %s, entitlement %s; want rev 2, blocked, not-proven", got.Revision, got.Progress, got.Entitlement.Verdict)
+	}
+	if !strings.Contains(got.Entitlement.Evidence[0].Uncertainty, "executable_digest drifted") {
+		t.Fatalf("invalidation lost the reason: %+v", got.Entitlement.Evidence)
+	}
+
+	before := hashDir(t, dir)
+	err = reg.InvalidateByHash(ctx, strings.Repeat("0", 64), "x")
+	if err == nil || !strings.Contains(err.Error(), "qualify: unknown key hash: ") {
+		t.Fatalf("unknown hash = %v, want qualify: unknown key hash", err)
+	}
+	if hashDir(t, dir) != before {
+		t.Fatal("unknown-hash invalidation changed the database")
+	}
+}
+
+// TestInvalidateByHashCorruptJSON pins that a row whose record_json does not
+// decode returns the DecodeRecord error and leaves the row untouched.
+func TestInvalidateByHashCorruptJSON(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	reg, dir := openRegistry(t)
+	rec := testRecord("claude-code")
+	if err := reg.Record(ctx, rec); err != nil {
+		t.Fatal(err)
+	}
+	hash := KeyHash(rec.Key)
+	db, err := sql.Open("sqlite", fileURI(filepath.Join(dir, journal.DBName)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE qualification_records SET record_json = ? WHERE key_hash = ?`, "{not json", hash); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	err = reg.InvalidateByHash(ctx, hash, "x")
+	if err == nil || strings.Contains(err.Error(), "unknown key hash") {
+		t.Fatalf("corrupt row = %v, want the decode error", err)
+	}
+	if _, _, superseded := storedRow(t, dir, hash, 1); superseded != nil {
+		t.Fatal("corrupt-row invalidation superseded revision 1")
+	}
+	if _, _, _, readErr := reg.Consult(ctx, rec.Key); readErr == nil {
+		t.Fatal("corrupt row reads clean after refused invalidation")
+	}
+}

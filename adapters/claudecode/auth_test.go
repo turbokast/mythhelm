@@ -61,7 +61,7 @@ func TestDeclarationBoundToIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	decl := admission.Declaration{AdapterID: claudecode.AdapterID, IdentityRef: original.IdentityRef, PlanClass: "max", ExtraUsage: "disabled", DeclaredAt: time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)}
-	if _, err := admission.ResolveBilling(t.Context(), "subscription-declared", original, &decl); err != nil {
+	if _, err := admission.ResolveBilling(t.Context(), "subscription-declared", original, &decl, admission.Eligibility{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct{ name, org, config string }{{"orgId", "different-identity", "test-config"}, {"configDirectory", "test-identity", "different-config"}} {
@@ -70,7 +70,7 @@ func TestDeclarationBoundToIdentity(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = admission.ResolveBilling(t.Context(), "subscription-declared", changed, &decl)
+			_, err = admission.ResolveBilling(t.Context(), "subscription-declared", changed, &decl, admission.Eligibility{})
 			var blocked *admission.BlockedError
 			if !errors.As(err, &blocked) || blocked.Code != "declaration_identity_mismatch" {
 				t.Fatalf("old declaration admitted after %s changed: %v", tc.name, err)
