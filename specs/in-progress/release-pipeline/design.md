@@ -5,7 +5,7 @@
 ### 1. Current state
 
 - No release pipeline exists. No `.goreleaser*` config, no release workflow, no `Makefile`, no `packaging/` (`ls .goreleaser* packaging/ Makefile` → all absent, verified 2026-10-08). `.github/workflows/` holds CI, lint, docs, CodeQL, dependency-review, zizmor and `release-drafter.yml` (notes only; triggers on push to `main`, `.github/workflows/release-drafter.yml:5-7`).
-- The deferred automation rows this pipeline activates are all in `docs/automation.md` (Deferred table): GoReleaser archives/checksums/SBOM, `actions/attest-build-provenance`, cosign keyless via GitHub OIDC, `go-licenses` notices, package managers, macOS x64 leg — each with trigger "First release".
+- The deferred automation rows this pipeline activates are in `docs/automation.md` (Deferred table): GoReleaser archives/checksums/SBOM, `actions/attest-build-provenance`, cosign keyless via GitHub OIDC, `go-licenses` notices — each with trigger "First release". The package-manager and macOS x64 rows stay Deferred (N1, N4; §11 H5).
 - Release authority and mechanics are decided: operator publishes the release-drafter draft, which creates the tag (`docs/release-process.md:17`; ADR-0010). Tags are lightweight, `v<semver>` with dotted pre-release markers (`v0.1.0`, `v1.2.3-rc.1`), never pushed by hand. `specs/*/release-tagging/design.md:21` fixes the trigger contract MH-7 implements: the `v*` filter selects candidates, but a format check on the pushed name is the gate, because a bare glob admits malformed tags.
 - Cross-compilation has no CGO blocker: `grep -rn 'import "C"' --include='*.go' .` returns nothing, and ADR-0003 records the pure-Go SQLite driver with `CGO_ENABLED=0` builds on all three OSes (`docs/decisions/0003-local-state-sqlite.md:45`; `TestBuildWithoutCgo`).
 - The binary already accepts version stamping: `internal/buildinfo/buildinfo.go:9-12` documents `-X .../buildinfo.Version=v0.1.0 -X .../buildinfo.Commit=<sha>` ldflags; empty values fall back to `devel`/`unknown` (`buildinfo.go:22-50`). `mythhelm version` prints them (`internal/cli/dispatch.go:36`; grep `runVersion` in `internal/cli/dispatch.go`).
@@ -33,10 +33,10 @@ No `branches`, no `pull_request`, no `merge_group` (AC-1.2). `test/*` tags never
 The first job step validates the pushed tag name against the ADR-0010 shape before anything builds (release-tagging §2: the format check is the gate, not the glob). Conservative regex, passed through `env:` and quoted per the workflows rule:
 
 ```text
-^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+\.[0-9A-Za-z.]+)?$
+^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)+)?$
 ```
 
-Accepts `v0.1.0`, `v1.2.3-rc.1`, `v1.2.3-beta.2`; rejects `0.1.0`, `v1.2`, `v1.2.3-rc1` (undotted marker, invalid per project convention). A non-matching tag fails the job before any build or publish step runs (fail-closed per release-tagging §4's failure rule).
+Accepts `v0.1.0`, `v1.2.3-rc.1`, `v1.2.3-beta.2`; rejects `0.1.0`, `v1.2`, `v1.2.3-rc1` (undotted marker, invalid per project convention), `v01.2.3` (leading zero), `v1.2.3-rc..1` (empty identifier) and `v1.2.3-rc.1.` (trailing dot). A non-matching tag fails the job before any build or publish step runs (fail-closed per release-tagging §4's failure rule).
 
 ### 4. GoReleaser configuration (FR-1, FR-2)
 

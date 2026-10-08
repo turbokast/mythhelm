@@ -37,5 +37,5 @@ Human-required, filed as Q-12 (Q1/Q2) and Q-13 (Q3); all answered 2026-10-07:
 
 ## Remaining notes for /spec
 
-- Unblocks when the maintainer answers Q-12/Q-13 or confirms the defaults.
+- Q-12/Q-13 answered 2026-10-07 (above); the move proceeded on the confirmed answers.
 - Re-check `todo/`/`in-progress/` for conflicts at /spec time (empty at refine time).
