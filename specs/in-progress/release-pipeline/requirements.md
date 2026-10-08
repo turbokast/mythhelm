@@ -41,7 +41,7 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 
 - **AC-1.1** [§17.3] When the operator publishes a release, which creates a version tag matching the ADR-0010 format, the release workflow shall trigger on the tag (GoReleaser consumes the tag on tag-push per ADR-0010) and build archives for the release matrix — linux/amd64, linux/arm64, darwin/arm64, windows/amd64, windows/arm64 per the CI runner matrix (`docs/automation.md:24`), darwin/amd64 excluded per N4, per the confirmed Q1 answer (`refinement-log.md`) — with checksums and an SBOM per archive.
 - **AC-1.2** [G10] The release workflow shall trigger only on version tags; a push to any branch or a pull request shall not run any release job.
-- **AC-1.3** [AT-46] When the build matrix or GoReleaser config changes, a pipeline dry-run on an operator-owned `test/*` tag (excluded from real-release matching, per the confirmed Q3 answer in `refinement-log.md`) shall prove the archives still build before the change merges.
+- **AC-1.3** [AT-46] When the build matrix or GoReleaser config changes, a pipeline dry-run on an operator-owned `test/*` tag (excluded from real-release matching, per the confirmed Q3 answer in `refinement-log.md`) shall prove the archives still build before the change merges. Initial delivery is proven once by the Task 6 dry run at the merged head; every later change uses the design §8 procedure at the PR head.
 
 ### FR-2 — Provenance, signatures and notices (§17.3, G10, AT-40)
 
