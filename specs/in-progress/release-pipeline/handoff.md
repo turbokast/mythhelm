@@ -37,7 +37,9 @@
 
 ## Task 5 — Pipeline operator and verify documentation
 
-<!-- pending -->
+- **Produces**: the `## Pipeline` section of `docs/release-process.md`, with verify commands the operator can copy (set `TAG`, `ARCHIVE`); the dry-run block is a separate copyable block using the `release-dry-run.yml` identity.
+- **For Task 6**: download the artifact with `gh run download <run-id> --name dist` into an empty directory, then run the dry-run block (checksum + cosign) and the tamper leg on a modified copy; attestation is excluded.
+- **For Task 6**: the re-run procedure notes `release.yml`'s upload step has no `--clobber`; a re-run after a successful bundle upload stops there, so the first real release may need a follow-up (workflow `--clobber`) if it is exercised.
 
 ## Task 6 — Operator dry run on a test tag
 
