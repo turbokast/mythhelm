@@ -150,7 +150,7 @@
 - **Test plan**: Build `cmd/mythhelm` once per package run; temp `MYTHHELM_HOME`; golden comparisons for the declared path.
 - **Invariants touched**: I15 (v2 §7.3: declared stays unverified); I02 (v2 §7.3: end-to-end blocking preserved).
 
-### Task 6 — Strict billing user documentation
+### Task 6 — Strict billing user documentation ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -165,6 +165,10 @@
   - `grep -q "Status: accepted" docs/decisions/0012-strict-subscription-admission.md && grep -q "ADR-0002" docs/decisions/0012-strict-subscription-admission.md && grep -q "early return" docs/decisions/0012-strict-subscription-admission.md`: ADR-0012 records the flip (early return removed, consult fails closed) and stales ADR-0002 item 1. Exits non-zero before the change (file absent).
 - **Test plan**: No Go test asserts prose; each item is a recorded shell command with a failing counterfactual (absent section before the change).
 - **Invariants touched**: None (docs only; Task 3 keeps I15/I02 — this task describes, not changes, behavior).
+- **Status**: ✅ Completed — `## Billing` in the user guide documents strict and declared postures, and ADR-0012 records the flip and stales ADR-0002 item 1; PR #223.
+- **Implementation**: Prose only, describing Task 3's merged `ResolveBilling`/`ResolveQualification`. The three acceptance greps exited non-zero before the change (1, 1, 2) and 0 after. Commit 057b743.
+- **Spec deviations**: None.
+- **Files modified**: `docs/user-guide.md`, `docs/decisions/0012-strict-subscription-admission.md`, `specs/in-progress/claude-strict-subscription/tasks.md`, `specs/in-progress/claude-strict-subscription/handoff.md`.
 
 ### Task 7 — Maintainer live qualification run
 
