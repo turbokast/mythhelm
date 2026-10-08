@@ -7,7 +7,7 @@
 | # | Question | Default in this spec | Owner / blocks |
 |---|---|---|---|
 | 1 | macOS/Windows native mechanism qualification (Seatbelt profile? AppContainer?) | v1 refuses both with named missing coverage; follow-up spec qualifies | Maintainer / nothing in v1 |
-| 2 | Destination-aware network blocking (netns plumbing / eBPF) | v1 = proxy pin + disclosed direct-egress residual; users requiring no-egress get a refusal | Maintainer / nothing in v1 |
+| 2 | Destination-aware network blocking (netns plumbing / eBPF) | v1 = proxy pin + disclosed direct-egress residual; no user-requirement mechanism, so no refusal fires for users wanting no-egress (see row 3) | Maintainer / nothing in v1 |
 | 3 | `--require-*` flag for users who need the no-egress guarantee as a single command | Not in this spec (honesty register); MH-22 or follow-up may add | Maintainer / nothing in v1 |
 | 4 | Exact first-party endpoint host:port for the proxy allowlist | Resolved from the qualification record at admission; unknown endpoint blocks contained admission (I02) | Task 3+5 / proxy allowlist |
 | 5 | Journal migration number: 0003 in the current tree (only 0001/0002 at `SchemaVersion = 2`); MH-21 streams plan 0003/0004 and MH-16 pins `0005_ledger.sql` on that chain | Task 7 takes the next free number at its start; whoever lands second renumbers | Task 7 |

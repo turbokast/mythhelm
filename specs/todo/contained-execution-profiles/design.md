@@ -118,10 +118,12 @@ with `HTTPS_PROXY`/`HTTP_PROXY` (and lowercase) pins to the ephemeral address
 it chose, and fills `Policy.ProxyAddr` with the same address. The pins are the
 process's initial environment, not irrevocable: the native can unset them from
 inside, and direct egress around the proxy is NOT blocked in v1 — it is the
-honesty-register residual, and a user who requires a no-egress guarantee gets
-a refusal naming it (v2 §7.4), not a weakened run. The enforced part is the
-proxy's allowlist denials for traffic sent through it: non-allowlisted hosts
-get `407/403`, non-CONNECT methods get `405`.
+honesty-register residual. This spec provides no way for a user to require a
+no-egress guarantee (no `--require-*` flag, §6), so v2 §7.4's "if required by
+the user" conditional has no trigger here and promises no refusal to such
+callers; the refusal this spec ships is AC-1.2's missing-coverage refusal.
+The enforced part is the proxy's allowlist denials for traffic sent through
+it: non-allowlisted hosts get `407/403`, non-CONNECT methods get `405`.
 
 ### 2.4 Admission: consult, default, refusal (v2 §7.1, I02, I04)
 
