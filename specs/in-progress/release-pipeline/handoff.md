@@ -13,6 +13,7 @@
 - **For dependents**: the `sboms` stanza runs the `syft` binary, so every workflow that runs `goreleaser release` (Tasks 2 and 3) must install syft at `v1.54.1` first; `goreleaser check` (Task 4) does not need it.
 - **For dependents**: `go-licenses save` must run before GoReleaser, because the archives glob `third_party_licenses/` and fail without it.
 - **For dependents**: `goreleaser check` only warns on a missing `version: 2` header (v2.18.2), so do not rely on it to refuse such a config; assert the header with a grep.
+- **For dependents**: the 7-day cooldown on tool pins (`docs/automation.md:47`) was not checked for the pins above, which are days old; workflow tasks must re-check pin ages at their implementation time and adopt a release at least 7 days old, recording what they chose.
 
 ## Task 2 — Tag-triggered release workflow with protected publishing
 
