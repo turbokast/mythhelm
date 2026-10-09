@@ -121,6 +121,33 @@ func TestIdenticalRepeatReplays(t *testing.T) { // I12 (v2 §2)
 	}
 }
 
+func TestReplayWithDifferentTokenDenied(t *testing.T) {
+	t.Parallel()
+	db, _ := openLedger(t)
+	ctx := WithLedger(t.Context(), db)
+	var runs atomic.Int32
+	h := counting(`{"ok":true}`, &runs)
+	first := intent("op_1", "probe")
+	first.CapabilityToken = "token-a"
+	if _, err := Execute(ctx, h, Peer{}, first); err != nil {
+		t.Fatal(err)
+	}
+	for name, token := range map[string]string{
+		"different token": "token-b",
+		"empty token":     "",
+	} {
+		other := first
+		other.CapabilityToken = token
+		_, err := Execute(ctx, h, Peer{}, other)
+		if !errors.Is(err, &Error{Code: CodeRevisionConflict}) {
+			t.Errorf("replay with %s: err = %v, want revision_conflict", name, err)
+		}
+	}
+	if runs.Load() != 1 {
+		t.Fatalf("handler ran %d times, want only the first", runs.Load())
+	}
+}
+
 func TestStoredFailureReplays(t *testing.T) {
 	t.Parallel()
 	db, _ := openLedger(t)
@@ -617,6 +644,15 @@ func TestStatusIntentReturnsInstanceState(t *testing.T) {
 	if err != nil || wire(t, first) != wire(t, second) {
 		t.Fatalf("repeat = %s (%v), want %s", wire(t, second), err, wire(t, first))
 	}
+}
+
+func TestStatusWithoutInstanceIsProcessLost(t *testing.T) {
+	// not parallel: t.Setenv redirects the per-user lock directory.
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	db, _ := openLedger(t)
+	ctx := WithLedger(t.Context(), db)
+	_, err := Execute(ctx, StatusHandler(db), Peer{}, intent("op_1", "status"))
+	requireCode(t, err, CodeProcessLost)
 }
 
 func TestAssignIntentRecordsOwnership(t *testing.T) {
