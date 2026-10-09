@@ -1,6 +1,6 @@
 # 0014. Service topology: one per-user supervisor replaces one supervisor per run
 
-- Status: proposed (shepherd fact-checked 2026-10-09; awaiting maintainer review; supervisor-service task 7)
+- Status: accepted (maintainer approved 2026-10-09; shepherd fact-checked the DDL claims and all 10 cited tests beforehand; supervisor-service task 7)
 - Date: 2026-10-09
 
 ## Context
