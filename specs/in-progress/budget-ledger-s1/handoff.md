@@ -43,8 +43,9 @@
 
 ## Task 7 — Envelope counting and launch gate
 
-<!-- pending -->
-
+- **Produces**: `supervisor.GateLaunch(ctx, j, runID, c)` (check only) returning `*GateError{Reason, Err}` (wraps `billing.ErrBudgetExhausted`), `supervisor.IsReplan`, `GateError`, and the unexported `planLaunchAt` / `launchPlan.commit` (check, then count in the intent transaction), `gateLaunchAt`, `effectiveCeilings`, `recordLaunchIntent` (in `state.go`) and `pipeline.blockLaunch` / `endStop`. Ingest projects `attempt.progress` into `run_envelopes.transport_retries_seen`.
+- **For dependents**: Task 9's reserve hook calls `IsReplan`, then `GateLaunch` with `p.ceilings` (set in `appendAdmission`); calling it more than once is harmless because it counts nothing. The pipeline counts the launch (repair or replan) and starts the clock inside the launch intent's transaction, through `plan.commit`, with a conditional `UPDATE` that enforces the ceiling, after re-checking the plan's deadline against the clock at commit; a refusal there (ceiling taken by another launch, or deadline passed since the plan) is a `*GateError` and blocks the run. A refusal that is not a `*GateError` blocks with `envelope_unavailable`. Task 8 can reuse `endStop`'s pattern for stops the pipeline requests. `p.deadline` is zero until the first launch; Task 9's derived replan deadline can overwrite it before `watch` starts.
+- **Traps**: the worker's `attempt.progress.retries` is cumulative per attempt, so the projection takes each attempt's maximum, never a sum, and a `retries` that is not a non-negative integer fails ingestion as `ErrCorruptSpool`. `run_envelopes` stores seconds, so a sub-second ceiling reads as 0 from the row. The pipeline runs a single attempt, so the repair and replan counters first matter when a later task adds a second attempt.
 ## Task 8 — Exhaustion path: preserve, block, schedule, never pay
 
 <!-- pending -->
