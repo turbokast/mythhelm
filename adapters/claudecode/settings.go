@@ -144,16 +144,24 @@ func inventorySources(workspace, configDir, claudeJSONPath, managed string) ([]s
 // the committed blobs for those instead, and they need no re-hash
 // (immutable). The mapping follows the ambient `CLAUDE_CONFIG_DIR`, like
 // `InventorySettings`; callers with an admitted child env use
-// `AdmittedConfigPathsForEnv`.
+// `AdmittedConfigPathsForEnv`. A manifest digest key with no entry here
+// (non-absolute roots, or a managed-fragment listing that failed after
+// admission) is a missing mapping, never a skipped source: the caller
+// must fail closed instead of re-hashing without it.
 func AdmittedConfigPaths(home, workdir string) map[string]string {
 	return AdmittedConfigPathsForEnv(home, workdir, os.Environ())
 }
 
 // AdmittedConfigPathsForEnv binds the config root to the admitted child
-// env, mirroring `InventorySettingsForEnv`. A managed-fragment listing
-// failure omits the fragments but keeps the fixed sources.
+// env, mirroring `InventorySettingsForEnv`. Non-absolute roots yield an
+// empty map, mirroring the inventory's `config_root` refusal; a
+// managed-fragment listing failure omits the fragments but keeps the
+// fixed sources.
 func AdmittedConfigPathsForEnv(home, workdir string, env []string) map[string]string {
 	configDir, claudeJSONPath, managed := configRoots(home, env)
+	if !filepath.IsAbs(home) || !filepath.IsAbs(workdir) || !filepath.IsAbs(configDir) {
+		return map[string]string{}
+	}
 	sources, err := inventorySources(workdir, configDir, claudeJSONPath, managed)
 	if err != nil {
 		sources = staticInventorySources(workdir, configDir, claudeJSONPath, managed)

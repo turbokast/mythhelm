@@ -336,24 +336,18 @@ func TestPluginsNeverWidenArgv(t *testing.T) {
 			t.Fatal("Prepare must refuse Windows by design")
 		}
 	} else {
-		withPlugins, err := New().Prepare(context.Background(), newInput())
+		// One Prepare call: its input carries no manifest, so the
+		// plugin/MCP-bearing inventory above cannot reach the launch.
+		// The test pins the exact argv and scans every launch element
+		// for the hostile names.
+		proposal, err := New().Prepare(context.Background(), newInput())
 		if err != nil {
 			t.Fatal(err)
 		}
-		bare, err := New().Prepare(context.Background(), newInput())
-		if err != nil {
-			t.Fatal(err)
+		if want := Argv(newInput().Probe.Executable, nil); !reflect.DeepEqual(proposal.Spec.Args, want[1:]) {
+			t.Fatalf("argv = %q, want exactly %q", proposal.Spec.Args, want[1:])
 		}
-		// Prepare takes no manifest input, so the plugin/MCP-bearing run is
-		// byte-identical to the bare run.
-		if !reflect.DeepEqual(withPlugins.Spec.Args, bare.Spec.Args) || !reflect.DeepEqual(withPlugins.Spec.Env, bare.Spec.Env) {
-			t.Fatalf("Prepare differs between runs:\nwith = %q %q\nbare = %q %q",
-				withPlugins.Spec.Args, withPlugins.Spec.Env, bare.Spec.Args, bare.Spec.Env)
-		}
-		if want := Argv(newInput().Probe.Executable, nil); !reflect.DeepEqual(withPlugins.Spec.Args, want[1:]) {
-			t.Fatalf("argv = %q, want exactly %q", withPlugins.Spec.Args, want[1:])
-		}
-		for _, element := range append(append([]string{}, withPlugins.Spec.Args...), withPlugins.Spec.Env...) {
+		for _, element := range append(append([]string{}, proposal.Spec.Args...), proposal.Spec.Env...) {
 			for _, smuggled := range hostile {
 				if strings.Contains(element, smuggled) {
 					t.Fatalf("launch element %q carries plugin/MCP content %q", element, smuggled)
@@ -361,12 +355,17 @@ func TestPluginsNeverWidenArgv(t *testing.T) {
 			}
 		}
 	}
-	// The seam pin: PrepareInput carries no manifest, plugin or MCP field,
-	// so threading one in fails here until this test is extended.
+	// The seam pin: every PrepareInput field must be allowlisted here, so
+	// a new field fails until it is reviewed for plugin/MCP carriage.
+	// Each listed field is reviewed: none carries manifest, plugin or
+	// MCP content into Prepare.
+	allowed := map[string]bool{
+		"Workdir": true, "AttemptID": true, "Env": true, "Prompt": true,
+		"Scenario": true, "Probe": true, "AllowedTools": true, "Passthrough": true,
+	}
 	for field := range reflect.TypeFor[adapter.PrepareInput]().Fields() {
-		name := strings.ToLower(field.Name)
-		if strings.Contains(name, "plugin") || strings.Contains(name, "mcp") || strings.Contains(name, "manifest") {
-			t.Fatalf("PrepareInput.%s could widen launch authority; extend this test to cover it", field.Name)
+		if !allowed[field.Name] {
+			t.Fatalf("PrepareInput.%s is not allowlisted; review it for plugin/MCP carriage and extend this test", field.Name)
 		}
 	}
 }

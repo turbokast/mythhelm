@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 
@@ -117,5 +118,43 @@ func TestAdmittedPathsCoverManifest(t *testing.T) {
 		if got := hex.EncodeToString(sum[:]); got != digest {
 			t.Errorf("admitted path for %q hashes to %s, want digest %s", name, got, digest)
 		}
+	}
+	// The managed roots are fixed per OS and need no fixture: pin them so
+	// a relocated root fails here until reviewed.
+	var managed string
+	switch runtime.GOOS {
+	case "linux":
+		managed = "/etc/claude-code"
+	case "darwin":
+		managed = "/Library/Application Support/ClaudeCode"
+	case "windows":
+		managed = `C:\Program Files\ClaudeCode`
+	default:
+		t.Fatalf("no managed root pinned for GOOS %q", runtime.GOOS)
+	}
+	for name, want := range map[string]string{
+		"managed":     filepath.Join(managed, "managed-settings.json"),
+		"managed_mcp": filepath.Join(managed, "managed-mcp.json"),
+	} {
+		if got, ok := paths[name]; !ok || got != want {
+			t.Errorf("admitted path for %q = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestAdmittedPathsRejectRelativeRoots(t *testing.T) {
+	t.Parallel()
+	home, workspace := t.TempDir(), t.TempDir()
+	for name, paths := range map[string]map[string]string{
+		"relative home":    claudecode.AdmittedConfigPathsForEnv("relative", workspace, nil),
+		"relative workdir": claudecode.AdmittedConfigPathsForEnv(home, "relative", nil),
+		"relative config":  claudecode.AdmittedConfigPathsForEnv(home, workspace, []string{"CLAUDE_CONFIG_DIR=relative"}),
+	} {
+		if len(paths) != 0 {
+			t.Errorf("%s: mapping = %v, want empty (callers fail closed on missing entries)", name, paths)
+		}
+	}
+	if got := claudecode.AdmittedConfigPathsForEnv(home, workspace, nil); len(got) == 0 {
+		t.Fatal("absolute roots yielded an empty mapping")
 	}
 }
