@@ -23,3 +23,5 @@
 
 - (Implementing tasks append one entry each: what was learned, with file:line or command evidence.)
 - Task 2: design §3 types `State` as Task 5's `RunState`/`TaskState`/`AttemptState`, but tasks 2 and 5 are parallel with disjoint Files, so Task 2 could not compile against them; fields are `string` (`grep -rn RunState internal/v2contract` on origin/main printed nothing). Also, `internal/supervisor` claudecode tests fail when `ANTHROPIC_BASE_URL` is set (`credential_route_override`); run go-test with the ANTHROPIC_* variables unset.
+- Task 4: golden fixtures must avoid `<`/`>`/`&` in string values — `encoding/json.Marshal` escapes them (`>` → `\u003e`), breaking byte-identical round-trips (`internal/v2contract/records_coordination_test.go: assertRoundTrip`). Also: the first task to call `loadGolden` must delete Task 1's provisional `//nolint:unused` or `golangci-lint` fails on `nolintlint`.
+- Task 7: the first test file to call `loadGolden` must delete its `//nolint:unused` directive (`internal/v2contract/codec_test.go:15`), else `golangci-lint run` fails on nolintlint; this task removed it.

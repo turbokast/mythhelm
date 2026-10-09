@@ -134,6 +134,7 @@ func TestMissingIDsRejected(t *testing.T) {
 	task.TaskID = ""
 	att := v2contract.Attempt{SchemaVersion: v2contract.SchemaVersion, TaskID: "t", State: "reserved"}
 	att2 := v2contract.Attempt{SchemaVersion: v2contract.SchemaVersion, AttemptID: "a", State: "reserved"}
+	att3 := v2contract.Attempt{SchemaVersion: v2contract.SchemaVersion, AttemptID: "a", TaskID: "t", State: "reserved"}
 	tests := []struct {
 		name    string
 		err     error
@@ -143,10 +144,20 @@ func TestMissingIDsRejected(t *testing.T) {
 		{"task_id", task.Validate(), "task_id"},
 		{"attempt_id", att.Validate(), "attempt_id"},
 		{"attempt task_id", att2.Validate(), "task_id"},
+		{"attempt task_revision", att3.Validate(), "task_revision"},
 	}
 	for _, tc := range tests {
 		if tc.err == nil || !strings.Contains(tc.err.Error(), tc.wantErr) {
 			t.Errorf("%s: error = %v, want containing %q", tc.name, tc.err, tc.wantErr)
 		}
+	}
+}
+
+// An omitted task_revision decodes to 0 and must not yield an accepted Attempt.
+func TestAttemptRejectsOmittedTaskRevision(t *testing.T) {
+	t.Parallel()
+	in := `{"schema_version":2,"attempt_id":"a1","task_id":"t1","lifecycle":"reserved"}`
+	if _, err := v2contract.Decode[v2contract.Attempt]([]byte(in)); err == nil || !strings.Contains(err.Error(), "task_revision") {
+		t.Errorf("Decode(omitted task_revision) error = %v, want naming task_revision", err)
 	}
 }

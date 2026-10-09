@@ -1,0 +1,1 @@
+{"schema_version":2,"decision_id":"rtd_demo_0001","run_id":"run_demo_0001","eligible":["claude-code","codex"],"exclusions":{"gemini":"entitlement unknown"},"features":{"size":"small"},"selected_route":"claude-code","selected_policy":"pol_demo_0001","rationale":"only eligible route with known entitlement","uncertainty":"no scores available","override_provenance":"operator"}

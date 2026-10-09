@@ -99,8 +99,8 @@ type Attempt struct {
 	UpdatedAt         time.Time `json:"updated_at" toml:"updated_at"`
 }
 
-// Validate requires schema_version 2 and non-empty attempt_id, task_id and
-// lifecycle.
+// Validate requires schema_version 2, non-empty attempt_id, task_id and
+// lifecycle, and task_revision >= 1.
 func (a Attempt) Validate() error {
 	if err := checkSchemaVersion("attempt", a.SchemaVersion); err != nil {
 		return err
@@ -110,6 +110,9 @@ func (a Attempt) Validate() error {
 	}
 	if a.TaskID == "" {
 		return errors.New("v2contract: attempt task_id is empty")
+	}
+	if a.TaskRevision < 1 {
+		return fmt.Errorf("v2contract: attempt task_revision %d below 1", a.TaskRevision)
 	}
 	if a.State == "" {
 		return errors.New("v2contract: attempt lifecycle is empty")
