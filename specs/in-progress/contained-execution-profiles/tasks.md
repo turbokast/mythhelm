@@ -149,7 +149,7 @@
   substantiates boundary claims); I14 (v2 §2: probe reports version or a
   precise reason, never a guess).
 
-### Task 3 — Filtering egress proxy
+### Task 3 — Filtering egress proxy ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (security primitive: network enforcement point)
@@ -178,6 +178,10 @@
   network.
 - **Invariants touched**: I09 (v2 §2: denials are explicit statuses, and the
   proxy never claims to block direct egress — see the honesty register).
+- **Status**: ✅ Completed — `internal/contain` ships the worker-owned localhost CONNECT-only proxy with exact host:port allowlist denials and the `ProxyEnv` pin map; PR #248.
+- **Implementation**: Exactly one CONNECT per connection is tunnelled, only after an exact allowlist hit; every denial (403/405/431/400) returns before any dial. `stop` is `sync.Once`-safe and ctx cancellation closes the listener. Commit 8532e12.
+- **Spec deviations**: None.
+- **Files modified**: `internal/contain/proxy.go`, `internal/contain/proxy_test.go`, `specs/in-progress/contained-execution-profiles/tasks.md`, `specs/in-progress/contained-execution-profiles/handoff.md`.
 
 ### Task 4 — `__contain` command and worker wiring
 
