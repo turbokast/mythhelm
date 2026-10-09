@@ -40,4 +40,4 @@ nothing above it is edited except OQ verdicts.
 
 ## Task notes
 
-(none yet)
+- Task 3: closing a socket with unread peer data resets it and can destroy a reply already sent, so a refused peer's bytes are discarded (bounded, never parsed) after the `permission_denied` frame. `modernize` (embedlit) wants promoted fields set directly in a `Frame` literal under Go 1.27.
