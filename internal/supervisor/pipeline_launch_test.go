@@ -132,21 +132,19 @@ func TestModelOutputNeverReachesLaunch(t *testing.T) {
 		t.Fatalf("launch moved under hostile journaled native results:\nbase %s\ngot  %s", base, got)
 	}
 
-	// The signature itself is pinned: exactly (Decision, string) in and one
-	// Launch out, so a future journal or store parameter breaks this test.
-	ft := reflect.TypeOf(launchForAttempt)
-	if ft.NumIn() != 2 || ft.In(0) != reflect.TypeOf(admission.Decision{}) || ft.In(1).Kind() != reflect.String ||
-		ft.NumOut() != 1 || ft.Out(0) != reflect.TypeOf(workers.Launch{}) {
-		t.Fatalf("launchForAttempt signature = %v; want func(admission.Decision, string) workers.Launch", ft)
-	}
+	// The signature itself is pinned at compile time: exactly
+	// (Decision, string) in and one Launch out, so a future journal or
+	// store parameter breaks this test until reviewed.
+	//nolint:staticcheck // QF1011: the explicit type is the pin; inference would pin nothing.
+	var _ func(admission.Decision, string) workers.Launch = launchForAttempt
 }
 
 func TestLaunchDecisionFieldPin(t *testing.T) {
 	t.Parallel()
-	dt := reflect.TypeOf(admission.Decision{})
+	dt := reflect.TypeFor[admission.Decision]()
 	seen := map[string]bool{}
-	for i := range dt.NumField() {
-		name := dt.Field(i).Name
+	for f := range dt.Fields() {
+		name := f.Name
 		seen[name] = true
 		inConsumed, inIgnored := t9consumed[name], t9ignored[name]
 		if inConsumed == inIgnored {
@@ -222,6 +220,12 @@ func t9hostileFill(v reflect.Value) {
 	if !v.CanSet() {
 		return
 	}
+	for v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			v.Set(reflect.New(v.Type().Elem()))
+		}
+		v = v.Elem()
+	}
 	switch v.Kind() {
 	case reflect.String:
 		v.SetString(t9marker)
@@ -244,14 +248,9 @@ func t9hostileFill(v reflect.Value) {
 		for i := range v.Len() {
 			t9hostileFill(v.Index(i))
 		}
-	case reflect.Ptr:
-		if v.IsNil() {
-			v.Set(reflect.New(v.Type().Elem()))
-		}
-		t9hostileFill(v.Elem())
 	case reflect.Struct:
-		for i := range v.NumField() {
-			t9hostileFill(v.Field(i))
+		for _, fv := range v.Fields() {
+			t9hostileFill(fv)
 		}
 	case reflect.Interface:
 		if v.Type().NumMethod() == 0 {
@@ -268,7 +267,7 @@ func TestLaunchForAttemptHostileTaskBytes(t *testing.T) {
 	l := launchForAttempt(d, t9token)
 	// Task bytes travel on stdin only: no argv element may contain any task
 	// line, and the child env is the admitted spec env verbatim.
-	for _, line := range strings.Split(string(hostile), "\n") {
+	for line := range strings.SplitSeq(string(hostile), "\n") {
 		if line == "" {
 			continue
 		}
@@ -290,11 +289,9 @@ func TestLaunchForAttemptContained(t *testing.T) {
 	if l.Containment == nil {
 		t.Fatal("contained launch carries no policy")
 	}
-	wantWork, err := filepath.EvalSymlinks(d.Workdir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if l.Containment.Profile != "restricted" || l.Containment.Workdir != wantWork ||
+	// PolicyFor stores the workdir as cleaned, not symlink-resolved;
+	// EnterLinux resolves it again (macOS /var, Windows short names).
+	if l.Containment.Profile != "restricted" || l.Containment.Workdir != filepath.Clean(d.Workdir) ||
 		l.Containment.ReadOnly || l.Containment.ProxyAddr != "" || len(l.Containment.AuthBinds) != 0 {
 		t.Fatalf("containment = %+v; want the restricted policy with an empty proxy address", l.Containment)
 	}

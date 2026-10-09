@@ -431,11 +431,11 @@ func outsideTmpDir(t *testing.T) string {
 		t.Skipf("cannot resolve /tmp: %v", err)
 	}
 	outside := func(dir string) bool {
-		real, err := filepath.EvalSymlinks(dir)
+		resolved, err := filepath.EvalSymlinks(dir)
 		if err != nil {
 			return false
 		}
-		rel, err := filepath.Rel(tmp, real)
+		rel, err := filepath.Rel(tmp, resolved)
 		return err == nil && (rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 	}
 	for _, parent := range []string{os.TempDir(), ".", "/var/tmp"} {
