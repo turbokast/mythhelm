@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -12,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/turbokast/mythhelm/internal/buildinfo"
+	"github.com/turbokast/mythhelm/internal/journal"
 )
 
 // Stdio is the standard streams a command reads and writes.
@@ -165,19 +167,26 @@ func runVersion(args []string, stdio Stdio) error {
 	}
 
 	info := buildinfo.Get()
+	// The shipped SQLite engine version is build identity: the OQ-8
+	// evidence (supervisor-migration design §8) reads it from this output.
+	sqlite, err := journal.SQLiteVersion(context.Background())
+	if err != nil {
+		return err
+	}
 	switch *format {
 	case "plain":
-		_, err = fmt.Fprintf(stdio.Out, "mythhelm %s\ncommit: %s\ngo: %s\nplatform: %s/%s\n",
-			info.Version, info.Commit, info.GoVersion, info.OS, info.Arch)
+		_, err = fmt.Fprintf(stdio.Out, "mythhelm %s\ncommit: %s\ngo: %s\nplatform: %s/%s\nsqlite: %s\n",
+			info.Version, info.Commit, info.GoVersion, info.OS, info.Arch, sqlite)
 	case "jsonl":
 		err = json.NewEncoder(stdio.Out).Encode(struct {
-			Type      string `json:"type"`
-			Version   string `json:"version"`
-			Commit    string `json:"commit"`
-			GoVersion string `json:"go_version"`
-			OS        string `json:"os"`
-			Arch      string `json:"arch"`
-		}{"version", info.Version, info.Commit, info.GoVersion, info.OS, info.Arch})
+			Type          string `json:"type"`
+			Version       string `json:"version"`
+			Commit        string `json:"commit"`
+			GoVersion     string `json:"go_version"`
+			OS            string `json:"os"`
+			Arch          string `json:"arch"`
+			SQLiteVersion string `json:"sqlite_version"`
+		}{"version", info.Version, info.Commit, info.GoVersion, info.OS, info.Arch, sqlite})
 	default:
 		return usageErrorf("--format must be plain or jsonl, got %q", *format)
 	}
