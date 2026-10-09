@@ -34,6 +34,8 @@ func TestDecodeRejectsUnknownField(t *testing.T) {
 		{"truncated names offset", `{"kind":"contract","id":`, "offset 24"},
 		{"syntax error names offset", `{"kind":"contract",,}`, "offset 20"},
 		{"trailing data rejected", `{"kind":"contract","id":"a","revision":1} {}`, "trailing data"},
+		{"trailing brace rejected", `{"kind":"contract","id":"a","revision":1}}`, "trailing data"},
+		{"trailing bracket rejected", `{"kind":"contract","id":"a","revision":1}]`, "trailing data"},
 		{"validation error propagates", `{"kind":"other","id":"a","revision":1}`, "kind"},
 	}
 	for _, tc := range tests {

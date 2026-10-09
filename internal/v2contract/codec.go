@@ -30,7 +30,10 @@ func Decode[T Validator](data []byte) (T, error) {
 		}
 		return v, fmt.Errorf("v2contract: decode: %w", err)
 	}
-	if dec.More() {
+	// A second decode must hit EOF: dec.More() alone misses unmatched
+	// trailing delimiters such as an extra "}" or "]".
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
 		return v, fmt.Errorf("v2contract: decode: trailing data at offset %d", dec.InputOffset())
 	}
 	if err := v.Validate(); err != nil {
