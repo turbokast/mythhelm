@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/contain"
 )
 
@@ -55,4 +56,32 @@ func ConsultRegistry(reg contain.Registry, profile, os, route string) (contain.E
 		return contain.Evidence{}, errors.Join(blocked, contain.ErrMissingCoverage)
 	}
 	return contain.Evidence{}, blocked
+}
+
+// BoundaryDeltas reports each user-visible restriction the admitted boundary
+// imposes on native features as a fidelity delta (AC-4.3): the read-only
+// mounts and the proxy pin. A claim that is not enforced gets no delta, and
+// unattributed evidence (no boundary name) gets none: a delta must never
+// claim a restriction nothing enforces. Process and credential claims get
+// none by design: dropping capabilities and hiding ambient credentials
+// restrict authority, not native features, and admitted auth binds keep
+// native authentication working (AC-7.1).
+func BoundaryDeltas(ev contain.Evidence) []adapter.ConfigDelta {
+	if ev.Boundary == "" {
+		return nil
+	}
+	var deltas []adapter.ConfigDelta
+	if ev.Coverage.Filesystem.Enforced {
+		workdir := "only the workdir stays writable"
+		if ev.Profile == contain.ProfileInspect {
+			workdir = "the workdir is read-only"
+		}
+		deltas = append(deltas, adapter.ConfigDelta{Kind: "boundary", Name: "read-only mounts",
+			Reason: ev.Boundary + " remounts / read-only; " + workdir})
+	}
+	if ev.Coverage.Network.Enforced {
+		deltas = append(deltas, adapter.ConfigDelta{Kind: "boundary", Name: "proxy pin",
+			Reason: ev.Boundary + " pins HTTPS_PROXY/HTTP_PROXY to the worker's filtering proxy; direct egress is not blocked"})
+	}
+	return deltas
 }

@@ -196,7 +196,9 @@ func TestReceiptCarriesBoundary(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the restricted boundary is qualified on Linux only")
 	}
+	requireBoundary(t)
 	f := newFixture(t)
+	f.home = outsideTmpDir(t)
 	args := slices.DeleteFunc(f.fakeRun(), func(a string) bool { return a == "trusted-host" || a == "--execution-profile" })
 	if code, _, stderr := f.run(t, args...); code != 5 {
 		t.Fatalf("run exit %d: %s", code, stderr)

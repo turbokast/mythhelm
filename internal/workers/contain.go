@@ -6,15 +6,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/turbokast/mythhelm/adapters/claudecode"
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/contain"
 )
+
+// projectConfigSources are inventoried from the admitted revision's committed
+// blobs, never from disk: immutable, so the pre-exec re-hash skips them. A
+// workdir file hashed against a blob digest would mismatch on identical
+// content, so skipping is correctness, not leniency.
+var projectConfigSources = map[string]bool{"project": true, "project_local": true, "project_mcp": true}
+
+// userMCPSource carries no whole-file digest: its manifest digest covers the
+// selected MCP subset, so it is re-verified by path presence plus
+// re-inventory, never by hashing the file.
+const userMCPSource = "user_mcp"
 
 // spawnHooks are what a contained spawn needs around cmd.Start and cmd.Wait.
 // The zero value, used for an uncontained native, does nothing.
@@ -131,6 +144,82 @@ func (l Launch) containedCommand(spec adapter.ProcSpec) (*exec.Cmd, spawnHooks, 
 			<-copied
 		},
 	}, nil
+}
+
+// verifyUserConfig re-verifies the mutable native-config files behind the
+// admitted digests before exec, closing the admission→exec TOCTOU window
+// (design §2.9, I20). Every digest key needs a path mapping — a missing
+// mapping fails the launch, never skips — and every mapped mutable source
+// must still match its admitted digest. It returns nil when the launch
+// carries no digests. Errors name sources and paths, never file content.
+func (l Launch) verifyUserConfig() error {
+	if len(l.UserConfigDigests) == 0 {
+		return nil
+	}
+	for _, source := range slices.Sorted(maps.Keys(l.UserConfigDigests)) {
+		want := l.UserConfigDigests[source]
+		if want == "" {
+			return fmt.Errorf("native config %q carries no admitted digest", source)
+		}
+		path, ok := l.UserConfigPaths[source]
+		if !ok || path == "" {
+			return fmt.Errorf("native config %q has no inventoried path to re-verify", source)
+		}
+		if projectConfigSources[source] {
+			continue
+		}
+		if source == userMCPSource {
+			if err := l.verifyUserMCP(path, want); err != nil {
+				return err
+			}
+			continue
+		}
+		digest, err := hashFile(path)
+		if err != nil {
+			return fmt.Errorf("re-hashing native config %q: %w", source, err)
+		}
+		if digest != want {
+			return fmt.Errorf("native config %q changed after admission", source)
+		}
+	}
+	return nil
+}
+
+// verifyUserMCP re-verifies the user MCP selection: the inventoried file
+// must still be a regular file, and a fresh inventory over the launch's own
+// workdir and child env must select the admitted digest.
+func (l Launch) verifyUserMCP(path, want string) error {
+	st, err := os.Stat(path)
+	switch {
+	case err != nil:
+		return fmt.Errorf("re-verifying native config %q: %w", userMCPSource, err)
+	case !st.Mode().IsRegular():
+		return fmt.Errorf("re-verifying native config %q: not a regular file", userMCPSource)
+	}
+	home := launchHome(l.Env)
+	if home == "" {
+		return fmt.Errorf("re-verifying native config %q needs HOME in the launch env", userMCPSource)
+	}
+	manifest, err := claudecode.InventorySettingsForEnv(home, l.Dir, l.Env)
+	if err != nil {
+		return fmt.Errorf("re-inventorying native config %q: %w", userMCPSource, err)
+	}
+	if manifest.Digests[userMCPSource] != want {
+		return fmt.Errorf("native config %q changed after admission", userMCPSource)
+	}
+	return nil
+}
+
+// launchHome is the HOME entry of the admitted child env, or "" when the
+// launch carries none. Later duplicates win, matching security.BuildEnv.
+func launchHome(env []string) string {
+	home := ""
+	for _, kv := range env {
+		if value, ok := strings.CutPrefix(kv, "HOME="); ok {
+			home = value
+		}
+	}
+	return home
 }
 
 // withEnv returns env with each pin set, replacing any existing entry for the

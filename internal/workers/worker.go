@@ -85,6 +85,12 @@ type Launch struct {
 	// host:port list its egress proxy forwards to; empty denies everything.
 	Containment *contain.Policy `json:"containment,omitempty"`
 	ProxyAllow  []string        `json:"proxy_allow,omitempty"`
+	// UserConfigPaths maps each inventoried native-config source to the
+	// absolute path the worker re-hashes before exec, and UserConfigDigests
+	// carries the admitted hex digests (design §2.9). Empty digests verify
+	// nothing; a digest without a mapping fails the launch.
+	UserConfigPaths   map[string]string `json:"user_config_paths,omitempty"`
+	UserConfigDigests map[string]string `json:"user_config_digests,omitempty"`
 }
 
 // Identity is worker.json: what the supervisor checks before it accepts a
@@ -260,6 +266,11 @@ func readLaunch(r io.Reader) (Launch, error) {
 	if l.Containment != nil && !filepath.IsAbs(l.Containment.Workdir) {
 		problems = append(problems, "containment workdir is not absolute")
 	}
+	for source, p := range l.UserConfigPaths {
+		if !filepath.IsAbs(p) {
+			problems = append(problems, fmt.Sprintf("user config %q path is not absolute", source))
+		}
+	}
 	for _, step := range l.StopLadder {
 		if step.Grace <= 0 {
 			problems = append(problems, fmt.Sprintf("stop step %s has no grace period", step.Signal))
@@ -369,11 +380,17 @@ func writeFileAtomic(dir, name string, body []byte) error {
 }
 
 func hashFile(path string) (string, error) {
-	f, err := os.Open(path) //nolint:gosec // The admitted launch names the native executable.
+	f, err := openHash(path)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = f.Close() }()
+	// The handle check, not the path, rejects a FIFO (or directory or
+	// device) swapped in after admission: open-then-fstat on one handle
+	// cannot hang and cannot be raced into hashing something else.
+	if st, err := f.Stat(); err != nil || !st.Mode().IsRegular() {
+		return "", fmt.Errorf("not a regular file: %s", path)
+	}
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
@@ -522,6 +539,12 @@ func (w *worker) start(ctx context.Context, l *launcher) (adapter.Session, error
 	digest, err := hashFile(w.launch.Path)
 	if err != nil || digest != w.launch.NativeSHA256 {
 		return nil, errors.New("native executable failed verification")
+	}
+	// The admission→exec TOCTOU close: mutable native config that changed
+	// after admission fails the launch before any native process exists
+	// (design §2.9, I20).
+	if err := w.launch.verifyUserConfig(); err != nil {
+		return nil, err
 	}
 	prompt, err := os.Open(w.launch.PromptPath)
 	if err != nil {
