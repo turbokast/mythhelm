@@ -22,6 +22,7 @@ import (
 	"github.com/turbokast/mythhelm/adapters/fake"
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/billing"
+	"github.com/turbokast/mythhelm/internal/contain"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/security"
 	"github.com/turbokast/mythhelm/internal/workspace"
@@ -47,9 +48,10 @@ const (
 // MaxTaskBytes bounds the task file, which reaches the native on stdin.
 const MaxTaskBytes = 1 << 20
 
-// trustedHostDisclosure is shown and recorded whenever trusted-host is
-// admitted (AC-2.3).
-const trustedHostDisclosure = "not contained: native tools and checks run with your host authority"
+// TrustedHostDisclosure is shown and recorded whenever trusted-host is
+// admitted (AC-2.3). It is the verbatim sentence every honesty surface
+// carries; softening it breaks the anchored disclosure test.
+const TrustedHostDisclosure = "runs with your host authority and is not adversarially contained"
 
 // ErrInvalid reports a request that is malformed rather than refused: a
 // missing or unknown flag value, or an unreadable task file (exit 2).
@@ -128,6 +130,9 @@ type Profile struct {
 	Contained  bool   `json:"contained"`
 	Consent    string `json:"consent"` // "--execution-profile" or "interactive"
 	Disclosure string `json:"disclosure"`
+	// Boundary is the evidence the consult admitted, or nil when no
+	// boundary was consulted (trusted-host). The receipt renders it.
+	Boundary *contain.Evidence `json:"boundary,omitempty"`
 }
 
 // Decision is an admitted run: everything the supervisor needs to record it
@@ -444,7 +449,7 @@ func checkCapabilityFlags(req Request) error {
 func consentProfile(req Request) (Profile, error) {
 	switch req.ExecutionProfile {
 	case ProfileTrustedHost:
-		return Profile{Name: ProfileTrustedHost, Consent: "--execution-profile", Disclosure: trustedHostDisclosure}, nil
+		return Profile{Name: ProfileTrustedHost, Consent: "--execution-profile", Disclosure: TrustedHostDisclosure}, nil
 	case "", ProfileRestricted, ProfileInspect:
 		p := Profile{Name: ProfileRestricted, Contained: true, Consent: "--execution-profile"}
 		if req.ExecutionProfile == ProfileInspect {
@@ -453,9 +458,11 @@ func consentProfile(req Request) (Profile, error) {
 		if req.ExecutionProfile == "" {
 			p.Consent = "default"
 		}
-		if _, err := BoundaryConsult(p.Name, runtime.GOOS, "builtin/"+req.Adapter); err != nil {
+		ev, err := BoundaryConsult(p.Name, runtime.GOOS, "builtin/"+req.Adapter)
+		if err != nil {
 			return Profile{}, err
 		}
+		p.Boundary = &ev
 		return p, nil
 	}
 	return Profile{}, fmt.Errorf("%w: unreachable execution profile %q", ErrInvalid, req.ExecutionProfile)
