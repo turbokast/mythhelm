@@ -2,16 +2,20 @@ package supervisor_test
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/supervisor"
@@ -180,5 +184,143 @@ func TestReviewReadsRealCandidateDiff(t *testing.T) {
 	}
 	if !strings.Contains(out, "Candidate diff:") || !strings.Contains(out, "demo.txt") || !strings.Contains(out, "+ok") {
 		t.Fatalf("review omitted the frozen candidate diff: %q", out)
+	}
+}
+
+// TestReceiptCarriesBoundary pins the receipt's execution_bundle.boundary: a
+// restricted run records the admitted evidence's name, version and coverage,
+// an unknown dimension renders unknown (never contained or verified), and a
+// trusted-host run with no admitted evidence renders boundary unknown (I09).
+func TestReceiptCarriesBoundary(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the restricted boundary is qualified on Linux only")
+	}
+	f := newFixture(t)
+	args := slices.DeleteFunc(f.fakeRun(), func(a string) bool { return a == "trusted-host" || a == "--execution-profile" })
+	if code, _, stderr := f.run(t, args...); code != 5 {
+		t.Fatalf("run exit %d: %s", code, stderr)
+	}
+	id := f.onlyRun(t).RunID
+	b, err := os.ReadFile(filepath.Join(f.state, "runs", id, "receipt.json")) // #nosec G304 -- fixture state and projected ID
+	if err != nil {
+		t.Fatal(err)
+	}
+	var r supervisor.Receipt
+	if err := json.Unmarshal(b, &r); err != nil {
+		t.Fatal(err)
+	}
+	ev, err := admission.BoundaryConsult(admission.ProfileRestricted, runtime.GOOS, "builtin/fake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundary, ok := r["execution_bundle"].(map[string]any)["boundary"].(map[string]any)
+	if !ok {
+		t.Fatalf("execution_bundle.boundary = %v, want the admitted boundary record", r["execution_bundle"])
+	}
+	if boundary["name"] != ev.Boundary || boundary["version"] != ev.Version {
+		t.Errorf("boundary name/version = %v/%v, want %s/%s from the admitted evidence",
+			boundary["name"], boundary["version"], ev.Boundary, ev.Version)
+	}
+	coverage, ok := boundary["coverage"].(map[string]any)
+	if !ok {
+		t.Fatalf("boundary.coverage = %v, want one entry per dimension", boundary["coverage"])
+	}
+	for dim, claim := range map[string]string{
+		"filesystem": ev.Coverage.Filesystem.Name, "process": ev.Coverage.Process.Name,
+		"network": ev.Coverage.Network.Name, "credential": ev.Coverage.Credential.Name,
+	} {
+		if coverage[dim] != claim {
+			t.Errorf("coverage[%s] = %v, want %q from the admitted evidence", dim, coverage[dim], claim)
+		}
+	}
+
+	// An unenforced dimension renders unknown, never contained or verified.
+	ev.Coverage.Credential.Enforced = false
+	doctored, err := json.Marshal(admission.Record{ExecutionProfile: admission.Profile{
+		Name: admission.ProfileRestricted, Contained: true, Boundary: &ev}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	j, err := journal.Open(t.Context(), f.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = j.Close() }()
+	if err := j.Append(t.Context(), journal.Event{
+		SchemaVersion: journal.EnvelopeVersion, EventID: ids.New("evt"), RunID: id,
+		ProducerID: ids.New("sup"), ProducerSequence: 1, Generation: 1,
+		ObservedAt: time.Now().UTC(), Type: "admission.decided", Payload: doctored,
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	rerendered, err := supervisor.BuildReceipt(t.Context(), j, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reboundary, ok := rerendered["execution_bundle"].(map[string]any)["boundary"].(map[string]any)
+	if !ok {
+		t.Fatalf("re-rendered boundary = %v, want the boundary record", rerendered["execution_bundle"])
+	}
+	recoverage := reboundary["coverage"].(map[string]any)
+	if recoverage["credential"] != "unknown" {
+		t.Errorf("coverage[credential] = %v, want unknown for the unenforced dimension", recoverage["credential"])
+	}
+	if flat, _ := json.Marshal(reboundary); strings.Contains(string(flat), "contained") || strings.Contains(string(flat), "verified") {
+		t.Errorf("unknown dimension rendered as contained or verified: %s", flat)
+	}
+
+	// A trusted-host run admits no boundary evidence: boundary stays unknown.
+	_, trusted, _ := receiptRun(t)
+	if got := trusted["execution_bundle"].(map[string]any)["boundary"]; got != "unknown" {
+		t.Errorf("trusted-host boundary = %v, want unknown", got)
+	}
+}
+
+// TestReceiptCarriesEvaluator pins the receipt's verification.evaluator: it
+// equals the verification row's name and digest, never a recomputation, and a
+// run with no verification row renders evaluator unknown.
+func TestReceiptCarriesEvaluator(t *testing.T) {
+	f := newFixture(t)
+	if code, _, stderr := f.run(t, f.fakeRun("--scenario", "native-fails")...); code != 4 {
+		t.Fatalf("run exit %d: %s", code, stderr)
+	}
+	id := f.onlyRun(t).RunID
+	j, err := journal.Open(t.Context(), f.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = j.Close() }()
+	if _, err := j.LatestVerification(t.Context(), id); !errors.Is(err, journal.ErrNotFound) {
+		t.Fatalf("LatestVerification err = %v, want no verification row yet", err)
+	}
+	r, err := supervisor.BuildReceipt(t.Context(), j, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r["verification"].(map[string]any)["evaluator"]; got != "unknown" {
+		t.Fatalf("evaluator with no row = %v, want unknown", got)
+	}
+	now := time.Now().UTC()
+	if err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+		return journal.InsertVerification(t.Context(), tx, journal.VerificationRow{ID: ids.New("ver"), RunID: id,
+			CandidateCommit: strings.Repeat("c", 40), ConfigSHA256: strings.Repeat("d", 64), Result: "passed",
+			EvaluatorName: "host", EvaluatorDigest: strings.Repeat("e", 64), StartedAt: now, FinishedAt: now})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	row, err := j.LatestVerification(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rerendered, err := supervisor.BuildReceipt(t.Context(), j, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evaluator, ok := rerendered["verification"].(map[string]any)["evaluator"].(map[string]any)
+	if !ok {
+		t.Fatalf("verification.evaluator = %v, want the row's name and digest", rerendered["verification"])
+	}
+	if evaluator["name"] != row.EvaluatorName || evaluator["digest"] != row.EvaluatorDigest {
+		t.Errorf("evaluator = %v, want {name: %s, digest: %s} from the row", evaluator, row.EvaluatorName, row.EvaluatorDigest)
 	}
 }

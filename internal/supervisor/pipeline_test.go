@@ -569,7 +569,7 @@ func TestAdmissionDecidedBeforeWorkerSpawn(t *testing.T) {
 	if adm["snapshot"].(map[string]any)["base_rev"] != f.git(t, "rev-parse", "HEAD") || adm["billing"].(map[string]any)["mode"] != "local-scripted" {
 		t.Fatalf("admission.decided does not resolve the snapshot and billing posture: %s", evs[decided].Payload)
 	}
-	if !strings.Contains(stdout, "SCRIPTED: fake adapter, no real agent") || !strings.Contains(stdout, "not contained") {
+	if !strings.Contains(stdout, "SCRIPTED: fake adapter, no real agent") || !strings.Contains(stdout, "runs with your host authority and is not adversarially contained") {
 		t.Fatalf("plain output does not disclose the scripted adapter and the uncontained profile:\n%s", stdout)
 	}
 	// The agent's edit lands in the snapshot clone, never in the checkout (I08).
