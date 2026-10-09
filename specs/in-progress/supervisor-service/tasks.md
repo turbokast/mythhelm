@@ -33,7 +33,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Instance lock and root-conflict refusal
+### Task 1 — Instance lock and root-conflict refusal ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (process ownership, cross-platform lock behaviour)
@@ -55,6 +55,10 @@
   - `TestStaleLockAdoptedWithGenerationBump`: after the holder process is killed, a new acquirer succeeds and records a higher generation; a test double that reuses the old generation fails.
 - **Test plan**: temp state dirs; kill a real holder subprocess for the stale test; build-tagged lock files vetted with cross-`GOOS` vet.
 - **Invariants touched**: I05 (v2 §2: one writer per user/host via the instance lock); I18 (v2 §2: one process owner, no second election).
+- **Status**: ✅ Completed — per-user instance lock with metadata, stale adoption and root-conflict refusal landed; PR #250.
+- **Implementation**: flock/LockFileEx exclusion with metadata classification; every successful acquire adopts with a bumped generation. Gates: go-fmt/go-vet/go-mod-tidy/golangci-lint/govulncheck/hygiene PASS via gate.sh; go-test fails only on pre-existing environmental TestStrictMainBlocksWriteNothing (identical on untouched base). Commit cd7191e.
+- **Spec deviations**: No separate liveness probe gates adoption (design §3): a successful flock proves the previous holder released, so the acquirer always adopts with a higher generation; a pid-liveness gate false-refused live-but-released recorders under other roots and risked pid-reuse false refusals. Observable contract unchanged.
+- **Files modified**: `internal/control/lock.go`, `internal/control/lock_unix.go`, `internal/control/lock_windows.go`, `internal/control/lock_test.go`, `specs/in-progress/supervisor-service/tasks.md`, `specs/in-progress/supervisor-service/handoff.md`.
 
 ### Task 2 — Frame codec and NFR-1 ingress enforcement
 
