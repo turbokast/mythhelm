@@ -57,7 +57,7 @@
 - **Test plan**: table-driven envelopes (valid, duplicate, gap, stale generation, v2-pre-migration); golden v1 journal fixture with a `Decision` and every v1 status word.
 - **Invariants touched**: I23 (v2 §4.3: contiguity, idempotent duplicates, generation fencing for v2); G16 (v1 decodes under v1 forever).
 - **Status**: ✅ Completed — `Append` accepts phased v2 envelopes through the stream-1 validators with v1 behavior and decodes byte-identical; PR #286.
-- **Implementation**: `Append` delegates to unexported `appendTx` (v1 checks unchanged; v2 branch validates, phase-gates, then CheckDuplicate/CheckGeneration/CheckSequence into a shared `storeTx` tail); v2 failures carry a valid `ControlError` plus the stream-1 cause. V1 golden captured from base `148084b`. Commit 883feb4.
+- **Implementation**: `Append` delegates to unexported `appendTx` (v1 checks unchanged; v2 branch validates, phase-gates, then CheckDuplicate/CheckGeneration/CheckSequence into a shared `storeTx` tail); v2 failures carry a valid `ControlError` plus the stream-1 cause. V1 golden captured from base `148084b`. Commits 883feb4, 848c270.
 - **Spec deviations**:
   - No behavior deviation. Phase refusals also wrap `journal.ErrInvalidEvent`, keeping the existing `TestAppendValidatesEnvelope` "schema version" contract green without touching that file.
   - No behavior deviation. Phase words are string literals in `internal/journal`, not imported `migrate.Phase` constants: `internal/migrate` reaches back into `journal` for the import path, so the import would cycle.
