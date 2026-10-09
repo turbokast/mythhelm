@@ -129,8 +129,16 @@ func TestReplayWithDifferentTokenDenied(t *testing.T) {
 	h := counting(`{"ok":true}`, &runs)
 	first := intent("op_1", "probe")
 	first.CapabilityToken = "token-a"
-	if _, err := Execute(ctx, h, Peer{}, first); err != nil {
+	stored, err := Execute(ctx, h, Peer{}, first)
+	if err != nil {
 		t.Fatal(err)
+	}
+	replayed, err := Execute(ctx, h, Peer{}, first)
+	if err != nil {
+		t.Fatalf("replay under the same token: %v", err)
+	}
+	if wire(t, stored) != wire(t, replayed) {
+		t.Fatalf("replay differs: %s vs %s", wire(t, stored), wire(t, replayed))
 	}
 	for name, token := range map[string]string{
 		"different token": "token-b",
