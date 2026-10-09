@@ -87,3 +87,15 @@ overrides `design.md` — conflicts go back to the designer.
   lock plus the state-dir owner lock; quarantine envelopes persist
   post-backup from re-read evidence, and adopted runs are never
   relaunched.
+- **Task 6**: `internal/cli` now imports `internal/migrate` (the
+  migrate command), so migrate's *internal* test files cannot import
+  `cli` back — `TestApplyRefusedDuringMigration` moved to
+  `internal/cli/migrate_test.go` (external `_test` packages may still
+  import across, per the admission/supervisor precedent). Quarantine
+  payload re-reads the latest attempt row at persist time (attempt +
+  task + token hash, empty when never launched); the dedupe strips
+  `quarantined_at` before comparing. `Apply` never spawns the
+  supervisor — adopted hands the ledger over on next lazy start. The
+  e2e and `TestBackupHoldsDrainedWrites` checkpoint the WAL after
+  closing every handle before `Restore` (Restore's non-empty-WAL
+  backstop).

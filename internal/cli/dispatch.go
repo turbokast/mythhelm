@@ -38,6 +38,7 @@ var commands = map[string]command{
 	"doctor":  {summary: "report environment facts without writing anything", run: runDoctor},
 
 	"supervisor": {summary: "show the per-user supervisor's state, starting it if needed (supervisor status)", run: runSupervisor},
+	"migrate":    {summary: "preview or apply the v1 to v2 state migration (migrate --preview|--apply)", run: runMigrate},
 }
 
 // Main runs the command named by args[0] and returns the process exit code.

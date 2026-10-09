@@ -1,12 +1,15 @@
 package migrate
 
 // Drain tests never touch the real per-user instance lock or state
-// directory: every test redirects XDG_RUNTIME_DIR (and MYTHHELM_HOME where
-// it drives cli.Main) into temp dirs. t.Setenv forbids t.Parallel, so no
-// test here is parallel.
+// directory: every test redirects XDG_RUNTIME_DIR into a temp dir.
+// t.Setenv forbids t.Parallel, so no test here is parallel.
+//
+// TestApplyRefusedDuringMigration used to live here and drive cli.Main;
+// migration task 6 moved it to internal/cli/migrate_test.go, since the
+// migrate command made package cli import package migrate and an
+// internal test file can no longer import cli back (import cycle).
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -23,7 +26,6 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/admission"
-	"github.com/turbokast/mythhelm/internal/cli"
 	"github.com/turbokast/mythhelm/internal/control"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/supervisor"
@@ -801,74 +803,5 @@ func TestRecoverRefusedPastPreviewed(t *testing.T) {
 	}
 }
 
-// runApplyMain drives `mythhelm apply` against dir and reports its exit
-// code with stderr.
-func runApplyMain(t *testing.T, dir, runID, branch string) (int, string) {
-	t.Helper()
-	t.Setenv("MYTHHELM_HOME", dir)
-	var stdout, stderr bytes.Buffer
-	code := cli.Main([]string{"apply", runID, "--to-branch", branch},
-		cli.Stdio{Out: &stdout, Err: &stderr})
-	return code, stderr.String()
-}
-
-// TestApplyRefusedDuringMigration // I05 (v2 §2): applying a run past the
-// previewed phase — or while migration holds the state directory — exits
-// with ownership_unresolved naming the phase; otherwise apply proceeds
-// into its own checks.
-func TestApplyRefusedDuringMigration(t *testing.T) {
-	isolateInstanceLock(t)
-	tests := []struct {
-		name     string
-		phase    Phase
-		holdLock bool
-		refuse   bool
-	}{
-		{name: "drained refuses", phase: PhaseDrained, refuse: true},
-		{name: "imported refuses", phase: PhaseImported, refuse: true},
-		{name: "adopted refuses", phase: PhaseAdopted, refuse: true},
-		{name: "not started proceeds", phase: PhaseNotStarted},
-		{name: "previewed proceeds", phase: PhasePreviewed},
-		{name: "held migration lock refuses", phase: PhaseNotStarted, holdLock: true, refuse: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			dir := t.TempDir()
-			db := openDrainDB(t, dir)
-			setPhase(t, db, tt.phase)
-			insertRun(t, db, "run_apply1", "created")
-			if err := os.MkdirAll(filepath.Join(dir, "runs", "run_apply1"), 0o700); err != nil {
-				t.Fatalf("mkdir run dir: %v", err)
-			}
-			if tt.holdLock {
-				held, err := supervisor.AcquireOwner(dir)
-				if err != nil {
-					t.Fatalf("hold migration lock: %v", err)
-				}
-				t.Cleanup(held)
-			}
-			code, stderr := runApplyMain(t, dir, "run_apply1", "feature/x")
-			if !tt.refuse {
-				// Past the guard, apply fails on the bare fixture: the
-				// source checkout is not a repository, so the branch is
-				// invalid there.
-				if code != 2 {
-					t.Fatalf("apply exit = %d (%s); want 2 past the guard", code, stderr)
-				}
-				if strings.Contains(stderr, "ownership_unresolved") {
-					t.Fatalf("apply stderr %q; want no ownership refusal", stderr)
-				}
-				return
-			}
-			if code != 6 {
-				t.Fatalf("apply exit = %d (%s); want 6 ownership_unresolved", code, stderr)
-			}
-			if !strings.Contains(stderr, "ownership_unresolved") {
-				t.Errorf("apply stderr %q names no ownership_unresolved", stderr)
-			}
-			if !tt.holdLock && !strings.Contains(stderr, string(tt.phase)) {
-				t.Errorf("apply stderr %q does not name phase %q", stderr, tt.phase)
-			}
-		})
-	}
-}
+// runApplyMain and TestApplyRefusedDuringMigration moved to
+// internal/cli/migrate_test.go (see the package note above).
