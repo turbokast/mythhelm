@@ -77,7 +77,7 @@
 - **Test plan**: fixture v1 state dirs; golden `TaskRevision` JSON per posture word.
 - **Invariants touched**: I15 (v2 §2: declared posture never promoted); I07 (acceptance needs independent evidence); I09 (unverified stays unverified); I12 (no replay of effects).
 
-### Task 4 — Drain, adopt, quarantine
+### Task 4 — Drain, adopt, quarantine ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (process ownership, concurrency across 4 lock sites)
@@ -100,6 +100,14 @@
   - `TestRunRefusedPastPreviewed`: starting a new run past `previewed` returns `ownership_unresolved` naming the phase; in-flight runs drain instead.
 - **Test plan**: lock-holding fixtures per owner site; dead-pid simulation; ledger assertions on quarantine envelopes.
 - **Invariants touched**: I05 (one writer per dir; no coexisting writers); I18 (one process owner); I06 (stop unconfirmed until reconciled); I12 (reconcile before retry; adopt-only-same-launch-identity).
+- **Status**: ✅ Completed — Drain quiesces the four legacy owner sites into a drain/adopt/quarantine report with no ledger write, and every owner site refuses new work while migration holds the state directory or the ledger is past previewed; PR #292.
+- **Implementation**: Drain holds the instance lock plus the state-dir owner lock as the migration lock, waits each run's owner lock to the context/default deadline, and verifies launch identity (token, journaled observations, live pid) before adopting; hook refusals wrap supervisor.ErrOwnership (CLI exit 6) while Drain returns v2 ControlError codes. Commits a0b675d, b6ae6e8.
+- **Spec deviations**:
+  - `internal/journal/migrate_tables_test.go` (outside Files): phase literals instead of `migrate.Phase` — the import cycled once migrate imports control/supervisor/journal as design §2 mandates; bound back by `TestPhaseMatchesMigrationVocabulary`.
+  - The migration lock is the state directory's owner lock held alongside the instance lock (same flock mechanism, hermetic under parallel package suites) rather than the per-user instance lock alone.
+  - No checkpoint-stop signalling: in-flight runs finish their admitted work or abort at the deadline; no acceptance criterion requires forced early stops.
+  - The TUI palette Apply call site shares `apply.go`'s guard helper and is covered by construction (no headless path drives the palette action itself).
+- **Files modified**: `internal/migrate/drain.go`, `internal/migrate/drain_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/recover.go`, `internal/cli/apply.go`, `internal/cli/tui.go`, `internal/journal/migrate_tables_test.go`, `specs/in-progress/supervisor-migration/tasks.md`, `specs/in-progress/supervisor-migration/handoff.md`, `specs/in-progress/supervisor-migration/scratchpad.md`.
 
 ### Task 5 — Backup and restore with downgrade refusal
 

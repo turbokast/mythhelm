@@ -51,3 +51,11 @@ overrides `design.md` — conflicts go back to the designer.
   version (`journal_test.go` pragmas, `qualification_test.go`
   `TestMigration0002Applies`, `evaluator_test.go`) and were bumped
   6→7; future schema bumps must sweep those files too.
+- **Task 4**: journal's internal tests must never import
+  `internal/migrate` (import cycle once migrate imports
+  control/supervisor/journal per design §2); the phase vocabulary
+  there stays as literals bound by
+  `TestPhaseMatchesMigrationVocabulary`. Drain holds the instance
+  lock plus the state-dir owner lock; quarantine envelopes persist
+  post-backup from re-read evidence, and adopted runs are never
+  relaunched.
