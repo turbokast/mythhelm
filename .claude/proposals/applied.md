@@ -156,3 +156,20 @@ Append a short entry: on Windows, atomic file replacement via rename can fail tr
 **Proposed change:**
 
 Add a dispatch step: before starting a task attempt, append the `run_start` row (once per spec run) and the task's `dispatch` row to `.claude/data/run-events.jsonl`; after the attempt ends, append the `return` row (and `merge` after the merge). A dispatch without its rows is incomplete. Before finalizing, the orchestrator may backfill rows for already-merged tasks only from authoritative records (merged PRs, merge commits). Backfilled rows must carry provenance marking them as reconstructed, and consumers must distinguish them from observed rows when computing attempt metrics and attribution. Use the schema's `null` and `unknown` values for unavailable attribution or results; never treat the generated `ts` as the original event time when that time cannot be recovered.
+
+## P-v2-contract-vocabulary-1 — Track deferred cross-task promises to completion
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: pending
+- **Eval**: `run-completion-resolves-deferrals`
+- **Rationale**: A cross-task deferral with no owner was dropped by both tasks it named and caught only at finalize, after every task had merged; checking each deferral against merged diffs at run completion stops the run while the fix is still cheap. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `v2-contract-vocabulary`
+- **Type**: skill
+- **Target**: `.claude/skills/run-spec-completion/SKILL.md`
+- **Rationale**: A task completion entry deferred work to a later task ("Task 5 or 8 retypes them") with no owner; neither task did it, per-task review passed both, and only the finalize review caught the broken promise — after every task had merged. Deferred items need tracking, not prose.
+- **Evidence**: specs/done/v2-contract-vocabulary/tasks.md Task 2 Spec deviations (string-State promise); Review Summary finding F2; fix PR #268
+
+**Proposed change:**
+
+Add to the Confirm step: collect every "Task N ..." deferral named in Spec deviations entries; each must resolve to a completing change whose promised edit is present in the referenced diff and whose task or fix PR has merged — a Files modified entry alone, or an open fix PR, is not proof — or the run stops with the unresolved promise named.
