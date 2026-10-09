@@ -22,3 +22,4 @@
 ## Discoveries
 
 - (Implementing tasks append one entry each: what was learned, with file:line or command evidence.)
+- Task 2: design §3 types `State` as Task 5's `RunState`/`TaskState`/`AttemptState`, but tasks 2 and 5 are parallel with disjoint Files, so Task 2 could not compile against them; fields are `string` (`grep -rn RunState internal/v2contract` on origin/main printed nothing). Also, `internal/supervisor` claudecode tests fail when `ANTHROPIC_BASE_URL` is set (`credential_route_override`); run go-test with the ANTHROPIC_* variables unset.

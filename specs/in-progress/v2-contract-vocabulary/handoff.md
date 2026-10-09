@@ -15,7 +15,9 @@
 
 ## Task 2 — Execution records: Run, TaskRevision, Attempt
 
-<!-- pending -->
+- **Produces**: `v2contract.Run`, `TaskRevision`, `Attempt` (design §3 fields, snake_case json/toml tags) with value-receiver `Validate()`; goldens in `testdata/records/{run,task_revision,attempt}.golden.json` (compact, no trailing newline).
+- **For dependents**: `State` is `string` on all three (Task 5 owns `RunState`/`TaskState`/`AttemptState`); retype the field to the typed state then, keeping the JSON key `lifecycle`. `Validate` requires State non-empty only, not in-vocabulary. Dependency errors read `dependencies[i]: ...`.
+- **Deviation**: the string-typed `State` above, a change to Task 5/8 inputs.
 
 ## Task 3 — Decision and evidence records
 
