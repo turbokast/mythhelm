@@ -124,6 +124,82 @@ decisions behind both postures are in
 [ADR 0002](https://github.com/turbokast/mythhelm/blob/main/docs/decisions/0002-dogfood-billing-posture.md) and
 [ADR 0012](https://github.com/turbokast/mythhelm/blob/main/docs/decisions/0012-strict-subscription-admission.md).
 
+### Budget ledger
+
+Every run keeps a budget ledger in the journal: typed usage rows, one quota
+reservation, one envelope row and, when an allowance runs out, one exhausted
+bucket. The ledger records what was observed and what was decided. It never
+claims a provider balance, a remaining quota or a price that was actually
+charged; anything MYTHHELM did not observe is reported as `unknown`, never as
+zero.
+
+**Usage rows.** Each native result projects into typed usage rows keyed by
+scope, unit and source (for example per-model token counts and a
+retail-equivalent cost). Every row carries a label: `reported` for exact
+observed totals, `estimated` for totals built from identity-less deltas or
+converted money, and `unknown` for scopes with no usable reading. The receipt's
+`billing.usage_observations` lists each row with its scope, unit, source,
+label and quantity, and retail rows add the note `estimate, not a charge`.
+After a run, MYTHHELM prints one `usage:` line per row, for example
+`usage: retail-equivalent unknown unknown (unknown, unknown)` when the adapter
+surfaced no usage. A fake-adapter run records only that retail `unknown`
+marker.
+
+**Remaining and next retry.** The receipt's `billing.remaining` is always
+`{quantity: unknown, bucket}`, and the CLI prints `remaining: unknown`:
+MYTHHELM cannot see provider-side quota, so it reports nothing. When a run
+exhausts its allowance, `billing.next_retry` and the `next retry:` line show
+the operator retry schedule (`at`, `retries_used`, `retries_max: 3`); a run
+that never exhausted renders `next retry: none (used 0 of 3)`. These lines
+print on the linear, jsonl and demo paths only, not in the full-screen TUI.
+
+**Envelopes.** Every admitted run carries an envelope: ceilings for execution
+time, repairs, replans and transport retries. The built-ins are 30 minutes, 3
+repairs, 2 replans and 5 transport retries. Per-run flags override them:
+
+```sh
+mythhelm run --envelope-execution 45m --envelope-repairs 5 ...
+```
+
+`--envelope-execution` takes a positive duration; `--envelope-repairs`,
+`--envelope-replans` and `--envelope-transport-retries` take counts. A
+`[envelopes]` table in `mythhelm.toml` sets the middle layer
+(`execution = "45m"`, `repairs = 5`, `replans`, `transport_retries`), decoded
+strictly: unknown keys, invalid durations and negative counts refuse admission.
+Precedence is flags, then file, then built-ins. Launches past a ceiling are
+refused and the run becomes `blocked` with a reason naming the exhausted
+kind (`envelope_repairs_exhausted`, `envelope_replans_exhausted`,
+`envelope_transport_retries_exhausted`, `envelope_deadline_exceeded`); only a
+recorded operator extension raises a ceiling.
+
+**Completion reserve.** Before dispatching a material replan after the first
+verification, MYTHHELM checks that the execution time left covers one more
+verification pass. The `reserve:` line and the receipt's `billing.reserve`
+show this estimate (`verify pass (...) + N repairs`), labelled
+`estimate, not a reserve of provider quota`. It is planning arithmetic, not a
+claim on provider capacity; repairs are never gated by it. For checked runs
+the receipt's verify pass reads `unknown`, because check timeouts are not
+journaled — only the CLI line, which reads the live admission decision, is
+exact there.
+
+**Exhaustion.** When the allowance is exhausted, the run keeps its frozen
+candidate and session artifacts, ends `blocked` with reason
+`allowance_exhausted`, and records the bucket. While the bucket row is live,
+new runs on the same bucket are refused with `allowance_exhausted`; the
+operator may retry on the recorded schedule (backoff 1m, 5m, 15m, then stop
+when the reset is unknown, at most 3 retries), and MYTHHELM itself launches
+nothing automatically. The run's reservation is released only after the
+attempt reaches terminal state.
+
+**Reservations.** Admission holds exactly one quota reservation coupled to the
+run's bucket, with quantity `unknown`. The reservation is
+`local coordination only — not provider availability`: it coordinates
+MYTHHELM's own runs and says nothing about what the provider will serve.
+
+The billing, persistence and process-ownership decisions behind the ledger are
+in
+[ADR 0015](https://github.com/turbokast/mythhelm/blob/main/docs/decisions/0015-budget-ledger-s1.md).
+
 ## Limitations
 
 The [limitations register]({{ site.baseurl }}/limitations.html) lists what is
