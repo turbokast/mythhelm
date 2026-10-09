@@ -12,7 +12,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Migration 0004 v2 contract tables
+### Task 1 — Migration 0004 v2 contract tables ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (persistence schema migration)
@@ -30,6 +30,13 @@
   - `TestSchemaVersionIs4`: `SchemaVersion == 4` after 0004 and `OpenReadOnly` succeeds on a 0004 database.
 - **Test plan**: temp databases migrated from a checked-in v1 golden fixture; DDL snapshot comparison.
 - **Invariants touched**: I23 (v2 §5.1: single ledger gains v2 tables, no second store); G16 (additive only).
+- **Status**: ✅ Completed — additive migration 0007 creates the five v2 tables with `migration_state` starting at `not_started`; PR #277.
+- **Implementation**: Renumbered 0004→0007 (origin/main already holds 0001–0006); `go:embed` picks the file up with no registry change. Commits 1be31e6, 30a2ecd.
+- **Spec deviations**:
+  - Migration ships as `0007_v2contracts.sql` with `SchemaVersion` 7, not 0004/4 as the task text says: later specs claimed 0003–0006 first. Test names follow (`TestMigration0007CreatesV2Tables`, `TestSchemaVersionIs7`); later tasks read "0004" as 0007.
+  - Extra files beyond the task Files list: `internal/journal/journal_test.go`, `internal/journal/qualification_test.go` and `internal/journal/evaluator_test.go` pin the schema version (incl. `user_version`) and were bumped 6→7.
+  - `TestMigration0001Untouched` already exists in `internal/journal/ledger_test.go` (added by budget-ledger-s1) and was reused, not duplicated.
+- **Files modified**: `internal/journal/migrations/0007_v2contracts.sql`, `internal/journal/journal.go`, `internal/migrate/phase.go`, `internal/journal/migrate_tables_test.go`, `internal/journal/journal_test.go`, `internal/journal/qualification_test.go`, `internal/journal/evaluator_test.go`, `specs/in-progress/supervisor-migration/tasks.md`, `specs/in-progress/supervisor-migration/handoff.md`, `specs/in-progress/supervisor-migration/scratchpad.md`.
 
 ### Task 2 — Append accepts v2 envelopes post-migration
 
