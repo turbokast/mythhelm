@@ -205,8 +205,8 @@ func (p *pipeline) run(ctx context.Context) error {
 // fresh entitlement declaration, an explicit native-config trust grant and
 // the run's resolved envelope commit in the same transaction as the
 // admission event, so a crash between them cannot admit a run whose
-// declaration never persisted. The run's reservation is then held; a
-// failed hold blocks the run.
+// declaration never persisted. The run's one reservation commits there too;
+// a failed hold rolls the admission back and blocks the run.
 func (p *pipeline) appendAdmission(ctx context.Context) error {
 	d := p.d
 	file, err := d.ProjectConfig.Envelopes.ToCeilings()
@@ -220,8 +220,11 @@ func (p *pipeline) appendAdmission(ctx context.Context) error {
 		return err
 	}
 	decl, trust, digest, repo := d.Declaration, d.RecordNativeTrust, d.NativeConfigDigest, d.RepoIdentity
-	// The run's finite envelope commits with the admission, so no admitted
-	// run exists without one (I21).
+	rec, identityRef := quotaBucketInputs(d)
+	var holdErr error
+	// The envelope and the reservation commit with the admission, so no
+	// admitted run exists without either, and a failed hold leaves nothing
+	// behind (AC-3.2, I21).
 	project := func(tx *sql.Tx) error {
 		if decl != nil {
 			if err := journal.InsertDeclaration(ctx, tx, *decl); err != nil {
@@ -233,39 +236,39 @@ func (p *pipeline) appendAdmission(ctx context.Context) error {
 				return err
 			}
 		}
-		return journal.UpsertRunEnvelope(ctx, tx, journal.EnvelopeRow{RunID: d.RunID,
+		if err := journal.UpsertRunEnvelope(ctx, tx, journal.EnvelopeRow{RunID: d.RunID,
 			ExecutionSeconds: int64(ceilings.Execution / time.Second), Repairs: int64(ceilings.Repairs),
 			Replans: int64(ceilings.Replans), TransportRetries: int64(ceilings.TransportRetries),
-			UpdatedAt: at.Format(time.RFC3339Nano)})
+			UpdatedAt: at.Format(time.RFC3339Nano)}); err != nil {
+			return err
+		}
+		if _, holdErr = admission.HoldQuotaReservation(ctx, tx, admission.NewJournalReserver(ceilings), d.RunID, rec, identityRef); holdErr != nil {
+			return holdErr
+		}
+		return nil
 	}
 	if err := p.prod.append(ctx, p.j, ev, project); err != nil {
+		if holdErr != nil {
+			// The admission rolled back with the failed hold: block the
+			// run before any worker exists (I02).
+			return errors.Join(err, p.runTo(ctx, RunBlocked, "quota_reservation_failed"))
+		}
 		return err
 	}
-	if err := p.holdReservation(ctx, ceilings); err != nil {
-		return err
-	}
+	p.h.Notice(admission.ReservationText(admission.QuotaBucket(rec, identityRef)))
 	return p.flush(ctx)
 }
 
-// holdReservation holds the run's one reservation, coupled to the admitted
-// bucket. The bucket is built from the decision: its harness and surface
-// come from the adapter descriptor, its entitlement class from the admitted
-// billing posture and its identity from the native auth evidence, which the
-// fake adapter has none of (unknown). A failed hold blocks the run before
-// any worker exists (I02).
-func (p *pipeline) holdReservation(ctx context.Context, c billing.Ceilings) error {
-	d := p.d
+// quotaBucketInputs builds the bucket's record from the decision: its
+// harness and surface come from the adapter descriptor, its entitlement
+// class from the admitted billing posture and its identity from the native
+// auth evidence, which the fake adapter has none of (unknown).
+func quotaBucketInputs(d admission.Decision) (qualify.Record, string) {
 	rec := qualify.Record{Key: qualify.Key{Harness: d.Adapter.Harness, Surface: d.Adapter.Surface, EntitlementClass: d.Proposal.Billing.EntitlementClass}}
-	identityRef := ""
-	if d.NativeAuth != nil {
-		identityRef = d.NativeAuth.IdentityRef
+	if d.NativeAuth == nil {
+		return rec, ""
 	}
-	_, err := admission.HoldQuotaReservation(ctx, admission.NewJournalReserver(p.j, c), d.RunID, rec, identityRef)
-	if err != nil {
-		return errors.Join(err, p.runTo(ctx, RunBlocked, "quota_reservation_failed"))
-	}
-	p.h.Notice(admission.ReservationText(admission.QuotaBucket(rec, identityRef)))
-	return nil
+	return rec, d.NativeAuth.IdentityRef
 }
 
 // snapshot writes the task and clones the admitted revision (AC-3.3).

@@ -26,13 +26,14 @@ const reservationGrace = time.Hour
 // one bucket per run and preauthorises no alternative route (AC-6.4).
 var ErrDuplicateHold = errors.New("run already holds a reservation")
 
-// Reserver holds quota reservations. It is declared here, where admission
-// consumes it, so tests can use a fake.
+// Reserver holds quota reservations inside the caller's transaction, so a
+// hold commits or rolls back with the admission it belongs to (AC-3.2). It
+// is declared here, where admission consumes it, so tests can use a fake.
 type Reserver interface {
 	// Reserve holds one reservation for runID on bucket, owned by owner.
 	// A second live hold for the same run returns ErrDuplicateHold; a
 	// storage failure wraps its cause.
-	Reserve(ctx context.Context, runID, bucket, owner string) (reservationID string, err error)
+	Reserve(ctx context.Context, tx *sql.Tx, runID, bucket, owner string) (reservationID string, err error)
 }
 
 // QuotaBucket names the admitted billing bucket from the record's harness,
@@ -61,48 +62,40 @@ func ReservationText(bucket string) string {
 	return fmt.Sprintf("reservation held on bucket %s: %s", bucket, ReservationNote)
 }
 
-type journalReserver struct {
-	j *journal.Journal
-	c billing.Ceilings
-}
+type journalReserver struct{ c billing.Ceilings }
 
 // NewJournalReserver returns the production Reserver, writing the
-// reservations table through the run owner's journal. A hold expires at its
-// creation plus the execution ceiling plus one hour of grace.
-func NewJournalReserver(j *journal.Journal, c billing.Ceilings) Reserver {
-	return journalReserver{j: j, c: c}
-}
+// reservations table through the run owner's transaction. A hold expires at
+// its creation plus the execution ceiling plus one hour of grace.
+func NewJournalReserver(c billing.Ceilings) Reserver { return journalReserver{c: c} }
 
-func (r journalReserver) Reserve(ctx context.Context, runID, bucket, owner string) (string, error) {
+func (r journalReserver) Reserve(ctx context.Context, tx *sql.Tx, runID, bucket, owner string) (string, error) {
 	now := time.Now().UTC()
 	id := ids.New("rsv")
-	err := r.j.Transact(ctx, func(tx *sql.Tx) error {
-		var held int
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM reservations WHERE run_id = ? AND status = 'held'`, runID).Scan(&held); err != nil {
-			return fmt.Errorf("counting held reservations of %s: %w", runID, err)
-		}
-		if held > 0 {
-			return fmt.Errorf("%w: %s", ErrDuplicateHold, runID)
-		}
-		return journal.InsertReservation(ctx, tx, journal.ReservationRow{
-			ReservationID: id, RunID: runID, Bucket: bucket, Scope: bucket, Owner: owner,
-			Quantity: "unknown", Status: "held",
-			ExpiresAt: now.Add(r.c.Execution + reservationGrace).Format(time.RFC3339Nano),
-			CreatedAt: now.Format(time.RFC3339Nano),
-		})
-	})
-	if err != nil {
+	var held int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM reservations WHERE run_id = ? AND status = 'held'`, runID).Scan(&held); err != nil {
+		return "", fmt.Errorf("counting held reservations of %s: %w", runID, err)
+	}
+	if held > 0 {
+		return "", fmt.Errorf("%w: %s", ErrDuplicateHold, runID)
+	}
+	if err := journal.InsertReservation(ctx, tx, journal.ReservationRow{
+		ReservationID: id, RunID: runID, Bucket: bucket, Scope: bucket, Owner: owner,
+		Quantity: "unknown", Status: "held",
+		ExpiresAt: now.Add(r.c.Execution + reservationGrace).Format(time.RFC3339Nano),
+		CreatedAt: now.Format(time.RFC3339Nano),
+	}); err != nil {
 		return "", err
 	}
 	return id, nil
 }
 
 // HoldQuotaReservation holds the run's reservation coupled to the admitted
-// bucket and returns its id. The quantity is unknown: S1 cannot read
-// provider quota (I09). A failure holds nothing and must block the run
-// (I02).
-func HoldQuotaReservation(ctx context.Context, r Reserver, runID string, rec qualify.Record, identityRef string) (string, error) {
-	id, err := r.Reserve(ctx, runID, QuotaBucket(rec, identityRef), runID)
+// bucket inside tx and returns its id. The quantity is unknown: S1 cannot
+// read provider quota (I09). A failure holds nothing; the caller rolls tx
+// back and blocks the run (I02).
+func HoldQuotaReservation(ctx context.Context, tx *sql.Tx, r Reserver, runID string, rec qualify.Record, identityRef string) (string, error) {
+	id, err := r.Reserve(ctx, tx, runID, QuotaBucket(rec, identityRef), runID)
 	if err != nil {
 		return "", fmt.Errorf("holding the quota reservation of %s: %w", runID, err)
 	}

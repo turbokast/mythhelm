@@ -1489,8 +1489,17 @@ func TestHoldFailureBlocksRun(t *testing.T) {
 		t.Fatalf("projected run = %s (%s), want blocked (quota_reservation_failed)", run.State, run.Reason)
 	}
 	// Nothing launched and nothing is held: no partial claim survives.
-	if typeIndex(f.events(t, d.RunID), "attempt.launch_intent_recorded") >= 0 {
+	evs := f.events(t, d.RunID)
+	if typeIndex(evs, "attempt.launch_intent_recorded") >= 0 {
 		t.Fatal("a run whose hold failed still recorded a launch intent")
+	}
+	// The hold commits with the admission, so a failed hold leaves neither
+	// the admission event nor the envelope behind (AC-3.2, design §4).
+	if typeIndex(evs, "admission.decided") >= 0 {
+		t.Fatal("admission.decided survived a failed hold: the hold is not in the admission transaction")
+	}
+	if _, err := f.journal(t).RunEnvelope(t.Context(), d.RunID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("RunEnvelope after a failed hold = %v, want no row", err)
 	}
 	if got := f.reservations(t, d.RunID); len(got) != 0 {
 		t.Fatalf("reservations after a failed hold = %v, want none", got)

@@ -41,6 +41,18 @@ func journalWithRun(t *testing.T) (*journal.Journal, string) {
 	return j, runID
 }
 
+// hold runs one hold in its own transaction, as the admission append does.
+func hold(t *testing.T, j *journal.Journal, r admission.Reserver, runID string, rec qualify.Record) (string, error) {
+	t.Helper()
+	var id string
+	err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+		var err error
+		id, err = admission.HoldQuotaReservation(t.Context(), tx, r, runID, rec, identityRef)
+		return err
+	})
+	return id, err
+}
+
 func reservationRows(t *testing.T, j *journal.Journal, runID string) int {
 	t.Helper()
 	var n int
@@ -55,8 +67,8 @@ func reservationRows(t *testing.T, j *journal.Journal, runID string) int {
 func TestHoldCouplesAdmittedBucket(t *testing.T) {
 	t.Parallel()
 	j, runID := journalWithRun(t)
-	reserver := admission.NewJournalReserver(j, billing.BuiltInCeilings())
-	id, err := admission.HoldQuotaReservation(t.Context(), reserver, runID, admittedRecord, identityRef)
+	reserver := admission.NewJournalReserver(billing.BuiltInCeilings())
+	id, err := hold(t, j, reserver, runID, admittedRecord)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +114,7 @@ type fakeReserver struct {
 	err                  error
 }
 
-func (f *fakeReserver) Reserve(_ context.Context, runID, bucket, owner string) (string, error) {
+func (f *fakeReserver) Reserve(_ context.Context, _ *sql.Tx, runID, bucket, owner string) (string, error) {
 	f.runID, f.bucket, f.owner = runID, bucket, owner
 	return "rsv_fake", f.err
 }
@@ -110,7 +122,7 @@ func (f *fakeReserver) Reserve(_ context.Context, runID, bucket, owner string) (
 func TestHoldPassesBucketAndPropagatesFailure(t *testing.T) {
 	t.Parallel()
 	f := &fakeReserver{}
-	id, err := admission.HoldQuotaReservation(t.Context(), f, "run_1", admittedRecord, identityRef)
+	id, err := admission.HoldQuotaReservation(t.Context(), nil, f, "run_1", admittedRecord, identityRef)
 	if err != nil || id != "rsv_fake" {
 		t.Fatalf("hold = %q, %v", id, err)
 	}
@@ -119,7 +131,7 @@ func TestHoldPassesBucketAndPropagatesFailure(t *testing.T) {
 	}
 	boom := errors.New("storage down")
 	f.err = boom
-	if id, err := admission.HoldQuotaReservation(t.Context(), f, "run_1", admittedRecord, identityRef); !errors.Is(err, boom) || id != "" {
+	if id, err := admission.HoldQuotaReservation(t.Context(), nil, f, "run_1", admittedRecord, identityRef); !errors.Is(err, boom) || id != "" {
 		t.Fatalf("failed hold = %q, %v; want the storage error and no id", id, err)
 	}
 }
@@ -127,13 +139,13 @@ func TestHoldPassesBucketAndPropagatesFailure(t *testing.T) {
 func TestOneBucketPerRun(t *testing.T) {
 	t.Parallel()
 	j, runID := journalWithRun(t)
-	reserver := admission.NewJournalReserver(j, billing.BuiltInCeilings())
-	if _, err := admission.HoldQuotaReservation(t.Context(), reserver, runID, admittedRecord, identityRef); err != nil {
+	reserver := admission.NewJournalReserver(billing.BuiltInCeilings())
+	if _, err := hold(t, j, reserver, runID, admittedRecord); err != nil {
 		t.Fatal(err)
 	}
 	// A second hold for the same run is refused, on the same bucket or any other.
 	for _, rec := range []qualify.Record{admittedRecord, bucketRecord("codex", "cli", "included-plan")} {
-		if _, err := admission.HoldQuotaReservation(t.Context(), reserver, runID, rec, identityRef); !errors.Is(err, admission.ErrDuplicateHold) {
+		if _, err := hold(t, j, reserver, runID, rec); !errors.Is(err, admission.ErrDuplicateHold) {
 			t.Fatalf("second hold err = %v, want ErrDuplicateHold", err)
 		}
 	}
@@ -145,7 +157,7 @@ func TestOneBucketPerRun(t *testing.T) {
 func TestUnknownQuantityNeverZero(t *testing.T) {
 	t.Parallel()
 	j, runID := journalWithRun(t)
-	id, err := admission.HoldQuotaReservation(t.Context(), admission.NewJournalReserver(j, billing.BuiltInCeilings()), runID, admittedRecord, identityRef)
+	id, err := hold(t, j, admission.NewJournalReserver(billing.BuiltInCeilings()), runID, admittedRecord)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +175,7 @@ func TestHoldExpiresAfterCeilingPlusGrace(t *testing.T) {
 	j, runID := journalWithRun(t)
 	c := billing.Ceilings{Execution: 10 * time.Minute, Repairs: 1, Replans: 1, TransportRetries: 1}
 	before := time.Now()
-	id, err := admission.HoldQuotaReservation(t.Context(), admission.NewJournalReserver(j, c), runID, admittedRecord, identityRef)
+	id, err := hold(t, j, admission.NewJournalReserver(c), runID, admittedRecord)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,5 +201,28 @@ func TestReservationWordingIsLocalOnly(t *testing.T) {
 	}
 	if admission.ReservationNote != "local coordination only — not provider availability" {
 		t.Fatalf("ReservationNote = %q", admission.ReservationNote)
+	}
+}
+
+func TestHoldRollsBackWithItsTransaction(t *testing.T) {
+	t.Parallel()
+	j, runID := journalWithRun(t)
+	reserver := admission.NewJournalReserver(billing.BuiltInCeilings())
+	boom := errors.New("admission append failed after the hold")
+	err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+		if _, err := admission.HoldQuotaReservation(t.Context(), tx, reserver, runID, admittedRecord, identityRef); err != nil {
+			return err
+		}
+		return boom
+	})
+	if !errors.Is(err, boom) {
+		t.Fatalf("Transact err = %v, want the later failure", err)
+	}
+	if n := reservationRows(t, j, runID); n != 0 {
+		t.Fatalf("reservation rows after a rolled-back transaction = %d, want 0", n)
+	}
+	// The rolled-back hold does not count as a live one.
+	if _, err := hold(t, j, reserver, runID, admittedRecord); err != nil {
+		t.Fatalf("hold after a rollback: %v", err)
 	}
 }
