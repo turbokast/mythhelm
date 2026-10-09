@@ -36,7 +36,7 @@ In the task's block in `specs/<state>/<name>/tasks.md`, keep every original fiel
 
 - **Status** starts with `✅ Completed` and names the pull request as `PR #<n>`. Write it once the pull request exists (Step 3).
 - **Implementation** names the commit SHAs. It never restates the task or pastes code; the diff is the detail.
-- **Spec deviations** is `None.`, or each deviation with its reason, one sub-bullet each when there are several. Every changed file outside the task's `Files` list is named here with its reason: the merge check refuses an unnamed one.
+- **Spec deviations** is `None.`, or each deviation with its reason, one sub-bullet each when there are several. Every changed file outside the task's `Files` list is named here with its reason: the merge check refuses an unnamed one. A deviation that defers to another spec's unmerged work (a stand-in "until task N lands") cites the tracked follow-up that fires when that work lands, an issue `#<n>` or a proposal id; file the follow-up before you write the entry, because a stand-in without one is a silent promise.
 - **Files modified** lists every path the pull request changes, backticked.
 - Optional **CI evidence**: run or job links, for acceptance criteria that only CI can show.
 
