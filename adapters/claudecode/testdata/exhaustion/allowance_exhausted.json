@@ -1,0 +1,19 @@
+{
+  "synthetic": true,
+  "note": "Doc-derived synthetic exhaustion shapes; MH-12 Task 7 replaces them with a sanitised live recording.",
+  "allowance_exhausted": [
+    {"type":"system","subtype":"init","session_id":"synth-exhausted","model":"claude-synthetic","claude_code_version":"2.1.284","permissionMode":"acceptEdits","apiKeySource":"none","tools":[],"mcp_servers":[],"plugins":[]},
+    {"type":"assistant","error":{"class":"allowance_exhausted"},"message":{"content":[]}},
+    {"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":1,"duration_ms":900,"stop_reason":"end_turn"}
+  ],
+  "rate_limit": [
+    {"type":"system","subtype":"init","session_id":"synth-throttled","model":"claude-synthetic","claude_code_version":"2.1.284","permissionMode":"acceptEdits","apiKeySource":"none","tools":[],"mcp_servers":[],"plugins":[]},
+    {"type":"assistant","error":{"class":"rate_limit"},"message":{"content":[]}},
+    {"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":1,"duration_ms":900,"stop_reason":"end_turn"}
+  ],
+  "unknown_shape": [
+    {"type":"system","subtype":"init","session_id":"synth-unknown","model":"claude-synthetic","claude_code_version":"2.1.284","permissionMode":"acceptEdits","apiKeySource":"none","tools":[],"mcp_servers":[],"plugins":[]},
+    {"type":"assistant","error":{"kind":"usage_cap_reached","message":"limit hit","reset_at":"2030-01-01T00:00:00Z"},"message":{"content":[]}},
+    {"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":1,"duration_ms":900,"stop_reason":"end_turn"}
+  ]
+}
