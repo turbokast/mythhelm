@@ -7,6 +7,6 @@
   ],
   "grader": {
     "type": "must-match",
-    "pattern": "Re-verify each decision record the spec accepted against the shipped tree.*`docs/decisions/\\*\\.md` in `files` whose `Status` at `head` is `accepted`.*blocked, deferred or unsupported is still not shipped.*every file and test it cites exists.*Amend each drifted claim in the working tree the Review Summary goes to.*`amended in finalize`.*contradicts the decision itself.*is an escalation"
+    "pattern": "Re-verify each decision record the spec accepted against the shipped tree.*`docs/decisions/\\*\\.md` in `files` whose `Status` at `head` is `accepted`.*blocked, deferred or unsupported is still not shipped.*every NFR or limit table matches the code and tests.*every file it cites exists.*every test it cites is declared in a test file.*'\\*_test\\.go'.*Amend each drifted claim in the working tree the Review Summary goes to.*`amended in finalize`.*contradicts the decision itself.*is an escalation"
   }
 }
