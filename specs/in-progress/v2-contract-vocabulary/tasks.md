@@ -41,7 +41,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `internal/v2contract/v2contract.go`, `internal/v2contract/scales.go`, `internal/v2contract/codec.go`, `internal/v2contract/scales_test.go`, `internal/v2contract/codec_test.go`, `specs/in-progress/v2-contract-vocabulary/tasks.md`, `specs/in-progress/v2-contract-vocabulary/handoff.md`.
 
-### Task 2 — Execution records: Run, TaskRevision, Attempt
+### Task 2 — Execution records: Run, TaskRevision, Attempt ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -63,6 +63,10 @@
   - `TestMissingIDsRejected`: empty `RunID`/`TaskID`/`AttemptID` each fail `Validate` naming the field, never defaulted.
 - **Test plan**: Golden round-trips via the Task 1 `loadGolden` helper; table tests for validation; synthetic IDs via `ids.New`.
 - **Invariants touched**: I20 (v2 §2: revisions required, digests differ); I09 (v2 §2: missing IDs rejected, never zero); I23 (v2 §5.1: records shaped for the single canonical ledger).
+- **Status**: ✅ Completed — `Run`, `TaskRevision`, `Attempt` with strict `Validate` and three goldens; all six acceptance tests passing; PR #244.
+- **Implementation**: Value-receiver `Validate` checks schema_version 2, non-empty IDs and lifecycle, `Revision >= 1` and every dependency via `RevisionRef.Validate` (error names `dependencies[i]`). Goldens are compact canonical JSON. Commit 1061475.
+- **Spec deviations**: `internal/v2contract/codec_test.go` (outside Files): removed Task 1's `//nolint:unused` on `loadGolden`, now flagged unused-directive because this task's tests call it. `State` fields are `string`, not `RunState`/`TaskState`/`AttemptState`: those types are Task 5's (`lifecycle.go`, outside this task's Files, not on main). Wire shape is identical; Task 5 or 8 retypes them.
+- **Files modified**: `internal/v2contract/records_execution.go`, `internal/v2contract/records_execution_test.go`, `internal/v2contract/testdata/records/run.golden.json`, `internal/v2contract/testdata/records/task_revision.golden.json`, `internal/v2contract/testdata/records/attempt.golden.json`, `internal/v2contract/codec_test.go`, `specs/in-progress/v2-contract-vocabulary/tasks.md`, `specs/in-progress/v2-contract-vocabulary/handoff.md`, `specs/in-progress/v2-contract-vocabulary/scratchpad.md`.
 
 ### Task 3 — Decision and evidence records ✅ COMPLETED
 
