@@ -156,6 +156,13 @@ type pipeline struct {
 	prod     *Producer
 	out      Outcome
 	rendered int64 // run_sequence of the last event passed to h.Event
+
+	// ceilings are the run's resolved envelope, set at admission; deadline is
+	// when its execution time ends (zero until the first attempt starts), and
+	// deadlineHit records that the stop in progress is the deadline's.
+	ceilings    billing.Ceilings
+	deadline    time.Time
+	deadlineHit bool
 }
 
 func (p *pipeline) run(ctx context.Context) error {
@@ -214,6 +221,7 @@ func (p *pipeline) appendAdmission(ctx context.Context) error {
 		return errors.Join(err, p.runTo(ctx, RunBlocked, "envelope_config_invalid"))
 	}
 	ceilings := billing.ResolveCeilings(d.EnvelopeFlags, file)
+	p.ceilings = ceilings
 	at := time.Now().UTC()
 	ev, err := newEvent(d.RunID, "", "", "admission.decided", d.Record(), at)
 	if err != nil {
@@ -257,6 +265,26 @@ func (p *pipeline) appendAdmission(ctx context.Context) error {
 	}
 	p.h.Notice(admission.ReservationText(admission.QuotaBucket(rec, identityRef)))
 	return p.flush(ctx)
+}
+
+// endStop finishes a stopping run: cancelled when the user asked for the
+// stop, blocked when the execution deadline did. Either way the stop ladder
+// already ran and the candidate is preserved (I06).
+func (p *pipeline) endStop(ctx context.Context) error {
+	if p.deadlineHit {
+		return p.runTo(ctx, RunBlocked, "envelope_deadline_exceeded")
+	}
+	return p.runTo(ctx, RunCancelled, "")
+}
+
+// blockLaunch turns a refused launch into a blocked run before any attempt
+// is journaled. A gate that could not be evaluated blocks too (I02).
+func (p *pipeline) blockLaunch(ctx context.Context, err error) error {
+	reason := "envelope_unavailable"
+	if gate, ok := errors.AsType[*GateError](err); ok {
+		reason = gate.Reason
+	}
+	return errors.Join(err, p.runTo(ctx, RunBlocked, reason))
 }
 
 // quotaBucketInputs builds the bucket's record from the decision: its
@@ -313,6 +341,20 @@ func (p *pipeline) attempt(ctx context.Context) error {
 	if stopped, err := p.stopBeforeSpawn(ctx); stopped || err != nil {
 		return err
 	}
+	// The envelope gates the launch before any intent is journaled, and
+	// the first launch starts the execution clock (I21, I02).
+	if err := GateLaunch(ctx, p.j, d.RunID, p.ceilings); err != nil {
+		return p.blockLaunch(ctx, err)
+	}
+	startedAt := time.Now().UTC()
+	if err := recordFirstStart(ctx, p.j, d.RunID, startedAt); err != nil {
+		return p.blockLaunch(ctx, err)
+	}
+	deadline, err := executionDeadline(ctx, p.j, d.RunID, p.ceilings, startedAt)
+	if err != nil {
+		return p.blockLaunch(ctx, err)
+	}
+	p.deadline = deadline
 	token, err := launchToken()
 	if err != nil {
 		return err
@@ -568,6 +610,12 @@ func (p *pipeline) watch(ctx context.Context, ref AttemptRef, exited <-chan stru
 	defer tick.Stop()
 	interrupts := 0
 	workerGone := false
+	var expiry <-chan time.Time
+	if !p.deadline.IsZero() {
+		timer := time.NewTimer(time.Until(p.deadline))
+		defer timer.Stop()
+		expiry = timer.C
+	}
 	for {
 		// A worker seen gone before this ingest has spooled everything it
 		// ever will.
@@ -608,6 +656,21 @@ func (p *pipeline) watch(ctx context.Context, ref AttemptRef, exited <-chan stru
 			return ctx.Err()
 		case <-exited:
 			workerGone, exited = true, nil
+		case <-expiry:
+			// The execution deadline ends the attempt through the same stop
+			// ladder as a user's stop; conclude reports it as blocked.
+			expiry = nil
+			// A stop the user already asked for stays the user's.
+			p.deadlineHit = p.out.State != RunStopping
+			if err := workers.RequestStop(ref.Dir(), stopRequester); err != nil {
+				return fmt.Errorf("requesting a stop at the deadline: %w", err)
+			}
+			if p.out.State != RunStopping {
+				if err := p.runTo(ctx, RunStopping, ""); err != nil {
+					return err
+				}
+			}
+			p.h.Notice("execution deadline reached; stopping the attempt")
 		case <-p.h.Interrupt:
 			interrupts++
 			if interrupts > 1 {
@@ -663,10 +726,10 @@ func (p *pipeline) conclude(ctx context.Context) error {
 				return err
 			}
 		}
-		return p.runTo(ctx, RunCancelled, "")
+		return p.endStop(ctx)
 	case AttemptSucceededNative, AttemptFailedNative:
 		if stopping {
-			return p.runTo(ctx, RunCancelled, "")
+			return p.endStop(ctx)
 		}
 		if p.out.AttemptState == AttemptFailedNative {
 			// Classified native failures keep their reason at run level

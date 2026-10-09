@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
 )
@@ -115,4 +116,180 @@ func CheckExtension(ctx context.Context, j *journal.Journal, runID, kind string)
 		}
 	}
 	return lastGrant > lastBlock, nil
+}
+
+// GateError is a launch the envelope refuses; Reason is the blocked reason.
+type GateError struct {
+	Reason string
+	Err    error
+}
+
+func (e *GateError) Error() string { return e.Reason + ": " + e.Err.Error() }
+func (e *GateError) Unwrap() error { return e.Err }
+
+// GateLaunch refuses a launch that would exceed the run's finite envelope:
+// a past deadline, or one more repair, replan or transport retry than its
+// ceiling allows. A refusal is a *GateError naming the blocked reason and
+// counts nothing. An allowed attempt after the first is counted as a repair
+// or a replan (D8). A ceiling raised by a recorded run.extension_granted
+// takes the envelope row's raised value; with no grant, c stays in force
+// (I21).
+func GateLaunch(ctx context.Context, j *journal.Journal, runID string, c billing.Ceilings) error {
+	return gateLaunchAt(ctx, j, runID, c, time.Now())
+}
+
+// gateLaunchAt is GateLaunch at an explicit time, so tests need no clock.
+func gateLaunchAt(ctx context.Context, j *journal.Journal, runID string, c billing.Ceilings, now time.Time) error {
+	env, eff, err := effectiveCeilings(ctx, j, runID, c)
+	if err != nil {
+		return err
+	}
+	if deadline, expired, err := envelopeDeadline(env, eff, now); err != nil {
+		return err
+	} else if expired {
+		return &GateError{Reason: "envelope_deadline_exceeded",
+			Err: fmt.Errorf("%w: execution deadline %s reached", billing.ErrBudgetExhausted, deadline.Format(time.RFC3339))}
+	}
+	counts := billing.AttemptCounts{Repairs: int(env.RepairsUsed), Replans: int(env.ReplansUsed), TransportRetries: int(env.TransportRetriesSeen)}
+	counted := false
+	if _, err := j.LatestAttempt(ctx, runID); err == nil {
+		replan, err := IsReplan(ctx, j, runID)
+		if err != nil {
+			return err
+		}
+		if replan {
+			counts.Replans++
+			env.ReplansUsed++
+		} else {
+			counts.Repairs++
+			env.RepairsUsed++
+		}
+		counted = true
+	} else if !errors.Is(err, journal.ErrNotFound) {
+		return err
+	}
+	if err := eff.Check(counts); err != nil {
+		return &GateError{Reason: exhaustedReason(eff, counts), Err: err}
+	}
+	if !counted {
+		return nil
+	}
+	env.UpdatedAt = now.UTC().Format(time.RFC3339Nano)
+	return j.Transact(ctx, func(tx *sql.Tx) error { return journal.UpsertRunEnvelope(ctx, tx, env) })
+}
+
+// exhaustedReason names the blocked reason of the first kind over its
+// ceiling, in the order Ceilings.Check reports them.
+func exhaustedReason(c billing.Ceilings, n billing.AttemptCounts) string {
+	switch {
+	case c.Check(billing.AttemptCounts{Repairs: n.Repairs}) != nil:
+		return "envelope_repairs_exhausted"
+	case c.Check(billing.AttemptCounts{Replans: n.Replans}) != nil:
+		return "envelope_replans_exhausted"
+	default:
+		return "envelope_transport_retries_exhausted"
+	}
+}
+
+// effectiveCeilings returns the run's envelope row and the ceilings in force:
+// c, with each kind that has a recorded extension taking the row's raised
+// value.
+func effectiveCeilings(ctx context.Context, j *journal.Journal, runID string, c billing.Ceilings) (journal.EnvelopeRow, billing.Ceilings, error) {
+	env, err := j.RunEnvelope(ctx, runID)
+	if err != nil {
+		return journal.EnvelopeRow{}, c, err
+	}
+	for kind, apply := range map[string]func(){
+		"execution":         func() { c.Execution = time.Duration(env.ExecutionSeconds) * time.Second },
+		"repairs":           func() { c.Repairs = int(env.Repairs) },
+		"replans":           func() { c.Replans = int(env.Replans) },
+		"transport_retries": func() { c.TransportRetries = int(env.TransportRetries) },
+	} {
+		granted, err := CheckExtension(ctx, j, runID, kind)
+		if err != nil {
+			return journal.EnvelopeRow{}, c, err
+		}
+		if granted {
+			apply()
+		}
+	}
+	return env, c, nil
+}
+
+type pauseSpanJSON struct {
+	RequestedAt string `json:"requested_at"`
+	QuiescedAt  string `json:"quiesced_at"`
+	ResumedAt   string `json:"resumed_at"`
+}
+
+// envelopeDeadline returns the execution deadline, once the first attempt
+// has started. Before that no clock runs (AC-4.3).
+func envelopeDeadline(env journal.EnvelopeRow, c billing.Ceilings, now time.Time) (deadline time.Time, expired bool, err error) {
+	if env.FirstStartAt == "" {
+		return time.Time{}, false, nil
+	}
+	first, err := time.Parse(time.RFC3339Nano, env.FirstStartAt)
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("envelope first start %q: %w", env.FirstStartAt, err)
+	}
+	var raw []pauseSpanJSON
+	if err := json.Unmarshal([]byte(env.PauseSpans), &raw); err != nil {
+		return time.Time{}, false, fmt.Errorf("envelope pause spans: %w", err)
+	}
+	pauses := make([]billing.PauseSpan, len(raw))
+	for i, r := range raw {
+		for _, f := range []struct {
+			text string
+			dst  *time.Time
+		}{{r.RequestedAt, &pauses[i].RequestedAt}, {r.QuiescedAt, &pauses[i].QuiescedAt}, {r.ResumedAt, &pauses[i].ResumedAt}} {
+			if f.text == "" {
+				continue
+			}
+			if *f.dst, err = time.Parse(time.RFC3339Nano, f.text); err != nil {
+				return time.Time{}, false, fmt.Errorf("envelope pause span time %q: %w", f.text, err)
+			}
+		}
+	}
+	deadline, expired = billing.Deadline(first, c, pauses, now)
+	return deadline, expired, nil
+}
+
+// executionDeadline is the run's deadline at now, or the zero time before
+// the first attempt has started.
+func executionDeadline(ctx context.Context, j *journal.Journal, runID string, c billing.Ceilings, now time.Time) (time.Time, error) {
+	env, eff, err := effectiveCeilings(ctx, j, runID, c)
+	if err != nil {
+		return time.Time{}, err
+	}
+	deadline, _, err := envelopeDeadline(env, eff, now)
+	return deadline, err
+}
+
+// recordFirstStart stamps the run's first attempt launch, once; the
+// execution deadline runs from it.
+func recordFirstStart(ctx context.Context, j *journal.Journal, runID string, at time.Time) error {
+	env, err := j.RunEnvelope(ctx, runID)
+	if err != nil {
+		return err
+	}
+	if env.FirstStartAt != "" {
+		return nil
+	}
+	env.FirstStartAt = at.UTC().Format(time.RFC3339Nano)
+	env.UpdatedAt = env.FirstStartAt
+	return j.Transact(ctx, func(tx *sql.Tx) error { return journal.UpsertRunEnvelope(ctx, tx, env) })
+}
+
+// IsReplan reports whether the run's next attempt is a material replan: true
+// iff no verifications row exists for the run (D8). A journal read failure
+// is an error, never a default; the pipeline blocks the launch (I02).
+func IsReplan(ctx context.Context, j *journal.Journal, runID string) (bool, error) {
+	_, err := j.LatestVerification(ctx, runID)
+	switch {
+	case errors.Is(err, journal.ErrNotFound):
+		return true, nil
+	case err != nil:
+		return false, err
+	}
+	return false, nil
 }

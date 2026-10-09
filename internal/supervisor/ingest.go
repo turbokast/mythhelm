@@ -194,6 +194,26 @@ func projectWorkerEvent(ctx context.Context, tx *sql.Tx, ev journal.Event) error
 		return journal.SetNativeSession(ctx, tx, ev.AttemptID, p.SessionID)
 	case "attempt.native_result":
 		return projectUsage(ctx, tx, ev)
+	case "attempt.progress":
+		return projectTransportRetries(ctx, tx, ev)
+	}
+	return nil
+}
+
+// projectTransportRetries recomputes the run's transport retries seen from
+// its journaled progress events. The worker reports a cumulative count per
+// attempt, so each attempt contributes its largest report, and replaying an
+// event changes nothing. A run with no envelope row has nothing to update.
+func projectTransportRetries(ctx context.Context, tx *sql.Tx, ev journal.Event) error {
+	var seen int64
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(m), 0) FROM (
+		SELECT MAX(CAST(json_extract(payload, '$.retries') AS INTEGER)) AS m
+		FROM journal WHERE run_id = ? AND type = 'attempt.progress' GROUP BY attempt_id)`, ev.RunID).Scan(&seen); err != nil {
+		return fmt.Errorf("counting transport retries of %s: %w", ev.RunID, err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE run_envelopes SET transport_retries_seen = ?, updated_at = ? WHERE run_id = ?`,
+		seen, ev.ObservedAt.UTC().Format(time.RFC3339Nano), ev.RunID); err != nil {
+		return fmt.Errorf("storing transport retries of %s: %w", ev.RunID, err)
 	}
 	return nil
 }
