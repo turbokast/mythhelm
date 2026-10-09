@@ -7,6 +7,6 @@
   ],
   "grader": {
     "type": "must-match",
-    "pattern": "(?s)(?=.*review the branch's own diff, `git diff <merge-base> HEAD`)(?=.*`git merge-base origin/main HEAD`)(?=.*use it only to confirm the merge result after the branch is updated)"
+    "pattern": "(?s)(?=.*review the branch's own diff, `git diff <merge-base> HEAD`)(?=.*`git merge-base origin/main HEAD` after `git fetch origin main`)(?=.*use it only to confirm the merge result after the branch is updated)"
   }
 }
