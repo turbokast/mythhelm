@@ -3,6 +3,7 @@ package contain
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,8 +37,13 @@ func PolicyFor(profile, workdir string, readonly bool, binds []AuthBind, proxy s
 	if !filepath.IsAbs(workdir) {
 		return Policy{}, fmt.Errorf("contain: workdir %q is not absolute", workdir)
 	}
-	home := filepath.Clean(os.Getenv("HOME"))
-	workdir = filepath.Clean(workdir)
+	home, err := resolveExisting(os.Getenv("HOME"))
+	if err != nil {
+		return Policy{}, fmt.Errorf("contain: resolve HOME: %w", err)
+	}
+	if workdir, err = resolveExisting(workdir); err != nil {
+		return Policy{}, fmt.Errorf("contain: resolve workdir: %w", err)
+	}
 	if (home != "." && within(home, workdir)) || within("/tmp", workdir) {
 		return Policy{}, fmt.Errorf("contain: workdir %q encloses $HOME or /tmp", workdir)
 	}
@@ -62,6 +68,17 @@ func PolicyFor(profile, workdir string, readonly bool, binds []AuthBind, proxy s
 		AuthBinds: admitted,
 		ProxyAddr: proxy,
 	}, nil
+}
+
+// resolveExisting follows symlinks in path so overlap checks compare real
+// locations. A path that does not exist yet is kept as written; EnterLinux
+// requires it to exist and resolves it again.
+func resolveExisting(path string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return filepath.Clean(path), nil
+	}
+	return resolved, err
 }
 
 // within reports whether path equals dir or lies beneath it.

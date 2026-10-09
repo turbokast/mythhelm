@@ -1,6 +1,7 @@
 package contain
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -104,5 +105,38 @@ func TestPolicyRejectsWorkdirEnclosingHomeOrTmp(t *testing.T) {
 				t.Fatalf("PolicyFor rejected workdir %q: %v", tc.workdir, err)
 			}
 		})
+	}
+}
+
+func TestPolicyResolvesSymlinksBeforeChecks(t *testing.T) {
+	parent := t.TempDir()
+	realHome := filepath.Join(parent, "user")
+	if err := os.Mkdir(realHome, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(parent, "alias")
+	if err := os.Symlink(parent, alias); err != nil {
+		t.Skipf("cannot create symlinks here: %v", err)
+	}
+	t.Setenv("HOME", realHome)
+
+	if p, err := PolicyFor("restricted", filepath.Join(alias, "user"), false, nil, ""); err == nil {
+		t.Fatalf("PolicyFor accepted a workdir that resolves to HOME: %+v", p)
+	}
+
+	sibling := filepath.Join(parent, "work")
+	if err := os.Mkdir(sibling, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	p, err := PolicyFor("restricted", filepath.Join(alias, "work"), false, nil, "")
+	if err != nil {
+		t.Fatalf("PolicyFor rejected a workdir behind a symlinked ancestor: %v", err)
+	}
+	want, err := filepath.EvalSymlinks(sibling)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Workdir != want {
+		t.Fatalf("Workdir = %q, want the resolved %q", p.Workdir, want)
 	}
 }

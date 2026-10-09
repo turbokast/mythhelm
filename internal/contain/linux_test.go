@@ -442,3 +442,60 @@ func TestEnterLinuxRejectsInvalidLayout(t *testing.T) {
 		})
 	}
 }
+
+func TestEnterLinuxResolvesSymlinksBeforeChecks(t *testing.T) {
+	requireUserNamespaces(t)
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := os.MkdirTemp(cwd, "layout") //nolint:usetesting // must sit outside /tmp, which t.TempDir uses
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(parent) })
+	realHome := filepath.Join(parent, "user")
+	realWork := filepath.Join(parent, "work")
+	inner := filepath.Join(realWork, "home")
+	for _, d := range []string{realHome, realWork, inner} {
+		if err := os.Mkdir(d, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	alias := filepath.Join(parent, "alias")
+	if err := os.Symlink(parent, alias); err != nil {
+		t.Fatal(err)
+	}
+	homeLink := filepath.Join(parent, "homelink")
+	if err := os.Symlink(inner, homeLink); err != nil {
+		t.Fatal(err)
+	}
+	base := t.TempDir()
+
+	refused := []struct{ name, workdir, home string }{
+		{"symlinked HOME resolves into the workdir", realWork, homeLink},
+		{"workdir behind a symlinked ancestor resolves to HOME", filepath.Join(alias, "user"), realHome},
+	}
+	for _, tc := range refused {
+		t.Run(tc.name, func(t *testing.T) {
+			p := Policy{Profile: "restricted", Workdir: tc.workdir}
+			spec := nsSpec(t, "/bin/sh", []string{"sh", "-c", "echo ran"}, baseEnv(tc.workdir, base, tc.home), p)
+			out, err := runHelper(t, "enter", spec)
+			if err == nil || strings.Contains(out, "ran") {
+				t.Fatalf("overlapping layout was accepted: err=%v out=%q", err, out)
+			}
+		})
+	}
+
+	t.Run("workdir behind a symlinked ancestor still works", func(t *testing.T) {
+		workdir := filepath.Join(alias, "work")
+		p := Policy{Profile: "restricted", Workdir: workdir}
+		spec := nsSpec(t, "/bin/sh", []string{"sh", "-c", `touch "$WORKDIR/ok"`}, baseEnv(workdir, base, realHome), p)
+		if out, err := runHelper(t, "enter", spec); err != nil {
+			t.Fatalf("contained run: %v\n%s", err, out)
+		}
+		if _, err := os.Stat(filepath.Join(realWork, "ok")); err != nil {
+			t.Fatalf("write through the resolved workdir failed: %v", err)
+		}
+	})
+}

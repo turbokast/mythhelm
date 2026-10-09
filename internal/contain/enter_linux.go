@@ -83,16 +83,9 @@ func EnterLinux(spec ContainSpec) error {
 	runtime.LockOSThread()
 
 	p := spec.Policy
-	home := envValue(spec.Env, "HOME")
-	if home == "" || !filepath.IsAbs(home) {
-		return errors.New("contain: spec env needs an absolute HOME")
-	}
-	if within(home, "/tmp") || within("/tmp", home) {
-		return fmt.Errorf("contain: HOME %q must lie outside /tmp, which gets its own tmpfs", home)
-	}
-	workdir := filepath.Clean(p.Workdir)
-	if within(home, workdir) || within("/tmp", workdir) {
-		return fmt.Errorf("contain: workdir %q encloses $HOME or /tmp, whose tmpfs the workdir mount would cover", workdir)
+	home, workdir, targets, err := resolveLayout(spec)
+	if err != nil {
+		return err
 	}
 
 	// Detached copies are taken before /tmp and $HOME are covered by tmpfs,
@@ -103,9 +96,6 @@ func EnterLinux(spec ContainSpec) error {
 	}
 	binds := make([]int, len(p.AuthBinds))
 	for i, b := range p.AuthBinds {
-		if !within(b.Target, home) {
-			return fmt.Errorf("contain: auth bind target %q is outside $HOME", b.Target)
-		}
 		if within(b.Source, workdir) {
 			return fmt.Errorf("contain: auth bind source %q lies inside the workdir, which is mounted unmasked", b.Source)
 		}
@@ -138,7 +128,7 @@ func EnterLinux(spec ContainSpec) error {
 		return fmt.Errorf("workdir: %w", err)
 	}
 	for i, b := range p.AuthBinds {
-		if err := attach(binds[i], b.Target, p.ReadOnly, false); err != nil {
+		if err := attach(binds[i], targets[i], p.ReadOnly, false); err != nil {
 			return fmt.Errorf("auth bind %q: %w", b.Source, err)
 		}
 	}
@@ -154,6 +144,56 @@ func EnterLinux(spec ContainSpec) error {
 		return err
 	}
 	return syscall.Exec(spec.Path, spec.Args, spec.Env) //nolint:gosec // G204: the native admitted by the supervisor
+}
+
+// resolveLayout resolves symlinks in $HOME, the workdir and /tmp, so every
+// overlap check and mount below works on the real paths. All three must exist.
+// It returns the resolved HOME and workdir and each auth bind's target
+// rebased under the resolved HOME.
+func resolveLayout(spec ContainSpec) (home, workdir string, targets []string, err error) {
+	envHome := envValue(spec.Env, "HOME")
+	if envHome == "" || !filepath.IsAbs(envHome) {
+		return "", "", nil, errors.New("contain: spec env needs an absolute HOME")
+	}
+	if home, err = filepath.EvalSymlinks(envHome); err != nil {
+		return "", "", nil, fmt.Errorf("contain: resolve HOME: %w", err)
+	}
+	if workdir, err = filepath.EvalSymlinks(spec.Policy.Workdir); err != nil {
+		return "", "", nil, fmt.Errorf("contain: resolve workdir: %w", err)
+	}
+	tmp, err := filepath.EvalSymlinks("/tmp")
+	if err != nil {
+		return "", "", nil, fmt.Errorf("contain: resolve /tmp: %w", err)
+	}
+	if within(home, tmp) || within(tmp, home) {
+		return "", "", nil, fmt.Errorf("contain: HOME %q must lie outside /tmp, which gets its own tmpfs", home)
+	}
+	if within(home, workdir) || within(tmp, workdir) {
+		return "", "", nil, fmt.Errorf("contain: workdir %q encloses $HOME or /tmp, whose tmpfs the workdir mount would cover", workdir)
+	}
+	for _, b := range spec.Policy.AuthBinds {
+		target, err := rebase(b.Target, filepath.Clean(envHome), home)
+		if err != nil {
+			return "", "", nil, fmt.Errorf("contain: auth bind target %q is outside $HOME", b.Target)
+		}
+		targets = append(targets, target)
+	}
+	return home, workdir, targets, nil
+}
+
+// rebase moves target from beneath either spelling of HOME to beneath the
+// resolved one.
+func rebase(target, lexical, resolved string) (string, error) {
+	for _, base := range []string{resolved, lexical} {
+		if within(target, base) {
+			rel, err := filepath.Rel(base, target)
+			if err != nil {
+				return "", err
+			}
+			return filepath.Join(resolved, rel), nil
+		}
+	}
+	return "", errors.New("outside")
 }
 
 func envValue(env []string, key string) string {
