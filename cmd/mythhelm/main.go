@@ -17,6 +17,8 @@ func main() {
 			os.Exit(fake.AgentMain(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 		case workers.Command: // hidden: an attempt's detached worker (design §3)
 			os.Exit(workers.Main(os.Args[2:]))
+		case cli.SupervisorCommand: // hidden: the lazily started per-user supervisor
+			os.Exit(cli.SupervisorMain(os.Stderr))
 		case contain.Command: // hidden: builds the boundary around a native and execs it (design §2.2)
 			os.Exit(contain.Main(os.Args[2:]))
 		case cli.DemoCheckCommand: // hidden: the demo repository's scripted check

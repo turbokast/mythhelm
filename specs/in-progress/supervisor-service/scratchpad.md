@@ -41,3 +41,4 @@ nothing above it is edited except OQ verdicts.
 ## Task notes
 
 - Task 3: closing a socket with unread peer data resets it and can destroy a reply already sent, so a refused peer's bytes are discarded (bounded, never parsed) after the `permission_denied` frame. `modernize` (embedlit) wants promoted fields set directly in a `Frame` literal under Go 1.27.
+- Task 6: design §13's honesty register has no row for AC-6.3's entitlement source. The filter mechanism ships, but no repository identity or entitlement store exists (v2 §5.1 repository records are unbuilt), so the operator's scope is the list it presents and only attempt-token callers are bounded by the ledger. A register row (partially met) belongs to the spec owner.

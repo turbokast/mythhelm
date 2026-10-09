@@ -1476,8 +1476,10 @@ func TestAdmissionWritesInitialEnvelope(t *testing.T) {
 	if got != want {
 		t.Fatalf("envelope row ceilings = %+v, want %+v", got, want)
 	}
-	if row.RepairsUsed != 0 || row.ReplansUsed != 0 || row.TransportRetriesSeen != 0 || row.FirstStartAt != "" {
-		t.Fatalf("a fresh envelope carries usage: %+v", row)
+	// The first attempt is neither a repair nor a replan and the fake run
+	// retries nothing; FirstStartAt is the launch gate's to set (Task 7).
+	if row.RepairsUsed != 0 || row.ReplansUsed != 0 || row.TransportRetriesSeen != 0 {
+		t.Fatalf("a one-attempt run carries usage: %+v", row)
 	}
 
 	// The admitted run holds exactly one reservation, coupled to the bucket,
@@ -1659,5 +1661,65 @@ func TestChecksRefusedUnderInspect(t *testing.T) {
 	}
 	if res := lastResult(t, stdout); res["error_category"] != "verification_unavailable" || res["state"] != "ready_for_review" {
 		t.Errorf("run.result = %v, want ready_for_review with category verification_unavailable", res)
+	}
+}
+
+func TestDeadlineExpiryBlocks(t *testing.T) {
+	f := newFixture(t)
+	// The slow scenario would run for ten minutes; the 2s execution ceiling
+	// outlasts the launch (a ceiling that ran out before the intent commits
+	// is refused instead, TestLaunchRefusedWhenDeadlineExpiresBeforeCommit)
+	// and ends the attempt through the stop ladder. The test never sleeps.
+	d, err := admission.Decide(t.Context(), admission.Request{
+		StateDir: f.state, Repo: f.repo, TaskFile: f.task,
+		Adapter: admission.AdapterFake, Billing: admission.BillingLocalScripted,
+		ExecutionProfile: admission.ProfileTrustedHost, Env: os.Environ(),
+		NoChecks: true, Scenario: "slow",
+		EnvelopeFlags: &billing.Ceilings{Execution: 2 * time.Second, Repairs: -1, Replans: -1, TransportRetries: -1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	out, err := supervisor.Run(ctx, d, supervisor.Hooks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.State != supervisor.RunBlocked || out.Reason != "envelope_deadline_exceeded" {
+		t.Fatalf("outcome = %s (%s), want blocked (envelope_deadline_exceeded)", out.State, out.Reason)
+	}
+	if out.AttemptState != supervisor.AttemptStopped {
+		t.Fatalf("attempt = %s, want stopped through the stop ladder", out.AttemptState)
+	}
+	evs := f.events(t, d.RunID)
+	if typeIndex(evs, "candidate.frozen") < 0 {
+		t.Fatal("no candidate was preserved when the deadline stopped the attempt")
+	}
+	row, err := f.journal(t).RunEnvelope(t.Context(), d.RunID)
+	if err != nil || row.FirstStartAt == "" {
+		t.Fatalf("envelope after launch = %+v, %v; want the first start recorded", row, err)
+	}
+}
+
+func TestGateRefusalBlocksRunBeforeAnyIntent(t *testing.T) {
+	f := newFixture(t)
+	d := f.decideEnvelope(t, f.envelopeConfig(t), nil)
+	// A run whose execution clock started long ago, as after a recovery: the
+	// trigger stamps the first start when the admission writes the envelope.
+	_ = f.journal(t)
+	if _, err := rawDB(t, f.state).ExecContext(t.Context(), `CREATE TRIGGER aged_clock AFTER INSERT ON run_envelopes BEGIN
+		UPDATE run_envelopes SET first_start_at = '2000-01-01T00:00:00Z' WHERE run_id = NEW.run_id; END`); err != nil {
+		t.Fatal(err)
+	}
+	out, err := supervisor.Run(t.Context(), d, supervisor.Hooks{})
+	if err == nil {
+		t.Fatal("a refused launch returned no error")
+	}
+	if out.State != supervisor.RunBlocked || out.Reason != "envelope_deadline_exceeded" {
+		t.Fatalf("outcome = %s (%s), want blocked (envelope_deadline_exceeded)", out.State, out.Reason)
+	}
+	if typeIndex(f.events(t, d.RunID), "attempt.launch_intent_recorded") >= 0 {
+		t.Fatal("a launch the envelope refused still journaled an intent")
 	}
 }
