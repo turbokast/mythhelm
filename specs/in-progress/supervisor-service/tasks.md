@@ -56,7 +56,7 @@
 - **Test plan**: temp state dirs; kill a real holder subprocess for the stale test; build-tagged lock files vetted with cross-`GOOS` vet.
 - **Invariants touched**: I05 (v2 §2: one writer per user/host via the instance lock); I18 (v2 §2: one process owner, no second election).
 
-### Task 2 — Frame codec and NFR-1 ingress enforcement
+### Task 2 — Frame codec and NFR-1 ingress enforcement ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -75,6 +75,10 @@
   - `TestUnknownKeyRejected`: a frame with an unknown key fails naming the key (strict decode, not silent drop).
 - **Test plan**: table-driven fixtures at each boundary; constants referenced from `v2contract`, never copied.
 - **Invariants touched**: I09 (v2 §2: absent measurements stay absent, never zero-filled by decode).
+- **Status**: ✅ Completed — length-prefixed JSON codec with strict decode and `CheckIngress` NFR-1 enforcement, all four acceptance tests passing; PR #251.
+- **Implementation**: `CheckIngress` validates the length prefix, strict-decodes via `v2contract.Decode[Frame]`, then measures depth/refs with a streaming scan and enforces all three dimensions through `v2contract.CheckFrameLimits` verbatim. Depth = max simultaneously open containers (top-level object is 1); refs = string-valued `artifact_id` keys anywhere in the payload. Gates: `go-fmt`, `go-vet` (+ `GOOS=windows`/`darwin` vet on `internal/control`), `go-mod-tidy`, `golangci-lint` PASS; `go test -race ./internal/control/` PASS; full-suite `go-test` fails only on pre-existing `TestStrictMainBlocksWriteNothing` (internal/cli, fails identically on clean origin/main). Commit 5bfd608.
+- **Spec deviations**: (1) Violations are plain `error` values carrying the `protocol_mismatch` code in the message (pinned by `requireMismatch` in every rejection test), not `*v2contract.ControlError`: vocab task 6 (error catalogue + `ControlError`) is unmerged on origin/main so the type does not exist; no parallel code was defined (N1). Follow-up once vocab task 6 lands: return `protocol_mismatch` `*v2contract.ControlError` values keeping the same code string. (3) `internal/control/testdata/depth64.json` and `depth65.json`: acceptance-mandated depth fixtures (`TestDepth64Passes65Fails` pins each depth "by a fixture"); fixture data has no separate Files entry. (2) Started before stream 1 fully shipped (vocab tasks 2, 6, 8 open at branch time): this task consumes only merged Task-1 APIs (limits, `CheckFrameLimits`, `Decode`, `RequestEnvelope`) verbatim, so no unmerged input was needed.
+- **Files modified**: `internal/control/frame.go`, `internal/control/frame_test.go`, `internal/control/testdata/depth64.json`, `internal/control/testdata/depth65.json`, `specs/in-progress/supervisor-service/tasks.md`, `specs/in-progress/supervisor-service/handoff.md`.
 
 ### Task 3 — Unix transport and peer authentication
 
