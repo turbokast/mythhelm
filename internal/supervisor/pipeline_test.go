@@ -443,15 +443,18 @@ func outsideTmpDir(t *testing.T) string {
 		if err != nil {
 			continue
 		}
-		if outside(dir) {
-			t.Cleanup(func() { _ = os.RemoveAll(dir) })
-			abs, err := filepath.Abs(dir)
-			if err != nil {
-				t.Fatal(err)
-			}
+		// Absolute before the outside check: EvalSymlinks preserves a
+		// relative input, which filepath.Rel cannot compare against /tmp.
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			_ = os.RemoveAll(dir)
+			continue
+		}
+		if outside(abs) {
+			t.Cleanup(func() { _ = os.RemoveAll(abs) })
 			return abs
 		}
-		_ = os.RemoveAll(dir)
+		_ = os.RemoveAll(abs)
 	}
 	t.Skip("no writable directory outside /tmp for the contained test HOME")
 	return ""
