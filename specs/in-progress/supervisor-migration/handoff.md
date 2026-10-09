@@ -29,7 +29,31 @@
 
 ## Task 2 — Append accepts v2 envelopes post-migration
 
-<!-- pending -->
+- **Produces**: `Journal.Append` with the same signature, now accepting
+  `schema_version == 2` under the §7 phase rule (nothing pre-`drained`;
+  only `migration.quarantined`/`migration.imported` at `drained`;
+  everything at `imported`/`adopted`); unexported
+  `appendTx(ctx, tx, ev, project)` core (`internal/journal/journal.go`)
+  that `Append` delegates to after `BeginTx`; v2 failures as a valid
+  `*v2contract.ControlError` plus the stream-1 cause
+  (`invalid_contract`, `ownership_unresolved` on stale generation,
+  `persistence_unavailable` on ledger I/O). Tests in
+  `internal/journal/append_v2_test.go`, including the v1 golden.
+- **For dependents**: Task 3 calls the envelope path inside `Mutate` —
+  but `appendTx` is unexported per this task's spec, so Task 3 must add
+  a thin exported wrapper in `internal/journal` (one-line deviation) to
+  reach it cross-package; never call db-level `Append` from inside
+  `Mutate` (it takes its own `BeginTx`). A duplicate `event_id` acks
+  nil with no append — ID-reuse-with-different-content conflicts are
+  the caller's layer (import markers), never `Append`'s. v1 behavior,
+  messages and sentinels are byte-identical, and the v1 golden pins
+  decodes; phase refusals also wrap `journal.ErrInvalidEvent`.
+- **Deviations that change a later task's inputs**: none — the phase
+  vocabulary, migration number (0007) and `migration_state` shape from
+  Task 1 are unchanged. Note the wrapper need above (Task 3), and that
+  phase words live as literals in `internal/journal` mirroring
+  `migrate.Phase` (no import either way between the packages, or it
+  cycles).
 
 ## Task 3 — Legacy import as one-task runs
 
