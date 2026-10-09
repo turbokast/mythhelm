@@ -8,7 +8,10 @@
 
 ## Task 1 — Containment contract package
 
-<!-- pending -->
+- **Produces**: `internal/contain/contain.go` exactly as design §4 (Dimension consts, Claim, Coverage, Evidence, Registry, AuthBind, Policy, Availability, ErrUnsupported, ErrMissingCoverage); no `Provider` interface yet.
+- **For dependents**: `Coverage.Missing` returns nil (not empty slice) when nothing is missing, keeps the caller's order, and reports unknown dimensions as missing. A zero `Claim` is unenforced. Registry lookups must return `ok == false` for unknown combinations.
+- **Environment trap**: set `GOTOOLCHAIN=go1.27.1` for golangci-lint, and unset `ANTHROPIC_BASE_URL` in cloud sessions or a supervisor test fails.
+- **Deviations**: None.
 
 ## Task 2 — Linux boundary mechanism
 
