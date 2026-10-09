@@ -89,6 +89,16 @@ func testPlatforms(t *testing.T) map[string]string {
 				break
 			}
 		}
+		// An implicit GOOS filename suffix constrains the file even without a
+		// build tag; without this an untagged foo_windows_test.go would be
+		// mislabelled "all".
+		base := strings.TrimSuffix(name, "_test.go")
+		for _, goos := range []string{"linux", "darwin", "windows"} {
+			if strings.HasSuffix(base, "_"+goos) {
+				platforms = goos
+				break
+			}
+		}
 		switch platforms {
 		case "all", "linux || darwin":
 			platforms = strings.Replace(platforms, " || ", ", ", 1)
