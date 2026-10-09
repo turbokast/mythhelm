@@ -9,9 +9,12 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/turbokast/mythhelm/internal/admission"
+	billingpkg "github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/qualify"
 	"github.com/turbokast/mythhelm/internal/statedir"
 	"github.com/turbokast/mythhelm/internal/supervisor"
@@ -42,6 +45,7 @@ func runRun(args []string, stdio Stdio) error {
 	nonInteractive := fs.Bool("non-interactive", false, "never ask: a decision that needs you exits 3, naming the flag that answers it")
 	scenario := fs.String("scenario", "", "fake adapter scenario (default happy)")
 	host := fs.String("host", "", "standalone (herdr is not available in this build)")
+	addEnvelopeFlags(fs)
 	tuiFlags := addTUIFlags(fs)
 	positional, err := parseFlags(fs, args, stdio)
 	if errors.Is(err, flag.ErrHelp) {
@@ -49,6 +53,7 @@ func runRun(args []string, stdio Stdio) error {
 	}
 	r := newRenderer(*format, stdio)
 	var opts tuiOptions
+	var envelopeFlags *billingpkg.Ceilings
 	switch {
 	case err != nil:
 	case len(positional) > 0:
@@ -57,7 +62,9 @@ func runRun(args []string, stdio Stdio) error {
 		r = newRenderer("plain", stdio)
 		err = usageErrorf("--format must be plain or jsonl, got %q", *format)
 	default:
-		opts, err = tuiFlags.resolve(os.Getenv)
+		if envelopeFlags, err = envelopeFlagCeilings(fs); err == nil {
+			opts, err = tuiFlags.resolve(os.Getenv)
+		}
 	}
 	if err != nil {
 		return finish(r, supervisor.Outcome{}, err)
@@ -90,6 +97,7 @@ func runRun(args []string, stdio Stdio) error {
 		TrustNativeConfig:          *trustNative,
 		DeclareEntitlement:         *declareEntitlement,
 		AllowUntestedNativeVersion: *allowUntested,
+		EnvelopeFlags:              envelopeFlags,
 	}
 	if !*nonInteractive {
 		req.Confirm = prompter(stdio)
@@ -124,6 +132,56 @@ func runRun(args []string, stdio Stdio) error {
 		err = persistDriftInvalidation(context.Background(), stateDir, err, stdio.Err)
 		return finish(r, out, err)
 	}
+}
+
+// addEnvelopeFlags registers the four envelope ceilings. Whether one was
+// given is read back from the flag set, so a zero count stays a set value.
+func addEnvelopeFlags(fs *flag.FlagSet) {
+	fs.String("envelope-execution", "", "execution time ceiling for this run, a positive duration such as 45m")
+	fs.Int("envelope-repairs", 0, "repair attempts allowed for this run (0 or more)")
+	fs.Int("envelope-replans", 0, "replans allowed for this run (0 or more)")
+	fs.Int("envelope-transport-retries", 0, "transport retries allowed for this run (0 or more)")
+}
+
+// envelopeFlagCeilings returns the explicit flag layer, nil when no envelope
+// flag was given. Fields not given are negative (unset); a given value that
+// is not a positive duration or a non-negative count is a usage error.
+func envelopeFlagCeilings(fs *flag.FlagSet) (*billingpkg.Ceilings, error) {
+	c := billingpkg.Ceilings{Execution: -1, Repairs: -1, Replans: -1, TransportRetries: -1}
+	given := false
+	var err error
+	fs.Visit(func(f *flag.Flag) {
+		count := func(dst *int) {
+			n, convErr := strconv.Atoi(f.Value.String())
+			if convErr != nil || n < 0 {
+				err = errors.Join(err, usageErrorf("--%s must be 0 or more, got %s", f.Name, f.Value))
+				return
+			}
+			*dst = n
+		}
+		switch f.Name {
+		case "envelope-execution":
+			d, parseErr := time.ParseDuration(f.Value.String())
+			if parseErr != nil || d <= 0 {
+				err = errors.Join(err, usageErrorf("--%s must be a positive duration, got %q", f.Name, f.Value))
+				return
+			}
+			c.Execution = d
+		case "envelope-repairs":
+			count(&c.Repairs)
+		case "envelope-replans":
+			count(&c.Replans)
+		case "envelope-transport-retries":
+			count(&c.TransportRetries)
+		default:
+			return
+		}
+		given = true
+	})
+	if err != nil || !given {
+		return nil, err
+	}
+	return &c, nil
 }
 
 // persistDriftInvalidation stores an invalidation revision for the record a

@@ -15,6 +15,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/turbokast/mythhelm/adapters/claudecode"
+	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/security"
 	"github.com/turbokast/mythhelm/internal/workspace"
 )
@@ -45,7 +46,48 @@ type ProjectConfig struct {
 			AllowedTools []string `toml:"allowed_tools"`
 		} `toml:"claudecode"`
 	} `toml:"adapters"`
-	Checks []CheckConfig `toml:"checks"`
+	Checks    []CheckConfig   `toml:"checks"`
+	Envelopes EnvelopesConfig `toml:"envelopes"`
+}
+
+// EnvelopesConfig is the optional [envelopes] table: the run-configuration
+// layer of the finite run envelope. An absent field is unset, not zero.
+type EnvelopesConfig struct {
+	Execution        string `toml:"execution"`
+	Repairs          *int   `toml:"repairs"`
+	Replans          *int   `toml:"replans"`
+	TransportRetries *int   `toml:"transport_retries"`
+}
+
+// ToCeilings returns the file layer with unset fields negative, or nil when
+// the table is absent. An invalid duration or a negative count is an error,
+// never a default (I02).
+func (e EnvelopesConfig) ToCeilings() (*billing.Ceilings, error) {
+	if e.Execution == "" && e.Repairs == nil && e.Replans == nil && e.TransportRetries == nil {
+		return nil, nil
+	}
+	c := billing.Ceilings{Execution: -1, Repairs: -1, Replans: -1, TransportRetries: -1}
+	if e.Execution != "" {
+		d, err := time.ParseDuration(e.Execution)
+		if err != nil || d <= 0 {
+			return nil, fmt.Errorf("envelopes.execution %q must be a positive duration", e.Execution)
+		}
+		c.Execution = d
+	}
+	for _, f := range []struct {
+		name string
+		in   *int
+		out  *int
+	}{{"repairs", e.Repairs, &c.Repairs}, {"replans", e.Replans, &c.Replans}, {"transport_retries", e.TransportRetries, &c.TransportRetries}} {
+		if f.in == nil {
+			continue
+		}
+		if *f.in < 0 {
+			return nil, fmt.Errorf("envelopes.%s must not be negative, got %d", f.name, *f.in)
+		}
+		*f.out = *f.in
+	}
+	return &c, nil
 }
 
 // CheckConfig is an argv check and its output/timeout policy.
@@ -134,6 +176,9 @@ func ParseProjectConfig(raw []byte) (ProjectConfig, string, error) {
 		if rule == "" || len(rule) > claudecode.MaxAllowedToolRule || strings.ContainsRune(rule, 0) || strings.HasPrefix(rule, "-") {
 			return cfg, "", fmt.Errorf("%w: invalid adapters.claudecode allowed_tools rule %q", ErrProjectConfig, rule)
 		}
+	}
+	if _, err := cfg.Envelopes.ToCeilings(); err != nil {
+		return cfg, "", fmt.Errorf("%w: %w", ErrProjectConfig, err)
 	}
 	seen := make(map[string]bool, len(cfg.Checks))
 	for _, check := range cfg.Checks {

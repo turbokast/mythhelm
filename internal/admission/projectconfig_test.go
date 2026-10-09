@@ -9,8 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/turbokast/mythhelm/internal/admission"
+	"github.com/turbokast/mythhelm/internal/billing"
 )
 
 func TestLoadProjectConfigUsesCommittedBytes(t *testing.T) {
@@ -97,5 +99,59 @@ func TestLoadProjectConfigRejectsSymlinkEscape(t *testing.T) {
 	_, _, err := admission.LoadProjectConfig(dir)
 	if !errors.Is(err, admission.ErrProjectConfig) {
 		t.Fatalf("outside symlink err = %v", err)
+	}
+}
+
+func envelopesConfig(table string) []byte {
+	return []byte("schema_version = 1\n" + table + "\n[[checks]]\nname = \"test\"\nargv = [\"true\"]\ntimeout = \"1s\"\n")
+}
+
+func TestEnvelopesStrictDecode(t *testing.T) {
+	t.Parallel()
+	cfg, _, err := admission.ParseProjectConfig(envelopesConfig("[envelopes]\nexecution = \"45m\"\nrepairs = 1\nreplans = 0\ntransport_retries = 7"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := cfg.Envelopes.ToCeilings()
+	want := &billing.Ceilings{Execution: 45 * time.Minute, Repairs: 1, Replans: 0, TransportRetries: 7}
+	if err != nil || got == nil || *got != *want {
+		t.Fatalf("ToCeilings = %+v, %v; want %+v (a zero count is a set value)", got, err, want)
+	}
+
+	// A partial table leaves the other fields unset (negative), never zero.
+	cfg, _, err = admission.ParseProjectConfig(envelopesConfig("[envelopes]\nrepairs = 4"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = cfg.Envelopes.ToCeilings()
+	if err != nil || got == nil || *got != (billing.Ceilings{Execution: -1, Repairs: 4, Replans: -1, TransportRetries: -1}) {
+		t.Fatalf("partial ToCeilings = %+v, %v", got, err)
+	}
+
+	// No table at all is no file layer.
+	cfg, _, err = admission.ParseProjectConfig(envelopesConfig(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := cfg.Envelopes.ToCeilings(); err != nil || got != nil {
+		t.Fatalf("absent table ToCeilings = %+v, %v; want nil layer", got, err)
+	}
+
+	for name, table := range map[string]string{
+		"unknown key":          "[envelopes]\nrepair = 3",
+		"unknown nested table": "[envelopes.extra]\nx = 1",
+		"negative count":       "[envelopes]\nrepairs = -1",
+		"negative replans":     "[envelopes]\nreplans = -2",
+		"negative transport":   "[envelopes]\ntransport_retries = -1",
+		"invalid duration":     "[envelopes]\nexecution = \"soon\"",
+		"zero duration":        "[envelopes]\nexecution = \"0s\"",
+		"negative duration":    "[envelopes]\nexecution = \"-5m\"",
+		"integer duration":     "[envelopes]\nexecution = 30",
+		"fractional count":     "[envelopes]\nrepairs = 1.5",
+		"string count":         "[envelopes]\nrepairs = \"3\"",
+	} {
+		if _, _, err := admission.ParseProjectConfig(envelopesConfig(table)); !errors.Is(err, admission.ErrProjectConfig) {
+			t.Errorf("%s: err = %v, want ErrProjectConfig", name, err)
+		}
 	}
 }
