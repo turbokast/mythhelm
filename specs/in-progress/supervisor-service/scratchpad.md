@@ -14,7 +14,7 @@ nothing above it is edited except OQ verdicts.
 - **OQ-7** (Windows pipe transport: go-winio vs hand-rolled x/sys): default
   go-winio behind the `Transport` interface, D4. Decider: maintainer (new
   dependency). Task 4 MUST NOT start until the maintainer records approval
-  here with the reviewed version pin. Approval: _pending_. License check
+  here with the reviewed version pin. Approval: approved 2026-10-09 by the maintainer — go-winio v0.6.3 (MIT, Copyright Microsoft; LICENSE verified at the pin). License check
   (2026-10-08): go-winio is MIT-licensed (Copyright Microsoft); Task 4
   confirms the LICENSE text at the pinned version.
 - **OQ-10** (control-protocol package shape): default new `internal/` package,
