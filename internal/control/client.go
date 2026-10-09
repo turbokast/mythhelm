@@ -18,9 +18,8 @@ import (
 const SupervisorCommand = "__supervisor"
 
 const (
-	spawnWait    = 10 * time.Second
-	spawnPoll    = 25 * time.Millisecond
-	clientBudget = 30 * time.Second
+	spawnWait = 10 * time.Second
+	spawnPoll = 25 * time.Millisecond
 )
 
 // ErrSpawnUnsupported reports a platform without a control transport yet.
