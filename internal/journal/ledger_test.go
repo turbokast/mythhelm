@@ -101,8 +101,8 @@ func TestSchemaVersionIs3(t *testing.T) {
 	if err := j.db.QueryRowContext(t.Context(), "PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if SchemaVersion != 3 || version != 3 {
-		t.Fatalf("SchemaVersion = %d, user_version = %d, want 3", SchemaVersion, version)
+	if SchemaVersion < 3 || version != SchemaVersion {
+		t.Fatalf("SchemaVersion = %d, user_version = %d, want at least 3 and equal", SchemaVersion, version)
 	}
 }
 

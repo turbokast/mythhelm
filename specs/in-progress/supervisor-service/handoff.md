@@ -64,7 +64,13 @@ What later tasks must know:
 
 ## Task 5 — Intent server, idempotency ledger and sole-writer transactions
 
-<!-- pending -->
+- **Produces** (PR #255): `control.Intent` (+`Validate`), `Result`, `Handler`, `Execute`, `Mutate`, `Server` (`NewServer`, `Register`, `Dispatch`), `StatusHandler`, `AssignHandler`, `MintToken`, `CheckToken`, `EndpointPath`, `WithLedger`, and `control.Error` with `Code*` constants, in `control.go`, `ledger.go`, `server.go`. Migration `0004_supervisor.sql` (`operations`, `capability_tokens`, `run_assignments`), `SchemaVersion` 4.
+- **For dependents**: attach the ledger with `control.WithLedger(ctx, db)` before `Dispatch`/`Execute`; without it they fail closed. `Execute` returns a handler's `*control.Error` as both `Result.Error` and the error, and stores it: a repeat replays the same failure. Any other handler error is transient: nothing is stored and a retry runs the handler again. Return `Result.Revision` (the object's new revision); `Execute` requires `expected_revision` to equal the object's latest recorded revision. `Execute` holds one write transaction across the handler: write only through `control.Mutate(ctx, db, ...)` with the handler's ctx (it joins that transaction, so the writes commit with the result or not at all); a handler that writes through `db` directly waits on the write lock and fails. Reads through `db` do not see the transaction's uncommitted writes.
+- **For dependents**: `reservations` was created by `0003_ledger.sql` (budget-ledger-s1), not by this migration. It has no execution-host key and no `expired` status; Task 6 must rebuild or extend it before keying by host (design §8). Its accessors live in `internal/journal/ledger.go`.
+- **For dependents**: `control.Error` replaces `*v2contract.ControlError` until v2-contract-vocabulary task 6 lands; swap it then and keep the code strings. `control.Error` matches by code under `errors.Is`.
+- **For dependents**: there are no claim rows: a crash before the commit leaves nothing, so a retry runs the handler again, and concurrent duplicates wait on the SQLite write lock (5 s busy timeout) and then replay the winner's result.
+- **For dependents**: capability token digests live in `capability_tokens`, not on `attempts`; `MintToken` rotates on re-mint. `CheckToken` is for Task 6's handlers to call per request. The control socket path is `EndpointPath()`, beside the instance lock.
+- **Traps**: `internal/workers` already depends on `modernc.org/sqlite` through `journal.Event`; AC-6.1 is pinned by a source scan, not `go list`. Run tests with `ANTHROPIC_BASE_URL` unset and lint with `GOTOOLCHAIN=go1.27.1`; the status test sets `XDG_RUNTIME_DIR`, so it is not parallel.
 
 ## Task 6 — Reservations, capability tokens, authority filtering and lazy start
 
