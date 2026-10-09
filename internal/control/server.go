@@ -135,6 +135,14 @@ func AssignHandler(db *sql.DB) Handler {
 	}
 }
 
+// RegisterStop binds the stop method to s. It stays out of
+// NewSupervisorServer until Task 4 folds the stop and recover methods into
+// the served set with their support-matrix rows, so the matrix test keeps
+// passing without a stop row meanwhile.
+func (s *Server) RegisterStop(d StopDeps) error {
+	return s.Register("stop", StopHandler(d))
+}
+
 // NewSupervisorServer binds every method the supervisor serves to db.
 func NewSupervisorServer(db *sql.DB) *Server {
 	return NewServer(map[string]Handler{
