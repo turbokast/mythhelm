@@ -48,7 +48,7 @@
 
 ## CI history
 
-- t1..t5, t7, t8, fix branches: every workflow run green; `cancelled` entries are superseded pushes, not failures.
+- t1..t5, t7, t8, fix branches: every workflow run green except one infra job-failed on #241's merge (t7, noted below); `cancelled` entries are superseded pushes, not failures.
 - Merge 85049b2 (PR #241): CI/(run) job-failed, class=infra (from `finalize.py verify` history note).
 - No same-`headSha` failure+success pair on any branch: no nondeterministic failure to explain.
 
