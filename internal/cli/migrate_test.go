@@ -89,6 +89,9 @@ func seedV1(t *testing.T) string {
 	if _, err := db.Exec(`PRAGMA user_version = 1`); err != nil {
 		t.Fatalf("set user_version: %v", err)
 	}
+	// Closed, not just test-cleaned: an open handle at Restore time
+	// denies Windows' copy-back rename (Unix renames anyway).
+	_ = db.Close()
 	return dir
 }
 
