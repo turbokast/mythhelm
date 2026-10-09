@@ -27,5 +27,5 @@ CREATE TABLE run_assignments (
   run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
   owner TEXT NOT NULL,
   assigned_at TEXT NOT NULL,
-  operation_id TEXT NOT NULL REFERENCES operations(operation_id)
+  operation_id TEXT NOT NULL REFERENCES operations(operation_id) DEFERRABLE INITIALLY DEFERRED -- the result row is inserted after the handler, in the same transaction
 ) STRICT;

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/v2contract"
@@ -87,12 +88,6 @@ type Result struct {
 // that releases the operation_id for a retry.
 type Handler func(ctx context.Context, peer Peer, intent Intent) (Result, error)
 
-// pollInterval and claimWait bound how a duplicate waits for the claimant.
-const (
-	pollInterval = 5 * time.Millisecond
-	claimWait    = 30 * time.Second
-)
-
 type ledgerKey struct{}
 
 // WithLedger returns ctx carrying the ledger Execute claims operations in.
@@ -110,13 +105,16 @@ func ledgerFrom(ctx context.Context) (*sql.DB, error) {
 	return db, nil
 }
 
-// Execute runs h at most once per operation_id (I12). The operation is
-// claimed in the ledger before h runs. An identical repeat (same method,
-// object and params) returns the stored Result; a reused operation_id with
-// different arguments, and an expected_revision that is not the object's
-// current revision, return revision_conflict without running h. A duplicate
-// that arrives while the claimant runs waits for, and returns, the stored
-// Result. A malformed intent returns invalid_contract.
+// Execute runs h at most once per operation_id (I12). The handler's writes
+// and the operation's result commit in one transaction (Mutate joins it from
+// the handler's context), so a failure before the commit leaves nothing
+// behind and the operation_id can be retried. An identical repeat (same
+// method, object, params, expected_revision and generation) returns the
+// stored Result; a reused operation_id with different arguments, and an
+// expected_revision that is not the object's current revision, return
+// revision_conflict without running h. Concurrent duplicates serialise on
+// the write lock: the loser returns the winner's stored Result. A malformed
+// intent returns invalid_contract.
 func Execute(ctx context.Context, h Handler, peer Peer, intent Intent) (Result, error) {
 	if err := intent.Validate(); err != nil {
 		return Result{}, newError(CodeInvalidContract, "%v", err)
@@ -125,50 +123,10 @@ func Execute(ctx context.Context, h Handler, peer Peer, intent Intent) (Result, 
 	if err != nil {
 		return Result{}, err
 	}
-	digest := intentDigest(intent)
-
-	deadline := time.Now().Add(claimWait)
-	for {
-		stored, claimed, err := claim(ctx, db, intent, digest)
-		if err != nil {
-			return Result{}, err
-		}
-		if stored != nil {
-			return replay(*stored)
-		}
-		if claimed {
-			break
-		}
-		if time.Now().After(deadline) {
-			return Result{}, newError(CodePersistenceUnavailable, "operation %s is still being executed", intent.OperationID)
-		}
-		select {
-		case <-ctx.Done():
-			return Result{}, ctx.Err()
-		case <-time.After(pollInterval):
-		}
-	}
-
-	finished := false
-	defer func() {
-		if !finished {
-			release(context.WithoutCancel(ctx), db, intent.OperationID)
-		}
-	}()
-	res, herr := h(ctx, peer, intent)
-	var ce *Error
-	switch {
-	case herr == nil:
-	case errors.As(herr, &ce):
-		res = Result{Revision: res.Revision, Error: ce}
-	default:
-		return Result{}, herr
-	}
-	res.OperationID = intent.OperationID
-	if err := record(context.WithoutCancel(ctx), db, res); err != nil {
+	res, err := execute(ctx, db, h, peer, intent, intentDigest(intent))
+	if err != nil {
 		return Result{}, err
 	}
-	finished = true
 	return replay(res)
 }
 
@@ -186,7 +144,11 @@ func intentDigest(i Intent) string {
 		_ = json.Compact(&params, i.Params) // Validate has checked it
 	}
 	sum := sha256.New()
-	for _, part := range []string{i.Method, i.Object, params.String()} {
+	generation := "-"
+	if i.Generation != nil {
+		generation = strconv.FormatInt(*i.Generation, 10)
+	}
+	for _, part := range []string{i.Method, i.Object, params.String(), strconv.FormatInt(i.ExpectedRevision, 10), generation} {
 		_, _ = fmt.Fprintf(sum, "%d:%s;", len(part), part)
 	}
 	return hex.EncodeToString(sum.Sum(nil))

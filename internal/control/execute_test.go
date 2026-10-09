@@ -450,6 +450,7 @@ func TestWorkersNeverOpenSQLite(t *testing.T) { // I23 (v2 §2)
 var releasedMigrations = map[string]string{
 	"0001_init.sql":          "262e63e2c7630dc637a916d476a1862db361affcb734dcbe2317f6770cb72e36",
 	"0002_qualification.sql": "52ce1d7a33fe4ace12e06ac3eae4032d9f11d647199113ef287416ab0202da7e",
+	"0003_ledger.sql":        "c9203ba912b7fe187d472edfa56f02fd751ffaddcb12d3eee4c98bf920487aa6",
 }
 
 func TestMigration0004IsAdditive(t *testing.T) {
@@ -695,5 +696,121 @@ func TestMintTokenUnknownAttemptRefused(t *testing.T) {
 	requireCode(t, err, CodeInvalidContract)
 	if n := count(t, db, "capability_tokens"); n != 0 {
 		t.Fatalf("%d token rows stored for an unknown attempt", n)
+	}
+}
+
+func TestReusedIDWithDifferentEnvelopeConflicts(t *testing.T) {
+	t.Parallel()
+	db, _ := openLedger(t)
+	ctx := WithLedger(t.Context(), db)
+	var runs atomic.Int32
+	h := counting(`{}`, &runs)
+	gen := int64(7)
+	first := intent("op_1", "probe")
+	first.Object, first.ExpectedRevision, first.Generation = "run_1", 0, &gen
+	if _, err := Execute(ctx, h, Peer{}, first); err != nil {
+		t.Fatal(err)
+	}
+	otherGen := int64(8)
+	for name, mutate := range map[string]func(*Intent){
+		"expected_revision":  func(i *Intent) { i.ExpectedRevision = 1 },
+		"generation":         func(i *Intent) { i.Generation = &otherGen },
+		"generation removed": func(i *Intent) { i.Generation = nil },
+	} {
+		other := first
+		mutate(&other)
+		_, err := Execute(ctx, h, Peer{}, other)
+		if !errors.Is(err, &Error{Code: CodeRevisionConflict}) {
+			t.Errorf("reuse with different %s: err = %v, want revision_conflict", name, err)
+		}
+	}
+	if _, err := Execute(ctx, h, Peer{}, first); err != nil {
+		t.Fatalf("the identical repeat no longer replays: %v", err)
+	}
+	if runs.Load() != 1 {
+		t.Fatalf("handler ran %d times, want only the first", runs.Load())
+	}
+}
+
+// assignOnce is AssignHandler's write with a failure injected after it.
+func assigningThen(db *sql.DB, then error) Handler {
+	return func(ctx context.Context, p Peer, in Intent) (Result, error) {
+		res, err := AssignHandler(db)(ctx, p, in)
+		if err != nil {
+			return res, err
+		}
+		return res, then
+	}
+}
+
+func TestRecordFailureDoesNotWedgeTheRun(t *testing.T) { // I12, I23 (v2 §2)
+	t.Parallel()
+	db, _ := openLedger(t)
+	seedRun(t, db, "run_1")
+	ctx := WithLedger(t.Context(), db)
+	// The operation's result row cannot be written: the handler's assignment
+	// must not survive without it.
+	if _, err := db.Exec(`CREATE TRIGGER fail_record BEFORE INSERT ON operations WHEN NEW.operation_id = 'op_1'
+		BEGIN SELECT RAISE(ABORT, 'disk full'); END`); err != nil {
+		t.Fatal(err)
+	}
+	in := intent("op_1", "assign")
+	in.Object = "run_1"
+	_, err := Execute(ctx, AssignHandler(db), Peer{}, in)
+	requireCode(t, err, CodePersistenceUnavailable)
+	if n := count(t, db, "run_assignments"); n != 0 {
+		t.Fatalf("%d assignments survive a result that was never recorded, want none", n)
+	}
+	if n := count(t, db, "operations"); n != 0 {
+		t.Fatalf("%d operation rows left behind, want none", n)
+	}
+
+	if _, err := db.Exec(`DROP TRIGGER fail_record`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Execute(ctx, AssignHandler(db), Peer{}, in); err != nil {
+		t.Fatalf("retry of the same operation after the fault cleared: %v", err)
+	}
+	later := intent("op_2", "unassign")
+	later.Object, later.ExpectedRevision = "run_1", 1
+	if _, err := Execute(ctx, counting(`{}`, new(atomic.Int32)), Peer{}, later); err != nil {
+		t.Fatalf("a later operation on the run is refused: %v", err)
+	}
+}
+
+func TestHandlerWritesRollBackWithTheirFailure(t *testing.T) { // I23 (v2 §2)
+	t.Parallel()
+	db, _ := openLedger(t)
+	seedRun(t, db, "run_1")
+	seedRun(t, db, "run_2")
+	ctx := WithLedger(t.Context(), db)
+	// A control failure is stored as the result, but its writes are undone.
+	in := intent("op_1", "assign")
+	in.Object = "run_1"
+	_, err := Execute(ctx, assigningThen(db, newError(CodePermissionDenied, "refused after writing")), Peer{}, in)
+	requireCode(t, err, CodePermissionDenied)
+	if n := count(t, db, "run_assignments"); n != 0 {
+		t.Fatalf("%d assignments survive a failed handler, want none", n)
+	}
+	if n := count(t, db, "operations"); n != 1 {
+		t.Fatalf("%d operation rows, want the stored failure", n)
+	}
+	// A transient failure stores nothing at all and the id can be retried.
+	in2 := intent("op_2", "assign")
+	in2.Object = "run_2"
+	if _, err := Execute(ctx, assigningThen(db, errors.New("lost the disk")), Peer{}, in2); err == nil {
+		t.Fatal("transient failure returned no error")
+	}
+	if n := count(t, db, "run_assignments"); n != 0 {
+		t.Fatalf("%d assignments survive a transient failure, want none", n)
+	}
+	if n := count(t, db, "operations"); n != 1 {
+		t.Fatalf("%d operation rows after a transient failure, want only the stored failure", n)
+	}
+	if _, err := Execute(ctx, AssignHandler(db), Peer{}, in2); err != nil {
+		t.Fatalf("retry after a transient failure: %v", err)
+	}
+	if n := count(t, db, "run_assignments"); n != 1 {
+		t.Fatalf("assignments = %d after the retry, want run_2 only", n)
 	}
 }
