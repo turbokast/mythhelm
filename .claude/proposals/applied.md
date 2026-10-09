@@ -161,7 +161,7 @@ Add a dispatch step: before starting a task attempt, append the `run_start` row 
 
 - **Decision**: approved
 - **Date**: 2026-10-09
-- **Pull request**: pending
+- **Pull request**: #303
 - **Eval**: `completion-names-review-clarifications`
 - **Rationale**: A Spec deviations entry of None hid two review-round additions in PR #180, so the finalize review had to rediscover them by diffing; naming each consistent clarification in one line keeps the entry an accurate map of what merged. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
 - **Source spec**: `release-tagging`
