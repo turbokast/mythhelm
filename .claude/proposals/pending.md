@@ -2,19 +2,6 @@
 
 Proposals awaiting a maintainer's decision. The format, the id scheme and the rules for appending are in [`README.md`](README.md). New proposals go at the end of this file.
 
-
-## P-release-tagging-1 — completion entries name review-round clarifications as deviations
-
-- **Source spec**: `release-tagging`
-- **Type**: skill
-- **Target**: `.claude/skills/task-completion/SKILL.md`
-- **Rationale**: The Spec deviations field said None while two review-round sentences (a permission qualification, a release-flag requirement) landed post-worker. Both were consistent with the design, so no defect shipped — but the finalize review had to rediscover them by diffing, and the entry claims a none-divergence record that is not quite true. Naming consistent clarifications keeps the entry an accurate map of what review added.
-- **Evidence**: PR #180 review round 1 (2 fixed threads); specs/done/release-tagging/retrospective.md Review Summary finding 1 and Deviations section; task entry Spec deviations: None.
-
-**Proposed change:**
-
-In the Spec deviations rule, add: a review-round addition that stays inside the task's Files list and is consistent with the design is still named, one line each, marked consistent (e.g. "- Added the Contents:write permission qualification in review round 1 (consistent with design §3)"). None. is reserved for a task whose merged diff the worker's own commits fully describe.
-
 ## P-strict-lint-set-1 — gate parallel run-spec waves on FD headroom
 
 - **Source spec**: `strict-lint-set`

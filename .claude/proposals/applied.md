@@ -157,6 +157,23 @@ Append a short entry: on Windows, atomic file replacement via rename can fail tr
 
 Add a dispatch step: before starting a task attempt, append the `run_start` row (once per spec run) and the task's `dispatch` row to `.claude/data/run-events.jsonl`; after the attempt ends, append the `return` row (and `merge` after the merge). A dispatch without its rows is incomplete. Before finalizing, the orchestrator may backfill rows for already-merged tasks only from authoritative records (merged PRs, merge commits). Backfilled rows must carry provenance marking them as reconstructed, and consumers must distinguish them from observed rows when computing attempt metrics and attribution. Use the schema's `null` and `unknown` values for unavailable attribution or results; never treat the generated `ts` as the original event time when that time cannot be recovered.
 
+## P-release-tagging-1 — completion entries name review-round clarifications as deviations
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #303
+- **Eval**: `completion-names-review-clarifications`
+- **Rationale**: A Spec deviations entry of None hid two review-round additions in PR #180, so the finalize review had to rediscover them by diffing; naming each consistent clarification in one line keeps the entry an accurate map of what merged. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `release-tagging`
+- **Type**: skill
+- **Target**: `.claude/skills/task-completion/SKILL.md`
+- **Rationale**: The Spec deviations field said None while two review-round sentences (a permission qualification, a release-flag requirement) landed post-worker. Both were consistent with the design, so no defect shipped — but the finalize review had to rediscover them by diffing, and the entry claims a none-divergence record that is not quite true. Naming consistent clarifications keeps the entry an accurate map of what review added.
+- **Evidence**: PR #180 review round 1 (2 fixed threads); specs/done/release-tagging/retrospective.md Review Summary finding 1 and Deviations section; task entry Spec deviations: None.
+
+**Proposed change:**
+
+In the Spec deviations rule, add: a review-round addition that stays inside the task's Files list and is consistent with the design is still named, one line each, marked consistent (e.g. "- Added the Contents:write permission qualification in review round 1 (consistent with design §3)"). None. is reserved for a task whose merged diff the worker's own commits fully describe.
+
 ## P-supervisor-service-1 — Re-verify accepted ADRs against the shipped tree at finalize
 
 - **Decision**: approved
