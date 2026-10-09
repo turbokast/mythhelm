@@ -560,7 +560,10 @@ func TestGateRefusesPastDeadline(t *testing.T) {
 func TestFirstLaunchStartsClockOnce(t *testing.T) {
 	t.Parallel()
 	w := newGateWorld(t, gateEnvelope(), 0)
-	t0 := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	// The start floats with the test clock: w.launch commits with the real
+	// clock, so a fixed date would expire and fail every run past its
+	// deadline (this fired 2026-10-09T12:10Z).
+	t0 := time.Now().UTC().Truncate(time.Second)
 	if err := w.launch(t, gateCeilings, t0); err != nil {
 		t.Fatal(err)
 	}
