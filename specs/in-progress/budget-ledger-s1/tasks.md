@@ -135,7 +135,7 @@
   - `go test ./adapters/fake/ -run TestScenariosEmbedded`: the pinned list gains `usage-counters` and `allowance-exhausted` and both parse; an unlisted or unparseable scenario fails. Fails before: names absent from the list.
 - **Test plan**: Synthetic fixtures with `synthetic: true` markers per the adapter rule; scenario playback through the existing fake harness.
 - **Invariants touched**: I14 (v2 §2: fixture-tested taxonomy explicitly labelled, not live-qualified); I09 (v2 §7.3: unknown reset stays unknown).
-- **Status**: ✅ Completed — the claudecode decoder maps the fixture-qualified `allowance_exhausted` class fail-closed and the `usage-counters` and `allowance-exhausted` fake scenarios are embedded; PR #245.
+- **Status**: ✅ Completed — the claudecode decoder maps the fixture-qualified `allowance_exhausted` class fail-closed and the `usage-counters` and `allowance-exhausted` fake scenarios are embedded; PR #249.
 - **Implementation**: `allowance_exhausted` joins `errorClasses`; the exact class name is the only documented shape, so every other spelling stays `native_error` and `rate_limit` keeps its transient mapping. `NativeError` carries only a class, so reset stays unknown. The synthetic fixture holds three named streams (exhausted, rate-limited, undocumented shape). Commit ffdc9eb.
 - **Spec deviations**: None.
 - **Files modified**: `adapters/claudecode/decode.go`, `adapters/claudecode/decode_test.go`, `adapters/claudecode/testdata/exhaustion/allowance_exhausted.json`, `adapters/fake/scenarios/usage-counters.json`, `adapters/fake/scenarios/allowance-exhausted.json`, `adapters/fake/fake_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
