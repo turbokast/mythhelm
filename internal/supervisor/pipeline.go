@@ -369,11 +369,11 @@ func (p *pipeline) attempt(ctx context.Context) error {
 	// The envelope gates the launch before any intent is journaled; the
 	// launch is counted, and the first one starts the execution clock, in
 	// the intent's own transaction (I21, I02).
-	plan, err := planLaunchAt(ctx, p.j, d.RunID, p.ceilings, time.Now().UTC())
+	plan, deadline, err := p.planAttempt(ctx, time.Now().UTC())
 	if err != nil {
 		return p.blockLaunch(ctx, err)
 	}
-	p.deadline = plan.deadline
+	p.deadline = deadline
 	token, err := launchToken()
 	if err != nil {
 		return err
@@ -455,6 +455,70 @@ func (p *pipeline) attempt(ctx context.Context) error {
 		p.h.Notice(fmt.Sprintf("worker pid %d has not exited %s after its attempt ended", proc.Pid, reapTimeout))
 	}
 	return nil
+}
+
+// planAttempt gates the next launch and returns its plan with the deadline
+// the attempt runs under. A material replan after the first verification is
+// optional work: it dispatches only when the remaining execution time covers
+// one verification pass, and then runs under a deadline that leaves that
+// pass unconsumed (AC-5.1, I21). The reserve is checked before the envelope
+// so a short replan reports the shortfall. The first attempt and repairs are
+// completion work and keep the execution deadline.
+func (p *pipeline) planAttempt(ctx context.Context, now time.Time) (launchPlan, time.Time, error) {
+	reserve, err := p.replanReserve(ctx, now)
+	if err != nil {
+		return launchPlan{}, time.Time{}, err
+	}
+	plan, err := planLaunchAt(ctx, p.j, p.d.RunID, p.ceilings, now)
+	if err != nil {
+		return launchPlan{}, time.Time{}, err
+	}
+	return plan, plan.deadline.Add(-reserve), nil
+}
+
+// replanReserve returns the verification time a launch at now must leave
+// unconsumed: zero unless the launch is a replan, and a *GateError with
+// reason completion_reserve_shortfall when the remaining time cannot cover
+// it. A check timeout or journal read that cannot be evaluated is an error
+// that blocks the launch (I02).
+func (p *pipeline) replanReserve(ctx context.Context, now time.Time) (time.Duration, error) {
+	if _, err := p.j.LatestAttempt(ctx, p.d.RunID); errors.Is(err, journal.ErrNotFound) {
+		return 0, nil
+	} else if err != nil {
+		return 0, err
+	}
+	replan, err := IsReplan(ctx, p.j, p.d.RunID)
+	if err != nil || !replan {
+		return 0, err
+	}
+	var checks []billing.CheckBound
+	if !p.d.NoChecks {
+		for _, c := range p.d.ProjectConfig.Checks {
+			timeout := c.Duration()
+			if timeout <= 0 {
+				return 0, fmt.Errorf("completion reserve: check %q has timeout %q, want a positive duration", c.Name, c.Timeout)
+			}
+			checks = append(checks, billing.CheckBound{Name: c.Name, Timeout: timeout})
+		}
+	}
+	env, eff, err := effectiveCeilings(ctx, p.j, p.d.RunID, p.ceilings)
+	if err != nil {
+		return 0, err
+	}
+	deadline, _, err := envelopeDeadline(env, eff, now)
+	if err != nil {
+		return 0, err
+	}
+	left := eff.Execution
+	if !deadline.IsZero() {
+		left = max(deadline.Sub(now), 0)
+	}
+	est := billing.EstimateReserve(checks, eff)
+	if !billing.RemainderCoversReserve(billing.ExecutionRemainder{TimeLeft: left}, est) {
+		return 0, &GateError{Reason: "completion_reserve_shortfall", Err: fmt.Errorf("%w: %s left, a verification pass of %d checks needs %s (%s)",
+			billing.ErrBudgetExhausted, left, est.VerifyPassChecks, est.VerifyTimeoutSum, est.Note)}
+	}
+	return est.VerifyTimeoutSum, nil
 }
 
 // freezeAfterStop trusts the worker's confirmed stop event, never just its

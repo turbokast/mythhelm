@@ -771,3 +771,210 @@ func TestLaunchRefusedWhenDeadlineExpiresBeforeCommit(t *testing.T) {
 		})
 	}
 }
+
+// reserveWorld is a run whose execution clock started at reserveStart under a
+// 10-minute ceiling, gated by a pipeline that carries the given admitted
+// checks.
+var reserveStart = time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+
+func newReserveWorld(t *testing.T, env journal.EnvelopeRow, attempts int64, verified bool, checks ...admission.CheckConfig) (*gateWorld, *pipeline) {
+	t.Helper()
+	env.FirstStartAt = reserveStart.Format(time.RFC3339Nano)
+	w := newGateWorld(t, env, attempts)
+	if verified {
+		w.addVerification(t)
+	}
+	p := &pipeline{d: admission.Decision{RunID: w.runID, ProjectConfig: admission.ProjectConfig{Checks: checks}},
+		j: w.j, prod: w.prod, ceilings: gateCeilings}
+	return w, p
+}
+
+func reserveChecks(timeouts ...string) []admission.CheckConfig {
+	checks := make([]admission.CheckConfig, len(timeouts))
+	for i, d := range timeouts {
+		checks[i] = admission.CheckConfig{Name: fmt.Sprintf("check-%d", i), Argv: []string{"true"}, Timeout: d}
+	}
+	return checks
+}
+
+// commitPlan records the planned launch's intent, as the pipeline does.
+func (w *gateWorld) commitPlan(t *testing.T, plan launchPlan) {
+	t.Helper()
+	w.attempts++
+	if err := recordLaunchIntent(t.Context(), w.j, journal.AttemptRow{AttemptID: ids.New("att"), RunID: w.runID, TaskID: "task", AttemptNumber: w.attempts,
+		LaunchTokenSHA256: strings.Repeat("a", 64), WorkspacePath: "/tmp/ws"}, w.prod, plan.commit(t.Context(), w.runID)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// I21 (v2 §10.3): completion is budgeted before optional work.
+func TestShortfallBlocksOptionalWork(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		replansUsed int64
+		now         time.Time
+		wantReason  string
+	}{
+		{"remainder one second short blocks the replan", 0, reserveStart.Add(10*time.Minute - 2*time.Minute + time.Second), "completion_reserve_shortfall"},
+		{"remainder exactly covering dispatches", 0, reserveStart.Add(10*time.Minute - 2*time.Minute), ""},
+		{"reserve is checked before the replan count", 2, reserveStart.Add(9 * time.Minute), "completion_reserve_shortfall"},
+		{"a covered replan over the count reports the count", 2, reserveStart.Add(time.Minute), "envelope_replans_exhausted"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			env := gateEnvelope()
+			env.ReplansUsed = tc.replansUsed
+			w, p := newReserveWorld(t, env, 1, false, reserveChecks("1m", "1m")...) // no verification: a replan
+			intents := w.launchIntents(t)
+			_, _, err := p.planAttempt(t.Context(), tc.now)
+			if tc.wantReason == "" {
+				if err != nil {
+					t.Fatalf("planAttempt refused a covered replan: %v", err)
+				}
+				return
+			}
+			requireGateRefusal(t, err, tc.wantReason)
+			run := w.blockedByGate(t, err)
+			if run.State != string(RunBlocked) || run.Reason != tc.wantReason {
+				t.Fatalf("run = %s (%s), want blocked (%s)", run.State, run.Reason, tc.wantReason)
+			}
+			if got := w.launchIntents(t); got != intents {
+				t.Fatalf("launch intents %d -> %d: a blocked replan journaled an intent", intents, got)
+			}
+		})
+	}
+}
+
+func TestCheckBoundConversionBlocksOnFailure(t *testing.T) {
+	t.Parallel()
+	now := reserveStart.Add(time.Minute)
+	for _, timeout := range []string{"soon", "", "0s", "-1m"} {
+		t.Run("timeout "+timeout, func(t *testing.T) {
+			t.Parallel()
+			w, p := newReserveWorld(t, gateEnvelope(), 1, false, reserveChecks("1m", timeout)...)
+			intents := w.launchIntents(t)
+			_, _, err := p.planAttempt(t.Context(), now)
+			if err == nil {
+				t.Fatal("an unconvertible check timeout did not block the launch")
+			}
+			if _, ok := errors.AsType[*GateError](err); ok {
+				t.Fatalf("err = %v: a conversion failure is not an envelope refusal", err)
+			}
+			run := w.blockedByGate(t, err)
+			if run.State != string(RunBlocked) || run.Reason != "envelope_unavailable" {
+				t.Fatalf("run = %s (%s), want blocked (envelope_unavailable)", run.State, run.Reason)
+			}
+			if got := w.launchIntents(t); got != intents {
+				t.Fatalf("launch intents %d -> %d", intents, got)
+			}
+		})
+	}
+	// Control: the same list with parseable timeouts is estimated and passes.
+	_, p := newReserveWorld(t, gateEnvelope(), 1, false, reserveChecks("1m", "2m")...)
+	if _, _, err := p.planAttempt(t.Context(), now); err != nil {
+		t.Fatalf("parseable checks refused: %v", err)
+	}
+}
+
+func TestReplanDeadlineLeavesReserve(t *testing.T) {
+	t.Parallel()
+	_, p := newReserveWorld(t, gateEnvelope(), 1, false, reserveChecks("1m", "2m")...)
+	plan, deadline, err := p.planAttempt(t.Context(), reserveStart.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := reserveStart.Add(10 * time.Minute)
+	if !plan.deadline.Equal(full) {
+		t.Fatalf("plan deadline = %v, want the full execution deadline %v", plan.deadline, full)
+	}
+	if want := full.Add(-3 * time.Minute); !deadline.Equal(want) {
+		t.Fatalf("replan deadline = %v, want execution deadline minus the 3m verify sum = %v", deadline, want)
+	}
+}
+
+func TestReplanPreservesRepairSlots(t *testing.T) {
+	t.Parallel()
+	env := gateEnvelope()
+	env.RepairsUsed = 1
+	w, p := newReserveWorld(t, env, 1, false, reserveChecks("1m")...)
+	plan, deadline, err := p.planAttempt(t.Context(), reserveStart.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.commitPlan(t, plan)
+	row := w.row(t)
+	if row.RepairsUsed != 1 || row.ReplansUsed != 1 {
+		t.Fatalf("after a dispatched replan repairs_used = %d, replans_used = %d, want 1 and 1", row.RepairsUsed, row.ReplansUsed)
+	}
+	if !deadline.Before(plan.deadline) {
+		t.Fatalf("replan deadline %v is not derived (execution deadline %v)", deadline, plan.deadline)
+	}
+}
+
+// Repairs are completion work: drawn from the reserve, never gated on it.
+func TestRepairsNotReserveGated(t *testing.T) {
+	t.Parallel()
+	env := gateEnvelope()
+	env.RepairsUsed = 1 // an earlier repair consumed part of the ceiling of 3
+	for _, c := range []struct {
+		name string
+		now  time.Time
+	}{
+		{"time covers the verify pass", reserveStart.Add(time.Minute)},
+		{"time short of the verify pass", reserveStart.Add(9*time.Minute + 30*time.Second)},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			w, p := newReserveWorld(t, env, 2, true, reserveChecks("1m", "1m")...)
+			plan, deadline, err := p.planAttempt(t.Context(), c.now)
+			if err != nil {
+				t.Fatalf("repair blocked: %v", err)
+			}
+			if !deadline.Equal(plan.deadline) {
+				t.Fatalf("repair deadline = %v, want the shared execution deadline %v", deadline, plan.deadline)
+			}
+			w.commitPlan(t, plan)
+			if got := w.row(t).RepairsUsed; got != 2 {
+				t.Fatalf("repairs used = %d, want 2", got)
+			}
+		})
+	}
+}
+
+func TestFirstAttemptUnaffected(t *testing.T) {
+	t.Parallel()
+	// The first attempt has nothing optional yet: even checks that could never
+	// fit, and a timeout the estimator could not convert, do not gate it.
+	for _, timeouts := range [][]string{{"1h", "1h"}, {"soon"}} {
+		env := gateEnvelope()
+		w, p := newReserveWorld(t, env, 0, false, reserveChecks(timeouts...)...)
+		plan, deadline, err := p.planAttempt(t.Context(), reserveStart)
+		if err != nil {
+			t.Fatalf("first attempt with checks %v blocked: %v", timeouts, err)
+		}
+		if !deadline.Equal(plan.deadline) {
+			t.Fatalf("first attempt deadline = %v, want the full %v", deadline, plan.deadline)
+		}
+		_ = w
+	}
+}
+
+// Under --no-checks no verification pass runs, so there is nothing to reserve.
+func TestNoChecksReservesNothing(t *testing.T) {
+	t.Parallel()
+	_, p := newReserveWorld(t, gateEnvelope(), 1, false, reserveChecks("1h")...)
+	now := reserveStart.Add(9 * time.Minute)
+	if _, _, err := p.planAttempt(t.Context(), now); err == nil {
+		t.Fatal("control: a 1h check on 1m left did not block the replan")
+	}
+	p.d.NoChecks = true
+	plan, deadline, err := p.planAttempt(t.Context(), now)
+	if err != nil {
+		t.Fatalf("replan under --no-checks blocked: %v", err)
+	}
+	if !deadline.Equal(plan.deadline) {
+		t.Fatalf("deadline = %v, want the full %v (empty reserve)", deadline, plan.deadline)
+	}
+}
