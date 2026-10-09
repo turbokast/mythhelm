@@ -17,7 +17,23 @@ var containedDimensions = []contain.Dimension{contain.DimFilesystem, contain.Dim
 // (AC-1.2), and an unknown combination is also contain.ErrMissingCoverage:
 // unknown evidence blocks and never falls back to host authority (I02).
 func BoundaryConsult(profile, os, route string) (contain.Evidence, error) {
-	ev, known := contain.SeedV1()[profile+"/"+os+"/"+route]
+	return ConsultRegistry(evidenceMap(contain.SeedV1()), profile, os, route)
+}
+
+// evidenceMap is a contain.Registry over SeedV1's records.
+type evidenceMap map[string]contain.Evidence
+
+func (m evidenceMap) Lookup(profile, os, route string) (contain.Evidence, bool) {
+	ev, ok := m[profile+"/"+os+"/"+route]
+	return ev, ok
+}
+
+// ConsultRegistry is BoundaryConsult over any registry. A record is accepted
+// only when it enforces every contained dimension, the filesystem included:
+// inspect's read-only workspace never rests on a prompt or a tool label
+// (AC-2.2).
+func ConsultRegistry(reg contain.Registry, profile, os, route string) (contain.Evidence, error) {
+	ev, known := reg.Lookup(profile, os, route)
 	missing := containedDimensions
 	if known {
 		missing = ev.Coverage.Missing(containedDimensions)

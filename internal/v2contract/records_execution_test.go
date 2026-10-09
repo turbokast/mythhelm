@@ -42,7 +42,7 @@ func TestExecutionGoldensRoundTrip(t *testing.T) {
 
 func validTaskRevision() v2contract.TaskRevision {
 	return v2contract.TaskRevision{
-		SchemaVersion: v2contract.SchemaVersion, TaskID: ids.New("task"), Revision: 1, State: "pending",
+		SchemaVersion: v2contract.SchemaVersion, TaskID: ids.New("task"), Revision: 1, State: v2contract.TaskPending,
 	}
 }
 
@@ -129,12 +129,12 @@ func TestRecordTagsAreSnakeCase(t *testing.T) {
 // I09 (v2 §2): a missing ID is rejected, never defaulted.
 func TestMissingIDsRejected(t *testing.T) {
 	t.Parallel()
-	run := v2contract.Run{SchemaVersion: v2contract.SchemaVersion, State: "created"}
+	run := v2contract.Run{SchemaVersion: v2contract.SchemaVersion, State: v2contract.RunCreated}
 	task := validTaskRevision()
 	task.TaskID = ""
-	att := v2contract.Attempt{SchemaVersion: v2contract.SchemaVersion, TaskID: "t", State: "reserved"}
-	att2 := v2contract.Attempt{SchemaVersion: v2contract.SchemaVersion, AttemptID: "a", State: "reserved"}
-	att3 := v2contract.Attempt{SchemaVersion: v2contract.SchemaVersion, AttemptID: "a", TaskID: "t", State: "reserved"}
+	att := v2contract.Attempt{SchemaVersion: v2contract.SchemaVersion, TaskID: "t", State: v2contract.AttemptReserved}
+	att2 := v2contract.Attempt{SchemaVersion: v2contract.SchemaVersion, AttemptID: "a", State: v2contract.AttemptReserved}
+	att3 := v2contract.Attempt{SchemaVersion: v2contract.SchemaVersion, AttemptID: "a", TaskID: "t", LaunchID: "l", State: v2contract.AttemptReserved}
 	tests := []struct {
 		name    string
 		err     error
@@ -159,5 +159,56 @@ func TestAttemptRejectsOmittedTaskRevision(t *testing.T) {
 	in := `{"schema_version":2,"attempt_id":"a1","task_id":"t1","lifecycle":"reserved"}`
 	if _, err := v2contract.Decode[v2contract.Attempt]([]byte(in)); err == nil || !strings.Contains(err.Error(), "task_revision") {
 		t.Errorf("Decode(omitted task_revision) error = %v, want naming task_revision", err)
+	}
+}
+
+// I12 (v2 §2): reconcile compares launch identities, so an Attempt without
+// one never validates; the guard's own emptiness is covered here.
+func TestAttemptRequiresLaunchID(t *testing.T) {
+	t.Parallel()
+	att := v2contract.Attempt{
+		SchemaVersion: v2contract.SchemaVersion, AttemptID: "a", TaskID: "t", TaskRevision: 1, State: v2contract.AttemptReserved,
+	}
+	if err := att.Validate(); err == nil || !strings.Contains(err.Error(), "launch_id") {
+		t.Errorf("empty launch_id: error = %v, want naming launch_id", err)
+	}
+	att.LaunchID = "launch_SYNTHETIC1"
+	if err := att.Validate(); err != nil {
+		t.Errorf("attempt with launch_id: %v", err)
+	}
+	in := `{"schema_version":2,"attempt_id":"a1","task_id":"t1","task_revision":1,"lifecycle":"reserved"}`
+	if _, err := v2contract.Decode[v2contract.Attempt]([]byte(in)); err == nil || !strings.Contains(err.Error(), "launch_id") {
+		t.Errorf("Decode(omitted launch_id) error = %v, want naming launch_id", err)
+	}
+}
+
+// G04 (v2 §18.3): record lifecycle fields carry the typed vocabulary; a word
+// outside it fails Validate naming the field and the word.
+func TestRecordLifecycleMustBeInVocabulary(t *testing.T) {
+	t.Parallel()
+	run := v2contract.Run{SchemaVersion: v2contract.SchemaVersion, RunID: "r", State: v2contract.RunState("bogus")}
+	task := validTaskRevision()
+	task.State = v2contract.TaskState("bogus")
+	att := v2contract.Attempt{
+		SchemaVersion: v2contract.SchemaVersion, AttemptID: "a", TaskID: "t", TaskRevision: 1,
+		LaunchID: "l", State: v2contract.AttemptState("bogus"),
+	}
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"run", run.Validate()}, {"task revision", task.Validate()}, {"attempt", att.Validate()},
+	} {
+		if tc.err == nil || !strings.Contains(tc.err.Error(), "lifecycle") || !strings.Contains(tc.err.Error(), `"bogus"`) {
+			t.Errorf("%s: error = %v, want naming lifecycle and \"bogus\"", tc.name, tc.err)
+		}
+	}
+	run.State = v2contract.RunCreated
+	task.State = v2contract.TaskPending
+	att.State = v2contract.AttemptReserved
+	for name, err := range map[string]error{"run": run.Validate(), "task revision": task.Validate(), "attempt": att.Validate()} {
+		if err != nil {
+			t.Errorf("%s with in-vocabulary lifecycle: %v", name, err)
+		}
 	}
 }

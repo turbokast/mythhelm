@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strconv"
@@ -24,6 +25,7 @@ import (
 	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/cli"
+	"github.com/turbokast/mythhelm/internal/contain"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/supervisor"
@@ -55,6 +57,11 @@ func TestMain(m *testing.M) {
 				os.Exit(1)
 			case "output":
 				fmt.Print("not formatted\n")
+				os.Exit(0)
+			case "marker":
+				if err := os.WriteFile(os.Args[3], []byte("ran"), 0o600); err != nil { //nolint:gosec // G703: the test's own marker path
+					os.Exit(3)
+				}
 				os.Exit(0)
 			}
 			os.Exit(2)
@@ -400,11 +407,19 @@ func TestRunNoAdapterFlagExits2(t *testing.T) {
 	}
 }
 
-func TestInspectProfileExit7(t *testing.T) {
+// TestInspectProfileAdmission pins inspect's admission: admitted where its
+// boundary is recorded (Linux), an exit-7 refusal everywhere else.
+func TestInspectProfileAdmission(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	args := slices.DeleteFunc(f.fakeRun(), func(a string) bool { return a == "trusted-host" || a == "--execution-profile" })
 	code, _, stderr := f.run(t, append(args, "--execution-profile", "inspect")...)
+	if runtime.GOOS == "linux" {
+		if !strings.Contains(stderr, "ended ready_for_review") {
+			t.Fatalf("exit %d, stderr %q; want inspect admitted and run", code, stderr)
+		}
+		return
+	}
 	if code != 7 || !strings.Contains(stderr, "execution_profile_unavailable") {
 		t.Fatalf("exit %d, stderr %q; want exit 7 execution_profile_unavailable", code, stderr)
 	}
@@ -1542,6 +1557,112 @@ func TestFailedAdmissionHoldsNothing(t *testing.T) {
 	}
 	if got := f.reservations(t, d.RunID); len(got) != 0 {
 		t.Fatalf("a refused admission holds %v, want nothing (AC-3.2)", got)
+	}
+}
+
+// inspectRegistry is a one-record contain.Registry.
+type inspectRegistry struct{ ev contain.Evidence }
+
+func (r inspectRegistry) Lookup(profile, os, route string) (contain.Evidence, bool) {
+	if profile == r.ev.Profile && os == r.ev.OS && route == r.ev.Route {
+		return r.ev, true
+	}
+	return contain.Evidence{}, false
+}
+
+func TestInspectRequiresEnforcedCoverage(t *testing.T) {
+	t.Parallel()
+	ev, err := admission.BoundaryConsult("inspect", "linux", "builtin/fake")
+	if err != nil {
+		t.Fatalf("seeded inspect evidence on linux: %v", err)
+	}
+
+	// The same record with the filesystem claim not enforced is refused, and
+	// the refusal is exit 7: there is no prompt-only path to accept.
+	weak := ev
+	weak.Coverage.Filesystem.Enforced = false
+	_, err = admission.ConsultRegistry(inspectRegistry{weak}, "inspect", "linux", "builtin/fake")
+	var blocked *admission.BlockedError
+	if !errors.As(err, &blocked) || !blocked.Capability || !strings.Contains(err.Error(), "filesystem") {
+		t.Fatalf("err = %v, want an exit-7 refusal naming filesystem", err)
+	}
+	if _, err := admission.ConsultRegistry(inspectRegistry{ev}, "inspect", "linux", "builtin/fake"); err != nil {
+		t.Fatalf("the unmodified record is refused: %v", err)
+	}
+}
+
+func TestInspectPolicyIsReadOnly(t *testing.T) {
+	t.Parallel()
+	workdir := filepath.Join(t.TempDir(), "work")
+	binds := []contain.AuthBind{{Source: filepath.Join(t.TempDir(), "token"), Target: filepath.Join(t.TempDir(), "home", "token")}}
+	inspect, err := contain.PolicyForProfile("inspect", workdir, binds, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	restricted, err := contain.PolicyForProfile("restricted", workdir, binds, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !inspect.ReadOnly || restricted.ReadOnly {
+		t.Fatalf("read-only: inspect %v, restricted %v; want true and false", inspect.ReadOnly, restricted.ReadOnly)
+	}
+	// Shared mechanism: nothing but the profile name and the read-only flag differs.
+	inspect.Profile, inspect.ReadOnly = restricted.Profile, restricted.ReadOnly
+	if !reflect.DeepEqual(inspect, restricted) {
+		t.Fatalf("inspect policy diverges from restricted: %+v vs %+v", inspect, restricted)
+	}
+	// Read-only never rests on a label: an inspect policy that is not
+	// read-only cannot be built.
+	if p, err := contain.PolicyFor("inspect", workdir, false, nil, ""); err == nil {
+		t.Fatalf("PolicyFor built a writable inspect policy: %+v", p)
+	}
+}
+
+func TestChecksRefusedUnderInspect(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "linux" {
+		t.Skip("inspect is qualified on Linux only")
+	}
+	f := newFixture(t)
+	marker := filepath.Join(t.TempDir(), "check-ran")
+	contents := "schema_version = 1\n[[checks]]\nname = \"test\"\nargv = [" + strconv.Quote(os.Args[0]) +
+		", \"__check\", \"marker\", " + strconv.Quote(marker) + "]\ntimeout = \"5s\"\n"
+	if err := os.WriteFile(filepath.Join(f.repo, "mythhelm.toml"), []byte(contents), 0o600); err != nil { // #nosec G703 -- fixture repo is t.TempDir
+		t.Fatal(err)
+	}
+	f.git(t, "add", "mythhelm.toml")
+	f.git(t, "commit", "--quiet", "-m", "add checks")
+	_, digest, err := admission.ParseProjectConfig([]byte(contents))
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := slices.DeleteFunc(f.checkedRun(digest, "--format", "jsonl"), func(a string) bool { return a == "trusted-host" || a == "--execution-profile" })
+	code, stdout, stderr := f.run(t, append(args, "--execution-profile", "inspect")...)
+	if code != 5 {
+		t.Fatalf("exit %d, stderr %q; want exit 5 (verification unavailable)", code, stderr)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("a check ran under inspect")
+	}
+	evs, err := decodeEnvelopes(stdout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, ev := range evs {
+		if ev.Type != "verification.completed" {
+			continue
+		}
+		found = true
+		if p := payloadOf(t, ev); p["result"] != "NOT RUN" || p["reason"] != "checks_refused_under_inspect" {
+			t.Errorf("verification.completed = %v, want NOT RUN / checks_refused_under_inspect", p)
+		}
+	}
+	if !found {
+		t.Fatal("no verification.completed event")
+	}
+	if res := lastResult(t, stdout); res["error_category"] != "verification_unavailable" || res["state"] != "ready_for_review" {
+		t.Errorf("run.result = %v, want ready_for_review with category verification_unavailable", res)
 	}
 }
 
