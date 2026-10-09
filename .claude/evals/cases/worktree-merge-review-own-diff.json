@@ -1,0 +1,12 @@
+{
+  "id": "worktree-merge-review-own-diff",
+  "hazard": "A stale branch reviewed with a tree-diff against origin/main shows other specs' merged work as deletions, and the reviewer misreads the branch as destroying it.",
+  "source": "P-v2-contract-vocabulary-2",
+  "targets": [
+    ".claude/skills/run-spec-worktree-merge/SKILL.md"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "(?s)(?=.*review the branch's own diff, `git diff <merge-base> HEAD`)(?=.*`git merge-base origin/main HEAD`)(?=.*use it only to confirm the merge result after the branch is updated)"
+  }
+}

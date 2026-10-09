@@ -156,3 +156,20 @@ Append a short entry: on Windows, atomic file replacement via rename can fail tr
 **Proposed change:**
 
 Add a dispatch step: before starting a task attempt, append the `run_start` row (once per spec run) and the task's `dispatch` row to `.claude/data/run-events.jsonl`; after the attempt ends, append the `return` row (and `merge` after the merge). A dispatch without its rows is incomplete. Before finalizing, the orchestrator may backfill rows for already-merged tasks only from authoritative records (merged PRs, merge commits). Backfilled rows must carry provenance marking them as reconstructed, and consumers must distinguish them from observed rows when computing attempt metrics and attribution. Use the schema's `null` and `unknown` values for unavailable attribution or results; never treat the generated `ts` as the original event time when that time cannot be recovered.
+
+## P-v2-contract-vocabulary-2 — Review stale branches by their own diff
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: pending
+- **Eval**: `worktree-merge-review-own-diff`
+- **Rationale**: A tree-diff against main on a stale branch shows other specs' merged work as deletions, and that misread recurred across four reviews in one run (#261 to #264); reviewing merge-base..HEAD shows only the branch's own change. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `v2-contract-vocabulary`
+- **Type**: skill
+- **Target**: `.claude/skills/run-spec-worktree-merge/SKILL.md`
+- **Rationale**: Reviewing a stale branch with a tree-diff against main shows other specs' merged work as deletions, which misreads as the branch destroying them; the mistake recurred across several reviews in one run before the merge-base comparison became habit.
+- **Evidence**: PR #261/#262/#263/#264 shepherd reviews (stale-base tree-diffs vs merge-base..HEAD); retrospective Lessons
+
+**Proposed change:**
+
+Add to the verify-before-merge procedure: when the branch base trails origin/main, review the branch's own diff (`git diff <merge-base> HEAD`) for scope and deletions; use the tree-diff against main only to confirm the merge result after updating.

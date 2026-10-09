@@ -87,18 +87,6 @@ Add to the implement procedure a docs-task step: before the PR leaves draft, the
 
 Add to the Confirm step: collect every "Task N ..." deferral named in Spec deviations entries; each must resolve to a completing change whose promised edit is present in the referenced diff and whose task or fix PR has merged — a Files modified entry alone, or an open fix PR, is not proof — or the run stops with the unresolved promise named.
 
-## P-v2-contract-vocabulary-2 — Review stale branches by their own diff
-
-- **Source spec**: `v2-contract-vocabulary`
-- **Type**: skill
-- **Target**: `.claude/skills/run-spec-worktree-merge/SKILL.md`
-- **Rationale**: Reviewing a stale branch with a tree-diff against main shows other specs' merged work as deletions, which misreads as the branch destroying them; the mistake recurred across several reviews in one run before the merge-base comparison became habit.
-- **Evidence**: PR #261/#262/#263/#264 shepherd reviews (stale-base tree-diffs vs merge-base..HEAD); retrospective Lessons
-
-**Proposed change:**
-
-Add to the verify-before-merge procedure: when the branch base trails origin/main, review the branch's own diff (`git diff <merge-base> HEAD`) for scope and deletions; use the tree-diff against main only to confirm the merge result after updating.
-
 ## P-supervisor-service-1 — Re-verify accepted ADRs against the shipped tree at finalize
 
 - **Source spec**: `supervisor-service`
