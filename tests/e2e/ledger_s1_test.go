@@ -372,8 +372,11 @@ func TestRunPathLedgerLatency(t *testing.T) {
 
 	reserver := admission.NewJournalReserver(billing.BuiltInCeilings(), nil)
 	rec := qualify.Record{Key: qualify.Key{Harness: "fake", Surface: "scripted", EntitlementClass: "local-scripted"}}
-	ledgerPath := func(runID string) {
+	ledgerPath := func(runID string, delay time.Duration) {
 		t.Helper()
+		if delay > 0 {
+			time.Sleep(delay)
+		}
 		if err := j.Transact(ctx, func(tx *sql.Tx) error {
 			_, err := admission.HoldQuotaReservation(ctx, tx, reserver, runID, rec, "unknown")
 			return err
@@ -396,17 +399,16 @@ func TestRunPathLedgerLatency(t *testing.T) {
 	}
 
 	start := time.Now()
-	ledgerPath(fastRun)
+	ledgerPath(fastRun, 0)
 	if elapsed := time.Since(start); elapsed >= time.Second {
 		t.Errorf("admit + record + read took %v, want under 1s (NFR-1)", elapsed)
 	}
 
 	// Discriminating variant: the same path with a 1.5 s injected delay
-	// must exceed the bound — if it did not, the assertion above could
-	// never fail.
+	// inside the measured section must exceed the bound — if it did not,
+	// the assertion above could never fail.
 	start = time.Now()
-	time.Sleep(1500 * time.Millisecond)
-	ledgerPath(slowRun)
+	ledgerPath(slowRun, 1500*time.Millisecond)
 	if elapsed := time.Since(start); elapsed < time.Second {
 		t.Error("ledger path with a 1.5 s injected delay completed within the bound; the latency assertion cannot discriminate")
 	}
