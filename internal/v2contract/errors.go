@@ -196,8 +196,15 @@ func namespacedKey(k string) bool {
 // default (never-widening) disposition and namespaced detail. The detail
 // key is namespace + "/cause" holding the cause text, or "unknown" when
 // cause is nil (I09). NextAction points at that detail; callers replace it
-// with code-specific guidance where they have it.
-func MapAdapterFailure(code Code, owner, operationID, namespace string, cause error) *ControlError {
+// with code-specific guidance where they have it. A code outside the
+// catalogue or an empty namespace is refused rather than mapped.
+func MapAdapterFailure(code Code, owner, operationID, namespace string, cause error) (*ControlError, error) {
+	if !code.Valid() {
+		return nil, fmt.Errorf("v2contract: map adapter failure: code %q is not in the catalogue", string(code))
+	}
+	if namespace == "" {
+		return nil, errors.New("v2contract: map adapter failure: namespace is empty")
+	}
 	detail := "unknown"
 	if cause != nil {
 		detail = cause.Error()
@@ -210,5 +217,5 @@ func MapAdapterFailure(code Code, owner, operationID, namespace string, cause er
 		Disposition: code.DefaultDisposition(),
 		NextAction:  "see detail " + key,
 		Detail:      map[string]string{key: detail},
-	}
+	}, nil
 }
