@@ -1,7 +1,12 @@
 package claudecode_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 
@@ -50,5 +55,106 @@ func TestManifestRequiresTrustTriggersUnchanged(t *testing.T) {
 		if !m.RequiresTrust {
 			t.Errorf("%s: RequiresTrust = false", name)
 		}
+	}
+}
+
+func TestAdmittedPathsCoverManifest(t *testing.T) {
+	home, workspace := t.TempDir(), t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	writeFixture := func(path string, raw []byte) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFixture(filepath.Join(home, ".claude", "settings.json"), []byte(`{"enabledPlugins":{"alpha@synthetic":true}}`))
+	writeFixture(filepath.Join(workspace, ".claude", "settings.json"), []byte(`{"hooks":{"PreToolUse":[{"hooks":[{"type":"command"}]}]}}`))
+	writeFixture(filepath.Join(workspace, ".claude", "settings.local.json"), []byte(`{"env":{"EDITOR":"vi"}}`))
+	writeFixture(filepath.Join(workspace, ".mcp.json"), []byte(`{"mcpServers":{"proj":{}}}`))
+	claudeRaw, err := json.Marshal(map[string]any{
+		"mcpServers": map[string]any{"up": map[string]any{}},
+		"projects":   map[string]any{workspace: map[string]any{"mcpServers": map[string]any{"pj": map[string]any{}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(filepath.Join(home, ".claude.json"), claudeRaw)
+
+	manifest, err := claudecode.InventorySettings(home, workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Digests) < 5 {
+		t.Fatalf("fixture yielded %d digests, want at least 5 (user, project, project_local, project_mcp, user_mcp)", len(manifest.Digests))
+	}
+	paths := claudecode.AdmittedConfigPaths(home, workspace)
+	for name, digest := range manifest.Digests {
+		path, ok := paths[name]
+		if !ok {
+			t.Errorf("digest source %q has no admitted path", name)
+			continue
+		}
+		if !filepath.IsAbs(path) {
+			t.Errorf("admitted path for %q is %q, want absolute", name, path)
+		}
+		raw, err := os.ReadFile(path) // #nosec G304 -- Test reads the fixture file the mapping returned.
+		if err != nil {
+			t.Errorf("admitted path for %q unreadable: %v", name, err)
+			continue
+		}
+		if name == "user_mcp" {
+			// The user_mcp digest covers the selected MCP subset only
+			// (account/session data excluded by design), so the whole
+			// file never hashes to it; pin the path instead.
+			if want := filepath.Join(home, ".claude.json"); path != want {
+				t.Errorf("admitted path for user_mcp = %q, want %q", path, want)
+			}
+			continue
+		}
+		sum := sha256.Sum256(raw)
+		if got := hex.EncodeToString(sum[:]); got != digest {
+			t.Errorf("admitted path for %q hashes to %s, want digest %s", name, got, digest)
+		}
+	}
+	// The managed roots are fixed per OS and need no fixture: pin them so
+	// a relocated root fails here until reviewed.
+	var managed string
+	switch runtime.GOOS {
+	case "linux":
+		managed = "/etc/claude-code"
+	case "darwin":
+		managed = "/Library/Application Support/ClaudeCode"
+	case "windows":
+		managed = `C:\Program Files\ClaudeCode`
+	default:
+		t.Fatalf("no managed root pinned for GOOS %q", runtime.GOOS)
+	}
+	for name, want := range map[string]string{
+		"managed":     filepath.Join(managed, "managed-settings.json"),
+		"managed_mcp": filepath.Join(managed, "managed-mcp.json"),
+	} {
+		if got, ok := paths[name]; !ok || got != want {
+			t.Errorf("admitted path for %q = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestAdmittedPathsRejectRelativeRoots(t *testing.T) {
+	t.Parallel()
+	home, workspace := t.TempDir(), t.TempDir()
+	for name, paths := range map[string]map[string]string{
+		"relative home":    claudecode.AdmittedConfigPathsForEnv("relative", workspace, nil),
+		"relative workdir": claudecode.AdmittedConfigPathsForEnv(home, "relative", nil),
+		"relative config":  claudecode.AdmittedConfigPathsForEnv(home, workspace, []string{"CLAUDE_CONFIG_DIR=relative"}),
+	} {
+		if len(paths) != 0 {
+			t.Errorf("%s: mapping = %v, want empty (callers fail closed on missing entries)", name, paths)
+		}
+	}
+	if got := claudecode.AdmittedConfigPathsForEnv(home, workspace, nil); len(got) == 0 {
+		t.Fatal("absolute roots yielded an empty mapping")
 	}
 }
