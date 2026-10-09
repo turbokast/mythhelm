@@ -161,7 +161,7 @@ Add a dispatch step: before starting a task attempt, append the `run_start` row 
 
 - **Decision**: approved
 - **Date**: 2026-10-09
-- **Pull request**: pending
+- **Pull request**: #309
 - **Eval**: n/a
 - **Rationale**: A docs example verified only by reading shipped output the command never prints past two reviewers; requiring the producing command makes examples checkable, the same way behaviour criteria already need a failing state. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
 - **Source spec**: `qualification-registry`
