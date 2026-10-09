@@ -298,7 +298,7 @@
 - **Spec deviations**: (1) `inspect` stays refused with exit 7 (`checkCapabilityFlags`): its read-only enforcement is Task 6, and admitting it earlier would claim enforcement nothing provides. (2) `TestRestrictedProfileExit7` becomes `TestInspectProfileExit7`: `restricted` is no longer a refusal on Linux. (3) The Claude Code route is seeded with an unenforced credential claim, so `restricted` is refused for it, naming `credential`, until native auth is bound into the boundary. (4) An admitted `restricted` run is not yet launched inside the boundary: `launchForAttempt` (Task 9) builds `Launch.Containment`; Task 5 only decides admission.
 - **Files modified**: `internal/admission/boundary.go`, `internal/admission/boundary_test.go`, `internal/admission/admission.go`, `internal/contain/records.go`, `internal/cli/run.go`, `internal/cli/run_test.go`, `internal/supervisor/pipeline_test.go`, `specs/in-progress/contained-execution-profiles/tasks.md`, `specs/in-progress/contained-execution-profiles/handoff.md`.
 
-### Task 6 — Inspect read-only enforcement
+### Task 6 — Inspect read-only enforcement ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -328,6 +328,10 @@
 - **Invariants touched**: I02 (v2 §7.1: read-only without an enforced
   mechanism blocks); I07 (v2 §11.2: no checks run, so none can be faked —
   the candidate stays unverified).
+- **Status**: ✅ Completed — `inspect` is admitted through the shared boundary consult with a read-only policy, and its checks are refused (the candidate stays unverified); PR #261.
+- **Implementation**: `ConsultRegistry` (the registry-parametrised `BoundaryConsult`) accepts a record only when every contained dimension is enforced; `contain.PolicyForProfile` makes `inspect` the `restricted` policy with `ReadOnly`, and `PolicyFor` refuses a writable `inspect`. The pipeline's no-checks branch also covers `inspect`, recording `NOT RUN` with reason `checks_refused_under_inspect`. Commit 8ca184b.
+- **Spec deviations**: (1) `internal/admission/admission.go` is outside the task's `Files`: it holds the `inspect` refusal in `checkCapabilityFlags` and the profile resolution this task extends. (2) The refusal is recorded as `verification.completed` `NOT RUN` with that reason and the run ends `ready_for_review`/`unverified` (exit 5, category `verification_unavailable`), mirroring `--no-checks`, rather than a new run state. (3) `TestInspectProfileExit7` (from Task 5) becomes `TestInspectProfileAdmission`: `inspect` is admitted on Linux. (4) All three acceptance tests live in `pipeline_test.go`, as the `Files` list has no admission or contain test file. (5) An admitted `inspect` run is not yet launched inside the boundary either: `launchForAttempt` (Task 9) builds `Launch.Containment` for all contained profiles from the admission decision; this task decides admission, policy and check-refusal only, mirroring Task 5's deviation (4) for `restricted`.
+- **Files modified**: `internal/contain/policy.go`, `internal/admission/boundary.go`, `internal/admission/admission.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/pipeline_test.go`, `specs/in-progress/contained-execution-profiles/tasks.md`, `specs/in-progress/contained-execution-profiles/handoff.md`.
 
 ### Task 7 — Protected check evaluator
 

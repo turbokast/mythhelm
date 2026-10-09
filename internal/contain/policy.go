@@ -27,12 +27,24 @@ type ContainSpec struct { //nolint:revive // the name is part of the design §4 
 	Policy Policy   `json:"policy"`
 }
 
+// ProfileInspect is the contained profile whose workdir is read-only.
+const ProfileInspect = "inspect"
+
+// PolicyForProfile builds the policy of a contained profile. inspect shares the
+// restricted mechanism with a read-only workdir and nothing else (Q2, D5).
+func PolicyForProfile(profile, workdir string, binds []AuthBind, proxy string) (Policy, error) {
+	return PolicyFor(profile, workdir, profile == ProfileInspect, binds, proxy)
+}
+
 // PolicyFor builds the Policy for one worker. An AuthBind must name a single
 // absolute source path that is neither $HOME nor an ancestor of it, so a whole
 // credential store never enters the boundary.
 func PolicyFor(profile, workdir string, readonly bool, binds []AuthBind, proxy string) (Policy, error) {
 	if profile == "" {
 		return Policy{}, errors.New("contain: empty profile")
+	}
+	if profile == ProfileInspect && !readonly {
+		return Policy{}, errors.New("contain: inspect needs a read-only workdir; read-only never rests on a label")
 	}
 	if !filepath.IsAbs(workdir) {
 		return Policy{}, fmt.Errorf("contain: workdir %q is not absolute", workdir)
