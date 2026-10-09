@@ -50,6 +50,7 @@ func TestSecondInstanceHeld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first AcquireInstance: %v", err)
 	}
+	t.Cleanup(first)
 
 	second, err := AcquireInstance(dir)
 	if !errors.Is(err, ErrInstanceHeld) {
@@ -64,6 +65,7 @@ func TestSecondInstanceHeld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AcquireInstance after release: %v", err)
 	}
+	t.Cleanup(third)
 	third()
 }
 
