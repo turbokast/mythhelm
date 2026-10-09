@@ -42,4 +42,12 @@ overrides `design.md` — conflicts go back to the designer.
 
 ## Task discoveries
 
-(none yet)
+- **Task 1**: the migration shipped as `0007_v2contracts.sql`
+  (`SchemaVersion` 7), not 0004/4 as the task text says: origin/main
+  already carries 0001–0006 (budget-ledger-s1's 0003, supervisor
+  0004, reservation-host 0005, evaluator 0006). Later tasks read
+  "0004" as 0007. `go:embed migrations/*.sql` picks the new file up
+  with no registry change. Three pre-existing tests pin the schema
+  version (`journal_test.go` pragmas, `qualification_test.go`
+  `TestMigration0002Applies`, `evaluator_test.go`) and were bumped
+  6→7; future schema bumps must sweep those files too.
