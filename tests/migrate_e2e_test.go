@@ -26,6 +26,7 @@ import (
 
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/migrate"
+	"github.com/turbokast/mythhelm/internal/v2contract"
 )
 
 // mythhelmBin is the packaged binary under test, built once by TestMain.
@@ -178,6 +179,9 @@ func e2eV1Projections(t *testing.T, db *sql.DB) string {
 // built binary.
 func TestMigrateE2EPackagedBinary(t *testing.T) {
 	dir := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
 	raw, err := os.ReadFile(filepath.Join(migrateRoot(t), "internal", "journal", "migrations", "0001_init.sql"))
 	if err != nil {
 		t.Fatalf("read 0001_init.sql: %v", err)
@@ -272,23 +276,15 @@ func TestMigrateE2EPackagedBinary(t *testing.T) {
 	if err := json.Unmarshal(sidecar, &info); err != nil {
 		t.Fatal(err)
 	}
+	// Restore requires every handle closed: the last close checkpoints
+	// the WAL (no extra checkpoint handle — less file churn on Windows).
 	_ = db.Close()
-	cp := filepath.ToSlash(filepath.Join(dir, journal.DBName))
-	if !strings.HasPrefix(cp, "/") {
-		cp = "/" + cp
-	}
-	checkpoint, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: cp,
-		RawQuery: "_pragma=busy_timeout(5000)",
-	}).String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := checkpoint.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
-		_ = checkpoint.Close()
-		t.Fatal(err)
-	}
-	_ = checkpoint.Close()
 	if err := migrate.Restore(context.Background(), info, dir); err != nil {
+		var ce *v2contract.ControlError
+		if errors.As(err, &ce) {
+			t.Logf("restore detail: code=%s operation=%s next=%q detail=%v",
+				ce.Code, ce.OperationID, ce.NextAction, ce.Detail)
+		}
 		t.Fatalf("Restore: %v", err)
 	}
 	restored := openE2ERaw(t, filepath.Join(dir, journal.DBName))

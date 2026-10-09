@@ -69,10 +69,15 @@ func openMigRaw(t *testing.T, dir string) *sql.DB {
 
 // seedV1 creates a true v1 state database in a fresh temp dir: 0001 only,
 // user_version 1, no v2 tables. Every apply test starts here, so journal
-// migration runs exactly as in production.
+// migration runs exactly as in production. The dir is symlink-resolved
+// (macOS /var → /private/var, Windows 8.3 short names): SQLite reports
+// the resolved path, so every comparison uses it.
 func seedV1(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
 	raw, err := os.ReadFile(filepath.Join(repoRoot(t), "internal", "journal", "migrations", "0001_init.sql"))
 	if err != nil {
 		t.Fatalf("read 0001_init.sql: %v", err)
@@ -263,7 +268,7 @@ func TestPreviewWritesNothing(t *testing.T) {
 			"internal/cli/apply.go", "internal/cli/tui.go",
 			"internal/supervisor/pipeline.go", "internal/supervisor/recover.go",
 			"0002_qualification.sql", "0007_v2contracts.sql",
-			"mythhelm.db.bak-migration-v7", dir,
+			"mythhelm.db.bak-migration-v7",
 		} {
 			if !strings.Contains(stdout, want) {
 				t.Errorf("%s output names no %q:\n%s", format, want, stdout)
@@ -285,8 +290,23 @@ func TestPreviewWritesNothing(t *testing.T) {
 				t.Fatalf("jsonl output does not parse: %v\n%s", err, stdout)
 			}
 			if decoded.Type != "migrate.preview" || len(decoded.Runs) != 2 ||
-				len(decoded.Owners) != 4 || len(decoded.Steps) != 6 || decoded.BackupTo == "" {
+				len(decoded.Owners) != 4 || len(decoded.Steps) != 6 {
 				t.Errorf("jsonl preview shape wrong: %+v", decoded)
+			}
+			// The state dir compares decoded, never as a raw
+			// substring: jsonl escapes Windows backslashes.
+			if decoded.BackupTo != filepath.Join(dir, "mythhelm.db.bak-migration-v7") {
+				t.Errorf("jsonl backup_to = %q; want under %q", decoded.BackupTo, dir)
+			}
+		} else {
+			var target string
+			for line := range strings.Lines(stdout) {
+				if rest, ok := strings.CutPrefix(line, "backup target: "); ok {
+					target = strings.TrimSpace(rest)
+				}
+			}
+			if target != filepath.Join(dir, "mythhelm.db.bak-migration-v7") {
+				t.Errorf("plain backup target = %q; want under %q", target, dir)
 			}
 		}
 		requireSameState(t, dir, before)
@@ -469,29 +489,38 @@ func openBackupReadOnly(t *testing.T, path string) *sql.DB {
 	return db
 }
 
-// checkpoint closes every handle the test holds on dir and checkpoints
-// the WAL, so Restore's live-WAL backstop cannot trip.
-func checkpoint(t *testing.T, dir string, dbs ...*sql.DB) {
-	t.Helper()
+// closeHandles closes every test handle on dir. Restore requires them
+// all closed: the last close checkpoints the WAL (the backup_test.go
+// pattern — no extra checkpoint handle, which only adds file churn on
+// Windows runners).
+func closeHandles(dbs ...*sql.DB) {
 	for _, db := range dbs {
 		_ = db.Close()
 	}
-	p := filepath.ToSlash(filepath.Join(dir, journal.DBName))
-	if !strings.HasPrefix(p, "/") {
-		p = "/" + p
+}
+
+// dumpRestoreFailure logs the catalogue detail (hidden from the Error
+// string) and the state dir contents, so a CI-only Restore failure
+// names its cause instead of just its code.
+func dumpRestoreFailure(t *testing.T, dir string, err error) {
+	t.Helper()
+	var ce *v2contract.ControlError
+	if errors.As(err, &ce) {
+		t.Logf("restore detail: code=%s owner=%s operation=%s next=%q detail=%v",
+			ce.Code, ce.Owner, ce.OperationID, ce.NextAction, ce.Detail)
 	}
-	db, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: p,
-		RawQuery: "_pragma=busy_timeout(5000)",
-	}).String())
-	if err != nil {
-		t.Fatal(err)
+	entries, listErr := os.ReadDir(dir)
+	if listErr != nil {
+		t.Logf("read dir: %v", listErr)
+		return
 	}
-	if _, err := db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
-		_ = db.Close()
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
+	for _, entry := range entries {
+		info, infoErr := entry.Info()
+		size := int64(-1)
+		if infoErr == nil {
+			size = info.Size()
+		}
+		t.Logf("dir entry: %s size=%d dir=%v", entry.Name(), size, entry.IsDir())
 	}
 }
 
@@ -581,8 +610,9 @@ func TestBackupHoldsDrainedWrites(t *testing.T) {
 	if err := json.Unmarshal(raw, &info); err != nil {
 		t.Fatal(err)
 	}
-	checkpoint(t, dir, db, writer, backup)
+	closeHandles(db, writer, backup)
 	if err := migrate.Restore(context.Background(), info, dir); err != nil {
+		dumpRestoreFailure(t, dir, err)
 		t.Fatalf("Restore: %v", err)
 	}
 	restored := openMigRaw(t, dir)
@@ -693,6 +723,44 @@ func TestApplyResumesAfterFailure(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "migration adopted") {
 		t.Errorf("receipt does not adopt:\n%s", stdout)
+	}
+}
+
+// TestApplyRefusesWhenRecordedBackupVanished: a resume whose recorded
+// pre-migration backup is gone refuses with invalid_contract instead of
+// taking a fresh copy over partly migrated state.
+func TestApplyRefusesWhenRecordedBackupVanished(t *testing.T) {
+	isolateMigLock(t)
+	dir := seedV1(t)
+	db := openMigRaw(t, dir)
+	insertMigRun(t, db, "run_a", "completed")
+	insertMigRun(t, db, "run_z", "bogus")
+	useMigHome(t, dir)
+	if code, _, _ := runMain("migrate", "--apply", "--yes"); code == 0 {
+		t.Fatal("first apply exit 0; want failure on run_z")
+	}
+	phase, backupPath := queryPhase(t, db)
+	if phase != string(migrate.PhaseDrained) || backupPath == "" {
+		t.Fatalf("phase = %q backup = %q; want drained with a recorded backup", phase, backupPath)
+	}
+	if err := os.Remove(backupPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(backupPath + ".json"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE runs SET state = 'completed' WHERE run_id = 'run_z'`); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := runMain("migrate", "--apply", "--yes")
+	if code == 0 {
+		t.Fatal("resume exit 0; want refusal on the vanished backup")
+	}
+	if !strings.Contains(stderr, "invalid_contract") {
+		t.Errorf("stderr %q names no invalid_contract", stderr)
+	}
+	if matches, _ := filepath.Glob(filepath.Join(dir, "mythhelm.db.bak-migration-*")); len(matches) != 0 {
+		t.Errorf("resume took a fresh backup %v over migrated state", matches)
 	}
 }
 

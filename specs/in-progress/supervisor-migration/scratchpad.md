@@ -96,6 +96,9 @@ overrides `design.md` — conflicts go back to the designer.
   task + token hash, empty when never launched); the dedupe strips
   `quarantined_at` before comparing. `Apply` never spawns the
   supervisor — adopted hands the ledger over on next lazy start. The
-  e2e and `TestBackupHoldsDrainedWrites` checkpoint the WAL after
-  closing every handle before `Restore` (Restore's non-empty-WAL
-  backstop).
+  e2e and `TestBackupHoldsDrainedWrites` close every handle before
+  `Restore` and rely on last-close checkpointing (the backup_test.go
+  pattern; no extra checkpoint handle — less file churn for Windows
+  runners). A resume whose recorded backup vanished refuses with
+  `invalid_contract` instead of re-taking (a fresh copy would hold
+  committed migration rows, not pre-migration state).

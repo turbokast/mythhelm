@@ -2,15 +2,12 @@ package migrate
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -105,10 +102,9 @@ func Apply(ctx context.Context, db *sql.DB, plan preview.Plan) (DrainReport, err
 	if err != nil {
 		return DrainReport{}, err
 	}
-	stateDir, err := applyStateDir(ctx, db)
+	stateDir, err := drainStateDir(ctx, db)
 	if err != nil {
-		return report, applyError(v2contract.CodePersistenceUnavailable, "apply", "",
-			"retry once the database answers; see detail migrate/cause", "%v", err)
+		return report, err
 	}
 	// The migration lock for the rest of the run (design §4): while it
 	// is held no service writer starts and no legacy admission proceeds.
@@ -128,7 +124,7 @@ func Apply(ctx context.Context, db *sql.DB, plan preview.Plan) (DrainReport, err
 	}
 	defer releaseMigration()
 
-	current, err := enumerateCurrentRuns(ctx, db, stateDir)
+	current, err := currentRunIDs(ctx, db, stateDir)
 	if err != nil {
 		return report, err
 	}
@@ -136,6 +132,11 @@ func Apply(ctx context.Context, db *sql.DB, plan preview.Plan) (DrainReport, err
 		return report, applyError(v2contract.CodeOwnershipUnresolved, "apply", surprise,
 			"retry the migration after it settles",
 			"run %s started during the drain; nothing past the drain ran", surprise)
+	}
+	// Before the first ledger write: a stale plan refuses with no backup
+	// taken and no phase advanced.
+	if err := checkPlanRuns(current, plan); err != nil {
+		return report, err
 	}
 	info, err := backupOrReuse(ctx, db, stateDir, backupPath)
 	if err != nil {
@@ -147,9 +148,6 @@ func Apply(ctx context.Context, db *sql.DB, plan preview.Plan) (DrainReport, err
 		}
 	}
 	if err := recordPhase(ctx, db, PhaseDrained); err != nil {
-		return report, err
-	}
-	if err := checkPlanRuns(current, plan); err != nil {
 		return report, err
 	}
 	if err := persistQuarantine(ctx, db, report.Quarantined); err != nil {
@@ -238,74 +236,18 @@ func recordPhase(ctx context.Context, db *sql.DB, phase Phase) error {
 	})
 }
 
-// applyStateDir resolves the state directory holding db: the parent of
-// the main database file, mirroring Drain's resolution.
-func applyStateDir(ctx context.Context, db *sql.DB) (string, error) {
-	rows, err := db.QueryContext(ctx, "PRAGMA database_list")
+// currentRunIDs lists every v1 run through Drain's own enumeration, so
+// the surprise check compares like with like by construction and can
+// never drift from what Drain quiesced.
+func currentRunIDs(ctx context.Context, db *sql.DB, stateDir string) ([]string, error) {
+	runs, err := enumerateRuns(ctx, db, stateDir)
 	if err != nil {
-		return "", fmt.Errorf("listing databases: %w", err)
+		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var seq int
-		var name, file string
-		if err := rows.Scan(&seq, &name, &file); err != nil {
-			return "", fmt.Errorf("reading database list: %w", err)
-		}
-		if name == "main" {
-			if file == "" {
-				return "", errors.New("the ledger has no database file")
-			}
-			return filepath.Dir(file), nil
-		}
+	ids := make([]string, len(runs))
+	for i, r := range runs {
+		ids[i] = r.id
 	}
-	if err := rows.Err(); err != nil {
-		return "", fmt.Errorf("reading database list: %w", err)
-	}
-	return "", errors.New("the ledger has no main database")
-}
-
-// enumerateCurrentRuns lists every v1 run exactly as Drain does — the
-// runs table plus any run directory the table does not know yet — so the
-// surprise check compares like with like.
-func enumerateCurrentRuns(ctx context.Context, db *sql.DB, stateDir string) ([]string, error) {
-	byID := map[string]bool{}
-	rows, err := db.QueryContext(ctx, "SELECT run_id FROM runs ORDER BY run_id")
-	if err != nil {
-		return nil, applyError(v2contract.CodePersistenceUnavailable, "apply", "",
-			"retry once the database answers; see detail migrate/cause", "listing runs: %v", err)
-	}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			_ = rows.Close()
-			return nil, applyError(v2contract.CodePersistenceUnavailable, "apply", "",
-				"retry once the database answers; see detail migrate/cause", "reading runs: %v", err)
-		}
-		byID[id] = true
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return nil, applyError(v2contract.CodePersistenceUnavailable, "apply", "",
-			"retry once the database answers; see detail migrate/cause", "reading runs: %v", err)
-	}
-	_ = rows.Close()
-	entries, err := os.ReadDir(filepath.Join(stateDir, "runs"))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, applyError(v2contract.CodePersistenceUnavailable, "apply", "",
-			"retry once the state directory answers; see detail migrate/cause",
-			"listing run directories: %v", err)
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			byID[entry.Name()] = true
-		}
-	}
-	ids := make([]string, 0, len(byID))
-	for id := range byID {
-		ids = append(ids, id)
-	}
-	slices.Sort(ids)
 	return ids, nil
 }
 
@@ -335,7 +277,10 @@ func findSurprise(current []string, report DrainReport) string {
 // previous attempt already took: Backup never overwrites, so a resume
 // must not call it blindly. Both backup and sidecar present verifies by
 // digest; exactly one present is a half-state the operator moves aside;
-// neither present takes a fresh backup.
+// neither present takes a fresh backup — unless a backup was recorded,
+// in which case the recorded pre-migration copy is irreplaceable (a
+// resume may already hold committed migration rows) and its absence
+// refuses.
 func backupOrReuse(ctx context.Context, db *sql.DB, stateDir, recorded string) (BackupInfo, error) {
 	candidate := recorded
 	if candidate == "" {
@@ -351,8 +296,15 @@ func backupOrReuse(ctx context.Context, db *sql.DB, stateDir, recorded string) (
 		}
 		return info, nil
 	case errors.Is(dstErr, os.ErrNotExist) && errors.Is(scErr, os.ErrNotExist):
-		// A recorded backup that vanished is stale, not half-state:
-		// re-taking a fresh consistent copy is safe.
+		if recorded != "" {
+			// A resume may already hold committed imports or
+			// quarantine envelopes: a fresh copy would not be
+			// pre-migration state, so the recorded backup is
+			// irreplaceable — refuse rather than re-take.
+			return BackupInfo{}, applyError(v2contract.CodeInvalidContract, "apply", "",
+				"restore the recorded pre-migration backup to its path before re-applying",
+				"recorded backup %s is missing; refusing to replace the pre-migration backup", recorded)
+		}
 		return Backup(ctx, db, stateDir)
 	case errors.Is(dstErr, os.ErrNotExist) || errors.Is(scErr, os.ErrNotExist):
 		return BackupInfo{}, applyError(v2contract.CodeInvalidContract, "apply", "",
@@ -385,14 +337,13 @@ func verifyBackup(dst string) (BackupInfo, error) {
 			"move the unreadable backup aside and retry from a fresh backup",
 			"%s is not a backup sidecar: %v", dst+".json", err)
 	}
-	content, err := os.ReadFile(dst) //nolint:gosec // G304: Apply's own backup copy, built from the state dir
+	digest, err := hashFile(dst)
 	if err != nil {
 		return BackupInfo{}, applyError(v2contract.CodePersistenceUnavailable, "apply", "",
 			"retry once the backup target answers; see detail migrate/cause",
 			"reading %s: %v", dst, err)
 	}
-	sum := sha256.Sum256(content)
-	if info.SHA256 == "" || hex.EncodeToString(sum[:]) != info.SHA256 {
+	if info.SHA256 == "" || digest != info.SHA256 {
 		return BackupInfo{}, applyError(v2contract.CodeInvalidContract, "apply", "",
 			"move the tampered backup aside and retry from a fresh backup",
 			"backup %s fails its sidecar digest", dst)
