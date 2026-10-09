@@ -182,6 +182,12 @@ func wireActions(stateDir string) tui.Actions {
 			if _, err := j.Run(ctx, runID); err != nil {
 				return nil, err
 			}
+			// The palette's apply drains with the CLI's: refused while
+			// migration owns the state directory or the ledger has moved
+			// past previewed.
+			if err := checkMigrationClear(ctx, j, "apply the run"); err != nil {
+				return nil, err
+			}
 			release, err := supervisor.AcquireOwner(filepath.Join(stateDir, "runs", runID))
 			if err != nil {
 				return nil, err

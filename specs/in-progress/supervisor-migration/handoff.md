@@ -78,7 +78,36 @@
 
 ## Task 4 — Drain, adopt, quarantine
 
-<!-- pending -->
+- **Produces**: `migrate.Drain(ctx, db) (DrainReport, error)` and
+  `DrainReport{Drained, Adopted, Quarantined []string}` in
+  `internal/migrate/drain.go`; migration guards in
+  `internal/supervisor/pipeline.go` (`checkMigrationClear`, called by `Run`),
+  `internal/supervisor/recover.go` (`RecoverWithHooks`),
+  `internal/cli/apply.go` (`runApply` plus the shared helper) and
+  `internal/cli/tui.go` (palette Apply); tests in
+  `internal/migrate/drain_test.go`. Drain errors are `*v2contract.ControlError`
+  (`ownership_unresolved`/`persistence_unavailable`); hook refusals wrap
+  `supervisor.ErrOwnership` naming the code and phase (CLI exit 6).
+- **For dependents**: call Drain before Backup (Task 6) — it holds the
+  instance lock and the state-dir owner lock throughout and writes no ledger
+  row. Persist each quarantined run's `migration.quarantined` envelope
+  post-backup by re-reading its worker.json and journal evidence (the report
+  carries run IDs only). Adopted runs keep live pids under their existing
+  launch identity — never relaunch. Terminal states are the complement of
+  `supervisor.activeStates`; active runs without a live verified worker
+  (including rowless dirs) quarantine. Drain loops `drainStabilizePasses`
+  re-enumerations for admission racers, with the final pass aborting on a
+  fresh run. The `spawnWorker` seam
+  in drain.go is test-only. `Run` maps guard I/O failures to the existing
+  `persistence_unavailable` refusal (see `TestLockedDatabaseStopsAdmission`).
+- **Deviations that change a later task's inputs**: the migration lock is the
+  state-dir `owner.lock` held alongside the instance lock (Tasks 5–6: probe
+  or hold the same pair, never the instance lock alone for admissions); the
+  journal phase test uses literals — never re-add a migrate import to
+  journal's internal tests (Tasks 2, 6). `Run` holds the migration lock
+  through `MkdirAll` + `AcquireOwner`, so no hook-check-to-mkdir race
+  remains: any post-drain run is a genuine surprise, and Apply (Task 6)
+  must treat it as fatal, not silent.
 
 ## Task 5 — Backup and restore with downgrade refusal
 

@@ -300,7 +300,7 @@
 - **Spec deviations**: (1) The receipt `reserve` carries the repair ceiling and the Task 9 note always, but the verify pass is exact only for `--no-checks` runs (0 checks, 0s) and `unknown` for checked runs: check names and timeouts live only in the in-memory Decision and no task journals them, so a checked receipt cannot reconstruct the pass (I09: unknown, never invented). (2) The four lines emit from `executeRun` immediately ahead of `finish`'s `run.result` rather than inside `finish`: `finish`'s signature is shared with `demo`/`recover` (outside this task's Files) and the admitted checks exist only in `executeRun`'s Decision. (3) The full-screen TUI and accessible-stream presentations do not render the lines: the TUI owns its screen, and the accessible path skips `finish` by design with its wiring in `tui.go` (outside this task's Files).
 - **Files modified**: `internal/supervisor/receipt.go`, `internal/supervisor/receipt_test.go`, `internal/cli/render.go`, `internal/cli/render_test.go`, `internal/cli/run.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`, `specs/in-progress/budget-ledger-s1/scratchpad.md`.
 
-### Task 11 — AT-13 end-to-end and NFR-1 run-path latency
+### Task 11 — AT-13 end-to-end and NFR-1 run-path latency ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -315,6 +315,10 @@
   - `TestRunPathLedgerLatency`: admission + record + read complete within 1 s total; a variant with 1.5 s injected delay exceeds the bound and fails, proving discrimination (MH-10 `TestRegistryLookupLatency` shape). Fails before: ledger absent.
 - **Test plan**: Build `cmd/mythhelm` once per package run; temp `MYTHHELM_HOME`; fake adapter only (no credentials, no `live` tag).
 - **Invariants touched**: I02 (v2 §7.3: coupled quota exercised); I09 (v2 §7.3: normalization exercised); G05 via AT-13 (v2 §18.3, S1 route).
+- **Status**: ✅ Completed — AT-13 exercised from the packaged binary on the S1 route and the 1 s run-path ledger bound pinned; PR #293.
+- **Implementation**: `tests/e2e/ledger_s1_test.go` runs the packaged binary (fake adapter, temp home, `--plain --no-checks`, no `mythhelm.toml`) for the counters, exhaustion and reservation cases, and drives admit + record + read on a temp journal for latency. The counters case pins the exact typed set (the AC-2.2 marker) with receipt/CLI wiring; delta accumulation stays unit-pinned (see deviations). Commits d306f21, 1f3e2c4.
+- **Spec deviations**: (1) Per-attempt delta accumulation is not exercised end to end: the fake surfaces no usage or cost, so the S1 route journals only the retail-equivalent unknown marker; AC-2.1 deltas stay pinned at unit level by `TestNormalizeDeltaAppliedOnce`, `TestNormalizeRepeatedDeltaCountedOnce`, `TestNativeResultAttemptsAccumulate` and `TestNativeResultRepresentedDeltaDropped`. Exercising deltas end to end needs a fake-decoder extension outside this task's Files (follow-up scoped in the handoff). (2) The exhaustion marker sweep covers the receipt, stdout and stderr: stderr carries notices and the outcome summary, so it rides along with the task's receipt + CLI output.
+- **Files modified**: `tests/e2e/ledger_s1_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`, `specs/in-progress/budget-ledger-s1/scratchpad.md`.
 
 ### Task 12 — Ledger user documentation and decision record
 

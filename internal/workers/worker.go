@@ -106,6 +106,35 @@ type Identity struct {
 	NativeLaunchIntent *time.Time `json:"native_launch_intent"`
 	NativePID          *int       `json:"native_pid"`
 	NativePGID         *int       `json:"native_pgid"` // null where the platform has no owned process group
+	// Nonce pins the worker to its admission. worker.json carries the raw
+	// value echoed from Launch.Nonce (0600 file, the LaunchToken precedent);
+	// the journaled expected record carries NonceDigest of it, never the raw
+	// value (the launch_token_sha256 precedent). Empty in pre-change files,
+	// which therefore never match.
+	Nonce string `json:"nonce"`
+}
+
+// NonceDigest is the lowercase hex sha256 of a raw worker nonce. It lives in
+// workers (not control) because MatchIdentity is the consumer and workers
+// must not import control.
+func NonceDigest(nonce string) string {
+	sum := sha256.Sum256([]byte(nonce))
+	return hex.EncodeToString(sum[:])
+}
+
+// MatchIdentity reports whether observed is the worker expected names:
+// PID and start time must agree, and the nonce must agree. expected.Nonce
+// is the journaled digest; observed.Nonce is the raw worker.json value;
+// agreement is NonceDigest(observed.Nonce) == expected.Nonce. An empty
+// nonce on either side never matches, so pre-change identity files fail
+// closed.
+func MatchIdentity(expected, observed Identity) bool {
+	if expected.Nonce == "" || observed.Nonce == "" {
+		return false
+	}
+	return expected.PID == observed.PID &&
+		expected.StartTime.Equal(observed.StartTime) &&
+		NonceDigest(observed.Nonce) == expected.Nonce
 }
 
 // AttemptDir is the attempt's directory in the state directory.

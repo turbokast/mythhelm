@@ -79,3 +79,11 @@ overrides `design.md` — conflicts go back to the designer.
   CI runners — pre-existing on origin/main, unrelated to this spec. (`python3` here is
   an asdf shim that needs the real `HOME`; run gatelib with the resolved interpreter
   when overriding `HOME`.)
+- **Task 4**: journal's internal tests must never import
+  `internal/migrate` (import cycle once migrate imports
+  control/supervisor/journal per design §2); the phase vocabulary
+  there stays as literals bound by
+  `TestPhaseMatchesMigrationVocabulary`. Drain holds the instance
+  lock plus the state-dir owner lock; quarantine envelopes persist
+  post-backup from re-read evidence, and adopted runs are never
+  relaunched.
