@@ -2,9 +2,7 @@ package journal
 
 import (
 	"os"
-	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -22,13 +20,10 @@ func TestPragmasPinned(t *testing.T) {
 
 	// The busy timeout is named once at design time (5000 ms, design §8):
 	// every busy_timeout in this package's non-test sources names it, so
-	// no second value lurks in a read-only DSN.
+	// no second value lurks in a read-only DSN. The scan reads the
+	// package working directory, which `go test` sets to the source dir.
 	timeoutArg := regexp.MustCompile(`busy_timeout\(([^)]*)\)`)
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("cannot locate this test file")
-	}
-	entries, err := os.ReadDir(filepath.Dir(file))
+	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +33,7 @@ func TestPragmasPinned(t *testing.T) {
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		raw, err := os.ReadFile(filepath.Join(filepath.Dir(file), name)) //nolint:gosec // G304: the test's own package dir; name comes from reading it
+		raw, err := os.ReadFile(name) //nolint:gosec // G304: the test's own package dir; name comes from reading it
 		if err != nil {
 			t.Fatal(err)
 		}

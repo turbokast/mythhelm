@@ -30,19 +30,17 @@ import (
 // (supervisor-migration design §8): every ledger-mutating write in
 // internal/migrate runs inside control.Mutate. Structural: no sql.Open and
 // no *sql.DB Exec (nor Begin/Prepare, the other write-capable handles)
-// outside it. Allowed: tx.* calls inside the Mutate fn; read-only Query;
-// the preview subpackage (this walk is top-level only — preview
+// outside it, and every Query statement must be a read-only literal
+// (SELECT, WITH, PRAGMA, EXPLAIN — a Query carrying UPDATE ... RETURNING
+// would mutate before returning rows). Allowed: tx.* calls inside the
+// Mutate fn; the preview subpackage (this walk is top-level only — preview
 // hermeticity is pinned by TestPreviewHermetic); Backup's single VACUUM
 // INTO Exec (a file-creating copy, not a ledger mutation); and the
 // read-only mode=ro integrity opens (Task 5 scratchpad note — Restore
-// verifies its copies through them, mutating nothing).
+// verifies its copies through them, mutating nothing). The walk reads the
+// package working directory, which `go test` sets to the source dir.
 func TestMigrateWritesRunInMutate(t *testing.T) {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("cannot locate this test file")
-	}
-	dir := filepath.Dir(file)
-	entries, err := os.ReadDir(dir)
+	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +51,7 @@ func TestMigrateWritesRunInMutate(t *testing.T) {
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		f, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, 0)
+		f, err := parser.ParseFile(fset, name, nil, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -83,6 +81,10 @@ func TestMigrateWritesRunInMutate(t *testing.T) {
 			case isWriteCapable(sel.Sel.Name):
 				if !isVacuumInto(sel.Sel.Name, call) {
 					t.Errorf("%s: *sql.DB %s outside control.Mutate; ledger writes belong inside it", pos, sel.Sel.Name)
+				}
+			case isQuery(sel.Sel.Name):
+				if !isReadOnlyQuery(sel.Sel.Name, call) {
+					t.Errorf("%s: *sql.DB %s with a non-read-only statement outside control.Mutate; ledger writes belong inside it", pos, sel.Sel.Name)
 				}
 			}
 			return true
@@ -118,6 +120,42 @@ func isReadOnlyOpen(call *ast.CallExpr) bool {
 	}
 	if lit, ok := dsn.(*ast.BasicLit); ok && strings.Contains(lit.Value, "mode=ro") {
 		return true
+	}
+	return false
+}
+
+// isQuery reports the *sql.DB row-returning methods.
+func isQuery(sel string) bool {
+	switch sel {
+	case "Query", "QueryContext", "QueryRow", "QueryRowContext":
+		return true
+	default:
+		return false
+	}
+}
+
+// isReadOnlyQuery reports a Query whose statement is a read-only literal:
+// SELECT, WITH, PRAGMA or EXPLAIN. UPDATE ... RETURNING mutates before it
+// returns rows, so a Query carrying one is a direct write; a
+// non-literal statement fails closed and must name its reason in an
+// exclusion.
+func isReadOnlyQuery(sel string, call *ast.CallExpr) bool {
+	query := 0
+	if strings.HasSuffix(sel, "Context") {
+		query = 1
+	}
+	if len(call.Args) <= query {
+		return false
+	}
+	lit, ok := call.Args[query].(*ast.BasicLit)
+	if !ok {
+		return false
+	}
+	stmt := strings.ToUpper(strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(lit.Value), "\"`")))
+	for _, prefix := range []string{"SELECT", "WITH", "PRAGMA", "EXPLAIN"} {
+		if strings.HasPrefix(stmt, prefix) {
+			return true
+		}
 	}
 	return false
 }
@@ -306,11 +344,12 @@ func TestSQLiteEngineHasWALFix(t *testing.T) {
 	if err != nil {
 		t.Skip("go command not on PATH; cannot build cmd/mythhelm")
 	}
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("cannot locate this test file")
+	// The test working directory is internal/migrate, so the module root
+	// is two levels up however the test binary records file paths.
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
 	}
-	root := filepath.Dir(filepath.Dir(filepath.Dir(file)))
 	bin := filepath.Join(t.TempDir(), "mythhelm-oq8")
 	if runtime.GOOS == "windows" {
 		bin += ".exe"
