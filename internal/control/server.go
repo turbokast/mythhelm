@@ -7,8 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/url"
 	"path/filepath"
+	"strings"
 	"sync"
+
+	"github.com/turbokast/mythhelm/internal/journal"
 )
 
 // Server owns the intent dispatch table as instance state, never a
@@ -129,4 +133,105 @@ func AssignHandler(db *sql.DB) Handler {
 		}
 		return Result{Revision: in.ExpectedRevision + 1, Body: body}, nil
 	}
+}
+
+// NewSupervisorServer binds every method the supervisor serves to db.
+func NewSupervisorServer(db *sql.DB) *Server {
+	return NewServer(map[string]Handler{
+		"status":    StatusHandler(db),
+		"assign":    AssignHandler(db),
+		"reserve":   ReserveHandler(db),
+		"release":   ReleaseHandler(db),
+		"heartbeat": HeartbeatHandler(db),
+		"read":      ReadHandler(db),
+	})
+}
+
+// OpenLedger migrates the state database in dir and returns the supervisor's
+// handle on it, with the journal's pragmas: a busy timeout, foreign keys,
+// WAL, full sync and write transactions that take the lock at BEGIN.
+func OpenLedger(ctx context.Context, dir string) (*sql.DB, error) {
+	j, err := journal.Open(ctx, dir)
+	if err != nil {
+		return nil, err
+	}
+	if err := j.Close(); err != nil {
+		return nil, err
+	}
+	p := filepath.ToSlash(filepath.Join(dir, journal.DBName))
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	u := url.URL{Scheme: "file", Path: p, RawQuery: "_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)&_txlock=immediate"}
+	db, err := sql.Open("sqlite", u.String())
+	if err != nil {
+		return nil, fmt.Errorf("control: opening the ledger: %w", err)
+	}
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("control: opening the ledger: %w", err)
+	}
+	return db, nil
+}
+
+// Serve accepts connections on l until ctx ends or l fails, answering each
+// request frame through srv with db as the ledger. It returns after every
+// connection handler has finished.
+func Serve(ctx context.Context, l Listener, srv *Server, db *sql.DB) error {
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	stop := context.AfterFunc(ctx, func() { _ = l.Close() })
+	defer stop()
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return fmt.Errorf("control: accepting: %w", err)
+		}
+		wg.Go(func() {
+			defer func() { _ = conn.Close() }()
+			serveConn(WithLedger(ctx, db), conn, srv)
+		})
+	}
+}
+
+// serveConn answers request frames until the peer leaves or a frame breaks a
+// limit, which ends the integration (NFR-1).
+func serveConn(ctx context.Context, conn Conn, srv *Server) {
+	for {
+		frame, err := conn.Receive(ctx)
+		if err != nil {
+			return
+		}
+		res := answer(ctx, conn.Peer(), srv, frame)
+		out, err := Encode(res)
+		if err != nil {
+			return
+		}
+		if err := conn.Respond(out); err != nil {
+			return
+		}
+	}
+}
+
+// answer decodes one request frame and dispatches it. Every failure is a
+// Result carrying its Error, so the client sees one reply shape.
+func answer(ctx context.Context, peer Peer, srv *Server, frame []byte) Result {
+	in, err := Decode[Intent](frame)
+	if err != nil {
+		return Result{Error: newError(CodeInvalidContract, "%v", err)}
+	}
+	res, err := srv.Dispatch(ctx, peer, in)
+	res.OperationID = in.OperationID
+	var ce *Error
+	switch {
+	case err == nil:
+	case errors.As(err, &ce):
+		res.Error = ce
+	default:
+		res.Error = newError(CodePersistenceUnavailable, "the request could not be completed")
+	}
+	return res
 }

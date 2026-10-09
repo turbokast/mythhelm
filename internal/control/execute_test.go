@@ -446,11 +446,12 @@ func TestWorkersNeverOpenSQLite(t *testing.T) { // I23 (v2 §2)
 	}
 }
 
-// Hashes of the released migrations 0001-0003, which 0004 must not touch.
+// Hashes of the released migrations, which later migrations must not touch.
 var releasedMigrations = map[string]string{
 	"0001_init.sql":          "262e63e2c7630dc637a916d476a1862db361affcb734dcbe2317f6770cb72e36",
 	"0002_qualification.sql": "52ce1d7a33fe4ace12e06ac3eae4032d9f11d647199113ef287416ab0202da7e",
 	"0003_ledger.sql":        "c9203ba912b7fe187d472edfa56f02fd751ffaddcb12d3eee4c98bf920487aa6",
+	"0004_supervisor.sql":    "2078c4755d71cc0d73003f1025209aa3bb1afd234fe992a830056ac9def22910",
 }
 
 func TestMigration0004IsAdditive(t *testing.T) {
@@ -504,6 +505,9 @@ func TestMigration0004IsAdditive(t *testing.T) {
 	defer func() { _ = after.Close() }()
 	got := schemaObjects(t, after)
 	for name, ddl := range before {
+		if name == "reservations" {
+			continue // migration 0005 adds its host column; Test0005 pins that change
+		}
 		if got[name] != ddl {
 			t.Errorf("DDL of %s changed by migration 0004:\nbefore %q\nafter  %q", name, ddl, got[name])
 		}
@@ -539,8 +543,8 @@ func schemaObjects(t *testing.T, db *sql.DB) map[string]string {
 func TestSchemaVersionIs4(t *testing.T) {
 	t.Parallel()
 	_, dir := openLedger(t)
-	if journal.SchemaVersion != 4 {
-		t.Fatalf("SchemaVersion = %d, want 4", journal.SchemaVersion)
+	if journal.SchemaVersion < 4 {
+		t.Fatalf("SchemaVersion = %d, want at least 4", journal.SchemaVersion)
 	}
 	ro, err := journal.OpenReadOnly(t.Context(), dir)
 	if err != nil {

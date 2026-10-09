@@ -36,6 +36,8 @@ var commands = map[string]command{
 	"version": {summary: "print the version, commit and Go version", run: runVersion},
 	"demo":    {summary: "run a scripted offline demonstration (fake agent, disposable repo)", run: runDemo},
 	"doctor":  {summary: "report environment facts without writing anything", run: runDoctor},
+
+	"supervisor": {summary: "show the per-user supervisor's state, starting it if needed (supervisor status)", run: runSupervisor},
 }
 
 // Main runs the command named by args[0] and returns the process exit code.

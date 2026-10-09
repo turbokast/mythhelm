@@ -30,6 +30,7 @@ const (
 	CodePermissionDenied       Code = "permission_denied"
 	CodeCapabilityUnsupported  Code = "capability_unsupported"
 	CodePersistenceUnavailable Code = "persistence_unavailable"
+	CodeAllowanceExhausted     Code = "allowance_exhausted"
 )
 
 // Error is a control failure carrying its code. It matches another Error
