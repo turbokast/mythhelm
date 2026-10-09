@@ -96,7 +96,11 @@ func EnterLinux(spec ContainSpec) error {
 	}
 	binds := make([]int, len(p.AuthBinds))
 	for i, b := range p.AuthBinds {
-		if within(b.Source, workdir) {
+		srcDir, err := filepath.EvalSymlinks(filepath.Dir(b.Source))
+		if err != nil {
+			return fmt.Errorf("contain: resolve auth bind source %q: %w", b.Source, err)
+		}
+		if within(filepath.Join(srcDir, filepath.Base(b.Source)), workdir) {
 			return fmt.Errorf("contain: auth bind source %q lies inside the workdir, which is mounted unmasked", b.Source)
 		}
 		if binds[i], err = cloneFile(b.Source); err != nil {

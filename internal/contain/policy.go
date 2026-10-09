@@ -44,7 +44,11 @@ func PolicyFor(profile, workdir string, readonly bool, binds []AuthBind, proxy s
 	if workdir, err = resolveExisting(workdir); err != nil {
 		return Policy{}, fmt.Errorf("contain: resolve workdir: %w", err)
 	}
-	if (home != "." && within(home, workdir)) || within("/tmp", workdir) {
+	tmp, err := resolveExisting("/tmp")
+	if err != nil {
+		return Policy{}, fmt.Errorf("contain: resolve /tmp: %w", err)
+	}
+	if (home != "." && within(home, workdir)) || within(tmp, workdir) {
 		return Policy{}, fmt.Errorf("contain: workdir %q encloses $HOME or /tmp", workdir)
 	}
 	admitted := make([]AuthBind, 0, len(binds))
@@ -53,10 +57,14 @@ func PolicyFor(profile, workdir string, readonly bool, binds []AuthBind, proxy s
 			return Policy{}, fmt.Errorf("contain: auth bind %q -> %q needs absolute paths", b.Source, b.Target)
 		}
 		source := filepath.Clean(b.Source)
-		if source == filepath.VolumeName(source)+string(filepath.Separator) || (home != "." && within(home, source)) {
+		resolved, err := resolveSource(source)
+		if err != nil {
+			return Policy{}, fmt.Errorf("contain: resolve auth bind source %q: %w", source, err)
+		}
+		if resolved == filepath.VolumeName(resolved)+string(filepath.Separator) || (home != "." && within(home, resolved)) {
 			return Policy{}, fmt.Errorf("contain: auth bind source %q would expose $HOME; bind single files", source)
 		}
-		if within(source, workdir) {
+		if within(resolved, workdir) {
 			return Policy{}, fmt.Errorf("contain: auth bind source %q lies inside the workdir", source)
 		}
 		admitted = append(admitted, AuthBind{Source: source, Target: filepath.Clean(b.Target)})
@@ -70,15 +78,35 @@ func PolicyFor(profile, workdir string, readonly bool, binds []AuthBind, proxy s
 	}, nil
 }
 
-// resolveExisting follows symlinks in path so overlap checks compare real
-// locations. A path that does not exist yet is kept as written; EnterLinux
-// requires it to exist and resolves it again.
+// resolveExisting follows symlinks in the longest existing prefix of path and
+// keeps the rest as written, so HOME, workdir and sources are compared as real
+// locations on every OS (macOS /var, Windows short names). EnterLinux requires
+// the paths to exist and resolves them again.
 func resolveExisting(path string) (string, error) {
+	path = filepath.Clean(path)
 	resolved, err := filepath.EvalSymlinks(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return filepath.Clean(path), nil
+	if err == nil {
+		return resolved, nil
 	}
-	return resolved, err
+	parent := filepath.Dir(path)
+	if !errors.Is(err, fs.ErrNotExist) || parent == path {
+		return "", err
+	}
+	dir, err := resolveExisting(parent)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, filepath.Base(path)), nil
+}
+
+// resolveSource resolves the directory of an auth bind source but not its last
+// element: a terminal symlink is not followed, and EnterLinux refuses it.
+func resolveSource(path string) (string, error) {
+	dir, err := resolveExisting(filepath.Dir(path))
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, filepath.Base(path)), nil
 }
 
 // within reports whether path equals dir or lies beneath it.

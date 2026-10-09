@@ -140,3 +140,42 @@ func TestPolicyResolvesSymlinksBeforeChecks(t *testing.T) {
 		t.Fatalf("Workdir = %q, want the resolved %q", p.Workdir, want)
 	}
 }
+
+func TestPolicyResolvesAuthSourceParent(t *testing.T) {
+	parent := t.TempDir()
+	home := filepath.Join(parent, "user")
+	work := filepath.Join(parent, "work")
+	for _, d := range []string{home, work} {
+		if err := os.Mkdir(d, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(work, "secret"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(parent, "alias")
+	if err := os.Symlink(parent, alias); err != nil {
+		t.Skipf("cannot create symlinks here: %v", err)
+	}
+	t.Setenv("HOME", home)
+
+	viaAlias := []AuthBind{{Source: filepath.Join(alias, "work", "secret"), Target: filepath.Join(home, "token")}}
+	if p, err := PolicyFor("restricted", work, false, viaAlias, ""); err == nil {
+		t.Fatalf("PolicyFor accepted a source that resolves into the workdir: %+v", p)
+	}
+	viaAlias = []AuthBind{{Source: filepath.Join(alias, "user"), Target: filepath.Join(home, "token")}}
+	if p, err := PolicyFor("restricted", work, false, viaAlias, ""); err == nil {
+		t.Fatalf("PolicyFor accepted a source that resolves to HOME: %+v", p)
+	}
+
+	// HOME spelled through the symlink, and the same directory spelled
+	// really, must compare equal in either direction (macOS /var, Windows
+	// short names).
+	t.Setenv("HOME", filepath.Join(alias, "user"))
+	for _, source := range []string{filepath.Join(alias, "user"), home} {
+		binds := []AuthBind{{Source: source, Target: filepath.Join(home, "token")}}
+		if p, err := PolicyFor("restricted", work, false, binds, ""); err == nil {
+			t.Fatalf("PolicyFor accepted source %q equal to HOME: %+v", source, p)
+		}
+	}
+}

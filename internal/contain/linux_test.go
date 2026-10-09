@@ -487,6 +487,23 @@ func TestEnterLinuxResolvesSymlinksBeforeChecks(t *testing.T) {
 		})
 	}
 
+	t.Run("auth source behind a symlinked parent resolves into the workdir", func(t *testing.T) {
+		secret := filepath.Join(realWork, "secret")
+		if err := os.WriteFile(secret, []byte("s3cr3t-bytes"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		p := Policy{
+			Profile:   "restricted",
+			Workdir:   realWork,
+			AuthBinds: []AuthBind{{Source: filepath.Join(alias, "work", "secret"), Target: filepath.Join(realHome, "token")}},
+		}
+		spec := nsSpec(t, "/bin/sh", []string{"sh", "-c", "echo ran"}, baseEnv(realWork, base, realHome), p)
+		out, err := runHelper(t, "enter", spec)
+		if err == nil || strings.Contains(out, "ran") {
+			t.Fatalf("source inside the workdir via a parent symlink was accepted: err=%v out=%q", err, out)
+		}
+	})
+
 	t.Run("workdir behind a symlinked ancestor still works", func(t *testing.T) {
 		workdir := filepath.Join(alias, "work")
 		p := Policy{Profile: "restricted", Workdir: workdir}
