@@ -310,6 +310,24 @@ func TestSpentScheduleGivesUp(t *testing.T) {
 	}
 }
 
+// TestPassedResetClearsSpentBucket pins the recovery half of the give-up
+// rule: when an authoritative reset is recorded after the retries were
+// spent, the admission past that reset clears the row and admits instead of
+// refusing giveUp forever.
+func TestPassedResetClearsSpentBucket(t *testing.T) {
+	t.Parallel()
+	w := newBucketWorld(t)
+	w.bucket = admission.QuotaBucket(bucketRec, bucketIdentity)
+	past := -time.Hour
+	w.exhaust(t, 2*time.Hour, &past, admission.MaxBucketRetries)
+	if _, err := w.hold(t); err != nil {
+		t.Fatalf("admission past the reset was refused: %v", err)
+	}
+	if row, err := w.row(t); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("bucket row = %+v, %v; want it cleared", row, err)
+	}
+}
+
 var (
 	bucketRec      = qualifyRecord("fake", "scripted-child-process (ndjson)", "none (no inference, no network)")
 	bucketIdentity = ""

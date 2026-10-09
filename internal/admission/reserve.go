@@ -127,13 +127,14 @@ func (r journalReserver) Reserve(ctx context.Context, tx *sql.Tx, runID, bucket,
 }
 
 // checkBucket refuses new model work on a bucket that is live in
-// bucket_state until its schedule comes due. A due re-admission is counted
-// here, in the admission transaction. The row is cleared only once its
-// authoritative reset time has passed: a spent schedule keeps its row at
-// MaxBucketRetries so the next admission refuses with giveUp (AC-6.2 "then
-// stop", AC-6.1); clearing on spent retries would let the next admission
-// through and restart the schedule. A refusal changes nothing. A bucket
-// with no evaluator never admits (I02).
+// bucket_state until its schedule comes due. A passed authoritative reset
+// clears the row and admits before the schedule runs, so a reset recorded
+// after the retries were spent still ends the episode. Otherwise a due
+// re-admission is counted here, in the admission transaction, and a spent
+// schedule keeps its row at MaxBucketRetries so the next admission refuses
+// with giveUp (AC-6.2 "then stop", AC-6.1); clearing on spent retries would
+// let the next admission through and restart the schedule. A refusal
+// changes nothing. A bucket with no evaluator never admits (I02).
 func (r journalReserver) checkBucket(ctx context.Context, tx *sql.Tx, bucket string, now time.Time) error {
 	row := journal.BucketRow{Bucket: bucket}
 	var reset sql.NullString
@@ -151,21 +152,20 @@ func (r journalReserver) checkBucket(ctx context.Context, tx *sql.Tx, bucket str
 	if r.evaluate == nil {
 		return &ExhaustedError{Bucket: bucket}
 	}
+	// A passed authoritative reset ends the episode before the schedule runs:
+	// the reset may have been recorded after the retries were spent, and the
+	// spent row must still clear (otherwise giveUp would block it forever).
+	if row.ResetAt != nil {
+		if t, err := time.Parse(time.RFC3339Nano, *row.ResetAt); err == nil && !now.Before(t) {
+			return journal.ClearBucket(ctx, tx, bucket)
+		}
+	}
 	admit, wait, giveUp := r.evaluate(row, now)
 	if !admit {
 		return &ExhaustedError{Bucket: bucket, Wait: wait, GiveUp: giveUp}
 	}
 	if err := journal.NoteBucketRetry(ctx, tx, bucket); err != nil {
 		return err
-	}
-	resetPassed := false
-	if row.ResetAt != nil {
-		if t, err := time.Parse(time.RFC3339Nano, *row.ResetAt); err == nil {
-			resetPassed = !now.Before(t)
-		}
-	}
-	if resetPassed {
-		return journal.ClearBucket(ctx, tx, bucket)
 	}
 	return nil
 }
