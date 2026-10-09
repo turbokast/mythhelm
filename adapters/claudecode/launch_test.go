@@ -305,3 +305,99 @@ func TestPrepareRejectsBadInput(t *testing.T) {
 		})
 	}
 }
+
+func TestPluginsNeverWidenArgv(t *testing.T) {
+	t.Parallel()
+	// Hostile plugin/MCP names shaped like argv flags, tool rules and env
+	// assignments: none may reach the native argv or environment.
+	manifest, err := InventoryAdmittedProject(t.TempDir(), t.TempDir(), map[string][]byte{
+		"project": []byte(`{"enabledPlugins":{"--dangerously-skip-permissions":true,"Bash(rm -rf /tmp/pwned)":true,"EVIL_SMUGGLER=1":true},"mcpServers":{"evil-server":{},"smuggled-env":{}}}`),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.EnabledPlugins) != 3 || len(manifest.MCPServers) != 2 {
+		t.Fatalf("manifest = %+v, want 3 enabled plugins and 2 MCP servers", manifest)
+	}
+	hostile := append(append([]string{}, manifest.EnabledPlugins...), "evil-server", "smuggled-env")
+	newInput := func() adapter.PrepareInput {
+		return adapter.PrepareInput{
+			Workdir:   t.TempDir(),
+			AttemptID: "att_plugins",
+			Env:       []string{"PATH=/usr/bin", "HOME=/home/test"},
+			Prompt:    strings.NewReader("task\n"),
+			Probe:     launchProbe(t),
+		}
+	}
+	withPlugins, err := New().Prepare(context.Background(), newInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bare, err := New().Prepare(context.Background(), newInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Prepare takes no manifest input, so the plugin/MCP-bearing run is
+	// byte-identical to the bare run.
+	if !reflect.DeepEqual(withPlugins.Spec.Args, bare.Spec.Args) || !reflect.DeepEqual(withPlugins.Spec.Env, bare.Spec.Env) {
+		t.Fatalf("Prepare differs between runs:\nwith = %q %q\nbare = %q %q",
+			withPlugins.Spec.Args, withPlugins.Spec.Env, bare.Spec.Args, bare.Spec.Env)
+	}
+	if want := Argv(newInput().Probe.Executable, nil); !reflect.DeepEqual(withPlugins.Spec.Args, want[1:]) {
+		t.Fatalf("argv = %q, want exactly %q", withPlugins.Spec.Args, want[1:])
+	}
+	for _, element := range append(append([]string{}, withPlugins.Spec.Args...), withPlugins.Spec.Env...) {
+		for _, smuggled := range hostile {
+			if strings.Contains(element, smuggled) {
+				t.Fatalf("launch element %q carries plugin/MCP content %q", element, smuggled)
+			}
+		}
+	}
+	// The seam pin: PrepareInput carries no manifest, plugin or MCP field,
+	// so threading one in fails here until this test is extended.
+	for field := range reflect.TypeFor[adapter.PrepareInput]().Fields() {
+		name := strings.ToLower(field.Name)
+		if strings.Contains(name, "plugin") || strings.Contains(name, "mcp") || strings.Contains(name, "manifest") {
+			t.Fatalf("PrepareInput.%s could widen launch authority; extend this test to cover it", field.Name)
+		}
+	}
+}
+
+func TestSurplusRoutesStayUnknown(t *testing.T) {
+	t.Parallel()
+	m := Manifest{
+		EnabledPlugins: []string{"alpha", "beta", "gamma"},
+		MCPServers:     []string{"user:files", "project:search"},
+	}
+	routes := InventoryAuxiliary(m, adapter.SessionStarted{
+		PluginCount: 5,
+		MCPServers: []adapter.MCPServer{
+			{Name: "files", Status: "connected"},
+			{Name: "surprise", Status: "connected"},
+		},
+	})
+	var pluginUnknown, mcpUnknown int
+	for _, r := range routes {
+		if r.Funding != "unknown" {
+			t.Errorf("route %q funding = %q, want unknown (static inventory proves no funding)", r.Name, r.Funding)
+		}
+		switch r.Name {
+		case "plugin:unknown":
+			pluginUnknown++
+			if r.Evidence != "plugin-count:2" {
+				t.Errorf("plugin:unknown evidence = %q, want plugin-count:2", r.Evidence)
+			}
+		case "mcp:unknown":
+			mcpUnknown++
+			if r.Evidence != "mcp-session:surprise" {
+				t.Errorf("mcp:unknown evidence = %q, want mcp-session:surprise", r.Evidence)
+			}
+		}
+	}
+	if pluginUnknown != 1 {
+		t.Errorf("plugin:unknown routes = %d, want 1 (session reports 5 plugins, manifest names 3)", pluginUnknown)
+	}
+	if mcpUnknown != 1 {
+		t.Errorf("mcp:unknown routes = %d, want 1 (session reports an unnamed server)", mcpUnknown)
+	}
+}
