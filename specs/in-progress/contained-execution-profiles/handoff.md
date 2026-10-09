@@ -69,7 +69,18 @@
 
 ## Task 9 — Startup boundary and authority fixtures
 
-<!-- pending -->
+> Half 1 (admission/worker/security) shipped in PR #294; half 2 (supervisor)
+> is still open on the same branch: `launchForAttempt`, its call-site wiring,
+> `pipeline_launch_test.go` and the tasks.md completion entry. Task 11 starts
+> after both halves merge.
+
+- **Produces (half 1)**: `workers.Launch.UserConfigPaths`/`UserConfigDigests` (design §4 names); worker pre-exec `verifyUserConfig` (unexported; `start()` fails the launch before any native process exists); `admission.BoundaryDeltas(ev) []adapter.ConfigDelta` (`read-only mounts`, `proxy pin`, kind `boundary`); delta append-sites in `decideFake` and `decideClaudeCode` (contained profiles only).
+- **For dependents (half 2)**: build the `Launch` in `launchForAttempt(d, token)` exactly as `pipeline.go:attempt` does today, plus: `Containment` via `contain.PolicyForProfile(d.Profile.Name, d.Workdir, binds, "")` (`ProxyAddr` stays empty — the worker fills it); `ProxyAllow` (fake: empty denies all; the claudecode route is refused for contained profiles, so no endpoint is needed yet); `UserConfigPaths` via `claudecode.AdmittedConfigPathsForEnv(home, d.Workdir, d.Proposal.Spec.Env)` with the HOME admission inventoried; `UserConfigDigests` = `d.Proposal.Manifest.Digests`.
+- **For dependents (half 2)**: keep the verify contract — every digest key needs a mapping entry (missing → `launch_failed`); `project/*` keys are skipped (blob digests, never workdir bytes); `user_mcp` re-verifies by presence plus re-inventory over `(HOME from Launch.Env, Launch.Dir, Launch.Env)`, so the launch env's HOME must equal the home admission inventoried; every other key re-hashes bytes. Non-absolute mapping paths are an invalid launch (worker exit 2), not `launch_failed`.
+- **For dependents**: deltas flow `Decide → Proposal.Overrides → Record → receipt fidelity_differences` (the rendering pre-existed); trusted-host carries no boundary delta; `BoundaryDeltas` returns nil for unattributed or wholly-unenforced evidence. Process/credential claims get no delta by design (authority restrictions, not native-feature restrictions).
+- **For dependents**: no `native.go` change was needed — digests already flow via `Proposal.Manifest`, paths are computed post-admission per the Task 10 rule, and the worker needs nothing else.
+- **Tests (half 1)**: `TestWorkerRehashesMutableConfig` (admission package: builds `cmd/mythhelm` once and spawns real workers — the admission package cannot host a `__worker` TestMain dispatch, `qualify_test.go` owns `TestMain`); `TestTaskBytesNeverReachArgv`, `TestBoundaryRestrictionsAreDeltas` (`launch_fixture_test.go`); `TestCredentialEnvDenied` (`authority_test.go`, external `security_test` package so it can pin the admission opt-in). `TestModelOutputNeverReachesLaunch` plus the `Decision` reflect pin belong to half 2 (`pipeline_launch_test.go`).
+- **Deviations**: (1) Half 2 is outstanding — see above. (2) The re-hash e2e lives in `internal/admission` instead of `internal/workers` (file ownership); it exercises the production worker binary, so coverage is end-to-end, not weaker. (3) Deltas append in both decide paths (the task names one site; the fake route is the admitted contained route on Linux). (4) `internal/admission/native.go` untouched (see above).
 
 ## Task 10 — Adapter startup-inventory seam
 
