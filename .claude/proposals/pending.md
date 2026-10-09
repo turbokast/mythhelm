@@ -99,18 +99,6 @@ Add to the Confirm step: collect every "Task N ..." deferral named in Spec devia
 
 Add to the verify-before-merge procedure: when the branch base trails origin/main, review the branch's own diff (`git diff <merge-base> HEAD`) for scope and deletions; use the tree-diff against main only to confirm the merge result after updating.
 
-## P-supervisor-service-1 — Re-verify accepted ADRs against the shipped tree at finalize
-
-- **Source spec**: `supervisor-service`
-- **Type**: skill
-- **Target**: `.claude/skills/finalize-spec-review/SKILL.md`
-- **Rationale**: ADR 0014 was accepted mid-spec (task 7) stating the Windows transport was blocked; task 4 then landed it, leaving the accepted record contradicting the tree until finalize review caught it. Any record accepted before the last task lands can decay the same way.
-- **Evidence**: Review Summary finding at docs/decisions/0014-service-topology.md:67; retrospective.md; PR #262 (accept) then #266 (land)
-
-**Proposed change:**
-
-Add to the finalize review steps: for each decision record the spec accepted, diff its factual claims (blocked rows, NFR tables, cited files and tests) against the shipped tree at the review head; amend drift in the finalize worktree before publishing.
-
 ## P-supervisor-service-2 — Stand-in deviations must name their tracked follow-up
 
 - **Source spec**: `supervisor-service`

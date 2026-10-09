@@ -156,3 +156,20 @@ Append a short entry: on Windows, atomic file replacement via rename can fail tr
 **Proposed change:**
 
 Add a dispatch step: before starting a task attempt, append the `run_start` row (once per spec run) and the task's `dispatch` row to `.claude/data/run-events.jsonl`; after the attempt ends, append the `return` row (and `merge` after the merge). A dispatch without its rows is incomplete. Before finalizing, the orchestrator may backfill rows for already-merged tasks only from authoritative records (merged PRs, merge commits). Backfilled rows must carry provenance marking them as reconstructed, and consumers must distinguish them from observed rows when computing attempt metrics and attribution. Use the schema's `null` and `unknown` values for unavailable attribution or results; never treat the generated `ts` as the original event time when that time cannot be recovered.
+
+## P-supervisor-service-1 — Re-verify accepted ADRs against the shipped tree at finalize
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: pending
+- **Eval**: `finalize-review-reverifies-decision-records`
+- **Rationale**: ADR 0014 contradicted the shipped tree after a later task landed what it recorded as blocked; re-checking accepted decision records against the tree at finalize is the first point where every task's work is visible together. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `supervisor-service`
+- **Type**: skill
+- **Target**: `.claude/skills/finalize-spec-review/SKILL.md`
+- **Rationale**: ADR 0014 was accepted mid-spec (task 7) stating the Windows transport was blocked; task 4 then landed it, leaving the accepted record contradicting the tree until finalize review caught it. Any record accepted before the last task lands can decay the same way.
+- **Evidence**: Review Summary finding at docs/decisions/0014-service-topology.md:67; retrospective.md; PR #262 (accept) then #266 (land)
+
+**Proposed change:**
+
+Add to the finalize review steps: for each decision record the spec accepted, diff its factual claims (blocked rows, NFR tables, cited files and tests) against the shipped tree at the review head; amend drift in the finalize worktree before publishing.
