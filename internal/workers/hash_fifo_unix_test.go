@@ -4,9 +4,10 @@ package workers
 
 import (
 	"path/filepath"
-	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // TestHashFileRejectsFIFO pins the hash open against a FIFO swapped in after
@@ -15,7 +16,7 @@ import (
 func TestHashFileRejectsFIFO(t *testing.T) {
 	t.Parallel()
 	fifo := filepath.Join(t.TempDir(), "fifo")
-	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+	if err := unix.Mkfifo(fifo, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
