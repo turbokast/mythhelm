@@ -161,7 +161,7 @@ Add a dispatch step: before starting a task attempt, append the `run_start` row 
 
 - **Decision**: approved
 - **Date**: 2026-10-09
-- **Pull request**: pending
+- **Pull request**: #305
 - **Eval**: `run-completion-resolves-deferrals`
 - **Rationale**: A cross-task deferral with no owner was dropped by both tasks it named and caught only at finalize, after every task had merged; checking each deferral against merged diffs at run completion stops the run while the fix is still cheap. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
 - **Source spec**: `v2-contract-vocabulary`
