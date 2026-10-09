@@ -124,3 +124,11 @@ overrides `design.md` — conflicts go back to the designer.
   `nfr2-proof` row is `fixture-tested` (Task 7 merged before this PR). Lint note: the
   repo pins UK spelling (`behaviour`, misspell locale UK) — the matrix
   test was fixed for it during this task's gates.
+- **Task 8 gate environment**: `internal/cli` `TestStrictMainBlocksWriteNothing`
+  fails on a clean `origin/main` when `$HOME` holds a Claude config with
+  hooks/MCP (admission returns `untrusted_native_config` before the
+  expected reason) and passes with a throwaway `$HOME`; run the Go gates
+  with one. `adapters/claudecode` passed 15/15 alone; under 32 concurrent
+  `-race` copies its probe tests fail with `signal: killed` from
+  `runProbe`'s fixed 10s `CommandContext` deadline (`probe.go:104`), so a
+  loaded machine, not this branch, explains an isolated failure there.
