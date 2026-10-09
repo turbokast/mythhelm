@@ -388,13 +388,13 @@ func TestEvaluatorDigestRecorded(t *testing.T) {
 
 func TestEvaluatorDigestRepeatable(t *testing.T) {
 	base := contain.Policy{Profile: "restricted", Workdir: "/runs/a/verify", ReadOnly: true, ProxyAddr: "127.0.0.1:1111",
-		AuthBinds: []contain.AuthBind{{Source: "/home/a/.token", Target: "/home/scratch/token"}, {Source: "/x/y", Target: "/home/scratch/aa"}}}
+		AuthBinds: []contain.AuthBind{{Source: "/srv/a/.token", Target: "/scratch/token"}, {Source: "/x/y", Target: "/scratch/aa"}}}
 	checks := []string{"b", "a"}
 	want := contain.EvaluatorDigest("b", "1", base, checks)
 
 	moved := base
 	moved.Workdir, moved.ProxyAddr = "/runs/b/verify", "127.0.0.1:2222"
-	moved.AuthBinds = []contain.AuthBind{{Source: "/other/1", Target: "/home/scratch/aa"}, {Source: "/other/2", Target: "/home/scratch/token"}}
+	moved.AuthBinds = []contain.AuthBind{{Source: "/other/1", Target: "/scratch/aa"}, {Source: "/other/2", Target: "/scratch/token"}}
 	if got := contain.EvaluatorDigest("b", "1", moved, []string{"a", "b"}); got != want {
 		t.Errorf("runtime-specific values changed the digest: %+v vs %+v", got, want)
 	}
