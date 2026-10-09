@@ -1,7 +1,9 @@
 package control
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,16 +12,26 @@ import (
 	"time"
 )
 
-// TestHelperProcess is not a real test: it re-executes the test binary as a
-// lock-holder subprocess for TestStaleLockAdoptedWithGenerationBump. It
-// returns immediately in the parent process (env unset).
-func TestHelperProcess(_ *testing.T) {
-	if os.Getenv("MYTHHELM_TEST_HELPER") != "lockholder" {
-		return
+// TestMain lets the test binary act as a lock-holder child process for
+// TestStaleLockAdoptedWithGenerationBump (repo precedent: integration's
+// __verify_helper, supervisor's TestMain helpers). The holder branch runs
+// before flag parsing and m.Run, so the child never depends on the testing
+// framework's -test.run selection: re-running the framework in the child
+// exited during startup on darwin (exit status 2 before acquiring).
+func TestMain(m *testing.M) {
+	if os.Getenv("MYTHHELM_TEST_HELPER") == "lockholder" {
+		os.Exit(runLockHolder())
 	}
+	os.Exit(m.Run())
+}
+
+// runLockHolder acquires the instance lock and holds it until killed,
+// returning the child process exit code.
+func runLockHolder() int {
 	release, err := AcquireInstance(os.Getenv("MYTHHELM_TEST_HELPER_DIR"))
 	if err != nil {
-		os.Exit(3)
+		fmt.Fprintf(os.Stderr, "holder: AcquireInstance: %v\n", err)
+		return 3
 	}
 	defer release()
 	// Hold the lock until killed. No readiness file is needed: the parent
@@ -106,11 +118,13 @@ func TestStaleLockAdoptedWithGenerationBump(t *testing.T) {
 		t.Fatalf("LockPath: %v", err)
 	}
 
-	cmd := exec.Command(os.Args[0], "-test.run", "^TestHelperProcess$") //nolint:gosec // G702: re-executes this test binary with fixed argv
+	cmd := exec.Command(os.Args[0]) //nolint:gosec // G702: re-executes this test binary; TestMain selects the holder branch
 	cmd.Env = append(os.Environ(),
 		"MYTHHELM_TEST_HELPER=lockholder",
 		"MYTHHELM_TEST_HELPER_DIR="+dir,
 	)
+	var childOut, childErr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &childOut, &childErr
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("starting holder subprocess: %v", err)
 	}
@@ -126,7 +140,8 @@ func TestStaleLockAdoptedWithGenerationBump(t *testing.T) {
 	for time.Now().Before(deadline) {
 		select {
 		case err := <-waitDone:
-			t.Fatalf("holder subprocess exited before acquiring: %v", err)
+			t.Fatalf("holder subprocess exited before acquiring: %v\nstdout: %s\nstderr: %s",
+				err, childOut.String(), childErr.String())
 		default:
 		}
 		meta, ok := readMetadata(path)
