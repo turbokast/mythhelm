@@ -380,11 +380,17 @@ func writeFileAtomic(dir, name string, body []byte) error {
 }
 
 func hashFile(path string) (string, error) {
-	f, err := os.Open(path) //nolint:gosec // The admitted launch names this path.
+	f, err := openHash(path) //nolint:gosec // The admitted launch names this path.
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = f.Close() }()
+	// The handle check, not the path, rejects a FIFO (or directory or
+	// device) swapped in after admission: open-then-fstat on one handle
+	// cannot hang and cannot be raced into hashing something else.
+	if st, err := f.Stat(); err != nil || !st.Mode().IsRegular() {
+		return "", fmt.Errorf("not a regular file: %s", path)
+	}
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err

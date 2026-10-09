@@ -510,7 +510,10 @@
   failures surface as native exit 1; refusal diagnosis relies on `ProbeLinux`
   alone, no CLOEXEC status pipe in this spec (decides the Task 4 question).
 - **Files modified**: `internal/workers/worker.go`,
-  `internal/workers/contain.go`, `internal/admission/boundary.go`,
+  `internal/workers/contain.go`, `internal/workers/hash_unix.go`,
+  `internal/workers/hash_other.go`,
+  `internal/workers/hash_fifo_unix_test.go`,
+  `internal/admission/boundary.go`,
   `internal/admission/admission.go`,
   `internal/admission/launch_fixture_test.go`,
   `internal/security/authority_test.go`, `internal/supervisor/pipeline.go`,
