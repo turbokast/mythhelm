@@ -19,7 +19,13 @@
 
 ## Task 3 — Filtering egress proxy
 
-<!-- pending -->
+- **Produces**: `internal/contain/proxy.go` exactly as design §4 — `ServeProxy(ctx, allow) (addr, stop, err)` and `ProxyEnv(addr) map[string]string` (keys `HTTPS_PROXY`, `HTTP_PROXY`, `https_proxy`, `http_proxy`, values `http://` + addr). No `Provider` wiring yet.
+- **For dependents (Task 4)**: start the proxy before a contained spawn, fill `Policy.ProxyAddr` with the returned ephemeral `127.0.0.1:port`, and amend the child env with `ProxyEnv` post-admission. `stop` is safe to call twice; cancelling `ctx` also stops the listener.
+- **For dependents**: allowlist entries are exact `host:port` strings matched verbatim against the CONNECT request-target — no normalization, no suffix or port-range matching. `httptest` server URLs need the `http://` prefix stripped to form an entry.
+- **For dependents**: one connection carries exactly one request; denials (403 unlisted, 405 non-CONNECT, 431 over-long headers, 400 malformed, 502 dial failure) all return before any upstream dial. A 502 means the entry was allowlisted but the target refused the TCP dial.
+- **For dependents**: the proxy never claims to block direct egress — keep that residual disclosed, never assert it in later tests.
+- **Environment trap**: the `internal/cli` drift tests read ambient native config from `$HOME`; a real `~/.claude.json` fails `TestStrictMainBlocksWriteNothing` with `untrusted_native_config`. Run gates with an empty `HOME` (keeping `GOPATH`/`GOMODCACHE`/`GOCACHE` on the real cache, and `/usr/bin` first on `PATH` so `python3` avoids the asdf shim, which needs `HOME`).
+- **Deviations**: None.
 
 ## Task 4 — `__contain` command and worker wiring
 
