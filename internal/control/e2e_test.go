@@ -79,6 +79,13 @@ func newE2EHost(t *testing.T) *e2eHost {
 	return h
 }
 
+// newE2EHostOn is a second state root for the same user: it shares h's
+// runtime directory, so both roots meet at one lock and one socket.
+func newE2EHostOn(t *testing.T, h *e2eHost) *e2eHost {
+	t.Helper()
+	return &e2eHost{t: t, bin: h.bin, home: t.TempDir(), rt: h.rt}
+}
+
 func (h *e2eHost) run(args ...string) (stdout, stderr string, code int) {
 	h.t.Helper()
 	cmd := exec.Command(h.bin, args...)
@@ -244,3 +251,64 @@ func TestSupervisorStatusUsage(t *testing.T) {
 // exitInvalid is the exit code of an invalid command line; control must not
 // import the cli package that defines it.
 const exitInvalid = 2
+
+func TestForeignRootSupervisorRefused(t *testing.T) { // AC-5.4, I23 (v2 §2)
+	t.Parallel()
+	a := newE2EHost(t)
+	first := a.status() // a supervisor now serves root A
+	b := newE2EHostOn(t, a)
+	out, stderr, code := b.run("supervisor", "status")
+	if code == 0 || out != "" {
+		t.Fatalf("status for root B reached root A's supervisor: exit %d, stdout %q", code, out)
+	}
+	if !strings.Contains(stderr, "serves") || !strings.Contains(stderr, first.Root) {
+		t.Errorf("stderr %q does not say which root the supervisor serves", stderr)
+	}
+	if _, err := os.Stat(filepath.Join(b.home, "mythhelm.db")); err == nil {
+		t.Error("root B's database was created by a refused attach")
+	}
+	if again := a.status(); again.PID != first.PID || again.Root != first.Root {
+		t.Fatalf("root A's supervisor changed after the refusal: %+v, was %+v", again, first)
+	}
+}
+
+func TestRootsRacingOneWinnerNeverBothAttach(t *testing.T) { // AC-5.4, I23 (v2 §2)
+	t.Parallel()
+	a := newE2EHost(t)
+	b := newE2EHostOn(t, a)
+	type outcome struct {
+		out, stderr string
+		code        int
+	}
+	var res [2]outcome
+	var wg sync.WaitGroup
+	for i, h := range []*e2eHost{a, b} {
+		wg.Go(func() {
+			res[i].out, res[i].stderr, res[i].code = h.run("supervisor", "status", "--format", "jsonl")
+		})
+	}
+	wg.Wait()
+	ok := 0
+	for i, r := range res {
+		if r.code != 0 {
+			continue
+		}
+		ok++
+		var st status
+		if err := json.Unmarshal([]byte(r.out), &st); err != nil {
+			t.Fatalf("root %d: %v", i, err)
+		}
+		home := []*e2eHost{a, b}[i].home
+		want, err := filepath.EvalSymlinks(home)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.Root != want {
+			t.Errorf("root %d attached to a supervisor serving %s, want %s", i, st.Root, want)
+		}
+	}
+	if ok != 1 {
+		t.Fatalf("%d of the two roots attached (A: exit %d %q, B: exit %d %q), want exactly the winner", ok,
+			res[0].code, res[0].stderr, res[1].code, res[1].stderr)
+	}
+}

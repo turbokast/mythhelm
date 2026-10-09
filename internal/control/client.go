@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/statedir"
 )
 
@@ -37,7 +38,41 @@ func Connect(ctx context.Context) (Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return dialOrSpawn(ctx, t, endpoint, spawn)
+	dir, err := statedir.Resolve()
+	if err != nil {
+		return nil, err
+	}
+	conn, err := dialOrSpawn(ctx, t, endpoint, spawn)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireRoot(ctx, conn, canonicalRoot(dir)); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return conn, nil
+}
+
+// requireRoot asks the connected supervisor which state root it serves and
+// fails closed unless that is want. The socket is per user, not per root, so
+// a supervisor of another MYTHHELM_HOME can answer here, whether it started
+// first or won a startup race: attaching would act on its ledger, a second
+// authority (AC-5.4).
+func requireRoot(ctx context.Context, conn Conn, want string) error {
+	res, err := Call(ctx, conn, Intent{OperationID: ids.New("op"), Method: "status"})
+	if err != nil {
+		return fmt.Errorf("control: checking the supervisor's state root: %w", err)
+	}
+	var st struct {
+		Root string `json:"root"`
+	}
+	if err := json.Unmarshal(res.Body, &st); err != nil {
+		return fmt.Errorf("control: decoding the supervisor's state root: %w", err)
+	}
+	if !sameRoot(canonicalRoot(st.Root), want) {
+		return fmt.Errorf("%w: the supervisor serves %s, this command uses %s", ErrRootConflict, st.Root, want)
+	}
+	return nil
 }
 
 func dialOrSpawn(ctx context.Context, t Transport, endpoint string, start func() error) (Conn, error) {
