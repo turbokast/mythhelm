@@ -248,9 +248,9 @@ func TestReconcileChoosesOneOutcome(t *testing.T) { // FR-2 AC-2.1
 	}{
 		{
 			name:    "live same worker reconnects",
-			fixture: func(t *testing.T, f *recoverState) {},
+			fixture: func(*testing.T, *recoverState) {},
 			outcome: RecoverReconnected,
-			check: func(t *testing.T, f *recoverState, rep RecoveryReport) {
+			check: func(t *testing.T, f *recoverState, _ RecoveryReport) {
 				if got := attemptState(t, f.db, f.attempt); got != "running" {
 					t.Fatalf("attempt state = %q, want running: reconnect moves nothing", got)
 				}
@@ -636,12 +636,10 @@ func TestConcurrentFreshRecoversRecordOnce(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make([]error, n)
 	for i := range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, errs[i] = Execute(f.ctx(t), RecoverHandler(f.deps()), Peer{},
 				recoverIntent(t, fmt.Sprintf("op_rec_race_%d", i), f.runID))
-		}()
+		})
 	}
 	wg.Wait()
 	for i, err := range errs {

@@ -34,6 +34,7 @@ type RecoverParams struct {
 // RecoverOutcome is exactly one of the four v2 §6.4 dispositions.
 type RecoverOutcome string
 
+// The four recovery dispositions.
 const (
 	RecoverReconnected      RecoverOutcome = "reconnected"
 	RecoverContinued        RecoverOutcome = "continued"
