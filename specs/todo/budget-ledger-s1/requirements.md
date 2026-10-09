@@ -46,8 +46,8 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 
 ### FR-2 — Counter normalization (AT-13, §7.3)
 
-- **AC-2.1** [AT-13] When cumulative and delta counters arrive for the same scope, the system shall match readings on (scope, unit, source), treat the newest cumulative reading as the baseline, and apply only deltas whose event identity (producer, sequence) is not yet applied and whose observation time is strictly after the baseline's; deltas at or before the baseline are already covered and shall be skipped; a delta without identity shall be recorded as `estimated`, never summed into an exact total.
-- **AC-2.2** [AT-13] If counter input is missing for an expected scope (identified against the caller-supplied expected scope set), then the system shall mark that scope `unknown` and keep the remaining scopes usable.
+- **AC-2.1** [AT-13] When cumulative and delta counters arrive for the same scope, the system shall match readings on (scope, unit, source), treat the newest cumulative reading as the baseline, and apply only deltas whose event identity (producer, sequence) is not yet applied and whose observation time is strictly after the baseline's; deltas at or before the baseline are already covered and shall be skipped; a delta without identity shall be recorded as `estimated`, never summed into an exact total; the normalized result shall retain one total per matched (scope, unit, source) identity, so identities sharing a scope stay distinct.
+- **AC-2.2** [AT-13] If counter input is missing for an expected scope (identified against the caller-supplied expected scope set), then the system shall mark that scope `unknown` and keep the remaining scopes usable; the unknown marker is keyed by the scope with empty unit and source.
 - **AC-2.3** [§7.3] The system shall expose non-overlapping cache/reasoning/output totals only where per-route qualified evidence maps native fields to those components; where unmapped, it shall record the combined total only and mark the components `unknown`.
 
 ### FR-3 — Coupled quota reservations for one agent (§10.3, §4.1, I10)
@@ -65,7 +65,7 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 
 ### FR-5 — Completion reserve (§10.3, I10)
 
-- **AC-5.1** [§10.3] Before starting optional work, the system shall reserve one verification pass plus the FR-4 repair ceiling (AC-4.1 repair attempts); no separate configured envelope exists in S1. S1 optional work means material replans after the first verification (design §6): repairs are completion work drawn from the reserve, per-kind counts stay under the FR-4 ceilings, and a replan dispatches only when remaining execution time covers the verification pass.
+- **AC-5.1** [§10.3] Before starting optional work, the system shall reserve one verification pass plus the FR-4 repair ceiling (AC-4.1 repair attempts); no separate configured envelope exists in S1. S1 optional work means material replans after the first verification (design §6): repairs are completion work drawn from the reserve, per-kind counts stay under the FR-4 ceilings, a replan dispatches only when remaining execution time covers the verification pass, and a dispatched replan shall run under a derived deadline that leaves the verification reserve unconsumed.
 - **AC-5.2** [§10.3, I10] Where provider quota cannot be reserved, the system shall show the reserve in receipts and CLI run output as a conservative estimate, rely on qualified stop-at-exhaustion protection, and never advertise a hard token reserve.
 
 ### FR-6 — Exhaustion without paid fallback (§7.3, AT-13, I02)

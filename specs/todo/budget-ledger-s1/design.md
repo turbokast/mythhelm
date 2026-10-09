@@ -283,15 +283,19 @@ type ScopeTotal struct {
     Label qualify.DatumLabel
     Components map[string]*string // output, cache_read, cache_creation, reasoning; nil member = unknown
 }
-type Normalized struct{ Scopes map[string]ScopeTotal }
+// ScopeKey is the full reading identity: totals never merge across units
+// or sources, so two identities sharing one scope stay distinct entries.
+type ScopeKey struct{ Scope, Unit, Source string }
+type Normalized struct{ Scopes map[ScopeKey]ScopeTotal }
 
 // Normalize applies AC-2.1: match on (scope, unit, source); newest cumulative
 // is the baseline; apply only unapplied deltas with At strictly after the
 // baseline's At — deltas at or before it are already covered and skipped,
-// so no delta is counted twice. Deltas carry (producer, sequence) identity:
-// already-applied ones are skipped; identity-less deltas land as Estimated,
-// never summed exact. expected names the scopes the caller requires; an
-// expected scope with no readings marks unknown and keeps the rest (AC-2.2).
+// so no delta is counted twice. One total per matched identity. Deltas
+// carry (producer, sequence) identity: already-applied ones are skipped;
+// identity-less deltas land as Estimated, never summed exact. expected
+// names the scopes the caller requires; an expected scope with no readings
+// marks unknown under the key {scope, "", ""} and keeps the rest (AC-2.2).
 // Deltas sum with exact decimal addition — scale-aligned integer
 // arithmetic, never float64 — and a baseline cumulative passes its literal
 // through unchanged. A reading with an empty scope, unit or source, with
@@ -544,6 +548,11 @@ finish verifying (AC-5.1). Task 9's pipeline hook converts the admitted
 a conversion failure blocks the launch (I02). Gate order on the replan path is reserve first,
 then `GateLaunch`, so a short replan reports `completion_reserve_shortfall`
 while an over-count replan still reports `envelope_replans_exhausted`.
+A dispatched replan runs under a derived deadline — the execution deadline
+minus the estimated verification reserve (`VerifyTimeoutSum`), i.e. now +
+TimeLeft − reserve at dispatch — so the replan cannot consume the time the
+preflight reserved; Task 9's pipeline hook derives it and Task 7's deadline
+context enforces it.
 Where provider quota cannot be reserved — always
 in S1 — the reserve appears in receipts and CLI output only through
 `ReserveEstimate` with its `Note`, and stop-at-exhaustion remains the
