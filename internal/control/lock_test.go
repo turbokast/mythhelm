@@ -22,7 +22,9 @@ func TestMain(m *testing.M) {
 	if os.Getenv("MYTHHELM_TEST_HELPER") == "lockholder" {
 		os.Exit(runLockHolder())
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	cleanupE2EBinary()
+	os.Exit(code)
 }
 
 // runLockHolder acquires the instance lock and holds it until killed,
