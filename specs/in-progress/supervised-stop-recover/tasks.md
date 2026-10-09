@@ -106,7 +106,8 @@
   - A continued-from-quarantined attempt keeps its `quarantined` verdict (the lifecycle forbids `quarantined→interrupted`); the outcome event records the continuation beside it.
   - `CodeExternalEffectUncertain` is declared in `recover.go`: `control.go` predates the stream-4 codes (Task 1 precedent).
   - I06 holds structurally, not via a `CheckTerminalEntry` call: no recovery path enters a terminal state (asserted per outcome in `TestReconcileChoosesOneOutcome`); the check guards run states this task never moves.
-- **Files modified**: `internal/control/recover.go`, `internal/control/server.go`, `internal/control/recover_test.go`, `specs/in-progress/supervised-stop-recover/tasks.md`, `specs/in-progress/supervised-stop-recover/handoff.md`, `specs/in-progress/supervised-stop-recover/scratchpad.md`.
+  - `internal/control/lock_test.go` gains a `sleeper` test-helper branch in `TestMain`: `recover_test.go` spawns sleeper children and the helper must live in the package `TestMain` alongside the existing `lockholder` branch (8 lines, test-only).
+- **Files modified**: `internal/control/recover.go`, `internal/control/server.go`, `internal/control/recover_test.go`, `internal/control/lock_test.go`, `specs/in-progress/supervised-stop-recover/tasks.md`, `specs/in-progress/supervised-stop-recover/handoff.md`, `specs/in-progress/supervised-stop-recover/scratchpad.md`.
 
 ### Task 4 — Supervisor-loss envelope and reconnect handshake
 
