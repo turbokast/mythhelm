@@ -43,7 +43,7 @@ func TestCoverageMissingAggregates(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := tt.coverage.Missing(tt.required)
-			if !slices.Equal(got, tt.want) {
+			if (got == nil) != (tt.want == nil) || !slices.Equal(got, tt.want) {
 				t.Fatalf("Missing(%v) = %v, want %v", tt.required, got, tt.want)
 			}
 		})
