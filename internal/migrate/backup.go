@@ -151,6 +151,11 @@ func Backup(ctx context.Context, db *sql.DB, dir string) (BackupInfo, error) {
 // restored file is re-opened read-only and integrity-checked before any
 // writer touches it.
 //
+// Restore coordinates no writers itself: the caller must hold them
+// quiesced — Apply's migration lock for the whole migration run
+// (design §4) — and every database handle closed. The non-empty-WAL
+// refusal below is the backstop for a stale WAL, not a lock.
+//
 // Failure cases: schema_too_new (the sidecar or the backup file itself is
 // newer than this binary — upgrade, nothing written); invalid_contract
 // (digest mismatch, or the sidecar disagreeing with the backup file's own
