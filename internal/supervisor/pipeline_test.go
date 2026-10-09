@@ -1135,6 +1135,14 @@ func TestSeedFailureFailsClosed(t *testing.T) {
 	if rows := f.runs(t); len(rows) != 0 {
 		t.Fatalf("recorded runs = %d, want 0: the failed run admitted nothing", len(rows))
 	}
+	// The seed failure must release the migration lock: a leaked hold
+	// blocks later Run/Recover/Drain calls in a long-lived process and,
+	// on Windows, fails the TempDir cleanup with owner.lock held.
+	release, err := supervisor.AcquireOwner(f.state)
+	if err != nil {
+		t.Fatalf("AcquireOwner(state) = %v; want the migration lock released on seed failure", err)
+	}
+	release()
 }
 
 func TestCtrlCOnceStopsAndExits130(t *testing.T) {
