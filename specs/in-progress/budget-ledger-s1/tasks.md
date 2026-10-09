@@ -244,7 +244,7 @@
 - **Spec deviations**: (1) `internal/workers/worker.go` is unchanged: its sticky-poison logic already ranks exhaustion over `rate_limit`, so `TestExhaustionWinsOverRateLimit` is a guard that passed on first run and was shown to bite by mutation. (2) `adapters/fake/fake.go` and `scenarios/allowance-exhausted.json` change: the fake decoder ignored the scenario's nested `error`, so a `fake.error` frame now carries the class. (3) `state.go` gains `transitionRun` with an extra projection and `pipeline.go` splits `runTo` into `runTo` and `settleRun`. (4) `NewJournalReserver(c, evaluate)` takes a `BucketEvaluator`, and `admission.MaxBucketRetries` is exported. (5) Tests outside the Files list: `reserve_test.go` and `faults_test.go` (recovery orphan assertions), and `internal/supervisor/pipeline_test.go`, where Task 4's `TestAdmissionWritesInitialEnvelope` now expects a released reservation after a completed run. (6) Review round 1 (CodeRabbit, confirmed against AC-6.1/AC-6.2): `checkBucket` clears the bucket row only when the authoritative reset passed, not when the retries are spent — the task text's "clears the row when consumed (3 used)" would re-admit the 4th admission and restart the schedule, violating "then stop". The spent row stays at `MaxBucketRetries` so the next admission refuses with giveUp; pinned by new `TestSpentScheduleGivesUp` (shown to fail without the fix). (7) Review round 2 (CodeRabbit): a passed authoritative reset is handled before the schedule runs, so a reset recorded after the retries were spent still clears the row — otherwise the spent row would refuse giveUp forever; pinned by new `TestPassedResetClearsSpentBucket` (shown to fail without the fix).
 - **Files modified**: `adapters/fake/fake.go`, `adapters/fake/scenarios/allowance-exhausted.json`, `internal/admission/reserve.go`, `internal/admission/reserve_test.go`, `internal/supervisor/exhaustion.go`, `internal/supervisor/exhaustion_test.go`, `internal/supervisor/faults_test.go`, `internal/supervisor/ingest.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/pipeline_test.go`, `internal/supervisor/recover.go`, `internal/supervisor/state.go`, `internal/workers/worker_outcome_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
-### Task 9 — Completion reserve gate
+### Task 9 — Completion reserve gate ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -268,6 +268,10 @@
   - `TestReserveNeverHardTokenClaim`: the estimate carries no token-quantity field and the Note pins estimate-only; a hard-claim rendering fails (pinned again in Task 10 goldens).
 - **Test plan**: Pure estimator tests with synthetic check lists; pipeline gate test with a depleted envelope fixture.
 - **Invariants touched**: I10 (v2 §2: reserve is an estimate, never an advertised hard token reserve, AC-5.2); I21 (v2 §10.3: completion budgeted before optional work).
+- **Status**: ✅ Completed — completion reserve estimator, replan gate with `completion_reserve_shortfall`, and derived replan deadline, with all nine acceptance tests passing; PR #270.
+- **Implementation**: `pipeline.planAttempt` runs `replanReserve` (replans only: a prior attempt and `IsReplan`) before `planLaunchAt`, and returns the execution deadline minus `VerifyTimeoutSum` for replans. A non-positive `CheckConfig.Duration()` blocks the launch as `envelope_unavailable`. Commit fbb93a2.
+- **Spec deviations**: None.
+- **Files modified**: `internal/billing/reserve.go`, `internal/billing/reserve_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/envelope_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
 ### Task 10 — Receipt and CLI ledger surfaces
 
