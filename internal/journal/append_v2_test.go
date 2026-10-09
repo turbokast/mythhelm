@@ -186,10 +186,94 @@ func TestAppendAcceptsV2PostMigration(t *testing.T) {
 			t.Errorf("invalid code = %s, want invalid_contract", code)
 		}
 
+		// An empty event_id still rejects with a valid ControlError: the
+		// operation ID falls back to "unknown" instead of failing Validate.
+		noID := validV2("", "run_v2_checks", "sup_v2_checks", 2, 1, "task.transitioned")
+		if err := j.Append(ctx, asEvent(noID), nil); err == nil {
+			t.Error("empty event_id appended, want rejection")
+		} else if code := controlCode(t, err); code != v2contract.CodeInvalidContract {
+			t.Errorf("empty event_id code = %s, want invalid_contract", code)
+		}
+
 		if evs, err := j.Events(ctx, "run_v2_checks", 0); err != nil || len(evs) != 1 {
 			t.Fatalf("events after rejects = %d, %v; want 1, nil", len(evs), err)
 		}
 	})
+}
+
+// TestAppendV2TxBoundaryErrors covers Append's transaction boundaries for
+// v2: a BeginTx failure (closed database) and a Commit failure (the
+// projection rolls the transaction back) both map to
+// persistence_unavailable, while v1 keeps its raw journal errors.
+func TestAppendV2TxBoundaryErrors(t *testing.T) {
+	ctx := t.Context()
+
+	beginFails := func(t *testing.T, ev journal.Event) error {
+		t.Helper()
+		dir := t.TempDir()
+		j, err := journal.Open(ctx, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := j.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return j.Append(ctx, ev, nil)
+	}
+
+	err := beginFails(t, asEvent(validV2("evt_v2_nobegin", "run_v2_tx", "sup_v2_tx", 1, 1, "task.transitioned")))
+	if err == nil {
+		t.Fatal("Append on a closed database returned nil, want an error")
+	}
+	if code := controlCode(t, err); code != v2contract.CodePersistenceUnavailable {
+		t.Errorf("v2 BeginTx code = %s, want persistence_unavailable", code)
+	}
+
+	err = beginFails(t, journal.Event{
+		SchemaVersion: journal.EnvelopeVersion, EventID: "evt_v1_nobegin", RunID: "run_v1_tx",
+		ProducerID: "sup_v1_tx", ProducerSequence: 1, Generation: 1,
+		ObservedAt: v2FixedTime, Type: "run.state_changed",
+		Payload: json.RawMessage(`{"state":"created","reason":null}`),
+	})
+	if err == nil {
+		t.Fatal("v1 Append on a closed database returned nil, want an error")
+	}
+	var ce *v2contract.ControlError
+	if errors.As(err, &ce) {
+		t.Errorf("v1 BeginTx err = %v, want the raw journal error, not a ControlError", err)
+	}
+	if !strings.Contains(err.Error(), "journal: starting append") {
+		t.Errorf("v1 BeginTx err = %v, want the unchanged message", err)
+	}
+
+	commitFails := func(t *testing.T, j *journal.Journal, ev journal.Event) error {
+		t.Helper()
+		return j.Append(ctx, ev, func(tx *sql.Tx) error { return tx.Rollback() })
+	}
+
+	j, dir := openV2Temp(t)
+	setPhase(t, dir, "imported")
+	err = commitFails(t, j, asEvent(validV2("evt_v2_nocommit", "run_v2_tx", "sup_v2_commit", 1, 1, "task.transitioned")))
+	if !errors.Is(err, sql.ErrTxDone) {
+		t.Fatalf("v2 commit err = %v, want sql.ErrTxDone in the chain", err)
+	}
+	if code := controlCode(t, err); code != v2contract.CodePersistenceUnavailable {
+		t.Errorf("v2 commit code = %s, want persistence_unavailable", code)
+	}
+
+	j1, _ := openV2Temp(t)
+	err = commitFails(t, j1, journal.Event{
+		SchemaVersion: journal.EnvelopeVersion, EventID: "evt_v1_nocommit", RunID: "run_v1_tx",
+		ProducerID: "sup_v1_commit", ProducerSequence: 1, Generation: 1,
+		ObservedAt: v2FixedTime, Type: "run.state_changed",
+		Payload: json.RawMessage(`{"state":"created","reason":null}`),
+	})
+	if !errors.Is(err, sql.ErrTxDone) {
+		t.Fatalf("v1 commit err = %v, want sql.ErrTxDone in the chain", err)
+	}
+	if errors.As(err, &ce) {
+		t.Errorf("v1 commit err = %v, want the raw journal error, not a ControlError", err)
+	}
 }
 
 func TestAppendAcceptsMigrationOwnedAtDrained(t *testing.T) {

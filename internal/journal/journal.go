@@ -295,16 +295,28 @@ func (j *Journal) Append(ctx context.Context, ev Event, project func(*sql.Tx) er
 	}
 	tx, err := j.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("journal: starting append: %w", err)
+		return txBoundaryError(ev, "starting append", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	if err := appendTx(ctx, tx, ev, project); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("journal: committing event %s: %w", ev.EventID, err)
+		return txBoundaryError(ev, "committing event "+ev.EventID, err)
 	}
 	return nil
+}
+
+// txBoundaryError maps Append's transaction-boundary failures: v2 envelopes
+// get the catalogue's persistence_unavailable (the mutation did not
+// persist), while v1 keeps its exact messages.
+func txBoundaryError(ev Event, op string, err error) error {
+	if ev.SchemaVersion == v2contract.SchemaVersion {
+		return v2Error(v2contract.CodePersistenceUnavailable, ev,
+			"retry the append against a healthy ledger",
+			fmt.Errorf("%s: %w", op, err))
+	}
+	return fmt.Errorf("journal: %s: %w", op, err)
 }
 
 // appendTx is the transaction-scoped core of Append: checks, insert, producer
@@ -393,10 +405,16 @@ func migrationPhase(ctx context.Context, tx *sql.Tx) (string, error) {
 // (errors.As, for the code) and the stream-1 cause (errors.Is, for the
 // sentinel).
 func v2Error(code v2contract.Code, ev Event, nextAction string, cause error) error {
+	opID := ev.EventID
+	if opID == "" {
+		// The operation cannot be identified without an event_id; say so
+		// (I09: unmeasured, never empty) so the ControlError stays valid.
+		opID = "unknown"
+	}
 	ce := &v2contract.ControlError{
 		Code:        code,
 		Owner:       "journal",
-		OperationID: ev.EventID,
+		OperationID: opID,
 		Disposition: code.DefaultDisposition(),
 		NextAction:  nextAction,
 	}
