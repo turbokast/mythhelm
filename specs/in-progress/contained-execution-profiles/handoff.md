@@ -63,7 +63,9 @@
 
 ## Task 8 — Honesty surfaces and receipt boundary evidence
 
-<!-- pending -->
+- **Produces**: `admission.TrustedHostDisclosure` (the exported verbatim trusted-host sentence); `Profile.Boundary *contain.Evidence` (the consulted evidence kept on the admitted decision; nil for trusted-host); receipt `execution_bundle.boundary` (`{name, version, coverage{filesystem, process, network, credential}}`, or `unknown`) and `verification.evaluator` (`{name, digest}`, or `unknown`).
+- **For dependents**: boundary coverage values are mechanism names when enforced, `unknown` otherwise — never the words contained or verified; a trusted-host run renders boundary `unknown`. Read the evaluator from the verification row (`LatestVerification`), never recompute it. Any new trusted-host copy (Task 11 refusal/fixture text) must reuse `TrustedHostDisclosure` verbatim.
+- **Deviations**: see the entry (`pipeline_test.go` assertion update; no input change for later tasks).
 
 ## Task 9 — Startup boundary and authority fixtures
 
