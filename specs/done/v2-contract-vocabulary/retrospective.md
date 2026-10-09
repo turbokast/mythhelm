@@ -54,7 +54,7 @@
 
 ## Effort
 
-dispatched=8 returned=7 failed=0; attempts 8 over 8 tasks; first-pass 8/8; review rounds 3 (+1 finalize-review fix PR); wall-clock 2026-10-08T23:31:47Z → 2026-10-09T09:05:46Z
+dispatched=8 (one attempt-1 dispatch per task; the 9th dispatch row is the post-review seams fix, not a task attempt), returned=7 (t8 has no return row: it went dispatch → verify → maintainer merge #264 without one), failed=0 (no fail rows, no attempt-2 dispatch anywhere); first-pass 8/8 (all 8 tasks merged on attempt 1: #234 #237 #238 #239 #241 #243 #244 #264); review rounds 3 (+1 finalize-review fix PR); wall-clock 2026-10-08T23:31:47Z → 2026-10-09T09:05:46Z. Event-log gaps: the t8 return row and the t2 merge row (#244 is on main at 01f718f) were never recorded.
 
 | Task | Agent | Attempts | Review rounds | PR | Merged | First pass |
 |---|---|---|---|---|---|---|
