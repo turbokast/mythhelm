@@ -28,7 +28,7 @@ Supported now:
 
 Not supported yet:
 
-- Plugins, routing and releases — all still planned.
+- Plugins and routing — still planned. Releases: the pipeline is implemented and dry-run proven, but no release has been published yet (see [the release process](docs/release-process.md)).
 - `subscription-only`: it always blocks because no native surface qualifies an included-only boundary (G05 not passed).
 - The AC-4.7 OAuth-token exception: unwired, refused at both gates (see [ADR 0002](docs/decisions/0002-dogfood-billing-posture.md)).
 - macOS MDM preferences and remote cached managed policy as certified trust sources; the settings inventory covers files only.
