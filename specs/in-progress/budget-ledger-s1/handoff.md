@@ -54,7 +54,9 @@
 
 ## Task 9 — Completion reserve gate
 
-<!-- pending -->
+- **Produces**: `billing.ReserveEstimate`, `ReserveNote` (the exact Note text), `CheckBound`, `EstimateReserve`, `ExecutionRemainder`, `RemainderCoversReserve` in `internal/billing/reserve.go`; `pipeline.planAttempt(ctx, now)` returning the launch plan and the attempt's deadline, and `pipeline.replanReserve` in `pipeline.go`; blocked reason `completion_reserve_shortfall` (a `*GateError` wrapping `billing.ErrBudgetExhausted`).
+- **For dependents**: Task 10 can render `billing.EstimateReserve(checks, ceilings)` with its `Note`; the pipeline does not store or journal the estimate. `attempt()` passes the plan's deadline through `planAttempt`, so a replan's `p.deadline` is the derived one. The pipeline still launches one attempt, so the replan path is exercised through `planAttempt` in `envelope_test.go` (`newReserveWorld`).
+- **Traps**: `CheckConfig.Duration()` returns 0 for an unparseable timeout, so the hook treats any non-positive value as a conversion failure. Under `--no-checks` the reserve is empty. `replanReserve` reads the envelope with `effectiveCeilings`, so a granted extension raises the time left.
 
 ## Task 10 — Receipt and CLI ledger surfaces
 
