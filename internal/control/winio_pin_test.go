@@ -57,6 +57,9 @@ func TestGoWinioPinned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(matches) == 0 {
+		t.Fatal("no specs/*/supervisor-service/scratchpad.md records the go-winio approval")
+	}
 	for _, p := range matches {
 		note, err := os.ReadFile(p) //nolint:gosec // G304: p comes from a glob under the repository root
 		if err != nil {

@@ -65,7 +65,9 @@ func serveEcho(t *testing.T, l Listener) (wait func()) {
 // ownerOnlyDACL reports why the pipe's DACL is not exactly one allow entry
 // for the current user on a protected DACL.
 func ownerOnlyDACL(pipe string) error {
-	sd, err := windows.GetNamedSecurityInfo(pipe, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	// SE_KERNEL_OBJECT queries the pipe by name; SE_FILE_OBJECT would open it
+	// and fail with ERROR_PIPE_BUSY while the listener holds its instance.
+	sd, err := windows.GetNamedSecurityInfo(pipe, windows.SE_KERNEL_OBJECT, windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
 		return fmt.Errorf("reading the pipe DACL: %w", err)
 	}
