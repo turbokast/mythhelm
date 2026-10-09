@@ -43,7 +43,9 @@
 
 ## Task 7 — Event v2 envelope and sequence validators
 
-<!-- pending -->
+- **Produces**: `v2contract.Envelope` (design §6 exact fields; `Payload` `toml:"-"`) with value-receiver `Validate() error`; `ErrDuplicateEvent`, `ErrSequenceGap`, `ErrStaleGeneration`; `CheckSequence(last, got int64)`, `CheckDuplicate(seen bool)`, `CheckGeneration(current, got int64)` — all `errors.Is`-matchable. Golden: `testdata/envelope.golden.json`.
+- **For dependents**: check order is duplicate (by event_id) → generation → sequence, matching `Append`; a re-sent sequence under a new event_id is a gap, not a duplicate. OQ-9 contract side decided: same journal table, v2 accepted post-migration; the `Append` change is `supervisor-migration`'s. `loadGolden`'s `//nolint:unused` was removed (first caller here); parallel tasks touching that line merge cleanly.
+- No deviations affecting later tasks.
 
 ## Task 8 — Support matrix, hermeticity, and invalid-case evidence
 

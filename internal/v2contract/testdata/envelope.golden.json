@@ -1,0 +1,1 @@
+{"schema_version":2,"event_id":"evt_demo_0001","run_id":"run_demo_0001","task_id":"task_demo_0001","producer_id":"supervisor","producer_sequence":41,"run_sequence":1024,"generation":3,"observed_at":"2026-10-08T12:00:00Z","type":"task.accepted","payload":{"task_id":"task_demo_0001","revision":2}}

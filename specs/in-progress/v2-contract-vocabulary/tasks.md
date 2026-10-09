@@ -169,7 +169,7 @@
 - **Test plan**: Set-equality test for the catalogue; full 24-row disposition table; golden round-trip.
 - **Invariants touched**: I03 (v2 §2: adapter detail grants no authority; dispositions never widen); G04 (v2 §18.3: code-driven transitions).
 
-### Task 7 — Event v2 envelope and sequence validators
+### Task 7 — Event v2 envelope and sequence validators ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -189,6 +189,10 @@
   - `TestInt64SequencePrecision`: `9223372036854775807` sequences survive a JSON round-trip exactly (AC-9.1 sequence round-trips).
 - **Test plan**: Golden round-trip; reflection tag-set comparison against `journal.Event` (test-only import); validator table tests incl. boundary int64.
 - **Invariants touched**: I23 (v2 §5.1: envelope shaped for the single canonical ledger); I12 (v2 §2: stale generations quarantined, never accepted).
+- **Status**: ✅ Completed — v2 `Envelope` mirroring `journal.Event` plus pure sequence/duplicate/generation validators in `Append` check order; PR #241.
+- **Implementation**: `Validate` requires schema_version 2, non-empty IDs/type, non-negative sequences/generation, non-zero `ObservedAt`, JSON-object payload; `CheckSequence` guards `math.MaxInt64` overflow. Commit 35c0d64.
+- **Spec deviations**: `internal/v2contract/codec_test.go` (outside Files): removed the now-stale `//nolint:unused` on `loadGolden`, which this task's tests call for the first time (nolintlint flags the unused directive).
+- **Files modified**: `internal/v2contract/envelope.go`, `internal/v2contract/envelope_test.go`, `internal/v2contract/testdata/envelope.golden.json`, `internal/v2contract/codec_test.go`, `specs/in-progress/v2-contract-vocabulary/tasks.md`, `specs/in-progress/v2-contract-vocabulary/handoff.md`, `specs/in-progress/v2-contract-vocabulary/scratchpad.md`.
 
 ### Task 8 — Support matrix, hermeticity, and invalid-case evidence
 
