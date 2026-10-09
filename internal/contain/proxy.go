@@ -8,11 +8,27 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 )
 
 // proxyHeaderLimit caps how many header lines one client request may carry;
 // a CONNECT request that exceeds it is rejected without being forwarded.
 const proxyHeaderLimit = 64
+
+// proxyLineLimit caps one request or header line; longer lines are rejected
+// with 431 before they can retain unbounded memory.
+const proxyLineLimit = 8192
+
+// proxyRequestTimeout bounds the request phase of one connection so a client
+// that connects and sends nothing cannot hold a slot forever.
+const proxyRequestTimeout = 10 * time.Second
+
+// proxyDialTimeout bounds establishing the upstream side of a tunnel.
+const proxyDialTimeout = 10 * time.Second
+
+// proxyMaxConns caps concurrent client connections; excess connections are
+// closed instead of spawning unbounded goroutines.
+const proxyMaxConns = 32
 
 // ServeProxy starts a worker-owned localhost listener that forwards CONNECT
 // tunnels only to an allowlist of exact "host:port" entries. Anything else
@@ -37,13 +53,23 @@ func ServeProxy(ctx context.Context, allow []string) (addr string, stop func(), 
 		<-ctx.Done()
 		stop()
 	}()
+	sem := make(chan struct{}, proxyMaxConns)
 	go func() {
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
 				return // Listener closed by stop or context cancellation.
 			}
-			go serveProxyConn(conn, allowed)
+			select {
+			case sem <- struct{}{}:
+				go func() {
+					defer func() { <-sem }()
+					serveProxyConn(conn, allowed)
+				}()
+			default:
+				proxyWriteStatus(conn, "503 Service Unavailable")
+				_ = conn.Close()
+			}
 		}
 	}()
 	return ln.Addr().String(), stop, nil
@@ -61,14 +87,32 @@ func ProxyEnv(addr string) map[string]string {
 	}
 }
 
+// proxyReadLine reads one '\n'-terminated line of at most proxyLineLimit
+// bytes; a longer line reports tooLarge instead of retaining more memory.
+func proxyReadLine(br *bufio.Reader) (line string, tooLarge bool, err error) {
+	raw, err := br.ReadSlice('\n')
+	if err == bufio.ErrBufferFull {
+		return "", true, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return string(raw), false, nil
+}
+
 // serveProxyConn answers one client connection: exactly one CONNECT to an
 // allowlisted host:port is tunnelled; everything else is denied and the
 // connection closed without contacting the target.
 func serveProxyConn(conn net.Conn, allowed map[string]struct{}) {
 	defer func() { _ = conn.Close() }()
-	br := bufio.NewReader(conn)
-	line, err := br.ReadString('\n')
+	_ = conn.SetReadDeadline(time.Now().Add(proxyRequestTimeout))
+	br := bufio.NewReaderSize(conn, proxyLineLimit)
+	line, tooLarge, err := proxyReadLine(br)
 	if err != nil {
+		return
+	}
+	if tooLarge {
+		proxyWriteStatus(conn, "431 Request Header Fields Too Large")
 		return
 	}
 	fields := strings.Fields(line)
@@ -77,11 +121,15 @@ func serveProxyConn(conn net.Conn, allowed map[string]struct{}) {
 		return
 	}
 	method, target := fields[0], strings.TrimSpace(fields[1])
-	// Drain the request headers (bounded) so a denied or tunnelled request
-	// leaves no unread bytes behind on this connection.
+	// Drain the request headers (bounded in count and length) so a denied
+	// or tunnelled request leaves no unread bytes behind on this connection.
 	for i := range proxyHeaderLimit {
-		hdr, err := br.ReadString('\n')
+		hdr, hdrLarge, err := proxyReadLine(br)
 		if err != nil {
+			return
+		}
+		if hdrLarge {
+			proxyWriteStatus(conn, "431 Request Header Fields Too Large")
 			return
 		}
 		if hdr == "\r\n" || hdr == "\n" {
@@ -92,6 +140,7 @@ func serveProxyConn(conn net.Conn, allowed map[string]struct{}) {
 			return
 		}
 	}
+	_ = conn.SetReadDeadline(time.Time{}) // Request phase done; tunnel streams freely.
 	if method != "CONNECT" {
 		proxyWriteStatus(conn, "405 Method Not Allowed")
 		return
@@ -100,7 +149,7 @@ func serveProxyConn(conn net.Conn, allowed map[string]struct{}) {
 		proxyWriteStatus(conn, "403 Forbidden")
 		return
 	}
-	upstream, err := net.Dial("tcp", target)
+	upstream, err := (&net.Dialer{Timeout: proxyDialTimeout}).Dial("tcp", target)
 	if err != nil {
 		proxyWriteStatus(conn, "502 Bad Gateway")
 		return

@@ -243,6 +243,56 @@ func TestProxyEnvPinsAddress(t *testing.T) {
 	}
 }
 
+func TestProxyRejectsOverlongRequestLine(t *testing.T) {
+	t.Parallel()
+
+	addr, stop, err := ServeProxy(context.Background(), []string{"127.0.0.1:1"})
+	if err != nil {
+		t.Fatalf("ServeProxy: %v", err)
+	}
+	defer stop()
+
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		t.Fatalf("dial proxy %s: %v", addr, err)
+	}
+	defer func() { _ = conn.Close() }()
+	// One line longer than the proxy buffers: it must be rejected with 431
+	// without the proxy retaining an unbounded line in memory.
+	proxyWritef(t, conn, "CONNECT %s HTTP/1.1\r\n\r\n", strings.Repeat("A", proxyLineLimit))
+	status, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		t.Fatalf("read status: %v", err)
+	}
+	if code := proxyStatusCode(t, status); code != "431" {
+		t.Fatalf("overlong request line: status %q, want 431", strings.TrimSpace(status))
+	}
+}
+
+func TestProxyRejectsOverlongHeaderLine(t *testing.T) {
+	t.Parallel()
+
+	addr, stop, err := ServeProxy(context.Background(), []string{"127.0.0.1:1"})
+	if err != nil {
+		t.Fatalf("ServeProxy: %v", err)
+	}
+	defer stop()
+
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		t.Fatalf("dial proxy %s: %v", addr, err)
+	}
+	defer func() { _ = conn.Close() }()
+	proxyWritef(t, conn, "CONNECT 127.0.0.1:1 HTTP/1.1\r\nX-Pad: %s\r\n\r\n", strings.Repeat("B", proxyLineLimit))
+	status, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		t.Fatalf("read status: %v", err)
+	}
+	if code := proxyStatusCode(t, status); code != "431" {
+		t.Fatalf("overlong header line: status %q, want 431", strings.TrimSpace(status))
+	}
+}
+
 func TestServeProxyStopsOnContextCancel(t *testing.T) {
 	t.Parallel()
 
