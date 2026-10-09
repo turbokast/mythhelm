@@ -293,6 +293,62 @@ func TestProxyRejectsOverlongHeaderLine(t *testing.T) {
 	}
 }
 
+func TestProxyDelivers431WithTrailingBody(t *testing.T) {
+	t.Parallel()
+
+	addr, stop, err := ServeProxy(context.Background(), []string{"127.0.0.1:1"})
+	if err != nil {
+		t.Fatalf("ServeProxy: %v", err)
+	}
+	defer stop()
+
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		t.Fatalf("dial proxy %s: %v", addr, err)
+	}
+	defer func() { _ = conn.Close() }()
+	// An oversized request line followed by a large still-arriving body:
+	// closing with unread received data would reset the connection and
+	// discard the 431, so the denial must drain before closing.
+	proxyWritef(t, conn, "CONNECT %s HTTP/1.1\r\n%s", strings.Repeat("A", proxyLineLimit), strings.Repeat("C", 64<<10))
+	status, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		t.Fatalf("read status after oversized request with trailing body: %v", err)
+	}
+	if code := proxyStatusCode(t, status); code != "431" {
+		t.Fatalf("oversized request with trailing body: status %q, want 431", strings.TrimSpace(status))
+	}
+}
+
+func TestProxyCancelClosesActiveTunnel(t *testing.T) {
+	t.Parallel()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer upstream.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	addr, stop, err := ServeProxy(ctx, []string{proxyHostPort(t, upstream.URL)})
+	if err != nil {
+		t.Fatalf("ServeProxy: %v", err)
+	}
+	defer stop()
+
+	status, _, conn := proxyConnect(t, addr, proxyHostPort(t, upstream.URL))
+	defer func() { _ = conn.Close() }()
+	if code := proxyStatusCode(t, status); code != "200" {
+		t.Fatalf("CONNECT to listed host: status %q, want 200", strings.TrimSpace(status))
+	}
+	cancel()
+
+	// The active tunnel must not relay past cancellation: the proxy's
+	// side closes, so a read observes EOF instead of hanging.
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	one := make([]byte, 1)
+	if _, err := io.ReadFull(conn, one); err != io.EOF && err != io.ErrUnexpectedEOF {
+		t.Fatalf("read after cancel: err %v, want EOF (tunnel still open)", err)
+	}
+}
+
 func TestServeProxyStopsOnContextCancel(t *testing.T) {
 	t.Parallel()
 

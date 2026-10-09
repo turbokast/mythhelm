@@ -3,6 +3,7 @@ package contain
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -30,13 +31,18 @@ const proxyDialTimeout = 10 * time.Second
 // closed instead of spawning unbounded goroutines.
 const proxyMaxConns = 32
 
+// proxyDrainLimit caps how much unread request input a 431 denial drains
+// before closing, so the client receives the response instead of a reset.
+const proxyDrainLimit = 1 << 20
+
 // ServeProxy starts a worker-owned localhost listener that forwards CONNECT
 // tunnels only to an allowlist of exact "host:port" entries. Anything else
 // gets an explicit denial status (403 unlisted, 405 non-CONNECT) and no bytes
 // leave the proxy. Direct egress around the proxy is NOT blocked — that is
 // the spec's disclosed residual, never a claim this proxy makes. It returns
 // the proxy's own "host:port" address and a stop func that is safe to call
-// twice. The proxy also stops when ctx is done.
+// twice. Stopping closes the listener and every active connection, so no
+// tunnel relays past a stop. The proxy also stops when ctx is done.
 func ServeProxy(ctx context.Context, allow []string) (addr string, stop func(), err error) {
 	allowed := make(map[string]struct{}, len(allow))
 	for _, entry := range allow {
@@ -47,8 +53,19 @@ func ServeProxy(ctx context.Context, allow []string) (addr string, stop func(), 
 	if err != nil {
 		return "", nil, fmt.Errorf("contain: listen proxy: %w", err)
 	}
+	var mu sync.Mutex
+	active := make(map[net.Conn]struct{})
 	var once sync.Once
-	stop = func() { once.Do(func() { _ = ln.Close() }) }
+	stop = func() {
+		once.Do(func() {
+			_ = ln.Close()
+			mu.Lock()
+			defer mu.Unlock()
+			for conn := range active {
+				_ = conn.Close()
+			}
+		})
+	}
 	go func() {
 		<-ctx.Done()
 		stop()
@@ -62,8 +79,16 @@ func ServeProxy(ctx context.Context, allow []string) (addr string, stop func(), 
 			}
 			select {
 			case sem <- struct{}{}:
+				mu.Lock()
+				active[conn] = struct{}{}
+				mu.Unlock()
 				go func() {
-					defer func() { <-sem }()
+					defer func() {
+						mu.Lock()
+						delete(active, conn)
+						mu.Unlock()
+						<-sem
+					}()
 					serveProxyConn(conn, allowed)
 				}()
 			default:
@@ -91,13 +116,25 @@ func ProxyEnv(addr string) map[string]string {
 // bytes; a longer line reports tooLarge instead of retaining more memory.
 func proxyReadLine(br *bufio.Reader) (line string, tooLarge bool, err error) {
 	raw, err := br.ReadSlice('\n')
-	if err == bufio.ErrBufferFull {
+	if errors.Is(err, bufio.ErrBufferFull) {
 		return "", true, nil
 	}
 	if err != nil {
 		return "", false, err
 	}
 	return string(raw), false, nil
+}
+
+// proxyDenyTooLarge answers an oversized request or header line with 431,
+// then half-closes and drains bounded unread input (under the request-phase
+// read deadline) so the client receives the response instead of a TCP reset
+// triggered by closing with unread received data.
+func proxyDenyTooLarge(conn net.Conn, br *bufio.Reader) {
+	proxyWriteStatus(conn, "431 Request Header Fields Too Large")
+	if tc, ok := conn.(*net.TCPConn); ok {
+		_ = tc.CloseWrite()
+	}
+	_, _ = io.CopyN(io.Discard, br, proxyDrainLimit)
 }
 
 // serveProxyConn answers one client connection: exactly one CONNECT to an
@@ -112,7 +149,7 @@ func serveProxyConn(conn net.Conn, allowed map[string]struct{}) {
 		return
 	}
 	if tooLarge {
-		proxyWriteStatus(conn, "431 Request Header Fields Too Large")
+		proxyDenyTooLarge(conn, br)
 		return
 	}
 	fields := strings.Fields(line)
@@ -129,7 +166,7 @@ func serveProxyConn(conn net.Conn, allowed map[string]struct{}) {
 			return
 		}
 		if hdrLarge {
-			proxyWriteStatus(conn, "431 Request Header Fields Too Large")
+			proxyDenyTooLarge(conn, br)
 			return
 		}
 		if hdr == "\r\n" || hdr == "\n" {
