@@ -64,10 +64,11 @@ func normalizeLinearRun(s string, e env, repo string) string {
 }
 
 // tuiVolatilePayloadKeys holds JSONL payload keys whose values vary run to
-// run wherever they appear: launch tokens, process IDs, timestamps and
-// commit-dependent values.
+// run wherever they appear: launch tokens, worker nonces, process IDs,
+// timestamps and commit-dependent values.
 var tuiVolatilePayloadKeys = map[string]bool{
 	"launch_token_sha256": true,
+	"nonce_sha256":        true,
 	"worker_pid":          true,
 	"native_pid":          true,
 	"native_pgid":         true,

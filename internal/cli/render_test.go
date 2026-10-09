@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/admission"
+	"github.com/turbokast/mythhelm/internal/control"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/supervisor"
@@ -282,6 +283,13 @@ func ledgerRunFixture(t *testing.T) string {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("XDG_CONFIG_HOME", home)
+	// The run pins a real boot generation from an isolated instance lock.
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	release, err := control.AcquireInstance(state)
+	if err != nil {
+		t.Fatalf("AcquireInstance: %v", err)
+	}
+	t.Cleanup(release)
 	t.Chdir(repo)
 	return task
 }

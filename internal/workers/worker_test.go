@@ -246,6 +246,8 @@ type stoppedPayload struct {
 	Confirmed      bool                 `json:"confirmed"`
 	UnresolvedPIDs []int                `json:"unresolved_pids"`
 	SignalsSent    []adapter.StopSignal `json:"signals_sent"`
+	Sent           []adapter.StopStep   `json:"sent"`
+	LadderVersion  string               `json:"ladder_version"`
 	DescendantScan string               `json:"descendant_scan"`
 }
 
@@ -978,5 +980,189 @@ func TestWorkerPanicAfterTerminalWritePreservesState(t *testing.T) {
 	}
 	if terminals != 1 {
 		t.Fatalf("spool must have one terminal transition for ingestion, got %d", terminals)
+	}
+}
+
+// climbPinnedLadder hands a worker the pinned ladder version with a fresh
+// nonce and the ladder, stops it once its native session is up, and
+// returns its stopped report. The platform climb tests share it.
+func climbPinnedLadder(t *testing.T, scenario string, ladder []adapter.StopStep) stoppedPayload {
+	t.Helper()
+	a := newAttempt(t)
+	l := a.launch(t, scenario)
+	l.LadderVersion = "stop-ladder/v1"
+	l.Nonce = "test-nonce-" + a.attemptID
+	l.StopLadder = ladder
+	proc := a.spawn(t, l)
+	a.requestStopOnce(t, "test-stop")
+	evs := a.waitDone(t)
+	if _, err := proc.Wait(); err != nil {
+		t.Fatalf("worker wait: %v (log %q)", err, a.workerLog())
+	}
+	if st, _ := final(t, evs); st != "stopped" {
+		t.Fatalf("final state = %s, want stopped", st)
+	}
+	return stoppedOf(t, evs)
+}
+
+func TestStopRequestFirstStands(t *testing.T) {
+	dir := t.TempDir()
+	if err := RequestStop(dir, "stop_first"); err != nil {
+		t.Fatalf("first RequestStop: %v", err)
+	}
+	// A second request with a different ID still returns nil...
+	if err := RequestStop(dir, "stop_second"); err != nil {
+		t.Fatalf("second RequestStop: %v", err)
+	}
+	// ...but the first request's ID is what stands recorded.
+	by, ok := readStopRequest(dir)
+	if !ok || by != "stop_first" {
+		t.Fatalf("recorded requester = %q, %v; want stop_first", by, ok)
+	}
+}
+
+// writeIdentityFile stores id as dir/worker.json.
+func writeIdentityFile(t *testing.T, dir string, id Identity) {
+	t.Helper()
+	body, err := json.Marshal(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "worker.json"), body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// pinnedWorker returns a worker running as the test process in dir, whose
+// launch pins raw as its nonce.
+func pinnedWorker(t *testing.T, dir, raw string) *worker {
+	t.Helper()
+	return &worker{
+		dir: dir, runID: "run_pin", attemptID: "att_pin",
+		launch: Launch{Nonce: raw},
+		id:     Identity{PID: os.Getpid()},
+		log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+}
+
+func TestWorkerSignalsNoStranger(t *testing.T) {
+	live, err := ProcessStartTime(os.Getpid())
+	if err != nil {
+		t.Skipf("process start times are unavailable: %v", err)
+	}
+	dir := t.TempDir()
+	const raw = "test-nonce-no-stranger"
+	// worker.json names this PID but a different start time: the PID was
+	// reused by another process after the worker died.
+	writeIdentityFile(t, dir, Identity{SchemaVersion: 1, RunID: "run_pin", AttemptID: "att_pin",
+		PID: os.Getpid(), StartTime: live.Add(time.Second), Nonce: raw})
+	w := pinnedWorker(t, dir, raw)
+	sess := &stubSession{}
+	rep, err := w.interrupt(context.Background(), sess)
+	if !errors.Is(err, errOwnershipUnresolved) {
+		t.Fatalf("interrupt = %v, want ownership_unresolved", err)
+	}
+	if rep.Confirmed || len(rep.Sent) != 0 {
+		t.Errorf("report = %+v, want unconfirmed with nothing sent", rep)
+	}
+	if sess.interrupts != 0 {
+		t.Errorf("the ladder ran %d times against a stranger, want 0: nothing is signalled", sess.interrupts)
+	}
+}
+
+func TestNonceMismatchBlocks(t *testing.T) {
+	live, err := ProcessStartTime(os.Getpid())
+	if err != nil {
+		t.Skipf("process start times are unavailable: %v", err)
+	}
+	const raw = "test-nonce-pinned"
+	if NonceDigest("another-raw-value") == NonceDigest(raw) {
+		t.Fatal("the mismatched nonce digests to the pinned one; the row proves nothing")
+	}
+	matching := Identity{SchemaVersion: 1, RunID: "run_pin", AttemptID: "att_pin",
+		PID: os.Getpid(), StartTime: live, Nonce: raw}
+	for _, tc := range []struct {
+		name     string
+		file     func(t *testing.T, dir string)
+		wantErr  bool
+		wantCall int
+	}{
+		{
+			name: "wrong nonce",
+			file: func(t *testing.T, dir string) {
+				t.Helper()
+				id := matching
+				id.Nonce = "another-raw-value"
+				writeIdentityFile(t, dir, id)
+			},
+			wantErr: true,
+		},
+		{
+			name: "legacy file without nonce",
+			file: func(t *testing.T, dir string) {
+				t.Helper()
+				// The pre-change worker.json shape carries no nonce key at all.
+				body := fmt.Sprintf(`{"schema_version":1,"run_id":"run_pin","attempt_id":"att_pin",`+
+					`"pid":%d,"start_time":%q,"launch_token":"tok_test"}`,
+					os.Getpid(), live.Format(time.RFC3339Nano))
+				if strings.Contains(body, "nonce") {
+					t.Fatal("the legacy fixture names a nonce; the row proves nothing")
+				}
+				if err := os.WriteFile(filepath.Join(dir, "worker.json"), []byte(body), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantErr: true,
+		},
+		{
+			name: "matching identity climbs",
+			file: func(t *testing.T, dir string) {
+				t.Helper()
+				writeIdentityFile(t, dir, matching)
+			},
+			wantCall: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			tc.file(t, dir)
+			w := pinnedWorker(t, dir, raw)
+			sess := &stubSession{}
+			rep, err := w.interrupt(context.Background(), sess)
+			if tc.wantErr {
+				if !errors.Is(err, errOwnershipUnresolved) {
+					t.Fatalf("interrupt = %v, want ownership_unresolved", err)
+				}
+				if rep.Confirmed || len(rep.Sent) != 0 {
+					t.Errorf("report = %+v, want unconfirmed with nothing sent", rep)
+				}
+			} else if err != nil {
+				t.Fatalf("interrupt = %v, want the ladder to run", err)
+			}
+			if sess.interrupts != tc.wantCall {
+				t.Errorf("the ladder ran %d times, want %d", sess.interrupts, tc.wantCall)
+			}
+		})
+	}
+}
+
+func TestSentStepsPairsSignalsWithRungGraces(t *testing.T) {
+	ladder := []adapter.StopStep{
+		{Signal: adapter.StopInterrupt, Grace: time.Second},
+		{Signal: adapter.StopTerminate, Grace: 5 * time.Second},
+	}
+	got := sentSteps([]adapter.StopSignal{adapter.StopInterrupt, adapter.StopTerminate}, ladder)
+	if !slices.Equal(got, ladder) {
+		t.Errorf("sentSteps = %+v, want the climbed rungs %+v", got, ladder)
+	}
+	// A signal with no matching rung carries a zero grace, which the stop
+	// intent rejects rather than confirm a climb it cannot vouch for.
+	got = sentSteps([]adapter.StopSignal{adapter.StopKill}, ladder)
+	if len(got) != 1 || got[0].Signal != adapter.StopKill || got[0].Grace != 0 {
+		t.Errorf("sentSteps for a foreign signal = %+v, want one zero-grace kill", got)
+	}
+	// A climb that sent nothing still reports an explicit empty sent array.
+	if got := sentSteps(nil, ladder); got == nil {
+		t.Error("sentSteps(nil) = nil, want an empty array")
 	}
 }
