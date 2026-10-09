@@ -161,7 +161,7 @@ Add a dispatch step: before starting a task attempt, append the `run_start` row 
 
 - **Decision**: approved
 - **Date**: 2026-10-09
-- **Pull request**: pending
+- **Pull request**: #308
 - **Eval**: `finalize-review-reverifies-decision-records`
 - **Rationale**: ADR 0014 contradicted the shipped tree after a later task landed what it recorded as blocked; re-checking accepted decision records against the tree at finalize is the first point where every task's work is visible together. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
 - **Source spec**: `supervisor-service`
