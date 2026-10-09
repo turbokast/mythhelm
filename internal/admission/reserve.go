@@ -128,10 +128,12 @@ func (r journalReserver) Reserve(ctx context.Context, tx *sql.Tx, runID, bucket,
 
 // checkBucket refuses new model work on a bucket that is live in
 // bucket_state until its schedule comes due. A due re-admission is counted
-// here, in the admission transaction, and the row is cleared once its
-// retries are spent or its reset time has passed; if the bucket is still
-// exhausted the native signal re-blocks the next attempt. A refusal changes
-// nothing. A bucket with no evaluator never admits (I02).
+// here, in the admission transaction. The row is cleared only once its
+// authoritative reset time has passed: a spent schedule keeps its row at
+// MaxBucketRetries so the next admission refuses with giveUp (AC-6.2 "then
+// stop", AC-6.1); clearing on spent retries would let the next admission
+// through and restart the schedule. A refusal changes nothing. A bucket
+// with no evaluator never admits (I02).
 func (r journalReserver) checkBucket(ctx context.Context, tx *sql.Tx, bucket string, now time.Time) error {
 	row := journal.BucketRow{Bucket: bucket}
 	var reset sql.NullString
@@ -162,7 +164,7 @@ func (r journalReserver) checkBucket(ctx context.Context, tx *sql.Tx, bucket str
 			resetPassed = !now.Before(t)
 		}
 	}
-	if row.RetriesUsed+1 >= MaxBucketRetries || resetPassed {
+	if resetPassed {
 		return journal.ClearBucket(ctx, tx, bucket)
 	}
 	return nil

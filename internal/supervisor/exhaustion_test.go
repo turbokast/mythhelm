@@ -226,7 +226,7 @@ func TestEvaluateBucketAdmitsAndClears(t *testing.T) {
 	}{
 		{"first backoff due: counted, row kept", 2 * time.Minute, nil, 0, 1, false},
 		{"second backoff due: counted, row kept", 6 * time.Minute, nil, 1, 2, false},
-		{"third retry consumes the schedule: row cleared", 16 * time.Minute, nil, 2, 3, true},
+		{"third retry consumes the schedule: row kept, retries spent", 16 * time.Minute, nil, 2, 3, false},
 		{"authoritative reset reached: row cleared", 2 * time.Hour, &past, 0, 1, true},
 		{"authoritative reset ahead stays refused", time.Minute, &future, 0, 0, false},
 	} {
@@ -259,6 +259,54 @@ func TestEvaluateBucketAdmitsAndClears(t *testing.T) {
 				t.Fatalf("an admitted re-admission holds %d reservations, want 1", n)
 			}
 		})
+	}
+}
+
+// TestSpentScheduleGivesUp pins AC-6.2's "then stop": after the unknown-reset
+// schedule's three retries are consumed, the row stays at MaxBucketRetries
+// and the next admission refuses with giveUp instead of admitting; a further
+// native exhaustion signal does not restart the schedule.
+func TestSpentScheduleGivesUp(t *testing.T) {
+	t.Parallel()
+	w := newBucketWorld(t)
+	w.bucket = admission.QuotaBucket(bucketRec, bucketIdentity)
+	w.exhaust(t, 16*time.Minute, nil, 0)
+	holdNewRun := func() error {
+		t.Helper()
+		runID := ids.New("run")
+		now := time.Now()
+		err := w.j.Transact(t.Context(), func(tx *sql.Tx) error {
+			if err := journal.InsertRun(t.Context(), tx, journal.RunRow{RunID: runID, State: "admission", AdapterID: "builtin/fake", SourceRepo: "/tmp/repo",
+				TaskSHA256: "t", BillingPosture: "local-scripted", ExecutionProfile: "trusted-host", CreatedAt: now, UpdatedAt: now}); err != nil {
+				return err
+			}
+			_, err := admission.HoldQuotaReservation(t.Context(), tx, admission.NewJournalReserver(billing.BuiltInCeilings(), EvaluateBucket), runID, bucketRec, bucketIdentity)
+			return err
+		})
+		return err
+	}
+	for i := range 3 {
+		if err := holdNewRun(); err != nil {
+			t.Fatalf("scheduled retry %d was refused: %v", i+1, err)
+		}
+	}
+	row, err := w.row(t)
+	if err != nil || row.RetriesUsed != int64(admission.MaxBucketRetries) {
+		t.Fatalf("bucket row = %+v, %v; want retries_used %d", row, err, admission.MaxBucketRetries)
+	}
+	err = holdNewRun()
+	var exhausted *admission.ExhaustedError
+	if !errors.As(err, &exhausted) || !exhausted.GiveUp {
+		t.Fatalf("fourth admission err = %v; want giveUp ExhaustedError", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if err := w.j.Transact(t.Context(), func(tx *sql.Tx) error {
+		return journal.SetBucketExhausted(t.Context(), tx, w.bucket, now, nil)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := holdNewRun(); !errors.As(err, &exhausted) || !exhausted.GiveUp {
+		t.Fatalf("admission after re-exhaustion err = %v; want still giveUp", err)
 	}
 }
 
