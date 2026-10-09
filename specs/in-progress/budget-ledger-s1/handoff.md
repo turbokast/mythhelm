@@ -20,7 +20,9 @@
 
 ## Task 3 — Migration 0003, ledger rows, ingest projection
 
-<!-- pending -->
+- **Produces**: migration `0003_ledger.sql`, `journal.SchemaVersion` 3, and `internal/journal/ledger.go` with `UsageRow`, `EnvelopeRow`, `ReservationRow`, `BucketRow`, `Transact` and every accessor in the task, exactly as in design §2. `ingest.go` projects `attempt.native_result` into usage rows.
+- **For dependents**: usage rows are per-event increments (one row per scope, unit, source per native_result), never running totals; sum them with `billing.Normalize` over `Delta` readings. `ReservationRow.Status` admits only held/released/orphaned. Release accepts held or orphaned; touch and orphan accept only held, and a refused transition wraps `sql.ErrNoRows`. `RunEnvelope`, `Reservation` and `BucketState` also wrap `sql.ErrNoRows` when missing. `SetReservationReleased` records its time in `heartbeat_at`.
+- **Traps**: the route key for `SplitUsage` is read from the run's `admission.decided` event payload (`adapter.harness`); a run without one has an unmapped route. The cost literal must be plain decimal text to project, else its scope goes unknown. Task 7 and Task 8 share `ingest.go`: add cases to `projectWorkerEvent`'s switch, do not restructure `projectUsage`. Run tests with `ANTHROPIC_BASE_URL` unset and `GOTOOLCHAIN=go1.27.1` for `golangci-lint`; `Normalize` calls need `//nolint:misspell`.
 
 ## Task 4 — Admission reservation coupling
 
