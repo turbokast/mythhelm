@@ -12,8 +12,12 @@ overrides `design.md` — conflicts go back to the designer.
   Status: decided.
 - **OQ-8** (shipped SQLite engine WAL-fix status): default unverified until
   `SELECT sqlite_version()` is asserted from the built binary. Decider:
-  implementing task evidence (Task 7). Status: open — Task 7 records the
-  observed version and the backport pin (if any) here.
+  implementing task evidence (Task 7). Status: decided — the built
+  binary reports engine 3.53.4 (`modernc.org/sqlite v1.60.1`), meeting
+  the ≥3.51.3 floor; no backport pin needed. Evidence:
+  `TestSQLiteEngineHasWALFix` (`internal/migrate/nfr2_test.go`) builds
+  `cmd/mythhelm` and reads `sqlite_version` from `version --format
+  jsonl`.
 
 ## Prerequisite-spec notes
 
@@ -102,6 +106,14 @@ overrides `design.md` — conflicts go back to the designer.
   runners). A resume whose recorded backup vanished refuses with
   `invalid_contract` instead of re-taking (a fresh copy would hold
   committed migration rows, not pre-migration state).
+- **Task 7**: `ControlError.Error()` renders code + next action only —
+  integrity-path pins must assert on `Detail["migrate/cause"]`, not the
+  message. Single-flipped-byte corruption past page 1 trips
+  `integrity_check` on the first candidate tried (page 2 + 64); the
+  `corruptCopy` helper still hunts across pages/offsets so the
+  fixture fails loudly instead of silently passing if the engine ever
+  stops detecting it. Local gate note from earlier tasks still
+  applies: run the full suite with a clean `HOME`.
 - **Task 8**: the support matrix pins exactly the 6 shipped rows and
   `TestSupportMatrixMatchesEvidence` resolves every evidence ref to a
   real test, checks platform claims against build tags, and maps every
@@ -109,6 +121,6 @@ overrides `design.md` — conflicts go back to the designer.
   without a row fails, with self-mutations proving each defect class
   is reported. ADR 0016 stays `proposed` until the maintainer accepts
   it (flip `docs/decisions/0016-migration-import.md:3`); the
-  `nfr2-proof` row stays `blocked` until Task 7 lands. Lint note: the
+  `nfr2-proof` row is `fixture-tested` (Task 7 merged before this PR). Lint note: the
   repo pins UK spelling (`behaviour`, misspell locale UK) — the matrix
   test was fixed for it during this task's gates.

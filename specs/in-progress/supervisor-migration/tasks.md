@@ -186,7 +186,7 @@
   - `TestApplyResumesAfterFailure` simulates the kill with a mid-import `invalid_contract` failure (corrupt v1 row) + fix + re-apply through `cli.Main`, not a literal SIGKILL: the resume path (phase + markers + backup reuse) is identical and deterministic.
 - **Files modified**: `internal/migrate/preview/plan.go`, `internal/migrate/apply.go`, `internal/cli/migrate.go`, `internal/cli/dispatch.go`, `internal/cli/migrate_test.go`, `tests/migrate_e2e_test.go`, `internal/migrate/drain_test.go`, `specs/in-progress/supervisor-migration/tasks.md`, `specs/in-progress/supervisor-migration/handoff.md`, `specs/in-progress/supervisor-migration/scratchpad.md`.
 
-### Task 7 — NFR-2 SQLite posture proof
+### Task 7 — NFR-2 SQLite posture proof ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -202,6 +202,13 @@
   - `TestSQLiteEngineHasWALFix`: `SELECT sqlite_version()` from the built binary is ≥3.51.3 or a backport pinned in `scratchpad.md`; records the OQ-8 verdict.
 - **Test plan**: assertion tests on the built binary and package structure; corrupt-page fixtures.
 - **Invariants touched**: AT-42 (v2 §18.2: failure handling + tested restore posture).
+- **Status**: ✅ Completed — NFR-2 posture pinned: pragma string, Mutate tx scope, named busy timeout, backup/restore integrity checks, and the OQ-8 engine verdict (3.53.4 ≥ 3.51.3) from the built binary; PR #301.
+- **Implementation**: `TestPragmasPinned` asserts the `pragmas` const carries WAL/FULL/5000 and scans the package sources so no second busy_timeout lurks; `TestMigrateWritesRunInMutate` walks top-level `internal/migrate` ASTs (preview/ excluded by construction, `tx.*` and read-only `Query` allowed; `sql.Open` allowed only for `readOnlyDSN`/`mode=ro` opens, `Exec` only for `VACUUM INTO`); `TestIntegrityCheckOnBackupRestore` flips one byte past page 1 (header intact, `user_version` still answers) and requires `persistence_unavailable` naming `integrity_check` in `migrate/cause` with write-free refusals; `TestSQLiteEngineHasWALFix` builds `cmd/mythhelm` and reads `sqlite_version` from `version --format jsonl` against the 3.51.3 floor. Teeth: pragma drift, read-only-DSN drift, direct `db.Exec`/`sql.Open` mutants and a raised floor each fail for the right reason. Commit 92342f0.
+- **Spec deviations**:
+  - No behavior deviation. The `sql.Open` exclusion covers the read-only `mode=ro` integrity opens per the Task 5 handoff ("exclude those opens from `TestMigrateWritesRunInMutate` exactly as the design excludes Backup's single `VACUUM INTO` `Exec`"); the entry's exclusion list names only the `VACUUM INTO` `Exec`.
+  - No behavior deviation. The structural pin also flags `Begin`/`BeginTx`/`Prepare`/`PrepareContext` on non-`tx` receivers: a direct write through those handles would otherwise evade a literal `Exec`-only check while violating the one-transaction-per-mutation scope the test pins.
+  - Extra files beyond the task Files list: `internal/journal/engine.go` (new `journal.SQLiteVersion` helper — the binary needs a surface exposing `SELECT sqlite_version()` for the OQ-8 assertion), `internal/cli/dispatch.go` (`version` reports `sqlite_version` in plain and jsonl), `internal/cli/dispatch_test.go` and `internal/cli/tui_test.go` (version-object and version-template assertions move with the new field).
+- **Files modified**: `internal/journal/pragmas_test.go`, `internal/migrate/nfr2_test.go`, `internal/journal/engine.go`, `internal/cli/dispatch.go`, `internal/cli/dispatch_test.go`, `internal/cli/tui_test.go`, `specs/in-progress/supervisor-migration/tasks.md`, `specs/in-progress/supervisor-migration/handoff.md`, `specs/in-progress/supervisor-migration/scratchpad.md`.
 
 ### Task 8 — Migration ADR and support rows ✅ COMPLETED
 

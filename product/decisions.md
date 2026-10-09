@@ -342,3 +342,22 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: claude-strict-subscription in-progress; 5 tasks merged (#215,#219,#220,#223,#224), T5/T7 held per Q-15
 - **Cards**: MH-12
 - **Evidence**: PRs #215,#219,#220,#223,#224
+
+### D-80 — 2026-10-08: MH-16 → specced (budget-ledger-s1)
+- **Type**: lifecycle-sync
+- **Decision**: MH-16 moved to specced (S1 slice)
+- **Rationale**: budget-ledger-s1 requirements written to specs/unrefined/ (S1: basic ledger/envelopes)
+- **Cards**: MH-16
+
+### D-81 — 2026-10-08: MH-13 → specced (contained-execution-profiles)
+- **Type**: lifecycle-sync
+- **Decision**: MH-13 moved to specced
+- **Rationale**: contained-execution-profiles requirements written to specs/unrefined/
+- **Cards**: MH-13
+
+### D-82 — 2026-10-09: MH-7 → shipped (release-pipeline)
+- **Type**: lifecycle-sync
+- **Decision**: MH-7 moved to shipped
+- **Rationale**: release-pipeline reached done
+- **Cards**: MH-7
+- **Evidence**: PR #274, main CI green 7/7 at 4fa5d9a

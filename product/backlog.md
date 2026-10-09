@@ -31,17 +31,6 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 
 ## Open
 
-### MH-7: Release pipeline: GoReleaser archives, attestations and signatures
-- **Status**: implementing
-- **Stage**: 1
-- **Gates**: G01, G10
-- **Score**: 4.3 = (value 4 + urgency 5 + risk 4) / effort 3
-- **Spec**: `release-pipeline`
-- **Issue**: [#28](https://github.com/turbokast/mythhelm/issues/28)
-- **Source**: Master Specification v2 §§1, 17–18; W16; historical issue #28
-- **Summary**: A tag-triggered release that builds cross-platform archives with GoReleaser, checksums and an SBOM, build-provenance attestations, keyless signatures and licence notices, publishing from a protected environment only. It turns the Stage 1 binary into something users can install and verify.
-- **Notes**: Release evidence recurs for every supported subset, including S1; it does not wait for the full adaptive destination. Actual releases, signing settings and tags still require operator action.
-
 ### MH-11: Windows process-tree ownership
 - **Status**: triaged
 - **Stage**: 1
@@ -88,14 +77,15 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: Requires MH-10, MH-15 and MH-16; native profile/home selection is enabled only where separately qualified. Unknown entitlement blocks even when remaining allowance is user-declared.
 
 ### MH-13: Contained execution profiles: restricted and inspect
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 1
 - **Gates**: G07
 - **Score**: 3.5 = (value 4 + urgency 5 + risk 5) / effort 4
-- **Spec**: (none)
+- **Spec**: `contained-execution-profiles`
 - **Issue**: [#34](https://github.com/turbokast/mythhelm/issues/34)
 - **Source**: Master Specification v2 §§7–8, 11; W02/W04; historical issue #34
 - **Summary**: Implement and adversarially test restricted/inspect execution boundaries, including native startup hooks/MCP/plugins, file/network scope and protected verification. A trusted-host profile discloses residual same-user-code trust; reservations and UI toggles cannot masquerade as containment.
+- **Premise-grounded**: 2026-10-08 — v2-profiles HOLDS; dogfood-deferral HOLDS; no-enforcement HOLDS; unknown-blocks PARTIAL (Claude route); no-containment-claims HOLDS; fail-today HOLDS; section-refs PARTIAL (R1.1 numbers); S1-need HOLDS
 - **Notes**: Required for claimed S1 enforcement. Preserve native authentication and useful tools within qualified profiles; unknown effective configuration or boundary evidence blocks affected launch.
 
 ### MH-3: Herdr bridge: single-pane experience with scoped status
@@ -121,14 +111,15 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: Requires MH-10 records and effective startup/trust controls. Restaged to S1 so first-route selection is evidence-led; being the second named adapter is not a product requirement.
 
 ### MH-16: Quota observations and the budget ledger
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 1
 - **Gates**: G05
 - **Score**: 3.3 = (value 4 + urgency 5 + risk 4) / effort 4
-- **Spec**: (none)
+- **Spec**: `budget-ledger-s1`
 - **Issue**: [#37](https://github.com/turbokast/mythhelm/issues/37)
 - **Source**: Master Specification v2 §§7–8, 10, 12–13; W03/W04/W11; historical issue #37
 - **Summary**: Record typed observed/reported/estimated/declared/unknown usage and coupled quota reservations, finite run limits and foreground completion reserves. Enforce only established boundaries; exhaustion pauses or stops safely without paid fallback, while unknown remaining quota stays distinct from zero.
+- **Premise-grounded**: 2026-10-08 — estimate-only HOLDS; source-sections HOLDS; MH-10 HOLDS; MH-21 PARTIAL (plan only, sequences behind); no-ledger HOLDS; fail-today HOLDS; unknown-quota HOLDS
 - **Notes**: S1 needs the basic ledger/envelopes for one-agent delivery; multi-profile and experiment scheduling extend it in S2/S4. Requires MH-10 billing semantics and durable supervisor contracts; no provider hard-cap claim from cancellation alone.
 
 ### MH-23: Complete TUI intervention, accessibility and safe declarative themes
@@ -305,6 +296,17 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Source**: master spec §15 (visual language, mission view, responsive layouts, navigation, motion, accessibility, render model), §20.3 and §22.2 item 5
 - **Summary**: The polished focused TUI that Stage 1 requires, on top of the run pipeline the dogfood slice delivers: the mission view, responsive layouts down to the linear accessible mode, keyboard flows and event-driven motion. The dogfood slice deliberately defers it (its non-goal N1).
 - **Premise-grounded**: 2026-10-02 — run pipeline exists HOLDS; dogfood N1 defers TUI HOLDS; Stage 1 requires polished TUI HOLDS; §15 coverage HOLDS; §22.2 item 5 HOLDS; G09 HOLDS; Bubble Tea stack HOLDS; no TUI exists yet HOLDS
+
+### MH-7: Release pipeline: GoReleaser archives, attestations and signatures
+- **Status**: shipped
+- **Stage**: 1
+- **Gates**: G01, G10
+- **Score**: 4.3 = (value 4 + urgency 5 + risk 4) / effort 3
+- **Spec**: `release-pipeline`
+- **Issue**: [#28](https://github.com/turbokast/mythhelm/issues/28)
+- **Source**: Master Specification v2 §§1, 17–18; W16; historical issue #28
+- **Summary**: A tag-triggered release that builds cross-platform archives with GoReleaser, checksums and an SBOM, build-provenance attestations, keyless signatures and licence notices, publishing from a protected environment only. It turns the Stage 1 binary into something users can install and verify.
+- **Notes**: Release evidence recurs for every supported subset, including S1; it does not wait for the full adaptive destination. Actual releases, signing settings and tags still require operator action.
 
 ### MH-8: Documentation site and scripted terminal demos
 - **Status**: shipped
