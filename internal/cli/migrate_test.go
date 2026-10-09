@@ -544,6 +544,33 @@ func dumpRestoreFailure(t *testing.T, dir string, err error) {
 		}
 		t.Logf("dir entry: %s size=%d dir=%v", entry.Name(), size, entry.IsDir())
 	}
+	// Decisive probes for a stuck copy-back: can the live database be
+	// opened read-write, what are its attributes, and does a rename of
+	// two probe files in the same dir succeed?
+	live := filepath.Join(dir, journal.DBName)
+	probe, probeErr := os.OpenFile(live, os.O_RDWR, 0)
+	if probeErr != nil {
+		t.Logf("probe: open O_RDWR mythhelm.db: %v", probeErr)
+	} else {
+		t.Logf("probe: open O_RDWR mythhelm.db: ok")
+		_ = probe.Close()
+	}
+	if st, statErr := os.Stat(live); statErr != nil {
+		t.Logf("probe: stat mythhelm.db: %v", statErr)
+	} else {
+		t.Logf("probe: mythhelm.db mode=%v", st.Mode())
+	}
+	probeA := filepath.Join(dir, ".probe-rename-a")
+	probeB := filepath.Join(dir, ".probe-rename-b")
+	if writeErr := os.WriteFile(probeA, []byte("probe"), 0o600); writeErr != nil {
+		t.Logf("probe: write probe file: %v", writeErr)
+	} else if renameErr := os.Rename(probeA, probeB); renameErr != nil {
+		t.Logf("probe: rename probe files: %v", renameErr)
+	} else {
+		t.Logf("probe: rename probe files: ok")
+	}
+	_ = os.Remove(probeA)
+	_ = os.Remove(probeB)
 }
 
 // TestBackupHoldsDrainedWrites: a run completing during the drain quiesce
