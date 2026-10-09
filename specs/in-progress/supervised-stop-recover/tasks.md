@@ -12,7 +12,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Versioned ladder contract and `stop` intent
+### Task 1 — Versioned ladder contract and `stop` intent ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (identity contract and matcher plus the stop Handler across `control` and `workers`)
@@ -43,6 +43,16 @@
   - `TestStopIdentityMismatchOwnershipUnresolved`: a `stop` intent whose observed worker identity fails `MatchIdentity` against the journaled digest (observed raw nonce whose digest differs, while PID and start time agree) returns `ownership_unresolved`, writes no `stop.request`, and signals nothing.
 - **Test plan**: Table-driven unit tests with a scripted worker (writes `attempt.stopped` on cue, or never); ledger assertions via `Mutate` on a temp DB; pinning reads against fixture `attempt.admission_pinned` events in a temp journal; golden `StopReceipt` JSON. Signal-level assertions live in Task 2.
 - **Invariants touched**: I06 (v2 §6.4: unconfirmed stops stay unconfirmed; receipt distinguishes `unknown` from `confirmed`); I09 (v2 §4.2: unknown outcomes never read as confirmed).
+- **Status**: ✅ Completed — versioned ladder contract, worker-identity matcher, admission-pinning reads and the idempotent `stop` intent landed; PR #289.
+- **Implementation**: `StopHandler` runs through `Execute` as two `Mutate` scopes with delivery and the bounded spool wait outside any `Mutate` scope; quarantine returns its failure in the `Result` so the transition commits. Commit 9b0e54af85d7678d2efe6fb7ffb4a5ea494265a9.
+- **Spec deviations**:
+  - The stop wait runs inside `Execute`'s transaction (design §3 says no transaction is held): stream-2 `Execute` wraps every handler in one transaction and forking a second idempotency shell would risk the exactly-once path a stop's safety rests on; repeats block-then-replay byte-identical bodies. Follow-up: long-handler support in `Execute`.
+  - `stop` is registered via `RegisterStop`, not in `NewSupervisorServer`, so the support-matrix exactness test stays green until Task 4 adds the rows.
+  - New control codes (`cancel_incomplete`, `ownership_unresolved`, `process_lost`) are declared in `stop.go`: `control.go` is outside this task's files.
+  - The stopped report carries `ladder_version` (design §3 payload gains the field): acceptance requires rejecting wrong-version reports; Task 2 emits it.
+  - `AdmissionPinnedPayload` and `EventAdmissionPinned` live in `control` so Task 2's writer reuses the reader's definition instead of duplicating it.
+  - Quarantine returns its failure in the `Result` with a nil handler error: `Execute` rolls a handler's writes back on a returned `*Error`, which would lose the `quarantined` transition; the stored result still replays as `cancel_incomplete`.
+- **Files modified**: `internal/control/stopladder.go`, `internal/control/stop.go`, `internal/control/server.go`, `internal/control/pinning.go`, `internal/control/stop_test.go`, `internal/control/pinning_test.go`, `internal/workers/worker.go`, `internal/workers/identity_test.go`, `specs/in-progress/supervised-stop-recover/tasks.md`, `specs/in-progress/supervised-stop-recover/handoff.md`, `specs/in-progress/supervised-stop-recover/scratchpad.md`.
 
 ### Task 2 — Worker climbs the pinned ladder
 

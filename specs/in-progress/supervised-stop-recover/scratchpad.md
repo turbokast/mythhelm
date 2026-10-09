@@ -43,4 +43,8 @@ lifecycle skills own the other files.
 
 ## Discoveries
 
+- **Task 1 — OQ-SR1 resolved**: keep the opaque-string default. `StopParams.LadderVersion` must equal the pinned version exactly; any mismatch is `revision_conflict`, never a compatibility guess. Reviewer to confirm.
+- **Task 1 — `Execute` failure-with-writes pattern**: a handler that returns a `*Error` gets its writes rolled back (`runHandler` savepoint), so a failure that must persist state (quarantine here, the one-pass record in Task 3) returns the failure in the `Result` with a nil error instead. The stored result still replays as the failure.
+- **Task 1 — no `stop` token check**: the design lists no `permission_denied` case, so the handler does not check capability tokens; same-user peers act as the operator (the `read`-intent precedent). Token-scoping for `stop` is a future hardening, not this spec.
+- **Task 1 — stopped-report `ladder_version`**: the design §3 payload gains the field because acceptance requires rejecting wrong-version reports; Task 2 emits it and the handler skips reports that fail validation (wrong version, missing `sent`) until the deadline.
 - (Tasks append here.)
