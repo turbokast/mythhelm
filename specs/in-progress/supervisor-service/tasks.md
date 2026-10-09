@@ -80,7 +80,7 @@
 - **Spec deviations**: (1) Violations are plain `error` values carrying the `protocol_mismatch` code in the message (pinned by `requireMismatch` in every rejection test), not `*v2contract.ControlError`: vocab task 6 (error catalogue + `ControlError`) is unmerged on origin/main so the type does not exist; no parallel code was defined (N1). Follow-up once vocab task 6 lands: return `protocol_mismatch` `*v2contract.ControlError` values keeping the same code string. (3) `internal/control/testdata/depth64.json` and `depth65.json`: acceptance-mandated depth fixtures (`TestDepth64Passes65Fails` pins each depth "by a fixture"); fixture data has no separate Files entry. (2) Started before stream 1 fully shipped (vocab tasks 2, 6, 8 open at branch time): this task consumes only merged Task-1 APIs (limits, `CheckFrameLimits`, `Decode`, `RequestEnvelope`) verbatim, so no unmerged input was needed.
 - **Files modified**: `internal/control/frame.go`, `internal/control/frame_test.go`, `internal/control/testdata/depth64.json`, `internal/control/testdata/depth65.json`, `specs/in-progress/supervisor-service/tasks.md`, `specs/in-progress/supervisor-service/handoff.md`.
 
-### Task 3 — Unix transport and peer authentication
+### Task 3 — Unix transport and peer authentication ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (security primitive, cross-platform behaviour)
@@ -100,6 +100,10 @@
   - `TestNoTCPListener`: `grep -rn 'Listen("tcp"' internal/control` prints nothing and a test asserts no `tcp` network string exists in the package (fails if a TCP path is added).
 - **Test plan**: temp socket dirs; peer-cred tests on linux/darwin; the foreign-UID case uses a stubbed credential source behind an interface.
 - **Invariants touched**: I03 (v2 §2: transport grants no authority; peer identity is platform-observed, never payload-claimed); I18 (v2 §2: one input writer per session).
+- **Status**: ✅ Completed — `Transport`/`Listener`/`Conn`/`Peer`/`ErrNoSupervisor` and the Unix socket transport with same-UID peer auth, all four acceptance tests passing; PR #253.
+- **Implementation**: 0700 socket dir (existing dirs with group/other bits or a foreign owner are refused), 0600 socket; `Accept` yields only same-UID peers and refuses others with a `permission_denied` frame, discarding (never parsing) what they sent; reads bound the prefix by `MaxFrameBytes` before allocating and run `CheckIngress` on received requests. Gates: go-fmt, go-vet (+ darwin/windows vet on `internal/control`), go-mod-tidy, golangci-lint, hygiene, go-test PASS. Commit dfc40ed.
+- **Spec deviations**: (1) `internal/control/transport_peercred_linux.go` and `transport_peercred_darwin.go` (outside Files): `SO_PEERCRED` and `LOCAL_PEERCRED` need different x/sys calls, which one file cannot hold. (2) `Conn` gains `Receive` and `Respond` beyond the design's `Request`-only interface: an accepted connection needs a server-side read/reply path. (3) `permission_denied` is a plain `{code,message}` frame, not `*v2contract.ControlError` (vocab task 6 unmerged); wrap it when that lands.
+- **Files modified**: `internal/control/transport.go`, `internal/control/transport_unix.go`, `internal/control/transport_unix_test.go`, `internal/control/transport_peercred_linux.go`, `internal/control/transport_peercred_darwin.go`, `specs/in-progress/supervisor-service/tasks.md`, `specs/in-progress/supervisor-service/handoff.md`.
 
 ### Task 4 — Windows named-pipe transport
 

@@ -45,7 +45,9 @@ What later tasks must know:
 
 ## Task 3 — Unix transport and peer authentication
 
-<!-- pending -->
+- **Produces** (PR #253): `control.Transport`, `Listener`, `Conn`, `Peer`, `ErrNoSupervisor`, `control.NewUnixTransport()` (linux/darwin only; `transport.go` itself builds everywhere, so Task 4's Windows transport implements the same interfaces).
+- **For dependents**: `Listener.Accept` returns only same-UID peers; `Conn.Receive(ctx)` reads one request frame (prefix bounded by `MaxFrameBytes`, then `CheckIngress`) and `Conn.Respond(frame)` writes the reply; `Conn.Request` is the client call. `Dial` returns `ErrNoSupervisor` for a missing or refused socket. `Listen` creates the parent dir 0700 and refuses an existing dir with group/other bits; it does not remove a stale socket (instance lock, Task 1, owns that).
+- **Deviations**: `Conn` has `Receive`/`Respond` beyond the design; refusal is a plain `{"code":"permission_denied","message":...}` frame until vocab task 6 provides `ControlError`; two extra platform files (`transport_peercred_{linux,darwin}.go`).
 
 ## Task 4 — Windows named-pipe transport
 
