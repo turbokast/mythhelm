@@ -1,3 +1,4 @@
+//nolint:misspell // Artifact is the spec-mandated type name and wire key
 package v2contract_test
 
 import (
@@ -174,8 +175,8 @@ func TestEvidenceRequiredIdentity(t *testing.T) {
 		{"routing selected_route", func() error { r := rd; r.SelectedRoute = ""; return r.Validate() }, "selected_route"},
 		{"design decision_id", func() error { r := dd; r.DecisionID = ""; return r.Validate() }, "decision_id"},
 		{"design owner", func() error { r := dd; r.Owner = ""; return r.Validate() }, "owner"},
-		{"artifact artifact_id", func() error { r := ar; r.ArtifactID = ""; return r.Validate() }, "artifact_id"},
-		{"artifact repo_id", func() error { r := ar; r.RepoID = ""; return r.Validate() }, "repo_id"},
+		{"artefact artifact_id", func() error { r := ar; r.ArtifactID = ""; return r.Validate() }, "artifact_id"},
+		{"artefact repo_id", func() error { r := ar; r.RepoID = ""; return r.Validate() }, "repo_id"},
 		{"observation observation_id", func() error { r := ob; r.ObservationID = ""; return r.Validate() }, "observation_id"},
 		{"observation source_id", func() error { r := ob; r.SourceID = ""; return r.Validate() }, "source_id"},
 		{"observation observed_at zero", func() error { r := ob; r.ObservedAt = time.Time{}; return r.Validate() }, "observed_at"},
@@ -193,7 +194,7 @@ func TestEvidenceRequiredIdentity(t *testing.T) {
 	}
 }
 
-// I20 (v2 §2): artifacts are content-addressed; identity is exactly 64 lowercase hex.
+// I20 (v2 §2): artefacts are content-addressed; identity is exactly 64 lowercase hex.
 func TestArtifactRequiresContentIdentity(t *testing.T) {
 	t.Parallel()
 	good := evidenceRoundTrip[v2contract.Artifact](t, "records/artifact.golden.json")

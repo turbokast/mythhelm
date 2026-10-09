@@ -1,3 +1,4 @@
+//nolint:misspell // Artifact is the spec-mandated type name and wire key
 package v2contract
 
 import (
@@ -149,7 +150,7 @@ func (d DesignDecision) Validate() error {
 // pointer so a missing or null size is rejected while 0 stays a real size (I09).
 type Artifact struct {
 	SchemaVersion  int        `json:"schema_version" toml:"schema_version"`
-	ArtifactID     string     `json:"artifact_id" toml:"artifact_id"` // repository-scoped opaque ID
+	ArtifactID     string     `json:"artifact_id" toml:"artifact_id"`
 	RepoID         string     `json:"repo_id" toml:"repo_id"`
 	SHA256         string     `json:"sha256" toml:"sha256"`
 	SizeBytes      *int64     `json:"size_bytes" toml:"size_bytes"`
@@ -165,7 +166,7 @@ type Artifact struct {
 // Validate requires identities, a SHA256 of exactly 64 lowercase hex
 // characters and a present, non-negative SizeBytes.
 func (a Artifact) Validate() error {
-	const rec = "artifact"
+	const rec = "artefact"
 	if err := evidenceSchema(rec, a.SchemaVersion); err != nil {
 		return err
 	}
@@ -182,10 +183,10 @@ func (a Artifact) Validate() error {
 		return fmt.Errorf("v2contract: %s sha256 %q is not 64 lowercase hex characters", rec, a.SHA256)
 	}
 	if a.SizeBytes == nil {
-		return errors.New("v2contract: artifact size_bytes is missing or null")
+		return errors.New("v2contract: artefact size_bytes is missing or null")
 	}
 	if *a.SizeBytes < 0 {
-		return fmt.Errorf("v2contract: artifact size_bytes %d is negative", *a.SizeBytes)
+		return fmt.Errorf("v2contract: artefact size_bytes %d is negative", *a.SizeBytes)
 	}
 	return nil
 }
