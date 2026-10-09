@@ -100,7 +100,7 @@ func testPlatforms(t *testing.T) map[string]string {
 			}
 		}
 		switch platforms {
-		case "all", "linux || darwin":
+		case "all", "linux || darwin", "windows":
 			platforms = strings.Replace(platforms, " || ", ", ", 1)
 		default:
 			continue // a file for platforms outside the matrix (the stand-in for the rest)
