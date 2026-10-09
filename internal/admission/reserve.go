@@ -22,9 +22,37 @@ const ReservationNote = "local coordination only — not provider availability"
 // it can be treated as abandoned.
 const reservationGrace = time.Hour
 
+// MaxBucketRetries is how many scheduled retries an exhausted bucket gets
+// before its schedule is spent (AC-6.2).
+const MaxBucketRetries = 3
+
 // ErrDuplicateHold reports a second live reservation for one run: S1 admits
 // one bucket per run and preauthorises no alternative route (AC-6.4).
 var ErrDuplicateHold = errors.New("run already holds a reservation")
+
+// BucketEvaluator decides a re-admission against an exhausted bucket's
+// retry schedule: admit iff the next scheduled time has come, otherwise
+// refuse with the wait remaining; giveUp is terminal (AC-6.2). The
+// supervisor supplies its EvaluateBucket.
+type BucketEvaluator func(row journal.BucketRow, now time.Time) (admit bool, wait time.Duration, giveUp bool)
+
+// ExhaustedError reports a new hold refused because the bucket is live in
+// bucket_state and its retry schedule has not come due (AC-6.1). It wraps
+// billing.ErrAllowanceExhausted.
+type ExhaustedError struct {
+	Bucket string
+	Wait   time.Duration
+	GiveUp bool
+}
+
+func (e *ExhaustedError) Error() string {
+	if e.GiveUp {
+		return fmt.Sprintf("%s: bucket %s used its scheduled retries; next retry time unknown", billing.CodeAllowanceExhausted, e.Bucket)
+	}
+	return fmt.Sprintf("%s: bucket %s is exhausted; next scheduled admission in %s", billing.CodeAllowanceExhausted, e.Bucket, e.Wait.Round(time.Second))
+}
+
+func (e *ExhaustedError) Unwrap() error { return billing.ErrAllowanceExhausted }
 
 // Reserver holds quota reservations inside the caller's transaction, so a
 // hold commits or rolls back with the admission it belongs to (AC-3.2). It
@@ -62,16 +90,24 @@ func ReservationText(bucket string) string {
 	return fmt.Sprintf("reservation held on bucket %s: %s", bucket, ReservationNote)
 }
 
-type journalReserver struct{ c billing.Ceilings }
+type journalReserver struct {
+	c        billing.Ceilings
+	evaluate BucketEvaluator
+}
 
 // NewJournalReserver returns the production Reserver, writing the
 // reservations table through the run owner's transaction. A hold expires at
 // its creation plus the execution ceiling plus one hour of grace.
-func NewJournalReserver(c billing.Ceilings) Reserver { return journalReserver{c: c} }
+func NewJournalReserver(c billing.Ceilings, evaluate BucketEvaluator) Reserver {
+	return journalReserver{c: c, evaluate: evaluate}
+}
 
 func (r journalReserver) Reserve(ctx context.Context, tx *sql.Tx, runID, bucket, owner string) (string, error) {
 	now := time.Now().UTC()
 	id := ids.New("rsv")
+	if err := r.checkBucket(ctx, tx, bucket, now); err != nil {
+		return "", err
+	}
 	var held int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM reservations WHERE run_id = ? AND status = 'held'`, runID).Scan(&held); err != nil {
 		return "", fmt.Errorf("counting held reservations of %s: %w", runID, err)
@@ -88,6 +124,50 @@ func (r journalReserver) Reserve(ctx context.Context, tx *sql.Tx, runID, bucket,
 		return "", err
 	}
 	return id, nil
+}
+
+// checkBucket refuses new model work on a bucket that is live in
+// bucket_state until its schedule comes due. A passed authoritative reset
+// clears the row and admits before the schedule runs, so a reset recorded
+// after the retries were spent still ends the episode. Otherwise a due
+// re-admission is counted here, in the admission transaction, and a spent
+// schedule keeps its row at MaxBucketRetries so the next admission refuses
+// with giveUp (AC-6.2 "then stop", AC-6.1); clearing on spent retries would
+// let the next admission through and restart the schedule. A refusal
+// changes nothing. A bucket with no evaluator never admits (I02).
+func (r journalReserver) checkBucket(ctx context.Context, tx *sql.Tx, bucket string, now time.Time) error {
+	row := journal.BucketRow{Bucket: bucket}
+	var reset sql.NullString
+	err := tx.QueryRowContext(ctx, `SELECT exhausted_at, reset_at, retries_used FROM bucket_state WHERE bucket = ?`, bucket).
+		Scan(&row.ExhaustedAt, &reset, &row.RetriesUsed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("reading bucket state of %s: %w", bucket, err)
+	}
+	if reset.Valid {
+		row.ResetAt = &reset.String
+	}
+	if r.evaluate == nil {
+		return &ExhaustedError{Bucket: bucket}
+	}
+	// A passed authoritative reset ends the episode before the schedule runs:
+	// the reset may have been recorded after the retries were spent, and the
+	// spent row must still clear (otherwise giveUp would block it forever).
+	if row.ResetAt != nil {
+		if t, err := time.Parse(time.RFC3339Nano, *row.ResetAt); err == nil && !now.Before(t) {
+			return journal.ClearBucket(ctx, tx, bucket)
+		}
+	}
+	admit, wait, giveUp := r.evaluate(row, now)
+	if !admit {
+		return &ExhaustedError{Bucket: bucket, Wait: wait, GiveUp: giveUp}
+	}
+	if err := journal.NoteBucketRetry(ctx, tx, bucket); err != nil {
+		return err
+	}
+	return nil
 }
 
 // HoldQuotaReservation holds the run's reservation coupled to the admitted

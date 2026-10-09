@@ -193,9 +193,27 @@ func projectWorkerEvent(ctx context.Context, tx *sql.Tx, ev journal.Event) error
 		}
 		return journal.SetNativeSession(ctx, tx, ev.AttemptID, p.SessionID)
 	case "attempt.native_result":
-		return projectUsage(ctx, tx, ev)
+		if err := projectUsage(ctx, tx, ev); err != nil {
+			return err
+		}
+		return touchReservations(ctx, tx, ev)
 	case "attempt.progress":
 		return projectTransportRetries(ctx, tx, ev)
+	}
+	return nil
+}
+
+// touchReservations records a heartbeat on the run's held reservation: a
+// native result proves the run owner is alive and the claim is in use.
+func touchReservations(ctx context.Context, tx *sql.Tx, ev journal.Event) error {
+	held, err := heldReservationsTx(ctx, tx, ev.RunID)
+	if err != nil {
+		return err
+	}
+	for _, id := range held {
+		if err := journal.TouchReservation(ctx, tx, id, ev.ObservedAt); err != nil {
+			return err
+		}
 	}
 	return nil
 }

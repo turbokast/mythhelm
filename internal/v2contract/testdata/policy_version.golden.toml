@@ -1,0 +1,21 @@
+schema_version = 2
+policy_id = "pol_demo_0001"
+version = 3
+parent = 2
+action_family = "routing"
+eligible_cohorts = ["cohort-a"]
+evidence = ["ev-1"]
+promoted_from = "pol_demo_0000"
+rollback_to = "pol_demo_0000"
+
+[prompts]
+planner = "p1"
+
+[context]
+region = "eu"
+
+[review]
+owner = "alice"
+
+[decomposition]
+max_depth = "4"

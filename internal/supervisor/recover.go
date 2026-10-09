@@ -160,12 +160,20 @@ func RecoverWithHooks(ctx context.Context, j *journal.Journal, runID string, h H
 				} else if err != nil {
 					return out, err
 				}
+				// The attempt was lost, not concluded: its claim is orphaned
+				// after reconciliation (AC-3.4).
+				if err := orphanHeldReservations(ctx, j, runID); err != nil {
+					return out, err
+				}
 				err := p.runTo(ctx, RunFailed, "recovered_partial")
 				out.Outcome, out.Mode = p.out, "continued"
 				return out, err
 			}
 		}
 		err = p.quarantineRecovery(ctx)
+		if oerr := orphanHeldReservations(ctx, j, runID); oerr != nil {
+			err = errors.Join(err, oerr)
+		}
 		out.Outcome, out.Mode = p.out, "interrupted_and_quarantined"
 		out.UnresolvedPIDs, _ = workers.OrphanPIDs(a.AttemptID)
 		h.Notice(fmt.Sprintf("ownership unresolved; inspect %s; marked PIDs %v; no process was signalled", workers.AttemptMarker(a.AttemptID), out.UnresolvedPIDs))
@@ -223,6 +231,9 @@ func RecoverWithHooks(ctx context.Context, j *journal.Journal, runID string, h H
 		out.UnresolvedPIDs, _ = workers.OrphanPIDs(a.AttemptID)
 		h.Notice(fmt.Sprintf("ownership unresolved; inspect %s; marked PIDs %v; no process was signalled", workers.AttemptMarker(a.AttemptID), out.UnresolvedPIDs))
 		err = errors.Join(err, ErrOwnership)
+		if oerr := orphanHeldReservations(ctx, j, runID); oerr != nil {
+			err = errors.Join(err, oerr)
+		}
 	}
 	return out, err
 }

@@ -48,7 +48,10 @@
 
 ## Task 6 — Inspect read-only enforcement
 
-<!-- pending -->
+- **Produces**: `admission.ConsultRegistry(reg contain.Registry, profile, os, route)`; `contain.PolicyForProfile(profile, workdir, binds, proxy)` (inspect = restricted with `ReadOnly`) and `contain.ProfileInspect`; `Profile.Name == "inspect"` with `Contained == true` is admitted on Linux.
+- **For dependents**: Task 9's `launchForAttempt` must build the policy with `PolicyForProfile`, never a hand-set `ReadOnly`. Task 7's `RunChecksWithPolicy` is never reached under `inspect`: the pipeline's verify stage skips checks (reason `checks_refused_under_inspect`) before it; keep that branch when Task 7 edits `pipeline.go`.
+- **Tests**: `inspect` runs need Linux; the supervisor pipeline tests skip or assert the exit-7 refusal elsewhere. The `__check` helper has a `marker` mode that writes the file named by its next argument.
+- **Deviations**: see the entry (`admission.go` edited; the refusal is a `NOT RUN` verification, not a new state).
 
 ## Task 7 — Protected check evaluator
 

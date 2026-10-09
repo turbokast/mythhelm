@@ -422,8 +422,8 @@ func TestReconcileRequiresSameLaunch(t *testing.T) {
 	} else if !strings.Contains(err.Error(), "lch_old") || !strings.Contains(err.Error(), "lch_new") {
 		t.Errorf("launch mismatch %q does not name both identities", err)
 	}
-	// Emptiness is owned by Attempt validation (Task 2); this guard checks
-	// sameness only.
+	// Emptiness is owned by Attempt.Validate (TestAttemptRequiresLaunchID);
+	// this guard checks sameness only.
 	if err := v2contract.CheckReconcileIdentity("", ""); err != nil {
 		t.Errorf("equal empty identities: unexpected error: %v", err)
 	}

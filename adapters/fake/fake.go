@@ -278,6 +278,7 @@ const (
 	frameProgress = "fake.progress"
 	frameDenied   = "fake.denied"
 	frameResult   = "fake.result"
+	frameError    = "fake.error"
 )
 
 type initFrame struct {
@@ -295,6 +296,10 @@ type progressFrame struct {
 
 type deniedFrame struct {
 	ToolName string `json:"tool_name"`
+}
+
+type errorFrame struct {
+	Class string `json:"class"`
 }
 
 type resultFrame struct {
@@ -344,6 +349,17 @@ func (d *decoder) decode(frame []byte) adapter.Observation {
 			break
 		}
 		return adapter.PermissionDenied{ToolName: toolName(f.ToolName)}
+	case frameError:
+		// Only the classes the scripted scenarios stage are known; any other
+		// name is reported as an unrecognised native error.
+		var f errorFrame
+		if json.Unmarshal(frame, &f) != nil {
+			break
+		}
+		if f.Class != "allowance_exhausted" && f.Class != "rate_limit" {
+			f.Class = "native_error"
+		}
+		return adapter.NativeError{Class: f.Class}
 	case frameResult:
 		var f resultFrame
 		if json.Unmarshal(frame, &f) != nil || f.Subtype == "" {

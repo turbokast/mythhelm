@@ -250,7 +250,7 @@ func (p *pipeline) appendAdmission(ctx context.Context) error {
 			UpdatedAt: at.Format(time.RFC3339Nano)}); err != nil {
 			return err
 		}
-		if _, holdErr = admission.HoldQuotaReservation(ctx, tx, admission.NewJournalReserver(ceilings), d.RunID, rec, identityRef); holdErr != nil {
+		if _, holdErr = admission.HoldQuotaReservation(ctx, tx, admission.NewJournalReserver(ceilings, EvaluateBucket), d.RunID, rec, identityRef); holdErr != nil {
 			return holdErr
 		}
 		return nil
@@ -258,13 +258,38 @@ func (p *pipeline) appendAdmission(ctx context.Context) error {
 	if err := p.prod.append(ctx, p.j, ev, project); err != nil {
 		if holdErr != nil {
 			// The admission rolled back with the failed hold: block the
-			// run before any worker exists (I02).
-			return errors.Join(err, p.runTo(ctx, RunBlocked, "quota_reservation_failed"))
+			// run before any worker exists (I02). A bucket still waiting
+			// on its retry schedule is the allowance, not a storage fault.
+			reason := "quota_reservation_failed"
+			if errors.Is(holdErr, billing.ErrAllowanceExhausted) {
+				reason = "allowance_exhausted"
+			}
+			return errors.Join(err, p.runTo(ctx, RunBlocked, reason))
 		}
 		return err
 	}
 	p.h.Notice(admission.ReservationText(admission.QuotaBucket(rec, identityRef)))
 	return p.flush(ctx)
+}
+
+// exhausted ends a run whose native reported an exhausted allowance, after
+// the candidate froze: the bucket is recorded, the run blocked and the
+// reservation released together. The native reports no reset time, so it
+// stays unknown (I09). MYTHHELM starts nothing more; retries are the
+// operator's, on the recorded schedule (D13).
+func (p *pipeline) exhausted(ctx context.Context) error {
+	held, err := heldReservations(ctx, p.j, p.d.RunID)
+	if err != nil {
+		return err
+	}
+	if len(held) == 0 {
+		p.h.Notice("allowance exhausted with no held reservation; the bucket could not be recorded")
+		return p.runTo(ctx, RunBlocked, "allowance_exhausted")
+	}
+	if err := HandleExhaustion(ctx, p.j, p.prod, p.d.RunID, held[0], nil); err != nil {
+		return err
+	}
+	return p.settleRun(ctx, RunBlocked, "allowance_exhausted")
 }
 
 // endStop finishes a stopping run: cancelled when the user asked for the
@@ -705,6 +730,18 @@ func attemptEnded(s AttemptState) bool {
 // native did, as long as the worker confirmed its process group gone.
 func (p *pipeline) conclude(ctx context.Context) error {
 	stopping := p.out.State == RunStopping
+	// A terminal attempt ends its quota claim, with evidence; an interrupted
+	// one stays held until recovery reconciles it. Exhaustion releases with
+	// the bucket record in HandleExhaustion.
+	switch p.out.AttemptState {
+	case AttemptSucceededNative, AttemptFailedNative, AttemptStopped:
+		if p.out.AttemptReason != "allowance_exhausted" || stopping {
+			evidence := "attempt terminal: " + string(p.out.AttemptState)
+			if err := releaseHeldReservations(ctx, p.j, p.d.RunID, evidence); err != nil {
+				return err
+			}
+		}
+	}
 	switch p.out.AttemptState {
 	case AttemptInterrupted:
 		reason := p.out.AttemptReason
@@ -741,6 +778,8 @@ func (p *pipeline) conclude(ctx context.Context) error {
 				return p.runTo(ctx, RunFailed, "protocol_error")
 			case "provider_limit":
 				return p.runTo(ctx, RunFailed, "provider_limit")
+			case "allowance_exhausted":
+				return p.exhausted(ctx)
 			default:
 				return p.runTo(ctx, RunFailed, "native_failed")
 			}
@@ -754,7 +793,16 @@ func (p *pipeline) conclude(ctx context.Context) error {
 		}); err != nil {
 			return err
 		}
-		if p.d.NoChecks {
+		// Checks are waived, or refused under inspect: no per-check scope
+		// exists yet, so none runs and none can be faked (I07).
+		skipReason := ""
+		switch {
+		case p.d.NoChecks:
+			skipReason = "waived by --no-checks"
+		case p.d.Profile.Name == admission.ProfileInspect:
+			skipReason = "checks_refused_under_inspect"
+		}
+		if skipReason != "" {
 			candidate, err := p.j.Candidate(ctx, p.d.AttemptID)
 			if err != nil {
 				return errors.Join(err, p.runTo(ctx, RunFailed, "verification_unavailable"))
@@ -762,7 +810,7 @@ func (p *pipeline) conclude(ctx context.Context) error {
 			at, id := time.Now().UTC(), ids.New("ver")
 			ev, err := newEvent(p.d.RunID, p.d.TaskID, p.d.AttemptID, "verification.completed", map[string]any{
 				"verification_id": id, "candidate_commit": candidate.Commit, "result": "NOT RUN",
-				"reason": "waived by --no-checks", "baseline": "not-run",
+				"reason": skipReason, "baseline": "not-run",
 			}, at)
 			if err != nil {
 				return err
@@ -846,6 +894,12 @@ func (p *pipeline) runTo(ctx context.Context, to RunState, reason string) error 
 	if err := TransitionRun(ctx, p.j, p.d.RunID, to, reason, p.prod); err != nil {
 		return err
 	}
+	return p.settleRun(ctx, to, reason)
+}
+
+// settleRun reports a transition that has committed: the outcome, the
+// rendered events and, for a run that ended, its receipt.
+func (p *pipeline) settleRun(ctx context.Context, to RunState, reason string) error {
 	p.out.State, p.out.Reason = to, reason
 	if err := p.flush(ctx); err != nil {
 		return err

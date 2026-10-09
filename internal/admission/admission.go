@@ -430,13 +430,9 @@ func validate(req *Request) error {
 
 // checkCapabilityFlags refuses what the slice cannot do (exit 7).
 func checkCapabilityFlags(req Request) error {
-	switch {
-	case req.Host == HostHerdr:
+	if req.Host == HostHerdr {
 		return &BlockedError{Code: "host_unavailable", Field: "--host herdr", Capability: true,
 			Action: "the Herdr bridge is not in this build; run standalone"}
-	case req.ExecutionProfile == ProfileInspect:
-		return &BlockedError{Code: "execution_profile_unavailable", Field: "--execution-profile inspect", Capability: true,
-			Action: "read-only enforcement for inspect is not in this build; use restricted or trusted-host"}
 	}
 	return nil
 }
@@ -449,8 +445,11 @@ func consentProfile(req Request) (Profile, error) {
 	switch req.ExecutionProfile {
 	case ProfileTrustedHost:
 		return Profile{Name: ProfileTrustedHost, Consent: "--execution-profile", Disclosure: trustedHostDisclosure}, nil
-	case "", ProfileRestricted:
+	case "", ProfileRestricted, ProfileInspect:
 		p := Profile{Name: ProfileRestricted, Contained: true, Consent: "--execution-profile"}
+		if req.ExecutionProfile == ProfileInspect {
+			p.Name = ProfileInspect
+		}
 		if req.ExecutionProfile == "" {
 			p.Consent = "default"
 		}

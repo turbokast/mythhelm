@@ -296,11 +296,20 @@ func TestValidateRejectsUnnamespacedDetail(t *testing.T) {
 	}
 }
 
+func mustMap(t *testing.T, code v2contract.Code, owner, op, ns string, cause error) *v2contract.ControlError {
+	t.Helper()
+	e, err := v2contract.MapAdapterFailure(code, owner, op, ns, cause)
+	if err != nil {
+		t.Fatalf("MapAdapterFailure(%q, %q): %v", code, ns, err)
+	}
+	return e
+}
+
 // AC-3.2: adapter failures map to a required code with its default,
 // never-widening disposition and namespaced detail.
 func TestMapAdapterFailure(t *testing.T) {
 	t.Parallel()
-	got := v2contract.MapAdapterFailure(
+	got := mustMap(t,
 		v2contract.CodeToolFailed, "owner1", "op1", "adapter/claudecode", errors.New("boom"))
 	if got.Code != v2contract.CodeToolFailed {
 		t.Errorf("Code = %q, want tool_failed", got.Code)
@@ -320,7 +329,7 @@ func TestMapAdapterFailure(t *testing.T) {
 	}
 	// Code — not message — drives transitions: the same code with a
 	// different cause takes the same branch.
-	other := v2contract.MapAdapterFailure(
+	other := mustMap(t,
 		v2contract.CodeToolFailed, "owner2", "op2", "adapter/other", errors.New("different"))
 	if other.Code != got.Code {
 		t.Errorf("same-code errors differ: %q vs %q", other.Code, got.Code)
@@ -328,7 +337,7 @@ func TestMapAdapterFailure(t *testing.T) {
 	if other.Error() == got.Error() {
 		t.Errorf("distinct failures share Error() text %q", got.Error())
 	}
-	ineligible := v2contract.MapAdapterFailure(
+	ineligible := mustMap(t,
 		v2contract.CodeEntitlementIneligible, "owner1", "op1", "adapter/native", errors.New("nope"))
 	if ineligible.Disposition != v2contract.DispositionNever {
 		t.Errorf("ineligible Disposition = %q, want never", ineligible.Disposition)
@@ -337,13 +346,41 @@ func TestMapAdapterFailure(t *testing.T) {
 		t.Errorf("ineligible mapped error Validate: %v", err)
 	}
 	var nilCause error
-	unknown := v2contract.MapAdapterFailure(
+	unknown := mustMap(t,
 		v2contract.CodeProcessLost, "owner1", "op1", "adapter/native", nilCause)
 	if unknown.Detail["adapter/native/cause"] != "unknown" {
 		t.Errorf("nil-cause Detail = %v, want unknown stated explicitly", unknown.Detail)
 	}
 	if err := unknown.Validate(); err != nil {
 		t.Errorf("nil-cause mapped error Validate: %v", err)
+	}
+}
+
+// I03 (v2 §2): the mapper refuses input it would turn into an invalid or
+// authority-less error instead of returning one.
+func TestMapAdapterFailureRejectsBadInput(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		code      v2contract.Code
+		namespace string
+		wantErr   string
+	}{
+		{"empty namespace", v2contract.CodeToolFailed, "", "namespace"},
+		{"unknown code", v2contract.Code("made_up"), "adapter/native", `"made_up"`},
+		{"empty code", v2contract.Code(""), "adapter/native", "code"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := v2contract.MapAdapterFailure(tc.code, "owner1", "op1", tc.namespace, errors.New("x"))
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("error = %v, want containing %q", err, tc.wantErr)
+			}
+			if got != nil {
+				t.Errorf("got %+v alongside error, want nil", got)
+			}
+		})
 	}
 }
 

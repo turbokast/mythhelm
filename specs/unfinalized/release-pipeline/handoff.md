@@ -43,4 +43,5 @@
 
 ## Task 6 — Operator dry run on a test tag
 
-<!-- pending -->
+- **Produces**: the observed dry-run record: tag `test/2026-10-09-mh7`, run 37914280148 green, five archives + SBOMs + signed checksums, local checksum/cosign/tamper legs all as documented.
+- **For the first real release**: attest-to-release and `keep-existing` behaviour are still unexercised (design H2/H6; N2), as is the `--clobber` re-run follow-up from Task 5. Delete the test tag after this entry merges.
