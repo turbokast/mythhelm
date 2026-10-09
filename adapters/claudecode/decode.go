@@ -38,10 +38,14 @@ var jsonNumber = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9
 
 // errorClasses are the native error classes the result-mapping table knows.
 // Anything else is reported as native_error, never verbatim: the journal
-// holds identifiers, not native text (NFR-2).
+// holds identifiers, not native text (NFR-2). allowance_exhausted is
+// fixture-qualified only (budget-ledger-s1 D4, D10): the exact class name is
+// the single documented shape, rate_limit stays the transient class, and any
+// other spelling fails closed to native_error. The class carries no reset
+// time, so reset stays unknown until MH-12 Task 7 qualifies a live shape.
 var errorClasses = []string{
 	"authentication_failed", "oauth_org_not_allowed", "account_on_hold",
-	"billing_error", "rate_limit",
+	"billing_error", "rate_limit", "allowance_exhausted",
 }
 
 // streamDecoder turns Claude Code stream-json frames into observations. The

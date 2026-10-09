@@ -43,7 +43,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Containment contract package
+### Task 1 — Containment contract package ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -80,6 +80,10 @@
   never a zero-value supported record); I14 (v2 §2: every evidence record
   carries version and owner for its nested claims, each with name and
   version).
+- **Status**: ✅ Completed — `internal/contain` ships the contract types, `Missing` aggregator and sentinel errors; PR #242.
+- **Implementation**: `Missing` iterates the required list in order and treats an unknown dimension as missing (fail closed). Tests include a control lookup and a kept mutation-proven failing case. Commit 785b530.
+- **Spec deviations**: None.
+- **Files modified**: `internal/contain/contain.go`, `internal/contain/contain_test.go`, `specs/in-progress/contained-execution-profiles/tasks.md`, `specs/in-progress/contained-execution-profiles/handoff.md`.
 
 ### Task 2 — Linux boundary mechanism
 
