@@ -69,11 +69,11 @@ Append to the checkable-criteria patterns: an acceptance item that adds or chang
 - **Type**: skill
 - **Target**: `.claude/skills/run-spec-completion/SKILL.md`
 - **Rationale**: A task completion entry deferred work to a later task ("Task 5 or 8 retypes them") with no owner; neither task did it, per-task review passed both, and only the finalize review caught the broken promise — after every task had merged. Deferred items need tracking, not prose.
-- **Evidence**: specs/unfinalized/v2-contract-vocabulary/tasks.md Task 2 Spec deviations (string-State promise); Review Summary finding F2; fix PR #268
+- **Evidence**: specs/done/v2-contract-vocabulary/tasks.md Task 2 Spec deviations (string-State promise); Review Summary finding F2; fix PR #268
 
 **Proposed change:**
 
-Add to the Confirm step: collect every "Task N ..." deferral named in Spec deviations entries; each must resolve to a completing change (a later task's Files modified, or an open fix PR referenced by number) or the run stops with the unresolved promise named.
+Add to the Confirm step: collect every "Task N ..." deferral named in Spec deviations entries; each must resolve to a completing change whose promised edit is present in the referenced diff and whose task or fix PR has merged — a Files modified entry alone, or an open fix PR, is not proof — or the run stops with the unresolved promise named.
 
 ## P-v2-contract-vocabulary-2 — Review stale branches by their own diff
 
