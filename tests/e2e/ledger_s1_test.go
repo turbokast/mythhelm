@@ -8,7 +8,6 @@ package e2e
 // notice lines on stdout, ahead of the result line.
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"os"
@@ -105,9 +104,9 @@ func ledgerResultOf(t *testing.T, stdout string) (state, reason string) {
 }
 
 // ledgerEventCounts counts journaled events for runID by type.
-func ledgerEventCounts(t *testing.T, ctx context.Context, j *journal.Journal, runID string) map[string]int {
+func ledgerEventCounts(t *testing.T, j *journal.Journal, runID string) map[string]int {
 	t.Helper()
-	events, err := j.Events(ctx, runID, 0)
+	events, err := j.Events(t.Context(), runID, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +128,7 @@ func ledgerOpenState(t *testing.T, e env) *journal.Journal {
 	return j
 }
 
-// TestE2ELedgerNormalizesCounters pins the AT-13 normalization wiring
+// TestE2ELedgerNormalizesCounters pins the AT-13 normalisation wiring
 // through the packaged binary: the usage-counters run journals exactly
 // the expected typed usage set, and the receipt and CLI line carry it.
 //
@@ -168,10 +167,7 @@ func TestE2ELedgerNormalizesCounters(t *testing.T) {
 	}
 
 	// The receipt and the CLI line carry the same row.
-	receiptBytes, err := os.ReadFile(filepath.Join(e.state, "runs", runID, "receipt.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	receiptBytes := ledgerReceiptBytes(t, e, runID)
 	var receipt struct {
 		Billing struct {
 			Usage []struct {
@@ -190,6 +186,17 @@ func TestE2ELedgerNormalizesCounters(t *testing.T) {
 	if !strings.Contains(stdout, "usage: retail-equivalent unknown unknown (unknown, unknown)\n") {
 		t.Fatalf("CLI output has no exact usage marker line:\n%s", stdout)
 	}
+}
+
+// ledgerReceiptBytes reads the run's receipt from this test's temp state
+// dir; the run ID comes from the packaged binary's own stdout.
+func ledgerReceiptBytes(t *testing.T, e env, runID string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(e.state, "runs", runID, "receipt.json")) // #nosec G304 -- temp state dir and the run's own ID
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
 
 // ledgerPaidMarkers are the paid-continuation phrases that must never
@@ -222,12 +229,12 @@ func TestE2EExhaustionPreservesWithoutFallback(t *testing.T) {
 		t.Fatalf("attempt reason = %q, want allowance_exhausted", attempt.Reason)
 	}
 
-	// The partial work is frozen in place, with its session artifacts.
+	// The partial work is frozen in place, with its session artefacts.
 	cand, err := j.Candidate(ctx, attempt.AttemptID)
 	if err != nil || cand.Commit == "" {
 		t.Fatalf("candidate = %+v, %v; want the partial work frozen", cand, err)
 	}
-	counts := ledgerEventCounts(t, ctx, j, runID)
+	counts := ledgerEventCounts(t, j, runID)
 	if counts["candidate.frozen"] != 1 {
 		t.Fatalf("candidate.frozen events = %d, want exactly 1", counts["candidate.frozen"])
 	}
@@ -245,10 +252,7 @@ func TestE2EExhaustionPreservesWithoutFallback(t *testing.T) {
 	// No paid-continuation marker on either surface. Both outputs are
 	// asserted non-empty first, so vacuous absence fails. stderr rides
 	// along: notices and the outcome summary surface there.
-	receiptBytes, err := os.ReadFile(filepath.Join(e.state, "runs", runID, "receipt.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	receiptBytes := ledgerReceiptBytes(t, e, runID)
 	if len(receiptBytes) == 0 || len(stdout) == 0 {
 		t.Fatalf("receipt is %d bytes and stdout %d bytes; both must be non-empty", len(receiptBytes), len(stdout))
 	}
