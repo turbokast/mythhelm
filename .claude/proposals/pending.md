@@ -62,3 +62,15 @@ Append to the MH-12 card scope as its first test item: a test that fails if trus
 **Proposed change:**
 
 Append to the checkable-criteria patterns: an acceptance item that adds or changes a docs example showing command output must name the executed command (or generating test) that produced the pasted text, and the worker re-runs it before the PR leaves draft; a paste with no producing command is a finding.
+
+## P-release-pipeline-1 — Docs-task claim verification checklist
+
+- **Source spec**: `release-pipeline`
+- **Type**: skill
+- **Target**: `.claude/skills/implement/SKILL.md`
+- **Rationale**: Task 5 (operator/verify docs) needed 3 review rounds for 6 claim fixes — a hand-pushed tag claim, a wrong download dir, a recovery procedure that missed stale-asset deletion, tag-grammar wording, the attestation subject, and an over-broad cleanup loop. Each was verifiable at implement time against the workflows it documents. P-qualification-registry-3 grounds command-output examples at spec-authoring time; this covers the remaining claim classes (procedures, paths, subjects, grammar) at implement time, before review.
+- **Evidence**: specs/done/release-pipeline/retrospective.md Lessons (PR #222 rounds 1–3: run-events review_round rows 2026-10-08T16:51:28Z, 19:24:52Z, 19:37:23Z); threads r4221854905, r4223318311, r4223318317, r4223318329
+
+**Proposed change:**
+
+Add to the implement procedure a docs-task step: before the PR leaves draft, the worker re-verifies every shell command (run it or quote its producing run), every path (it exists at the PR head), every procedure (walk it against the code or workflow it describes), and every behavioral claim (name the workflow step or test that exhibits it). An unverified claim is a finding against the worker's own PR, fixed before review is requested.
