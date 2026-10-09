@@ -142,7 +142,7 @@
 - **Spec deviations**: The re-run procedure deletes a stale bundle (`gh release delete-asset`) before the job re-run, because `release.yml`'s upload step has no `--clobber`; `gh release upload --clobber` is documented for replacing a bundle the workflow produced. Untested until the first real release.
 - **Files modified**: `docs/release-process.md`, `specs/in-progress/release-pipeline/tasks.md`, `specs/in-progress/release-pipeline/handoff.md`.
 
-### Task 6 — Operator dry run on a test tag
+### Task 6 — Operator dry run on a test tag ✅ COMPLETED
 
 - **Domain/agent**: maintainer
 - **Budget**: standard
@@ -156,3 +156,7 @@
   - No release, draft or tag mutation results: `gh release list` shows no new entry and the `release.yml` workflow has no run for the `test/*` tag (AC-1.2 separation observed, not just configured).
 - **Test plan**: Operator-executed; the entry records the tag name, run URL, and the observed log lines for each leg. On failure the operator deletes the test tag and the fix goes through a normal PR + a fresh test tag.
 - **Invariants touched**: None (observation only; the pipeline under test keeps I03/I13/I14 per Tasks 1–3).
+- **Status**: ✅ Completed — test-tag dry run green, all verify legs behave as documented; PR #269.
+- **Implementation**: Tag `test/2026-10-09-mh7` at `f1cf02a`; run https://github.com/turbokast/mythhelm/actions/runs/37914280148 (success): five archives + `checksums.txt` + five SBOMs, `mythhelm 0.0.0-SNAPSHOT-f1cf02a` (tagged commit, not `devel`), notices in every archive, cosign sign-blob + verify-blob `Verified OK`. Local: `sha256sum -c` all OK, `verify-blob` OK with the dry-run identity, tamper leg `FAILED` exit 1. No release entry; `release.yml` silent. Commit 593cb23.
+- **Spec deviations**: Version wording: the binary reports `0.0.0-SNAPSHOT-f1cf02a`, derived from the tagged commit rather than containing the tag name ("a test tag is not a version" per the merged workflow, which asserts `SNAPSHOT`). Accepted as the `test/*`-derived evidence the task requires.
+- **Files modified**: `specs/in-progress/release-pipeline/tasks.md`, `specs/in-progress/release-pipeline/handoff.md` (completion record only; operator-run, no tree changes).
