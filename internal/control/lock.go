@@ -22,6 +22,12 @@ var ErrInstanceHeld = errors.New("control: supervisor instance already running")
 // MYTHHELM_HOME. It is a refusal, never a second authority.
 var ErrRootConflict = errors.New("control: supervisor active under another root")
 
+// ErrNoSupervisorLock reports that no supervisor holds the per-user
+// instance lock: the lock file is absent. Callers deciding whether an
+// unfenced fallback is safe match this (and ErrRootConflict) and fail
+// closed on any other lock read error.
+var ErrNoSupervisorLock = errors.New("control: no live supervisor lock")
+
 var errLockHeld = errors.New("lock held")
 
 // lockMetadata is the instance-lock file content: which state root the
@@ -166,15 +172,24 @@ func canonicalRoot(dir string) string {
 // metadata for classification only, and a torn read must never look like
 // an absent holder.
 func readMetadata(path string) (lockMetadata, bool) {
+	meta, err := readMetadataErr(path)
+	return meta, err == nil
+}
+
+// readMetadataErr parses the lock file's metadata like readMetadata and
+// returns the read or parse error, so callers that fail closed can tell
+// an absent lock (os.ErrNotExist: genuinely unfenced) from a present
+// but unreadable one.
+func readMetadataErr(path string) (lockMetadata, error) {
 	var meta lockMetadata
 	raw, err := os.ReadFile(path) //nolint:gosec // G304: path is built by LockPath, never from caller input
 	if err != nil {
-		return meta, false
+		return meta, err
 	}
 	if err := json.Unmarshal(raw, &meta); err != nil {
-		return lockMetadata{}, false
+		return lockMetadata{}, err
 	}
-	return meta, true
+	return meta, nil
 }
 
 // writeMetadata records the holder in place on the flocked file. The write

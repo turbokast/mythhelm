@@ -181,3 +181,33 @@ func TestPinAdmissionForeignLockPinsUnfenced(t *testing.T) {
 		t.Errorf("unfenced generation = %d, want 0", gen)
 	}
 }
+
+func TestPinAdmissionCorruptLockFailsAdmission(t *testing.T) {
+	ctx := context.Background()
+	// The lock file is present but unparseable: a torn read must never
+	// look like an absent holder, so the admission fails instead of
+	// pinning unfenced.
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	path, err := control.LockPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{torn"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stateDir := t.TempDir()
+	j := openPinJournal(t, stateDir)
+	prod := NewProducer(ids.New("sup"), 1)
+	runID := newRun(t, j, prod)
+	attemptID := newAttempt(t, j, prod, runID)
+
+	if _, _, err := pinAdmission(ctx, j, prod, stateDir, runID, "task_1", attemptID); err == nil {
+		t.Fatal("pinAdmission with a corrupt lock = nil, want the admission to fail")
+	}
+	if _, _, err := control.PinnedAdmission(ctx, j, runID, attemptID); err == nil {
+		t.Error("a failed admission journaled attempt.admission_pinned, want no pin")
+	}
+}

@@ -779,24 +779,33 @@ func RecordAdmissionPinned(ctx context.Context, j *journal.Journal, runID, taskI
 
 // pinAdmission mints the worker nonce, reads this supervisor's boot
 // generation and journals the admission pin for the Launch handoff,
-// returning the raw nonce and generation the worker is handed. A generation
-// that cannot be read — no supervisor lock, a foreign root — pins
-// generation 0, unfenced, and the admission proceeds: the legacy run path
-// runs lockless by design during the migration window (svc D1), and a leaf
-// run on a fresh root or a demo on a temp root cannot hold the lock, so
-// failing the admission would brick them with no remedy. Zero is never a
-// real boot generation (they start at 1), so it marks unfenced rather than
-// guessing one; Task 4's envelope defines its meaning. This deviates from
-// design §3's fail-the-admission default; the reason is recorded with the
-// task.
+// returning the raw nonce and generation the worker is handed. An
+// unreadable generation pins generation 0, unfenced — but only when no
+// supervisor holds the lock (ErrNoSupervisorLock) or the lock serves
+// another root (ErrRootConflict) — and the admission proceeds: the
+// legacy run path runs lockless by design during the migration window
+// (svc D1), and a leaf run on a fresh root or a demo on a temp root
+// cannot hold the lock, so failing the admission would brick them with
+// no remedy. Zero is never a real boot generation (they start at 1),
+// so it marks unfenced rather than guessing one; Task 4's envelope
+// defines its meaning. This deviates from design §3's
+// fail-the-admission default; the reason is recorded with the task. A
+// lock file that is present but unreadable or corrupt fails the
+// admission instead: a torn read must never look like an absent
+// holder, so the error propagates to the spawn site's
+// admission_pin_failed path.
 func pinAdmission(ctx context.Context, j *journal.Journal, prod *Producer, stateDir, runID, taskID, attemptID string) (nonce string, generation int64, err error) {
 	nonce, err = workerNonce()
 	if err != nil {
 		return "", 0, fmt.Errorf("minting the worker nonce: %w", err)
 	}
 	generation, err = control.CurrentGeneration(stateDir)
-	if err != nil {
+	switch {
+	case err == nil:
+	case errors.Is(err, control.ErrNoSupervisorLock) || errors.Is(err, control.ErrRootConflict):
 		generation = 0
+	default:
+		return "", 0, fmt.Errorf("reading the boot generation: %w", err)
 	}
 	if err := RecordAdmissionPinned(ctx, j, runID, taskID, attemptID, stopLadderVersion, workers.NonceDigest(nonce), prod); err != nil {
 		return "", 0, err
