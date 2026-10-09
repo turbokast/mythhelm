@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -54,7 +55,21 @@ const (
 	reasonOwnershipUnresolved     = "ownership_unresolved"
 	reasonStaleGeneration         = "stale_generation"
 	reasonExternalEffectUncertain = "external_effect_uncertain"
+	reasonSpoolUnverifiable       = "spool_unverifiable"
 )
+
+// maxRecoverSpoolBytes bounds one recovery spool read. Unacknowledged spool
+// past this bound is unverifiable evidence — the pass quarantines instead
+// of reasoning over silently truncated bytes.
+const maxRecoverSpoolBytes = 1 << 20
+
+// MaxRecoveryContinuationAge bounds the newborn replay: an admitted
+// continuation that has journaled nothing for this long is re-examined
+// instead of replayed, so a worker that died before its first event cannot
+// stick the run on "continued" forever. Healthy workers journal within
+// seconds (the supervisor ingests every 100ms), so the bound is all margin;
+// an expiry quarantines fail-closed and heals on fresh evidence.
+const MaxRecoveryContinuationAge = 15 * time.Minute
 
 // RecoveryReport is one recorded reconciliation pass: the outcome, what it
 // acted on, and the evidence markers it saw. The recover intent returns it
@@ -74,7 +89,9 @@ type RecoveryReport struct {
 // second pass. JournalSeq covers every journal input at once: the journal
 // is append-only, so an unchanged maximum over non-recovery events means an
 // unchanged event set. LiveNow covers the one input no table holds: whether
-// the journaled worker process is still the same live process.
+// the journaled worker process is still the same live process. ObservedLive
+// covers the same for the worker.json identity, which the gone verdict
+// probes independently: a stranger's death flips it and re-opens the pass.
 type RecoveryMarkers struct {
 	Attempts          []AttemptMark   `json:"attempts"`
 	Candidates        []CandidateMark `json:"candidates,omitempty"`
@@ -83,6 +100,7 @@ type RecoveryMarkers struct {
 	SpoolBytes        int64           `json:"spool_bytes"`
 	IdentityStat      string          `json:"identity_stat"`
 	LiveNow           string          `json:"live_now"`
+	ObservedLive      string          `json:"observed_live"`
 }
 
 // AttemptMark is the recoverable projection of one attempt row.
@@ -209,7 +227,7 @@ func reconcile(ctx context.Context, d RecoverDeps, runID, eventID string) (Recov
 		if err != nil {
 			return err
 		}
-		if stored, ok := latestRecoveryReport(tx, runID); ok && shouldReplay(stored, ev) {
+		if stored, decidedAt, ok := latestRecoveryReport(tx, runID); ok && shouldReplay(stored, ev, decidedAt) {
 			out, fresh = stored, false
 			return nil
 		}
@@ -257,6 +275,7 @@ type recoveryEvidence struct {
 	results    []time.Time
 	observed   *workers.Identity
 	transient  error // a file read that must abort the pass as retryable
+	unverified bool  // the unacknowledged spool exceeded the readable bound
 	live       string
 	markers    RecoveryMarkers
 	spoolFacts []spoolFact
@@ -362,7 +381,8 @@ func gatherEvidence(ctx context.Context, tx *sql.Tx, stateDir, runID string) (*r
 		}
 	}
 	dir := workers.AttemptDir(stateDir, runID, latest.AttemptID)
-	ev.spoolFacts = scanSpoolFacts(filepath.Join(dir, "spool.jsonl"), latest.AttemptID)
+	facts, spoolOK := scanSpoolFacts(filepath.Join(dir, "spool.jsonl"), latest.AttemptID, latest.SpoolOffset)
+	ev.spoolFacts, ev.unverified = facts, !spoolOK
 	for _, fact := range ev.spoolFacts {
 		switch {
 		case fact.launched && fact.native:
@@ -399,6 +419,7 @@ func gatherEvidence(ctx context.Context, tx *sql.Tx, stateDir, runID string) (*r
 		Attempts: attempts, Candidates: candidates, JournalSeq: journalSeq,
 		WorkerProducerGen: gen, SpoolBytes: statSize(filepath.Join(dir, "spool.jsonl")),
 		IdentityStat: statIdentity(filepath.Join(dir, "worker.json")), LiveNow: ev.live,
+		ObservedLive: probeObservedLiveness(ev.observed),
 	}
 	return ev, nil
 }
@@ -560,6 +581,42 @@ func probeLiveness(launched *launchedIdentity) string {
 	return "live:" + start.UTC().Format(time.RFC3339Nano)
 }
 
+// probeObservedLiveness asks the OS about the worker.json identity's PID,
+// in the probeLiveness vocabulary: a "live:" marker carrying the probed
+// start time, "gone" for a dead or reused PID, "unknown" when nothing can
+// be proven, and "none" when no identity was observed.
+func probeObservedLiveness(observed *workers.Identity) string {
+	if observed == nil {
+		return "none"
+	}
+	start, err := workers.ProcessStartTime(observed.PID)
+	if errors.Is(err, workers.ErrNoProcess) {
+		return "gone"
+	}
+	if err != nil || !start.Equal(observed.StartTime) {
+		if err != nil {
+			return "unknown"
+		}
+		return "gone"
+	}
+	return "live:" + start.UTC().Format(time.RFC3339Nano)
+}
+
+// observedWorkerGone reports whether the observed worker identity's process
+// is provably not running: dead, or a reused PID whose start time no
+// longer matches. An unprovable probe never confirms gone.
+func observedWorkerGone(observed *workers.Identity) bool {
+	if observed == nil {
+		return true
+	}
+	switch probeObservedLiveness(observed) {
+	case "gone":
+		return true
+	default:
+		return false
+	}
+}
+
 // statSize reports the file's size in bytes, or -1 when it cannot be read.
 func statSize(path string) int64 {
 	st, err := os.Stat(path)
@@ -582,14 +639,42 @@ func statIdentity(path string) string {
 	return fmt.Sprintf("%d:%d", st.Size(), st.ModTime().UnixNano())
 }
 
-// scanSpoolFacts collects the unacknowledged spool lines the pass can use:
-// launched events (for a native PID) and native results (for their time).
-// A missing or unreadable spool means nothing unacknowledged. Oversize or
-// torn lines are skipped, never trusted.
-func scanSpoolFacts(spoolPath, attemptID string) []spoolFact {
-	data, err := os.ReadFile(spoolPath) //nolint:gosec // G304: fixed spool name under the ledger-resolved attempt directory
+// scanSpoolFacts collects the unacknowledged spool lines past offset the
+// pass can use: launched events (for a native PID) and native results (for
+// their time). The read is bounded (the scanStopped precedent): the pass
+// holds the ledger write lock, so an unbounded worker-written file must not
+// exhaust memory or wedge the lock. A missing or unreadable spool means
+// nothing unacknowledged. Torn or unparsable lines are skipped, never
+// trusted. It returns ok=false when the unacknowledged bytes exceed
+// maxRecoverSpoolBytes: the caller must treat the spool as unverifiable
+// evidence rather than reasoning over truncated bytes.
+func scanSpoolFacts(spoolPath, attemptID string, offset int64) (facts []spoolFact, ok bool) {
+	f, err := os.Open(spoolPath) //nolint:gosec // G304: fixed spool name under the ledger-resolved attempt directory
 	if err != nil {
-		return nil
+		return nil, true
+	}
+	defer func() { _ = f.Close() }()
+	if st, err := f.Stat(); err != nil || st.Size() < offset {
+		if err != nil {
+			return nil, true
+		}
+		// The spool shrank (rotation or rewrite): re-read from the
+		// start so unacknowledged lines in the new content are not
+		// skipped past into a wrongful clean bill.
+		offset = 0
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return nil, true
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxRecoverSpoolBytes+1))
+	if err != nil {
+		return nil, true
+	}
+	if len(data) == maxRecoverSpoolBytes+1 {
+		return nil, false
 	}
 	complete, _ := splitCompleteLines(data)
 	var out []spoolFact
@@ -617,7 +702,7 @@ func scanSpoolFacts(spoolPath, attemptID string) []spoolFact {
 			out = append(out, spoolFact{at: ev.ObservedAt})
 		}
 	}
-	return out
+	return out, true
 }
 
 // decideOutcome chooses exactly one outcome from gathered evidence and
@@ -626,10 +711,13 @@ func scanSpoolFacts(spoolPath, attemptID string) []spoolFact {
 //  1. Effects first (I12): a native launched with no later result,
 //     journaled or spooled, is ambiguous and irreversible — quarantine with
 //     external_effect_uncertain, never retry by replay.
-//  2. Identity and liveness (NFR-5): the same live worker reconnects; a
+//  2. Unverifiable spool: unacknowledged bytes past the readable bound may
+//     hide an effect no journaled event settles, so the pass quarantines
+//     instead of reasoning over truncated evidence.
+//  3. Identity and liveness (NFR-5): the same live worker reconnects; a
 //     provably gone worker continues or exposes its partial candidate;
 //     anything else quarantines as ownership unresolved.
-//  3. On the live path only: the observed launch token must reconcile with
+//  4. On the live path only: the observed launch token must reconcile with
 //     the admitted one (a forgery refuses with revision_conflict and
 //     records nothing), and the journal generation must fence fresh (stale
 //     evidence quarantines, retained, never reconnected).
@@ -642,6 +730,9 @@ func decideOutcome(ctx context.Context, tx *sql.Tx, ev *recoveryEvidence, eventI
 	}
 	if ambiguousEffect(ev) {
 		return recordQuarantineOutcome(ctx, tx, ev, eventID, reasonExternalEffectUncertain, "", 0, 0)
+	}
+	if ev.unverified {
+		return recordQuarantineOutcome(ctx, tx, ev, eventID, reasonSpoolUnverifiable, "", 0, 0)
 	}
 	switch classifyWorker(ev) {
 	case workerSameLive:
@@ -664,18 +755,23 @@ const (
 // classifyWorker sorts the recovered attempt's worker: the same live
 // worker (journaled and observed identity agree via MatchIdentity and the
 // process is live), a provably gone one (the journaled PID is dead or
-// reused — lease expiry never proves this, only the probe does), or
-// unverifiable (anything else, including a live stranger).
+// reused — lease expiry never proves this, only the probe does — and no
+// conflicting live worker owns the directory), or unverifiable (anything
+// else, including a live stranger).
 func classifyWorker(ev *recoveryEvidence) workerClass {
 	if ev.launched == nil || ev.pin == nil || ev.observed == nil {
-		if ev.launched != nil && ev.live == "gone" {
+		if ev.launched != nil && ev.live == "gone" && observedWorkerGone(ev.observed) {
 			return workerGone
 		}
 		return workerUnverifiable
 	}
 	expected := workers.Identity{PID: ev.launched.pid, StartTime: ev.launched.start, Nonce: ev.pin.NonceSHA256}
 	if !workers.MatchIdentity(expected, *ev.observed) {
-		if ev.live == "gone" {
+		// The directory names a different worker than the journal did.
+		// The journaled worker's death alone must not admit a
+		// continuation beside a live stranger: gone needs the observed
+		// process gone too.
+		if ev.live == "gone" && observedWorkerGone(ev.observed) {
 			return workerGone
 		}
 		return workerUnverifiable
@@ -740,7 +836,9 @@ func decideLive(ctx context.Context, tx *sql.Tx, ev *recoveryEvidence, eventID s
 // decideGone reconciles a provably dead worker: a partial frozen candidate
 // is exposed, else a continuation is admitted carrying the same launch
 // identity. Neither path launches; the handler launches a fresh
-// continuation after the record commits.
+// continuation once admitted, still inside Execute's transaction — the
+// launch is not post-commit (see the Task 3 review-round-1 scratchpad
+// note; Task 4 lands the durable handoff with registration).
 func decideGone(ctx context.Context, tx *sql.Tx, ev *recoveryEvidence, eventID string) (RecoveryReport, error) {
 	for _, c := range ev.markers.Candidates {
 		if c.AttemptID == ev.attempt.AttemptID && c.Partial {
@@ -804,6 +902,9 @@ func quarantineError(reason, producer string, got, current int64) *Error {
 		return newError(CodeOwnershipUnresolved,
 			"producer %s journaled at generation %d but is at %d: the evidence is stale, not fresh ownership",
 			producer, got, current)
+	case reasonSpoolUnverifiable:
+		return newError(CodeOwnershipUnresolved,
+			"the unacknowledged spool exceeds the readable bound, so its effects cannot be verified")
 	default:
 		return newError(CodeOwnershipUnresolved, "the worker identity cannot be verified")
 	}
@@ -909,27 +1010,32 @@ func recordOutcome(ctx context.Context, tx *sql.Tx, ev *recoveryEvidence, eventI
 	return rep, nil
 }
 
-// latestRecoveryReport returns the run's latest recorded pass. A corrupt
-// payload counts as no record: the pass re-examines rather than replaying
-// bytes it cannot read.
-func latestRecoveryReport(tx *sql.Tx, runID string) (RecoveryReport, bool) {
-	var payload string
-	err := tx.QueryRow(`SELECT payload FROM journal WHERE run_id = ? AND type = ?
-		ORDER BY run_sequence DESC LIMIT 1`, runID, EventRecoveryDecided).Scan(&payload)
+// latestRecoveryReport returns the run's latest recorded pass and when it
+// was decided. A corrupt payload counts as no record: the pass
+// re-examines rather than replaying bytes it cannot read. An unreadable
+// timestamp fails the newborn bound closed (the zero time always expires).
+func latestRecoveryReport(tx *sql.Tx, runID string) (RecoveryReport, time.Time, bool) {
+	var payload, observedAt string
+	err := tx.QueryRow(`SELECT payload, observed_at FROM journal WHERE run_id = ? AND type = ?
+		ORDER BY run_sequence DESC LIMIT 1`, runID, EventRecoveryDecided).Scan(&payload, &observedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return RecoveryReport{}, false
+		return RecoveryReport{}, time.Time{}, false
 	}
 	if err != nil {
-		return RecoveryReport{}, false
+		return RecoveryReport{}, time.Time{}, false
 	}
 	var rep RecoveryReport
 	if err := json.Unmarshal([]byte(payload), &rep); err != nil {
-		return RecoveryReport{}, false
+		return RecoveryReport{}, time.Time{}, false
 	}
 	if rep.Outcome == "" || rep.AttemptID == "" {
-		return RecoveryReport{}, false
+		return RecoveryReport{}, time.Time{}, false
 	}
-	return rep, true
+	decidedAt, err := time.Parse(time.RFC3339Nano, observedAt)
+	if err != nil {
+		return rep, time.Time{}, true
+	}
+	return rep, decidedAt, true
 }
 
 // shouldReplay reports whether the stored pass still stands. Same target
@@ -937,8 +1043,10 @@ func latestRecoveryReport(tx *sql.Tx, runID string) (RecoveryReport, bool) {
 // own continuation: while the admitted attempt has journaled nothing, it
 // stands as admitted however its files look, so a fresh pass never
 // quarantines a newborn for having no evidence yet. Its first journaled
-// event opens its first examination.
-func shouldReplay(stored RecoveryReport, ev *recoveryEvidence) bool {
+// event opens its first examination, as does the newborn bound expiring:
+// past MaxRecoveryContinuationAge the pass examines the silent
+// continuation instead of replaying "continued" forever.
+func shouldReplay(stored RecoveryReport, ev *recoveryEvidence, decidedAt time.Time) bool {
 	if stored.AttemptID == ev.attempt.AttemptID {
 		return markersEqual(stored.Markers, ev.markers)
 	}
@@ -948,7 +1056,7 @@ func shouldReplay(stored RecoveryReport, ev *recoveryEvidence) bool {
 				return false
 			}
 		}
-		return true
+		return time.Since(decidedAt) <= MaxRecoveryContinuationAge
 	}
 	return false
 }

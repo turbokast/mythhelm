@@ -22,6 +22,14 @@ func TestMain(m *testing.M) {
 	if os.Getenv("MYTHHELM_TEST_HELPER") == "lockholder" {
 		os.Exit(runLockHolder())
 	}
+	if os.Getenv("MYTHHELM_TEST_HELPER") == "sleeper" {
+		// Block until the parent kills this sleeper. Sleep (a pending
+		// timer), never a bare select{}: this child has no other
+		// goroutine, so select{} trips the runtime's
+		// all-goroutines-asleep deadlock detector on some platforms.
+		time.Sleep(1000 * time.Hour)
+		os.Exit(0) // Unreachable: the parent kills the sleeper first.
+	}
 	code := m.Run()
 	cleanupE2EBinary()
 	os.Exit(code)

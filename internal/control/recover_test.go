@@ -1,13 +1,16 @@
 package control
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -838,7 +841,8 @@ func TestRecoveryReportGolden(t *testing.T) {
 	if want := `{"run_id":"run_rec_golden","attempt_id":"att_rec_golden","outcome":"reconnected"}`; string(stable) != want {
 		t.Fatalf("report prefix = %s, want %s", stable, want)
 	}
-	if rep.Markers.JournalSeq < 1 || rep.Markers.SpoolBytes < -1 || rep.Markers.IdentityStat == "" || rep.Markers.LiveNow == "" {
+	if rep.Markers.JournalSeq < 1 || rep.Markers.SpoolBytes < -1 || rep.Markers.IdentityStat == "" ||
+		rep.Markers.LiveNow == "" || rep.Markers.ObservedLive == "" {
 		t.Fatalf("report markers are incomplete: %+v", rep.Markers)
 	}
 	if len(rep.Markers.Attempts) != 1 || rep.Markers.Attempts[0].AttemptID != f.attempt {
@@ -850,4 +854,347 @@ func TestRecoveryReportGolden(t *testing.T) {
 	if len(evs) != 1 || string(evs[0].Payload) != string(res.Body) {
 		t.Fatalf("journaled outcome differs from the returned report")
 	}
+}
+
+// spoolLaunchedEvent builds a spool-only attempt.launched envelope with a
+// parseable payload, naming a native PID when native is non-nil.
+func spoolLaunchedEvent(t *testing.T, runID, attemptID, eventID string, pid int, start time.Time, native *int) journal.Event {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{
+		"worker_pid": pid, "worker_start_time": start, "native_pid": native, "native_pgid": nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev := spoolEvent(runID, attemptID, "attempt.launched", eventID)
+	ev.Payload = payload
+	return ev
+}
+
+func TestScanSpoolFactsSkipsAcknowledgedLines(t *testing.T) {
+	t.Parallel()
+	f := newRecoverState(t, "run_rec_spooloff", "att_rec_spooloff")
+	appendSpoolEvent(t, f.attemptDir(), spoolEvent(f.runID, f.attempt,
+		"attempt.native_result", "evt_spool_ack_1"))
+	spool := filepath.Join(f.attemptDir(), "spool.jsonl")
+	st, err := os.Stat(spool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acked := st.Size()
+	appendSpoolEvent(t, f.attemptDir(), spoolLaunchedEvent(t, f.runID, f.attempt,
+		"evt_spool_unack_1", f.pid, f.start, nil))
+	all, ok := scanSpoolFacts(spool, f.attempt, 0)
+	if !ok || len(all) != 2 {
+		t.Fatalf("scan from zero = %d facts ok=%v, want the acknowledged result plus the unacknowledged launch", len(all), ok)
+	}
+	unacked, ok := scanSpoolFacts(spool, f.attempt, acked)
+	if !ok || len(unacked) != 1 || !unacked[0].launched {
+		t.Fatalf("scan past the acknowledged offset = %+v ok=%v, want only the unacknowledged launch", unacked, ok)
+	}
+}
+
+func TestScanSpoolFactsRereadsAfterTruncation(t *testing.T) {
+	t.Parallel()
+	f := newRecoverState(t, "run_rec_spooltrunc", "att_rec_spooltrunc")
+	spool := filepath.Join(f.attemptDir(), "spool.jsonl")
+	appendSpoolEvent(t, f.attemptDir(), spoolLaunchedEvent(t, f.runID, f.attempt,
+		"evt_spool_trunc_1", f.pid, f.start, nil))
+	first, ok := scanSpoolFacts(spool, f.attempt, 0)
+	if !ok || len(first) != 1 || !first[0].launched {
+		t.Fatalf("first scan = %+v ok=%v, want the launched fact", first, ok)
+	}
+	st, err := os.Stat(spool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumed := st.Size()
+	// The worker rotates the spool: a shorter file holding a fresh
+	// native result, with the old offset past its end.
+	line, err := json.Marshal(spoolEvent(f.runID, f.attempt, "attempt.native_result", "evt_spool_trunc_2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(spool, append(line, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := os.Stat(spool); err != nil || st.Size() >= consumed {
+		t.Fatalf("rotated spool size breaks the fixture: want it below the old offset %d", consumed)
+	}
+	second, ok := scanSpoolFacts(spool, f.attempt, consumed)
+	if !ok || len(second) != 1 || second[0].launched {
+		t.Fatalf("scan after truncation = %+v ok=%v, want the fresh result re-read from the start", second, ok)
+	}
+}
+
+func TestRecoveryIgnoresAcknowledgedSpool(t *testing.T) {
+	t.Parallel()
+	f := newRecoverState(t, "run_rec_spoolack", "att_rec_spoolack")
+	native := 4242
+	killWorker(t, f, &native, 2)
+	appendSpoolEvent(t, f.attemptDir(), spoolEvent(f.runID, f.attempt,
+		"attempt.native_result", "evt_spool_ackres_1"))
+	// Ingest journaled the spool up to its end: the spooled result is
+	// acknowledged, so it must not settle the journaled native launch.
+	st, err := os.Stat(filepath.Join(f.attemptDir(), "spool.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec(`UPDATE attempts SET spool_offset = ? WHERE attempt_id = ?`,
+		st.Size(), f.attempt); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Execute(f.ctx(t), RecoverHandler(f.deps()), Peer{}, recoverIntent(t, "op_rec_spoolack", f.runID))
+	requireCode(t, err, CodeExternalEffectUncertain)
+	if rep := decodeReport(t, res.Body); rep.Outcome != RecoverQuarantined {
+		t.Fatalf("outcome = %q, want quarantined: the acknowledged result settles nothing", rep.Outcome)
+	}
+	if n := f.launcher.count(); n != 0 {
+		t.Fatalf("launcher ran %d times under uncertainty, want zero", n)
+	}
+}
+
+func TestOversizeSpoolQuarantinesUnverifiable(t *testing.T) {
+	t.Parallel()
+	f := newRecoverState(t, "run_rec_spoolbig", "att_rec_spoolbig")
+	killWorker(t, f, nil, 2)
+	spool := filepath.Join(f.attemptDir(), "spool.jsonl")
+	if err := os.WriteFile(spool, bytes.Repeat([]byte("x"), maxRecoverSpoolBytes+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if facts, ok := scanSpoolFacts(spool, f.attempt, 0); ok || facts != nil {
+		t.Fatalf("oversize scan = %+v ok=%v, want no facts and ok=false", facts, ok)
+	}
+	res, err := Execute(f.ctx(t), RecoverHandler(f.deps()), Peer{}, recoverIntent(t, "op_rec_spoolbig", f.runID))
+	requireCode(t, err, CodeOwnershipUnresolved)
+	rep := decodeReport(t, res.Body)
+	if rep.Outcome != RecoverQuarantined || rep.Reason != "spool_unverifiable" {
+		t.Fatalf("report = %+v, want quarantined with the spool reason: truncation is never silent", rep)
+	}
+	if got := attemptState(t, f.db, f.attempt); got != "quarantined" {
+		t.Fatalf("attempt state = %q, want quarantined", got)
+	}
+	if n := f.launcher.count(); n != 0 {
+		t.Fatalf("launcher ran %d times over unverifiable spool, want zero", n)
+	}
+	// The quarantine replays without re-examining while the spool stays
+	// over the bound.
+	again, err := Execute(f.ctx(t), RecoverHandler(f.deps()), Peer{}, recoverIntent(t, "op_rec_spoolbig_2", f.runID))
+	requireCode(t, err, CodeOwnershipUnresolved)
+	if string(again.Body) != string(res.Body) {
+		t.Fatalf("replayed body %s differs from %s", again.Body, res.Body)
+	}
+	if got := f.examined.Load(); got != 1 {
+		t.Fatalf("examination passes = %d after the replay, want one", got)
+	}
+}
+
+func TestObservedLiveStrangerBlocksContinuation(t *testing.T) {
+	t.Parallel()
+	f := newRecoverState(t, "run_rec_stranger", "att_rec_stranger")
+	killWorker(t, f, nil, 2)
+	// The journaled worker is dead, but the directory names a different
+	// live worker (this test process under another nonce).
+	writeWorkerJSON(t, f.stopState, workers.Identity{SchemaVersion: 1, RunID: f.runID,
+		AttemptID: f.attempt, PID: f.pid, StartTime: f.start,
+		LaunchToken: f.launchToken, Nonce: "someone-elses-nonce"})
+	outcome, err := f.reconcile(t)
+	requireCode(t, err, CodeOwnershipUnresolved)
+	if outcome != RecoverQuarantined {
+		t.Fatalf("Reconcile = %q, want quarantined: no continuation beside a live stranger", outcome)
+	}
+	if rows := attemptRows(t, f.db, f.runID); len(rows) != 1 {
+		t.Fatalf("run holds %d attempts, want one: a stranger blocks admission", len(rows))
+	}
+	if n := f.launcher.count(); n != 0 {
+		t.Fatalf("Reconcile launched %d natives beside a live stranger, want zero", n)
+	}
+}
+
+// startSleeper spawns this test binary as a sleeper child that blocks
+// until killed (the TestMain branch beside the lockholder), returning it
+// once the process table agrees it is alive. The child is killed and
+// reaped on cleanup.
+func startSleeper(t *testing.T) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command(os.Args[0]) //nolint:gosec // G702: re-executes this test binary; TestMain selects the sleeper branch
+	cmd.Env = append(os.Environ(), "MYTHHELM_TEST_HELPER=sleeper")
+	var childOut, childErr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &childOut, &childErr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("starting sleeper subprocess: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := workers.ProcessStartTime(cmd.Process.Pid); err == nil {
+			return cmd
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("sleeper subprocess never appeared alive\nstdout: %s\nstderr: %s",
+		childOut.String(), childErr.String())
+	return nil
+}
+
+// killSleeper kills the sleeper child and waits for the process table to
+// agree it is gone (the drain deadPID precedent).
+func killSleeper(t *testing.T, cmd *exec.Cmd) {
+	t.Helper()
+	pid := cmd.Process.Pid
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatalf("killing the sleeper: %v", err)
+	}
+	_ = cmd.Wait()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := workers.ProcessStartTime(pid); errors.Is(err, workers.ErrNoProcess) {
+			return
+		}
+		if !time.Now().Before(deadline) {
+			t.Fatalf("sleeper pid %d never left the process table", pid)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestRecoveryProceedsWhenStrangerDies(t *testing.T) {
+	t.Parallel()
+	f := newRecoverState(t, "run_rec_healstranger", "att_rec_healstranger")
+	killWorker(t, f, nil, 2)
+	sleeper := startSleeper(t)
+	strangerStart, err := workers.ProcessStartTime(sleeper.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeWorkerJSON(t, f.stopState, workers.Identity{SchemaVersion: 1, RunID: f.runID,
+		AttemptID: f.attempt, PID: sleeper.Process.Pid, StartTime: strangerStart,
+		LaunchToken: f.launchToken, Nonce: "someone-elses-nonce"})
+	identityPath := filepath.Join(f.attemptDir(), "worker.json")
+	before, err := os.ReadFile(identityPath) //nolint:gosec // G304: a test temp path
+	if err != nil {
+		t.Fatal(err)
+	}
+	// While the stranger lives, the pass quarantines without admitting.
+	first, err := Execute(f.ctx(t), RecoverHandler(f.deps()), Peer{}, recoverIntent(t, "op_rec_hs_1", f.runID))
+	requireCode(t, err, CodeOwnershipUnresolved)
+	if rep := decodeReport(t, first.Body); rep.Outcome != RecoverQuarantined {
+		t.Fatalf("first outcome = %q, want quarantined beside the live stranger", rep.Outcome)
+	}
+	if rows := attemptRows(t, f.db, f.runID); len(rows) != 1 {
+		t.Fatalf("run holds %d attempts, want one: a stranger blocks admission", len(rows))
+	}
+	// The stranger dies with its file untouched: the liveness flip alone
+	// re-opens the pass, which continues.
+	killSleeper(t, sleeper)
+	after, err := os.ReadFile(identityPath) //nolint:gosec // G304: a test temp path
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatalf("worker.json changed across the stranger's death: the flip must be liveness alone")
+	}
+	second, err := Execute(f.ctx(t), RecoverHandler(f.deps()), Peer{}, recoverIntent(t, "op_rec_hs_2", f.runID))
+	if err != nil {
+		t.Fatalf("recover: %v", err)
+	}
+	if rep := decodeReport(t, second.Body); rep.Outcome != RecoverContinued {
+		t.Fatalf("second outcome = %q, want continued once the stranger is gone", rep.Outcome)
+	}
+	if got := f.examined.Load(); got != 2 {
+		t.Fatalf("examination passes = %d, want two: the flip opened a new pass", got)
+	}
+	if n := f.launcher.count(); n != 1 {
+		t.Fatalf("launcher ran %d times, want the one continuation launch", n)
+	}
+	// The two recorded passes differ only in the observed-liveness
+	// marker (plus the second pass's own admission): nothing else moved.
+	evs := recoveryEvents(t, f.j, f.runID)
+	if len(evs) != 2 {
+		t.Fatalf("journal holds %d recovery outcomes, want one per pass", len(evs))
+	}
+	strip := func(m RecoveryMarkers) RecoveryMarkers {
+		m.Attempts, m.ObservedLive = nil, ""
+		return m
+	}
+	ma, merr := json.Marshal(strip(decodeReport(t, evs[0].Payload).Markers))
+	mb, merr2 := json.Marshal(strip(decodeReport(t, evs[1].Payload).Markers))
+	if merr != nil || merr2 != nil {
+		t.Fatalf("encoding markers: %v %v", merr, merr2)
+	}
+	if !bytes.Equal(ma, mb) {
+		t.Fatalf("stripped markers differ:\n%s\n%s", ma, mb)
+	}
+	if got := decodeReport(t, evs[0].Payload).Markers.ObservedLive; len(got) < 5 || got[:5] != "live:" {
+		t.Fatalf("first observed_live = %q, want the live stranger", got)
+	}
+	if got := decodeReport(t, evs[1].Payload).Markers.ObservedLive; got != "gone" {
+		t.Fatalf("second observed_live = %q, want gone", got)
+	}
+}
+
+func TestEventlessContinuationExpiresToQuarantine(t *testing.T) {
+	t.Parallel()
+	f := newRecoverState(t, "run_rec_expire", "att_rec_expire")
+	killWorker(t, f, nil, 2)
+	// An admitted continuation whose worker never journaled anything —
+	// not even its launch — with a continued record older than the
+	// newborn bound. (The journal is append-only, so the aged record is
+	// appended old, never backdated.)
+	cont := f.attempt + "-c2"
+	if _, err := f.db.Exec(`INSERT INTO attempts (attempt_id, run_id, task_id, attempt_number, state,
+		launch_token_sha256, workspace_path) VALUES (?, ?, 'task_1', 2, 'launching', ?, '/tmp/ws')`,
+		cont, f.runID, shahex(f.launchToken)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec(`UPDATE attempts SET state = 'interrupted' WHERE attempt_id = ?`, f.attempt); err != nil {
+		t.Fatal(err)
+	}
+	aged, err := json.Marshal(RecoveryReport{RunID: f.runID, AttemptID: f.attempt,
+		Outcome: RecoverContinued, NewAttemptID: cont})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decidedAt := time.Now().Add(-(MaxRecoveryContinuationAge + time.Minute)).UTC()
+	if err := f.j.Append(t.Context(), journal.Event{
+		SchemaVersion: journal.EnvelopeVersion, EventID: "evt_recovery_aged_1",
+		RunID: f.runID, TaskID: "task_1", AttemptID: f.attempt, ProducerID: "ctl_recover_" + f.runID,
+		ProducerSequence: 1, Generation: 1, ObservedAt: decidedAt,
+		Type: EventRecoveryDecided, Payload: aged,
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Execute(f.ctx(t), RecoverHandler(f.deps()), Peer{}, recoverIntent(t, "op_rec_exp_1", f.runID))
+	requireCode(t, err, CodeOwnershipUnresolved)
+	rep := decodeReport(t, res.Body)
+	if rep.Outcome != RecoverQuarantined || rep.Reason != "ownership_unresolved" {
+		t.Fatalf("report = %+v, want the expired continuation quarantined, not replayed forever", rep)
+	}
+	if got := f.examined.Load(); got != 1 {
+		t.Fatalf("examination passes = %d, want one: the expiry examined instead of replaying", got)
+	}
+	if n := f.launcher.count(); n != 0 {
+		t.Fatalf("launcher ran %d times, want zero: the expiry relaunches nothing", n)
+	}
+	if got := attemptState(t, f.db, cont); got != "quarantined" {
+		t.Fatalf("continuation state = %q, want quarantined", got)
+	}
+	if evs := recoveryEvents(t, f.j, f.runID); len(evs) != 2 {
+		t.Fatalf("journal holds %d recovery outcomes, want the aged record plus the new pass", len(evs))
+	}
+}
+
+// TestRecoverUnservedUntilLaunchLeavesTransaction pins the Task 3
+// review-round-1 deferral: the continuation launch runs inside Execute's
+// transaction, so a commit failure after a successful spawn would orphan a
+// worker with no durable admission. recover stays out of the served set
+// until Task 4 lands the durable post-commit handoff. Task 4 deletes this
+// test when it lands the fix with registration.
+func TestRecoverUnservedUntilLaunchLeavesTransaction(t *testing.T) {
+	t.Parallel()
+	srv := NewSupervisorServer(nil)
+	_, err := srv.Dispatch(context.Background(), Peer{}, Intent{OperationID: "op_rec_unserved", Method: "recover"})
+	requireCode(t, err, CodeCapabilityUnsupported)
 }
