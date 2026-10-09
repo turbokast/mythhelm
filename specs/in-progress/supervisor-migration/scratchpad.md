@@ -42,6 +42,15 @@ overrides `design.md` — conflicts go back to the designer.
 
 ## Task discoveries
 
+- **Task 5**: the pre-migration backup lands at
+  `mythhelm.db.bak-migration-v<N>` (+ `<copy>.json` sidecar), not
+  journal's `<path>.bak-v<N>` (Open writes those during migration;
+  the names must not collide). `internal/migrate` cannot import
+  `internal/journal` (journal's tests import migrate — cycle), so
+  `backup.go` mirrors `DBName`/`SchemaVersion` with
+  `TestBackupPinsMatchJournal`; schema bumps sweep that file too.
+  Task 7's Mutate-scope assertion must exclude Restore's read-only
+  `mode=ro` integrity opens alongside Backup's `VACUUM INTO`.
 - **Task 1**: the migration shipped as `0007_v2contracts.sql`
   (`SchemaVersion` 7), not 0004/4 as the task text says: origin/main
   already carries 0001–0006 (budget-ledger-s1's 0003, supervisor

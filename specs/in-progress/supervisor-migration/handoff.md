@@ -41,7 +41,31 @@
 
 ## Task 5 — Backup and restore with downgrade refusal
 
-<!-- pending -->
+- **Produces**: `migrate.Backup(ctx, db, dir) (BackupInfo, error)` and
+  `migrate.Restore(ctx, info, dir) error` in `internal/migrate/backup.go`
+  with `migrate.BackupInfo` exactly as designed (`path`,
+  `schema_version`, `build_version`, `sha256`, `created_at`);
+  tests in `internal/migrate/backup_test.go`.
+- **For dependents**: `dir` is the state dir in both calls. Backup lands
+  at `<dir>/mythhelm.db.bak-migration-v<N>` with the sidecar at
+  `<backup>.json` (Task 6: expect this name in `Plan.BackupTo`).
+  Every failure is a `*v2contract.ControlError` passing `Validate` —
+  assert codes with `errors.As`: `invalid_contract` (overwrite,
+  digest mismatch), `schema_too_new` (backup newer than the binary),
+  `persistence_unavailable` (I/O, integrity failures). All refusals
+  return before writing anything to the target dir.
+- **For Task 7**: `Restore` opens the backup and the restored copy
+  read-only (`mode=ro`) for `PRAGMA integrity_check`; exclude those
+  opens from `TestMigrateWritesRunInMutate` exactly as the design
+  excludes Backup's single `VACUUM INTO` `Exec`. Corrupt-source
+  backup and corrupt-copy restore (matching digest) both abort with
+  `persistence_unavailable` — verified by a throwaway probe, not a
+  committed test, so Task 7 owns that pin.
+- **Deviations that change a later task's inputs**: backup.go mirrors
+  `journal.DBName`/`journal.SchemaVersion` (import cycle — journal's
+  tests import migrate); the next schema bump must sweep
+  `supportedSchemaVersion` (Task 6+, `TestBackupPinsMatchJournal`
+  fails otherwise).
 
 ## Task 6 — `mythhelm migrate` with hermetic preview
 
