@@ -27,6 +27,18 @@ func prefixFrame(payload []byte) []byte {
 	return frame
 }
 
+// requireMismatch fails unless err is a CheckIngress violation carrying the
+// protocol_mismatch code the spec pins on every ingress rejection.
+func requireMismatch(t *testing.T, err error, what string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("CheckIngress(%s) = nil, want protocol_mismatch", what)
+	}
+	if !strings.Contains(err.Error(), "protocol_mismatch") {
+		t.Fatalf("CheckIngress(%s) error = %q, want protocol_mismatch code", what, err)
+	}
+}
+
 // mustMarshal encodes v as JSON or fails the test.
 func mustMarshal(t *testing.T, v any) []byte {
 	t.Helper()
@@ -54,10 +66,10 @@ func TestFrameAtExactly1MiBPasses(t *testing.T) {
 		t.Fatalf("CheckIngress at exactly MaxFrameBytes: %v", err)
 	}
 	over := pad(v2contract.MaxFrameBytes - overhead + 1)
-	if err := control.CheckIngress(over); err == nil {
-		t.Fatal("CheckIngress at MaxFrameBytes+1 = nil, want size-limit error")
-	} else if !strings.Contains(err.Error(), "exceed limit") {
-		t.Fatalf("CheckIngress at MaxFrameBytes+1 error = %q, want size-limit mention", err)
+	overErr := control.CheckIngress(over)
+	requireMismatch(t, overErr, "MaxFrameBytes+1")
+	if !strings.Contains(overErr.Error(), "exceed limit") {
+		t.Fatalf("CheckIngress at MaxFrameBytes+1 error = %q, want size-limit mention", overErr)
 	}
 }
 
@@ -81,14 +93,14 @@ func TestDepth64Passes65Fails(t *testing.T) {
 				t.Fatalf("fixture has %d open braces, want %d", got, tc.braces)
 			}
 			err = control.CheckIngress(prefixFrame(payload))
-			if tc.wantErr && err == nil {
-				t.Fatal("CheckIngress = nil, want depth-limit error")
-			}
 			if !tc.wantErr && err != nil {
 				t.Fatalf("CheckIngress = %v, want nil", err)
 			}
-			if tc.wantErr && !strings.Contains(err.Error(), "depth") {
-				t.Fatalf("error = %q, want depth-limit mention", err)
+			if tc.wantErr {
+				requireMismatch(t, err, tc.name)
+				if !strings.Contains(err.Error(), "depth") {
+					t.Fatalf("error = %q, want depth-limit mention", err)
+				}
 			}
 		})
 	}
@@ -109,10 +121,10 @@ func TestRefs128Pass129Fail(t *testing.T) {
 	if err := control.CheckIngress(refs(v2contract.MaxArtifactRefs)); err != nil {
 		t.Fatalf("CheckIngress with 128 artefact refs: %v", err)
 	}
-	if err := control.CheckIngress(refs(v2contract.MaxArtifactRefs + 1)); err == nil {
-		t.Fatal("CheckIngress with 129 artefact refs = nil, want refs-limit error")
-	} else if !strings.Contains(err.Error(), "refs") {
-		t.Fatalf("error = %q, want refs-limit mention", err)
+	refsErr := control.CheckIngress(refs(v2contract.MaxArtifactRefs + 1))
+	requireMismatch(t, refsErr, "129 artefact refs")
+	if !strings.Contains(refsErr.Error(), "refs") {
+		t.Fatalf("error = %q, want refs-limit mention", refsErr)
 	}
 }
 
@@ -148,10 +160,10 @@ func TestRefsCountNestedObjects(t *testing.T) {
 		},
 	})
 	// 127 flat plus 2 nested = 129 references.
-	if err := control.CheckIngress(prefixFrame(payload)); err == nil {
-		t.Fatal("CheckIngress with 129 refs incl. nested = nil, want refs-limit error")
-	} else if !strings.Contains(err.Error(), "refs") {
-		t.Fatalf("error = %q, want refs-limit mention", err)
+	nestedErr := control.CheckIngress(prefixFrame(payload))
+	requireMismatch(t, nestedErr, "129 refs incl. nested")
+	if !strings.Contains(nestedErr.Error(), "refs") {
+		t.Fatalf("error = %q, want refs-limit mention", nestedErr)
 	}
 }
 
@@ -163,19 +175,17 @@ func TestCheckIngressSurvivesAdversarialNesting(t *testing.T) {
 	// cap) or at the NFR-1 depth check; either way it must fail closed.
 	payload := []byte(`{"operation_id":"op-deep","method":"depth-probe","params":` + nested + `}`)
 	// Must return a depth error, never exhaust the stack.
-	if err := control.CheckIngress(prefixFrame(payload)); err == nil {
-		t.Fatal("CheckIngress with 100000 nesting = nil, want depth-limit error")
-	} else if !strings.Contains(err.Error(), "depth") {
-		t.Fatalf("error = %q, want depth-limit mention", err)
+	deepErr := control.CheckIngress(prefixFrame(payload))
+	requireMismatch(t, deepErr, "100000 nesting")
+	if !strings.Contains(deepErr.Error(), "depth") {
+		t.Fatalf("error = %q, want depth-limit mention", deepErr)
 	}
 }
 
 func TestUnknownKeyRejected(t *testing.T) {
 	payload := []byte(`{"operation_id":"op-unknown","method":"status","bogus_key":1}`)
 	err := control.CheckIngress(prefixFrame(payload))
-	if err == nil {
-		t.Fatal("CheckIngress with unknown key = nil, want strict-decode error")
-	}
+	requireMismatch(t, err, "unknown key")
 	if !strings.Contains(err.Error(), "bogus_key") {
 		t.Fatalf("error = %q, want it to name bogus_key", err)
 	}
@@ -232,9 +242,7 @@ func TestDecodeRejectsBadPrefix(t *testing.T) {
 			if _, err := control.Decode[control.Frame](frame); err == nil {
 				t.Fatalf("Decode(%s) = nil, want prefix error", name)
 			}
-			if err := control.CheckIngress(frame); err == nil {
-				t.Fatalf("CheckIngress(%s) = nil, want prefix error", name)
-			}
+			requireMismatch(t, control.CheckIngress(frame), name+" prefix")
 		})
 	}
 }
@@ -248,18 +256,14 @@ func TestCheckIngressRejectsMalformed(t *testing.T) {
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
-			if err := control.CheckIngress(prefixFrame([]byte(body))); err == nil {
-				t.Fatalf("CheckIngress(%s) = nil, want malformed-frame error", name)
-			}
+			requireMismatch(t, control.CheckIngress(prefixFrame([]byte(body))), name)
 		})
 	}
 }
 
 func TestCheckIngressRejectsEmptyOperationID(t *testing.T) {
 	err := control.CheckIngress(prefixFrame([]byte(`{"operation_id":"","method":"status"}`)))
-	if err == nil {
-		t.Fatal("CheckIngress with empty operation_id = nil, want envelope error")
-	}
+	requireMismatch(t, err, "empty operation_id")
 	if !strings.Contains(err.Error(), "operation_id") {
 		t.Fatalf("error = %q, want it to name operation_id", err)
 	}

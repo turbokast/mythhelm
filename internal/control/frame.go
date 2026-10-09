@@ -84,8 +84,17 @@ func Decode[T v2contract.Validator](frame []byte) (T, error) {
 // depth and artefact-reference count must satisfy
 // v2contract.CheckFrameLimits. Any violation stops the affected
 // integration: the caller closes the connection and accepts no further
-// frames on it.
+// frames on it. Every violation reports the protocol_mismatch code; once
+// vocab task 6 lands, violations become *v2contract.ControlError instead of
+// plain errors carrying the code in the message.
 func CheckIngress(frame []byte) error {
+	if err := checkIngress(frame); err != nil {
+		return fmt.Errorf("control: protocol_mismatch: %w", err)
+	}
+	return nil
+}
+
+func checkIngress(frame []byte) error {
 	payload, err := splitPrefix(frame)
 	if err != nil {
 		return err
