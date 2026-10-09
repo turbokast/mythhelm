@@ -430,7 +430,7 @@
 - **Spec deviations**: `internal/supervisor/pipeline_test.go` is outside the task's `Files` list: `TestAdmissionDecidedBeforeWorkerSpawn` asserts the new verbatim disclosure sentence, since the old weaker wording no longer exists.
 - **Files modified**: `internal/supervisor/receipt.go`, `internal/supervisor/receipt_test.go`, `internal/admission/admission.go`, `internal/cli/run.go`, `internal/cli/disclosure_test.go`, `internal/supervisor/pipeline_test.go`, `specs/in-progress/contained-execution-profiles/tasks.md`, `specs/in-progress/contained-execution-profiles/handoff.md`, `specs/in-progress/contained-execution-profiles/scratchpad.md`.
 
-### Task 9 — Startup boundary and authority fixtures
+### Task 9 — Startup boundary and authority fixtures ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (security primitives across the launch path)
@@ -484,6 +484,43 @@
 - **Invariants touched**: I03 (v2 §2: task text, env, plugin messages and
   model output grant no authority); I20 (v2 §2: changed config invalidates
   trust before the next launch).
+- **Status**: ✅ Completed — the worker re-hashes mutable native config
+  before exec, `Launch` is built by the pure `launchForAttempt` helper,
+  boundary restrictions render as fidelity deltas, and all four AC-4.2
+  channels carry failing fixtures; PR #294.
+- **Implementation**: Half 1 (`bf0ff49`): `UserConfigPaths`/`Digests` with
+  worker pre-exec `verifyUserConfig`, `BoundaryDeltas` plus both decide-path
+  append sites. Half 2 (`0d3ce4e`): `launchForAttempt` (containment, digest
+  mapping bound to the launch HOME, empty proxy allowlist) with the
+  model-output and field-classification pins, and the contained e2e gates.
+- **Spec deviations**: (1) `internal/admission/native.go` untouched: digests
+  already flow via `Proposal.Manifest` and paths are computed post-admission
+  per the Task 10 rule. (2) The re-hash e2e lives in `internal/admission`
+  instead of `internal/workers` (file ownership: the admission package cannot
+  host a `__worker` TestMain dispatch, so the test builds `cmd/mythhelm` and
+  spawns real workers through the exported API). (3) Deltas append in both
+  decide paths (the fake
+  route is the admitted contained route on Linux). (4) A `PolicyForProfile`
+  failure yields a zero policy — an invalid launch the worker refuses with
+  exit 2 — never a silent uncontained run. (5) Test collateral outside
+  `Files`: `pipeline_test.go` (`__contain` dispatch, `ProbeLinux` gate,
+  outside-`/tmp` HOME), `receipt_test.go` (same gate), and the write-free
+  `readonly` fake scenario plus its embed-list pin — wiring real containment
+  changed what the four contained e2e execute. (6) Pre-exec `__contain`
+  failures surface as native exit 1; refusal diagnosis relies on `ProbeLinux`
+  alone, no CLOEXEC status pipe in this spec (decides the Task 4 question).
+- **Files modified**: `internal/workers/worker.go`,
+  `internal/workers/contain.go`, `internal/admission/boundary.go`,
+  `internal/admission/admission.go`,
+  `internal/admission/launch_fixture_test.go`,
+  `internal/security/authority_test.go`, `internal/supervisor/pipeline.go`,
+  `internal/supervisor/pipeline_launch_test.go`,
+  `internal/supervisor/pipeline_test.go`,
+  `internal/supervisor/receipt_test.go`,
+  `adapters/fake/scenarios/readonly.json`, `adapters/fake/fake_test.go`,
+  `specs/in-progress/contained-execution-profiles/tasks.md`,
+  `specs/in-progress/contained-execution-profiles/handoff.md`,
+  `specs/in-progress/contained-execution-profiles/scratchpad.md`.
 
 ### Task 10 — Adapter startup-inventory seam ✅ COMPLETED
 
