@@ -341,33 +341,32 @@ func (p *pipeline) attempt(ctx context.Context) error {
 	if stopped, err := p.stopBeforeSpawn(ctx); stopped || err != nil {
 		return err
 	}
-	// The envelope gates the launch before any intent is journaled, and
-	// the first launch starts the execution clock (I21, I02).
-	if err := GateLaunch(ctx, p.j, d.RunID, p.ceilings); err != nil {
-		return p.blockLaunch(ctx, err)
-	}
-	startedAt := time.Now().UTC()
-	if err := recordFirstStart(ctx, p.j, d.RunID, startedAt); err != nil {
-		return p.blockLaunch(ctx, err)
-	}
-	deadline, err := executionDeadline(ctx, p.j, d.RunID, p.ceilings, startedAt)
+	// The envelope gates the launch before any intent is journaled; the
+	// launch is counted, and the first one starts the execution clock, in
+	// the intent's own transaction (I21, I02).
+	plan, err := planLaunchAt(ctx, p.j, d.RunID, p.ceilings, time.Now().UTC())
 	if err != nil {
 		return p.blockLaunch(ctx, err)
 	}
-	p.deadline = deadline
+	p.deadline = plan.deadline
 	token, err := launchToken()
 	if err != nil {
 		return err
 	}
 	sum := sha256.Sum256([]byte(token))
-	if err := RecordLaunchIntent(ctx, p.j, journal.AttemptRow{
+	if err := recordLaunchIntent(ctx, p.j, journal.AttemptRow{
 		AttemptID:         d.AttemptID,
 		RunID:             d.RunID,
 		TaskID:            d.TaskID,
 		AttemptNumber:     1,
 		LaunchTokenSHA256: hex.EncodeToString(sum[:]),
 		WorkspacePath:     d.Workdir,
-	}, p.prod); err != nil {
+	}, p.prod, plan.commit(ctx, d.RunID)); err != nil {
+		// The update refused the launch the check allowed: the envelope
+		// changed in between.
+		if _, ok := errors.AsType[*GateError](err); ok {
+			return p.blockLaunch(ctx, err)
+		}
 		return err
 	}
 	p.out.AttemptState = AttemptLaunchIntentRecorded

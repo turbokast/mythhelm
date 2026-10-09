@@ -224,6 +224,12 @@ type launchIntentPayload struct {
 // attempt's projection in state launch_intent_recorded, before any worker is
 // spawned (AC-5.1). It sets attempt's State and Reason.
 func RecordLaunchIntent(ctx context.Context, j *journal.Journal, attempt journal.AttemptRow, producer *Producer) error {
+	return recordLaunchIntent(ctx, j, attempt, producer, nil)
+}
+
+// recordLaunchIntent is RecordLaunchIntent with an extra projection that
+// commits in the same transaction as the intent.
+func recordLaunchIntent(ctx context.Context, j *journal.Journal, attempt journal.AttemptRow, producer *Producer, also func(*sql.Tx) error) error {
 	attempt.State, attempt.Reason = string(AttemptLaunchIntentRecorded), ""
 	ev, err := newEvent(attempt.RunID, attempt.TaskID, attempt.AttemptID, "attempt.launch_intent_recorded",
 		launchIntentPayload{LaunchTokenSHA256: attempt.LaunchTokenSHA256}, time.Now().UTC())
@@ -231,7 +237,13 @@ func RecordLaunchIntent(ctx context.Context, j *journal.Journal, attempt journal
 		return err
 	}
 	return producer.append(ctx, j, ev, func(tx *sql.Tx) error {
-		return journal.InsertAttempt(ctx, tx, attempt)
+		if err := journal.InsertAttempt(ctx, tx, attempt); err != nil {
+			return err
+		}
+		if also == nil {
+			return nil
+		}
+		return also(tx)
 	})
 }
 

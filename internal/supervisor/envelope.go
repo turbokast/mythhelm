@@ -127,55 +127,110 @@ type GateError struct {
 func (e *GateError) Error() string { return e.Reason + ": " + e.Err.Error() }
 func (e *GateError) Unwrap() error { return e.Err }
 
-// GateLaunch refuses a launch that would exceed the run's finite envelope:
-// a past deadline, or one more repair, replan or transport retry than its
-// ceiling allows. A refusal is a *GateError naming the blocked reason and
-// counts nothing. An allowed attempt after the first is counted as a repair
-// or a replan (D8). A ceiling raised by a recorded run.extension_granted
-// takes the envelope row's raised value; with no grant, c stays in force
-// (I21).
+// launchPlan is a launch the envelope allows, and what committing it with
+// the attempt's launch intent records.
+type launchPlan struct {
+	kind     string // "repairs", "replans", or "" for the first attempt
+	startAt  time.Time
+	deadline time.Time
+	ceilings billing.Ceilings
+}
+
+// GateLaunch refuses a launch that would exceed the run's finite envelope: a
+// past deadline, or one more repair, replan or transport retry than its
+// ceiling allows. A refusal is a *GateError naming the blocked reason. It
+// only checks; the launch is counted when its intent commits (planLaunchAt).
+// A ceiling raised by a recorded run.extension_granted takes the envelope
+// row's raised value; with no grant, c stays in force (I21).
 func GateLaunch(ctx context.Context, j *journal.Journal, runID string, c billing.Ceilings) error {
 	return gateLaunchAt(ctx, j, runID, c, time.Now())
 }
 
 // gateLaunchAt is GateLaunch at an explicit time, so tests need no clock.
 func gateLaunchAt(ctx context.Context, j *journal.Journal, runID string, c billing.Ceilings, now time.Time) error {
+	_, err := planLaunchAt(ctx, j, runID, c, now)
+	return err
+}
+
+// planLaunchAt checks the launch and returns its plan. An attempt after the
+// first is a repair when the run has a verifications row and a replan when
+// it has none (D8); the first attempt starts the execution clock.
+func planLaunchAt(ctx context.Context, j *journal.Journal, runID string, c billing.Ceilings, now time.Time) (launchPlan, error) {
 	env, eff, err := effectiveCeilings(ctx, j, runID, c)
 	if err != nil {
-		return err
+		return launchPlan{}, err
 	}
 	if deadline, expired, err := envelopeDeadline(env, eff, now); err != nil {
-		return err
+		return launchPlan{}, err
 	} else if expired {
-		return &GateError{Reason: "envelope_deadline_exceeded",
+		return launchPlan{}, &GateError{Reason: "envelope_deadline_exceeded",
 			Err: fmt.Errorf("%w: execution deadline %s reached", billing.ErrBudgetExhausted, deadline.Format(time.RFC3339))}
 	}
+	plan := launchPlan{startAt: now.UTC(), ceilings: eff}
 	counts := billing.AttemptCounts{Repairs: int(env.RepairsUsed), Replans: int(env.ReplansUsed), TransportRetries: int(env.TransportRetriesSeen)}
-	counted := false
 	if _, err := j.LatestAttempt(ctx, runID); err == nil {
 		replan, err := IsReplan(ctx, j, runID)
 		if err != nil {
-			return err
+			return launchPlan{}, err
 		}
 		if replan {
+			plan.kind = "replans"
 			counts.Replans++
-			env.ReplansUsed++
 		} else {
+			plan.kind = "repairs"
 			counts.Repairs++
-			env.RepairsUsed++
 		}
-		counted = true
 	} else if !errors.Is(err, journal.ErrNotFound) {
-		return err
+		return launchPlan{}, err
 	}
 	if err := eff.Check(counts); err != nil {
-		return &GateError{Reason: exhaustedReason(eff, counts), Err: err}
+		return launchPlan{}, &GateError{Reason: exhaustedReason(eff, counts), Err: err}
 	}
-	if !counted {
+	// The deadline of a launch that starts the clock runs from now.
+	started := env
+	if started.FirstStartAt == "" {
+		started.FirstStartAt = plan.startAt.Format(time.RFC3339Nano)
+	}
+	if plan.deadline, _, err = envelopeDeadline(started, eff, now); err != nil {
+		return launchPlan{}, err
+	}
+	return plan, nil
+}
+
+// commit counts the planned launch and stamps the first start. It runs in
+// the launch intent's transaction, so a launch whose intent fails counts
+// nothing, and the update itself enforces the ceiling, so two launches
+// planned from the same state cannot both pass (AC-4.2). It increments in
+// place rather than rewriting the row, leaving concurrent ingest updates of
+// the transport count intact.
+func (p launchPlan) commit(ctx context.Context, runID string) func(*sql.Tx) error {
+	var repairs, replans int
+	switch p.kind {
+	case "repairs":
+		repairs = 1
+	case "replans":
+		replans = 1
+	}
+	return func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE run_envelopes SET repairs_used = repairs_used + ?, replans_used = replans_used + ?,
+			first_start_at = COALESCE(first_start_at, ?), updated_at = ?
+			WHERE run_id = ? AND repairs_used + ? <= ? AND replans_used + ? <= ?`,
+			repairs, replans, p.startAt.Format(time.RFC3339Nano), p.startAt.Format(time.RFC3339Nano),
+			runID, repairs, p.ceilings.Repairs, replans, p.ceilings.Replans)
+		if err != nil {
+			return fmt.Errorf("counting the launch of %s: %w", runID, err)
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return fmt.Errorf("counting the launch of %s: %w", runID, err)
+		} else if n == 0 {
+			reason := "envelope_repairs_exhausted"
+			if p.kind == "replans" {
+				reason = "envelope_replans_exhausted"
+			}
+			return &GateError{Reason: reason, Err: fmt.Errorf("%w: another launch took the last %s slot of %s", billing.ErrBudgetExhausted, p.kind, runID)}
+		}
 		return nil
 	}
-	env.UpdatedAt = now.UTC().Format(time.RFC3339Nano)
-	return j.Transact(ctx, func(tx *sql.Tx) error { return journal.UpsertRunEnvelope(ctx, tx, env) })
 }
 
 // exhaustedReason names the blocked reason of the first kind over its
@@ -252,32 +307,6 @@ func envelopeDeadline(env journal.EnvelopeRow, c billing.Ceilings, now time.Time
 	}
 	deadline, expired = billing.Deadline(first, c, pauses, now)
 	return deadline, expired, nil
-}
-
-// executionDeadline is the run's deadline at now, or the zero time before
-// the first attempt has started.
-func executionDeadline(ctx context.Context, j *journal.Journal, runID string, c billing.Ceilings, now time.Time) (time.Time, error) {
-	env, eff, err := effectiveCeilings(ctx, j, runID, c)
-	if err != nil {
-		return time.Time{}, err
-	}
-	deadline, _, err := envelopeDeadline(env, eff, now)
-	return deadline, err
-}
-
-// recordFirstStart stamps the run's first attempt launch, once; the
-// execution deadline runs from it.
-func recordFirstStart(ctx context.Context, j *journal.Journal, runID string, at time.Time) error {
-	env, err := j.RunEnvelope(ctx, runID)
-	if err != nil {
-		return err
-	}
-	if env.FirstStartAt != "" {
-		return nil
-	}
-	env.FirstStartAt = at.UTC().Format(time.RFC3339Nano)
-	env.UpdatedAt = env.FirstStartAt
-	return j.Transact(ctx, func(tx *sql.Tx) error { return journal.UpsertRunEnvelope(ctx, tx, env) })
 }
 
 // IsReplan reports whether the run's next attempt is a material replan: true

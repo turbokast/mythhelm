@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -265,6 +267,23 @@ func (w *gateWorld) addAttempt(t *testing.T) string {
 	return id
 }
 
+// launch plans and records the next attempt as the pipeline does: the check,
+// then the counted intent.
+func (w *gateWorld) launch(t *testing.T, c billing.Ceilings, now time.Time) error {
+	t.Helper()
+	plan, err := planLaunchAt(t.Context(), w.j, w.runID, c, now)
+	if err != nil {
+		return err
+	}
+	w.attempts++
+	err = recordLaunchIntent(t.Context(), w.j, journal.AttemptRow{AttemptID: ids.New("att"), RunID: w.runID, TaskID: "task", AttemptNumber: w.attempts,
+		LaunchTokenSHA256: strings.Repeat("a", 64), WorkspacePath: "/tmp/ws"}, w.prod, plan.commit(t.Context(), w.runID))
+	if err != nil {
+		w.attempts--
+	}
+	return err
+}
+
 func (w *gateWorld) addVerification(t *testing.T) {
 	t.Helper()
 	now := time.Now().UTC()
@@ -353,7 +372,7 @@ func TestGateRefusesOverCeilingRepairs(t *testing.T) {
 	env.RepairsUsed = 2
 	ok := newGateWorld(t, env, 1)
 	ok.addVerification(t)
-	if err := GateLaunch(t.Context(), ok.j, ok.runID, gateCeilings); err != nil {
+	if err := ok.launch(t, gateCeilings, time.Now()); err != nil {
 		t.Fatalf("repair under the ceiling refused: %v", err)
 	}
 	if got := ok.row(t).RepairsUsed; got != 3 {
@@ -428,7 +447,7 @@ func TestRepairReplanClassification(t *testing.T) {
 			if c.verification {
 				w.addVerification(t)
 			}
-			if err := GateLaunch(t.Context(), w.j, w.runID, gateCeilings); err != nil {
+			if err := w.launch(t, gateCeilings, time.Now()); err != nil {
 				t.Fatal(err)
 			}
 			if row := w.row(t); row.RepairsUsed != c.repairs || row.ReplansUsed != c.replans {
@@ -538,17 +557,177 @@ func TestGateRefusesPastDeadline(t *testing.T) {
 	}
 }
 
-func TestRecordFirstStartOnce(t *testing.T) {
+func TestFirstLaunchStartsClockOnce(t *testing.T) {
 	t.Parallel()
 	w := newGateWorld(t, gateEnvelope(), 0)
 	t0 := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
-	if err := recordFirstStart(t.Context(), w.j, w.runID, t0); err != nil {
-		t.Fatal(err)
-	}
-	if err := recordFirstStart(t.Context(), w.j, w.runID, t0.Add(time.Hour)); err != nil {
+	if err := w.launch(t, gateCeilings, t0); err != nil {
 		t.Fatal(err)
 	}
 	if got := w.row(t).FirstStartAt; got != t0.Format(time.RFC3339Nano) {
-		t.Fatalf("first start = %q, want the first launch %q", got, t0.Format(time.RFC3339Nano))
+		t.Fatalf("first start = %q, want %q", got, t0.Format(time.RFC3339Nano))
+	}
+	plan, err := planLaunchAt(t.Context(), w.j, w.runID, gateCeilings, t0.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := t0.Add(gateCeilings.Execution); !plan.deadline.Equal(want) {
+		t.Fatalf("deadline of a later launch = %v, want %v (from the first start)", plan.deadline, want)
+	}
+	if err := w.launch(t, gateCeilings, t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.row(t).FirstStartAt; got != t0.Format(time.RFC3339Nano) {
+		t.Fatalf("a later launch moved the first start to %q", got)
+	}
+}
+
+func TestPlannedLaunchesCannotBothPass(t *testing.T) {
+	t.Parallel()
+	env := gateEnvelope()
+	env.RepairsUsed = 2 // one repair left
+	w := newGateWorld(t, env, 1)
+	w.addVerification(t)
+	// Two launches planned from the same state both pass the check.
+	a, errA := planLaunchAt(t.Context(), w.j, w.runID, gateCeilings, time.Now())
+	b, errB := planLaunchAt(t.Context(), w.j, w.runID, gateCeilings, time.Now())
+	if errA != nil || errB != nil {
+		t.Fatalf("plans refused: %v, %v", errA, errB)
+	}
+	intent := func(n int64, plan launchPlan) error {
+		return recordLaunchIntent(t.Context(), w.j, journal.AttemptRow{AttemptID: ids.New("att"), RunID: w.runID, TaskID: "task", AttemptNumber: n,
+			LaunchTokenSHA256: strings.Repeat("a", 64), WorkspacePath: "/tmp/ws"}, w.prod, plan.commit(t.Context(), w.runID))
+	}
+	if err := intent(2, a); err != nil {
+		t.Fatalf("first launch: %v", err)
+	}
+	requireGateRefusal(t, intent(3, b), "envelope_repairs_exhausted")
+	if got := w.row(t).RepairsUsed; got != 3 {
+		t.Fatalf("repairs used = %d, want 3: the second launch must not count", got)
+	}
+	if got := w.launchIntents(t); got != 2 {
+		t.Fatalf("launch intents = %d, want 2 (the first attempt and one repair)", got)
+	}
+}
+
+func TestConcurrentLaunchesStayWithinCeiling(t *testing.T) {
+	t.Parallel()
+	env := gateEnvelope()
+	env.RepairsUsed = 1 // two repairs left
+	w := newGateWorld(t, env, 1)
+	w.addVerification(t)
+	const launchers = 6
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	passed := 0
+	for n := range launchers {
+		wg.Go(func() {
+			plan, err := planLaunchAt(t.Context(), w.j, w.runID, gateCeilings, time.Now())
+			if err != nil {
+				return
+			}
+			err = recordLaunchIntent(t.Context(), w.j, journal.AttemptRow{AttemptID: ids.New("att"), RunID: w.runID, TaskID: "task", AttemptNumber: int64(2 + n),
+				LaunchTokenSHA256: strings.Repeat("a", 64), WorkspacePath: "/tmp/ws"}, w.prod, plan.commit(t.Context(), w.runID))
+			if err == nil {
+				mu.Lock()
+				passed++
+				mu.Unlock()
+			}
+		})
+	}
+	wg.Wait()
+	if passed != 2 {
+		t.Fatalf("%d concurrent launches passed with 2 repairs left, want exactly 2", passed)
+	}
+	if got := w.row(t).RepairsUsed; got != 3 {
+		t.Fatalf("repairs used = %d, want 3", got)
+	}
+}
+
+func TestFailedLaunchDoesNotConsumeCounter(t *testing.T) {
+	t.Parallel()
+	env := gateEnvelope()
+	env.RepairsUsed = 1
+	w := newGateWorld(t, env, 1)
+	w.addVerification(t)
+	db := rawOpen(t, filepath.Join(w.j.StateDir(), journal.DBName))
+	if _, err := db.ExecContext(t.Context(), `CREATE TRIGGER no_attempts BEFORE INSERT ON attempts BEGIN SELECT RAISE(ABORT, 'injected intent failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	before := w.row(t)
+	if err := w.launch(t, gateCeilings, time.Now()); err == nil || !strings.Contains(err.Error(), "injected intent failure") {
+		t.Fatalf("launch err = %v, want the injected intent failure", err)
+	}
+	after := w.row(t)
+	if after.RepairsUsed != before.RepairsUsed || after.ReplansUsed != before.ReplansUsed || after.FirstStartAt != before.FirstStartAt {
+		t.Fatalf("a launch whose intent failed changed the envelope: %+v -> %+v", before, after)
+	}
+}
+
+// rawProgress appends an attempt.progress event with the given payload
+// text through the ingest projection (validate=true) or straight into the
+// journal (validate=false), as a journal from before the check would hold.
+func (w *gateWorld) rawProgress(t *testing.T, attemptID, payload string, validate bool) error {
+	t.Helper()
+	ev := journal.Event{SchemaVersion: journal.EnvelopeVersion, EventID: ids.New("evt"), RunID: w.runID, TaskID: "task", AttemptID: attemptID,
+		ProducerID: "worker-" + attemptID, ProducerSequence: 1 + w.sent[attemptID], Generation: 1, ObservedAt: time.Now().UTC(),
+		Type: "attempt.progress", Payload: json.RawMessage(payload)}
+	var project func(*sql.Tx) error
+	if validate {
+		project = func(tx *sql.Tx) error { return projectWorkerEvent(t.Context(), tx, ev) }
+	}
+	err := w.j.Append(t.Context(), ev, project)
+	if err == nil {
+		w.sent[attemptID]++ // a rejected event does not advance the producer
+	}
+	return err
+}
+
+func TestMalformedProgressRetriesFailClosed(t *testing.T) {
+	t.Parallel()
+	w := newGateWorld(t, gateEnvelope(), 0)
+	att := w.addAttempt(t)
+	if err := w.rawProgress(t, att, `{"retries":3}`, true); err != nil {
+		t.Fatal(err)
+	}
+	for name, payload := range map[string]string{
+		"negative":    `{"retries":-4}`,
+		"non-numeric": `{"retries":"many"}`,
+		"fractional":  `{"retries":1.5}`,
+		"null":        `{"retries":null}`,
+		"missing":     `{"assistant_turns":1}`,
+	} {
+		err := w.rawProgress(t, att, payload, true)
+		if !errors.Is(err, ErrCorruptSpool) {
+			t.Errorf("%s: err = %v, want ErrCorruptSpool", name, err)
+		}
+		if got := w.row(t).TransportRetriesSeen; got != 3 {
+			t.Errorf("%s: transport retries seen = %d, want 3 (malformed output cannot change it)", name, got)
+		}
+	}
+	// The ceiling still bites: 3 seen, 3 more is over the ceiling of 5.
+	if err := w.rawProgress(t, att, `{"retries":6}`, true); err != nil {
+		t.Fatal(err)
+	}
+	requireGateRefusal(t, GateLaunch(t.Context(), w.j, w.runID, gateCeilings), "envelope_transport_retries_exhausted")
+}
+
+func TestJournaledMalformedRetriesNeverReduceCount(t *testing.T) {
+	t.Parallel()
+	w := newGateWorld(t, gateEnvelope(), 0)
+	good, negative, text := w.addAttempt(t), w.addAttempt(t), w.addAttempt(t)
+	// Events journaled before the validation existed: a negative and a
+	// non-numeric report, each alone for its attempt, with no projection run.
+	if err := w.rawProgress(t, negative, `{"retries":-9}`, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.rawProgress(t, text, `{"retries":"7"}`, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.rawProgress(t, good, `{"retries":4}`, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.row(t).TransportRetriesSeen; got != 4 {
+		t.Fatalf("transport retries seen = %d, want 4: malformed journaled reports must count for nothing", got)
 	}
 }
