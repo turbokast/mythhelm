@@ -637,6 +637,36 @@ func TestReceiptNextRetryShown(t *testing.T) {
 			t.Errorf("next retry = %v, want the authoritative reset with 0 used", next)
 		}
 	})
+	t.Run("divergent scope resolves by bucket", func(t *testing.T) {
+		t.Parallel()
+		j, runID := ledgerReceiptWorld(t)
+		r := held("released")
+		r.RunID, r.Owner = runID, runID
+		r.Scope = "another-scope"
+		insertReservation(t, j, r)
+		now := time.Now().UTC().Format(time.RFC3339Nano)
+		if err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+			return journal.SetBucketExhausted(t.Context(), tx, bucket, now, nil)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		billing := receiptBilling(t, j, runID)
+		next, ok := billing["next_retry"].(map[string]any)
+		if !ok {
+			t.Fatalf("next_retry = %#v, want the schedule looked up by bucket, not scope",
+				billing["next_retry"])
+		}
+		if next["at"] != "unknown" {
+			t.Errorf("next retry at = %v, want unknown", next["at"])
+		}
+		remaining, ok := billing["remaining"].(map[string]any)
+		if !ok {
+			t.Fatalf("remaining = %#v, want an object", billing["remaining"])
+		}
+		if remaining["bucket"] != bucket {
+			t.Errorf("remaining bucket = %v, want %q, not the scope", remaining["bucket"], bucket)
+		}
+	})
 	t.Run("never exhausted renders null", func(t *testing.T) {
 		t.Parallel()
 		j, runID := ledgerReceiptWorld(t)

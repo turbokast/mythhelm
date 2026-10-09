@@ -281,7 +281,7 @@ const retailScope = "retail-equivalent"
 func RunBucket(ctx context.Context, j *journal.Journal, runID string) (string, error) {
 	bucket := ""
 	err := j.Transact(ctx, func(tx *sql.Tx) error {
-		return tx.QueryRowContext(ctx, `SELECT scope FROM reservations WHERE run_id = ?
+		return tx.QueryRowContext(ctx, `SELECT bucket FROM reservations WHERE run_id = ?
 			ORDER BY created_at DESC, reservation_id DESC LIMIT 1`, runID).Scan(&bucket)
 	})
 	if errors.Is(err, sql.ErrNoRows) {
