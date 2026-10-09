@@ -231,7 +231,8 @@ func (p launchPlan) commit(ctx context.Context, runID string) func(*sql.Tx) erro
 			return deadlineError(p.deadline)
 		}
 		if !p.replanDeadline.IsZero() && !now.Before(p.replanDeadline) {
-			return deadlineError(p.replanDeadline)
+			return &GateError{Reason: "completion_reserve_shortfall",
+				Err: fmt.Errorf("%w: replan deadline %s passed; the completion reserve no longer covers a verification pass", billing.ErrBudgetExhausted, p.replanDeadline.Format(time.RFC3339))}
 		}
 		res, err := tx.ExecContext(ctx, `UPDATE run_envelopes SET repairs_used = repairs_used + ?, replans_used = replans_used + ?,
 			first_start_at = COALESCE(first_start_at, ?), updated_at = ?

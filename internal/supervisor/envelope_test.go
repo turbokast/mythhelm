@@ -910,7 +910,7 @@ func TestCommitRefusesPastReplanDeadline(t *testing.T) {
 	plan.replanDeadline = time.Now().Add(-time.Minute)
 	err = recordLaunchIntent(t.Context(), w.j, journal.AttemptRow{AttemptID: ids.New("att"), RunID: w.runID, TaskID: "task", AttemptNumber: 2,
 		LaunchTokenSHA256: strings.Repeat("a", 64), WorkspacePath: "/tmp/ws"}, w.prod, plan.commit(t.Context(), w.runID))
-	requireGateRefusal(t, err, "envelope_deadline_exceeded")
+	requireGateRefusal(t, err, "completion_reserve_shortfall")
 	if got := w.launchIntents(t); got != intents {
 		t.Fatalf("launch intents %d -> %d: a refused replan journaled an intent", intents, got)
 	}
