@@ -1,6 +1,6 @@
 # 0015. Budget ledger S1: billing, persistence and process ownership
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-09
 
 ## Context
