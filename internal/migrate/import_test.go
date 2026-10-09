@@ -797,3 +797,71 @@ func TestImportMapsV1States(t *testing.T) {
 		})
 	}
 }
+
+func TestImportProducerGeneration(t *testing.T) {
+	t.Parallel()
+	t.Run("stored generation ahead conflicts", func(t *testing.T) {
+		t.Parallel()
+		j := openTestJournal(t)
+		const runID, taskID = "run-gen-ahead", "task-gen-ahead"
+		seedV1Run(t, j, seedRun{runID: runID, taskID: taskID, state: "executing", attempts: 1})
+		err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+			_, err := tx.ExecContext(t.Context(), `INSERT INTO producers (producer_id, last_sequence, generation)
+				VALUES ('migration', 5, 2)`)
+			return err
+		})
+		if err != nil {
+			t.Fatalf("planting producer row: %v", err)
+		}
+		before := dumpJournal(t, j)
+
+		// A stored generation ahead of the import's is a ledger-state
+		// conflict, never a transient fault: retrying cannot move it.
+		_, err = importCommitted(t, j, runID)
+		cerr := requireControlError(t, err, v2contract.CodeRevisionConflict)
+		if !strings.Contains(cerr.Detail["migration/cause"], "generation 2") {
+			t.Errorf("conflict detail %q does not name the stored generation", cerr.Detail["migration/cause"])
+		}
+		if n := countRows(t, j, "tasks"); n != 0 {
+			t.Errorf("tasks rows = %d, want 0", n)
+		}
+		if n := countRows(t, j, "task_revisions"); n != 0 {
+			t.Errorf("task_revisions rows = %d, want 0", n)
+		}
+		if got := dumpJournal(t, j); strings.Join(got, "\n") != strings.Join(before, "\n") {
+			t.Errorf("journal changed:\n got %v\nwant %v", got, before)
+		}
+	})
+	t.Run("stored generation behind advances", func(t *testing.T) {
+		t.Parallel()
+		j := openTestJournal(t)
+		const runID, taskID = "run-gen-behind", "task-gen-behind"
+		seedV1Run(t, j, seedRun{runID: runID, taskID: taskID, state: "executing", attempts: 1})
+		err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+			_, err := tx.ExecContext(t.Context(), `INSERT INTO producers (producer_id, last_sequence, generation)
+				VALUES ('migration', 5, -1)`)
+			return err
+		})
+		if err != nil {
+			t.Fatalf("planting producer row: %v", err)
+		}
+		if _, err := importCommitted(t, j, runID); err != nil {
+			t.Fatalf("ImportRun: %v", err)
+		}
+		_, _, _, _, _, _, _, prodSeq, _, gen := readEnvelope(t, j, "migration-imported-"+runID)
+		if prodSeq != 6 || gen != 0 {
+			t.Errorf("envelope = (producer_sequence %d, generation %d), want (6, 0)", prodSeq, gen)
+		}
+		var lastSeq, generation int64
+		err = j.Transact(t.Context(), func(tx *sql.Tx) error {
+			return tx.QueryRowContext(t.Context(), `SELECT last_sequence, generation FROM producers
+				WHERE producer_id = 'migration'`).Scan(&lastSeq, &generation)
+		})
+		if err != nil {
+			t.Fatalf("reading migration producer: %v", err)
+		}
+		if lastSeq != 6 || generation != 0 {
+			t.Errorf("producer = (%d, gen %d), want (6, gen 0)", lastSeq, generation)
+		}
+	})
+}

@@ -108,12 +108,13 @@ type importedPayload struct {
 // ImportRun itself never commits. The v2 task id is the run's earliest
 // attempt's legacy task id, or the run id when the run has no attempts;
 // the envelope's run and attempt ids are the legacy ids verbatim. Failure
-// cases: revision_conflict (run already imported, or the stored
+// cases: revision_conflict (run already imported; the stored
 // migration.imported envelope for the generated event_id differs from the
 // incoming envelope — the import-marker layer compares envelopes before
 // treating a duplicate event_id as idempotent, and a mismatch aborts before
-// anything commits); invalid_contract (v1 row fails v1 decode — never
-// reinterpreted, AC-7.5); persistence_unavailable (ledger I/O).
+// anything commits; or the migration producer sits at a newer generation);
+// invalid_contract (v1 row fails v1 decode — never reinterpreted, AC-7.5);
+// persistence_unavailable (ledger I/O).
 func ImportRun(ctx context.Context, tx *sql.Tx, runID string) (v2contract.TaskRevision, error) {
 	if tx == nil {
 		return v2contract.TaskRevision{}, errors.New("migrate: ImportRun needs a transaction")
@@ -365,10 +366,12 @@ func checkImportEnvelope(ctx context.Context, tx *sql.Tx, runID, taskID, attempt
 }
 
 // appendImported journals the migration.imported envelope with Append's
-// sequencing (producer last+1, run MAX+1) inside the caller's transaction.
-// Task 2's appendTx will own this path once it lands; until then the
-// statements mirror Journal.Append line for line, minus the duplicate ack
-// the marker layer already handled.
+// sequencing (producer last+1, run MAX+1) and generation rule (accept at or
+// ahead, advance the producer) inside the caller's transaction. Task 2's
+// appendTx will own this path once it lands; until then the statements
+// mirror Journal.Append, minus the duplicate ack the marker layer already
+// handled, with a stored generation ahead mapping to revision_conflict
+// (Append's stale-generation rejection).
 func appendImported(ctx context.Context, tx *sql.Tx, runID, taskID, attemptID string, payload []byte) error {
 	ev := v2contract.Envelope{
 		SchemaVersion: v2contract.SchemaVersion,
@@ -392,9 +395,13 @@ func appendImported(ctx context.Context, tx *sql.Tx, runID, taskID, attemptID st
 		return importError(v2contract.CodePersistenceUnavailable, runID,
 			"retry once the ledger is writable", "reading producer: %v", err)
 	}
-	if generation != ev.Generation {
-		return importError(v2contract.CodePersistenceUnavailable, runID,
-			"retry once the ledger is writable",
+	// Like Append, the import accepts its generation when it is at least
+	// the stored one and advances the producer; a stored generation ahead
+	// of the import's is a ledger-state conflict, never a transient fault:
+	// retrying cannot move the stored generation.
+	if ev.Generation < generation {
+		return importError(v2contract.CodeRevisionConflict, runID,
+			"inspect the migration producer row; a newer generation owns it",
 			"producer %s is at generation %d, import appends at %d",
 			ev.ProducerID, generation, ev.Generation)
 	}
