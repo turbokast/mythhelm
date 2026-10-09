@@ -26,7 +26,8 @@
 
 ## Task 5 — Exhaustion signal taxonomy and fake scenarios
 
-<!-- pending -->
+- **Produces**: error class `allowance_exhausted` in `adapters/claudecode/decode.go` (`errorClasses`), emitted as `adapter.NativeError{Class: "allowance_exhausted"}`; fake scenarios `usage-counters` and `allowance-exhausted`; synthetic fixture `adapters/claudecode/testdata/exhaustion/allowance_exhausted.json`.
+- **For dependents**: only the exact class name maps to exhaustion; `NativeError` has no reset field, so reset is always unknown from the decoder (a later task adding a reset needs `internal/adapter`, outside this task's Files). The fake decoder ignores extra frame fields: `usage-counters` carries per-turn `usage` deltas on `fake.progress` (turn 2 omits it) and `allowance-exhausted` carries `error.class` on its `fake.result`, but `adapters/fake/fake.go` does not surface either yet. The task that consumes them must extend that decoder.
 
 ## Task 6 — Envelope configuration and extension decision
 
