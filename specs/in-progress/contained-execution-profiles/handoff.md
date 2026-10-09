@@ -41,7 +41,10 @@
 
 ## Task 5 — Admission consult, restricted default, precise refusal
 
-<!-- pending -->
+- **Produces**: `admission.BoundaryConsult(profile, os, route) (contain.Evidence, error)` (exit-7 `*BlockedError` naming each missing dimension; unknown combinations also wrap `contain.ErrMissingCoverage`); `contain.SeedV1()` (key `profile/os/route`; `restricted` and `inspect` × `linux`/`darwin`/`windows` × `builtin/fake`/`builtin/claudecode`); `Profile.Contained` set for `restricted`; `Profile.Consent` is `"default"` for the empty flag.
+- **For dependents**: `Decide` does not yet keep the evidence: Task 8 must carry it to the receipt and Task 9's `launchForAttempt` must build `Launch.Containment`/`ProxyAllow` from the admitted profile. `inspect` is refused in `checkCapabilityFlags`; Task 6 removes that refusal when its enforcement lands. The Claude Code route is refused for `restricted` (credential unenforced) until Task 10 or later binds auth.
+- **Tests**: `restricted` is admitted only on Linux; tests that need it skip elsewhere, and `TestMissingProfileConsentNonInteractiveExit3` asserts the refusal off Linux. Run gates with `HOME` set to an empty directory.
+- **Deviations**: see the entry (inspect still refused; Claude Code route seeded as credential-missing).
 
 ## Task 6 — Inspect read-only enforcement
 
