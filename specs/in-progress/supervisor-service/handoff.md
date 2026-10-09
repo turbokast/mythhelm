@@ -60,7 +60,11 @@ What later tasks must know:
 
 ## Task 4 — Windows named-pipe transport
 
-<!-- pending -->
+- **Produces** (PR #266): `control.NewPipeTransport()` (`transport_windows.go`); `DefaultTransport` returns it on Windows and `detach` starts the supervisor with `DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP` (`default_windows.go`). go-winio v0.6.3 (MIT) is a direct dependency.
+- **For dependents**: an endpoint path that is not already `\\.\pipe\...` is hashed to `\\.\pipe\mythhelm-<sha256 prefix>`, so `EndpointPath()` is unchanged. The pipe DACL is `D:P(A;;GA;;;<user SID>)`, remote clients are rejected, and the first instance flag blocks squatting. Both ends compare the peer's user SID and logon session LUID, and refuse with `permission_denied`.
+- **For dependents**: `streamConn` (shared framing) now lives in `transport.go`; the Unix transport uses it too. `spawnEnvKeys` in `client.go` lists the variables a spawned supervisor receives.
+- **Traps**: the Windows tests have only been compiled, not run, outside the Windows CI legs. The packaged-binary e2e tests are still Unix-only, so lazy start on Windows has no end-to-end test yet. An elevated shell of the same user is a different logon session and is refused. Run lint with `GOTOOLCHAIN=go1.27.1`; `govulncheck` needs access to vuln.go.dev.
+- **Deviations**: none that change a later task's inputs.
 
 ## Task 5 — Intent server, idempotency ledger and sole-writer transactions
 

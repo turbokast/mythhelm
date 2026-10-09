@@ -109,7 +109,7 @@
 - **Spec deviations**: (1) `internal/control/transport_peercred_linux.go` and `transport_peercred_darwin.go` (outside Files): `SO_PEERCRED` and `LOCAL_PEERCRED` need different x/sys calls, which one file cannot hold. (2) `Conn` gains `Receive` and `Respond` beyond the design's `Request`-only interface: an accepted connection needs a server-side read/reply path. (3) `permission_denied` is a plain `{code,message}` frame, not `*v2contract.ControlError` (vocab task 6 unmerged); wrap it when that lands.
 - **Files modified**: `internal/control/transport.go`, `internal/control/transport_unix.go`, `internal/control/transport_unix_test.go`, `internal/control/transport_peercred_linux.go`, `internal/control/transport_peercred_darwin.go`, `specs/in-progress/supervisor-service/tasks.md`, `specs/in-progress/supervisor-service/handoff.md`.
 
-### Task 4 — Windows named-pipe transport
+### Task 4 — Windows named-pipe transport ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (cross-platform behaviour, new dependency)
@@ -130,6 +130,10 @@
   - `TestGoWinioPinned`: `go.mod` pins `github.com/Microsoft/go-winio` to the reviewed version in `scratchpad.md`; an unpinned or different version fails.
 - **Test plan**: Windows-runner tests; DACL assertion on the pipe; lazy-spawn covered in Task 6.
 - **Invariants touched**: I03 (v2 §2: pipe ACL grants no authority beyond the owning user); I18 (v2 §2: same singleton semantics as Unix).
+- **Status**: ✅ Completed — Windows named-pipe `Transport` via go-winio v0.6.3 with a user-only protected DACL, per-peer logon-session check and Windows lazy start; PR #266.
+- **Implementation**: Peer identity (SID + logon LUID) is read from the peer process token via the pipe's client/server pid, on both ends; the Unix `unixConn` became the shared `streamConn`. go-winio LICENSE at v0.6.3 is MIT (Copyright 2015 Microsoft). Windows-tagged tests compile (`GOOS=windows go vet`, `go test -c`) but were not run locally. Commit 51e9f54.
+- **Spec deviations**: Also changed `internal/control/transport.go`, `transport_unix.go` (shared framing moved out), `client.go` (Windows variables in the spawn environment), `default_other.go` and `default_windows.go` (Windows `DefaultTransport` and detached start), `winio_pin_test.go` (`TestGoWinioPinned` untagged so every CI leg runs it), and `internal/admission/qualify_test.go` (renamed a local `comparable` that golangci-lint flags on main). "Same logon" is user SID plus logon session LUID. `govulncheck` could not run in the sandbox (vuln.go.dev 403).
+- **Files modified**: `go.mod`, `go.sum`, `internal/control/transport_windows.go`, `internal/control/transport_windows_test.go`, `internal/control/default_windows.go`, `internal/control/default_other.go`, `internal/control/transport.go`, `internal/control/transport_unix.go`, `internal/control/client.go`, `internal/control/winio_pin_test.go`, `internal/admission/qualify_test.go`, `specs/in-progress/supervisor-service/tasks.md`, `specs/in-progress/supervisor-service/handoff.md`.
 
 ### Task 5 — Intent server, idempotency ledger and sole-writer transactions ✅ COMPLETED
 
