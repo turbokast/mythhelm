@@ -59,6 +59,9 @@ func readSpec(r io.Reader) (ContainSpec, error) {
 	if err := dec.Decode(&spec); err != nil {
 		return ContainSpec{}, fmt.Errorf("decoding the spec: %w", err)
 	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return ContainSpec{}, errors.New("trailing data after the spec")
+	}
 	switch {
 	case !filepath.IsAbs(spec.Path):
 		return ContainSpec{}, errors.New("spec path is not absolute")

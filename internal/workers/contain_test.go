@@ -287,3 +287,43 @@ func TestContainedProxyDenyThroughPinnedEnv(t *testing.T) {
 		t.Errorf("allowlisted CONNECT result missing a 200:\n%s", out)
 	}
 }
+
+func TestContainedSlowNativeGetsFullPrompt(t *testing.T) {
+	requireBoundary(t)
+	prompt := bytes.Repeat([]byte("0123456789abcdef"), 40<<10) // 640 KiB: far beyond the pipe buffer
+	promptFile := filepath.Join(t.TempDir(), "prompt")
+	if err := os.WriteFile(promptFile, prompt, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(promptFile) //nolint:gosec // G304: a test temp path
+	if err != nil {
+		t.Fatal(err)
+	}
+	workdir := t.TempDir()
+	spec := adapter.ProcSpec{
+		Path:  "/bin/sh",
+		Args:  []string{"-c", "sleep 1; exec cat"},
+		Dir:   workdir,
+		Env:   []string{"PATH=/usr/bin:/bin", "HOME=" + outsideTmpDir(t)},
+		Stdin: f,
+	}
+	l := Launch{Containment: &contain.Policy{Profile: "restricted", Workdir: workdir}}
+	proc, err := containTestLauncher(t, l).Launch(t.Context(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// worker.start closes the prompt as soon as Launch returns.
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	out, err := io.ReadAll(proc.Stdout())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exit := proc.Wait(); exit.Code != 0 {
+		t.Fatalf("native exit = %+v", exit)
+	}
+	if !bytes.Equal(out, prompt) {
+		t.Fatalf("the slow native read %d bytes, want the prompt's %d", len(out), len(prompt))
+	}
+}

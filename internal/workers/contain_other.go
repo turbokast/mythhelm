@@ -4,6 +4,7 @@ package workers
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"syscall"
 
@@ -14,3 +15,6 @@ import (
 func containAttr() (*syscall.SysProcAttr, error) {
 	return nil, fmt.Errorf("contained launch on %s: %w", runtime.GOOS, contain.ErrUnsupported)
 }
+
+// dupFile is unreachable off Linux: containAttr refuses first.
+func dupFile(*os.File) (*os.File, error) { return nil, contain.ErrUnsupported }

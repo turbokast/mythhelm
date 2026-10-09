@@ -1,7 +1,10 @@
 package workers
 
 import (
+	"os"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/turbokast/mythhelm/internal/contain"
 )
@@ -13,4 +16,14 @@ func containAttr() (*syscall.SysProcAttr, error) {
 	attr, ns := nativeAttr(), contain.NamespaceAttr()
 	attr.Cloneflags, attr.UidMappings, attr.GidMappings = ns.Cloneflags, ns.UidMappings, ns.GidMappings
 	return attr, nil
+}
+
+// dupFile duplicates f's descriptor with close-on-exec, so the copy cannot
+// leak into the children and outlives the original's Close.
+func dupFile(f *os.File) (*os.File, error) {
+	fd, err := unix.FcntlInt(f.Fd(), unix.F_DUPFD_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	return os.NewFile(uintptr(fd), f.Name()), nil
 }

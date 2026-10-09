@@ -88,12 +88,30 @@ func (l Launch) containedCommand(spec adapter.ProcSpec) (*exec.Cmd, spawnHooks, 
 		cancel()
 		return nil, spawnHooks{}, err
 	}
+	// The copier owns a duplicate of the prompt file: the worker closes its
+	// own handle as soon as Launch returns, while a slow native is still
+	// reading.
+	src := spec.Stdin
+	if f, ok := src.(*os.File); ok {
+		dup, err := dupFile(f)
+		if err != nil {
+			stopProxy()
+			cancel()
+			_ = r.Close()
+			_ = w.Close()
+			return nil, spawnHooks{}, fmt.Errorf("duplicating the prompt: %w", err)
+		}
+		src = dup
+	}
 	copied := make(chan struct{})
 	go func() {
 		defer close(copied)
 		defer func() { _ = w.Close() }()
-		if spec.Stdin != nil {
-			_, _ = io.Copy(w, spec.Stdin) // a short read surfaces as the native's own EOF
+		if c, ok := src.(io.Closer); ok && src != spec.Stdin {
+			defer func() { _ = c.Close() }()
+		}
+		if src != nil {
+			_, _ = io.Copy(w, src) // a short read surfaces as the native's own EOF
 		}
 	}()
 

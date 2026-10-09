@@ -36,12 +36,18 @@ func runContainMain(t *testing.T, stdin []byte) (int, string) {
 
 func specJSON(t *testing.T, mutate func(*ContainSpec)) []byte {
 	t.Helper()
+	// Paths valid on every OS: the test binary and a temp directory.
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
 	spec := ContainSpec{
-		Path:   "/bin/sh",
+		Path:   exe,
 		Args:   []string{"sh", "-c", "true"},
-		Dir:    "/",
-		Env:    []string{"HOME=/nonexistent"},
-		Policy: Policy{Profile: "restricted", Workdir: filepath.Join(t.TempDir(), "work")},
+		Dir:    dir,
+		Env:    []string{"HOME=" + dir},
+		Policy: Policy{Profile: "restricted", Workdir: filepath.Join(dir, "work")},
 	}
 	mutate(&spec)
 	b, err := json.Marshal(spec)
@@ -78,6 +84,8 @@ func TestContainRejectsInvalidSpec(t *testing.T) {
 		{"unknown field", []byte(`{"path":"/bin/sh","args":["sh"],"policy":{"workdir":"/w"},"extra":1}`)},
 		{"relative path", specJSON(t, func(s *ContainSpec) { s.Path = "sh" })},
 		{"no argv", specJSON(t, func(s *ContainSpec) { s.Args = nil })},
+		{"trailing garbage", append(specJSON(t, func(*ContainSpec) {}), " garbage"...)},
+		{"two concatenated specs", append(specJSON(t, func(*ContainSpec) {}), specJSON(t, func(*ContainSpec) {})...)},
 		{"relative workdir", specJSON(t, func(s *ContainSpec) { s.Policy.Workdir = "work" })},
 	}
 	for _, tc := range tests {
