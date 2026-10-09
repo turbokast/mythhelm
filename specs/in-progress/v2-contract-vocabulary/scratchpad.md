@@ -22,3 +22,4 @@
 ## Discoveries
 
 - (Implementing tasks append one entry each: what was learned, with file:line or command evidence.)
+- Task 7: the first test file to call `loadGolden` must delete its `//nolint:unused` directive (`internal/v2contract/codec_test.go:15`), else `golangci-lint run` fails on nolintlint; this task removed it.
