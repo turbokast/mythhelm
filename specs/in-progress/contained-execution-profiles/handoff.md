@@ -33,7 +33,11 @@
 
 ## Task 4 — `__contain` command and worker wiring
 
-<!-- pending -->
+- **Produces**: `contain.Command` (`__contain`), `contain.Main(args) int`, `contain.NamespaceAttr()`; `workers.Launch.Containment *contain.Policy` and `Launch.ProxyAllow []string`; `Launch.command(spec)` builds the uncontained or `__contain` command; `cmd/mythhelm` dispatches `__contain`.
+- **For dependents**: whoever builds a `Launch` (Task 9's `launchForAttempt`) sets `Containment` and `ProxyAllow` (the admitted endpoint host:port; empty denies all egress) and an env whose `HOME` lies outside `/tmp`, does not enclose or sit under the workdir, and exists. The worker fills `Policy.ProxyAddr` and the proxy pins itself.
+- **Setup failures**: `__contain` exits 1 (setup) or 2 (invalid spec) with a message on the attempt's captured stderr; the worker records a native exit, not `launch_failed`. Mapping it needs a status channel (not built).
+- **Tests**: both `TestMain`s dispatch `contain.Command`; a native fixture must live outside `/tmp` (the boundary replaces it) — see `TestContainedProxyDenyThroughPinnedEnv`.
+- **Deviations**: `ProxyAllow` and the exported `NamespaceAttr` (see the entry).
 
 ## Task 5 — Admission consult, restricted default, precise refusal
 
