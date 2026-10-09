@@ -13,7 +13,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Package kernel: scales, claims, strict decode, digest, limits
+### Task 1 — Package kernel: scales, claims, strict decode, digest, limits ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -36,6 +36,10 @@
   - `TestFrameLimitsExact`: the three constants equal `1<<20`, `64`, `128`; `CheckFrameLimits` accepts the boundary values and rejects each over-limit dimension naming it.
 - **Test plan**: Table tests over the scales; golden digest via `sha256sum`; boundary table for limits.
 - **Invariants touched**: I09 (v2 §2: unknown stays distinct from zero/empty); I20 (v2 §2: digests content-addressed); I14 (v2 §2: honest-label scales).
+- **Status**: ✅ Completed — `internal/v2contract` kernel (scales, claims, strict decode, digest, limits) with all seven acceptance tests passing; PR #234.
+- **Implementation**: Generic `Decode[T]` uses `DisallowUnknownFields`, names offsets, rejects trailing data. `Digest` returns "" for unencodable values. Capability words pinned to qualify through `CanonicalDigest`. Commit 0763e55.
+- **Spec deviations**: None.
+- **Files modified**: `internal/v2contract/v2contract.go`, `internal/v2contract/scales.go`, `internal/v2contract/codec.go`, `internal/v2contract/scales_test.go`, `internal/v2contract/codec_test.go`, `specs/in-progress/v2-contract-vocabulary/tasks.md`, `specs/in-progress/v2-contract-vocabulary/handoff.md`.
 
 ### Task 2 — Execution records: Run, TaskRevision, Attempt
 
