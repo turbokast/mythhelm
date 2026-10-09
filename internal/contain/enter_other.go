@@ -19,4 +19,6 @@ func EnterLinux(ContainSpec) error { return ErrUnsupported }
 // RunProbeChild has no probe to run off Linux.
 func RunProbeChild() int { return 1 }
 
-func nsSysProcAttr() *syscall.SysProcAttr { return nil }
+func promptToStdin() error { return ErrUnsupported }
+
+func NamespaceAttr() *syscall.SysProcAttr { return nil }

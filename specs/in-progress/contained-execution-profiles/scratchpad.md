@@ -35,3 +35,6 @@
 ## Discoveries
 
 - Task 2: plain `mount(MS_REMOUNT|MS_BIND|MS_REC)` does not recurse, so the read-only root uses `mount_setattr(AT_RECURSIVE)` (Linux 5.12+); an older kernel makes `ProbeLinux` report the denied `readonly` step. `NO_NEW_PRIVS` is what stops root regaining capabilities at exec.
+
+
+- Task 4: a failure inside `__contain` before exec is a native exit code 1 to the worker, not `launch_failed` (design §2.2 says launch_failed). Closing that gap needs a CLOEXEC status pipe from `__contain`; Task 5 or 9 should decide whether the refusal text can rely on `ProbeLinux` alone.

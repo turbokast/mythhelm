@@ -38,14 +38,24 @@ func (sysOps) Release() (string, error) {
 	return unix.ByteSliceToString(uts.Release[:]), nil
 }
 
-// nsSysProcAttr starts a child in new user and mount namespaces with the
+// NamespaceAttr starts a child in new user and mount namespaces with the
 // caller mapped to root inside them.
-func nsSysProcAttr() *syscall.SysProcAttr {
+func NamespaceAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{
 		Cloneflags:  syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS,
 		UidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}},
 		GidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}},
 	}
+}
+
+// promptToStdin makes the prompt pipe the launcher passed as the first extra
+// file (fd 3) the process's stdin and closes fd 3, so the native receives the
+// prompt byte for byte and no extra descriptor.
+func promptToStdin() error {
+	if err := unix.Dup2(promptFD, 0); err != nil {
+		return fmt.Errorf("prompt pipe on fd %d: %w", promptFD, err)
+	}
+	return unix.Close(promptFD)
 }
 
 // ProbeLinux runs the boundary's setup in a throwaway child and reports its
@@ -57,7 +67,7 @@ func ProbeLinux() Availability {
 	}
 	cmd := exec.Command(exe, "__contain") //nolint:gosec // G204: re-executes this binary
 	cmd.Env = append(os.Environ(), ProbeEnv+"=1")
-	cmd.SysProcAttr = nsSysProcAttr()
+	cmd.SysProcAttr = NamespaceAttr()
 	out, err := cmd.CombinedOutput()
 	return probeResult(out, err)
 }
@@ -76,7 +86,7 @@ func RunProbeChild() int {
 
 // EnterLinux builds the boundary around the current process and execs the
 // native. The caller must already be in new user and mount namespaces
-// (nsSysProcAttr). It returns only on failure.
+// (NamespaceAttr). It returns only on failure.
 func EnterLinux(spec ContainSpec) error {
 	// Capabilities and NO_NEW_PRIVS are per-thread, and the exec below must
 	// run on the thread that dropped them.
