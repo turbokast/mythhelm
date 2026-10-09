@@ -33,7 +33,9 @@
 
 ## Task 6 — Error catalogue and adapter mapping
 
-<!-- pending -->
+- **Produces**: `v2contract.Code` (24 consts `CodeInvalidContract`…`CodeSchemaTooNew`) with `Valid()` and `DefaultDisposition()`; `v2contract.Disposition` (5 consts); `v2contract.ControlError` with `Error()` (`"v2contract: <code>: <next_action>"`) and pointer-receiver `Validate()` (strict form is `Decode[*ControlError]`); `v2contract.MapAdapterFailure(code, owner, operationID, namespace, cause)`.
+- **For dependents**: `Valid()` is `DefaultDisposition() != ""` (single source); unknown codes default to `""`. `Validate` rejects dispositions ranked above the code default (`never < after_user_action < after_reconciliation < after_cooldown < bounded_transient`) and detail keys without non-empty `<ns>/<key>`. `MapAdapterFailure` sets `NextAction` to `see detail <ns>/cause` and nil-cause detail to `"unknown"`. Golden: `testdata/error.golden.json` (all fields set, revision 3).
+- No deviations affecting later tasks.
 
 ## Task 7 — Event v2 envelope and sequence validators
 

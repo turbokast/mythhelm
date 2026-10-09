@@ -139,7 +139,7 @@
 - **Test plan**: Tables transcribed from design §4.1 (each row: allowed set + sampled forbidden pairs); guard table tests.
 - **Invariants touched**: I06 (v2 §2: terminal entry fenced on resolved ownership); I12 (v2 §2: same-launch reconcile); G04 (v2 §18.3: lifecycle gate tables).
 
-### Task 6 — Error catalogue and adapter mapping
+### Task 6 — Error catalogue and adapter mapping ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -159,6 +159,10 @@
   - `TestErrorGoldenRoundTrip`: the golden decodes via `Decode[*ControlError]`, re-encodes byte-identical, and omits absent `revision`.
 - **Test plan**: Set-equality test for the catalogue; full 24-row disposition table; golden round-trip.
 - **Invariants touched**: I03 (v2 §2: adapter detail grants no authority; dispositions never widen); G04 (v2 §18.3: code-driven transitions).
+- **Status**: ✅ Completed — 24-code catalogue with default dispositions, `ControlError` and adapter mapping; PR #243.
+- **Implementation**: `Valid` derives from `DefaultDisposition` (one switch, no drift); detail keys require non-empty `<ns>/<key>`; `MapAdapterFailure` points `NextAction` at the namespaced cause detail, `"unknown"` for nil cause. Commits 63b1eda, f30b0a8.
+- **Spec deviations**: None.
+- **Files modified**: `internal/v2contract/errors.go`, `internal/v2contract/errors_test.go`, `internal/v2contract/testdata/error.golden.json`, `specs/in-progress/v2-contract-vocabulary/tasks.md`, `specs/in-progress/v2-contract-vocabulary/handoff.md`, `specs/in-progress/v2-contract-vocabulary/scratchpad.md`.
 
 ### Task 7 — Event v2 envelope and sequence validators
 

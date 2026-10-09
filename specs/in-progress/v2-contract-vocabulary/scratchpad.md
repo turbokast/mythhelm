@@ -23,3 +23,4 @@
 
 - (Implementing tasks append one entry each: what was learned, with file:line or command evidence.)
 - Task 4: golden fixtures must avoid `<`/`>`/`&` in string values — `encoding/json.Marshal` escapes them (`>` → `\u003e`), breaking byte-identical round-trips (`internal/v2contract/records_coordination_test.go: assertRoundTrip`). Also: the first task to call `loadGolden` must delete Task 1's provisional `//nolint:unused` or `golangci-lint` fails on `nolintlint`.
+- Task 6: Go constants are not runtime-enumerable, so `TestCatalogueHas24Codes` counts the `Code` declarations with `go/parser` on `errors.go` — a 25th constant fails the count, a renamed word fails the value table (`internal/v2contract/errors_test.go: codeConstantsFromSource`). Golden files keep a trailing newline with `bytes.TrimSpace` in the comparison, matching Task 4's `assertRoundTrip`.

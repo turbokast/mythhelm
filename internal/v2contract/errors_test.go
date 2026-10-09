@@ -363,8 +363,8 @@ func TestErrorGoldenRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-encode golden: %v", err)
 	}
-	if !bytes.Equal(re, raw) {
-		t.Fatalf("re-encoded golden differs:\n got: %s\nwant: %s", re, raw)
+	if want := bytes.TrimSpace(raw); !bytes.Equal(re, want) {
+		t.Fatalf("re-encoded golden differs:\n got: %s\nwant: %s", re, want)
 	}
 	got.Revision = nil
 	omitted, err := json.Marshal(got)
