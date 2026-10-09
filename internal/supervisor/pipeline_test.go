@@ -1477,8 +1477,10 @@ func TestAdmissionWritesInitialEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Status != "held" || res.Quantity != "unknown" || res.Scope == "" || res.Scope != res.Bucket {
-		t.Fatalf("reservation = %+v, want a held, unknown-quantity row with scope = bucket", res)
+	// The attempt is terminal by now, so the claim is released with evidence
+	// (Task 8); it was held while the attempt ran (TestReleaseOnlyAfterStop).
+	if res.Status != "released" || res.ReleaseEvidence == "" || res.Quantity != "unknown" || res.Scope == "" || res.Scope != res.Bucket {
+		t.Fatalf("reservation = %+v, want a released, unknown-quantity row with scope = bucket", res)
 	}
 	if !slices.Contains(notices, admission.ReservationText(res.Bucket)) {
 		t.Fatalf("notices %q lack the reservation line", notices)

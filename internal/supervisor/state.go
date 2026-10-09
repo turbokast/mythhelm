@@ -189,6 +189,12 @@ func CreateRun(ctx context.Context, j *journal.Journal, run journal.RunRow, prod
 // read inside that transaction, so concurrent transitions serialise and an
 // illegal one (ErrIllegalTransition) journals nothing.
 func TransitionRun(ctx context.Context, j *journal.Journal, runID string, to RunState, reason string, producer *Producer) error {
+	return transitionRun(ctx, j, runID, to, reason, producer, nil)
+}
+
+// transitionRun is TransitionRun with an extra projection that commits in
+// the same transaction as the transition.
+func transitionRun(ctx context.Context, j *journal.Journal, runID string, to RunState, reason string, producer *Producer, also func(*sql.Tx) error) error {
 	if err := checkReason(string(to), reason); err != nil {
 		return err
 	}
@@ -207,7 +213,13 @@ func TransitionRun(ctx context.Context, j *journal.Journal, runID string, to Run
 			illegal = fmt.Errorf("%w: run %s cannot move from %s to %s", ErrIllegalTransition, runID, from, to)
 			return illegal
 		}
-		return journal.SetRunState(ctx, tx, runID, string(to), reason, now)
+		if err := journal.SetRunState(ctx, tx, runID, string(to), reason, now); err != nil {
+			return err
+		}
+		if also == nil {
+			return nil
+		}
+		return also(tx)
 	})
 	if illegal != nil {
 		return illegal

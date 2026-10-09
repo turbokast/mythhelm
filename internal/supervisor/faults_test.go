@@ -492,9 +492,27 @@ func TestRecoverFreezesOnlyAfterDescendantsGone(t *testing.T) {
 	f := newFixture(t)
 	d, _, wait := seedLaunch(t, f, "escapee")
 	wait()
+	// The run's reservation is held when its owner is lost (AC-3.4).
+	heldAt := time.Now().UTC()
+	if err := f.journal(t).Transact(t.Context(), func(tx *sql.Tx) error {
+		return journal.InsertReservation(t.Context(), tx, journal.ReservationRow{ReservationID: ids.New("rsv"), RunID: d.RunID, Bucket: "b", Scope: "b",
+			Owner: d.RunID, Quantity: "unknown", Status: "held", ExpiresAt: heldAt.Add(time.Hour).Format(time.RFC3339Nano), CreatedAt: heldAt.Format(time.RFC3339Nano)})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reservationStatus := func() string {
+		var status string
+		if err := rawDB(t, f.state).QueryRowContext(t.Context(), `SELECT status FROM reservations WHERE run_id = ?`, d.RunID).Scan(&status); err != nil {
+			t.Fatal(err)
+		}
+		return status
+	}
 	code, _, stderr := f.run(t, "recover", d.RunID)
 	if code != 6 {
 		t.Fatalf("escaped writer recover %d: %s", code, stderr)
+	}
+	if got := reservationStatus(); got != "orphaned" {
+		t.Fatalf("reservation of an unreconciled attempt = %s, want orphaned (recover said: %s)", got, stderr)
 	}
 	if _, err := f.journal(t).Candidate(t.Context(), d.AttemptID); !errors.Is(err, journal.ErrNotFound) {
 		t.Fatalf("candidate before descendant gone: %v", err)
@@ -553,6 +571,9 @@ func TestRecoverFreezesOnlyAfterDescendantsGone(t *testing.T) {
 	}
 	if got := f.onlyRun(t); got.State != "failed" || got.Reason != "recovered_partial" {
 		t.Fatalf("recovered partial labelled %v", got)
+	}
+	if got := reservationStatus(); got != "orphaned" {
+		t.Fatalf("reservation after the partial recovery = %s, want it to stay orphaned, never revived", got)
 	}
 }
 

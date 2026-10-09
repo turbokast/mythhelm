@@ -67,7 +67,7 @@ func reservationRows(t *testing.T, j *journal.Journal, runID string) int {
 func TestHoldCouplesAdmittedBucket(t *testing.T) {
 	t.Parallel()
 	j, runID := journalWithRun(t)
-	reserver := admission.NewJournalReserver(billing.BuiltInCeilings())
+	reserver := admission.NewJournalReserver(billing.BuiltInCeilings(), nil)
 	id, err := hold(t, j, reserver, runID, admittedRecord)
 	if err != nil {
 		t.Fatal(err)
@@ -139,7 +139,7 @@ func TestHoldPassesBucketAndPropagatesFailure(t *testing.T) {
 func TestOneBucketPerRun(t *testing.T) {
 	t.Parallel()
 	j, runID := journalWithRun(t)
-	reserver := admission.NewJournalReserver(billing.BuiltInCeilings())
+	reserver := admission.NewJournalReserver(billing.BuiltInCeilings(), nil)
 	if _, err := hold(t, j, reserver, runID, admittedRecord); err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestOneBucketPerRun(t *testing.T) {
 func TestUnknownQuantityNeverZero(t *testing.T) {
 	t.Parallel()
 	j, runID := journalWithRun(t)
-	id, err := hold(t, j, admission.NewJournalReserver(billing.BuiltInCeilings()), runID, admittedRecord)
+	id, err := hold(t, j, admission.NewJournalReserver(billing.BuiltInCeilings(), nil), runID, admittedRecord)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestHoldExpiresAfterCeilingPlusGrace(t *testing.T) {
 	j, runID := journalWithRun(t)
 	c := billing.Ceilings{Execution: 10 * time.Minute, Repairs: 1, Replans: 1, TransportRetries: 1}
 	before := time.Now()
-	id, err := hold(t, j, admission.NewJournalReserver(c), runID, admittedRecord)
+	id, err := hold(t, j, admission.NewJournalReserver(c, nil), runID, admittedRecord)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestReservationWordingIsLocalOnly(t *testing.T) {
 func TestHoldRollsBackWithItsTransaction(t *testing.T) {
 	t.Parallel()
 	j, runID := journalWithRun(t)
-	reserver := admission.NewJournalReserver(billing.BuiltInCeilings())
+	reserver := admission.NewJournalReserver(billing.BuiltInCeilings(), nil)
 	boom := errors.New("admission append failed after the hold")
 	err := j.Transact(t.Context(), func(tx *sql.Tx) error {
 		if _, err := admission.HoldQuotaReservation(t.Context(), tx, reserver, runID, admittedRecord, identityRef); err != nil {
