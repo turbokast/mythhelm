@@ -124,20 +124,15 @@ func TestPolicyResolvesSymlinksBeforeChecks(t *testing.T) {
 		t.Fatalf("PolicyFor accepted a workdir that resolves to HOME: %+v", p)
 	}
 
-	sibling := filepath.Join(parent, "work")
-	if err := os.Mkdir(sibling, 0o750); err != nil {
+	if err := os.Mkdir(filepath.Join(parent, "work"), 0o750); err != nil {
 		t.Fatal(err)
 	}
 	p, err := PolicyFor("restricted", filepath.Join(alias, "work"), false, nil, "")
 	if err != nil {
 		t.Fatalf("PolicyFor rejected a workdir behind a symlinked ancestor: %v", err)
 	}
-	want, err := filepath.EvalSymlinks(sibling)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p.Workdir != want {
-		t.Fatalf("Workdir = %q, want the resolved %q", p.Workdir, want)
+	if want := filepath.Join(alias, "work"); p.Workdir != want {
+		t.Fatalf("Workdir = %q, want the configured %q carried through", p.Workdir, want)
 	}
 }
 

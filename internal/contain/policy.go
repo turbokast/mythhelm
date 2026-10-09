@@ -41,14 +41,15 @@ func PolicyFor(profile, workdir string, readonly bool, binds []AuthBind, proxy s
 	if err != nil {
 		return Policy{}, fmt.Errorf("contain: resolve HOME: %w", err)
 	}
-	if workdir, err = resolveExisting(workdir); err != nil {
+	realWork, err := resolveExisting(workdir)
+	if err != nil {
 		return Policy{}, fmt.Errorf("contain: resolve workdir: %w", err)
 	}
 	tmp, err := resolveExisting("/tmp")
 	if err != nil {
 		return Policy{}, fmt.Errorf("contain: resolve /tmp: %w", err)
 	}
-	if (home != "." && within(home, workdir)) || within(tmp, workdir) {
+	if (home != "." && within(home, realWork)) || within(tmp, realWork) {
 		return Policy{}, fmt.Errorf("contain: workdir %q encloses $HOME or /tmp", workdir)
 	}
 	admitted := make([]AuthBind, 0, len(binds))
@@ -64,14 +65,14 @@ func PolicyFor(profile, workdir string, readonly bool, binds []AuthBind, proxy s
 		if resolved == filepath.VolumeName(resolved)+string(filepath.Separator) || (home != "." && within(home, resolved)) {
 			return Policy{}, fmt.Errorf("contain: auth bind source %q would expose $HOME; bind single files", source)
 		}
-		if within(resolved, workdir) {
+		if within(resolved, realWork) {
 			return Policy{}, fmt.Errorf("contain: auth bind source %q lies inside the workdir", source)
 		}
 		admitted = append(admitted, AuthBind{Source: source, Target: filepath.Clean(b.Target)})
 	}
 	return Policy{
 		Profile:   profile,
-		Workdir:   workdir,
+		Workdir:   filepath.Clean(workdir),
 		ReadOnly:  readonly,
 		AuthBinds: admitted,
 		ProxyAddr: proxy,
