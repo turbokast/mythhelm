@@ -305,3 +305,106 @@ func TestPrepareRejectsBadInput(t *testing.T) {
 		})
 	}
 }
+
+func TestPluginsNeverWidenArgv(t *testing.T) {
+	t.Parallel()
+	// Hostile plugin/MCP names shaped like argv flags, tool rules and env
+	// assignments: none may reach the native argv or environment.
+	manifest, err := InventoryAdmittedProject(t.TempDir(), t.TempDir(), map[string][]byte{
+		"project": []byte(`{"enabledPlugins":{"--dangerously-skip-permissions":true,"Bash(rm -rf /tmp/pwned)":true,"EVIL_SMUGGLER=1":true},"mcpServers":{"evil-server":{},"smuggled-env":{}}}`),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.EnabledPlugins) != 3 || len(manifest.MCPServers) != 2 {
+		t.Fatalf("manifest = %+v, want 3 enabled plugins and 2 MCP servers", manifest)
+	}
+	hostile := append(append([]string{}, manifest.EnabledPlugins...), "evil-server", "smuggled-env")
+	newInput := func() adapter.PrepareInput {
+		return adapter.PrepareInput{
+			Workdir:   t.TempDir(),
+			AttemptID: "att_plugins",
+			Env:       []string{"PATH=/usr/bin", "HOME=/home/test"},
+			Prompt:    strings.NewReader("task\n"),
+			Probe:     launchProbe(t),
+		}
+	}
+	if runtime.GOOS == "windows" {
+		// Prepare refuses Windows by design; the probe tests pin the
+		// refusal. The manifest and seam-pin assertions still run below.
+		if _, err := New().Prepare(context.Background(), newInput()); err == nil {
+			t.Fatal("Prepare must refuse Windows by design")
+		}
+	} else {
+		// One Prepare call: its input carries no manifest, so the
+		// plugin/MCP-bearing inventory above cannot reach the launch.
+		// The test pins the exact argv and scans every launch element
+		// for the hostile names.
+		proposal, err := New().Prepare(context.Background(), newInput())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := Argv(newInput().Probe.Executable, nil); !reflect.DeepEqual(proposal.Spec.Args, want[1:]) {
+			t.Fatalf("argv = %q, want exactly %q", proposal.Spec.Args, want[1:])
+		}
+		for _, element := range append(append([]string{}, proposal.Spec.Args...), proposal.Spec.Env...) {
+			for _, smuggled := range hostile {
+				if strings.Contains(element, smuggled) {
+					t.Fatalf("launch element %q carries plugin/MCP content %q", element, smuggled)
+				}
+			}
+		}
+	}
+	// The seam pin: every PrepareInput field must be allowlisted here, so
+	// a new field fails until it is reviewed for plugin/MCP carriage.
+	// Each listed field is reviewed: none carries manifest, plugin or
+	// MCP content into Prepare.
+	allowed := map[string]bool{
+		"Workdir": true, "AttemptID": true, "Env": true, "Prompt": true,
+		"Scenario": true, "Probe": true, "AllowedTools": true, "Passthrough": true,
+	}
+	for field := range reflect.TypeFor[adapter.PrepareInput]().Fields() {
+		if !allowed[field.Name] {
+			t.Fatalf("PrepareInput.%s is not allowlisted; review it for plugin/MCP carriage and extend this test", field.Name)
+		}
+	}
+}
+
+func TestSurplusRoutesStayUnknown(t *testing.T) {
+	t.Parallel()
+	m := Manifest{
+		EnabledPlugins: []string{"alpha", "beta", "gamma"},
+		MCPServers:     []string{"user:files", "project:search"},
+	}
+	routes := InventoryAuxiliary(m, adapter.SessionStarted{
+		PluginCount: 5,
+		MCPServers: []adapter.MCPServer{
+			{Name: "files", Status: "connected"},
+			{Name: "surprise", Status: "connected"},
+		},
+	})
+	var pluginUnknown, mcpUnknown int
+	for _, r := range routes {
+		if r.Funding != "unknown" {
+			t.Errorf("route %q funding = %q, want unknown (static inventory proves no funding)", r.Name, r.Funding)
+		}
+		switch r.Name {
+		case "plugin:unknown":
+			pluginUnknown++
+			if r.Evidence != "plugin-count:2" {
+				t.Errorf("plugin:unknown evidence = %q, want plugin-count:2", r.Evidence)
+			}
+		case "mcp:unknown":
+			mcpUnknown++
+			if r.Evidence != "mcp-session:surprise" {
+				t.Errorf("mcp:unknown evidence = %q, want mcp-session:surprise", r.Evidence)
+			}
+		}
+	}
+	if pluginUnknown != 1 {
+		t.Errorf("plugin:unknown routes = %d, want 1 (session reports 5 plugins, manifest names 3)", pluginUnknown)
+	}
+	if mcpUnknown != 1 {
+		t.Errorf("mcp:unknown routes = %d, want 1 (session reports an unnamed server)", mcpUnknown)
+	}
+}

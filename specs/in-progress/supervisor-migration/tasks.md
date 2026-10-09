@@ -106,7 +106,7 @@
 - **Test plan**: lock-holding fixtures per owner site; dead-pid simulation; ledger assertions on quarantine envelopes.
 - **Invariants touched**: I05 (one writer per dir; no coexisting writers); I18 (one process owner); I06 (stop unconfirmed until reconciled); I12 (reconcile before retry; adopt-only-same-launch-identity).
 
-### Task 5 — Backup and restore with downgrade refusal
+### Task 5 — Backup and restore with downgrade refusal ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -123,6 +123,13 @@
   - `TestBackupRefusesOverwrite`: an existing backup at the target returns `invalid_contract`; the existing bytes are unchanged.
 - **Test plan**: fixture state dirs with hashed contents; tampered and future-version sidecars.
 - **Invariants touched**: I23 (v2 §5.2: backup + tested restore); AT-42 (refusal without write).
+- **Status**: ✅ Completed — Backup/Restore around `VACUUM INTO` with a schema/build-identity sidecar, integrity checks and write-free newer-schema/downgrade refusal; PR #285.
+- **Implementation**: `mythhelm.db.bak-migration-v<N>` target beside Open's `.bak-v<N>`; journal constants mirrored (import cycle) with a pin test; every failure a validated `ControlError`. Commit bb16b26.
+- **Spec deviations**:
+  - Backup target named `mythhelm.db.bak-migration-v<N>` with a `<copy>.json` sidecar: the design pins no filename, and Open already writes `<path>.bak-v<N>` during migration — a distinct name keeps the two from colliding.
+  - `backup.go` mirrors `journal.DBName`/`journal.SchemaVersion` as unexported constants instead of importing `internal/journal`: journal's tests import `internal/migrate`, so the import would cycle in test builds. `TestBackupPinsMatchJournal` fails on drift.
+  - `Restore` drops stale `-wal`/`-shm` sidecars and installs via write-then-rename: both follow from "copies back" onto a live state dir and keep a failed restore from leaving a half-written ledger.
+- **Files modified**: `internal/migrate/backup.go`, `internal/migrate/backup_test.go`, `specs/in-progress/supervisor-migration/tasks.md`, `specs/in-progress/supervisor-migration/handoff.md`, `specs/in-progress/supervisor-migration/scratchpad.md`.
 
 ### Task 6 — `mythhelm migrate` with hermetic preview
 
