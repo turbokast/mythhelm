@@ -8,6 +8,7 @@ package migrate
 // Phase is the durable migration phase in migration_state.
 type Phase string
 
+// Migration phases, matching the migration_state.phase CHECK vocabulary.
 const (
 	PhaseNotStarted Phase = "not_started"
 	PhasePreviewed  Phase = "previewed"
