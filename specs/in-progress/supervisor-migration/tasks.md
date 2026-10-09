@@ -38,7 +38,7 @@
   - `TestMigration0001Untouched` already exists in `internal/journal/ledger_test.go` (added by budget-ledger-s1) and was reused, not duplicated.
 - **Files modified**: `internal/journal/migrations/0007_v2contracts.sql`, `internal/journal/journal.go`, `internal/migrate/phase.go`, `internal/journal/migrate_tables_test.go`, `internal/journal/journal_test.go`, `internal/journal/qualification_test.go`, `internal/journal/evaluator_test.go`, `specs/in-progress/supervisor-migration/tasks.md`, `specs/in-progress/supervisor-migration/handoff.md`, `specs/in-progress/supervisor-migration/scratchpad.md`.
 
-### Task 2 — Append accepts v2 envelopes post-migration
+### Task 2 — Append accepts v2 envelopes post-migration ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -56,6 +56,12 @@
   - `TestV1DecodeByteIdentical`: a golden v1 journal's projections are byte-identical before and after the change (AC-7.5).
 - **Test plan**: table-driven envelopes (valid, duplicate, gap, stale generation, v2-pre-migration); golden v1 journal fixture with a `Decision` and every v1 status word.
 - **Invariants touched**: I23 (v2 §4.3: contiguity, idempotent duplicates, generation fencing for v2); G16 (v1 decodes under v1 forever).
+- **Status**: ✅ Completed — `Append` accepts phased v2 envelopes through the stream-1 validators with v1 behavior and decodes byte-identical; PR #286.
+- **Implementation**: `Append` delegates to unexported `appendTx` (v1 checks unchanged; v2 branch validates, phase-gates, then CheckDuplicate/CheckGeneration/CheckSequence into a shared `storeTx` tail); v2 failures carry a valid `ControlError` plus the stream-1 cause. V1 golden captured from base `148084b`. Commits 883feb4, 848c270.
+- **Spec deviations**:
+  - No behavior deviation. Phase refusals also wrap `journal.ErrInvalidEvent`, keeping the existing `TestAppendValidatesEnvelope` "schema version" contract green without touching that file.
+  - No behavior deviation. Phase words are string literals in `internal/journal`, not imported `migrate.Phase` constants: `internal/migrate` reaches back into `journal` for the import path, so the import would cycle.
+- **Files modified**: `internal/journal/journal.go`, `internal/journal/append_v2_test.go`, `specs/in-progress/supervisor-migration/tasks.md`, `specs/in-progress/supervisor-migration/handoff.md`, `specs/in-progress/supervisor-migration/scratchpad.md`.
 
 ### Task 3 — Legacy import as one-task runs ✅ COMPLETED
 
@@ -106,7 +112,7 @@
 - **Test plan**: lock-holding fixtures per owner site; dead-pid simulation; ledger assertions on quarantine envelopes.
 - **Invariants touched**: I05 (one writer per dir; no coexisting writers); I18 (one process owner); I06 (stop unconfirmed until reconciled); I12 (reconcile before retry; adopt-only-same-launch-identity).
 
-### Task 5 — Backup and restore with downgrade refusal
+### Task 5 — Backup and restore with downgrade refusal ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -123,6 +129,13 @@
   - `TestBackupRefusesOverwrite`: an existing backup at the target returns `invalid_contract`; the existing bytes are unchanged.
 - **Test plan**: fixture state dirs with hashed contents; tampered and future-version sidecars.
 - **Invariants touched**: I23 (v2 §5.2: backup + tested restore); AT-42 (refusal without write).
+- **Status**: ✅ Completed — Backup/Restore around `VACUUM INTO` with a schema/build-identity sidecar, integrity checks and write-free newer-schema/downgrade refusal; PR #285.
+- **Implementation**: `mythhelm.db.bak-migration-v<N>` target beside Open's `.bak-v<N>`; journal constants mirrored (import cycle) with a pin test; every failure a validated `ControlError`. Commit bb16b26.
+- **Spec deviations**:
+  - Backup target named `mythhelm.db.bak-migration-v<N>` with a `<copy>.json` sidecar: the design pins no filename, and Open already writes `<path>.bak-v<N>` during migration — a distinct name keeps the two from colliding.
+  - `backup.go` mirrors `journal.DBName`/`journal.SchemaVersion` as unexported constants instead of importing `internal/journal`: journal's tests import `internal/migrate`, so the import would cycle in test builds. `TestBackupPinsMatchJournal` fails on drift.
+  - `Restore` drops stale `-wal`/`-shm` sidecars and installs via write-then-rename: both follow from "copies back" onto a live state dir and keep a failed restore from leaving a half-written ledger.
+- **Files modified**: `internal/migrate/backup.go`, `internal/migrate/backup_test.go`, `specs/in-progress/supervisor-migration/tasks.md`, `specs/in-progress/supervisor-migration/handoff.md`, `specs/in-progress/supervisor-migration/scratchpad.md`.
 
 ### Task 6 — `mythhelm migrate` with hermetic preview
 
