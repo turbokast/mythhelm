@@ -1,0 +1,1 @@
+{"schema_version":2,"manifest_id":"man_demo_0001","requirements":["req-1","req-2"],"decisions":["dec_demo_0001"],"inputs":["in-1"],"claims":["claim-1"],"evidence":["ev-1"],"unresolved":[],"disclosures":["runs hot"],"last_acknowledged_revision":3}

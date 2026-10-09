@@ -11,8 +11,6 @@ import (
 )
 
 // loadGolden reads testdata/<rel>; later tasks' tests reuse it.
-//
-//nolint:unused // shared helper; the golden round-trip tests of tasks 2-8 call it
 func loadGolden(t *testing.T, rel string) []byte {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("testdata", filepath.FromSlash(rel)))

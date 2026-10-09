@@ -1,0 +1,1 @@
+{"schema_version":2,"reservation_id":"res_demo_0001","bucket":"gpu-hours","scope":"run-1","owner":"controller","generation":7,"quantity":"unknown","status":"held","expires_at":"2026-10-11T12:00:00Z","heartbeat_at":"2026-10-08T12:05:00Z","release_evidence":"rel-1"}
