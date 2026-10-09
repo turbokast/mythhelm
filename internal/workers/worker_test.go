@@ -18,6 +18,7 @@ import (
 
 	"github.com/turbokast/mythhelm/adapters/fake"
 	"github.com/turbokast/mythhelm/internal/adapter"
+	"github.com/turbokast/mythhelm/internal/contain"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
 )
@@ -29,8 +30,13 @@ const spawnHelperEnv = "MYTHHELM_TEST_SPAWN_HELPER"
 // TestMain lets the test binary play every process of an attempt: the
 // worker (__worker), the fake agent (__fake-agent) and the spawning CLI.
 func TestMain(m *testing.M) {
+	if os.Getenv(connectNativeEnv) != "" {
+		os.Exit(connectNative())
+	}
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case contain.Command:
+			os.Exit(contain.Main(os.Args[2:]))
 		case Command:
 			os.Exit(Main(os.Args[2:]))
 		case fake.AgentCommand:
