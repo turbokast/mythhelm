@@ -7,6 +7,6 @@
   ],
   "grader": {
     "type": "must-match",
-    "pattern": "(?s)(?=.*deferral named in a \\*\\*Spec deviations\\*\\* entry)(?=.*the promised edit is present in the referenced diff)(?=.*an open fix pull request, is not proof)(?=.*An unresolved deferral stops the run)"
+    "pattern": "(?s)(?=.*Collect every \"Task N \\.\\.\\.\" deferral named in a \\*\\*Spec deviations\\*\\* entry)(?=.*the promised edit is present in the referenced diff)(?=.*an open fix pull request, is not proof)(?=.*An unresolved deferral stops the run)"
   }
 }
