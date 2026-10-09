@@ -161,7 +161,7 @@ Add a dispatch step: before starting a task attempt, append the `run_start` row 
 
 - **Decision**: approved
 - **Date**: 2026-10-09
-- **Pull request**: pending
+- **Pull request**: #304
 - **Eval**: `completion-stand-in-cites-follow-up`
 - **Rationale**: Four stand-in deviations waited on another spec's task with no follow-up, so the parallel error vocabulary the spec forbids went live untracked (#283); requiring a filed follow-up turns each silent promise into a tracked one. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
 - **Source spec**: `supervisor-service`
