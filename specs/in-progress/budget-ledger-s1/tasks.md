@@ -66,7 +66,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `internal/billing/normalize.go`, `internal/billing/normalize_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
-### Task 3 — Migration 0003, ledger rows, ingest projection
+### Task 3 — Migration 0003, ledger rows, ingest projection ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (persistence schema migration)
@@ -93,6 +93,10 @@
   - `TestBucketStateMissingIsNoRows`: `BucketState` on a never-exhausted bucket returns `sql.ErrNoRows`; any other outcome fails. Fails before: accessor absent.
 - **Test plan**: Temp databases migrated from the checked-in fixture chain; golden DDL snapshot; ingest tests through `projectWorkerEvent` with synthetic spool lines.
 - **Invariants touched**: I23 (v2 §5.1: single ledger gains tables, no second store); I09 (v2 §7.3: labels checked, quantity `unknown` distinct from zero); G16 (additive only).
+- **Status**: ✅ Completed — `0003_ledger.sql`, `SchemaVersion` 3, the ledger accessors with `Transact`, and the `native_result` usage projection landed; PR #252.
+- **Implementation**: Each native_result writes one increment row per (scope, unit, source) from `billing.Normalize`, with the run's identified rows as `applied`; missing scopes become `unknown` markers with NULL producer. Route key is the harness ID read from the run's journaled `admission.decided`. Commit a04b539.
+- **Spec deviations**: (1) `internal/journal/journal_test.go` and `internal/journal/qualification_test.go` changed (outside Files): they hard-coded schema version 2. (2) Per-model token rows carry the `SplitUsage` combined total; the design DDL has no component columns, so mapped components are not persisted. (3) A cost that is not plain decimal text is treated as unreported (unknown row), so one odd literal cannot stall spool ingestion. 0003 was free and no MH-21 `reservations` table had landed, so no renumbering or adoption applied.
+- **Files modified**: `internal/journal/migrations/0003_ledger.sql`, `internal/journal/journal.go`, `internal/journal/journal_test.go`, `internal/journal/qualification_test.go`, `internal/journal/ledger.go`, `internal/journal/ledger_test.go`, `internal/supervisor/ingest.go`, `internal/supervisor/ingest_ledger_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
 ### Task 4 — Admission reservation coupling
 
