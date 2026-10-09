@@ -607,3 +607,38 @@ func TestStopUnservedUntilWaitLeavesTransaction(t *testing.T) {
 	_, err := srv.Dispatch(context.Background(), Peer{}, Intent{OperationID: "op_stop_unserved", Method: "stop"})
 	requireCode(t, err, CodeCapabilityUnsupported)
 }
+
+// TestScanStoppedRereadsAfterTruncation pins the shrink path: when the
+// spool is rewritten to a shorter file, the next scan re-reads from the
+// start instead of skipping past the new content into a wrongful
+// timeout.
+func TestScanStoppedRereadsAfterTruncation(t *testing.T) {
+	t.Parallel()
+	f := newStopState(t, "run_stop_trunc", "att_stop_trunc")
+	writeStopped(t, f, `{"confirmed":true,"sent":[{"signal":"interrupt","grace":1000000000},{"signal":"terminate","grace":2000000000}],"ladder_version":"stop-ladder/v1","unresolved_pids":[]}`, 2)
+	spool := filepath.Join(f.attemptDir(), "spool.jsonl")
+	first, consumed := scanStopped(spool, f.attempt, f.version, 0)
+	if first == nil || !first.Confirmed || len(first.Sent) != 2 {
+		t.Fatalf("first scan receipt = %+v, want the two-step confirmed report", first)
+	}
+	// The worker rotates the spool: a shorter file holding a fresh
+	// stopped report, with the old offset past its end.
+	if err := os.Truncate(spool, 0); err != nil {
+		t.Fatal(err)
+	}
+	writeStopped(t, f, `{"confirmed":true,"sent":[],"ladder_version":"stop-ladder/v1"}`, 3)
+	st, err := os.Stat(spool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Size() >= consumed {
+		t.Fatalf("rotated spool size = %d, want it below the old offset %d", st.Size(), consumed)
+	}
+	second, next := scanStopped(spool, f.attempt, f.version, consumed)
+	if second == nil || !second.Confirmed || len(second.Sent) != 0 {
+		t.Fatalf("scan after truncation receipt = %+v, want the fresh report from the new content", second)
+	}
+	if next != st.Size() {
+		t.Fatalf("scan after truncation offset = %d, want the full new size %d", next, st.Size())
+	}
+}

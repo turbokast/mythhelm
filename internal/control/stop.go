@@ -336,7 +336,10 @@ func scanStopped(spoolPath, attemptID, pinned string, offset int64) (*StopReceip
 		if err != nil {
 			return nil, offset
 		}
-		offset = st.Size()
+		// The spool shrank (rotation or rewrite): re-read from the
+		// start so a stopped report already in the new content is
+		// not skipped past into a wrongful timeout.
+		offset = 0
 	}
 	if _, err := f.Seek(offset, io.SeekStart); err != nil {
 		return nil, offset
