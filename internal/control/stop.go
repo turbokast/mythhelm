@@ -21,11 +21,10 @@ import (
 
 // Stream-4 control codes. They extend the control.go catalogue with the
 // exact v2 §4.5 strings for the codes the stop method returns; control.go
-// predates them.
+// predates them. (CodeProcessLost already lives in control.go.)
 const (
 	CodeCancelIncomplete    Code = "cancel_incomplete"
 	CodeOwnershipUnresolved Code = "ownership_unresolved"
-	CodeProcessLost         Code = "process_lost"
 )
 
 // stopPollInterval is how often the stop Handler polls the spool for the

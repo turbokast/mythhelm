@@ -48,7 +48,7 @@
 - **Spec deviations**:
   - The stop wait runs inside `Execute`'s transaction (design §3 says no transaction is held): stream-2 `Execute` wraps every handler in one transaction and forking a second idempotency shell would risk the exactly-once path a stop's safety rests on; repeats block-then-replay byte-identical bodies. Follow-up: long-handler support in `Execute`.
   - `stop` is registered via `RegisterStop`, not in `NewSupervisorServer`, so the support-matrix exactness test stays green until Task 4 adds the rows.
-  - New control codes (`cancel_incomplete`, `ownership_unresolved`, `process_lost`) are declared in `stop.go`: `control.go` is outside this task's files.
+  - New control codes (`cancel_incomplete`, `ownership_unresolved`) are declared in `stop.go`: `control.go` is outside this task's files. (`process_lost` landed in `control.go` on main via #284 during this task, so `stop.go` uses it instead of declaring it.)
   - The stopped report carries `ladder_version` (design §3 payload gains the field): acceptance requires rejecting wrong-version reports; Task 2 emits it.
   - `AdmissionPinnedPayload` and `EventAdmissionPinned` live in `control` so Task 2's writer reuses the reader's definition instead of duplicating it.
   - Quarantine returns its failure in the `Result` with a nil handler error: `Execute` rolls a handler's writes back on a returned `*Error`, which would lose the `quarantined` transition; the stored result still replays as `cancel_incomplete`.
