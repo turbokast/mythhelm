@@ -12,7 +12,7 @@
 
 ## Task 2 — Frame codec and NFR-1 ingress enforcement
 
-Produced (PR #PRNUM): package `internal/control` (`frame.go`, `frame_test.go`,
+Produced (PR #251): package `internal/control` (`frame.go`, `frame_test.go`,
 `testdata/depth64.json`, `testdata/depth65.json`).
 
 - `control.Frame`: the wire object — embeds `v2contract.RequestEnvelope` plus
