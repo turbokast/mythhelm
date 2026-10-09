@@ -87,6 +87,9 @@ func EnterLinux(spec ContainSpec) error {
 	if home == "" || !filepath.IsAbs(home) {
 		return errors.New("contain: spec env needs an absolute HOME")
 	}
+	if within(home, "/tmp") || within("/tmp", home) {
+		return fmt.Errorf("contain: HOME %q must lie outside /tmp, which gets its own tmpfs", home)
+	}
 	workdir := filepath.Clean(p.Workdir)
 
 	// Detached copies are taken before /tmp and $HOME are covered by tmpfs,
@@ -99,6 +102,9 @@ func EnterLinux(spec ContainSpec) error {
 	for i, b := range p.AuthBinds {
 		if !within(b.Target, home) {
 			return fmt.Errorf("contain: auth bind target %q is outside $HOME", b.Target)
+		}
+		if within(b.Source, workdir) {
+			return fmt.Errorf("contain: auth bind source %q lies inside the workdir, which is mounted unmasked", b.Source)
 		}
 		if binds[i], err = cloneFile(b.Source); err != nil {
 			return fmt.Errorf("auth bind %q: %w", b.Source, err)
@@ -114,12 +120,15 @@ func EnterLinux(spec ContainSpec) error {
 			return fmt.Errorf("mask auth source %q: %w", b.Source, err)
 		}
 	}
-	for dir, mode := range map[string]uint32{"/tmp": 0o1777, home: 0o700} {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
+	for _, t := range []struct {
+		dir  string
+		mode uint32
+	}{{"/tmp", 0o1777}, {home, 0o700}} {
+		if err := os.MkdirAll(t.dir, 0o700); err != nil {
 			return err
 		}
-		if err := ops.Tmpfs(dir, mode); err != nil {
-			return fmt.Errorf("tmpfs %s: %w", dir, err)
+		if err := ops.Tmpfs(t.dir, t.mode); err != nil {
+			return fmt.Errorf("tmpfs %s: %w", t.dir, err)
 		}
 	}
 	if err := attach(workTree, workdir, p.ReadOnly, true); err != nil {

@@ -84,6 +84,22 @@ func requireUserNamespaces(t *testing.T) {
 	}
 }
 
+// homeOutsideTmp makes a $HOME that satisfies the boundary's contract: not
+// beneath /tmp, which gets its own tmpfs.
+func homeOutsideTmp(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp(".", "home") //nolint:usetesting // must sit outside /tmp, which t.TempDir uses
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return abs
+}
+
 func baseEnv(workdir, outside, home string) []string {
 	return []string{
 		"PATH=/usr/bin:/bin",
@@ -155,8 +171,8 @@ func TestEnterLinuxConfinesFilesystem(t *testing.T) {
 	base := t.TempDir()
 	workdir := filepath.Join(base, "work")
 	outside := filepath.Join(base, "outside")
-	home := filepath.Join(base, "home")
-	for _, d := range []string{workdir, outside, home} {
+	home := homeOutsideTmp(t)
+	for _, d := range []string{workdir, outside} {
 		if err := os.Mkdir(d, 0o750); err != nil {
 			t.Fatal(err)
 		}
@@ -221,8 +237,8 @@ func TestEnterLinuxDropsCapabilities(t *testing.T) {
 	requireUserNamespaces(t)
 	base := t.TempDir()
 	workdir := filepath.Join(base, "work")
-	home := filepath.Join(base, "home")
-	for _, d := range []string{workdir, home} {
+	home := homeOutsideTmp(t)
+	for _, d := range []string{workdir} {
 		if err := os.Mkdir(d, 0o750); err != nil {
 			t.Fatal(err)
 		}
@@ -260,8 +276,8 @@ func TestEnterLinuxBindsAuthFile(t *testing.T) {
 	requireUserNamespaces(t)
 	base := t.TempDir()
 	workdir := filepath.Join(base, "work")
-	home := filepath.Join(base, "home")
-	for _, d := range []string{workdir, home} {
+	home := homeOutsideTmp(t)
+	for _, d := range []string{workdir} {
 		if err := os.Mkdir(d, 0o750); err != nil {
 			t.Fatal(err)
 		}
@@ -299,8 +315,8 @@ func TestEnterLinuxMasksAuthSource(t *testing.T) {
 	requireUserNamespaces(t)
 	base := t.TempDir()
 	workdir := filepath.Join(base, "work")
-	home := filepath.Join(base, "home")
-	for _, d := range []string{workdir, home} {
+	home := homeOutsideTmp(t)
+	for _, d := range []string{workdir} {
 		if err := os.Mkdir(d, 0o750); err != nil {
 			t.Fatal(err)
 		}
@@ -342,8 +358,8 @@ func TestEnterLinuxRejectsUnstableAuthSource(t *testing.T) {
 	requireUserNamespaces(t)
 	base := t.TempDir()
 	workdir := filepath.Join(base, "work")
-	home := filepath.Join(base, "home")
-	for _, d := range []string{workdir, home} {
+	home := homeOutsideTmp(t)
+	for _, d := range []string{workdir} {
 		if err := os.Mkdir(d, 0o750); err != nil {
 			t.Fatal(err)
 		}
@@ -378,6 +394,41 @@ func TestEnterLinuxRejectsUnstableAuthSource(t *testing.T) {
 			}
 			if err == nil || strings.Contains(out, "s3cr3t-bytes") {
 				t.Fatalf("%s source was bound: err=%v out=%q", name, err, out)
+			}
+		})
+	}
+}
+
+func TestEnterLinuxRejectsInvalidLayout(t *testing.T) {
+	requireUserNamespaces(t)
+	base := t.TempDir()
+	workdir := filepath.Join(base, "work")
+	if err := os.Mkdir(workdir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	inWork := filepath.Join(workdir, "secret")
+	if err := os.WriteFile(inWork, []byte("s3cr3t-bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	home := homeOutsideTmp(t)
+
+	tests := []struct {
+		name  string
+		home  string
+		binds []AuthBind
+	}{
+		{"HOME beneath /tmp", filepath.Join(base, "home"), nil},
+		{"HOME is /tmp", "/tmp", nil},
+		{"HOME is an ancestor of /tmp", "/", nil},
+		{"auth source inside the workdir", home, []AuthBind{{Source: inWork, Target: filepath.Join(home, "token")}}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := Policy{Profile: "restricted", Workdir: workdir, AuthBinds: tc.binds}
+			spec := nsSpec(t, "/bin/sh", []string{"sh", "-c", "echo ran"}, baseEnv(workdir, base, tc.home), p)
+			out, err := runHelper(t, "enter", spec)
+			if err == nil || strings.Contains(out, "ran") {
+				t.Fatalf("invalid layout was accepted: err=%v out=%q", err, out)
 			}
 		})
 	}

@@ -46,6 +46,9 @@ func PolicyFor(profile, workdir string, readonly bool, binds []AuthBind, proxy s
 		if source == filepath.VolumeName(source)+string(filepath.Separator) || (home != "." && within(home, source)) {
 			return Policy{}, fmt.Errorf("contain: auth bind source %q would expose $HOME; bind single files", source)
 		}
+		if within(source, filepath.Clean(workdir)) {
+			return Policy{}, fmt.Errorf("contain: auth bind source %q lies inside the workdir", source)
+		}
 		admitted = append(admitted, AuthBind{Source: source, Target: filepath.Clean(b.Target)})
 	}
 	return Policy{

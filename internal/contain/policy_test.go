@@ -22,6 +22,7 @@ func TestPolicyRejectsWholeHomeBind(t *testing.T) {
 		{"root", root, true},
 		{"ancestor of home", filepath.Dir(home), true},
 		{"relative source", "token.json", true},
+		{"inside the workdir", filepath.Join(work, "secret"), true},
 		{"single file under home", secret, false},
 	}
 	for _, tc := range tests {
