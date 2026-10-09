@@ -3,13 +3,19 @@ package journal
 import (
 	"strings"
 	"testing"
-
-	migratepkg "github.com/turbokast/mythhelm/internal/migrate"
 )
 
 // The five tables migration 0007 adds (supervisor-migration design §2, D2;
 // renumbered from 0004: later specs consumed 0003-0006 first).
 var v2ContractTables = []string{"tasks", "task_revisions", "policies", "grants", "migration_state"}
+
+// migrationPhases is the migration_state vocabulary as literals. This
+// internal test cannot name migrate.Phase: importing internal/migrate here
+// would cycle once migrate imports control, supervisor or journal (Tasks 4
+// and 6; design §2 mandates migrate calls control.Mutate). The constants
+// stay bound to these words by TestPhaseMatchesMigrationVocabulary in
+// internal/migrate/drain_test.go, which asserts both directions.
+var migrationPhases = []string{"not_started", "previewed", "drained", "imported", "adopted"}
 
 // The ten v1 tables from 0001_init.sql; no migration may alter their DDL.
 var v1Tables = []string{"runs", "attempts", "journal", "producers", "candidates",
@@ -83,8 +89,8 @@ func TestMigrationStateStartsNotStarted(t *testing.T) {
 	if rows != 1 {
 		t.Fatalf("migration_state holds %d rows, want exactly 1", rows)
 	}
-	if phase != string(migratepkg.PhaseNotStarted) {
-		t.Errorf("phase = %q, want %q", phase, migratepkg.PhaseNotStarted)
+	if phase != migrationPhases[0] {
+		t.Errorf("phase = %q, want %q", phase, migrationPhases[0])
 	}
 	if schemaVersion != SchemaVersion {
 		t.Errorf("schema_version = %d, want SchemaVersion %d", schemaVersion, SchemaVersion)
@@ -103,10 +109,8 @@ func TestMigrationStateStartsNotStarted(t *testing.T) {
 func TestMigrationStatePhaseVocabulary(t *testing.T) {
 	j, _ := openTemp(t)
 	ctx := t.Context()
-	phases := []migratepkg.Phase{migratepkg.PhaseNotStarted, migratepkg.PhasePreviewed,
-		migratepkg.PhaseDrained, migratepkg.PhaseImported, migratepkg.PhaseAdopted}
-	for _, phase := range phases {
-		if _, err := j.db.ExecContext(ctx, `UPDATE migration_state SET phase = ?`, string(phase)); err != nil {
+	for _, phase := range migrationPhases {
+		if _, err := j.db.ExecContext(ctx, `UPDATE migration_state SET phase = ?`, phase); err != nil {
 			t.Errorf("phase %q rejected by the migration_state CHECK: %v", phase, err)
 		}
 	}

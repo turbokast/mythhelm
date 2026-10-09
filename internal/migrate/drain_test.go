@@ -300,6 +300,32 @@ func TestDrainRefusesWhileLockHeld(t *testing.T) {
 	}
 }
 
+// TestPhaseMatchesMigrationVocabulary binds the migrate.Phase constants to
+// the migration_state words in both directions: the constants are exactly
+// the vocabulary, and the CHECK accepts every constant. The journal-side
+// test asserts the same vocabulary as literals — it cannot import this
+// package without an import cycle — so this test is what keeps the two
+// spellings from drifting apart.
+func TestPhaseMatchesMigrationVocabulary(t *testing.T) {
+	isolateInstanceLock(t)
+	dir := t.TempDir()
+	db := openDrainDB(t, dir)
+	consts := []Phase{PhaseNotStarted, PhasePreviewed, PhaseDrained, PhaseImported, PhaseAdopted}
+	words := make([]string, 0, len(consts))
+	for _, c := range consts {
+		words = append(words, string(c))
+	}
+	want := []string{"adopted", "drained", "imported", "not_started", "previewed"}
+	if !slices.Equal(slices.Sorted(slices.Values(words)), want) {
+		t.Fatalf("Phase constants %v do not match the migration_state vocabulary %v", words, want)
+	}
+	for _, c := range consts {
+		if _, err := db.Exec(`UPDATE migration_state SET phase = ? WHERE id = 1`, string(c)); err != nil {
+			t.Errorf("Phase %q rejected by the migration_state CHECK: %v", c, err)
+		}
+	}
+}
+
 // TestLedgerHashDetectsWrites is the kept violating case for the
 // writes-nothing checks: one inserted row changes the digest, so a Drain
 // that wrote could not pass TestDrainWritesNothing by accident.
