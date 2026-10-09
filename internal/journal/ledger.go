@@ -92,6 +92,8 @@ func InsertUsageObservation(ctx context.Context, tx *sql.Tx, o UsageRow) error {
 		return fmt.Errorf("journal: usage observation label %q is not one of %s", o.Label, strings.Join(usageLabels, ", "))
 	case o.Quantity == "":
 		return errors.New("journal: usage observation quantity is empty; use \"unknown\" for an unreported value")
+	case o.ProducerID == "" && o.ProducerSequence != 0:
+		return errors.New("journal: usage observation has a producer sequence but no producer")
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO usage_observations
 		(observation_id, run_id, scope, unit, source, label, quantity, producer_id, producer_sequence, observed_at)

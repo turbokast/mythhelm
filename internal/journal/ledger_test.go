@@ -178,6 +178,27 @@ func TestUnknownLabelRejectedNeverDefaulted(t *testing.T) { // I09 (v2 §2)
 	}
 }
 
+func TestProducerSequenceWithoutProducerRejected(t *testing.T) { // I09 (v2 §2)
+	j, _ := openTemp(t)
+	seedRun(t, j, "run_1")
+	err := transact(t, j, func(ctx context.Context, tx *sql.Tx) error {
+		return InsertUsageObservation(ctx, tx, UsageRow{ObservationID: "obs_1", RunID: "run_1", Scope: "m", Unit: "tokens",
+			Source: "s", Label: "reported", Quantity: "10", ProducerSequence: 4, ObservedAt: "2026-01-01T00:00:00Z"})
+	})
+	if err == nil || !strings.Contains(err.Error(), "a producer sequence but no producer") {
+		t.Errorf("usage row with a sequence but no producer: err = %v, want the accessor's producer error", err)
+	}
+	// Control: a fully identity-less row (empty producer, zero sequence)
+	// still persists with NULL producer, never erroring.
+	err = transact(t, j, func(ctx context.Context, tx *sql.Tx) error {
+		return InsertUsageObservation(ctx, tx, UsageRow{ObservationID: "obs_2", RunID: "run_1", Scope: "m", Unit: "tokens",
+			Source: "s", Label: "unknown", Quantity: "unknown", ObservedAt: "2026-01-01T00:00:00Z"})
+	})
+	if err != nil {
+		t.Errorf("identity-less usage row: err = %v, want nil", err)
+	}
+}
+
 func TestEmptyQuantityRejected(t *testing.T) { // I09 (v2 §2)
 	j, _ := openTemp(t)
 	seedRun(t, j, "run_1")
