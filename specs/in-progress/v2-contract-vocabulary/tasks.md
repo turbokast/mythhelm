@@ -119,7 +119,7 @@
 - **Spec deviations**: `internal/v2contract/codec_test.go` (outside Files): removed Task 1's provisional `//nolint:unused` on `loadGolden`, now used — keeping it fails `golangci-lint` (`nolintlint`). Comment-only, no behaviour change.
 - **Files modified**: `internal/v2contract/records_coordination.go`, `internal/v2contract/records_coordination_test.go`, `internal/v2contract/testdata/records/context_manifest.golden.json`, `internal/v2contract/testdata/records/message.golden.json`, `internal/v2contract/testdata/records/grant.golden.json`, `internal/v2contract/testdata/records/reservation.golden.json`, `internal/v2contract/testdata/records/policy_version.golden.json`, `internal/v2contract/testdata/records/experiment.golden.json`, `internal/v2contract/codec_test.go`, `specs/in-progress/v2-contract-vocabulary/tasks.md`, `specs/in-progress/v2-contract-vocabulary/handoff.md`, `specs/in-progress/v2-contract-vocabulary/scratchpad.md`.
 
-### Task 5 — Machine-checkable lifecycles
+### Task 5 — Machine-checkable lifecycles ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -138,6 +138,11 @@
   - `TestReconcileRequiresSameLaunch`: mismatched launch IDs fail; equal IDs pass (AC-2.3).
 - **Test plan**: Tables transcribed from design §4.1 (each row: allowed set + sampled forbidden pairs); guard table tests.
 - **Invariants touched**: I06 (v2 §2: terminal entry fenced on resolved ownership); I12 (v2 §2: same-launch reconcile); G04 (v2 §18.3: lifecycle gate tables).
+- **Status**: ✅ Completed — v2 §6.1–§6.2 lifecycle tables with terminal-entry and reconcile guards in `internal/v2contract`, all six acceptance tests passing; PR #238.
+- **Implementation**: Explicit tables plus the blanket active-phase stop/interrupt row and the recovering→reconciled-phase rule; blocked `to == saved` always requires saved eligibility. Commit 62d8495.
+- **Spec deviations**: One interpretation (no stated requirement contradicted): "active phase" read as the 7 forward phases admission…applying; created is pre-admission and blocked/stopping/interrupted/recovering keep their explicit rows. Pinned in `TestRunTableMatchesSpec`.
+- **Files modified**: `internal/v2contract/lifecycle.go`, `internal/v2contract/lifecycle_test.go`, `specs/in-progress/v2-contract-vocabulary/tasks.md`, `specs/in-progress/v2-contract-vocabulary/handoff.md`.
+- **CI evidence**: `go-test` fails only on pre-existing `internal/cli TestStrictMainBlocksWriteNothing`, which fails identically on an untouched origin/main checkout; `internal/cli` does not reference `v2contract`.
 
 ### Task 6 — Error catalogue and adapter mapping
 
