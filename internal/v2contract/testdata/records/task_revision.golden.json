@@ -1,0 +1,1 @@
+{"schema_version":2,"task_id":"task_SYNTHETIC1","revision":2,"deliverable":"patch","acceptance_contract_digest":"sha256:132acd35377fa231649f9681586be0c41a3e72e6d027ed0184a9afb524e56eb5","dependencies":[{"kind":"contract","id":"c1","revision":1}],"write_scope":["internal/example/"],"risk":"low","resource_claims":["workspace"],"integration_destination":"main","lifecycle":"pending"}
