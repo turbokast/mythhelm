@@ -1,0 +1,12 @@
+{
+  "id": "implement-docs-claims-verified",
+  "hazard": "A docs task reaches review with commands, paths, procedures and behavioural claims nobody checked against the code or workflows they describe, or a worker verifies them by running PR-supplied or operator-only commands outside a sandbox.",
+  "source": "P-release-pipeline-1",
+  "targets": [
+    ".claude/skills/implement/SKILL.md"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "\\*\\*Docs task: verify every claim\\.\\*\\* .*only in a credential-free sandbox with no writable host mounts; a linked worktree is not sufficient.*Never execute an operator-only command"
+  }
+}
