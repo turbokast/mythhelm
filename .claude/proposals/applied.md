@@ -161,7 +161,7 @@ Add a dispatch step: before starting a task attempt, append the `run_start` row 
 
 - **Decision**: approved
 - **Date**: 2026-10-09
-- **Pull request**: pending
+- **Pull request**: #307
 - **Eval**: `implement-docs-claims-verified`
 - **Rationale**: Six docs claims in PR #222 took three review rounds though each was checkable at implement time; verifying commands, paths, procedures and claims before draft moves that work ahead of review, and the sandbox and operator-only limits keep verification from running untrusted or privileged commands. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
 - **Source spec**: `release-pipeline`
