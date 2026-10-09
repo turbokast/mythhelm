@@ -51,3 +51,13 @@ overrides `design.md` — conflicts go back to the designer.
   version (`journal_test.go` pragmas, `qualification_test.go`
   `TestMigration0002Applies`, `evaluator_test.go`) and were bumped
   6→7; future schema bumps must sweep those files too.
+- **T3 (import, PR #287)**: v1 runs carry no goal/deliverable/write-scope text (only
+  `task_sha256`), so the v2 record stores `sha256:<task_sha256>` as
+  `AcceptanceContractDigest` with empty prose fields (I09). Task-id rule: earliest
+  attempt's legacy task id, run id fallback. Import never yields `accepted`, including
+  for `completed` runs (I07). Local gate note: `TestStrictMainBlocksWriteNothing`
+  (`internal/cli`) inventories the developer's real `$HOME` native config and fails on
+  machines with untrusted native settings; it passes with a clean `HOME` and on clean
+  CI runners — pre-existing on origin/main, unrelated to this spec. (`python3` here is
+  an asdf shim that needs the real `HOME`; run gatelib with the resolved interpreter
+  when overriding `HOME`.)
