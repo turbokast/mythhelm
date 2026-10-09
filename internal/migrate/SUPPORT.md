@@ -24,14 +24,14 @@ CI's to show. Platforms are `all` (the test files carry no build tag).
 | `drain` | `Drain` quiesces the four legacy owner sites in drain order into a drain/adopt/quarantine report with no ledger write; new admissions and recovery refuse past `previewed` | fixture-tested | all | `migrate.TestDrainRefusesWhileLockHeld`, `migrate.TestDrainAdoptsSameLaunch`, `migrate.TestDrainWritesNothing`, `migrate.TestDrainQuarantinesDeadWorker`, `migrate.TestRunRefusedPastPreviewed`, `migrate.TestRecoverRefusedPastPreviewed`, `cli.TestApplyRefusedDuringMigration` |
 | `backup-restore` | `VACUUM INTO` backup with a schema/build-identity sidecar, integrity-checked restore, and newer-schema/digest/overwrite refusals that write nothing | fixture-tested | all | `migrate.TestBackupRestoreRoundTrip`, `migrate.TestRestoreNewerSchemaRefuses`, `migrate.TestRestoreDigestMismatchRefuses`, `migrate.TestBackupRefusesOverwrite` |
 | `migrate-cli` | `mythhelm migrate --preview` (hermetic, read-only plan) and `--apply --yes` (Drain → Backup → Import → Adopt with receipt, marker-based resume, packaged-binary e2e) | fixture-tested | all | `cli.TestPreviewWritesNothing`, `cli.TestPreviewHermetic`, `cli.TestPreviewRefusesNewerSchema`, `cli.TestApplyWithoutYesPreviewsFirst`, `cli.TestBackupHoldsDrainedWrites`, `cli.TestApplyPersistsQuarantinePostBackup`, `cli.TestApplyResumesAfterFailure`, `tests.TestMigrateE2EPackagedBinary` |
-| `nfr2-proof` | NFR-2 SQLite posture proof (pragma string, `Mutate` write scope, integrity checks, OQ-8 engine-version assertion) | blocked | all | blocked: Task 7 is unmerged, so the pragma pins, the `Mutate`-scope assertion, the backup/restore integrity pins and the OQ-8 engine-version assertion have no evidence yet. |
+| `nfr2-proof` | NFR-2 SQLite posture proof: the open pragma string (WAL, synchronous FULL, busy_timeout 5000), migrate ledger writes confined to `control.Mutate` apart from Backup's `VACUUM INTO` and read-only integrity opens, `integrity_check` on backup and restore, and the shipped engine's WAL-fix version (OQ-8) read from the built binary | fixture-tested | all | `journal.TestPragmasPinned`, `migrate.TestMigrateWritesRunInMutate`, `migrate.TestIntegrityCheckOnBackupRestore`, `migrate.TestSQLiteEngineHasWALFix` |
 
 ## Not claimed
 
 - No row is `live-qualified`.
-- The NFR-2 posture (row `nfr2-proof`) is explicitly `blocked` until Task 7
-  lands; the pragmas, `VACUUM INTO` mechanism and integrity checks the code
-  already runs on are described in ADR 0016 but claim no posture proof here.
+- The NFR-2 row is fixture-tested (corrupt-page fixtures and an engine
+  assertion on the built binary); it claims no behaviour under a live
+  multi-client load.
 - The legacy per-run path is drained and refused during migration, not
   removed; full removal is a follow-up after stream 4 (design §11).
 - Quarantined runs are persisted with evidence, never reconciled;

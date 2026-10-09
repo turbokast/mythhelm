@@ -137,6 +137,7 @@ replaying effects (I12) and re-importing without markers.
 - The support matrix (`internal/migrate/SUPPORT.md`) pins exactly these
   rows; `TestSupportMatrixMatchesEvidence` fails on a new deliverable,
   a new export, or any `live-qualified` claim. The NFR-2 posture row is
-  explicitly `blocked` until Task 7 ships (OQ-8 still open), and the
-  legacy per-run path is drained and refused, not removed — full removal
+  fixture-tested (`TestPragmasPinned`, `TestMigrateWritesRunInMutate`,
+  `TestIntegrityCheckOnBackupRestore`, `TestSQLiteEngineHasWALFix`), and
+  the legacy per-run path is drained and refused, not removed — full removal
   waits for stream 4.
