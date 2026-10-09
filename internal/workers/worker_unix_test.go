@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -18,6 +19,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/turbokast/mythhelm/internal/adapter"
 )
 
 func TestWorkerSurvivesParentExit(t *testing.T) {
@@ -134,5 +137,31 @@ func TestProcGoneMapsReadRace(t *testing.T) {
 	denied := &fs.PathError{Op: "open", Path: "/proc/1/stat", Err: syscall.EACCES}
 	if procGone(denied) {
 		t.Errorf("procGone(%v) = true, want false: undeterminable stays fail-closed", denied)
+	}
+}
+
+func TestWorkerClimbsPinnedLadder(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("process-group stop semantics are claimed on Linux and macOS only")
+	}
+	// The scenario ignores SIGINT, so both rungs fire whatever the grace;
+	// short graces keep the test fast.
+	two := []adapter.StopStep{
+		{Signal: adapter.StopInterrupt, Grace: time.Second},
+		{Signal: adapter.StopTerminate, Grace: 5 * time.Second},
+	}
+	p := climbPinnedLadder(t, "ignore-sigint", two)
+	if !p.Confirmed || !slices.Equal(p.Sent, two) || p.LadderVersion != "stop-ladder/v1" {
+		t.Errorf("attempt.stopped = %+v, want confirmed with sent %v under stop-ladder/v1", p, two)
+	}
+	if len(p.UnresolvedPIDs) != 0 {
+		t.Errorf("attempt.stopped unresolved_pids = %v, want none", p.UnresolvedPIDs)
+	}
+	// Deleting one rung from the handoff changes the recorded receipt: the
+	// receipt reflects the climb, not the default ladder.
+	one := []adapter.StopStep{{Signal: adapter.StopTerminate, Grace: 5 * time.Second}}
+	p = climbPinnedLadder(t, "ignore-sigint", one)
+	if !p.Confirmed || !slices.Equal(p.Sent, one) {
+		t.Errorf("attempt.stopped = %+v, want confirmed with sent %v", p, one)
 	}
 }

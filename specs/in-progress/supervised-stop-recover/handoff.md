@@ -19,7 +19,12 @@
 
 ## Task 2 — Worker climbs the pinned ladder
 
-<!-- pending -->
+- **Produces**: `workers.Launch{LadderVersion, Nonce, Generation}` (`stop-ladder/v1` pinned at the spawn site; raw nonce; boot generation, 0 when unfenced); the worker climbs `launch.StopLadder` on `stop.request` behind the `MatchIdentity` gate (unexported `interrupt` seam; a mismatch signals nothing and resolves to `ownership_unresolved` with an unconfirmed report); `attempt.stopped` gains `sent` (`[{signal, grace-ns}]` in climb order) and `ladder_version`; `supervisor.RecordAdmissionPinned` + `pinAdmission` (mint via crypto/rand, generation read, journal before `workers.Spawn`).
+- **Produces, differs from design**: none in shape; the no-lock behavior deviates (below).
+- **For dependents (Task 4)**: `Launch.Generation` is 0 for lockless spawns (legacy runs, demos) — define 0 in the envelope; the pin payload carries no generation, so the envelope's generation comes only from the worker-held `Launch`. `worker.json` carries the raw nonce; the journal carries its digest. A `sent` entry with zero grace means a foreign signal — never confirm it.
+- **For dependents (Task 4)**: the worker's `stop` wait still holds `Execute`'s tx (Task 1 deviation); the Task 1 hand-off's long-handler warning stands.
+- **Traps**: launches with an empty nonce climb without the identity check (legacy-shaped handoffs); `ReadIdentity` still decodes pre-change files (missing `nonce` fails closed in the match). Existing pipeline spawn tests run under per-fixture instance locks (`__acquire-instance` helper in `pipeline_test.go`); demo tests run lockless and pin 0.
+- **Deviations changing later inputs (Task 4)**: generation-0 unfenced fallback instead of design §3's fail-the-admission (missing/foreign lock); see the task entry and scratchpad for the reason.
 
 ## Task 3 — One-pass recovery through the supervisor
 

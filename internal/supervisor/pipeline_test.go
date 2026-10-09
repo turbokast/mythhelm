@@ -26,6 +26,7 @@ import (
 	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/cli"
 	"github.com/turbokast/mythhelm/internal/contain"
+	"github.com/turbokast/mythhelm/internal/control"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/supervisor"
@@ -71,6 +72,20 @@ func TestMain(m *testing.M) {
 			os.Exit(workers.Main(os.Args[2:]))
 		case fake.AgentCommand:
 			os.Exit(fake.AgentMain(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+		case "__acquire-instance":
+			// Writes the instance-lock metadata for the state root and
+			// exits, releasing the lock: the spawn site's generation read
+			// only reads the metadata, so the lock itself stays free.
+			if len(os.Args) != 3 {
+				os.Exit(2)
+			}
+			release, err := control.AcquireInstance(os.Args[2])
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			release()
+			os.Exit(0)
 		}
 	}
 	if os.Getenv(cliEnv) == "1" {
@@ -84,13 +99,16 @@ func TestMain(m *testing.M) {
 }
 
 // fixture is a user repository, a task file and an empty state directory.
+// rt is the fixture's isolated runtime dir: the stream-2 instance lock
+// lives there, so every fixture run pins a real boot generation.
 type fixture struct {
-	state, repo, task, home string
+	state, repo, task, home, rt string
 }
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
-	f := fixture{state: t.TempDir(), repo: t.TempDir(), home: t.TempDir()}
+	f := fixture{state: t.TempDir(), repo: t.TempDir(), home: t.TempDir(), rt: t.TempDir()}
+	acquireInstanceLock(t, f.rt, f.state)
 	f.task = filepath.Join(t.TempDir(), "task.md")
 	if err := os.WriteFile(f.task, []byte("# Demo task\n\nWrite demo.txt.\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -120,15 +138,40 @@ func (f fixture) git(t *testing.T, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// acquireInstanceLock writes the stream-2 instance-lock metadata for root
+// into rt through a helper process, so parallel fixtures never share
+// process env: each child resolves its own lock from its own
+// XDG_RUNTIME_DIR.
+func acquireInstanceLock(t *testing.T, rt, root string) {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "__acquire-instance", root) //nolint:gosec // G702: the test binary itself, with the test's own argv
+	cmd.Env = append(os.Environ(), "XDG_RUNTIME_DIR="+rt)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("acquire lock for %s: %v\n%s", root, err, out)
+	}
+}
+
+// holdInstanceLock takes the stream-2 instance lock for root in an
+// isolated runtime dir for tests that run the pipeline in-process.
+func holdInstanceLock(t *testing.T, root string) {
+	t.Helper()
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	release, err := control.AcquireInstance(root)
+	if err != nil {
+		t.Fatalf("AcquireInstance: %v", err)
+	}
+	t.Cleanup(release)
+}
+
 // command builds `mythhelm args...` run in the repository against the
 // fixture's state directory.
 func (f fixture) command(ctx context.Context, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, os.Args[0], args...) //nolint:gosec // G702: the test binary itself, with the test's own argv
 	cmd.Dir = f.repo
 	env := slices.DeleteFunc(os.Environ(), func(kv string) bool {
-		return strings.HasPrefix(kv, "MYTHHELM_HOME=") || strings.HasPrefix(kv, "HOME=") || strings.HasPrefix(kv, "XDG_CONFIG_HOME=")
+		return strings.HasPrefix(kv, "MYTHHELM_HOME=") || strings.HasPrefix(kv, "HOME=") || strings.HasPrefix(kv, "XDG_CONFIG_HOME=") || strings.HasPrefix(kv, "XDG_RUNTIME_DIR=")
 	})
-	env = append(env, cliEnv+"=1", "MYTHHELM_HOME="+f.state, "HOME="+f.home, "XDG_CONFIG_HOME="+f.home)
+	env = append(env, cliEnv+"=1", "MYTHHELM_HOME="+f.state, "HOME="+f.home, "XDG_CONFIG_HOME="+f.home, "XDG_RUNTIME_DIR="+f.rt)
 	cmd.Env = env
 	cmd.WaitDelay = 10 * time.Second
 	return cmd
@@ -694,7 +737,7 @@ func lastResult(t *testing.T, stdout string) map[string]any {
 // documentedEvents is design §5's event set, which is all run may print.
 var documentedEvents = []string{
 	"run.created", "run.state_changed", "admission.decided", "workspace.snapshot_created",
-	"attempt.launch_intent_recorded", "attempt.launched", "attempt.native_session", "attempt.progress",
+	"attempt.launch_intent_recorded", "attempt.admission_pinned", "attempt.launched", "attempt.native_session", "attempt.progress",
 	"attempt.permission_denied", "attempt.native_result", "attempt.stop_requested", "attempt.stopped",
 	"attempt.state_changed", "attempt.protocol_counters", "candidate.frozen", "verification.started",
 	"check.completed", "verification.completed", "receipt.written", "apply.intent_recorded", "apply.completed", "run.result",
@@ -1039,6 +1082,7 @@ func TestInterruptBeforeWorkerSpawnNeverLaunchesNative(t *testing.T) {
 	for _, stage := range []string{"executing", "launch_intent_recorded"} {
 		t.Run(stage, func(t *testing.T) {
 			f := newFixture(t)
+			holdInstanceLock(t, f.state)
 			d, err := admission.Decide(t.Context(), admission.Request{
 				StateDir: f.state, Repo: f.repo, TaskFile: f.task,
 				Adapter: admission.AdapterFake, Billing: admission.BillingLocalScripted,
@@ -1090,6 +1134,7 @@ func TestInterruptBeforeWorkerSpawnNeverLaunchesNative(t *testing.T) {
 // the first admission).
 func TestRunSeedsRegistry(t *testing.T) {
 	f := newFixture(t)
+	holdInstanceLock(t, f.state)
 	decide := func() admission.Decision {
 		t.Helper()
 		d, err := admission.Decide(t.Context(), admission.Request{
@@ -1157,6 +1202,7 @@ func TestRunSeedsRegistry(t *testing.T) {
 // persistence_unavailable instead of running unseeded, admitting nothing.
 func TestSeedFailureFailsClosed(t *testing.T) {
 	f := newFixture(t)
+	holdInstanceLock(t, f.state)
 	d, err := admission.Decide(t.Context(), admission.Request{
 		StateDir: f.state, Repo: f.repo, TaskFile: f.task,
 		Adapter: admission.AdapterFake, Billing: admission.BillingLocalScripted,
@@ -1521,6 +1567,7 @@ func (f fixture) reservations(t *testing.T, runID string) []string {
 
 func TestAdmissionWritesInitialEnvelope(t *testing.T) {
 	f := newFixture(t)
+	holdInstanceLock(t, f.state)
 	flags := &billing.Ceilings{Execution: -1, Repairs: 5, Replans: -1, TransportRetries: -1}
 	d := f.decideEnvelope(t, f.envelopeConfig(t), flags)
 	var notices []string
@@ -1575,6 +1622,7 @@ func TestAdmissionWritesInitialEnvelope(t *testing.T) {
 
 func TestHoldFailureBlocksRun(t *testing.T) {
 	f := newFixture(t)
+	holdInstanceLock(t, f.state)
 	d := f.decideEnvelope(t, f.envelopeConfig(t), nil)
 	// Storage refusing the hold is the failure; the journal must exist first.
 	_ = f.journal(t)
@@ -1611,6 +1659,7 @@ func TestHoldFailureBlocksRun(t *testing.T) {
 
 func TestFailedAdmissionHoldsNothing(t *testing.T) {
 	f := newFixture(t)
+	holdInstanceLock(t, f.state)
 	// Another run is active, so admission refuses before any hold.
 	j := f.journal(t)
 	other := ids.New("run")
@@ -1743,6 +1792,7 @@ func TestChecksRefusedUnderInspect(t *testing.T) {
 
 func TestDeadlineExpiryBlocks(t *testing.T) {
 	f := newFixture(t)
+	holdInstanceLock(t, f.state)
 	// The slow scenario would run for ten minutes; the 2s execution ceiling
 	// outlasts the launch (a ceiling that ran out before the intent commits
 	// is refused instead, TestLaunchRefusedWhenDeadlineExpiresBeforeCommit)
@@ -1781,6 +1831,7 @@ func TestDeadlineExpiryBlocks(t *testing.T) {
 
 func TestGateRefusalBlocksRunBeforeAnyIntent(t *testing.T) {
 	f := newFixture(t)
+	holdInstanceLock(t, f.state)
 	d := f.decideEnvelope(t, f.envelopeConfig(t), nil)
 	// A run whose execution clock started long ago, as after a recovery: the
 	// trigger stamps the first start when the admission writes the envelope.

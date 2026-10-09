@@ -20,6 +20,7 @@ import (
 	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/contain"
+	"github.com/turbokast/mythhelm/internal/control"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/integration"
 	"github.com/turbokast/mythhelm/internal/journal"
@@ -503,7 +504,20 @@ func (p *pipeline) attempt(ctx context.Context) error {
 		return err
 	}
 
-	proc, err := workers.Spawn(p.exe, d.StateDir, d.RunID, d.AttemptID, launchForAttempt(d, token))
+	nonce, generation, err := pinAdmission(ctx, p.j, p.prod, d.StateDir, d.RunID, d.TaskID, d.AttemptID)
+	if err != nil {
+		// The launch intent is journaled but the worker never spawned:
+		// like a spawn failure, the attempt is interrupted rather than
+		// retried blind.
+		return errors.Join(err,
+			p.attemptTo(ctx, AttemptInterrupted, "admission_pin_failed"),
+			p.runTo(ctx, RunFailed, "admission_pin_failed"))
+	}
+	launch := launchForAttempt(d, token)
+	launch.LadderVersion = stopLadderVersion
+	launch.Nonce = nonce
+	launch.Generation = generation
+	proc, err := workers.Spawn(p.exe, d.StateDir, d.RunID, d.AttemptID, launch)
 	if err != nil {
 		// Spawn kills a worker it could not hand the launch to, and a
 		// worker without its launch starts nothing.
@@ -782,6 +796,74 @@ func launchToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// stopLadderVersion is the stop ladder version the spawn site pins. The
+// per-surface proposal ladder travels as stop-ladder/v1 (OQ-SR2) until a
+// new version ships.
+const stopLadderVersion = "stop-ladder/v1"
+
+// workerNonce mints the raw per-worker nonce (256 crypto bits, hex), the
+// launchToken precedent: the supervisor journals NonceDigest of it in
+// attempt.admission_pinned and delivers the raw value in the Launch.
+func workerNonce() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// RecordAdmissionPinned journals attempt.admission_pinned for the attempt:
+// the pinned stop-ladder version and the expected worker-nonce digest. It
+// runs in the same admission step as RecordLaunchIntent and before
+// workers.Spawn (design §3); the payload reuses control's definition so the
+// writer and the PinnedAdmission reader cannot drift.
+func RecordAdmissionPinned(ctx context.Context, j *journal.Journal, runID, taskID, attemptID, ladderVersion, nonceSHA256 string, producer *Producer) error {
+	ev, err := newEvent(runID, taskID, attemptID, control.EventAdmissionPinned, control.AdmissionPinnedPayload{
+		LadderVersion: ladderVersion,
+		NonceSHA256:   nonceSHA256,
+	}, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	return producer.append(ctx, j, ev, nil)
+}
+
+// pinAdmission mints the worker nonce, reads this supervisor's boot
+// generation and journals the admission pin for the Launch handoff,
+// returning the raw nonce and generation the worker is handed. An
+// unreadable generation pins generation 0, unfenced — but only when no
+// supervisor holds the lock (ErrNoSupervisorLock) or the lock serves
+// another root (ErrRootConflict) — and the admission proceeds: the
+// legacy run path runs lockless by design during the migration window
+// (svc D1), and a leaf run on a fresh root or a demo on a temp root
+// cannot hold the lock, so failing the admission would brick them with
+// no remedy. Zero is never a real boot generation (they start at 1),
+// so it marks unfenced rather than guessing one; Task 4's envelope
+// defines its meaning. This deviates from design §3's
+// fail-the-admission default; the reason is recorded with the task. A
+// lock file that is present but unreadable or corrupt fails the
+// admission instead: a torn read must never look like an absent
+// holder, so the error propagates to the spawn site's
+// admission_pin_failed path.
+func pinAdmission(ctx context.Context, j *journal.Journal, prod *Producer, stateDir, runID, taskID, attemptID string) (nonce string, generation int64, err error) {
+	nonce, err = workerNonce()
+	if err != nil {
+		return "", 0, fmt.Errorf("minting the worker nonce: %w", err)
+	}
+	generation, err = control.CurrentGeneration(stateDir)
+	switch {
+	case err == nil:
+	case errors.Is(err, control.ErrNoSupervisorLock) || errors.Is(err, control.ErrRootConflict):
+		generation = 0
+	default:
+		return "", 0, fmt.Errorf("reading the boot generation: %w", err)
+	}
+	if err := RecordAdmissionPinned(ctx, j, runID, taskID, attemptID, stopLadderVersion, workers.NonceDigest(nonce), prod); err != nil {
+		return "", 0, err
+	}
+	return nonce, generation, nil
 }
 
 // errWorkerUnverified reports a worker whose identity does not match the

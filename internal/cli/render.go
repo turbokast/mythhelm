@@ -189,6 +189,8 @@ func plainEvent(ev journal.Event) string {
 		return fmt.Sprintf("snapshot: %s cloned to %s", p.text("base_rev"), p.text("clone_path"))
 	case "attempt.launch_intent_recorded":
 		return "attempt " + cell(ev.AttemptID) + ": launch intent recorded"
+	case "attempt.admission_pinned":
+		return "attempt " + cell(ev.AttemptID) + ": admission pinned (stop ladder " + p.text("ladder_version") + ")"
 	case "attempt.state_changed":
 		return "attempt: " + p.state()
 	case "attempt.launched":

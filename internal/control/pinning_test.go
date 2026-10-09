@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -149,6 +151,9 @@ func TestCurrentGenerationFailsWithoutLock(t *testing.T) {
 	if _, ok := errors.AsType[*Error](err); ok {
 		t.Fatalf("CurrentGeneration error = %v, want a plain error, not a coded one", err)
 	}
+	if !errors.Is(err, ErrNoSupervisorLock) {
+		t.Fatalf("CurrentGeneration error = %v, want ErrNoSupervisorLock", err)
+	}
 }
 
 func TestCurrentGenerationRefusesForeignRoot(t *testing.T) {
@@ -164,8 +169,39 @@ func TestCurrentGenerationRefusesForeignRoot(t *testing.T) {
 
 	if _, err := CurrentGeneration(rootB); err == nil {
 		t.Fatal("CurrentGeneration for a foreign root = nil, want an error")
+	} else if !errors.Is(err, ErrRootConflict) {
+		t.Fatalf("CurrentGeneration for a foreign root = %v, want ErrRootConflict", err)
 	}
 	if _, err := CurrentGeneration(rootA); err != nil {
 		t.Fatalf("CurrentGeneration for the claimed root: %v", err)
+	}
+}
+
+func TestCurrentGenerationFailsOnUnreadableLock(t *testing.T) {
+	// not parallel: t.Setenv redirects the per-user lock directory.
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	path, err := LockPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// A present but unparseable lock file is neither absent nor
+	// foreign: the error must be a plain fatal one the spawn site
+	// cannot mistake for an unfenced case.
+	if err := os.WriteFile(path, []byte("{torn"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = CurrentGeneration(t.TempDir())
+	if err == nil {
+		t.Fatal("CurrentGeneration with a corrupt lock = nil, want an error")
+	}
+	if errors.Is(err, ErrNoSupervisorLock) || errors.Is(err, ErrRootConflict) {
+		t.Fatalf("CurrentGeneration with a corrupt lock = %v, want neither unfenced sentinel", err)
+	}
+	if _, ok := errors.AsType[*Error](err); ok {
+		t.Fatalf("CurrentGeneration error = %v, want a plain error, not a coded one", err)
 	}
 }

@@ -80,6 +80,18 @@ type Launch struct {
 	Env          []string           `json:"env"`
 	PromptPath   string             `json:"prompt_path"` // the task file, delivered on the native's stdin
 	StopLadder   []adapter.StopStep `json:"stop_ladder"`
+	// LadderVersion pins the stop ladder the worker climbs: it equals the
+	// version the supervisor journaled in attempt.admission_pinned, and
+	// the worker echoes it into attempt.stopped (design §3).
+	LadderVersion string `json:"ladder_version"`
+	// Nonce is the raw per-worker nonce minted at spawn. The worker echoes
+	// it into worker.json; the journal carries NonceDigest of it, never
+	// the raw value (the expected-nonce rule, design §3). Empty in
+	// legacy-shaped handoffs, which climb without the identity check.
+	Nonce string `json:"nonce"`
+	// Generation is the supervisor boot generation pinned at admission
+	// (svc§3): the §5 envelope's generation. Task 4 consumes it.
+	Generation int64 `json:"generation"`
 	// Containment, when set, runs the native inside the boundary: the worker
 	// spawns `__contain` instead (design §2.2). ProxyAllow is the exact
 	// host:port list its egress proxy forwards to; empty denies everything.
@@ -493,7 +505,7 @@ func (w *worker) run(ctx context.Context) (retErr error) {
 	if err != nil {
 		return fmt.Errorf("reading the worker's start time: %w", err)
 	}
-	w.id = Identity{SchemaVersion: identityVersion, RunID: w.runID, AttemptID: w.attemptID, PID: os.Getpid(), StartTime: start, LaunchToken: w.launch.LaunchToken}
+	w.id = Identity{SchemaVersion: identityVersion, RunID: w.runID, AttemptID: w.attemptID, PID: os.Getpid(), StartTime: start, LaunchToken: w.launch.LaunchToken, Nonce: w.launch.Nonce}
 	if err := w.writeIdentity(); err != nil {
 		return err
 	}
@@ -582,7 +594,11 @@ func (w *worker) abort(ctx context.Context, sp *spool, sess adapter.Session, out
 			out.stopBy = "worker"
 		}
 		out.stopStarted = true
-		out.report = sess.Interrupt(ctx)
+		rep, err := w.interrupt(ctx, sess)
+		if err != nil {
+			w.log.Warn("stop refused: worker identity no longer matches the launch", "err", err)
+		}
+		out.report = rep
 	}
 	if !out.exited {
 		select {
@@ -668,6 +684,48 @@ func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session)
 	return out, prog.flush(sp, true)
 }
 
+// errOwnershipUnresolved reports that the worker's identity file no longer
+// matches its launch: the process the ladder would signal may be a
+// stranger, so nothing is signalled. It carries the control-code string so
+// the worker-side refusal agrees with the stop intent's ownership_unresolved.
+var errOwnershipUnresolved = errors.New("ownership_unresolved")
+
+// interrupt runs the session's stop ladder after verifying the worker still
+// owns its identity (I18): every session ladder goes through here (the
+// panic path's direct kill of a just-created owned handle is not a ladder).
+// A launch with no pinned nonce — a legacy-shaped handoff — climbs as
+// before; a pinned launch whose worker.json no longer matches signals
+// nothing and resolves to ownership_unresolved with an unconfirmed report.
+func (w *worker) interrupt(ctx context.Context, sess adapter.Session) (adapter.InterruptReport, error) {
+	if w.launch.Nonce != "" {
+		if err := w.checkStopIdentity(); err != nil {
+			return adapter.InterruptReport{}, err
+		}
+	}
+	return sess.Interrupt(ctx), nil
+}
+
+// checkStopIdentity matches the attempt's worker.json against this worker's
+// launch: the file must name this PID with its live start time and the raw
+// nonce whose digest the supervisor journaled. Any mismatch — including an
+// unreadable file or an unverifiable start time — fails closed, so a
+// replaced file, a reused PID or a mismatched nonce never leads to a signal.
+func (w *worker) checkStopIdentity() error {
+	observed, err := ReadIdentity(w.dir)
+	if err != nil {
+		return fmt.Errorf("%w: reading worker.json: %w", errOwnershipUnresolved, err)
+	}
+	live, err := ProcessStartTime(w.id.PID)
+	if err != nil {
+		return fmt.Errorf("%w: worker liveness is not verifiable: %w", errOwnershipUnresolved, err)
+	}
+	expected := Identity{PID: w.id.PID, StartTime: live, Nonce: NonceDigest(w.launch.Nonce)}
+	if !MatchIdentity(expected, observed) {
+		return fmt.Errorf("%w: worker.json no longer matches the pinned launch", errOwnershipUnresolved)
+	}
+	return nil
+}
+
 // requestStop records one stop request and runs the ladder for it. The first
 // requester stands; later requests join the running ladder through pending.
 func (w *worker) requestStop(ctx context.Context, sp *spool, sess adapter.Session, out *outcome, by, reason string) error {
@@ -687,7 +745,13 @@ func (w *worker) requestStop(ctx context.Context, sp *spool, sess adapter.Sessio
 	pending := make(chan adapter.InterruptReport, 1)
 	out.pending = pending
 	w.pendingStop = pending
-	go func() { pending <- sess.Interrupt(ctx) }()
+	go func() {
+		rep, err := w.interrupt(ctx, sess)
+		if err != nil {
+			w.log.Warn("stop refused: worker identity no longer matches the launch", "err", err)
+		}
+		pending <- rep
+	}()
 	return nil
 }
 
@@ -779,7 +843,11 @@ func (w *worker) conclude(ctx context.Context, sp *spool, sess adapter.Session, 
 		// recorded only after its exit. Anything left in its group is
 		// stopped before anything else, even if the spool then fails.
 		// Nothing is sent when the group is already gone.
-		out.report = sess.Interrupt(ctx)
+		rep, err := w.interrupt(ctx, sess)
+		if err != nil {
+			w.log.Warn("stop refused: worker identity no longer matches the launch", "err", err)
+		}
+		out.report = rep
 	}
 	w.saveStderr()
 	if out.exit.Err != nil {
@@ -800,7 +868,9 @@ func (w *worker) conclude(ctx context.Context, sp *spool, sess adapter.Session, 
 	}
 	if err := sp.emit(evStopped, map[string]any{
 		"confirmed": out.report.Confirmed, "unresolved_pids": unresolved,
-		"signals_sent": sent, "descendant_scan": scan,
+		"sent":           sentSteps(out.report.Sent, w.launch.StopLadder),
+		"ladder_version": w.launch.LadderVersion,
+		"signals_sent":   sent, "descendant_scan": scan,
 		"unresolved_identities": identities,
 	}); err != nil {
 		return err
@@ -808,6 +878,24 @@ func (w *worker) conclude(ctx context.Context, sp *spool, sess adapter.Session, 
 	state, reason := classify(out, len(unresolved) > 0 || scan == scanFailed)
 	w.log.Info("attempt concluded", "state", state, "reason", reason)
 	return emitState(sp, state, reason)
+}
+
+// sentSteps pairs each delivered signal with the grace its rung was given,
+// from the pinned ladder the session climbs in order, so the receipt
+// reflects the climb. A signal with no matching rung — a session that
+// climbed a ladder of its own — carries a zero grace, which the stop intent
+// rejects rather than confirm a climb it cannot vouch for. It never returns
+// nil: the stopped report always carries a sent array.
+func sentSteps(sent []adapter.StopSignal, ladder []adapter.StopStep) []adapter.StopStep {
+	steps := make([]adapter.StopStep, 0, len(sent))
+	for i, sig := range sent {
+		var grace time.Duration
+		if i < len(ladder) && ladder[i].Signal == sig {
+			grace = ladder[i].Grace
+		}
+		steps = append(steps, adapter.StopStep{Signal: sig, Grace: grace})
+	}
+	return steps
 }
 
 const scanFailed = "failed"

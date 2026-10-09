@@ -54,7 +54,7 @@
   - Quarantine returns its failure in the `Result` with a nil handler error: `Execute` rolls a handler's writes back on a returned `*Error`, which would lose the `quarantined` transition; the stored result still replays as `cancel_incomplete`.
 - **Files modified**: `internal/control/stopladder.go`, `internal/control/stop.go`, `internal/control/server.go`, `internal/control/pinning.go`, `internal/control/stop_test.go`, `internal/control/pinning_test.go`, `internal/workers/worker.go`, `internal/workers/identity_test.go`, `specs/in-progress/supervised-stop-recover/tasks.md`, `specs/in-progress/supervised-stop-recover/handoff.md`, `specs/in-progress/supervised-stop-recover/scratchpad.md`.
 
-### Task 2 — Worker climbs the pinned ladder
+### Task 2 — Worker climbs the pinned ladder ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (process signals, cross-platform group semantics)
@@ -76,6 +76,16 @@
   - `TestSpawnMintsAndJournalsNonce`: the `pipeline.go:298` spawn path mints a nonce, journals `attempt.admission_pinned` with the pinned ladder version and the nonce digest (read back verbatim via Task 1's `PinnedAdmission`), and delivers the same raw nonce plus the `CurrentGeneration` value in the `Launch`; the worker's `worker.json` echoes the raw nonce, and a second spawn mints a different value.
 - **Test plan**: Synthetic sleep-child processes in their own group owned by the test; fake session for the mismatch cases; spawn tests fixture a stream-2 lock file for the generation read (existing pipeline spawn tests updated with the same fixture); build-tagged Unix group test (`worker_unix_test.go`) plus a Windows job-object test (`worker_windows_test.go`) on the Windows runner.
 - **Invariants touched**: I06 (v2 §6.4: a sent signal is not a confirmed stop; strangers never signaled); I18 (v2 §2: one process owner — the worker signals only its owned group).
+- **Status**: ✅ Completed — the worker climbs the pinned ladder with signal+grace receipts and the spawn site mints and journals the admission pin; PR #298.
+- **Implementation**: Worker-side `MatchIdentity` gate (live PID/start plus pinned nonce) in front of every session ladder; stopped reports carry `sent` pairs plus `ladder_version`; the spawn site mints the nonce, journals `attempt.admission_pinned`, and delivers the raw nonce plus boot generation in the `Launch`. Commit 21fe0923015080209bf9bce7f5024044c4dc4482.
+- **Spec deviations**:
+  - Unfenced spawns pin generation 0 instead of failing the admission (design §3 says fail): the legacy run path runs lockless by design during migration (svc D1) and a leaf run on a fresh root or a demo on a temp root cannot hold the lock, so failing would brick both with no remedy; zero is never a real boot generation, so it marks unfenced rather than guessing one. Task 4 defines 0's envelope meaning. Review round 1 narrowed this to an absent lock file (`ErrNoSupervisorLock`) or a foreign root (`ErrRootConflict`): a present-but-unreadable lock fails the admission via `admission_pin_failed`, since a torn read must never look like an absent holder.
+  - Legacy-shaped handoffs (empty `Launch.Nonce`) climb without the identity check; the gate arms only when a nonce is pinned.
+  - `readLaunch` does not require the new `Launch` fields: the launch is a stdin-only handoff whose sole producer always sets them.
+  - Production file outside the task list: `internal/cli/render.go` renders the new `attempt.admission_pinned` envelope line — the JSONL stream must mirror the journal.
+  - Production files outside the task list (review round 1): `internal/control/pinning.go` (`CurrentGeneration` maps absent/foreign locks to `ErrNoSupervisorLock`/`ErrRootConflict` and fails closed otherwise) and `internal/control/lock.go` (the `ErrNoSupervisorLock` sentinel; `readMetadataErr` under the unchanged `readMetadata` wrapper) — the spawn site cannot apply the narrowed fallback without the signal.
+  - Test-only files outside the task list: `internal/supervisor/pipeline_test.go` (per-fixture instance locks, per the task's test plan), `internal/cli/render_test.go` (lock fixture for the in-process run), `tests/e2e/tui_test.go` (redact `nonce_sha256` as volatile), `internal/control/pinning_test.go` (sentinel mapping plus the corrupt-lock case, review round 1).
+- **Files modified**: `internal/workers/worker.go`, `internal/workers/worker_test.go`, `internal/workers/worker_unix_test.go`, `internal/workers/worker_windows_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/pinning_test.go`, `internal/supervisor/pipeline_test.go`, `internal/cli/render.go`, `internal/cli/render_test.go`, `tests/e2e/tui_test.go`, `internal/control/pinning.go`, `internal/control/lock.go`, `internal/control/pinning_test.go`, `specs/in-progress/supervised-stop-recover/tasks.md`, `specs/in-progress/supervised-stop-recover/handoff.md`, `specs/in-progress/supervised-stop-recover/scratchpad.md`.
 
 ### Task 3 — One-pass recovery through the supervisor ✅ COMPLETED
 

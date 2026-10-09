@@ -3,7 +3,9 @@ package control
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 
 	"github.com/turbokast/mythhelm/internal/journal"
 )
@@ -55,20 +57,26 @@ func PinnedAdmission(ctx context.Context, j *journal.Journal, runID, attemptID s
 
 // CurrentGeneration reports this supervisor's boot generation from the
 // stream-2 lock-file metadata for dir. The lock must exist, parse, and
-// claim dir's root; otherwise the generation is a guess and a plain
-// error reports it, so the spawn site fails the admission rather than
-// pinning a guessed generation.
+// claim dir's root. An absent lock file reports ErrNoSupervisorLock and
+// a lock serving another root reports ErrRootConflict, so the spawn
+// site can pin those two unfenced cases generation 0; any other
+// failure — an unreadable or unparseable lock file, an unlocatable
+// lock — is a plain error, and the spawn site fails the admission
+// rather than pinning a guessed generation.
 func CurrentGeneration(dir string) (int64, error) {
 	path, err := LockPath()
 	if err != nil {
 		return 0, fmt.Errorf("control: locating the instance lock: %w", err)
 	}
-	meta, ok := readMetadata(path)
-	if !ok {
-		return 0, fmt.Errorf("control: no live supervisor lock at %s", path)
+	meta, err := readMetadataErr(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, fmt.Errorf("%w at %s", ErrNoSupervisorLock, path)
+		}
+		return 0, fmt.Errorf("control: reading the supervisor lock at %s: %w", path, err)
 	}
 	if !sameRoot(meta.Root, canonicalRoot(dir)) {
-		return 0, fmt.Errorf("control: the supervisor serves %s, not %s", meta.Root, dir)
+		return 0, fmt.Errorf("%w: the supervisor serves %s, not %s", ErrRootConflict, meta.Root, dir)
 	}
 	return int64(meta.Generation), nil //nolint:gosec // G115: boot generations increment from 1 and cannot approach 2^63
 }
