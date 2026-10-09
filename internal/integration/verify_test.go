@@ -8,17 +8,22 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/admission"
+	"github.com/turbokast/mythhelm/internal/contain"
 	"github.com/turbokast/mythhelm/internal/integration"
 	"github.com/turbokast/mythhelm/internal/workspace"
 )
 
 func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == contain.Command {
+		os.Exit(contain.Main(os.Args[2:]))
+	}
 	if len(os.Args) > 2 && os.Args[1] == "__verify_helper" {
 		switch os.Args[2] {
 		case "pass":
@@ -77,6 +82,13 @@ func TestMain(m *testing.M) {
 
 func verifyFixture(t *testing.T) (integration.Candidate, admission.ProjectConfig) {
 	t.Helper()
+	return verifyFixtureWith(t, nil)
+}
+
+// verifyFixtureWith is verifyFixture with extra files added to the candidate
+// before it is frozen.
+func verifyFixtureWith(t *testing.T, files map[string]string) (integration.Candidate, admission.ProjectConfig) {
+	t.Helper()
 	f := fixture(t)
 	f.write(t, "mythhelm.toml", "schema_version = 1\n[[checks]]\nname = \"admitted\"\nargv = [\"true\"]\ntimeout = \"2s\"\n")
 	f.git(t, "add", "mythhelm.toml")
@@ -89,6 +101,11 @@ func verifyFixture(t *testing.T) (integration.Candidate, admission.ProjectConfig
 	}
 	if err := os.WriteFile(filepath.Join(clone, "mythhelm.toml"), []byte("schema_version = 1\n[[checks]]\nname = \"injected\"\nargv = [\"missing-injected-tool\"]\ntimeout = \"2s\"\n"), 0o600); err != nil {
 		t.Fatal(err)
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(clone, name), []byte(body), 0o700); err != nil { //nolint:gosec // G306: an executable fixture
+			t.Fatal(err)
+		}
 	}
 	c, err := integration.Freeze(t.Context(), clone, f.base, integration.CommitMeta{
 		RunID: "run_verify", AttemptID: "att_verify", Title: "Demo", Name: "Test User", Email: "test@example.com",
@@ -237,5 +254,175 @@ func TestEvidenceDirectorySymlinkRejected(t *testing.T) {
 	}
 	if _, err := integration.RunChecks(t.Context(), c, cfg, os.Environ()); err == nil {
 		t.Fatal("verification followed an agent-planted evidence symlink")
+	}
+}
+
+func requireBoundary(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("the check boundary is Linux-only in v1")
+	}
+	if a := contain.ProbeLinux(); !a.Supported {
+		t.Skipf("boundary unavailable here: %s", a.Reason)
+	}
+}
+
+// outsideTmp makes a directory outside /tmp, which the boundary replaces.
+func outsideTmp(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp(".", "contain") //nolint:usetesting // must sit outside /tmp, which t.TempDir uses
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return abs
+}
+
+func shCheck(name, script string, args ...string) admission.CheckConfig {
+	return admission.CheckConfig{Name: name, Argv: append([]string{"/bin/sh", "-c", script, "sh"}, args...), Timeout: "10s"}
+}
+
+func TestRestrictedChecksRunContained(t *testing.T) {
+	requireBoundary(t)
+	c, cfg := verifyFixture(t)
+	outside, home := outsideTmp(t), outsideTmp(t)
+	marker := filepath.Join(outside, "pwned")
+	cfg.Checks = []admission.CheckConfig{shCheck("write-outside", `echo x > "$1"`, marker)}
+	env := []string{"PATH=/usr/bin:/bin", "HOME=" + home}
+
+	v, err := integration.RunChecks(t.Context(), c, cfg, env)
+	if err != nil || v.Result != "passed" {
+		t.Fatalf("host policy: %+v, %v; want the write to pass", v, err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("the host check did not write outside the worktree; the fixture proves nothing: %v", err)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+
+	// One verification per candidate: the contained run gets its own.
+	c, _ = verifyFixture(t)
+	v, err = integration.RunChecksWithPolicy(t.Context(), c, cfg, env, integration.RunOptions{Policy: &contain.Policy{Profile: "restricted"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Result != "failed" || v.Checks[0].Status != "failed" {
+		t.Fatalf("contained verification = %s / %s, want the candidate failed, never accepted", v.Result, v.Checks[0].Status)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("a contained check wrote outside the worktree")
+	}
+	if v.Evaluator.Name != contain.BoundaryName {
+		t.Errorf("evaluator = %+v, want the boundary's name", v.Evaluator)
+	}
+
+	// Control: the boundary runs an ordinary check, so the failure above came
+	// from the confinement and not from a broken setup.
+	c, _ = verifyFixture(t)
+	cfg.Checks = []admission.CheckConfig{shCheck("noop", "true")}
+	v, err = integration.RunChecksWithPolicy(t.Context(), c, cfg, env, integration.RunOptions{Policy: &contain.Policy{Profile: "restricted"}})
+	if err != nil || v.Result != "passed" {
+		t.Fatalf("contained no-op check: %+v, %v; want passed", v, err)
+	}
+}
+
+func TestCheckArgvStillAdmittedOnly(t *testing.T) {
+	requireBoundary(t)
+	outside, home := outsideTmp(t), outsideTmp(t)
+	marker := filepath.Join(outside, "candidate-script-ran")
+	// The candidate adds a script of its own and rewrites mythhelm.toml
+	// (verifyFixture); neither is an admitted definition.
+	c, cfg := verifyFixtureWith(t, map[string]string{"evil.sh": "#!/bin/sh\necho x > " + marker + "\n"})
+	env := []string{"PATH=/usr/bin:/bin", "HOME=" + home}
+
+	v, err := integration.RunChecks(t.Context(), c, cfg, env)
+	if err != nil || len(v.Checks) != len(cfg.Checks) || v.Checks[0].Name != "admitted" {
+		t.Fatalf("verification = %+v, %v; want exactly the admitted checks", v, err)
+	}
+	if !reflect.DeepEqual(v.Checks[0].Argv, cfg.Checks[0].Argv) {
+		t.Errorf("executed argv = %q, want the admitted %q", v.Checks[0].Argv, cfg.Checks[0].Argv)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("a script the candidate added ran without being admitted")
+	}
+
+	// Even an admitted check that points at the candidate's script cannot
+	// escape the check policy: the script's write outside the worktree fails.
+	cfg.Checks = []admission.CheckConfig{{Name: "candidate-script", Argv: []string{"./evil.sh"}, Timeout: "10s"}}
+	c, _ = verifyFixtureWith(t, map[string]string{"evil.sh": "#!/bin/sh\necho x > " + marker + "\n"})
+	v, err = integration.RunChecksWithPolicy(t.Context(), c, cfg, env, integration.RunOptions{Policy: &contain.Policy{Profile: "restricted"}})
+	if err != nil || v.Result != "failed" {
+		t.Fatalf("contained candidate script: %+v, %v; want failed", v, err)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("the candidate's script wrote outside the worktree")
+	}
+}
+
+func TestEvaluatorDigestRecorded(t *testing.T) {
+	_, cfg := verifyFixture(t)
+	run := func(cfg admission.ProjectConfig) contain.Evaluator {
+		t.Helper()
+		c, _ := verifyFixture(t) // one verification per candidate
+		v, err := integration.RunChecks(t.Context(), c, cfg, os.Environ())
+		if err != nil || v.Evaluator.Digest == "" {
+			t.Fatalf("verification = %+v, %v; want an evaluator digest", v, err)
+		}
+		return v.Evaluator
+	}
+	first := run(cfg)
+	if again := run(cfg); again != first {
+		t.Errorf("same checks, different evaluators: %+v vs %+v", first, again)
+	}
+	changed := admission.ProjectConfig{Checks: []admission.CheckConfig{cfg.Checks[0]}}
+	changed.Checks[0].Timeout = "3s"
+	if other := run(changed); other.Digest == first.Digest {
+		t.Errorf("a changed check definition kept digest %s: an old row would still apply", first.Digest)
+	}
+}
+
+func TestEvaluatorDigestRepeatable(t *testing.T) {
+	base := contain.Policy{Profile: "restricted", Workdir: "/runs/a/verify", ReadOnly: true, ProxyAddr: "127.0.0.1:1111",
+		AuthBinds: []contain.AuthBind{{Source: "/srv/a/.token", Target: "/scratch/token"}, {Source: "/x/y", Target: "/scratch/aa"}}}
+	checks := []string{"b", "a"}
+	want := contain.EvaluatorDigest("b", "1", base, checks)
+
+	moved := base
+	moved.Workdir, moved.ProxyAddr = "/runs/b/verify", "127.0.0.1:2222"
+	moved.AuthBinds = []contain.AuthBind{{Source: "/other/1", Target: "/scratch/aa"}, {Source: "/other/2", Target: "/scratch/token"}}
+	if got := contain.EvaluatorDigest("b", "1", moved, []string{"a", "b"}); got != want {
+		t.Errorf("runtime-specific values changed the digest: %+v vs %+v", got, want)
+	}
+
+	rw := base
+	rw.ReadOnly = false
+	for name, got := range map[string]contain.Evaluator{
+		"read-only flag":   contain.EvaluatorDigest("b", "1", rw, checks),
+		"one check digest": contain.EvaluatorDigest("b", "1", base, []string{"a", "c"}),
+		"boundary version": contain.EvaluatorDigest("b", "2", base, checks),
+	} {
+		if got.Digest == want.Digest {
+			t.Errorf("changing the %s kept the digest", name)
+		}
+	}
+}
+
+func TestUnavailableChecksStayUnverified(t *testing.T) {
+	c, cfg := verifyFixture(t)
+	cfg.Checks = []admission.CheckConfig{{Name: "missing", Argv: []string{filepath.Join(t.TempDir(), "no-such-check")}, Timeout: "2s"}}
+	v, err := integration.RunChecks(t.Context(), c, cfg, os.Environ())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Result == "passed" || v.Checks[0].Status != "unavailable" || v.Checks[0].ExitCode != nil {
+		t.Fatalf("verification = %+v; want an unavailable check and no acceptance", v)
+	}
+	if v.CandidateCommit != c.Commit {
+		t.Errorf("verification names %s, want the preserved candidate %s", v.CandidateCommit, c.Commit)
 	}
 }

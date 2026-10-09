@@ -55,7 +55,11 @@
 
 ## Task 7 — Protected check evaluator
 
-<!-- pending -->
+- **Produces**: `integration.RunChecksWithPolicy(ctx, cand, cfg, env, RunOptions{KeepGoing, Policy})` (nil policy = host); `Verification.Evaluator` (`contain.Evaluator{Name, Digest}`, also in the `verification.completed` payload); `contain.EvaluatorDigest`, `contain.BoundaryName`/`BoundaryVersion`, `contain.ApplyNamespaces`; `journal.VerificationRow.EvaluatorName`/`EvaluatorDigest` from schema v6 (`verification_evaluators` side table; empty for older rows).
+- **For dependents**: Task 8 renders `Verification.Evaluator` in the receipt; read it from the row (`LatestVerification`), never recompute it. The next free migration is 0007. The pipeline picks the policy from `Decision.Profile.Contained`; a contained check needs `HOME` in the env outside `/tmp`, so callers building the check env must keep that (it is the Task 2 contract).
+- **Behaviour change**: a missing check executable now ends `failed`/`verification_unavailable` (was `verification_failed`); `inspect` still skips checks before this stage (Task 6).
+- **Tests**: contained-check tests skip off Linux or where `ProbeLinux` fails, need the check binary outside `/tmp` (the boundary replaces it) and one fresh candidate per verification (evidence directories are keyed by commit).
+- **Deviations**: see the entry (migration 0006 and a side table; new `evaluator.go`).
 
 ## Task 8 — Honesty surfaces and receipt boundary evidence
 

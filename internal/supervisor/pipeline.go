@@ -16,6 +16,7 @@ import (
 
 	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/billing"
+	"github.com/turbokast/mythhelm/internal/contain"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/integration"
 	"github.com/turbokast/mythhelm/internal/journal"
@@ -902,9 +903,15 @@ func (p *pipeline) conclude(ctx context.Context) error {
 		if err != nil {
 			return errors.Join(err, p.runTo(ctx, RunFailed, "verification_unavailable"))
 		}
-		v, err := integration.RunChecksWithOptions(ctx, integration.Candidate{
+		// restricted checks run in the boundary with a check policy (design
+		// §2.7); trusted-host keeps host checks.
+		opts := integration.RunOptions{KeepGoing: p.d.KeepGoing}
+		if p.d.Profile.Contained {
+			opts.Policy = &contain.Policy{Profile: admission.ProfileRestricted}
+		}
+		v, err := integration.RunChecksWithPolicy(ctx, integration.Candidate{
 			Commit: candidate.Commit, Workspace: p.d.Workdir,
-		}, p.d.ProjectConfig, p.d.Proposal.Spec.Env, p.d.KeepGoing)
+		}, p.d.ProjectConfig, p.d.Proposal.Spec.Env, opts)
 		if err != nil {
 			p.h.Notice(fmt.Sprintf("verification could not complete: %v", err))
 			return p.runTo(ctx, RunFailed, "verification_unavailable")
@@ -918,14 +925,15 @@ func (p *pipeline) conclude(ctx context.Context) error {
 		id := ids.New("ver")
 		ev, err := newEvent(p.d.RunID, p.d.TaskID, p.d.AttemptID, "verification.completed",
 			map[string]any{"verification_id": id, "candidate_commit": v.CandidateCommit,
-				"config_sha256": v.ConfigSHA256, "result": v.Result,
+				"config_sha256": v.ConfigSHA256, "result": v.Result, "evaluator": v.Evaluator,
 				"checks": v.Checks, "baseline": "not-run"}, v.FinishedAt)
 		if err != nil {
 			return err
 		}
 		if err := p.prod.append(ctx, p.j, ev, func(tx *sql.Tx) error {
 			row := journal.VerificationRow{ID: id, RunID: p.d.RunID, CandidateCommit: v.CandidateCommit,
-				ConfigSHA256: v.ConfigSHA256, Result: v.Result, StartedAt: v.StartedAt, FinishedAt: v.FinishedAt}
+				ConfigSHA256: v.ConfigSHA256, Result: v.Result, StartedAt: v.StartedAt, FinishedAt: v.FinishedAt,
+				EvaluatorName: v.Evaluator.Name, EvaluatorDigest: v.Evaluator.Digest}
 			for _, c := range v.Checks {
 				row.Checks = append(row.Checks, journal.CheckRow{Name: c.Name, Argv: c.Argv, Status: c.Status,
 					ExitCode: c.ExitCode, DurationMS: c.DurationMS, EvidencePath: c.EvidencePath,
@@ -939,7 +947,13 @@ func (p *pipeline) conclude(ctx context.Context) error {
 			return err
 		}
 		if v.Result != "passed" {
-			return p.runTo(ctx, RunFailed, "verification_failed")
+			// A check that could not run leaves the candidate unverified; it
+			// is never reported as a failed or accepted one (AC-5.2).
+			reason := "verification_failed"
+			if slices.ContainsFunc(v.Checks, func(c integration.CheckResult) bool { return c.Status == "unavailable" }) {
+				reason = "verification_unavailable"
+			}
+			return p.runTo(ctx, RunFailed, reason)
 		}
 		return p.runTo(ctx, RunReadyForReview, "")
 	}

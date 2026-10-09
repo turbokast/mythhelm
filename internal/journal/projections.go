@@ -66,8 +66,11 @@ type CandidateRow struct {
 // VerificationRow is a completed verification's projection with its checks.
 type VerificationRow struct {
 	ID, RunID, CandidateCommit, ConfigSHA256, Result string
-	StartedAt, FinishedAt                            time.Time
-	Checks                                           []CheckRow
+	// EvaluatorName and EvaluatorDigest identify the boundary, check policy
+	// and check definitions that ran the checks; empty when unrecorded.
+	EvaluatorName, EvaluatorDigest string
+	StartedAt, FinishedAt          time.Time
+	Checks                         []CheckRow
 }
 
 // CheckRow is one check's projected result within a verification.
@@ -86,6 +89,13 @@ func InsertVerification(ctx context.Context, tx *sql.Tx, v VerificationRow) erro
 		v.Result, formatTime(v.StartedAt), formatTime(v.FinishedAt))
 	if err != nil {
 		return fmt.Errorf("journal: inserting verification: %w", err)
+	}
+	if v.EvaluatorDigest != "" {
+		_, err = tx.ExecContext(ctx, `INSERT INTO verification_evaluators
+			(verification_id, evaluator_name, evaluator_digest) VALUES (?, ?, ?)`, v.ID, v.EvaluatorName, v.EvaluatorDigest)
+		if err != nil {
+			return fmt.Errorf("journal: inserting verification evaluator: %w", err)
+		}
 	}
 	for _, c := range v.Checks {
 		argv, err := json.Marshal(c.Argv)
@@ -424,9 +434,11 @@ func (j *Journal) LatestAttempt(ctx context.Context, runID string) (AttemptRow, 
 func (j *Journal) LatestVerification(ctx context.Context, runID string) (VerificationRow, error) {
 	var v VerificationRow
 	var start, finish string
-	err := j.db.QueryRowContext(ctx, `SELECT verification_id, run_id, candidate_commit, config_sha256, result, started_at, finished_at
-		FROM verifications WHERE run_id = ? ORDER BY finished_at DESC, verification_id DESC LIMIT 1`, runID).Scan(
-		&v.ID, &v.RunID, &v.CandidateCommit, &v.ConfigSHA256, &v.Result, &start, &finish)
+	err := j.db.QueryRowContext(ctx, `SELECT v.verification_id, v.run_id, v.candidate_commit, v.config_sha256, v.result, v.started_at, v.finished_at,
+		COALESCE(e.evaluator_name, ''), COALESCE(e.evaluator_digest, '')
+		FROM verifications v LEFT JOIN verification_evaluators e ON e.verification_id = v.verification_id
+		WHERE v.run_id = ? ORDER BY v.finished_at DESC, v.verification_id DESC LIMIT 1`, runID).Scan(
+		&v.ID, &v.RunID, &v.CandidateCommit, &v.ConfigSHA256, &v.Result, &start, &finish, &v.EvaluatorName, &v.EvaluatorDigest)
 	if errors.Is(err, sql.ErrNoRows) {
 		return VerificationRow{}, ErrNotFound
 	}
