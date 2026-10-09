@@ -23,7 +23,9 @@
 
 ## Task 4 — Coordination records
 
-<!-- pending -->
+- **Produces**: `v2contract.ContextManifest` (+ `type Handoff = ContextManifest`), `v2contract.Message` (+ open `DeliveryDisposition`), `v2contract.Grant` (+ `type EffectIntent = Grant`; `GrantStanding`/`GrantOneUse` consts for closed `Use`), `v2contract.Reservation` (open `Status`, `Quantity` `"unknown"`-or-value), `v2contract.PolicyVersion` (`Version >= 1`), `v2contract.Experiment` (finite `Splits`, open `Disposition`); all value-receiver `Validate`, design §3 exact fields/tags.
+- **For dependents**: six goldens under `internal/v2contract/testdata/records/` (canonical single-line JSON + trailing newline; tests compare against `bytes.TrimSpace`). `Reservation` `"quantity": null` decodes to `""` then fails `Validate` naming `quantity` — Task 8's null-measurement fixture relies on this. Aliases decode via `Decode[Handoff]`/`Decode[EffectIntent]` with equal digests.
+- **Deviations affecting later tasks**: none. `codec_test.go` lost Task 1's provisional `//nolint:unused` (comment-only; `loadGolden` signature unchanged).
 
 ## Task 5 — Machine-checkable lifecycles
 

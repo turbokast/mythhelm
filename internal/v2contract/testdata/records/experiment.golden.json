@@ -1,0 +1,1 @@
+{"schema_version":2,"experiment_id":"exp_demo_0001","hypothesis":"cache wins","population":"nightly","unit":"run","variants":["a","b"],"splits":{"a":0.5,"b":0.5},"assignment":"hash","budgets":[{"name":"gpu","limit":"10","unit":"hours"}],"metrics":["latency"],"margins":{"latency":"5%"},"stopping_rule":"n at least 100","evidence":["ev-1"],"disposition":"running"}

@@ -89,7 +89,7 @@
 - **Test plan**: Golden round-trips via `loadGolden`; enum table tests; absence-vs-zero assertions on optional fields.
 - **Invariants touched**: I09 (v2 §2: uncertainty preserved, absence never zero); I20 (v2 §2: `DesignDecision` revisions ordered via `Supersedes`); I07 lineage (v2 §2: `Verification` is the sole attestation shape).
 
-### Task 4 — Coordination records
+### Task 4 — Coordination records ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (8 files; one mechanical pattern across 6 record shapes)
@@ -114,6 +114,10 @@
   - `TestExperimentRejectsNonFiniteSplits`: NaN and ±Inf in `Splits` values fail `Validate` naming the field; finite splits pass.
 - **Test plan**: Golden round-trips via `loadGolden`; alias digest equality; enum/open-string table tests.
 - **Invariants touched**: I09 (v2 §2: unknown stated explicitly, never empty); I20 (v2 §2: `PolicyVersion` immutability fields); I03 (v2 §2: `Grant` is the authority shape; strict decode).
+- **Status**: ✅ Completed — six coordination records with strict validation and golden fixtures; PR #237.
+- **Implementation**: Goldens are canonical single-line JSON (no `<`/`>`/`&`: `encoding/json` escapes them, breaking byte-identity). `Grant.Use` closed via `GrantStanding`/`GrantOneUse`; open strings validated non-empty. Commit 64c0cef.
+- **Spec deviations**: `internal/v2contract/codec_test.go` (outside Files): removed Task 1's provisional `//nolint:unused` on `loadGolden`, now used — keeping it fails `golangci-lint` (`nolintlint`). Comment-only, no behaviour change.
+- **Files modified**: `internal/v2contract/records_coordination.go`, `internal/v2contract/records_coordination_test.go`, `internal/v2contract/testdata/records/context_manifest.golden.json`, `internal/v2contract/testdata/records/message.golden.json`, `internal/v2contract/testdata/records/grant.golden.json`, `internal/v2contract/testdata/records/reservation.golden.json`, `internal/v2contract/testdata/records/policy_version.golden.json`, `internal/v2contract/testdata/records/experiment.golden.json`, `internal/v2contract/codec_test.go`, `specs/in-progress/v2-contract-vocabulary/tasks.md`, `specs/in-progress/v2-contract-vocabulary/handoff.md`, `specs/in-progress/v2-contract-vocabulary/scratchpad.md`.
 
 ### Task 5 — Machine-checkable lifecycles
 

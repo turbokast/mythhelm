@@ -22,4 +22,5 @@
 ## Discoveries
 
 - (Implementing tasks append one entry each: what was learned, with file:line or command evidence.)
+- Task 4: golden fixtures must avoid `<`/`>`/`&` in string values — `encoding/json.Marshal` escapes them (`>` → `\u003e`), breaking byte-identical round-trips (`internal/v2contract/records_coordination_test.go: assertRoundTrip`). Also: the first task to call `loadGolden` must delete Task 1's provisional `//nolint:unused` or `golangci-lint` fails on `nolintlint`.
 - Task 7: the first test file to call `loadGolden` must delete its `//nolint:unused` directive (`internal/v2contract/codec_test.go:15`), else `golangci-lint run` fails on nolintlint; this task removed it.

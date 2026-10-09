@@ -1,0 +1,1 @@
+{"schema_version":2,"message_id":"msg_demo_0001","sender":"controller","recipient":"worker-1","kind":"directive","caused_by":"evt_demo_0009","references":["ref-1"],"sensitivity":"internal","expires_at":"2026-10-09T12:00:00Z","delivery":"queued_for_next_turn"}
