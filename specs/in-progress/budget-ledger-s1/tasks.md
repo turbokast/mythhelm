@@ -12,7 +12,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — billing kernel: types, envelopes, codes
+### Task 1 — billing kernel: types, envelopes, codes ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -32,6 +32,10 @@
   - `TestCodesPinV245Strings`: codes equal exactly `allowance_exhausted` and `budget_exhausted` (stability pin for MH-21 adoption); any other string fails. Fails before: package absent.
 - **Test plan**: Table tests, no I/O; durations asserted exactly (no sleeps).
 - **Invariants touched**: I09 (v2 §2: nil/unknown stays distinct from zero in every type); I10 (v2 §2: no hard-limit advertising in this package — types carry ceilings, never provider caps).
+- **Status**: ✅ Completed — `internal/billing` ships the reading/total types, envelope ceilings, deadline arithmetic and the S1 exhaustion codes; PR #240.
+- **Implementation**: `ResolveCeilings` treats a negative field as unset and zero as set; `Deadline` extends only by quiesced spans (an unresumed quiesced span runs to `now`) and reports expired when `now` is not before the deadline. Commit 8561511.
+- **Spec deviations**: None.
+- **Files modified**: `internal/billing/billing.go`, `internal/billing/envelope.go`, `internal/billing/billing_test.go`, `internal/billing/envelope_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
 ### Task 2 — Counter normalization and component split
 
