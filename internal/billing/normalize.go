@@ -72,8 +72,15 @@ func checkReading(r Reading) error {
 func totalFor(k ScopeKey, g []Reading, applied map[EventID]bool) (ScopeTotal, error) {
 	var base *Reading
 	for i := range g {
-		if g[i].Cumulative != nil && (base == nil || !g[i].At.Before(base.At)) {
-			base = &g[i]
+		c := &g[i]
+		if c.Cumulative == nil {
+			continue
+		}
+		switch {
+		case base == nil || c.At.After(base.At):
+			base = c
+		case c.At.Equal(base.At) && !sameDecimal(*c.Cumulative, *base.Cumulative):
+			return ScopeTotal{}, fmt.Errorf("%w: cumulatives %s and %s share one observation time", ErrReadingShape, *base.Cumulative, *c.Cumulative)
 		}
 	}
 
@@ -118,6 +125,12 @@ func totalFor(k ScopeKey, g []Reading, applied map[EventID]bool) (ScopeTotal, er
 		label = qualify.Estimated
 	}
 	return ScopeTotal{Total: &total, Label: label}, nil
+}
+
+func sameDecimal(a, b string) bool {
+	x, _ := new(big.Rat).SetString(a)
+	y, _ := new(big.Rat).SetString(b)
+	return x.Cmp(y) == 0
 }
 
 // sumDecimals adds validated decimal texts exactly, at the largest scale

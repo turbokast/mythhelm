@@ -283,3 +283,27 @@ func TestSplitUsageSumDoesNotOverflow(t *testing.T) {
 	st := SplitUsage("claude-code", adapter.TokenUsage{Input: new(int64(math.MaxInt64)), Output: new(int64(1)), CacheRead: new(int64(0)), CacheCreation: new(int64(0))})
 	wantTotal(t, st, "9223372036854775808")
 }
+
+func TestNormalizeEqualTimeCumulativesConflictRejected(t *testing.T) {
+	for _, order := range [][2]string{{"100", "90"}, {"90", "100"}} {
+		rs := []Reading{
+			cum("m", "tokens", "native-reported", order[0], t0),
+			cum("m", "tokens", "native-reported", order[1], t0),
+		}
+		if _, err := Normalize(rs, nil, nil); !errors.Is(err, ErrReadingShape) {
+			t.Fatalf("order %v: err = %v, want ErrReadingShape", order, err)
+		}
+	}
+}
+
+func TestNormalizeEqualTimeCumulativesAgreeing(t *testing.T) {
+	rs := []Reading{
+		cum("m", "tokens", "native-reported", "100", t0),
+		cum("m", "tokens", "native-reported", "100.0", t0),
+	}
+	n, err := Normalize(rs, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantTotal(t, totalOf(t, n, tokens), "100")
+}
