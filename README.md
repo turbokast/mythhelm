@@ -23,6 +23,7 @@ Supported now:
 - Headless `mythhelm run --adapter fake|claudecode` with admission, supervision, verification, review, apply and recovery.
 - `mythhelm demo`: a fully offline scripted run in a disposable repository; every screen is labelled `SCRIPTED DEMO`.
 - `mythhelm doctor`: read-only prerequisite report; it writes nothing and prints no credential values.
+- `mythhelm supervisor`: per-user supervisor service, lazily started, with authenticated local IPC (Unix socket, Windows named pipe).
 - Linux, macOS and Windows. Native Claude execution is refused on Windows by design (exit 7); the scripted adapter runs everywhere.
 - Dogfood billing postures `local-scripted` and `subscription-declared` (user-declared, never verified by MYTHHELM).
 

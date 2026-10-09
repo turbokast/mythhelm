@@ -29,7 +29,33 @@
 
 ## Task 2 — Append accepts v2 envelopes post-migration
 
-<!-- pending -->
+- **Produces**: `Journal.Append` with the same signature, now accepting
+  `schema_version == 2` under the §7 phase rule (nothing pre-`drained`;
+  only `migration.quarantined`/`migration.imported` at `drained`;
+  everything at `imported`/`adopted`); unexported
+  `appendTx(ctx, tx, ev, project)` core (`internal/journal/journal.go`)
+  that `Append` delegates to after `BeginTx`; v2 failures as a valid
+  `*v2contract.ControlError` plus the stream-1 cause
+  (`invalid_contract`, `ownership_unresolved` on stale generation,
+  `persistence_unavailable` on ledger I/O). Tests in
+  `internal/journal/append_v2_test.go`, including the v1 golden.
+- **For dependents**: Task 3 landed first (PR #287) with its own
+  mirrored `appendImported` in `internal/migrate/import.go`, since
+  `appendTx` is unexported per this task's spec and unreachable
+  cross-package — consolidating that mirror onto `appendTx` is a
+  follow-up needing a thin exported wrapper in `internal/journal`
+  (one-line deviation). Never call db-level `Append` from inside
+  `Mutate` (it takes its own `BeginTx`). A duplicate `event_id` acks
+  nil with no append — ID-reuse-with-different-content conflicts are
+  the caller's layer (import markers), never `Append`'s. v1 behavior,
+  messages and sentinels are byte-identical, and the v1 golden pins
+  decodes; phase refusals also wrap `journal.ErrInvalidEvent`.
+- **Deviations that change a later task's inputs**: none — the phase
+  vocabulary, migration number (0007) and `migration_state` shape from
+  Task 1 are unchanged. Note the consolidation follow-up above, and
+  that phase words live as literals in `internal/journal` mirroring
+  `migrate.Phase` (no import either way between the packages, or it
+  cycles).
 
 ## Task 3 — Legacy import as one-task runs
 
@@ -83,7 +109,38 @@
 
 ## Task 5 — Backup and restore with downgrade refusal
 
-<!-- pending -->
+- **Produces**: `migrate.Backup(ctx, db, dir) (BackupInfo, error)` and
+  `migrate.Restore(ctx, info, dir) error` in `internal/migrate/backup.go`
+  with `migrate.BackupInfo` exactly as designed (`path`,
+  `schema_version`, `build_version`, `sha256`, `created_at`);
+  tests in `internal/migrate/backup_test.go`.
+- **For dependents**: `dir` is the state dir in both calls. Backup lands
+  at `<dir>/mythhelm.db.bak-migration-v<N>` with the sidecar at
+  `<backup>.json` (Task 6: expect this name in `Plan.BackupTo`).
+  Every failure is a `*v2contract.ControlError` passing `Validate` —
+  assert codes with `errors.As`: `invalid_contract` (overwrite,
+  digest mismatch), `schema_too_new` (backup newer than the binary),
+  `persistence_unavailable` (I/O, integrity failures). All refusals
+  return before writing anything to the target dir.
+- **For dependents**: `Restore` refuses with `persistence_unavailable`
+  when the target holds a non-empty `-wal` — close every handle on
+  the state database first (last close checkpoints the WAL). The
+  backup file's own `user_version` is authoritative: a sidecar
+  disagreeing with it refuses `invalid_contract`, a lowered sidecar
+  over a newer file still refuses `schema_too_new`.
+- **For Task 7**: `Restore` opens the backup and the restored copy
+  read-only (`mode=ro`) for `PRAGMA integrity_check` and the
+  backup's `user_version` read; exclude those opens from
+  `TestMigrateWritesRunInMutate` exactly as the design excludes
+  Backup's single `VACUUM INTO` `Exec`. Corrupt-source backup and
+  corrupt-copy restore (matching digest) both abort with
+  `persistence_unavailable` — verified by a throwaway probe, not a
+  committed test, so Task 7 owns that pin.
+- **Deviations that change a later task's inputs**: backup.go mirrors
+  `journal.DBName`/`journal.SchemaVersion` (import cycle — journal's
+  tests import migrate); the next schema bump must sweep
+  `supportedSchemaVersion` (Task 6+, `TestBackupPinsMatchJournal`
+  fails otherwise).
 
 ## Task 6 — `mythhelm migrate` with hermetic preview
 

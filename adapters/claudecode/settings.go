@@ -104,25 +104,83 @@ func configRoots(home string, env []string) (configDir, claudeJSONPath, managed 
 	return configDir, claudeJSONPath, managed
 }
 
+// settingsSource is one inventoried native config file.
+type settingsSource struct{ name, path, kind string }
+
+// staticInventorySources lists the fixed §6.2 file sources in inventory
+// order. Both the inventory and the admitted-path mapping build on it, so
+// the two can never drift apart.
+func staticInventorySources(workspace, configDir, claudeJSONPath, managed string) []settingsSource {
+	sources := []settingsSource{{"user", filepath.Join(configDir, "settings.json"), "settings"}, {"project", filepath.Join(workspace, ".claude", "settings.json"), "settings"}, {"project_local", filepath.Join(workspace, ".claude", "settings.local.json"), "settings"}, {"project_mcp", filepath.Join(workspace, ".mcp.json"), "mcp"}, {"user_mcp", claudeJSONPath, "claude_json"}}
+	if managed != "" {
+		sources = append(sources, settingsSource{"managed", filepath.Join(managed, "managed-settings.json"), "settings"}, settingsSource{"managed_mcp", filepath.Join(managed, "managed-mcp.json"), "mcp"})
+	}
+	return sources
+}
+
+func inventorySources(workspace, configDir, claudeJSONPath, managed string) ([]settingsSource, error) {
+	sources := staticInventorySources(workspace, configDir, claudeJSONPath, managed)
+	if managed == "" {
+		return sources, nil
+	}
+	entries, err := managedFragments(filepath.Join(managed, "managed-settings.d"))
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".") || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		sources = append(sources, settingsSource{fmt.Sprintf("managed_fragment_%d", len(sources)), filepath.Join(managed, "managed-settings.d", entry.Name()), "settings"})
+	}
+	return sources, nil
+}
+
+// AdmittedConfigPaths maps each inventory source name to the absolute path
+// inventoried for the given home and workspace (design §4). The worker's
+// pre-exec re-hash uses it to re-verify the mutable files behind an
+// admitted manifest: every key of `Manifest.Digests` has an entry here.
+// Project sources point at the live workdir paths; admission inventories
+// the committed blobs for those instead, and they need no re-hash
+// (immutable). The mapping follows the ambient `CLAUDE_CONFIG_DIR`, like
+// `InventorySettings`; callers with an admitted child env use
+// `AdmittedConfigPathsForEnv`. A manifest digest key with no entry here
+// (non-absolute roots, or a managed-fragment listing that failed after
+// admission) is a missing mapping, never a skipped source: the caller
+// must fail closed instead of re-hashing without it.
+func AdmittedConfigPaths(home, workdir string) map[string]string {
+	return AdmittedConfigPathsForEnv(home, workdir, os.Environ())
+}
+
+// AdmittedConfigPathsForEnv binds the config root to the admitted child
+// env, mirroring `InventorySettingsForEnv`. Non-absolute roots yield an
+// empty map, mirroring the inventory's `config_root` refusal; a
+// managed-fragment listing failure omits the fragments but keeps the
+// fixed sources.
+func AdmittedConfigPathsForEnv(home, workdir string, env []string) map[string]string {
+	configDir, claudeJSONPath, managed := configRoots(home, env)
+	if !filepath.IsAbs(home) || !filepath.IsAbs(workdir) || !filepath.IsAbs(configDir) {
+		return map[string]string{}
+	}
+	sources, err := inventorySources(workdir, configDir, claudeJSONPath, managed)
+	if err != nil {
+		sources = staticInventorySources(workdir, configDir, claudeJSONPath, managed)
+	}
+	paths := make(map[string]string, len(sources))
+	for _, src := range sources {
+		paths[src.name] = src.path
+	}
+	return paths
+}
+
 func inventorySettings(home, workspace, configDir, claudeJSONPath, managed string, blobs map[string][]byte) (Manifest, error) {
 	manifest := Manifest{Digests: map[string]string{}, MCPServers: []string{}, EnabledPlugins: []string{}}
 	if !filepath.IsAbs(home) || !filepath.IsAbs(workspace) || !filepath.IsAbs(configDir) {
 		return Manifest{}, settingsError("config_root")
 	}
-	type source struct{ name, path, kind string }
-	sources := []source{{"user", filepath.Join(configDir, "settings.json"), "settings"}, {"project", filepath.Join(workspace, ".claude", "settings.json"), "settings"}, {"project_local", filepath.Join(workspace, ".claude", "settings.local.json"), "settings"}, {"project_mcp", filepath.Join(workspace, ".mcp.json"), "mcp"}, {"user_mcp", claudeJSONPath, "claude_json"}}
-	if managed != "" {
-		sources = append(sources, source{"managed", filepath.Join(managed, "managed-settings.json"), "settings"}, source{"managed_mcp", filepath.Join(managed, "managed-mcp.json"), "mcp"})
-		entries, err := managedFragments(filepath.Join(managed, "managed-settings.d"))
-		if err != nil {
-			return Manifest{}, settingsError("managed_fragments")
-		}
-		for _, entry := range entries {
-			if strings.HasPrefix(entry.Name(), ".") || !strings.HasSuffix(entry.Name(), ".json") {
-				continue
-			}
-			sources = append(sources, source{fmt.Sprintf("managed_fragment_%d", len(sources)), filepath.Join(managed, "managed-settings.d", entry.Name()), "settings"})
-		}
+	sources, err := inventorySources(workspace, configDir, claudeJSONPath, managed)
+	if err != nil {
+		return Manifest{}, settingsError("managed_fragments")
 	}
 	for _, src := range sources {
 		raw, present, err := readSource(src.name, src.path, blobs)

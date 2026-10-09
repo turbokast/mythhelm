@@ -485,7 +485,7 @@
   model output grant no authority); I20 (v2 §2: changed config invalidates
   trust before the next launch).
 
-### Task 10 — Adapter startup-inventory seam
+### Task 10 — Adapter startup-inventory seam ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -516,6 +516,10 @@
 - **Invariants touched**: I03 (v2 §2: plugin and MCP content cannot widen
   launch authority); I20 (v2 §2: every trusted source has a path the re-hash
   can re-verify).
+- **Status**: ✅ Completed — the Claude Code admitted-config path mapping is exposed for the worker re-hash, and plugins, MCP servers and surplus session routes are pinned to never widen argv, env or funding; PR #279.
+- **Implementation**: `inventorySources` is shared by the inventory and `AdmittedConfigPaths`, so the mapping cannot drift from the digests. `user_mcp` is pinned by path (its digest covers the selected MCP subset, never the whole file). Commit 0ffe54d.
+- **Spec deviations**: `AdmittedConfigPathsForEnv(home, workdir, env)` is added beside the specified `AdmittedConfigPaths`: the config root depends on the admitted child env (`CLAUDE_CONFIG_DIR`), which the two-argument form cannot see; the new form mirrors `InventorySettingsForEnv` so Task 9 can bind it exactly.
+- **Files modified**: `adapters/claudecode/settings.go`, `adapters/claudecode/settings_test.go`, `adapters/claudecode/launch_test.go`, `specs/in-progress/contained-execution-profiles/tasks.md`, `specs/in-progress/contained-execution-profiles/handoff.md`, `specs/in-progress/contained-execution-profiles/scratchpad.md`.
 
 ### Task 11 — Adversarial suite and frozen v1 evidence
 
