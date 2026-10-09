@@ -12,6 +12,7 @@ import (
 	"runtime"
 
 	"github.com/turbokast/mythhelm/internal/admission"
+	"github.com/turbokast/mythhelm/internal/contain"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/security"
 )
@@ -39,6 +40,16 @@ func eventValue(m map[string]any, key string) any {
 		return known(s)
 	}
 	return v
+}
+
+// boundaryClaim renders one coverage dimension: the mechanism name when the
+// admitted evidence enforces it, unknown otherwise — never a word like
+// contained or verified that would overstate it (I09).
+func boundaryClaim(c contain.Claim) any {
+	if !c.Enforced {
+		return unknown
+	}
+	return known(c.Name)
 }
 
 // BuildReceipt reads the durable run and attempt projections, plus the
@@ -96,7 +107,17 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 	}
 	profile := known(run.ExecutionProfile)
 	if profile != unknown && profile == "trusted-host" {
-		profile += " (not contained)"
+		profile += " (" + admission.TrustedHostDisclosure + ")"
+	}
+	boundary := any(unknown)
+	if ev := adm.ExecutionProfile.Boundary; ev != nil {
+		boundary = map[string]any{"name": known(ev.Boundary), "version": known(ev.Version),
+			"coverage": map[string]any{
+				"filesystem": boundaryClaim(ev.Coverage.Filesystem),
+				"process":    boundaryClaim(ev.Coverage.Process),
+				"network":    boundaryClaim(ev.Coverage.Network),
+				"credential": boundaryClaim(ev.Coverage.Credential),
+			}}
 	}
 	digests := map[string]any{"user": unknown, "project": unknown}
 	for _, source := range []string{"user", "project"} {
@@ -167,7 +188,8 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 		"admitted_snapshot": map[string]any{"source_repo": known(run.SourceRepo), "branch": known(run.SourceBranch), "base_rev": known(run.BaseRev), "dirty_at_admission": dirty},
 		"execution_bundle": map[string]any{"harness": known(adm.Adapter.Harness), "adapter": known(run.AdapterID), "surface": known(adm.Adapter.Surface),
 			"native_version": known(adm.Native.Version), "native_sha256": known(adm.Native.SHA256), "model": eventValue(nativeSession, "model"),
-			"permission_mode": eventValue(nativeSession, "permission_mode"), "allowed_tools": tools, "execution_profile": profile, "compatibility": known(adm.Native.Compatibility)},
+			"permission_mode": eventValue(nativeSession, "permission_mode"), "allowed_tools": tools, "execution_profile": profile, "compatibility": known(adm.Native.Compatibility),
+			"boundary": boundary},
 		"fidelity_differences": fidelity,
 		"native_configuration": map[string]any{"settings_digests": digests, "hooks": hooks, "mcp_servers": mcp, "trust_grant": known(adm.NativeTrustGrant)},
 		"billing": map[string]any{"mode": known(run.BillingPosture), "qualified": qualified, "g05": known(adm.Billing.G05),
@@ -180,7 +202,7 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 			"duration_ms": eventValue(native, "duration_ms"), "session_id": known(session), "permission_denials": denials},
 		"candidate": map[string]any{"base_rev": unknown, "commit": unknown, "tree_id": unknown, "patch_sha256": unknown,
 			"changed_paths": unknown, "flags": []any{}, "integration": "single candidate on admitted snapshot; candidate is the combined revision"},
-		"verification":     map[string]any{"config_sha256": unknown, "baseline": "not-run", "checks": []any{}},
+		"verification":     map[string]any{"config_sha256": unknown, "baseline": "not-run", "checks": []any{}, "evaluator": unknown},
 		"external_effects": []any{}, "execution_host": map[string]any{"os": runtime.GOOS, "arch": runtime.GOARCH},
 		"host_integration":       "standalone (Herdr out of scope)",
 		"unknowns":               []string{"whether any inference request preceded the init event", "native telemetry egress", "descendants outside the process group"},
@@ -224,7 +246,11 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 			checks = append(checks, map[string]any{"name": known(c.Name), "status": known(c.Status), "exit_code": code,
 				"evidence": known(c.EvidencePath), "sha256": known(c.EvidenceSHA256)})
 		}
-		r["verification"] = map[string]any{"config_sha256": known(v.ConfigSHA256), "baseline": "not-run", "checks": checks}
+		evaluator := any(unknown)
+		if v.EvaluatorDigest != "" {
+			evaluator = map[string]any{"name": known(v.EvaluatorName), "digest": known(v.EvaluatorDigest)}
+		}
+		r["verification"] = map[string]any{"config_sha256": known(v.ConfigSHA256), "baseline": "not-run", "checks": checks, "evaluator": evaluator}
 	}
 	return r, nil
 }

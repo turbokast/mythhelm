@@ -38,3 +38,4 @@
 
 
 - Task 4: a failure inside `__contain` before exec is a native exit code 1 to the worker, not `launch_failed` (design §2.2 says launch_failed). Closing that gap needs a CLOEXEC status pipe from `__contain`; Task 5 or 9 should decide whether the refusal text can rely on `ProbeLinux` alone.
+- Task 8: two weaker `not contained` wordings remain outside the disclosure pin by design (the task's test plan anchors to exact strings, not file-wide matches): the `BlockedError` fallback `Action` in `internal/admission/boundary.go` and the probe `Sandbox.Scope` in `adapters/claudecode/probe.go`. A follow-up may align them with `admission.TrustedHostDisclosure`; neither is an acceptance surface.
