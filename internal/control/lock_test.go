@@ -34,9 +34,13 @@ func runLockHolder() int {
 		return 3
 	}
 	defer release()
-	// Hold the lock until killed. No readiness file is needed: the parent
-	// polls the lock metadata for this process's PID.
-	select {}
+	// Hold the lock until the parent kills this holder. No readiness file
+	// is needed: the parent polls the lock metadata for this process's
+	// PID. Sleep (a pending timer), never a bare select{}: this child has
+	// no other goroutine, so select{} trips the runtime's
+	// all-goroutines-asleep deadlock detector on some platforms.
+	time.Sleep(1000 * time.Hour)
+	return 0 // Unreachable: the parent kills the holder first.
 }
 
 func TestSecondInstanceHeld(t *testing.T) {
