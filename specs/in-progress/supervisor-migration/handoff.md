@@ -95,17 +95,19 @@
   carries run IDs only). Adopted runs keep live pids under their existing
   launch identity — never relaunch. Terminal states are the complement of
   `supervisor.activeStates`; active runs without a live verified worker
-  (including rowless dirs) quarantine. Drain re-enumerates twice for
-  admission racers and aborts if runs still appear. The `spawnWorker` seam
+  (including rowless dirs) quarantine. Drain loops `drainStabilizePasses`
+  re-enumerations for admission racers, with the final pass aborting on a
+  fresh run. The `spawnWorker` seam
   in drain.go is test-only. `Run` maps guard I/O failures to the existing
   `persistence_unavailable` refusal (see `TestLockedDatabaseStopsAdmission`).
 - **Deviations that change a later task's inputs**: the migration lock is the
   state-dir `owner.lock` held alongside the instance lock (Tasks 5–6: probe
   or hold the same pair, never the instance lock alone for admissions); the
   journal phase test uses literals — never re-add a migrate import to
-  journal's internal tests (Tasks 2, 6); a residual sub-millisecond
-  hook-check-to-mkdir race remains — Apply (Task 6) must treat unexpected
-  post-drain runs as fatal, not silent.
+  journal's internal tests (Tasks 2, 6). `Run` holds the migration lock
+  through `MkdirAll` + `AcquireOwner`, so no hook-check-to-mkdir race
+  remains: any post-drain run is a genuine surprise, and Apply (Task 6)
+  must treat it as fatal, not silent.
 
 ## Task 5 — Backup and restore with downgrade refusal
 

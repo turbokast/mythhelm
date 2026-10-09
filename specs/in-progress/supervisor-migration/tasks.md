@@ -118,7 +118,9 @@
   - The migration lock is the state directory's owner lock held alongside the instance lock (same flock mechanism, hermetic under parallel package suites) rather than the per-user instance lock alone.
   - No checkpoint-stop signalling: in-flight runs finish their admitted work or abort at the deadline; no acceptance criterion requires forced early stops.
   - The TUI palette Apply call site shares `apply.go`'s guard helper and is covered by construction (no headless path drives the palette action itself).
-- **Files modified**: `internal/migrate/drain.go`, `internal/migrate/drain_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/recover.go`, `internal/cli/apply.go`, `internal/cli/tui.go`, `internal/journal/migrate_tables_test.go`, `specs/in-progress/supervisor-migration/tasks.md`, `specs/in-progress/supervisor-migration/handoff.md`, `specs/in-progress/supervisor-migration/scratchpad.md`.
+  - `internal/supervisor/migration_guard_test.go` (outside Files): pins the held-lock contract of the new `checkMigrationClear` guard (lock held on success, phase read under the lock, every refusal releases it); lives with the guard rather than in `drain_test.go`.
+  - `internal/supervisor/pipeline_test.go` (outside Files): extends `TestSeedFailureFailsClosed` with a release-on-seed-failure assertion (review round 2) — the seed-failure exit lives in `Run`, so the pin belongs to the existing `Run` seed test.
+- **Files modified**: `internal/migrate/drain.go`, `internal/migrate/drain_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/recover.go`, `internal/supervisor/migration_guard_test.go`, `internal/supervisor/pipeline_test.go`, `internal/cli/apply.go`, `internal/cli/tui.go`, `internal/journal/migrate_tables_test.go`, `specs/in-progress/supervisor-migration/tasks.md`, `specs/in-progress/supervisor-migration/handoff.md`, `specs/in-progress/supervisor-migration/scratchpad.md`.
 
 ### Task 5 — Backup and restore with downgrade refusal ✅ COMPLETED
 

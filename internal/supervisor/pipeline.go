@@ -137,6 +137,10 @@ func Run(ctx context.Context, d admission.Decision, h Hooks) (Outcome, error) {
 		}
 		return Outcome{}, err
 	}
+	// The release is idempotent (sync.OnceFunc), so this defer covers
+	// every early exit before the run lock — notably a seed failure —
+	// while the explicit calls below keep the documented handoff.
+	defer releaseMigration()
 	// The first admitted run seeds the seven v2 §7.2 records; refused
 	// runs never reach Run and seed nothing. A seed failure fails the
 	// run closed: no admission without its honest labels (I14).
