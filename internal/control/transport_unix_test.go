@@ -11,6 +11,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -35,9 +36,22 @@ func testFrame(t *testing.T) []byte {
 	return f
 }
 
+// shortDir returns a fresh directory directly under /tmp. A Unix socket path
+// must fit sun_path (104 bytes on macOS, 108 on Linux), which t.TempDir()
+// under /var/folders exceeds: bind and dial then fail with EINVAL.
+func shortDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "mh") //nolint:usetesting // t.TempDir() is too long for sun_path on macOS
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
 func socketPath(t *testing.T) string {
 	t.Helper()
-	return filepath.Join(t.TempDir(), "run", "control.sock")
+	return filepath.Join(shortDir(t), "run", "control.sock")
 }
 
 func ctx5(t *testing.T) context.Context {
@@ -113,7 +127,7 @@ func TestSocketDirIs0700(t *testing.T) {
 		}
 	}
 
-	open := filepath.Join(t.TempDir(), "open")
+	open := filepath.Join(shortDir(t), "open")
 	if err := os.Mkdir(open, 0o755); err != nil { //nolint:gosec // the 0755 dir is the broken input
 		t.Fatal(err)
 	}
@@ -162,11 +176,11 @@ func TestForeignUIDRejected(t *testing.T) {
 	}
 	_ = nc.SetReadDeadline(time.Now().Add(5 * time.Second))
 	prefix := make([]byte, prefixLen)
-	if _, err := nc.Read(prefix); err != nil {
+	if _, err := io.ReadFull(nc, prefix); err != nil {
 		t.Fatalf("read refusal: %v", err)
 	}
 	body := make([]byte, binary.BigEndian.Uint32(prefix))
-	if _, err := nc.Read(body); err != nil {
+	if _, err := io.ReadFull(nc, body); err != nil {
 		t.Fatalf("read refusal body: %v", err)
 	}
 	var reply permissionDenied
@@ -288,5 +302,121 @@ func TestNoTCPListener(t *testing.T) {
 		if got := tcpLiterals(t, f, string(src)); len(got) != 0 {
 			t.Errorf("%s contains TCP network literals %v", f, got)
 		}
+	}
+}
+
+// refusedReply reads what a refused peer receives: the permission_denied
+// frame, or EOF when the listener closed it without a reply.
+func refusedReply(t *testing.T, addr string) (code string, closedSilently bool) {
+	t.Helper()
+	nc, err := net.Dial("unix", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = nc.Close() })
+	_ = nc.SetReadDeadline(time.Now().Add(5 * time.Second))
+	prefix := make([]byte, prefixLen)
+	if _, err := io.ReadFull(nc, prefix); err != nil {
+		if errors.Is(err, io.EOF) {
+			return "", true
+		}
+		t.Fatalf("read refusal: %v", err)
+	}
+	body := make([]byte, binary.BigEndian.Uint32(prefix))
+	if _, err := io.ReadFull(nc, body); err != nil {
+		t.Fatalf("read refusal body: %v", err)
+	}
+	var reply permissionDenied
+	if err := json.Unmarshal(body, &reply); err != nil {
+		t.Fatalf("refusal %q: %v", body, err)
+	}
+	return reply.Code, false
+}
+
+// Foreign peers beyond the concurrent-refusal bound are closed at once; a
+// freed slot refuses with permission_denied again.
+func TestDenialsAreBounded(t *testing.T) {
+	t.Parallel()
+	server := &unixTransport{
+		uid:  euid(),
+		cred: func(*net.UnixConn) (Peer, error) { return Peer{UID: euid() + 1, PID: -1}, nil },
+	}
+	l, err := server.Listen(socketPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln := l.(*unixListener)
+	t.Cleanup(func() { _ = ln.Close() })
+	ln.denySlots = make(chan struct{}, 1)
+	go func() { _, _ = ln.Accept() }()
+
+	ln.denySlots <- struct{}{} // every slot busy
+	if code, silent := refusedReply(t, ln.Addr()); !silent {
+		t.Errorf("peer past the bound got reply %q, want a silent close", code)
+	}
+	<-ln.denySlots // slot freed
+	if code, silent := refusedReply(t, ln.Addr()); silent || code != "permission_denied" {
+		t.Errorf("peer within the bound: code %q silent %v, want permission_denied", code, silent)
+	}
+}
+
+// A malformed outgoing frame is rejected before anything is written, so it
+// cannot desynchronise the stream for the next frame.
+func TestOutgoingFramesAreValidated(t *testing.T) {
+	t.Parallel()
+	tr := NewUnixTransport()
+	ln, err := tr.Listen(socketPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	srvc := make(chan Conn, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			close(srvc)
+			return
+		}
+		srvc <- c
+	}()
+	client, err := tr.Dial(ln.Addr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	server := <-srvc
+	if server == nil {
+		t.Fatal("Accept failed")
+	}
+	t.Cleanup(func() { _ = server.Close() })
+
+	valid := testFrame(t)
+	tooShort := binary.BigEndian.AppendUint32(nil, uint32(len(valid)-prefixLen+5)) //nolint:gosec // G115: small test length
+	tooShort = append(tooShort, valid[prefixLen:]...)
+	tests := []struct {
+		name    string
+		frame   []byte
+		wantErr string
+	}{
+		{"shorter than prefix", []byte{0, 0}, "shorter than"},
+		{"prefix longer than payload", tooShort, "prefix says"},
+		{"trailing bytes after payload", append(append([]byte{}, valid...), 'x'), "prefix says"},
+		{"over MaxFrameBytes", binary.BigEndian.AppendUint32(nil, v2contract.MaxFrameBytes+1), "exceed limit"},
+	}
+	for _, tc := range tests {
+		if _, err := client.Request(ctx5(t), tc.frame); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+			t.Errorf("Request(%s) error = %v, want containing %q", tc.name, err, tc.wantErr)
+		}
+		if err := server.Respond(tc.frame); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+			t.Errorf("Respond(%s) error = %v, want containing %q", tc.name, err, tc.wantErr)
+		}
+	}
+
+	// Nothing from the rejected frames reached the stream: the next valid
+	// request is the first thing the server reads.
+	go func() { _, _ = client.Request(ctx5(t), valid) }()
+	got, err := server.Receive(ctx5(t))
+	if err != nil || !bytes.Equal(got, valid) {
+		t.Errorf("Receive after rejected frames = %q, %v; want the valid frame", got, err)
 	}
 }

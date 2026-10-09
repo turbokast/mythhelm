@@ -23,6 +23,11 @@ import (
 // discarding what the peer already sent, so the reply is not lost to a reset.
 const denyTimeout = 2 * time.Second
 
+// maxConcurrentDenials bounds the goroutines (each holding a descriptor for up
+// to denyTimeout) that refuse foreign peers; further foreign peers are closed
+// at once without a reply.
+const maxConcurrentDenials = 16
+
 type peerCredFunc func(*net.UnixConn) (Peer, error)
 
 type unixTransport struct {
@@ -60,7 +65,7 @@ func (t *unixTransport) Listen(path string) (Listener, error) {
 		_ = ln.Close()
 		return nil, fmt.Errorf("control: chmod socket %s: %w", path, err)
 	}
-	return &unixListener{ln: ln, t: t}, nil
+	return &unixListener{ln: ln, t: t, denySlots: make(chan struct{}, maxConcurrentDenials)}, nil
 }
 
 // ensureSocketDir creates dir with mode 0700 or verifies an existing one is a
@@ -110,8 +115,9 @@ func (t *unixTransport) Dial(path string) (Conn, error) {
 }
 
 type unixListener struct {
-	ln *net.UnixListener
-	t  *unixTransport
+	ln        *net.UnixListener
+	t         *unixTransport
+	denySlots chan struct{}
 }
 
 // Accept returns the next same-UID connection. A foreign or unidentifiable
@@ -124,10 +130,23 @@ func (l *unixListener) Accept() (Conn, error) {
 		}
 		p, err := l.t.peer(nc)
 		if err != nil || !p.SameUser {
-			go deny(nc)
+			l.refuse(nc)
 			continue
 		}
 		return &unixConn{c: nc, peer: p}, nil
+	}
+}
+
+// refuse hands a foreign peer to deny when a slot is free, else closes it.
+func (l *unixListener) refuse(nc *net.UnixConn) {
+	select {
+	case l.denySlots <- struct{}{}:
+		go func() {
+			defer func() { <-l.denySlots }()
+			deny(nc)
+		}()
+	default:
+		_ = nc.Close()
 	}
 }
 
@@ -160,6 +179,9 @@ func (c *unixConn) Peer() Peer   { return c.peer }
 func (c *unixConn) Close() error { return c.c.Close() }
 
 func (c *unixConn) Request(ctx context.Context, frame []byte) ([]byte, error) {
+	if err := checkOutgoing(frame); err != nil {
+		return nil, err
+	}
 	defer c.watch(ctx)()
 	if _, err := c.c.Write(frame); err != nil {
 		return nil, fmt.Errorf("control: send request: %w", ctxErr(ctx, err))
@@ -173,6 +195,9 @@ func (c *unixConn) Receive(ctx context.Context) ([]byte, error) {
 }
 
 func (c *unixConn) Respond(frame []byte) error {
+	if err := checkOutgoing(frame); err != nil {
+		return err
+	}
 	if _, err := c.c.Write(frame); err != nil {
 		return fmt.Errorf("control: send response: %w", err)
 	}
@@ -224,4 +249,21 @@ func ctxErr(ctx context.Context, err error) error {
 		return cerr
 	}
 	return err
+}
+
+// checkOutgoing rejects a frame whose length prefix is missing, does not match
+// the bytes that follow, or exceeds MaxFrameBytes: such a frame would
+// desynchronise the stream for every later frame.
+func checkOutgoing(frame []byte) error {
+	if len(frame) < prefixLen {
+		return fmt.Errorf("control: outgoing frame has %d bytes, shorter than the %d-byte prefix", len(frame), prefixLen)
+	}
+	n := binary.BigEndian.Uint32(frame[:prefixLen])
+	if n > v2contract.MaxFrameBytes {
+		return fmt.Errorf("control: outgoing frame bytes %d exceed limit %d", n, v2contract.MaxFrameBytes)
+	}
+	if int(n) != len(frame)-prefixLen {
+		return fmt.Errorf("control: outgoing frame prefix says %d bytes, payload has %d", n, len(frame)-prefixLen)
+	}
+	return nil
 }
