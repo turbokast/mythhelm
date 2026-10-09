@@ -37,7 +37,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `internal/billing/billing.go`, `internal/billing/envelope.go`, `internal/billing/billing_test.go`, `internal/billing/envelope_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
-### Task 2 — Counter normalization and component split
+### Task 2 — Counter normalization and component split ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -61,6 +61,10 @@
   - `TestSplitUsageUnmappedCombinedOnly`: an unknown route returns the combined total with all components nil; any non-nil component fails. `TestSplitUsageFirstRouteSplits`: the first-route mapping row (keyed by adapter harness ID, the key Task 3 passes) exposes non-overlapping components citing fixture evidence. Fails before: `SplitUsage` absent.
 - **Test plan**: Table tests over inline readings; cross-(scope, unit, source) mismatch cases included so unlike buckets never merge.
 - **Invariants touched**: I09 (v2 §7.3: missing is unknown, never zero; identity-less deltas estimated, AC-2.1/AC-2.2).
+- **Status**: ✅ Completed — `billing.Normalize` and `billing.SplitUsage` with the `claude-code` mapping row landed; PR #246.
+- **Implementation**: Exact decimal sums via scale-aligned `math/big` integers; the baseline literal passes through unchanged. An identity with no baseline whose deltas were all skipped is unknown, not zero. Commit dae117b.
+- **Spec deviations**: None.
+- **Files modified**: `internal/billing/normalize.go`, `internal/billing/normalize_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
 ### Task 3 — Migration 0003, ledger rows, ingest projection
 

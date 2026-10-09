@@ -14,7 +14,9 @@
 
 ## Task 2 — Counter normalization and component split
 
-<!-- pending -->
+- **Produces**: `internal/billing/normalize.go`: `Normalize(rs, expected, applied)` and `SplitUsage(route, u)`, as in design §3. `SplitUsage` returns a total (unknown unless all four token counts are reported) and components `output`, `cache_read`, `cache_creation`, `reasoning`; `reasoning` is always nil.
+- **For dependents**: Task 3 passes `adm.Adapter.Harness` as the route; the only mapped key is `claude-code`. A group whose deltas were all already applied, with no baseline, comes back unknown, so build `applied` and the readings consistently. Identity-less deltas are summed but label the total `estimated`. An unknown scope is keyed `{scope, "", ""}` with a nil total and label `unknown`.
+- **Traps**: `Normalize` and `Normalized` trip the UK-locale misspell linter; the files carry a file-level `//nolint:misspell`. Use `new(expr)` rather than pointer helpers (modernize).
 
 ## Task 3 — Migration 0003, ledger rows, ingest projection
 
