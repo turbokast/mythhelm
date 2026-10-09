@@ -692,7 +692,16 @@ func (p *pipeline) conclude(ctx context.Context) error {
 		}); err != nil {
 			return err
 		}
-		if p.d.NoChecks {
+		// Checks are waived, or refused under inspect: no per-check scope
+		// exists yet, so none runs and none can be faked (I07).
+		skipReason := ""
+		switch {
+		case p.d.NoChecks:
+			skipReason = "waived by --no-checks"
+		case p.d.Profile.Name == admission.ProfileInspect:
+			skipReason = "checks_refused_under_inspect"
+		}
+		if skipReason != "" {
 			candidate, err := p.j.Candidate(ctx, p.d.AttemptID)
 			if err != nil {
 				return errors.Join(err, p.runTo(ctx, RunFailed, "verification_unavailable"))
@@ -700,7 +709,7 @@ func (p *pipeline) conclude(ctx context.Context) error {
 			at, id := time.Now().UTC(), ids.New("ver")
 			ev, err := newEvent(p.d.RunID, p.d.TaskID, p.d.AttemptID, "verification.completed", map[string]any{
 				"verification_id": id, "candidate_commit": candidate.Commit, "result": "NOT RUN",
-				"reason": "waived by --no-checks", "baseline": "not-run",
+				"reason": skipReason, "baseline": "not-run",
 			}, at)
 			if err != nil {
 				return err
