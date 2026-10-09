@@ -594,3 +594,16 @@ func TestStopOnTerminalAttemptConflicts(t *testing.T) {
 		t.Fatalf("conflicting stop left stop.request %q", got)
 	}
 }
+
+// TestStopUnservedUntilWaitLeavesTransaction pins the Task 1 deviation:
+// the stop wait holds Execute's write transaction for up to
+// MaxStopDeadline, so stop stays out of the served set until Execute
+// grows long-handler support. Serving it earlier would wedge every other
+// mutating intent past busy_timeout for the whole wait. Task 4 deletes
+// this test when it lands the fix with registration.
+func TestStopUnservedUntilWaitLeavesTransaction(t *testing.T) {
+	t.Parallel()
+	srv := NewSupervisorServer(nil)
+	_, err := srv.Dispatch(context.Background(), Peer{}, Intent{OperationID: "op_stop_unserved", Method: "stop"})
+	requireCode(t, err, CodeCapabilityUnsupported)
+}

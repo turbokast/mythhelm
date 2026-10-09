@@ -63,11 +63,13 @@ type StopDeps struct {
 // StopHandler answers the stop intent: it verifies the attempt's pinned
 // ladder version and worker identity, persists stop_requested, delivers
 // the request file, waits for the worker's stopped report up to the
-// recorded deadline, and journals the receipt. It runs in two short
-// Mutate scopes with delivery and the bounded wait outside any Mutate
-// scope; Execute serialises concurrent duplicates on the operations
-// ledger, so a repeat while the first execution still waits blocks and
-// then replays its stored Result.
+// recorded deadline, and journals the receipt. Under Execute both Mutate
+// scopes join Execute's single transaction, so the bounded wait holds the
+// write lock for up to MaxStopDeadline (design §3 wants the wait outside
+// any transaction; the Task 1 deviation records why it stays here until
+// Execute grows long-handler support). Concurrent duplicates therefore
+// serialise on the write lock: a repeat while the first execution still
+// waits blocks and then replays its stored Result.
 func StopHandler(d StopDeps) Handler {
 	return func(ctx context.Context, _ Peer, in Intent) (Result, error) {
 		var p StopParams

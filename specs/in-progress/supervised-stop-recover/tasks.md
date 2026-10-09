@@ -44,7 +44,7 @@
 - **Test plan**: Table-driven unit tests with a scripted worker (writes `attempt.stopped` on cue, or never); ledger assertions via `Mutate` on a temp DB; pinning reads against fixture `attempt.admission_pinned` events in a temp journal; golden `StopReceipt` JSON. Signal-level assertions live in Task 2.
 - **Invariants touched**: I06 (v2 §6.4: unconfirmed stops stay unconfirmed; receipt distinguishes `unknown` from `confirmed`); I09 (v2 §4.2: unknown outcomes never read as confirmed).
 - **Status**: ✅ Completed — versioned ladder contract, worker-identity matcher, admission-pinning reads and the idempotent `stop` intent landed; PR #289.
-- **Implementation**: `StopHandler` runs through `Execute` as two `Mutate` scopes with delivery and the bounded spool wait outside any `Mutate` scope; quarantine returns its failure in the `Result` so the transition commits. Commit 9b0e54af85d7678d2efe6fb7ffb4a5ea494265a9.
+- **Implementation**: `StopHandler` runs through `Execute` as two `Mutate` scopes that join `Execute`'s single transaction, so the bounded spool wait holds the write lock (the recorded deviation below); quarantine returns its failure in the `Result` so the transition commits. Commit 9b0e54af85d7678d2efe6fb7ffb4a5ea494265a9.
 - **Spec deviations**:
   - The stop wait runs inside `Execute`'s transaction (design §3 says no transaction is held): stream-2 `Execute` wraps every handler in one transaction and forking a second idempotency shell would risk the exactly-once path a stop's safety rests on; repeats block-then-replay byte-identical bodies. Follow-up: long-handler support in `Execute`.
   - `stop` is registered via `RegisterStop`, not in `NewSupervisorServer`, so the support-matrix exactness test stays green until Task 4 adds the rows.
