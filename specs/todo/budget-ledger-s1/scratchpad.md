@@ -17,7 +17,7 @@ directive said single spec.
 
 | # | Question | Default in this spec | Owner / blocks |
 |---|---|---|---|
-| 1 | MH-21 coordination: MH-21 stream specs in `todo/` claim 0003/0004 with their own `reservations` table. | Landing order follows the renumber/adoption rule in tasks.md Dependencies (Task 3 re-checks at start; single `reservations` DDL). | Task 3 owner / blocks Task 3 start |
+| 1 | MH-21 coordination: MH-21 stream specs in `in-progress/` claim 0003/0004 with their own `reservations` table. | Landing order follows the renumber/adoption rule in tasks.md Dependencies (Task 3 re-checks at start; single `reservations` DDL). | Task 3 owner / blocks Task 3 start |
 | 2 | First-route mapping evidence: which decoded fields map to which non-overlapping components? | Task 2 ships the row against the synthetic stream-json fixtures and cites them; MH-12 T7 live evidence revises the row if fields differ. | Task 2 owner / blocks Task 2 mapping row only |
 | 3 | Exhaustion native shapes: which documented error surfaces mean "allowance exhausted, retry at reset"? | Task 5 maps only shapes documented in the current native docs, fixtures marked synthetic; anything undocumented stays `native_error` (fail closed). | Task 5 owner / blocks Task 5 |
 

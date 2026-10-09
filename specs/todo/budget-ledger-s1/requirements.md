@@ -12,7 +12,7 @@
   - Dogfood slice stores native cost only as a labelled estimate (issue, citing N13) — HOLDS (`specs/*/dogfood-slice/requirements.md:29` N13; `internal/supervisor/receipt.go:116-117,122`; `internal/workers/worker.go:831`; `grep -n "retail_equivalent_estimate_usd" internal/supervisor/receipt.go internal/workers/worker.go`).
   - Card Source sections (v2 §§7–8, 10, 12–13; W03/W04/W11) describe the quota/ledger mechanism — HOLDS (v2 `§7.3` usage labels and exhaustion, `§10.3` finite budgets and completion reserves, `§4.1` `Reservation` type; W03/W04 S1, W11 S4).
   - MH-10 billing semantics are available as a prerequisite — HOLDS (card status `shipped`, `specs/*/qualification-registry/`; `internal/qualify/qualify.go:39-49` five `DatumLabel` values, `Record.Quota Datum`; `grep -n "DatumLabel" internal/qualify/qualify.go`).
-  - Durable supervisor contracts are available as a prerequisite — PARTIAL: MH-21 exists only as the unrefined epic plan `specs/*/v2-contracts-supervisor/plan.md` with stream specs in `todo/` (`supervisor-migration`, `supervised-stop-recover`, `v2-contract-vocabulary`, `supervisor-service`); nothing shipped. Drift: MH-21 unshipped, so this spec lands first under the coordinated renumber/adoption rule (see Dependencies; design D2).
+  - Durable supervisor contracts are available as a prerequisite — PARTIAL: MH-21 exists only as the unrefined epic plan `specs/*/v2-contracts-supervisor/plan.md` with stream specs in `in-progress/` (`supervisor-migration`, `supervised-stop-recover`, `v2-contract-vocabulary`, `supervisor-service`); nothing shipped. Drift: MH-21 unshipped, so this spec lands first under the coordinated renumber/adoption rule (see Dependencies; design D2).
   - No budget ledger or quota reservation mechanism exists today — HOLDS (structural: no `internal/billing` or ledger package among the 14 under `internal/`; `grep -rliE "ledger|quota|budget|reservation" internal/ cmd/ adapters/` hits 30 files, all benign on inspection — TUI render budgets, the `stop_at_exhaustion` marker string in `internal/admission/qualify.go:59`, `qualify.Datum` scales, `adapter.Capabilities` Tri flags, entitlement inventory and their tests; `mythhelm.db` migrations create 11 tables, none for usage or reservations).
   - An acceptance check for this spec can be made to fail today — HOLDS (no usage/reservation tables in `internal/journal/migrations/0001_init.sql`, `0002_qualification.sql` — `grep -inE "CREATE TABLE (usage|reservation)" internal/journal/migrations/0001_init.sql internal/journal/migrations/0002_qualification.sql` returns nothing, the one `usage` hit being the `extra_usage` entitlement field at `0001_init.sql:52`; no exhaustion pause path outside the admission marker).
   - Unknown remaining quota must stay distinct from zero and no hard cap may be claimed from local state — HOLDS (`knowledge/invariants.md` I09/I10; `adapters/claudecode/probe.go:139` reports `QuotaRemaining: Unknown`, `HardMonetaryLimit: Unsupported` for the first route; `grep -n "QuotaRemaining" adapters/claudecode/probe.go`).
@@ -65,7 +65,7 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 
 ### FR-5 — Completion reserve (§10.3, I10)
 
-- **AC-5.1** [§10.3] Before starting optional work, the system shall reserve one verification pass plus the FR-4 repair ceiling (AC-4.1 repair attempts); no separate configured envelope exists in S1. S1 optional work means material replans after the first verification (design §6): repairs are completion work drawn from the reserve, per-kind counts stay under the FR-4 ceilings, a replan dispatches only when remaining execution time covers the verification pass, and a dispatched replan shall run under a derived deadline that leaves the verification reserve unconsumed.
+- **AC-5.1** [§10.3] Before starting optional work, the system shall reserve one verification pass plus the FR-4 repair ceiling (AC-4.1 repair attempts); no separate configured envelope exists in S1. S1 optional work means material replans after the first verification (design §6): repairs are completion work drawn from the reserve, per-kind counts stay under the FR-4 ceilings, a replan dispatches only when remaining execution time covers the verification pass, and a dispatched replan shall run under a derived deadline that leaves the verification reserve unconsumed; the repair component is attempt slots only — repair execution draws from the shared execution deadline and is not separately time-reserved.
 - **AC-5.2** [§10.3, I10] Where provider quota cannot be reserved, the system shall show the reserve in receipts and CLI run output as a conservative estimate, rely on qualified stop-at-exhaustion protection, and never advertise a hard token reserve.
 
 ### FR-6 — Exhaustion without paid fallback (§7.3, AT-13, I02)
@@ -88,7 +88,7 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 ## Definition of Done
 
 - [ ] AC-1.1 to AC-7.2 each have a named test that fails before the change and passes after it.
-- [ ] AT-13 exercised for the S1 route: cumulative/delta/missing counters normalize, coupled quota and exhaustion preserve work without paid fallback.
+- [ ] AT-13 exercised for the S1 route (delta/missing end-to-end, cumulative-baseline at unit level): counters normalize, coupled quota and exhaustion preserve work without paid fallback.
 - [ ] `scripts/harness/gate.sh go` green; no advertised hard limit anywhere in CLI, TUI or receipts (CLI/receipts pinned by `TestNoHardLimitAnywhere`; TUI pinned by zero hits for `grep -rliE 'hard (limit|cap)|spending limit|token limit' internal/tui/` plus no TUI file in any task's Files).
 
 ## Open Questions
@@ -101,10 +101,10 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 ## Dependencies
 
 - Prerequisite, shipped: MH-10 (`specs/*/qualification-registry/`) — `Datum`/`DatumLabel` provenance scales and the registry this ledger's quota coupling reads.
-- Not a prerequisite — coordinated landing order: MH-21 (epic plan `specs/*/v2-contracts-supervisor/plan.md`, stream specs in `todo/`, unshipped) — durable supervisor contracts and the single-writer service; this spec lands first and MH-21 adopts its tables, coordinated by the renumber/adoption rule (design D2, tasks.md Dependencies); OQ-4 fixes run-owner writes meanwhile.
+- Not a prerequisite — coordinated landing order: MH-21 (epic plan `specs/*/v2-contracts-supervisor/plan.md`, stream specs in `in-progress/`, unshipped) — durable supervisor contracts and the single-writer service; this spec lands first and MH-21 adopts its tables, coordinated by the renumber/adoption rule (design D2, tasks.md Dependencies); OQ-4 fixes run-owner writes meanwhile.
 - Prerequisite, in progress: MH-12 (`specs/*/claude-strict-subscription/`, Tasks 1–4 and 6 complete, Task 5 open, Task 7 maintainer live run) — the one qualified S1 route and its stop-at-exhaustion evidence; OQ-2 may consume its error taxonomy.
-- Downstream consumer (refined, waiting): MH-22 `specs/*/protected-acceptance/requirements.md` sequences behind MH-16 S1 and reads its evidence without reimplementing it.
-- Sequenced alongside (`todo/`): MH-13 `specs/*/contained-execution-profiles/` — S1 needs both specs, but neither is the other's prerequisite (MH-13 N3 scopes ledger mechanics out; no MH-13 AC reads ledger state).
+- Downstream consumer (triaged, spec unwritten): MH-22 sequences behind MH-16 S1 and reads its evidence without reimplementing it; `specs/*/protected-acceptance/` is this spec's proposed slug for its future spec (design §11 lists what it will read).
+- Sequenced alongside: MH-13 `specs/*/contained-execution-profiles/` (PR #228, landing to `todo/`) — S1 needs both specs, but neither is the other's prerequisite (MH-13 N3 scopes ledger mechanics out; no MH-13 AC reads ledger state).
 - Sibling extensions (not this spec): MH-17 (S2 multi-profile handoff), MH-27 (S4 protected experiments), MH-5 (S2 routing across profiles).
 - Conflicting: none found. MH-12 non-goal N2 (`metered-allowed`) and N3 (no-egress guarantees) align with N3 here.
 - Superseded: none.

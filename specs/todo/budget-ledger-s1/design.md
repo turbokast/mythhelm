@@ -14,7 +14,7 @@
 - Prerequisite, shipped: MH-10 (`specs/*/qualification-registry/`) —
   `qualify.Datum`/`DatumLabel` vocabulary this design builds on.
 - MH-21 is the plan `specs/*/v2-contracts-supervisor/plan.md` with stream
-  specs in `todo/` — explicitly not a prerequisite. This spec's migration
+  specs in `in-progress/` — explicitly not a prerequisite. This spec's migration
   is `0003_ledger.sql` (next free number while only 0001/0002 exist) with
   run-owner writes (OQ-1 option (a), OQ-4 as answered from ADR-0005), but
   two peers claim 0003 as well (`specs/*/supervisor-service/`'s
@@ -22,8 +22,8 @@
   `0003_evaluator.sql`): landing order is coordinated by the renumber rule
   in tasks.md Dependencies (Task 3 re-checks at start; whoever lands second
   renumbers; only one `reservations` DDL lands and the other side adopts).
-  Shared files with MH-13 (`specs/*/contained-execution-profiles/`,
-  alongside in `todo/`) are disjoint by region except `journal.go`:
+  Shared files with MH-13 (`specs/*/contained-execution-profiles/`, PR #228,
+  landing alongside in `todo/`) are disjoint by region except `journal.go`:
   `admission.go` (here: Request/Decision envelope fields + Decide
   pass-through; MH-13: Decide defaults/consult, disclosure,
   `Proposal.Overrides` append), `run.go` (here: `--envelope-*` flags +
@@ -175,7 +175,7 @@ CREATE TABLE reservations (
   run_id TEXT NOT NULL REFERENCES runs(run_id),
   bucket TEXT NOT NULL, scope TEXT NOT NULL, owner TEXT NOT NULL,
   quantity TEXT NOT NULL CHECK (quantity <> ''), -- decimal text or exactly 'unknown'
-  status TEXT NOT NULL CHECK (status IN ('held','released','orphaned')),
+  status TEXT NOT NULL CHECK (status IN ('held','released','orphaned')), -- adopted MH-21 tables additionally admit 'expired', which this spec reads past but never writes
   expires_at TEXT NOT NULL, heartbeat_at TEXT,
   release_evidence TEXT,
   created_at TEXT NOT NULL
@@ -244,6 +244,7 @@ reset (AC-6.2, shown):
 func (j *Journal) Transact(ctx context.Context, fn func(*sql.Tx) error) error
 func InsertUsageObservation(ctx context.Context, tx *sql.Tx, o UsageRow) error
 func (j *Journal) UsageObservations(ctx context.Context, runID string) ([]UsageRow, error)
+func UsageObservationsTx(ctx context.Context, tx *sql.Tx, runID string) ([]UsageRow, error)
 func UpsertRunEnvelope(ctx context.Context, tx *sql.Tx, e EnvelopeRow) error
 func (j *Journal) RunEnvelope(ctx context.Context, runID string) (EnvelopeRow, error)
 func InsertReservation(ctx context.Context, tx *sql.Tx, r ReservationRow) error
@@ -291,14 +292,21 @@ type Normalized struct{ Scopes map[ScopeKey]ScopeTotal }
 // Normalize applies AC-2.1: match on (scope, unit, source); newest cumulative
 // is the baseline; apply only unapplied deltas with At strictly after the
 // baseline's At — deltas at or before it are already covered and skipped,
-// so no delta is counted twice. One total per matched identity. Deltas
-// carry (producer, sequence) identity: already-applied ones are skipped;
-// identity-less deltas land as Estimated, never summed exact. expected
-// names the scopes the caller requires; an expected scope with no readings
-// marks unknown under the key {scope, "", ""} and keeps the rest (AC-2.2).
-// Deltas sum with exact decimal addition — scale-aligned integer
-// arithmetic, never float64 — and a baseline cumulative passes its literal
-// through unchanged. A reading with an empty scope, unit or source, with
+// so no delta is counted twice. With no cumulative for an identity, the
+// unapplied identity-carrying deltas sum from zero. One total per matched
+// identity. Deltas carry (producer, sequence) identity: already-applied
+// ones are skipped; identity-less deltas land as Estimated, never summed
+// exact — any identity-less delta among an identity's inputs makes that
+// identity's total Estimated (the exact decimal sum keeps the estimated
+// label). expected names the scopes the caller requires; an expected scope
+// with no readings marks unknown under the key {scope, "", ""} and keeps
+// the rest (AC-2.2). Deltas sum with exact decimal addition —
+// scale-aligned integer arithmetic, never float64 — and a baseline
+// cumulative passes its literal through unchanged. Labels derive per
+// total: retail-equivalent totals are Estimated, AC-2.2 markers are
+// unknown, any other total touched by an identity-less delta is
+// Estimated, and all-identified totals are Reported; observed and
+// user-declared have no S1 inputs. A reading with an empty scope, unit or source, with
 // both/neither of Cumulative/Delta set, or with non-decimal quantity text,
 // returns ErrReadingShape naming the reading index.
 func Normalize(rs []Reading, expected []string, applied map[EventID]bool) (Normalized, error)
@@ -322,17 +330,38 @@ nil/unknown); no float64 appears on the path. The native-overlap caveat
 Ingest seam: `projectWorkerEvent` (`internal/supervisor/ingest.go:155`)
 handles only `state_changed`/`launched`/`native_session` today;
 `native_result` is spooled (allowlist `ingest.go:33-37`) but unprojected.
-Task 3 adds the `native_result` case: on it, build `Reading`s from
-`usage_native_reported` (label
-Reported, integer decimal text) and `retail_equivalent_estimate_usd`
-(label Estimated, unit `USD`, scope `retail-equivalent`, carrying the
-native `CostUSD` decimal literal verbatim with its unit preserved through
-storage and receipts), `Normalize` with the expected scope set
-(the token scopes plus `retail-equivalent`), and insert rows in the same
-`Append` transaction. Null/absent usage and cost project to `unknown`
-quantities, never 0 (I09). AC-1.3: no cross-bucket aggregation anywhere —
-one row per (scope, unit, source); the receipt renders rows, never a summed
-figure.
+Task 3 adds the `native_result` case: on it, build `Delta` `Reading`s —
+never `Cumulative`: the worker emits one `native_result` per attempt (the
+single `evNativeResult` emit site, `worker.go:727`, inside `conclude`'s
+terminalWritten-guarded path), and the native `total_cost_usd` and
+per-model token counts each describe that attempt's own invocation, so
+every projected quantity is that attempt's increment — from
+`usage_native_reported` (one reading per model key: scope is the model
+name, unit `tokens`, source `native-reported`, integer decimal text) and
+`retail_equivalent_estimate_usd` (scope `retail-equivalent`, unit `USD`,
+source `native-reported`, carrying the native `CostUSD` decimal literal
+verbatim with its unit preserved through storage and receipts),
+`Normalize` with the expected scope set (the payload's model keys plus
+`retail-equivalent`, which is always expected), and insert rows in the
+same `Append` transaction. Distinct attempts accumulate: same-identity
+deltas from different attempts (`wrk_<attemptID>` producers keep them
+distinct) sum exactly; nothing replaces. Every projected reading sets
+`At` to the event's `observed_at` and carries `HasIdentity` with the
+event's (`ProducerID`, `ProducerSequence`) (`spool.go:40-41,67,83-84`,
+`journal.go:86-87,91`); Task 3 builds `applied` from the run's existing
+rows via `UsageObservationsTx`, skipping empty-producer rows, so any
+re-presented delta is dropped. Replayed spool lines never re-project
+anyway: `Append` ignores already-journaled `event_id`s without running
+the projector (`journal.go:292-299`; `ingest.go:54-56`). A null/absent
+quantity yields no `Reading` and its scope goes `unknown` by AC-2.2,
+never 0 (I09); usage unattributable to a model never reaches the
+projection (flat aggregates stay unreported in the decoder), so no scope
+is expected for it and none is recorded — S1 does not guess attribution.
+`unknown` markers persist as rows with quantity exactly `'unknown'` and
+NULL producer. Identity-less `Reading`s reach `Normalize` only from
+direct callers, never from an event projection. AC-1.3: no
+cross-bucket aggregation anywhere — one row per (scope, unit, source);
+the receipt renders rows, never a summed figure.
 
 ## 4. Reservations (FR-3)
 
@@ -498,7 +527,7 @@ func CheckExtension(ctx context.Context, j *journal.Journal, runID, kind string)
 ```
 
 This is the spec's only new journaled event type; downstream obligation:
-MH-22 must add this single type to its AC-3.3 allowlist (§11).
+MH-22 must add this single type to its event allowlist when it specifies one (§11).
 
 ## 6. Completion reserve (FR-5)
 
@@ -530,7 +559,12 @@ type ExecutionRemainder struct{ TimeLeft time.Duration }
 // (ceiling 3: the second repair sees RepairsLeft 2 < 3 and always blocks),
 // contradicting AC-4.1; per-kind counts are enforced by GateLaunch (§5),
 // and replans consume no repairs, so the repair ceiling needs no
-// replan-gate check.
+// replan-gate check. The repair component of the reserve is attempt slots,
+// not execution time: dispatch preserves the slots for GateLaunch, while
+// repair execution draws from the shared execution deadline — a repair
+// with no time left blocks with envelope_deadline_exceeded. S1 sets no
+// per-repair time budget (no grounded bound exists); AC-5.1 protects
+// repair slots plus verification time, never repair execution time.
 func RemainderCoversReserve(rem ExecutionRemainder, est ReserveEstimate) bool
 ```
 
@@ -552,7 +586,9 @@ A dispatched replan runs under a derived deadline — the execution deadline
 minus the estimated verification reserve (`VerifyTimeoutSum`), i.e. now +
 TimeLeft − reserve at dispatch — so the replan cannot consume the time the
 preflight reserved; Task 9's pipeline hook derives it and Task 7's deadline
-context enforces it.
+context enforces it. Repair execution itself is not time-reserved: repairs
+run in the shared execution pool and block with
+`envelope_deadline_exceeded` when it is spent, even with repair slots left.
 Where provider quota cannot be reserved — always
 in S1 — the reserve appears in receipts and CLI output only through
 `ReserveEstimate` with its `Note`, and stop-at-exhaustion remains the
@@ -682,7 +718,7 @@ Mapping reuses the existing outcome path (`runExit`,
 
 - Unit: table-driven per package (`Normalize` matrices incl. identity-less
   deltas, missing scopes, unmapped components, malformed readings,
-  decimal-exact totals;
+  decimal-exact totals, deltas-from-zero sums, derived labels;
   `ResolveCeilings` layer precedence incl. negative-field-unset; `Deadline`
   with quiescent vs still-running spans; `RetrySchedule`/`EvaluateBucket`
   reset/unknown paths incl. clearing; `RemainderCoversReserve` boundary).
@@ -692,7 +728,8 @@ Mapping reuses the existing outcome path (`runExit`,
   (`adapters/fake/scenarios/`, JSON `steps` per
   `adapters/fake/agent.go:43-44`).
 - E2E (packaged binary, temp `MYTHHELM_HOME`, fake adapter): AT-13 —
-  cumulative/delta/missing counters normalize without double counting;
+  per-attempt delta/missing counters normalize without double counting
+  (cumulative-baseline pinned at unit level);
   coupled quota and exhaustion preserve work without paid fallback
   (candidates intact, no second native launch, run `blocked`).
 - NFR-1: run-path ledger ops (admit + record + read) complete within 1 s
@@ -707,12 +744,13 @@ Mapping reuses the existing outcome path (`runExit`,
 
 ## 11. Downstream contract (MH-22)
 
-MH-22 (`specs/*/protected-acceptance/`, N3) reads without reimplementing:
-`usage_observations` / `run_envelopes` / `reservations` / `bucket_state`
-tables, the §2 readers, receipt `billing` members (`usage_observations`,
-`reserve`, `remaining`, `next_retry`), the recorded execution bounds
-(MH-22 AC-4.4), and the one new control event `run.extension_granted` (a downstream
-obligation on its AC-3.3 allowlist). MH-21 adopts the §2 tables and
+MH-22 (`specs/*/protected-acceptance/`, planned — see requirements
+Dependencies) reads without reimplementing: `usage_observations` /
+`run_envelopes` / `reservations` / `bucket_state` tables, the §2 readers,
+receipt `billing` members (`usage_observations`, `reserve`, `remaining`,
+`next_retry`), the recorded execution bounds, and the one new control
+event `run.extension_granted` (a downstream obligation on its event
+allowlist when it specifies one). MH-21 adopts the §2 tables and
 §9 code strings when it lands.
 
 ## 12. Decisions
@@ -729,10 +767,10 @@ obligation on its AC-3.3 allowlist). MH-21 adopts the §2 tables and
 | D8 | Attempt N>1 is a repair iff a `verifications` row exists for the run, else a replan | Derivable from existing projections with no new classification store. Rejected: trigger-string plumbing through the worker (crosses the spool contract for metadata the journal already has). |
 | D9 | Transport-retries ceiling counts ingested `attempt.progress` retries | The worker counts `adapter.Retry` (`worker.go:663-664`) but runs no native retry loop; counting observations enforces the ceiling without inventing a loop. Rejected: worker-side retry budget (no loop exists to budget). |
 | D10 | Exhaustion classification fails closed; `rate_limit` keeps its transient mapping | Only documented shapes mean exhaustion. Rejected: mapping all provider limits to exhaustion (would schedule reset-retries for throttles) and the reverse (would fail runs that should wait). |
-| D11 | CLI usage lines ride `Notice`, not new journaled events; one control event for extension | Display lines stay out of the journaled envelope set; the extension decision needs durability, so `run.extension_granted` is journaled (downstream obligation on MH-22's AC-3.3 allowlist). Rejected: new event types for display (allowlist churn) and undocumented extension (AC-4.2 requires a recorded decision). |
+| D11 | CLI usage lines ride `Notice`, not new journaled events; one control event for extension | Display lines stay out of the journaled envelope set; the extension decision needs durability, so `run.extension_granted` is journaled (downstream obligation on MH-22's event allowlist). Rejected: new event types for display (allowlist churn) and undocumented extension (AC-4.2 requires a recorded decision). |
 | D12 | Error codes defined S1-local with exact v2 §4.5 strings | No catalogue package exists in the tree; MH-21 adopts these strings when it lands. Rejected: blocking on MH-21's catalogue and parallel string codes (drift). |
 | D13 | S1 records and enforces the retry schedule; retries are operator-executed, never automatic | No scheduler daemon exists in the one-agent tree, so nothing could wake a run; AC-6.2's schedule is recorded, shown (§8) and enforced at re-admission (§7). Rejected: inventing a background scheduler inside this spec (MH-21/service scope) and silent auto-retry (would contradict the exactly-once launch pins). |
-| D14 | Reserve gate covers material replans only; repairs are completion work | Gating repairs on the full repair ceiling allows at most one repair (the ceiling-3 trace in §6), contradicting AC-4.1; v2 §10.3's reserve is verify-plus-repairs *before optional work*, and in S1 only a new-direction replan is optional. Rejected: gating every post-verification attempt (the contradiction) and a count-based replan predicate (replans consume no repairs; GateLaunch already enforces the replan ceiling). |
+| D14 | Reserve gate covers material replans only; repairs are completion work | Gating repairs on the full repair ceiling allows at most one repair (the ceiling-3 trace in §6), contradicting AC-4.1; v2 §10.3's reserve is verify-plus-repairs (repairs as attempt slots, not execution time) *before optional work*, and in S1 only a new-direction replan is optional. Rejected: gating every post-verification attempt (the contradiction) and a count-based replan predicate (replans consume no repairs; GateLaunch already enforces the replan ceiling). |
 
 ## 13. Honesty register
 
