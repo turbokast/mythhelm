@@ -36,8 +36,8 @@ files carry no build tag) or `linux, darwin` (they are tagged
 
 - Windows: the instance lock is built and its tests are untagged, so the CI
   Windows runners build them. The named-pipe transport is fixture-tested
-  (row `transport-windows-pipe`); there is still no Windows control method,
-  lazy start or detach evidence.
+  (row `transport-windows-pipe`); the untagged method tests also run on the
+  Windows leg. There is still no Windows lazy start or detach evidence.
 - No row is `live-qualified`.
 - A per-repository entitlement store does not exist (`read` scopes an
   operator by the repositories it presents); see the task 6 hand-off.

@@ -60,7 +60,10 @@
 
 ## Task 10 — Receipt and CLI ledger surfaces
 
-<!-- pending -->
+- **Produces**: receipt `billing.usage_observations` (one `{scope, unit, source, label, quantity, observed_at}` per row, retail rows add `note: estimate, not a charge`), `billing.reserve` (`{verify_pass_checks, verify_timeout_sum, repair_ceiling, note}` with `billing.ReserveNote`), `billing.remaining` (`{quantity: unknown, bucket}`), `billing.next_retry` (`{at, retries_used, retries_max}` or null); exported `supervisor.RunBucket(ctx, j, runID)` (the run's bucket, `""` when none); CLI `usage:`/`reserve:`/`remaining:`/`next retry:` notice lines via unexported `ledgerView.lines()`, gathered by `ledgerViewFor` and emitted by `emitLedgerNotices` from `executeRun` ahead of `run.result`.
+- **For dependents**: Task 11's marker grep is safe — neither surface emits `purchased credits`, `paid summary`, `upgrade`, `overage`, `metered` or `billed` (pinned by `TestNoHardLimitAnywhere`). A fake run's only usage row is the retail `unknown` marker (the fake surfaces no usage or cost); the CLI `usage:` line for it reads `usage: retail-equivalent unknown unknown (unknown, unknown)`. The envelope row's repairs are the effective ceiling (extensions raise the row), and the CLI falls back to `ResolveCeilings` of the decision layers only when no row exists.
+- **Traps**: the receipt verify pass is `unknown` for checked runs (check timeouts are not journaled); only the CLI line, which reads the Decision, is exact there — Task 12 must not document exact receipt reserves for checked runs. The lines print on the linear, jsonl and demo paths only, never in the full-screen TUI or the accessible stream. Display is best-effort: an unreadable ledger skips the lines without failing the run.
+- **Deviations that change later inputs**: none beyond the receipt `reserve` shape above (Task 9's `EstimateReserve` fields plus `unknown` where unjournaled) and the TUI/accessible gap (a future task renders them there if wanted).
 
 ## Task 11 — AT-13 end-to-end and NFR-1 run-path latency
 
