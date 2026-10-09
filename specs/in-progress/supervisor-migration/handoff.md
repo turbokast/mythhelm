@@ -33,7 +33,22 @@
 
 ## Task 3 — Legacy import as one-task runs
 
-<!-- pending -->
+- **Produces**: `migrate.ImportRun(ctx, tx, runID) (v2contract.TaskRevision, error)` in
+  `internal/migrate/import.go`; `migrate.ImportOptions{RunIDs}` (empty means all v1 runs;
+  consumed by Task 6, not by `ImportRun`); `migrate.ImportResult{RunID, TaskID, Revision,
+  Posture}` receipt row; failures are `*v2contract.ControlError` (`revision_conflict`,
+  `invalid_contract`, `persistence_unavailable`, each `Validate`-clean). Tests in
+  `internal/migrate/import_test.go`.
+- **For dependents**: call inside `control.Mutate` — `ImportRun` never commits. The v2
+  task id is the run's earliest attempt's legacy task id, or the run id when the run has
+  no attempts; the `migration.imported` envelope carries legacy run/attempt ids verbatim
+  under deterministic event id `migration-imported-<runID>` (producer `migration`,
+  generation 0). Import never yields `accepted` (`completed`/`ready_for_review`/
+  `applying` → `candidate`, I07); v1 rows are read-only to import.
+- **Deviations that change a later task's inputs**: the envelope append mirrors
+  `Journal.Append` inline instead of Task 2's `appendTx` (Tasks 2, 6: no action needed —
+  the statements stay valid after `appendTx` lands; a follow-up may refactor
+  `appendImported` onto it).
 
 ## Task 4 — Drain, adopt, quarantine
 

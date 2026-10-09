@@ -57,7 +57,7 @@
 - **Test plan**: table-driven envelopes (valid, duplicate, gap, stale generation, v2-pre-migration); golden v1 journal fixture with a `Decision` and every v1 status word.
 - **Invariants touched**: I23 (v2 §4.3: contiguity, idempotent duplicates, generation fencing for v2); G16 (v1 decodes under v1 forever).
 
-### Task 3 — Legacy import as one-task runs
+### Task 3 — Legacy import as one-task runs ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -76,6 +76,11 @@
   - `TestImportRollsBackAtomically`: when the `migration.imported` append fails (injected ledger fault), `ImportRun` returns `persistence_unavailable` and the caller's transaction rolls back all three writes — no v2 rows, no import marker and no envelope remain.
 - **Test plan**: fixture v1 state dirs; golden `TaskRevision` JSON per posture word.
 - **Invariants touched**: I15 (v2 §2: declared posture never promoted); I07 (acceptance needs independent evidence); I09 (unverified stays unverified); I12 (no replay of effects).
+- **Status**: ✅ Completed — `ImportRun` imports one legacy v1 run as a v2 task revision 1 with preserved IDs, verbatim posture and untouched v1 evidence; PR #287.
+- **Implementation**: Task id is the earliest attempt's legacy task id (run id when attempt-less); import never yields `accepted` (completed/ready_for_review → `candidate`, I07); envelope statements mirror `Journal.Append` until Task 2's `appendTx` lands. Red-first: stub → `TestImportPreservesIDsPostureEvidence` FAIL; mutants drop-marker-check → `TestImportTwiceConflicts` FAIL, promote-to-accepted → candidate tests FAIL; restored → PASS. Commit 0824820.
+- **Spec deviations**:
+  - The `migration.imported` envelope is appended with statements mirroring `Journal.Append` rather than Task 2's `appendTx`: Task 2 is parallel and unmerged, and Task 3's file list cannot create it. `import.go` names the seam; the statements stay valid after Task 2 lands.
+- **Files modified**: `internal/migrate/import.go`, `internal/migrate/import_test.go`, `specs/in-progress/supervisor-migration/tasks.md`, `specs/in-progress/supervisor-migration/handoff.md`, `specs/in-progress/supervisor-migration/scratchpad.md`.
 
 ### Task 4 — Drain, adopt, quarantine ✅ COMPLETED
 

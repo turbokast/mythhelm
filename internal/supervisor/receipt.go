@@ -3,6 +3,7 @@ package supervisor
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"runtime"
 
 	"github.com/turbokast/mythhelm/internal/admission"
+	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/contain"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/security"
@@ -182,6 +184,18 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 			"api_provider": known(adm.NativeAuth.APIProvider), "subscription_type": known(adm.NativeAuth.SubscriptionType),
 			"identity_ref": known(adm.NativeAuth.IdentityRef)}
 	}
+	observations, err := usageLedger(ctx, j, runID)
+	if err != nil {
+		return nil, err
+	}
+	reserve, err := reserveLedger(ctx, j, runID, adm, admitted)
+	if err != nil {
+		return nil, err
+	}
+	remaining, nextRetry, err := bucketLedger(ctx, j, runID)
+	if err != nil {
+		return nil, err
+	}
 	r := Receipt{
 		"schema_version": 1, "run_id": run.RunID, "state": run.State, "exit_code": exit,
 		"requested_outcome": map[string]any{"task_file_sha256": known(run.TaskSHA256), "title": taskTitle, "deliverable": "review-candidate"},
@@ -196,7 +210,8 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 			"credential_provenance": known(adm.Billing.CredentialProvenance), "entitlement_class": known(adm.Billing.EntitlementClass),
 			"entitlement_source": known(adm.Billing.EntitlementSource), "paid_continuation": known(adm.Billing.PaidContinuation),
 			"paid_continuation_user_declaration": known(adm.Billing.PaidContinuationUserDeclaration), "init_api_key_source": eventValue(nativeSession, "auth_source"),
-			"retail_equivalent_estimate_usd": price, "tokens": tokens, "native_auth": nativeAuth},
+			"retail_equivalent_estimate_usd": price, "tokens": tokens, "native_auth": nativeAuth,
+			"usage_observations": observations, "reserve": reserve, "remaining": remaining, "next_retry": nextRetry},
 		"routing": map[string]any{"decision": "pinned by --adapter; no routing in this slice"},
 		"native_result": map[string]any{"attempt_state": unknown, "subtype": eventValue(native, "subtype"), "num_turns": eventValue(native, "num_turns"),
 			"duration_ms": eventValue(native, "duration_ms"), "session_id": known(session), "permission_denials": denials},
@@ -253,6 +268,105 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 		r["verification"] = map[string]any{"config_sha256": known(v.ConfigSHA256), "baseline": "not-run", "checks": checks, "evaluator": evaluator}
 	}
 	return r, nil
+}
+
+// retailScope is the usage scope carrying the native retail estimate.
+const retailScope = "retail-equivalent"
+
+// RunBucket returns the billing bucket the run's reservation names: the
+// latest reservation row for runID, in any status. One bucket per run
+// (AC-6.4), so the latest row names the run's bucket whatever its status. A
+// run with no reservation has no bucket ("", nil): never-exhausted and
+// never-admitted runs alike.
+func RunBucket(ctx context.Context, j *journal.Journal, runID string) (string, error) {
+	bucket := ""
+	err := j.Transact(ctx, func(tx *sql.Tx) error {
+		return tx.QueryRowContext(ctx, `SELECT bucket FROM reservations WHERE run_id = ?
+			ORDER BY created_at DESC, reservation_id DESC LIMIT 1`, runID).Scan(&bucket)
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading the bucket of %s: %w", runID, err)
+	}
+	return bucket, nil
+}
+
+// usageLedger renders billing.usage_observations: one entry per row with
+// its full identity, never a summed figure across buckets (AC-1.3).
+func usageLedger(ctx context.Context, j *journal.Journal, runID string) ([]any, error) {
+	rows, err := j.UsageObservations(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	out := []any{}
+	for _, o := range rows {
+		entry := map[string]any{
+			"scope": known(o.Scope), "unit": known(o.Unit), "source": known(o.Source),
+			"label": known(o.Label), "quantity": known(o.Quantity), "observed_at": o.ObservedAt,
+		}
+		if o.Scope == retailScope {
+			entry["note"] = "estimate, not a charge"
+		}
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
+// reserveLedger renders billing.reserve: the completion reserve as an
+// estimate with the Task 9 note, never a hard token claim (AC-5.2). The
+// repair ceiling comes from the envelope row; the verify pass is exact only
+// for a waived suite (no checks admitted, so the pass is empty) and unknown
+// otherwise, because check timeouts are not journaled (I09).
+func reserveLedger(ctx context.Context, j *journal.Journal, runID string, adm admission.Record, admitted bool) (map[string]any, error) {
+	reserve := map[string]any{
+		"verify_pass_checks": unknown, "verify_timeout_sum": unknown,
+		"repair_ceiling": unknown, "note": billing.ReserveNote,
+	}
+	if admitted && adm.NoChecks {
+		reserve["verify_pass_checks"] = 0
+		reserve["verify_timeout_sum"] = "0s"
+	}
+	env, err := j.RunEnvelope(ctx, runID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return reserve, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	reserve["repair_ceiling"] = env.Repairs
+	return reserve, nil
+}
+
+// bucketLedger renders billing.remaining and billing.next_retry: remaining
+// quantity is always unknown in S1 (AC-7.1) with the run's bucket identity,
+// and the retry schedule renders only for an exhausted bucket — null when
+// the bucket never exhausted, with an unknown reset staying unknown.
+func bucketLedger(ctx context.Context, j *journal.Journal, runID string) (map[string]any, any, error) {
+	remaining := map[string]any{"quantity": unknown, "bucket": unknown}
+	var nextRetry any
+	bucket, err := RunBucket(ctx, j, runID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if bucket == "" {
+		return remaining, nextRetry, nil
+	}
+	remaining["bucket"] = known(bucket)
+	row, err := j.BucketState(ctx, bucket)
+	if errors.Is(err, sql.ErrNoRows) {
+		return remaining, nextRetry, nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	at := unknown
+	if row.ResetAt != nil {
+		at = known(*row.ResetAt)
+	}
+	nextRetry = map[string]any{"at": at, "retries_used": row.RetriesUsed, "retries_max": admission.MaxBucketRetries}
+	return remaining, nextRetry, nil
 }
 
 func receiptExit(state, reason string) int {

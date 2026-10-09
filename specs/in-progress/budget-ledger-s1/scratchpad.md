@@ -63,3 +63,11 @@ against the recorded schedule (no scheduler daemon in S1; D13).
   `TestRegistryLookupLatency` as the NFR-1 shape).
 
 ## Discoveries
+
+- Task 10: the fake adapter surfaces neither usage nor cost (`fake.go` maps
+  `UsageTokens: Unsupported` and ignores the `usage-counters` scenario's
+  per-turn usage), so every fake run to date journals exactly one usage
+  row — the always-expected `retail-equivalent` scope as an `unknown`
+  marker. Task 11's AT-13 counter test needs a `fake.go` decoder extension
+  (a spec deviation, as Task 8's `fake.error` frame was) or it can only
+  assert the marker, not accumulated deltas.
