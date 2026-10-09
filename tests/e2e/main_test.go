@@ -11,12 +11,20 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/turbokast/mythhelm/internal/contain"
 )
 
 // mythhelmBin is the packaged binary under test, built once by TestMain.
 var mythhelmBin string
 
 func TestMain(m *testing.M) {
+	// The boundary probe re-executes this binary as `__contain`: dispatch
+	// it before the build so the probe child never rebuilds or runs the
+	// suite, and the availability gate reads an honest verdict.
+	if len(os.Args) > 1 && os.Args[1] == contain.Command {
+		os.Exit(contain.Main(os.Args[2:]))
+	}
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		fmt.Fprintln(os.Stderr, "e2e: cannot locate the test directory")
