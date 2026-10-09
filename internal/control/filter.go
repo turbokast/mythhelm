@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"slices"
 )
 
@@ -36,9 +37,12 @@ func Filter(peer Peer, repos []string, rows []Row) ([]Row, error) {
 }
 
 // ReadHandler answers the read intent: the runs of the repositories named in
-// params ({"repos": [...]}), filtered before they are counted. The
-// repository set is the authority the same-user peer presents; no
-// per-repository policy store exists yet.
+// params ({"repos": [...]}), filtered before they are counted. A request
+// carrying an attempt's capability token is bounded to that attempt's run
+// repository, which the supervisor reads from its own ledger; the list can
+// only narrow it, never widen it. A token-less same-user peer is the operator:
+// no per-repository policy store exists yet, so the list it presents is its
+// scope.
 func ReadHandler(db *sql.DB) Handler {
 	return func(ctx context.Context, peer Peer, in Intent) (Result, error) {
 		var p struct {
@@ -47,20 +51,54 @@ func ReadHandler(db *sql.DB) Handler {
 		if err := strictParams(in, &p); err != nil {
 			return Result{}, err
 		}
-		if _, err := Filter(peer, p.Repos, nil); err != nil {
+		repos := p.Repos
+		if in.CapabilityToken != "" {
+			entitled, err := tokenRepo(ctx, db, in.CapabilityToken)
+			if err != nil {
+				return Result{}, err
+			}
+			repos = narrow(p.Repos, entitled)
+		}
+		if _, err := Filter(peer, repos, nil); err != nil {
 			return Result{}, err
 		}
 		rows, err := readRuns(ctx, db)
 		if err != nil {
 			return Result{}, err
 		}
-		kept, err := Filter(peer, p.Repos, rows)
+		kept, err := Filter(peer, repos, rows)
 		if err != nil {
 			return Result{}, err
 		}
 		body, err := json.Marshal(map[string]any{"count": len(kept), "rows": kept})
 		return Result{Body: body}, err
 	}
+}
+
+// narrow bounds a requested repository list by the one repository an
+// attempt is entitled to: an empty request means the entitled repository,
+// and a request that omits it leaves nothing in scope.
+func narrow(requested []string, entitled string) []string {
+	if len(requested) == 0 || slices.Contains(requested, entitled) {
+		return []string{entitled}
+	}
+	return nil
+}
+
+// tokenRepo is the repository of the run the token's attempt belongs to. An
+// unknown token is permission_denied.
+func tokenRepo(ctx context.Context, db *sql.DB, token string) (string, error) {
+	var repo string
+	err := db.QueryRowContext(ctx, `SELECT r.source_repo FROM capability_tokens t
+		JOIN attempts a ON a.attempt_id = t.attempt_id JOIN runs r ON r.run_id = a.run_id
+		WHERE t.token_sha256 = ?`, tokenDigest(token)).Scan(&repo)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return "", newError(CodePermissionDenied, "capability token is not valid")
+	case err != nil:
+		return "", newError(CodePersistenceUnavailable, "reading token scope: %v", err)
+	}
+	return repo, nil
 }
 
 func readRuns(ctx context.Context, db *sql.DB) ([]Row, error) {

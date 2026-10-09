@@ -405,3 +405,50 @@ func TestMigration0005KeysReservationsByHost(t *testing.T) {
 		t.Errorf("another host with the same bucket and scope is refused: %v", err)
 	}
 }
+
+func TestReadIntentTokenBindsRepoEntitlement(t *testing.T) { // I03 (v2 §2)
+	t.Parallel()
+	db, ctx, srv := supervisorFixture(t)
+	for _, r := range [][2]string{{"run_a", "/repos/a"}, {"run_b", "/repos/b"}} {
+		if _, err := db.Exec(`INSERT INTO runs (run_id, state, adapter_id, source_repo, task_sha256, billing_posture, execution_profile, created_at, updated_at)
+			VALUES (?, 'created', 'a', ?, 't', 'b', 'p', 't', 't')`, r[0], r[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seedAttempt(t, db, "run_a", "att_a")
+	token, err := MintToken(ctx, db, "att_a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := func(op, token string, repos ...string) (string, error) {
+		in := intent(op, "read")
+		in.CapabilityToken = token
+		in.Params = params(t, map[string]any{"repos": repos})
+		res, err := srv.Dispatch(ctx, Peer{SameUser: true}, in)
+		return string(res.Body), err
+	}
+	// Asking for more than its entitlement narrows to the entitlement.
+	body, err := read("op_1", token, "/repos/a", "/repos/b")
+	if err != nil || !strings.Contains(body, `"count":1`) || strings.Contains(body, "run_b") || strings.Contains(body, "/repos/b") {
+		t.Fatalf("read widened by the list = %s, %v; want only /repos/a", body, err)
+	}
+	// An empty request means the entitlement.
+	body, err = read("op_2", token)
+	if err != nil || !strings.Contains(body, `"count":1`) || !strings.Contains(body, "run_a") {
+		t.Fatalf("read with no list = %s, %v; want the attempt's own repository", body, err)
+	}
+	// Asking only for a foreign repository leaves nothing in scope.
+	body, err = read("op_3", token, "/repos/b")
+	requireCode(t, err, CodePermissionDenied)
+	if strings.Contains(body, "run_b") || strings.Contains(body, "/repos/b") {
+		t.Fatalf("refused read leaked %s", body)
+	}
+	// A forged token is not a token-less operator.
+	_, err = read("op_4", "forged", "/repos/a", "/repos/b")
+	requireCode(t, err, CodePermissionDenied)
+	// The token-less same-user peer keeps the operator scope it presents.
+	body, err = read("op_5", "", "/repos/a", "/repos/b")
+	if err != nil || !strings.Contains(body, `"count":2`) {
+		t.Fatalf("operator read = %s, %v; want both repositories", body, err)
+	}
+}
