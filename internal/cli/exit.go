@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/turbokast/mythhelm/internal/admission"
+	"github.com/turbokast/mythhelm/internal/control"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/security"
 	"github.com/turbokast/mythhelm/internal/supervisor"
@@ -66,7 +67,8 @@ func exitCode(err error) ExitCode {
 		return ExitCapability
 	case errors.As(err, &blocked):
 		return ExitBlocked
-	case errors.Is(err, supervisor.ErrOwnerHeld), errors.Is(err, supervisor.ErrOwnership):
+	case errors.Is(err, supervisor.ErrOwnerHeld), errors.Is(err, supervisor.ErrOwnership),
+		errors.Is(err, control.ErrRootConflict), errors.Is(err, control.ErrInstanceHeld):
 		return ExitOwnership
 	default:
 		return ExitInternal

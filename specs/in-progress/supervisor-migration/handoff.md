@@ -39,10 +39,12 @@
   (`invalid_contract`, `ownership_unresolved` on stale generation,
   `persistence_unavailable` on ledger I/O). Tests in
   `internal/journal/append_v2_test.go`, including the v1 golden.
-- **For dependents**: Task 3 calls the envelope path inside `Mutate` —
-  but `appendTx` is unexported per this task's spec, so Task 3 must add
-  a thin exported wrapper in `internal/journal` (one-line deviation) to
-  reach it cross-package; never call db-level `Append` from inside
+- **For dependents**: Task 3 landed first (PR #287) with its own
+  mirrored `appendImported` in `internal/migrate/import.go`, since
+  `appendTx` is unexported per this task's spec and unreachable
+  cross-package — consolidating that mirror onto `appendTx` is a
+  follow-up needing a thin exported wrapper in `internal/journal`
+  (one-line deviation). Never call db-level `Append` from inside
   `Mutate` (it takes its own `BeginTx`). A duplicate `event_id` acks
   nil with no append — ID-reuse-with-different-content conflicts are
   the caller's layer (import markers), never `Append`'s. v1 behavior,
@@ -50,14 +52,29 @@
   decodes; phase refusals also wrap `journal.ErrInvalidEvent`.
 - **Deviations that change a later task's inputs**: none — the phase
   vocabulary, migration number (0007) and `migration_state` shape from
-  Task 1 are unchanged. Note the wrapper need above (Task 3), and that
-  phase words live as literals in `internal/journal` mirroring
+  Task 1 are unchanged. Note the consolidation follow-up above, and
+  that phase words live as literals in `internal/journal` mirroring
   `migrate.Phase` (no import either way between the packages, or it
   cycles).
 
 ## Task 3 — Legacy import as one-task runs
 
-<!-- pending -->
+- **Produces**: `migrate.ImportRun(ctx, tx, runID) (v2contract.TaskRevision, error)` in
+  `internal/migrate/import.go`; `migrate.ImportOptions{RunIDs}` (empty means all v1 runs;
+  consumed by Task 6, not by `ImportRun`); `migrate.ImportResult{RunID, TaskID, Revision,
+  Posture}` receipt row; failures are `*v2contract.ControlError` (`revision_conflict`,
+  `invalid_contract`, `persistence_unavailable`, each `Validate`-clean). Tests in
+  `internal/migrate/import_test.go`.
+- **For dependents**: call inside `control.Mutate` — `ImportRun` never commits. The v2
+  task id is the run's earliest attempt's legacy task id, or the run id when the run has
+  no attempts; the `migration.imported` envelope carries legacy run/attempt ids verbatim
+  under deterministic event id `migration-imported-<runID>` (producer `migration`,
+  generation 0). Import never yields `accepted` (`completed`/`ready_for_review`/
+  `applying` → `candidate`, I07); v1 rows are read-only to import.
+- **Deviations that change a later task's inputs**: the envelope append mirrors
+  `Journal.Append` inline instead of Task 2's `appendTx` (Tasks 2, 6: no action needed —
+  the statements stay valid after `appendTx` lands; a follow-up may refactor
+  `appendImported` onto it).
 
 ## Task 4 — Drain, adopt, quarantine
 
