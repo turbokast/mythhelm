@@ -151,10 +151,12 @@ func Backup(ctx context.Context, db *sql.DB, dir string) (BackupInfo, error) {
 // restored file is re-opened read-only and integrity-checked before any
 // writer touches it.
 //
-// Failure cases: schema_too_new (the backup is newer than this binary —
-// upgrade, nothing written); invalid_contract (digest mismatch —
-// unrestorable, nothing written); persistence_unavailable (I/O, or a
-// corrupt backup/restored copy failing integrity_check).
+// Failure cases: schema_too_new (the sidecar or the backup file itself is
+// newer than this binary — upgrade, nothing written); invalid_contract
+// (digest mismatch, or the sidecar disagreeing with the backup file's own
+// version — unrestorable, nothing written); persistence_unavailable (I/O,
+// a corrupt backup/restored copy failing integrity_check, or a live WAL
+// at the target that must checkpoint first).
 func Restore(ctx context.Context, info BackupInfo, dir string) error {
 	const op = "restore"
 	if info.SchemaVersion > supportedSchemaVersion {
@@ -187,14 +189,42 @@ func Restore(ctx context.Context, info BackupInfo, dir string) error {
 			"restore from an intact backup; this copy fails integrity_check",
 			fmt.Errorf("backup integrity_check: %w", err))
 	}
-	dst := filepath.Join(dir, dbName)
-	for _, sidecar := range []string{dst + "-wal", dst + "-shm"} {
-		if err := os.Remove(sidecar); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return ctlErr(v2contract.CodePersistenceUnavailable, op,
-				"retry once the state directory answers; see detail migrate/cause", err)
-		}
+	// The sidecar digest covers the database bytes, not the sidecar
+	// fields, so a lowered schema_version would sail through the checks
+	// above. The backup file itself is authoritative for its version.
+	actual, err := readUserVersion(ctx, info.Path)
+	if err != nil {
+		return ctlErr(v2contract.CodePersistenceUnavailable, op,
+			"restore from an intact backup; see detail migrate/cause",
+			fmt.Errorf("backup user_version: %w", err))
 	}
-	// Write-then-rename: a failed restore never leaves a half-written ledger.
+	if actual > supportedSchemaVersion {
+		return ctlErr(v2contract.CodeSchemaTooNew, op,
+			fmt.Sprintf("upgrade mythhelm: backup schema is v%d, this binary supports up to v%d",
+				actual, supportedSchemaVersion),
+			fmt.Errorf("backup database is schema v%d, newer than supported v%d",
+				actual, supportedSchemaVersion))
+	}
+	if actual != info.SchemaVersion {
+		return ctlErr(v2contract.CodeInvalidContract, op,
+			"restore from a backup whose sidecar matches its database",
+			fmt.Errorf("backup database is schema v%d, sidecar says v%d",
+				actual, info.SchemaVersion))
+	}
+	dst := filepath.Join(dir, dbName)
+	// A non-empty WAL may hold committed frames not yet checkpointed into
+	// the live database. Only an empty or absent WAL is safe to drop, so
+	// a live one refuses before anything is staged.
+	if st, err := os.Stat(dst + "-wal"); err == nil && st.Size() > 0 {
+		return ctlErr(v2contract.CodePersistenceUnavailable, op,
+			"close every handle on the state database (last close checkpoints the WAL) and retry",
+			fmt.Errorf("%s holds %d uncheckpointed bytes", dst+"-wal", st.Size()))
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return ctlErr(v2contract.CodePersistenceUnavailable, op,
+			"retry once the state directory answers; see detail migrate/cause", err)
+	}
+	// Write-then-rename: the replacement is fully staged before the live
+	// sidecars are touched, so a failed stage leaves the dir byte-identical.
 	tmp, err := os.CreateTemp(dir, ".mythhelm.db.restore-*")
 	if err != nil {
 		return ctlErr(v2contract.CodePersistenceUnavailable, op,
@@ -215,6 +245,13 @@ func Restore(ctx context.Context, info BackupInfo, dir string) error {
 	if err := tmp.Close(); err != nil {
 		return ctlErr(v2contract.CodePersistenceUnavailable, op,
 			"retry once the state directory answers; see detail migrate/cause", err)
+	}
+	// The replacement is staged: drop the provably empty sidecars, then swap.
+	for _, sidecar := range []string{dst + "-wal", dst + "-shm"} {
+		if err := os.Remove(sidecar); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return ctlErr(v2contract.CodePersistenceUnavailable, op,
+				"retry once the state directory answers; see detail migrate/cause", err)
+		}
 	}
 	if err := os.Rename(tmpName, dst); err != nil {
 		return ctlErr(v2contract.CodePersistenceUnavailable, op,
@@ -260,6 +297,21 @@ func integrityCheckFile(ctx context.Context, path string) error {
 	}
 	defer func() { _ = db.Close() }()
 	return integrityCheck(ctx, db)
+}
+
+// readUserVersion reads PRAGMA user_version through a read-only handle: the
+// backup file is authoritative for its own schema version, never the sidecar.
+func readUserVersion(ctx context.Context, path string) (int, error) {
+	db, err := sql.Open("sqlite", readOnlyDSN(path))
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = db.Close() }()
+	var version int
+	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+		return 0, fmt.Errorf("reading user_version of %s: %w", path, err)
+	}
+	return version, nil
 }
 
 // readOnlyDSN builds a mode=ro SQLite URI for path, mirroring journal's DSN.

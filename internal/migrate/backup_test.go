@@ -167,6 +167,8 @@ func TestBackupRestoreRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Restore requires every handle closed (last close checkpoints the WAL).
+	_ = raw.Close()
 
 	// The sidecar carries schema version, build version, digest, timestamp.
 	sidecarRaw, err := os.ReadFile(info.Path + ".json")
@@ -289,6 +291,103 @@ func TestRestoreDigestMismatchRefuses(t *testing.T) {
 // bump that forgets to sweep backup.go fails here: the expected backup name
 // derives from journal.DBName, and a restore at exactly
 // journal.SchemaVersion must be accepted.
+// TestRestoreSidecarVersionMismatchRefuses pins the backup file as
+// authoritative for its own version: a sidecar disagreeing with the file
+// refuses with invalid_contract and writes nothing.
+func TestRestoreSidecarVersionMismatchRefuses(t *testing.T) {
+	ctx := t.Context()
+	dir, _ := fixtureWithV1(t)
+	raw := openRaw(t, dir)
+	info, err := migrate.Backup(ctx, raw, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = raw.Close()
+
+	info.SchemaVersion = journal.SchemaVersion - 1
+	before := hashDir(t, dir)
+	if code := codeOf(t, migrate.Restore(ctx, info, dir)); code != v2contract.CodeInvalidContract {
+		t.Errorf("code = %q, want %q", code, v2contract.CodeInvalidContract)
+	}
+	if after := hashDir(t, dir); after != before {
+		t.Error("target dir changed on sidecar/file version-mismatch refusal")
+	}
+}
+
+// TestRestoreLoweredSidecarWithNewerBackupRefuses is the downgrade case:
+// the sidecar digest covers the database bytes, not the sidecar fields, so
+// a lowered schema_version with a correct digest must still refuse with
+// schema_too_new when the backup file itself is newer than the binary.
+func TestRestoreLoweredSidecarWithNewerBackupRefuses(t *testing.T) {
+	ctx := t.Context()
+	dir, _ := fixtureWithV1(t)
+
+	newerDir := t.TempDir()
+	j, err := journal.Open(ctx, newerDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	newerRaw := openRaw(t, newerDir)
+	if _, err := newerRaw.ExecContext(ctx, "PRAGMA user_version = 99"); err != nil {
+		t.Fatal(err)
+	}
+	_ = newerRaw.Close()
+	newerPath := filepath.Join(newerDir, journal.DBName)
+	newerBytes, err := os.ReadFile(newerPath) //nolint:gosec // G304: the fixture database this test just built in its temp dir
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(newerBytes)
+	info := migrate.BackupInfo{
+		Path:          newerPath,
+		SchemaVersion: journal.SchemaVersion, // lowered: the file is v99
+		BuildVersion:  "test",
+		SHA256:        hex.EncodeToString(sum[:]),
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+	}
+
+	before := hashDir(t, dir)
+	if code := codeOf(t, migrate.Restore(ctx, info, dir)); code != v2contract.CodeSchemaTooNew {
+		t.Errorf("code = %q, want %q", code, v2contract.CodeSchemaTooNew)
+	}
+	if after := hashDir(t, dir); after != before {
+		t.Error("target dir changed on lowered-sidecar refusal")
+	}
+}
+
+// TestRestoreRefusesLiveWAL pins the pre-staging guard: a non-empty WAL at
+// the target may hold uncheckpointed frames, so Restore refuses with
+// persistence_unavailable before staging anything, leaving the WAL intact.
+func TestRestoreRefusesLiveWAL(t *testing.T) {
+	ctx := t.Context()
+	dir, _ := fixtureWithV1(t)
+	raw := openRaw(t, dir)
+	info, err := migrate.Backup(ctx, raw, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = raw.Close()
+
+	wal := filepath.Join(dir, journal.DBName+"-wal")
+	frames := []byte("uncheckpointed-frames")
+	if err := os.WriteFile(wal, frames, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := hashDir(t, dir)
+	if code := codeOf(t, migrate.Restore(ctx, info, dir)); code != v2contract.CodePersistenceUnavailable {
+		t.Errorf("code = %q, want %q", code, v2contract.CodePersistenceUnavailable)
+	}
+	if after := hashDir(t, dir); after != before {
+		t.Error("target dir changed on live-WAL refusal")
+	}
+	if kept, _ := os.ReadFile(wal); string(kept) != string(frames) { //nolint:gosec // G304: the WAL plant this test just wrote in its temp dir
+		t.Error("live WAL bytes changed on refusal")
+	}
+}
+
 func TestBackupPinsMatchJournal(t *testing.T) {
 	ctx := t.Context()
 	dir, _ := fixtureWithV1(t)

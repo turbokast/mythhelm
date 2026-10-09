@@ -54,11 +54,18 @@
   digest mismatch), `schema_too_new` (backup newer than the binary),
   `persistence_unavailable` (I/O, integrity failures). All refusals
   return before writing anything to the target dir.
+- **For dependents**: `Restore` refuses with `persistence_unavailable`
+  when the target holds a non-empty `-wal` — close every handle on
+  the state database first (last close checkpoints the WAL). The
+  backup file's own `user_version` is authoritative: a sidecar
+  disagreeing with it refuses `invalid_contract`, a lowered sidecar
+  over a newer file still refuses `schema_too_new`.
 - **For Task 7**: `Restore` opens the backup and the restored copy
-  read-only (`mode=ro`) for `PRAGMA integrity_check`; exclude those
-  opens from `TestMigrateWritesRunInMutate` exactly as the design
-  excludes Backup's single `VACUUM INTO` `Exec`. Corrupt-source
-  backup and corrupt-copy restore (matching digest) both abort with
+  read-only (`mode=ro`) for `PRAGMA integrity_check` and the
+  backup's `user_version` read; exclude those opens from
+  `TestMigrateWritesRunInMutate` exactly as the design excludes
+  Backup's single `VACUUM INTO` `Exec`. Corrupt-source backup and
+  corrupt-copy restore (matching digest) both abort with
   `persistence_unavailable` — verified by a throwaway probe, not a
   committed test, so Task 7 owns that pin.
 - **Deviations that change a later task's inputs**: backup.go mirrors
