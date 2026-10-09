@@ -98,7 +98,7 @@
 - **Spec deviations**: (1) `internal/journal/journal_test.go` and `internal/journal/qualification_test.go` changed (outside Files): they hard-coded schema version 2. (2) Per-model token rows carry the `SplitUsage` combined total; the design DDL has no component columns, so mapped components are not persisted. (3) A cost that is not plain decimal text is treated as unreported (unknown row), so one odd literal cannot stall spool ingestion. 0003 was free and no MH-21 `reservations` table had landed, so no renumbering or adoption applied.
 - **Files modified**: `internal/journal/migrations/0003_ledger.sql`, `internal/journal/journal.go`, `internal/journal/journal_test.go`, `internal/journal/qualification_test.go`, `internal/journal/ledger.go`, `internal/journal/ledger_test.go`, `internal/supervisor/ingest.go`, `internal/supervisor/ingest_ledger_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
-### Task 4 — Admission reservation coupling
+### Task 4 — Admission reservation coupling ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -121,6 +121,10 @@
   - `go test ./internal/admission/ -run TestUnknownQuotaAdmitsStopAtExhaustion`: the existing AC-7.2 guard still passes (cited, not added). Fails before only on regression (guard).
 - **Test plan**: Fake `Reserver` for unit tests; pipeline test with temp state dir asserting blocked-on-hold-failure.
 - **Invariants touched**: I02 (v2 §7.3: failed hold blocks admission); I10 (v2 §2: local reservation never presented as provider availability, AC-3.3); I04 (v2 §2: one bucket per run, no preauthorised alternative, AC-6.4).
+- **Status**: ✅ Completed — every admitted run now gets its resolved `run_envelopes` row in the admission transaction and one `unknown`-quantity reservation coupled to its bucket; a failed hold blocks the run; PR #256.
+- **Implementation**: `reserve.go` holds through `Transact` with a count-based duplicate check; `appendAdmission` resolves the Decision layers, upserts the envelope inside the admission append, then holds, blocking with `quota_reservation_failed` on failure. The bucket record is built from the Decision. Commit bebda35.
+- **Spec deviations**: (1) `Reserver.Reserve(ctx, runID, bucket, owner)` takes the run; the design signature omits it. (2) The bucket's record is built from the Decision (adapter harness and surface, billing posture entitlement class, native auth identity), since the Decision does not carry the consulted record. (3) The duplicate-hold check is a `COUNT` inside `Transact` in `reserve.go`, not a new journal accessor. (4) The notice names the bucket, not the reservation id, as a random id broke the stable-stderr test `TestE2EJsonlStable`.
+- **Files modified**: `internal/admission/reserve.go`, `internal/admission/reserve_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/pipeline_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
 ### Task 5 — Exhaustion signal taxonomy and fake scenarios ✅ COMPLETED
 

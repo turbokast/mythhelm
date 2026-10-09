@@ -26,7 +26,9 @@
 
 ## Task 4 — Admission reservation coupling
 
-<!-- pending -->
+- **Produces**: `admission.QuotaBucket`, `Reserver` (`Reserve(ctx, runID, bucket, owner)`), `NewJournalReserver`, `HoldQuotaReservation`, `ErrDuplicateHold`, `ReservationNote` and `ReservationText(bucket)` in `internal/admission/reserve.go`; `appendAdmission` now writes the resolved envelope and holds the reservation (`pipeline.holdReservation`).
+- **For dependents**: the envelope row is written in the `admission.decided` transaction, so Tasks 7 and 9 can read it with `RunEnvelope` from the first attempt; `FirstStartAt` is empty until Task 7 sets it. The reservation row has scope = bucket, owner = run id, quantity `unknown`, status `held`; Task 8 releases or orphans it by id, found with a query on `run_id` and status. A block at admission uses reason `quota_reservation_failed`. Under `--no-checks` the file layer is empty (Task 6), so those runs resolve flags over the built-ins.
+- **Traps**: the bucket is a JSON array of harness, surface, entitlement class and identity ref; the fake adapter's identity is `unknown`. A live-hold test needs a `runs` row first (foreign key). The reservation notice is printed once per run, so any exact-output golden must expect it (Task 10's `TestCliUsageNotices` says "exactly" the four usage lines: allow for this one).
 
 ## Task 5 — Exhaustion signal taxonomy and fake scenarios
 
