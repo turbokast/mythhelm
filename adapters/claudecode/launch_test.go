@@ -329,27 +329,35 @@ func TestPluginsNeverWidenArgv(t *testing.T) {
 			Probe:     launchProbe(t),
 		}
 	}
-	withPlugins, err := New().Prepare(context.Background(), newInput())
-	if err != nil {
-		t.Fatal(err)
-	}
-	bare, err := New().Prepare(context.Background(), newInput())
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Prepare takes no manifest input, so the plugin/MCP-bearing run is
-	// byte-identical to the bare run.
-	if !reflect.DeepEqual(withPlugins.Spec.Args, bare.Spec.Args) || !reflect.DeepEqual(withPlugins.Spec.Env, bare.Spec.Env) {
-		t.Fatalf("Prepare differs between runs:\nwith = %q %q\nbare = %q %q",
-			withPlugins.Spec.Args, withPlugins.Spec.Env, bare.Spec.Args, bare.Spec.Env)
-	}
-	if want := Argv(newInput().Probe.Executable, nil); !reflect.DeepEqual(withPlugins.Spec.Args, want[1:]) {
-		t.Fatalf("argv = %q, want exactly %q", withPlugins.Spec.Args, want[1:])
-	}
-	for _, element := range append(append([]string{}, withPlugins.Spec.Args...), withPlugins.Spec.Env...) {
-		for _, smuggled := range hostile {
-			if strings.Contains(element, smuggled) {
-				t.Fatalf("launch element %q carries plugin/MCP content %q", element, smuggled)
+	if runtime.GOOS == "windows" {
+		// Prepare refuses Windows by design; the probe tests pin the
+		// refusal. The manifest and seam-pin assertions still run below.
+		if _, err := New().Prepare(context.Background(), newInput()); err == nil {
+			t.Fatal("Prepare must refuse Windows by design")
+		}
+	} else {
+		withPlugins, err := New().Prepare(context.Background(), newInput())
+		if err != nil {
+			t.Fatal(err)
+		}
+		bare, err := New().Prepare(context.Background(), newInput())
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Prepare takes no manifest input, so the plugin/MCP-bearing run is
+		// byte-identical to the bare run.
+		if !reflect.DeepEqual(withPlugins.Spec.Args, bare.Spec.Args) || !reflect.DeepEqual(withPlugins.Spec.Env, bare.Spec.Env) {
+			t.Fatalf("Prepare differs between runs:\nwith = %q %q\nbare = %q %q",
+				withPlugins.Spec.Args, withPlugins.Spec.Env, bare.Spec.Args, bare.Spec.Env)
+		}
+		if want := Argv(newInput().Probe.Executable, nil); !reflect.DeepEqual(withPlugins.Spec.Args, want[1:]) {
+			t.Fatalf("argv = %q, want exactly %q", withPlugins.Spec.Args, want[1:])
+		}
+		for _, element := range append(append([]string{}, withPlugins.Spec.Args...), withPlugins.Spec.Env...) {
+			for _, smuggled := range hostile {
+				if strings.Contains(element, smuggled) {
+					t.Fatalf("launch element %q carries plugin/MCP content %q", element, smuggled)
+				}
 			}
 		}
 	}
