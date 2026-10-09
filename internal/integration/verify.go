@@ -5,16 +5,21 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/admission"
+	"github.com/turbokast/mythhelm/internal/contain"
 	"github.com/turbokast/mythhelm/internal/security"
 	"github.com/turbokast/mythhelm/internal/workspace"
 )
@@ -38,10 +43,13 @@ type Verification struct {
 	ConfigSHA256    string        `json:"config_sha256"`
 	Result          string        `json:"result"`
 	Checks          []CheckResult `json:"checks"`
-	StartedAt       time.Time     `json:"started_at"`
-	FinishedAt      time.Time     `json:"finished_at"`
-	Workdir         string        `json:"-"`
-	EvidenceDir     string        `json:"-"`
+	// Evaluator names what ran the checks and digests its policy and the
+	// check definitions (design §2.7).
+	Evaluator   contain.Evaluator `json:"evaluator"`
+	StartedAt   time.Time         `json:"started_at"`
+	FinishedAt  time.Time         `json:"finished_at"`
+	Workdir     string            `json:"-"`
+	EvidenceDir string            `json:"-"`
 }
 
 // RunChecks executes the admitted check list in a detached worktree of the
@@ -53,6 +61,22 @@ func RunChecks(ctx context.Context, cand Candidate, cfg admission.ProjectConfig,
 // RunChecksWithOptions executes the admitted check list like RunChecks,
 // continuing past an unavailable check when keepGoing is set.
 func RunChecksWithOptions(ctx context.Context, cand Candidate, cfg admission.ProjectConfig, env []string, keepGoing bool) (Verification, error) {
+	return RunChecksWithPolicy(ctx, cand, cfg, env, RunOptions{KeepGoing: keepGoing})
+}
+
+// RunOptions tunes a check run. A nil Policy runs the checks with host
+// authority (trusted-host); otherwise each check runs inside the boundary with
+// a read-only candidate worktree, scratch /tmp and HOME, and no credential
+// binds (design §2.7).
+type RunOptions struct {
+	KeepGoing bool
+	Policy    *contain.Policy
+}
+
+// RunChecksWithPolicy executes the admitted check list in a detached worktree
+// of the frozen candidate under opts. Check definitions come only from cfg, the
+// admitted configuration; the candidate's own files never define an argv.
+func RunChecksWithPolicy(ctx context.Context, cand Candidate, cfg admission.ProjectConfig, env []string, opts RunOptions) (Verification, error) {
 	v := Verification{CandidateCommit: cand.Commit, StartedAt: time.Now().UTC()}
 	if cand.Workspace == "" || cand.Commit == "" || len(cand.Commit) < 12 {
 		return v, errors.New("candidate has no managed workspace or commit")
@@ -61,6 +85,22 @@ func RunChecksWithOptions(ctx context.Context, cand Candidate, cfg admission.Pro
 	verID := cand.Commit[:12]
 	v.Workdir = filepath.Join(runDir, "verify", verID)
 	v.EvidenceDir = filepath.Join(runDir, "evidence", verID)
+	var policy *contain.Policy
+	if opts.Policy != nil {
+		if runtime.GOOS != "linux" {
+			return v, fmt.Errorf("contained checks on %s: %w", runtime.GOOS, contain.ErrUnsupported)
+		}
+		if !slices.ContainsFunc(env, func(kv string) bool { return strings.HasPrefix(kv, "HOME=") }) {
+			return v, errors.New("contained checks need HOME in the check environment")
+		}
+		p := *opts.Policy
+		p.Workdir, p.ReadOnly, p.AuthBinds = v.Workdir, true, nil
+		policy = &p
+	}
+	var err error
+	if v.Evaluator, err = evaluatorOf(policy, cfg.Checks); err != nil {
+		return v, err
+	}
 	if err := ensureRealDir(filepath.Dir(v.Workdir)); err != nil {
 		return v, err
 	}
@@ -79,11 +119,11 @@ func RunChecksWithOptions(ctx context.Context, cand Candidate, cfg admission.Pro
 	bad, unavailable := false, false
 	for _, check := range cfg.Checks {
 		result := CheckResult{Name: check.Name, Argv: redactedArgv(check.Argv)}
-		if unavailable && !keepGoing {
+		if unavailable && !opts.KeepGoing {
 			result.Status = "not_run"
 		} else {
 			var err error
-			result, err = runCheck(ctx, v.Workdir, v.EvidenceDir, check, env)
+			result, err = runCheck(ctx, v.Workdir, v.EvidenceDir, check, env, policy)
 			if err != nil {
 				return v, err
 			}
@@ -105,13 +145,73 @@ func RunChecksWithOptions(ctx context.Context, cand Candidate, cfg admission.Pro
 	return v, nil
 }
 
-func runCheck(ctx context.Context, dir, evidenceDir string, check admission.CheckConfig, env []string) (CheckResult, error) {
+// evaluatorOf digests the evaluator: the boundary and canonical check policy
+// when contained, "host" otherwise, plus every admitted check definition.
+func evaluatorOf(policy *contain.Policy, checks []admission.CheckConfig) (contain.Evaluator, error) {
+	digests := make([]string, len(checks))
+	for i, c := range checks {
+		b, err := json.Marshal(struct {
+			Name         string   `json:"name"`
+			Argv         []string `json:"argv"`
+			FailOnOutput bool     `json:"fail_on_output"`
+			Timeout      string   `json:"timeout"`
+		}{c.Name, c.Argv, c.FailOnOutput, c.Timeout})
+		if err != nil {
+			return contain.Evaluator{}, err
+		}
+		sum := sha256.Sum256(b)
+		digests[i] = hex.EncodeToString(sum[:])
+	}
+	if policy == nil {
+		return contain.EvaluatorDigest("host", "", contain.Policy{}, digests), nil
+	}
+	return contain.EvaluatorDigest(contain.BoundaryName, contain.BoundaryVersion, *policy, digests), nil
+}
+
+// checkCommand builds the process for one check: the argv itself, or the same
+// argv inside the boundary through `mythhelm __contain` (design §2.2). A command
+// that cannot be found surfaces from Start as an unavailable check.
+func checkCommand(check admission.CheckConfig, dir string, env []string, policy *contain.Policy) (*exec.Cmd, error) {
+	cmd := exec.Command(check.Argv[0], check.Argv[1:]...) // #nosec G204 -- reviewed, digest-bound project config, argv only
+	if policy == nil {
+		cmd.Dir, cmd.Env = dir, env
+		setProcessGroup(cmd)
+		return cmd, nil
+	}
+	if cmd.Err != nil {
+		return cmd, nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("locating mythhelm for __contain: %w", err)
+	}
+	body, err := json.Marshal(contain.ContainSpec{Path: cmd.Path, Args: check.Argv, Dir: dir, Env: env, Policy: *policy})
+	if err != nil {
+		return nil, err
+	}
+	null, err := os.Open(os.DevNull)
+	if err != nil {
+		return nil, err
+	}
+	contained := exec.Command(exe, contain.Command) // #nosec G204 -- re-executes this binary with a fixed argv
+	contained.Dir, contained.Env = string(filepath.Separator), []string{}
+	contained.Stdin = bytes.NewReader(body)
+	// fd 3 becomes the check's stdin: checks read nothing.
+	contained.ExtraFiles = []*os.File{null}
+	setProcessGroup(contained)
+	contain.ApplyNamespaces(contained.SysProcAttr)
+	return contained, nil
+}
+
+func runCheck(ctx context.Context, dir, evidenceDir string, check admission.CheckConfig, env []string, policy *contain.Policy) (CheckResult, error) {
 	r := CheckResult{Name: check.Name, Argv: redactedArgv(check.Argv)}
 	started := time.Now()
 	checkCtx, cancel := context.WithTimeout(ctx, check.Duration())
 	defer cancel()
-	cmd := exec.Command(check.Argv[0], check.Argv[1:]...) // #nosec G204 -- reviewed, digest-bound project config, argv only
-	cmd.Dir, cmd.Env = dir, env
+	cmd, err := checkCommand(check, dir, env, policy)
+	if err != nil {
+		return r, err
+	}
 	var output tailBuffer
 	// Give exec an *os.File so Wait reaps only the leader. We drain the pipe
 	// ourselves until EOF or the configured deadline, including descendants
@@ -121,9 +221,11 @@ func runCheck(ctx context.Context, dir, evidenceDir string, check admission.Chec
 		return r, err
 	}
 	cmd.Stdout, cmd.Stderr = pipeWrite, pipeWrite
-	setProcessGroup(cmd)
 	err = cmd.Start()
 	_ = pipeWrite.Close()
+	for _, f := range cmd.ExtraFiles {
+		_ = f.Close()
+	}
 	switch {
 	case errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist):
 		_ = pipeRead.Close()
