@@ -60,6 +60,15 @@ overrides `design.md` — conflicts go back to the designer.
   version (`journal_test.go` pragmas, `qualification_test.go`
   `TestMigration0002Applies`, `evaluator_test.go`) and were bumped
   6→7; future schema bumps must sweep those files too.
+- **Task 2**: the v1 golden in `append_v2_test.go` was captured from
+  base `148084b` via the test's `GOLDEN_OUT` hook (deterministic across
+  runs); regenerate from the base, never from the branch, if the
+  fixture ever changes. Sandbox note for the whole spec: the full
+  suite needs a clean `HOME` here — `TestStrictMainBlocksWriteNothing`
+  inventories native config from `$HOME` and fails identically on the
+  untouched base (it passes in CI); run gates with `HOME` pointed at
+  an empty dir and the real python on `PATH` (`python3` is an asdf
+  shim and breaks under a fake `HOME`).
 - **T3 (import, PR #287)**: v1 runs carry no goal/deliverable/write-scope text (only
   `task_sha256`), so the v2 record stores `sha256:<task_sha256>` as
   `AcceptanceContractDigest` with empty prose fields (I09). Task-id rule: earliest

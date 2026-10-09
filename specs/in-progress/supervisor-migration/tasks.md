@@ -38,7 +38,7 @@
   - `TestMigration0001Untouched` already exists in `internal/journal/ledger_test.go` (added by budget-ledger-s1) and was reused, not duplicated.
 - **Files modified**: `internal/journal/migrations/0007_v2contracts.sql`, `internal/journal/journal.go`, `internal/migrate/phase.go`, `internal/journal/migrate_tables_test.go`, `internal/journal/journal_test.go`, `internal/journal/qualification_test.go`, `internal/journal/evaluator_test.go`, `specs/in-progress/supervisor-migration/tasks.md`, `specs/in-progress/supervisor-migration/handoff.md`, `specs/in-progress/supervisor-migration/scratchpad.md`.
 
-### Task 2 — Append accepts v2 envelopes post-migration
+### Task 2 — Append accepts v2 envelopes post-migration ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -56,6 +56,12 @@
   - `TestV1DecodeByteIdentical`: a golden v1 journal's projections are byte-identical before and after the change (AC-7.5).
 - **Test plan**: table-driven envelopes (valid, duplicate, gap, stale generation, v2-pre-migration); golden v1 journal fixture with a `Decision` and every v1 status word.
 - **Invariants touched**: I23 (v2 §4.3: contiguity, idempotent duplicates, generation fencing for v2); G16 (v1 decodes under v1 forever).
+- **Status**: ✅ Completed — `Append` accepts phased v2 envelopes through the stream-1 validators with v1 behavior and decodes byte-identical; PR #286.
+- **Implementation**: `Append` delegates to unexported `appendTx` (v1 checks unchanged; v2 branch validates, phase-gates, then CheckDuplicate/CheckGeneration/CheckSequence into a shared `storeTx` tail); v2 failures carry a valid `ControlError` plus the stream-1 cause. V1 golden captured from base `148084b`. Commits 883feb4, 848c270.
+- **Spec deviations**:
+  - No behavior deviation. Phase refusals also wrap `journal.ErrInvalidEvent`, keeping the existing `TestAppendValidatesEnvelope` "schema version" contract green without touching that file.
+  - No behavior deviation. Phase words are string literals in `internal/journal`, not imported `migrate.Phase` constants: `internal/migrate` reaches back into `journal` for the import path, so the import would cycle.
+- **Files modified**: `internal/journal/journal.go`, `internal/journal/append_v2_test.go`, `specs/in-progress/supervisor-migration/tasks.md`, `specs/in-progress/supervisor-migration/handoff.md`, `specs/in-progress/supervisor-migration/scratchpad.md`.
 
 ### Task 3 — Legacy import as one-task runs ✅ COMPLETED
 
