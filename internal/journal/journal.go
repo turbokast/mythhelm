@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/turbokast/mythhelm/internal/v2contract"
 	_ "modernc.org/sqlite" // registers the "sqlite" database/sql driver
 )
 
@@ -278,18 +279,47 @@ func checkBackup(ctx context.Context, path string, version int) error {
 // one (ErrSequenceGap) and a generation older than the producer's newest
 // (ErrStaleGeneration). project may be nil; if it returns an error, nothing
 // is written.
+//
+// Envelopes with schema_version == 2 append once the durable migration phase
+// allows them (supervisor-migration design §7): migration-owned envelopes
+// (migration.quarantined, migration.imported) at phase drained, every v2
+// envelope at imported or later. v2 failures return an error that unwraps to
+// both a *v2contract.ControlError carrying the catalogue code (errors.As)
+// and the stream-1 cause (errors.Is); a v2 envelope refused by the phase
+// rule also unwraps to ErrInvalidEvent, since the ledger cannot accept it.
 func (j *Journal) Append(ctx context.Context, ev Event, project func(*sql.Tx) error) error {
-	if err := validate(ev); err != nil {
-		return err
+	if ev.SchemaVersion != v2contract.SchemaVersion {
+		if err := validate(ev); err != nil {
+			return err
+		}
 	}
 	tx, err := j.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("journal: starting append: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := appendTx(ctx, tx, ev, project); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("journal: committing event %s: %w", ev.EventID, err)
+	}
+	return nil
+}
+
+// appendTx is the transaction-scoped core of Append: checks, insert, producer
+// advance and projection. Append calls it after BeginTx; the migration Import
+// step calls it inside its Mutate transactions so v2 rows, the import marker
+// and the envelope commit or roll back together (design §7). v1 envelopes
+// arrive validated by Append, exactly as before; v2 envelopes validate
+// inside, where the phase read needs the transaction.
+func appendTx(ctx context.Context, tx *sql.Tx, ev Event, project func(*sql.Tx) error) error {
+	if ev.SchemaVersion == v2contract.SchemaVersion {
+		return appendV2(ctx, tx, ev, project)
+	}
 
 	var dup int
-	err = tx.QueryRowContext(ctx, `SELECT 1 FROM journal WHERE event_id = ?`, ev.EventID).Scan(&dup)
+	err := tx.QueryRowContext(ctx, `SELECT 1 FROM journal WHERE event_id = ?`, ev.EventID).Scan(&dup)
 	switch {
 	case err == nil:
 		return nil
@@ -314,11 +344,152 @@ func (j *Journal) Append(ctx context.Context, ev Event, project func(*sql.Tx) er
 		return fmt.Errorf("%w: producer %s expected sequence %d, event %s has %d",
 			ErrSequenceGap, ev.ProducerID, lastSeq+1, ev.EventID, ev.ProducerSequence)
 	}
+	return storeTx(ctx, tx, ev, project)
+}
+
+// Migration-owned envelope types (supervisor-migration design §7, D4): the
+// only v2 envelopes accepted at phase drained, persisted by the Import step
+// from its DrainReport before ordinary v2 traffic begins.
+const (
+	migrationQuarantinedType = "migration.quarantined"
+	migrationImportedType    = "migration.imported"
+)
+
+// v2Allowed is the one phase rule for v2 envelopes (design §7): nothing
+// before drained, only migration-owned envelopes at drained, everything at
+// imported or later. Unknown phases fail closed: v2 never stores silently.
+// The phase words mirror the migration_state CHECK vocabulary and
+// migrate.Phase as literals, so internal/journal never imports
+// internal/migrate (which reaches back into journal for the import path).
+func v2Allowed(phase, typ string) bool {
+	switch phase {
+	case "imported", "adopted":
+		return true
+	case "drained":
+		return typ == migrationQuarantinedType || typ == migrationImportedType
+	default:
+		return false
+	}
+}
+
+// migrationPhase reads the durable migration phase in tx. A database that
+// predates migration_state (or lost its row) reads as not_started: v2 fails
+// closed, and v1 is unaffected — the v1 path never calls this.
+func migrationPhase(ctx context.Context, tx *sql.Tx) (string, error) {
+	var phase string
+	err := tx.QueryRowContext(ctx, `SELECT phase FROM migration_state WHERE id = 1`).Scan(&phase)
+	switch {
+	case err == nil:
+		return phase, nil
+	case errors.Is(err, sql.ErrNoRows) || strings.Contains(err.Error(), "no such table"):
+		return "not_started", nil
+	default:
+		return "", err
+	}
+}
+
+// v2Error maps a v2 append failure to a catalogue code at the Append boundary
+// (design §7). The returned error unwraps to both the *v2contract.ControlError
+// (errors.As, for the code) and the stream-1 cause (errors.Is, for the
+// sentinel).
+func v2Error(code v2contract.Code, ev Event, nextAction string, cause error) error {
+	ce := &v2contract.ControlError{
+		Code:        code,
+		Owner:       "journal",
+		OperationID: ev.EventID,
+		Disposition: code.DefaultDisposition(),
+		NextAction:  nextAction,
+	}
+	return fmt.Errorf("%w: %w", ce, cause)
+}
+
+// appendV2 is appendTx for schema_version == 2 envelopes (design §7): the
+// stream-1 envelope validation, the one phase rule, then the stream-1 pure
+// validators in Append's check order — duplicate, generation, sequence —
+// before the shared store tail. A duplicate event_id acks with nil error
+// and no append.
+func appendV2(ctx context.Context, tx *sql.Tx, ev Event, project func(*sql.Tx) error) error {
+	venv := v2contract.Envelope{
+		SchemaVersion: ev.SchemaVersion, EventID: ev.EventID, RunID: ev.RunID,
+		TaskID: ev.TaskID, AttemptID: ev.AttemptID, ProducerID: ev.ProducerID,
+		ProducerSequence: ev.ProducerSequence, RunSequence: ev.RunSequence,
+		Generation: ev.Generation, CausedBy: ev.CausedBy, ObservedAt: ev.ObservedAt,
+		Type: ev.Type, Payload: ev.Payload,
+	}
+	if err := venv.Validate(); err != nil {
+		return v2Error(v2contract.CodeInvalidContract, ev, "fix the envelope and retry", err)
+	}
+	phase, err := migrationPhase(ctx, tx)
+	if err != nil {
+		return v2Error(v2contract.CodePersistenceUnavailable, ev,
+			"retry the append against a healthy ledger",
+			fmt.Errorf("reading migration phase: %w", err))
+	}
+	if !v2Allowed(phase, ev.Type) {
+		// ErrInvalidEvent joins the chain: the ledger cannot accept this
+		// envelope at this phase, so it is invalid here.
+		return fmt.Errorf("%w: %w", v2Error(v2contract.CodeInvalidContract, ev,
+			"append v2 envelopes only once migration reaches drained (migration-owned) or imported (ordinary)",
+			fmt.Errorf("schema_version 2 %q is not accepted at migration phase %q", ev.Type, phase)),
+			ErrInvalidEvent)
+	}
+
+	var one int
+	err = tx.QueryRowContext(ctx, `SELECT 1 FROM journal WHERE event_id = ?`, ev.EventID).Scan(&one)
+	var seen bool
+	switch {
+	case err == nil:
+		seen = true
+	case !errors.Is(err, sql.ErrNoRows):
+		return v2Error(v2contract.CodePersistenceUnavailable, ev,
+			"retry the append against a healthy ledger",
+			fmt.Errorf("checking event_id: %w", err))
+	}
+	if err := v2contract.CheckDuplicate(seen); err != nil {
+		return nil
+	}
+
+	var lastSeq, generation int64
+	err = tx.QueryRowContext(ctx, `SELECT last_sequence, generation FROM producers WHERE producer_id = ?`,
+		ev.ProducerID).Scan(&lastSeq, &generation)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		lastSeq, generation = 0, ev.Generation
+	case err != nil:
+		return v2Error(v2contract.CodePersistenceUnavailable, ev,
+			"retry the append against a healthy ledger",
+			fmt.Errorf("reading producer: %w", err))
+	}
+	if err := v2contract.CheckGeneration(generation, ev.Generation); err != nil {
+		return v2Error(v2contract.CodeOwnershipUnresolved, ev,
+			"retain the event as quarantined evidence at most; reconcile the producer generation", err)
+	}
+	if err := v2contract.CheckSequence(lastSeq, ev.ProducerSequence); err != nil {
+		return v2Error(v2contract.CodeInvalidContract, ev,
+			"resend with producer_sequence exactly one more than the last appended", err)
+	}
+	return storeTx(ctx, tx, ev, project)
+}
+
+// storeTx is the shared tail of the v1 and v2 append paths: run-sequence
+// allocation, insert, producer advance and projection. v1 failures keep
+// their exact messages; v2 ledger failures map to persistence_unavailable,
+// since the mutation did not persist.
+func storeTx(ctx context.Context, tx *sql.Tx, ev Event, project func(*sql.Tx) error) error {
+	v2 := ev.SchemaVersion == v2contract.SchemaVersion
+	fail := func(op string, err error) error {
+		if v2 {
+			return v2Error(v2contract.CodePersistenceUnavailable, ev,
+				"retry the append against a healthy ledger",
+				fmt.Errorf("%s: %w", op, err))
+		}
+		return fmt.Errorf("journal: %s: %w", op, err)
+	}
 
 	var runSeq int64
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(run_sequence), 0) + 1 FROM journal WHERE run_id = ?`,
 		ev.RunID).Scan(&runSeq); err != nil {
-		return fmt.Errorf("journal: assigning run sequence: %w", err)
+		return fail("assigning run sequence", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO journal (event_id, schema_version, run_id, task_id, attempt_id,
 		producer_id, producer_sequence, run_sequence, generation, caused_by, observed_at, type, payload)
@@ -326,20 +497,17 @@ func (j *Journal) Append(ctx context.Context, ev Event, project func(*sql.Tx) er
 		ev.EventID, ev.SchemaVersion, ev.RunID, nullable(ev.TaskID), nullable(ev.AttemptID),
 		ev.ProducerID, ev.ProducerSequence, runSeq, ev.Generation, nullable(ev.CausedBy),
 		ev.ObservedAt.UTC().Format(time.RFC3339Nano), ev.Type, string(ev.Payload)); err != nil {
-		return fmt.Errorf("journal: inserting event %s: %w", ev.EventID, err)
+		return fail("inserting event "+ev.EventID, err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO producers (producer_id, last_sequence, generation) VALUES (?, ?, ?)
 		ON CONFLICT (producer_id) DO UPDATE SET last_sequence = excluded.last_sequence, generation = excluded.generation`,
 		ev.ProducerID, ev.ProducerSequence, ev.Generation); err != nil {
-		return fmt.Errorf("journal: advancing producer %s: %w", ev.ProducerID, err)
+		return fail("advancing producer "+ev.ProducerID, err)
 	}
 	if project != nil {
 		if err := project(tx); err != nil {
-			return fmt.Errorf("journal: projecting event %s: %w", ev.EventID, err)
+			return fail("projecting event "+ev.EventID, err)
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("journal: committing event %s: %w", ev.EventID, err)
 	}
 	return nil
 }
