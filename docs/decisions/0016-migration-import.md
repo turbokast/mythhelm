@@ -83,8 +83,8 @@ carrying schema version, build version, digest and timestamp — a name
 distinct from the `<path>.bak-v<N>` copies `Open` writes during
 migration. Restore verifies the digest and the backup's own
 `user_version` first; a newer schema refuses `schema_too_new`, a
-tampered copy refuses `invalid_contract`, an existing target refuses
-overwrite — each writing nothing. `build_version` is recorded, never
+tampered copy refuses `invalid_contract`, and restore refuses to
+overwrite an existing target — each writing nothing. `build_version` is recorded, never
 compared (build strings are unordered); only a newer schema refuses.
 Rejected: a new copy path (the tested `VACUUM INTO` mechanism already
 exists) and silent overwrite of an existing backup.

@@ -76,6 +76,46 @@ var matrixEvidenceDirs = map[string]string{
 	"tests":   "../../tests",
 }
 
+// testFilePlatforms reports the platforms a test file is built for: "all",
+// "linux, darwin" or one GOOS. A constraint outside those, or a build tag that
+// disagrees with the GOOS filename suffix, is reported as "unsupported: ..." so
+// a row citing the file's tests fails on the platform claim, not on a test
+// that appears to be missing.
+func testFilePlatforms(name string, raw []byte) string {
+	tag := ""
+	for line := range strings.SplitSeq(string(raw), "\n") {
+		if line = strings.TrimSpace(line); strings.HasPrefix(line, "//go:build") {
+			tag = strings.TrimSpace(strings.TrimPrefix(line, "//go:build"))
+			break
+		}
+		if strings.HasPrefix(line, "package ") {
+			break
+		}
+	}
+	suffix := ""
+	base := strings.TrimSuffix(filepath.Base(name), "_test.go")
+	for _, goos := range []string{"linux", "darwin", "windows"} {
+		if strings.HasSuffix(base, "_"+goos) {
+			suffix = goos
+			break
+		}
+	}
+	platforms := "all"
+	switch {
+	case tag != "" && suffix != "" && tag != suffix:
+		return "unsupported: " + tag + " with _" + suffix + " suffix"
+	case tag != "":
+		platforms = tag
+	case suffix != "":
+		platforms = suffix
+	}
+	switch platforms {
+	case "all", "linux || darwin", "linux", "darwin", "windows":
+		return strings.Replace(platforms, " || ", ", ", 1)
+	}
+	return "unsupported: " + platforms
+}
+
 // evidenceTestPlatforms maps every "pkg.TestName" in the evidence packages to
 // the platforms its file is built for: "all", "linux, darwin" or one GOOS.
 func evidenceTestPlatforms(t *testing.T) map[string]string {
@@ -91,32 +131,7 @@ func evidenceTestPlatforms(t *testing.T) map[string]string {
 			if err != nil {
 				t.Fatal(err)
 			}
-			platforms := "all"
-			for line := range strings.SplitSeq(string(raw), "\n") {
-				if line = strings.TrimSpace(line); strings.HasPrefix(line, "//go:build") {
-					platforms = strings.TrimSpace(strings.TrimPrefix(line, "//go:build"))
-					break
-				}
-				if strings.HasPrefix(line, "package ") {
-					break
-				}
-			}
-			// An implicit GOOS filename suffix constrains the file even
-			// without a build tag; without this an untagged
-			// foo_windows_test.go would be mislabelled "all".
-			base := strings.TrimSuffix(filepath.Base(name), "_test.go")
-			for _, goos := range []string{"linux", "darwin", "windows"} {
-				if strings.HasSuffix(base, "_"+goos) {
-					platforms = goos
-					break
-				}
-			}
-			switch platforms {
-			case "all", "linux || darwin", "linux", "darwin", "windows":
-				platforms = strings.Replace(platforms, " || ", ", ", 1)
-			default:
-				continue // a file for platforms outside the matrix
-			}
+			platforms := testFilePlatforms(name, raw)
 			f, err := parser.ParseFile(token.NewFileSet(), name, raw, 0)
 			if err != nil {
 				t.Fatal(err)
@@ -329,6 +344,17 @@ func TestSupportMatrixMatchesEvidence(t *testing.T) {
 // internal/migrate.
 const migrationADR = "../../docs/decisions/0016-migration-import.md"
 
+// adrStatusOK reports whether the first `- Status:` line reads proposed or
+// accepted; later lines mentioning a status do not count.
+func adrStatusOK(src string) bool {
+	for line := range strings.SplitSeq(src, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "- Status:") {
+			return strings.Contains(line, "proposed") || strings.Contains(line, "accepted")
+		}
+	}
+	return false
+}
+
 func TestMigrationADRNamesDecisions(t *testing.T) {
 	t.Parallel()
 	raw, err := os.ReadFile(filepath.Clean(migrationADR))
@@ -341,13 +367,51 @@ func TestMigrationADRNamesDecisions(t *testing.T) {
 			t.Errorf("ADR does not name the %s decision", want)
 		}
 	}
-	statusOK := false
-	for line := range strings.SplitSeq(src, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "- Status:") {
-			statusOK = strings.Contains(line, "proposed") || strings.Contains(line, "accepted")
+	if !adrStatusOK(src) {
+		t.Error("ADR has no `- Status:` line reading proposed or accepted (acceptance is the maintainer's to grant)")
+	}
+}
+
+func TestADRStatusReadsTheFirstStatusLine(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		src  string
+		want bool
+	}{
+		"proposed first, a later line differs":     {"- Status: proposed\n- Status: rejected\n", true},
+		"rejected first, a later line is proposed": {"- Status: rejected\n- Status: proposed\n", false},
+		"accepted":       {"# ADR\n- Status: accepted\n", true},
+		"no status line": {"# ADR\nproposed\n", false},
+	} {
+		if got := adrStatusOK(tc.src); got != tc.want {
+			t.Errorf("%s: adrStatusOK = %v, want %v", name, got, tc.want)
 		}
 	}
-	if !statusOK {
-		t.Error("ADR has no `- Status:` line reading proposed or accepted (acceptance is the maintainer's to grant)")
+}
+
+func TestTestFilePlatformsReportsUnrecognisedConstraints(t *testing.T) {
+	t.Parallel()
+	const pkg = "package x\n"
+	for name, tc := range map[string]struct {
+		file, src, want string
+	}{
+		"no constraint":               {"a_test.go", pkg, "all"},
+		"linux or darwin":             {"a_test.go", "//go:build linux || darwin\n\n" + pkg, "linux, darwin"},
+		"negated constraint":          {"a_test.go", "//go:build !windows\n\n" + pkg, "unsupported: !windows"},
+		"unix constraint":             {"a_test.go", "//go:build unix\n\n" + pkg, "unsupported: unix"},
+		"goos suffix alone":           {"a_windows_test.go", pkg, "windows"},
+		"suffix agreeing with a tag":  {"a_windows_test.go", "//go:build windows\n\n" + pkg, "windows"},
+		"suffix disagreeing with tag": {"a_windows_test.go", "//go:build linux\n\n" + pkg, "unsupported: linux with _windows suffix"},
+		"tag after the package line":  {"a_test.go", pkg + "//go:build linux\n", "all"},
+	} {
+		if got := testFilePlatforms(tc.file, []byte(tc.src)); got != tc.want {
+			t.Errorf("%s: testFilePlatforms = %q, want %q", name, got, tc.want)
+		}
+	}
+
+	rows := []matrixRow{{ID: "import", Status: "fixture-tested", Platforms: "all", Tests: []string{"migrate.TestA"}}}
+	problems := matrixProblems(rows, map[string]string{"migrate.TestA": "unsupported: !windows"})
+	if !slices.ContainsFunc(problems, func(p string) bool { return strings.Contains(p, `is built for "unsupported: !windows"`) }) {
+		t.Errorf("a test in a file with an unrecognised constraint is not reported on its platform: %v", problems)
 	}
 }
