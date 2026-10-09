@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/admission"
+	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/integration"
 	"github.com/turbokast/mythhelm/internal/journal"
@@ -201,35 +202,70 @@ func (p *pipeline) run(ctx context.Context) error {
 }
 
 // appendAdmission journals the decision with its native side effects: a
-// fresh entitlement declaration and an explicit native-config trust grant
-// commit in the same transaction as the admission event, so a crash
-// between them cannot admit a run whose declaration never persisted.
+// fresh entitlement declaration, an explicit native-config trust grant and
+// the run's resolved envelope commit in the same transaction as the
+// admission event, so a crash between them cannot admit a run whose
+// declaration never persisted. The run's reservation is then held; a
+// failed hold blocks the run.
 func (p *pipeline) appendAdmission(ctx context.Context) error {
 	d := p.d
+	file, err := d.ProjectConfig.Envelopes.ToCeilings()
+	if err != nil {
+		return errors.Join(err, p.runTo(ctx, RunBlocked, "envelope_config_invalid"))
+	}
+	ceilings := billing.ResolveCeilings(d.EnvelopeFlags, file)
 	at := time.Now().UTC()
 	ev, err := newEvent(d.RunID, "", "", "admission.decided", d.Record(), at)
 	if err != nil {
 		return err
 	}
-	var project func(*sql.Tx) error
-	if d.Declaration != nil || d.RecordNativeTrust {
-		decl, trust, digest, repo := d.Declaration, d.RecordNativeTrust, d.NativeConfigDigest, d.RepoIdentity
-		project = func(tx *sql.Tx) error {
-			if decl != nil {
-				if err := journal.InsertDeclaration(ctx, tx, *decl); err != nil {
-					return err
-				}
+	decl, trust, digest, repo := d.Declaration, d.RecordNativeTrust, d.NativeConfigDigest, d.RepoIdentity
+	// The run's finite envelope commits with the admission, so no admitted
+	// run exists without one (I21).
+	project := func(tx *sql.Tx) error {
+		if decl != nil {
+			if err := journal.InsertDeclaration(ctx, tx, *decl); err != nil {
+				return err
 			}
-			if trust {
-				return journal.InsertTrustGrant(ctx, tx, admission.NativeConfigTrustKind, repo, digest, at)
-			}
-			return nil
 		}
+		if trust {
+			if err := journal.InsertTrustGrant(ctx, tx, admission.NativeConfigTrustKind, repo, digest, at); err != nil {
+				return err
+			}
+		}
+		return journal.UpsertRunEnvelope(ctx, tx, journal.EnvelopeRow{RunID: d.RunID,
+			ExecutionSeconds: int64(ceilings.Execution / time.Second), Repairs: int64(ceilings.Repairs),
+			Replans: int64(ceilings.Replans), TransportRetries: int64(ceilings.TransportRetries),
+			UpdatedAt: at.Format(time.RFC3339Nano)})
 	}
 	if err := p.prod.append(ctx, p.j, ev, project); err != nil {
 		return err
 	}
+	if err := p.holdReservation(ctx, ceilings); err != nil {
+		return err
+	}
 	return p.flush(ctx)
+}
+
+// holdReservation holds the run's one reservation, coupled to the admitted
+// bucket. The bucket is built from the decision: its harness and surface
+// come from the adapter descriptor, its entitlement class from the admitted
+// billing posture and its identity from the native auth evidence, which the
+// fake adapter has none of (unknown). A failed hold blocks the run before
+// any worker exists (I02).
+func (p *pipeline) holdReservation(ctx context.Context, c billing.Ceilings) error {
+	d := p.d
+	rec := qualify.Record{Key: qualify.Key{Harness: d.Adapter.Harness, Surface: d.Adapter.Surface, EntitlementClass: d.Proposal.Billing.EntitlementClass}}
+	identityRef := ""
+	if d.NativeAuth != nil {
+		identityRef = d.NativeAuth.IdentityRef
+	}
+	_, err := admission.HoldQuotaReservation(ctx, admission.NewJournalReserver(p.j, c), d.RunID, rec, identityRef)
+	if err != nil {
+		return errors.Join(err, p.runTo(ctx, RunBlocked, "quota_reservation_failed"))
+	}
+	p.h.Notice(admission.ReservationText(admission.QuotaBucket(rec, identityRef)))
+	return nil
 }
 
 // snapshot writes the task and clones the admitted revision (AC-3.3).
