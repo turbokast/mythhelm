@@ -168,6 +168,10 @@ func evaluatorOf(policy *contain.Policy, checks []admission.CheckConfig) (contai
 	return contain.EvaluatorDigest(contain.BoundaryName, contain.BoundaryVersion, *policy, digests), nil
 }
 
+// errCheckExecutableNotFound marks a check whose argv resolves to nothing:
+// runCheck reports it unavailable without starting a process.
+var errCheckExecutableNotFound = errors.New("check executable not found")
+
 // checkCommand builds the process for one check: the argv itself, or the same
 // argv inside the boundary through `mythhelm __contain` (design §2.2). A command
 // that cannot be found surfaces from Start as an unavailable check.
@@ -179,6 +183,11 @@ func checkCommand(check admission.CheckConfig, dir string, env []string, policy 
 		return cmd, nil
 	}
 	if cmd.Err != nil {
+		if errors.Is(cmd.Err, exec.ErrNotFound) {
+			return nil, fmt.Errorf("%w: %s", errCheckExecutableNotFound, check.Argv[0])
+		}
+		// Anything else (a relative-path ErrDot, a directory) still
+		// surfaces from Start as a hard start failure.
 		return cmd, nil
 	}
 	exe, err := os.Executable()
@@ -209,6 +218,10 @@ func runCheck(ctx context.Context, dir, evidenceDir string, check admission.Chec
 	checkCtx, cancel := context.WithTimeout(ctx, check.Duration())
 	defer cancel()
 	cmd, err := checkCommand(check, dir, env, policy)
+	if errors.Is(err, errCheckExecutableNotFound) {
+		r.Status = "unavailable"
+		return r, nil
+	}
 	if err != nil {
 		return r, err
 	}
@@ -218,6 +231,9 @@ func runCheck(ctx context.Context, dir, evidenceDir string, check admission.Chec
 	// that inherited stdout after their leader exited.
 	pipeRead, pipeWrite, err := os.Pipe()
 	if err != nil {
+		for _, f := range cmd.ExtraFiles {
+			_ = f.Close()
+		}
 		return r, err
 	}
 	cmd.Stdout, cmd.Stderr = pipeWrite, pipeWrite

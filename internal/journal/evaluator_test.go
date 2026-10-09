@@ -24,7 +24,7 @@ func TestVerificationRowCarriesEvaluator(t *testing.T) {
 	now := time.Now().UTC()
 	if _, err := j.db.ExecContext(ctx, `INSERT INTO runs (run_id, state, reason, adapter_id, source_repo, source_branch, base_rev, task_sha256, billing_posture, execution_profile, created_at, updated_at)
 		VALUES ('run_1', 'verifying', '', 'builtin/fake', '/r', 'main', 'abc', 'sha', 'local-scripted', 'restricted', ?, ?)`, formatTime(now), formatTime(now)); err != nil {
-		t.Skipf("runs table shape changed, adjust the fixture: %v", err)
+		t.Fatalf("runs table shape changed, adjust the fixture: %v", err)
 	}
 	tx, err := j.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -57,7 +57,7 @@ func TestVerificationWithoutEvaluatorReadsUnknown(t *testing.T) {
 	now := time.Now().UTC()
 	if _, err := j.db.ExecContext(ctx, `INSERT INTO runs (run_id, state, reason, adapter_id, source_repo, source_branch, base_rev, task_sha256, billing_posture, execution_profile, created_at, updated_at)
 		VALUES ('run_1', 'verifying', '', 'builtin/fake', '/r', 'main', 'abc', 'sha', 'local-scripted', 'trusted-host', ?, ?)`, formatTime(now), formatTime(now)); err != nil {
-		t.Skipf("runs table shape changed, adjust the fixture: %v", err)
+		t.Fatalf("runs table shape changed, adjust the fixture: %v", err)
 	}
 	tx, err := j.db.BeginTx(ctx, nil)
 	if err != nil {
