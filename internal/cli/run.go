@@ -30,7 +30,7 @@ func runRun(args []string, stdio Stdio) error {
 	taskFile := fs.String("task-file", "", "the task, as Markdown, delivered to the agent on stdin (required)")
 	adapterName := fs.String("adapter", "", "the native harness adapter: claudecode or fake (required; no default, no fallback)")
 	billing := fs.String("billing", "", "billing posture: subscription-declared, subscription-only or local-scripted (required)")
-	profile := fs.String("execution-profile", "", "trusted-host: native tools and checks run with your host authority, not contained")
+	profile := fs.String("execution-profile", "", "trusted-host (native tools and checks run with your host authority, not contained), restricted (the default; contained where a boundary is recorded for this OS) or inspect (read-only; not yet available)")
 	useCommitted := fs.Bool("use-committed", false, "run on the committed HEAD when the checkout has uncommitted changes")
 	rev := fs.String("rev", "", "run on this committed revision instead of HEAD")
 	trustConfig := fs.String("trust-project-config", "", "trust the admitted mythhelm.toml digest (sha256:<hex>)")

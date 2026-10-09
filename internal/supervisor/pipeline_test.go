@@ -400,31 +400,44 @@ func TestRunNoAdapterFlagExits2(t *testing.T) {
 	}
 }
 
-func TestRestrictedProfileExit7(t *testing.T) {
+func TestInspectProfileExit7(t *testing.T) {
 	t.Parallel()
-	for _, profile := range []string{"restricted", "inspect"} {
-		t.Run(profile, func(t *testing.T) {
-			t.Parallel()
-			f := newFixture(t)
-			args := slices.DeleteFunc(f.fakeRun(), func(a string) bool { return a == "trusted-host" || a == "--execution-profile" })
-			code, _, stderr := f.run(t, append(args, "--execution-profile", profile)...)
-			if code != 7 || !strings.Contains(stderr, "execution_profile_unavailable") {
-				t.Fatalf("exit %d, stderr %q; want exit 7 execution_profile_unavailable", code, stderr)
-			}
-			if rows := f.runs(t); len(rows) != 0 {
-				t.Fatalf("a refused profile recorded %d runs", len(rows))
-			}
-		})
+	f := newFixture(t)
+	args := slices.DeleteFunc(f.fakeRun(), func(a string) bool { return a == "trusted-host" || a == "--execution-profile" })
+	code, _, stderr := f.run(t, append(args, "--execution-profile", "inspect")...)
+	if code != 7 || !strings.Contains(stderr, "execution_profile_unavailable") {
+		t.Fatalf("exit %d, stderr %q; want exit 7 execution_profile_unavailable", code, stderr)
+	}
+	if rows := f.runs(t); len(rows) != 0 {
+		t.Fatalf("a refused profile recorded %d runs", len(rows))
 	}
 }
 
+// TestMissingProfileConsentNonInteractiveExit3 pins the empty-flag default:
+// restricted, with no consent question and never host authority (AC-1.2,
+// AC-1.3). Where the boundary is recorded the run is admitted; elsewhere it
+// is an exit-7 refusal naming each missing dimension.
 func TestMissingProfileConsentNonInteractiveExit3(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	args := slices.DeleteFunc(f.fakeRun(), func(a string) bool { return a == "trusted-host" || a == "--execution-profile" })
 	code, _, stderr := f.run(t, args...)
-	if code != 3 || !strings.Contains(stderr, "consent_required") || !strings.Contains(stderr, "--execution-profile trusted-host") {
-		t.Fatalf("exit %d, stderr %q; want exit 3 naming --execution-profile trusted-host", code, stderr)
+	if strings.Contains(stderr, "consent_required") {
+		t.Fatalf("stderr %q: the empty flag asked for consent", stderr)
+	}
+	if runtime.GOOS == "linux" {
+		if !strings.Contains(stderr, "ended ready_for_review") {
+			t.Fatalf("exit %d, stderr %q; want the restricted default admitted and run", code, stderr)
+		}
+		return
+	}
+	if code != 7 || !strings.Contains(stderr, "execution_profile_unavailable") {
+		t.Fatalf("exit %d, stderr %q; want exit 7 execution_profile_unavailable", code, stderr)
+	}
+	for _, dim := range []string{"filesystem", "process", "network", "credential"} {
+		if !strings.Contains(stderr, dim) {
+			t.Errorf("stderr %q does not name %s", stderr, dim)
+		}
 	}
 }
 
