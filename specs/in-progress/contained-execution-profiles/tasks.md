@@ -509,6 +509,12 @@
   changed what the four contained e2e execute. (6) Pre-exec `__contain`
   failures surface as native exit 1; refusal diagnosis relies on `ProbeLinux`
   alone, no CLOEXEC status pipe in this spec (decides the Task 4 question).
+  (7) `internal/workers/hash_unix.go` + `internal/workers/hash_other.go`
+  (platform-split non-blocking `openHash` called from `worker.go` hashing)
+  with `internal/workers/hash_fifo_unix_test.go` (FIFO fail-fast pin);
+  `adapters/fake/scenarios/readonly.json` with its
+  `adapters/fake/fake_test.go` embed-list pin (write-free scenario used by
+  `pipeline_test.go` contained e2e).
 - **Files modified**: `internal/workers/worker.go`,
   `internal/workers/contain.go`, `internal/workers/hash_unix.go`,
   `internal/workers/hash_other.go`,
