@@ -380,7 +380,7 @@ func writeFileAtomic(dir, name string, body []byte) error {
 }
 
 func hashFile(path string) (string, error) {
-	f, err := openHash(path) //nolint:gosec // The admitted launch names this path.
+	f, err := openHash(path)
 	if err != nil {
 		return "", err
 	}
