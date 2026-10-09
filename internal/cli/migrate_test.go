@@ -551,7 +551,7 @@ func dumpRestoreFailure(t *testing.T, dir string, err error) {
 	// opened read-write, what are its attributes, and does a rename of
 	// two probe files in the same dir succeed?
 	live := filepath.Join(dir, journal.DBName)
-	probe, probeErr := os.OpenFile(live, os.O_RDWR, 0)
+	probe, probeErr := os.OpenFile(live, os.O_RDWR, 0) //nolint:gosec // G304: probing the test's own temp-dir database, built from dir above
 	if probeErr != nil {
 		t.Logf("probe: open O_RDWR mythhelm.db: %v", probeErr)
 	} else {
