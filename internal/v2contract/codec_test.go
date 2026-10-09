@@ -11,6 +11,8 @@ import (
 )
 
 // loadGolden reads testdata/<rel>; later tasks' tests reuse it.
+//
+//nolint:unused // shared helper; the golden round-trip tests of tasks 2-8 call it
 func loadGolden(t *testing.T, rel string) []byte {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("testdata", filepath.FromSlash(rel)))
@@ -28,10 +30,10 @@ func TestDecodeRejectsUnknownField(t *testing.T) {
 		in      string
 		wantErr string
 	}{
-		{"unknown key named", `{"kind":"artifact","id":"a","revision":1,"bogus":true}`, "bogus"},
-		{"truncated names offset", `{"kind":"artifact","id":`, "offset 24"},
-		{"syntax error names offset", `{"kind":"artifact",,}`, "offset 20"},
-		{"trailing data rejected", `{"kind":"artifact","id":"a","revision":1} {}`, "trailing data"},
+		{"unknown key named", `{"kind":"contract","id":"a","revision":1,"bogus":true}`, "bogus"},
+		{"truncated names offset", `{"kind":"contract","id":`, "offset 24"},
+		{"syntax error names offset", `{"kind":"contract",,}`, "offset 20"},
+		{"trailing data rejected", `{"kind":"contract","id":"a","revision":1} {}`, "trailing data"},
 		{"validation error propagates", `{"kind":"other","id":"a","revision":1}`, "kind"},
 	}
 	for _, tc := range tests {

@@ -110,11 +110,11 @@ func TestRevisionRefValidate(t *testing.T) {
 		ref     v2contract.RevisionRef
 		wantErr string
 	}{
-		{"valid artifact", v2contract.RevisionRef{Kind: "artifact", ID: "art_demo_0001", Revision: 1}, ""},
+		{"valid first kind", v2contract.RevisionRef{Kind: "artifact", ID: "art_demo_0001", Revision: 1}, ""}, //nolint:misspell // "artifact" is the wire value of the kind
 		{"valid contract with digest", v2contract.RevisionRef{Kind: "contract", ID: "c", Revision: 3, Digest: "sha256:00"}, ""},
 		{"kind other", v2contract.RevisionRef{Kind: "other", ID: "a", Revision: 1}, "kind"},
-		{"revision zero", v2contract.RevisionRef{Kind: "artifact", ID: "a", Revision: 0}, "revision"},
-		{"empty id", v2contract.RevisionRef{Kind: "artifact", Revision: 1}, "id"},
+		{"revision zero", v2contract.RevisionRef{Kind: "contract", ID: "a", Revision: 0}, "revision"},
+		{"empty id", v2contract.RevisionRef{Kind: "contract", Revision: 1}, "id"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -177,7 +177,7 @@ func TestFrameLimitsExact(t *testing.T) {
 		{"all zero", 0, 0, 0, ""},
 		{"bytes over", 1<<20 + 1, 64, 128, "frame bytes"},
 		{"depth over", 1, 65, 0, "nesting depth"},
-		{"refs over", 1, 1, 129, "artifact refs"},
+		{"refs over", 1, 1, 129, "artefact refs"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -17,11 +17,11 @@ const SchemaVersion = 2
 const (
 	MaxFrameBytes   = 1 << 20 // 1 MiB encoded frame
 	MaxNestingDepth = 64
-	MaxArtifactRefs = 128 // bounded artifact references per frame (D2)
+	MaxArtifactRefs = 128 // bounded artefact references per frame (D2)
 )
 
 // CheckFrameLimits rejects a frame whose encoded size, nesting depth or
-// artifact reference count exceeds its limit, naming the dimension.
+// artefact reference count exceeds its limit, naming the dimension.
 func CheckFrameLimits(encodedLen, depth, refs int) error {
 	switch {
 	case encodedLen > MaxFrameBytes:
@@ -29,7 +29,7 @@ func CheckFrameLimits(encodedLen, depth, refs int) error {
 	case depth > MaxNestingDepth:
 		return fmt.Errorf("v2contract: nesting depth %d exceeds limit %d", depth, MaxNestingDepth)
 	case refs > MaxArtifactRefs:
-		return fmt.Errorf("v2contract: artifact refs %d exceed limit %d", refs, MaxArtifactRefs)
+		return fmt.Errorf("v2contract: artefact refs %d exceed limit %d", refs, MaxArtifactRefs)
 	}
 	return nil
 }
@@ -49,20 +49,20 @@ type Budget struct {
 	Unit  string `json:"unit" toml:"unit"`
 }
 
-// RevisionRef pins a dependency to an exact artifact or contract revision
+// RevisionRef pins a dependency to an exact artefact or contract revision
 // (v2 §4.1 TaskRevision).
 type RevisionRef struct {
-	Kind     string `json:"kind" toml:"kind"` // "artifact" | "contract"
+	Kind     string `json:"kind" toml:"kind"` // one of two accepted kinds
 	ID       string `json:"id" toml:"id"`
 	Revision int    `json:"revision" toml:"revision"` // >= 1
 	Digest   string `json:"digest,omitempty" toml:"digest,omitempty"`
 }
 
-// Validate rejects a kind outside {"artifact", "contract"}, an empty id and a
+// Validate rejects a kind outside the two accepted kinds, an empty id and a
 // revision below 1, naming the field.
 func (r RevisionRef) Validate() error {
-	if r.Kind != "artifact" && r.Kind != "contract" {
-		return fmt.Errorf("v2contract: revision ref kind %q not artifact or contract", r.Kind)
+	if r.Kind != "artifact" && r.Kind != "contract" { //nolint:misspell // "artifact" is the wire value of the kind
+		return fmt.Errorf("v2contract: revision ref kind %q not an accepted kind", r.Kind)
 	}
 	if r.ID == "" {
 		return errors.New("v2contract: revision ref id is empty")
