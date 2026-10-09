@@ -156,3 +156,20 @@ Append a short entry: on Windows, atomic file replacement via rename can fail tr
 **Proposed change:**
 
 Add a dispatch step: before starting a task attempt, append the `run_start` row (once per spec run) and the task's `dispatch` row to `.claude/data/run-events.jsonl`; after the attempt ends, append the `return` row (and `merge` after the merge). A dispatch without its rows is incomplete. Before finalizing, the orchestrator may backfill rows for already-merged tasks only from authoritative records (merged PRs, merge commits). Backfilled rows must carry provenance marking them as reconstructed, and consumers must distinguish them from observed rows when computing attempt metrics and attribution. Use the schema's `null` and `unknown` values for unavailable attribution or results; never treat the generated `ts` as the original event time when that time cannot be recovered.
+
+## P-qualification-registry-3 — Ground docs command-output examples in executed commands
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: pending
+- **Eval**: n/a
+- **Rationale**: A docs example verified only by reading shipped output the command never prints past two reviewers; requiring the producing command makes examples checkable, the same way behaviour criteria already need a failing state. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `qualification-registry`
+- **Type**: knowledge
+- **Target**: `knowledge/spec-authoring.md`
+- **Rationale**: A docs task shipped a command-output example with values the command never prints (wrong surface and verdicts); per-task review and one spec reviewer both eyeballed it as correct, and only the second spec reviewer checked it against the code. Examples verified by reading are verified by nobody. The checkable-criteria pattern already demands a failing state for behaviour; docs examples need the same grounding rule.
+- **Evidence**: specs/done/qualification-registry/retrospective.md Review Summary finding 3 (docs/user-guide.md:59 vs internal/qualify/seed.go); fixed in the finalize PR
+
+**Proposed change:**
+
+Append to the checkable-criteria patterns: an acceptance item that adds or changes a docs example showing command output must name the executed command (or generating test) that produced the pasted text, and the worker re-runs it before the PR leaves draft; a paste with no producing command is a finding.
