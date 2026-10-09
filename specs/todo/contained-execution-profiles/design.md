@@ -66,8 +66,9 @@ New package owning every boundary claim. Core types (exact; see §4):
 
 - `Claim{Name, Version, Enforced, Detail}` per dimension
   (`DimFilesystem`, `DimProcess`, `DimNetwork`, `DimCredential`).
-- `Coverage` (four claims) with `Missing() []Dimension`: the dimensions a
-  profile requires but the OS/route cannot enforce.
+- `Coverage` (four claims) with `Missing(required []Dimension)
+  []Dimension` (§4): the dimensions a profile requires but the OS/route
+  cannot enforce.
 - `Evidence{Profile, OS, Route, Boundary, Version, Owner, Coverage}`: one
   versioned record per profile × OS × route (NFR-1). Unknown combinations
   refuse; nothing defaults to supported (I02, I09).
@@ -86,7 +87,11 @@ Per-platform native, no container dependency (Q1, D2). The worker spawns
 `mythhelm __contain` (new hidden command, dispatched beside `__worker`) with
 `Cloneflags: CLONE_NEWUSER|CLONE_NEWNS`, a single-UID/GID map, and the
 `ContainSpec` on stdin (same ≤1 MiB `DisallowUnknownFields` envelope as
-`Launch`). `__contain` then, as root in its own namespaces:
+`Launch`). The control envelope is the only thing on stdin: `ProcSpec.Stdin`
+(the prompt stream, `worker.go:494`) travels on a dedicated pipe — the first
+`ExtraFiles` entry (fd 3) — and `__contain` dups it onto stdin before exec,
+so the native receives the prompt byte-for-byte. `__contain` then, as root
+in its own namespaces:
 
 - Filesystem: recursively (`MS_REC`) bind-remount `/` read-only inside
   the mount namespace (host unaffected), so inherited writable child mounts
@@ -116,9 +121,11 @@ Failure anywhere before exec → `launch_failed` (existing worker path); a
 
 The worker starts a localhost CONNECT-only proxy (`contain.ServeProxy`) whose
 allowlist is exactly the admitted provider endpoint host:port (first-party
-subscription for the first route), then amends the admitted env post-admission
-with `HTTPS_PROXY`/`HTTP_PROXY` (and lowercase) pins to the ephemeral address
-it chose, and fills `Policy.ProxyAddr` with the same address. The pins are the
+subscription for the first route); an unknown endpoint blocks contained
+admission (I02) instead of running the proxy open. The worker then amends
+the admitted env post-admission with `HTTPS_PROXY`/`HTTP_PROXY` (and
+lowercase) pins to the ephemeral address it chose, and fills
+`Policy.ProxyAddr` with the same address. The pins are the
 process's initial environment, not irrevocable: the native can unset them from
 inside, and direct egress around the proxy is NOT blocked in v1 — it is the
 honesty-register residual. This spec provides no way for a user to require a
@@ -126,7 +133,7 @@ no-egress guarantee (no `--require-*` flag, §6), so v2 §7.4's "if required by
 the user" conditional has no trigger here and promises no refusal to such
 callers; the refusal this spec ships is AC-1.2's missing-coverage refusal.
 The enforced part is the proxy's allowlist denials for traffic sent through
-it: non-allowlisted hosts get `407/403`, non-CONNECT methods get `405`.
+it: non-allowlisted hosts get `403`, non-CONNECT methods get `405`.
 
 ### 2.4 Admission: consult, default, refusal (v2 §7.1, I02, I04)
 
@@ -176,12 +183,17 @@ Evaluator isolation only; revision binding stays MH-22. Checks for
 read-only candidate worktree, scratch `/tmp`, no credential binds, proxy env
 retained. `trusted-host` keeps host checks (disclosed host authority).
 `RunChecksWithPolicy` is a new entry point; the existing `RunChecks` wraps it
-with the host policy so no caller breaks. Each verification records
-`Evaluator{Name, Digest}` = hash of (boundary name/version, check-policy,
-admitted check-definition digests); persisted on the verification row and
-rendered in the receipt for MH-22 to bind. Unavailable checks preserve the
-candidate unverified (`verification_unavailable`, exit 5); acceptance is
-never reported (AC-5.2).
+with a nil policy (host) so no caller breaks. Each verification records
+`Evaluator{Name, Digest}` where `Name` is the boundary name and `Digest`
+hashes (boundary name/version, canonical check-policy, sorted admitted
+check-definition digests). The canonical check-policy carries only stable
+semantic fields — profile, readonly flag, sorted auth-bind targets — and
+excludes runtime-specific values: `Workdir` (per-run worktree path,
+`verify.go:60-62`), `ProxyAddr` (ephemeral proxy port, §2.3) and bind
+sources (host paths). Equivalent evaluations hash equal across runs;
+persisted on the verification row and rendered in the receipt for MH-22 to
+bind. Unavailable checks preserve the candidate unverified
+(`verification_unavailable`, exit 5); acceptance is never reported (AC-5.2).
 
 ### 2.8 Honesty surfaces (v2 §8.1, I09, I05, AT-47)
 
@@ -328,7 +340,8 @@ func PolicyFor(profile, workdir string, readonly bool, binds []AuthBind, proxy s
 func ServeProxy(ctx context.Context, allow []string) (addr string, stop func(), err error)
 func ProxyEnv(addr string) map[string]string
 
-// Task 4.
+// Task 4. Spec arrives on stdin; the prompt arrives on fd 3 (first
+// ExtraFiles) and is duped to stdin before exec (§2.2).
 func Main(args []string) int // contain.Main: 0 unreachable post-exec, 2 invalid spec, 1 setup failure
 
 // Task 5.
@@ -340,6 +353,8 @@ type Evaluator struct {
     Name   string `json:"name"`
     Digest string `json:"digest"`
 }
+// Name is the boundary; Digest hashes the §2.7 canonical form (stable
+// semantic fields only — Workdir, ProxyAddr and bind sources excluded).
 func EvaluatorDigest(boundary string, version string, policy Policy, checkDigests []string) Evaluator
 func RunChecksWithPolicy(ctx context.Context, cand Candidate, cfg admission.ProjectConfig, env []string, opts RunOptions) (Verification, error)
 type RunOptions struct {

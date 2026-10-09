@@ -181,15 +181,17 @@
 - **Budget**: complex (process ownership: new spawn path + re-exec)
 - **Depends on**: Task 2, Task 3
 - **Change**: Add the hidden `__contain` command (reads `ContainSpec` on
-  stdin, calls `EnterLinux`, never returns on success) and wrap
-  `launcher.Launch` so a `Launch` carrying containment spawns `__contain`
-  with user+mount-namespace clone flags; the clone-flags wiring lives in
-  build-tagged helpers (`contain_linux.go` real, `contain_other.go`
-  `//go:build !linux` refusing) so all three OSes build. The worker also
-  starts the Task 3 proxy before a contained spawn, fills
-  `Policy.ProxyAddr` with the ephemeral address, and amends the child env
-  with the `ProxyEnv` pins post-admission (design §2.3); carry the decision
-  record for the new spawn path in the same PR.
+  stdin, dups the fd-3 prompt pipe onto stdin, calls `EnterLinux`, never
+  returns on success) and wrap `launcher.Launch` so a `Launch` carrying
+  containment spawns `__contain` with user+mount-namespace clone flags and
+  `ProcSpec.Stdin` forwarded byte-for-byte on that pipe (design §2.2).
+  Shared spec-build and prompt-pipe setup live in untagged `contain.go`;
+  the clone-flags wiring lives in build-tagged helpers (`contain_linux.go`
+  real, `contain_other.go` `//go:build !linux` refusing) so all three OSes
+  build. The worker also starts the Task 3 proxy before a contained spawn,
+  fills `Policy.ProxyAddr` with the ephemeral address, and amends the
+  child env with the `ProxyEnv` pins post-admission (design §2.3); carry
+  the decision record for the new spawn path in the same PR.
 - **Files**:
   - `internal/contain/main.go`
   - `internal/contain/main_test.go`
@@ -212,10 +214,14 @@
     restricted policy runs `sh -c` fixture that writes inside the workdir
     (succeeds) and outside it (fails); the same fixture with nil
     containment succeeds at both, proving the boundary did the work.
+  - `TestContainedStdinForwardedByteForByte` (linux-only): a worker launch
+    with a restricted policy and a prompt file holding shell metachars,
+    newlines and NUL bytes runs `cat`; the fixture echoes stdin
+    byte-identical to the prompt file; an EOF or short read fails.
   - `TestContainedProxyDenyThroughPinnedEnv` (linux-only): a worker launch
     with a restricted policy whose proxy allowlist names only an
     `httptest` host:port runs a fixture that CONNECTs to an evil host:port
-    through the pinned `HTTPS_PROXY` env; the CONNECT is denied (407/403)
+    through the pinned `HTTPS_PROXY` env; the CONNECT is denied (403)
     and `Policy.ProxyAddr` is non-empty in the launched spec. A worker
     that never starts the proxy (empty addr, unpinned env) lets the evil
     CONNECT succeed, failing the test.
@@ -310,7 +316,8 @@
 - **Depends on**: Task 4, Task 6
 - **Change**: Run `restricted` checks under containment with a check policy
   (read-only worktree, scratch tmp, no credential binds), keep host checks
-  for `trusted-host`, record the evaluator digest on the verification row,
+  for `trusted-host`, record the canonical evaluator digest on the
+  verification row (design §2.7: stable semantic fields only),
   and preserve unverified candidates explicitly when checks are unavailable.
   Re-check the next free migration number at task start (0003 in the current
   tree: only 0001/0002 exist at `SchemaVersion = 2`) and renumber if MH-21
@@ -341,6 +348,9 @@
     the exact policy + check definitions that ran; re-running with a changed
     check definition yields a different digest and the old row does not
     apply.
+  - `TestEvaluatorDigestRepeatable`: two policies differing only in
+    `Workdir`, `ProxyAddr` and bind sources yield identical digests;
+    flipping `ReadOnly` or one check digest changes it.
   - `TestUnavailableChecksStayUnverified`: a missing check executable yields
     `verification_unavailable` (exit 5), the candidate preserved, and no
     acceptance reported.
