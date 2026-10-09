@@ -203,7 +203,7 @@
 - **Test plan**: assertion tests on the built binary and package structure; corrupt-page fixtures.
 - **Invariants touched**: AT-42 (v2 §18.2: failure handling + tested restore posture).
 
-### Task 8 — Migration ADR and support rows
+### Task 8 — Migration ADR and support rows ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -218,3 +218,7 @@
   - The ADR names the OQ-1/OQ-2 decisions, the import mapping, and the drain order with file cites; review confirms no claim the code does not keep.
 - **Test plan**: matrix-vs-deliverables assertion following the stream-1/2 precedent; reviewer read of the ADR against the merged code.
 - **Invariants touched**: I14 (v2 §2: versioned evidence or explicitly unsupported); None beyond evidence (docs describe shipped behavior).
+- **Status**: ✅ Completed — Migration/import ADR recorded and the spec's support matrix published with its assertion; PR #302.
+- **Implementation**: ADR 0016 (proposed — acceptance is the maintainer's) pins OQ-1/OQ-2, the import mapping and the drain order with file cites; `SUPPORT.md` lists exactly the 6 shipped rows (5 `fixture-tested`, `nfr2-proof` blocked on unmerged Task 7); `support_test.go` resolves every evidence ref to a real test, checks platform claims against build tags, maps every `migrate`/`preview` export to a row, and self-mutates each defect class; review round 1 hardened the build-constraint scan and the ADR status check. Commits 4f7989a, 638222b.
+- **Spec deviations**: None.
+- **Files modified**: `docs/decisions/0016-migration-import.md`, `internal/migrate/SUPPORT.md`, `internal/migrate/support_test.go`, `specs/in-progress/supervisor-migration/tasks.md`, `specs/in-progress/supervisor-migration/handoff.md`, `specs/in-progress/supervisor-migration/scratchpad.md`.

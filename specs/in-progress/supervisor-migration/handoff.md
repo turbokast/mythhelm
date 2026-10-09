@@ -187,4 +187,22 @@
 
 ## Task 8 — Migration ADR and support rows
 
-<!-- pending -->
+- **Produces**: ADR `docs/decisions/0016-migration-import.md`
+  (`Status: proposed` — acceptance is the maintainer's; flip line 3 on
+  approval) pinning OQ-1/OQ-2, the import mapping and the drain order;
+  `internal/migrate/SUPPORT.md` with exactly the 6 shipped rows (5
+  `fixture-tested`, `nfr2-proof` blocked on Task 7); the matrix
+  assertion `TestSupportMatrixMatchesEvidence` plus
+  `TestMigrationADRNamesDecisions` in
+  `internal/migrate/support_test.go`.
+- **For dependents**: the matrix test resolves every evidence ref to a
+  real test function in `migrate`/`journal`/`cli`/`tests`, checks the
+  platform claims against build tags, and maps every exported
+  declaration of `internal/migrate` and `preview` to a row — adding
+  behaviour without a row fails. Nothing here claims
+  `live-qualified`.
+- **Deviations that change a later task's inputs**: none — docs plus
+  assertion only, no behaviour changed. Task 7: flip the
+  `nfr2-proof` row to `fixture-tested` with its evidence refs when the
+  NFR-2 proof lands (OQ-8 verdict); the row ID and the export mapping
+  stay as-is.

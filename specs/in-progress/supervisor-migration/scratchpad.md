@@ -102,3 +102,13 @@ overrides `design.md` — conflicts go back to the designer.
   runners). A resume whose recorded backup vanished refuses with
   `invalid_contract` instead of re-taking (a fresh copy would hold
   committed migration rows, not pre-migration state).
+- **Task 8**: the support matrix pins exactly the 6 shipped rows and
+  `TestSupportMatrixMatchesEvidence` resolves every evidence ref to a
+  real test, checks platform claims against build tags, and maps every
+  `internal/migrate` + `preview` export to a row — new behaviour
+  without a row fails, with self-mutations proving each defect class
+  is reported. ADR 0016 stays `proposed` until the maintainer accepts
+  it (flip `docs/decisions/0016-migration-import.md:3`); the
+  `nfr2-proof` row stays `blocked` until Task 7 lands. Lint note: the
+  repo pins UK spelling (`behaviour`, misspell locale UK) — the matrix
+  test was fixed for it during this task's gates.
