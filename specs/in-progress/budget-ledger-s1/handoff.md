@@ -35,7 +35,9 @@
 
 ## Task 6 — Envelope configuration and extension decision
 
-<!-- pending -->
+- **Produces**: as designed: `admission.EnvelopesConfig` with `ToCeilings()`, `ProjectConfig.Envelopes`, `Request.EnvelopeFlags` and `Decision.EnvelopeFlags`, the four `--envelope-*` flags, and `supervisor.RequestExtension`, `CheckExtension` and the `EventExtensionGranted` constant in `internal/supervisor/envelope.go`. Added: `supervisor.ExtensionGrant` and `Hooks.Extension` (in `pipeline.go`), which `RecoverWithHooks` acts on.
+- **For dependents**: both `ToCeilings` and the flag layer mark an unset field negative and return nil when nothing is set, so pass them straight to `billing.ResolveCeilings`. `RequestExtension` accepts only a run blocked with `envelope_deadline_exceeded` (execution), `envelope_repairs_exhausted`, `envelope_replans_exhausted` or `envelope_transport_retries_exhausted`; Task 7's gate must block with exactly those reasons. `CheckExtension` is true only for a grant after the latest block for that kind, so `GateLaunch` can call it after the run resumes. `Recover` leaves the run `blocked`: moving it on is the launch gate's job.
+- **Traps**: under `--no-checks` admission never reads `mythhelm.toml`, so `Decision.ProjectConfig.Envelopes` is empty and the file layer is nil. `internal/cli/run.go` has a local `billing` variable, so it imports the package as `billingpkg`. No CLI flag feeds `Hooks.Extension` yet; wiring one into `mythhelm recover` is not in any task's Files.
 
 ## Task 7 — Envelope counting and launch gate
 

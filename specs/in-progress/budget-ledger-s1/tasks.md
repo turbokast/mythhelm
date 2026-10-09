@@ -148,7 +148,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `adapters/claudecode/decode.go`, `adapters/claudecode/decode_test.go`, `adapters/claudecode/testdata/exhaustion/allowance_exhausted.json`, `adapters/fake/scenarios/usage-counters.json`, `adapters/fake/scenarios/allowance-exhausted.json`, `adapters/fake/fake_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
-### Task 6 — Envelope configuration and extension decision
+### Task 6 — Envelope configuration and extension decision ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (recover-path interplay, new control event; 10 files justified: one logical change — the envelope-config chain from flags/config through Decide to Decision — with a test file for each new behavior; splitting config from threading would leave flags that do not compile)
@@ -175,6 +175,10 @@
   - `TestExtensionRejectsUnknownKind`: an unknown kind or a run not blocked for that kind errors; granting fails. Fails before: function absent.
 - **Test plan**: TOML fixtures (valid + each invalid shape); CLI tests through flag parsing plus one `cli.Main` exit-code case; recover tests with temp journals on envelope-blocked runs.
 - **Invariants touched**: I02 (v2 §2: strict decode fails closed; unknown extension never assumed); I21 (v2 §10.3: ceilings configurable but always finite); I20 (v2 §2: extension binds the recorded decision, not a mutable grant).
+- **Status**: ✅ Completed — the `[envelopes]` table, the four `--envelope-*` flags and the recorded `run.extension_granted` decision landed; the flag and file layers reach the `Decision` unresolved; PR #254.
+- **Implementation**: `RequestExtension` journals the event and raises the envelope row in one append; `CheckExtension` is true only when a grant follows the run's latest block for that kind. `Hooks.Extension` carries the operator's decision into `RecoverWithHooks`, which journals it before anything else. Commit 469e067.
+- **Spec deviations**: `internal/supervisor/pipeline.go` is outside the task's Files list: `Hooks.Extension` lives there, as `RecoverWithHooks` has no other channel for the operator's decision.
+- **Files modified**: `internal/admission/admission.go`, `internal/admission/admission_test.go`, `internal/admission/projectconfig.go`, `internal/admission/projectconfig_test.go`, `internal/cli/run.go`, `internal/cli/run_envelope_test.go`, `internal/supervisor/envelope.go`, `internal/supervisor/envelope_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/recover.go`, `internal/supervisor/recover_envelope_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
 ### Task 7 — Envelope counting and launch gate
 

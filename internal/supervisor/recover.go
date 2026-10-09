@@ -63,6 +63,13 @@ func RecoverWithHooks(ctx context.Context, j *journal.Journal, runID string, h H
 		h.Notice = func(string) {}
 	}
 	p := &pipeline{j: j, h: h, prod: NewProducer(ids.New("sup"), 1), out: out.Outcome, d: admission.Decision{RunID: runID, StateDir: j.StateDir(), RunDir: dir}}
+	// An operator's extension is journaled before anything else, so the
+	// decision is durable whatever recovery does next (AC-4.2).
+	if g := h.Extension; g != nil {
+		if err := RequestExtension(ctx, j, runID, g.Kind, g.RaisedTo, g.DecidedBy); err != nil {
+			return out, err
+		}
+	}
 	// Named terminal states need no worker access. Receipt persistence may
 	// have been interrupted after their state transition committed.
 	switch out.State {
