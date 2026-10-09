@@ -3,6 +3,7 @@ package billing
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -139,6 +140,7 @@ func TestNormalizeRejectsMalformedReadings(t *testing.T) {
 		{"non-decimal cumulative", cum("m", "tokens", "s", "1e3", t0)},
 		{"float-ish text", cum("m", "tokens", "s", "0.", t0)},
 		{"empty quantity", cum("m", "tokens", "s", "", t0)},
+		{"identified without producer", Reading{Scope: "m", Unit: "u", Source: "s", Delta: new("1"), HasIdentity: true}},
 		{"non-decimal delta", delta("m", "tokens", "s", "abc", t0, "p", 1)},
 	}
 	for _, c := range cases {
@@ -245,4 +247,39 @@ func TestSplitUsageMissingFieldUnknown(t *testing.T) {
 	if st.Components["cache_read"] != nil {
 		t.Fatalf("unreported cache_read = %v, want nil", st.Components["cache_read"])
 	}
+}
+
+func TestNormalizeRepeatedDeltaCountedOnce(t *testing.T) {
+	d := delta("m", "tokens", "native-reported", "5", t0, "wrk_a", 1)
+	n, err := Normalize([]Reading{d, d}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantTotal(t, totalOf(t, n, tokens), "5")
+}
+
+func TestNormalizeRepeatedDeltaConflictRejected(t *testing.T) {
+	rs := []Reading{
+		delta("m", "tokens", "native-reported", "5", t0, "wrk_a", 1),
+		delta("m", "tokens", "native-reported", "6", t0, "wrk_a", 1),
+	}
+	if _, err := Normalize(rs, nil, nil); !errors.Is(err, ErrReadingShape) {
+		t.Fatalf("err = %v, want ErrReadingShape", err)
+	}
+}
+
+func TestSplitUsageNegativeCountUnknown(t *testing.T) {
+	st := SplitUsage("claude-code", adapter.TokenUsage{Input: new(int64(-1)), Output: new(int64(1)), CacheRead: new(int64(0)), CacheCreation: new(int64(0))})
+	if st.Total != nil || st.Label != qualify.DatumUnknown {
+		t.Fatalf("negative input = %+v, want nil total and unknown label", st)
+	}
+	neg := SplitUsage("claude-code", adapter.TokenUsage{Input: new(int64(1)), Output: new(int64(-2)), CacheRead: new(int64(0)), CacheCreation: new(int64(0))})
+	if neg.Components["output"] != nil {
+		t.Fatalf("negative output component = %s, want nil", *neg.Components["output"])
+	}
+}
+
+func TestSplitUsageSumDoesNotOverflow(t *testing.T) {
+	st := SplitUsage("claude-code", adapter.TokenUsage{Input: new(int64(math.MaxInt64)), Output: new(int64(1)), CacheRead: new(int64(0)), CacheCreation: new(int64(0))})
+	wantTotal(t, st, "9223372036854775808")
 }

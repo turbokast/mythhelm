@@ -36,7 +36,11 @@ func Normalize(rs []Reading, expected []string, applied map[EventID]bool) (Norma
 
 	out := Normalized{Scopes: make(map[ScopeKey]ScopeTotal, len(groups))}
 	for k, g := range groups {
-		out.Scopes[k] = totalFor(k, g, applied)
+		st, err := totalFor(k, g, applied)
+		if err != nil {
+			return Normalized{}, err
+		}
+		out.Scopes[k] = st
 	}
 	for _, s := range expected {
 		if !scopes[s] {
@@ -52,6 +56,8 @@ func checkReading(r Reading) error {
 		return errors.New("empty scope, unit or source")
 	case (r.Cumulative == nil) == (r.Delta == nil):
 		return errors.New("exactly one of cumulative or delta must be set")
+	case r.HasIdentity && r.Producer == "":
+		return errors.New("identified reading has no producer")
 	}
 	q := r.Cumulative
 	if q == nil {
@@ -63,7 +69,7 @@ func checkReading(r Reading) error {
 	return nil
 }
 
-func totalFor(k ScopeKey, g []Reading, applied map[EventID]bool) ScopeTotal {
+func totalFor(k ScopeKey, g []Reading, applied map[EventID]bool) (ScopeTotal, error) {
 	var base *Reading
 	for i := range g {
 		if g[i].Cumulative != nil && (base == nil || !g[i].At.Before(base.At)) {
@@ -72,13 +78,24 @@ func totalFor(k ScopeKey, g []Reading, applied map[EventID]bool) ScopeTotal {
 	}
 
 	var deltas []string
+	seen := map[EventID]string{}
 	estimated := k.Scope == retailEquivalentScope
 	for _, r := range g {
 		if r.Delta == nil || (base != nil && !r.At.After(base.At)) {
 			continue
 		}
-		if r.HasIdentity && applied[EventID{r.Producer, r.Sequence}] {
-			continue
+		if r.HasIdentity {
+			id := EventID{r.Producer, r.Sequence}
+			if applied[id] {
+				continue
+			}
+			if prev, dup := seen[id]; dup {
+				if prev != *r.Delta {
+					return ScopeTotal{}, fmt.Errorf("%w: event %s/%d repeated with deltas %s and %s", ErrReadingShape, id.Producer, id.Sequence, prev, *r.Delta)
+				}
+				continue
+			}
+			seen[id] = *r.Delta
 		}
 		deltas = append(deltas, *r.Delta)
 		estimated = estimated || !r.HasIdentity
@@ -87,7 +104,7 @@ func totalFor(k ScopeKey, g []Reading, applied map[EventID]bool) ScopeTotal {
 	var total string
 	switch {
 	case base == nil && len(deltas) == 0:
-		return ScopeTotal{Label: qualify.DatumUnknown}
+		return ScopeTotal{Label: qualify.DatumUnknown}, nil
 	case base == nil:
 		total = sumDecimals(deltas)
 	case len(deltas) == 0:
@@ -100,7 +117,7 @@ func totalFor(k ScopeKey, g []Reading, applied map[EventID]bool) ScopeTotal {
 	if estimated {
 		label = qualify.Estimated
 	}
-	return ScopeTotal{Total: &total, Label: label}
+	return ScopeTotal{Total: &total, Label: label}, nil
 }
 
 // sumDecimals adds validated decimal texts exactly, at the largest scale
@@ -139,22 +156,34 @@ var splitRoutes = map[string]bool{"claude-code": true}
 // SplitUsage totals one model's token usage and, for a route in splitRoutes,
 // exposes its non-overlapping components. Any other route gets the combined
 // total only, because native cache/reasoning/output counts may overlap
-// (v2 §7.3). A nil count is unknown: the total is unknown unless all four
-// counts are reported.
+// (v2 §7.3). A nil or negative count is unknown: the total is unknown unless
+// all four counts are reported.
 func SplitUsage(route string, u adapter.TokenUsage) ScopeTotal {
 	st := ScopeTotal{Label: qualify.DatumUnknown, Components: map[string]*string{
 		"output": nil, "cache_read": nil, "cache_creation": nil, "reasoning": nil,
 	}}
-	if u.Input != nil && u.Output != nil && u.CacheRead != nil && u.CacheCreation != nil {
-		sum := strconv.FormatInt(*u.Input+*u.Output+*u.CacheRead+*u.CacheCreation, 10)
-		st.Total, st.Label = &sum, qualify.Reported
+	in, out, cr, cc := reported(u.Input), reported(u.Output), reported(u.CacheRead), reported(u.CacheCreation)
+	if in != nil && out != nil && cr != nil && cc != nil {
+		sum := new(big.Int).Add(big.NewInt(*in), big.NewInt(*out))
+		sum.Add(sum, big.NewInt(*cr)).Add(sum, big.NewInt(*cc))
+		text := sum.String()
+		st.Total, st.Label = &text, qualify.Reported
 	}
 	if splitRoutes[route] {
-		st.Components["output"] = countText(u.Output)
-		st.Components["cache_read"] = countText(u.CacheRead)
-		st.Components["cache_creation"] = countText(u.CacheCreation)
+		st.Components["output"] = countText(out)
+		st.Components["cache_read"] = countText(cr)
+		st.Components["cache_creation"] = countText(cc)
 	}
 	return st
+}
+
+// reported keeps a count only if it is a plausible measurement: nil and
+// negative counts are unknown.
+func reported(n *int64) *int64 {
+	if n == nil || *n < 0 {
+		return nil
+	}
+	return n
 }
 
 func countText(n *int64) *string {
