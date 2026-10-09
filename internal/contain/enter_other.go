@@ -21,4 +21,7 @@ func RunProbeChild() int { return 1 }
 
 func promptToStdin() error { return ErrUnsupported }
 
+// ApplyNamespaces does nothing off Linux: no namespaces exist to add.
+func ApplyNamespaces(*syscall.SysProcAttr) {}
+
 func NamespaceAttr() *syscall.SysProcAttr { return nil }

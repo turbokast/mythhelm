@@ -58,6 +58,13 @@ func promptToStdin() error {
 	return unix.Close(promptFD)
 }
 
+// ApplyNamespaces adds the user and mount namespace clone flags to a
+// SysProcAttr a caller built (its own process-group settings stay).
+func ApplyNamespaces(a *syscall.SysProcAttr) {
+	ns := NamespaceAttr()
+	a.Cloneflags, a.UidMappings, a.GidMappings = ns.Cloneflags, ns.UidMappings, ns.GidMappings
+}
+
 // ProbeLinux runs the boundary's setup in a throwaway child and reports its
 // kernel version, or the step that failed.
 func ProbeLinux() Availability {
