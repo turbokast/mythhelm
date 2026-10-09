@@ -67,7 +67,10 @@
 
 ## Task 11 — AT-13 end-to-end and NFR-1 run-path latency
 
-<!-- pending -->
+- **Produces**: `tests/e2e/ledger_s1_test.go` — `TestE2ELedgerNormalizesCounters`, `TestE2EExhaustionPreservesWithoutFallback`, `TestE2ECoupledReservationPresent`, `TestRunPathLedgerLatency`, plus helpers (`ledgerSeedRepo`, `ledgerRun`, `ledgerRunIDOf`, `ledgerResultOf`, `ledgerEventCounts`, `ledgerReceiptBytes`, `ledgerPaidMarkers`). Packaged binary, fake adapter, temp `MYTHHELM_HOME`, `--plain --no-checks`, no `mythhelm.toml`.
+- **For dependents**: pinned end states — a single fake run journals exactly one usage row (the retail-equivalent unknown marker) and one reservation row (released with evidence after completion); the exhaustion run ends `blocked (allowance_exhausted)` with exactly one `attempt.launched`; the receipt lives at `runs/<runID>/receipt.json`. `--no-checks` runs exit non-zero (5 unverified, 3 blocked): assert the `result:` state/reason, not exit 0.
+- **Traps**: jsonl stdout contains `paid_overage_prevention` (a capability field, value `unsupported`), so a literal whole-stdout `overage` grep fails there — the marker sweep runs `--plain`. Ledger notices print on stdout in plain mode but on stderr in jsonl mode; the sweep covers receipt, stdout and stderr.
+- **Deviations that change later inputs**: none with an owner — but AC-2.1 deltas are still unexercised end to end (no later task covers them). Follow-up, unowned: extend the fake decoder to surface `Tokens`/`CostUSD` from `fake.result` and add usage to the `usage-counters` scenario's result frame (`adapters/fake/fake.go`, `adapters/fake/scenarios/usage-counters.json`, same-domain deviation as Task 8's `fake.error` frame); then strengthen `TestE2ELedgerNormalizesCounters` to assert accumulated deltas.
 
 ## Task 12 — Ledger user documentation and decision record
 
