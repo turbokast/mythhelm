@@ -1,0 +1,1 @@
+{"schema_version":2,"decision_id":"dd_demo_0001","disposition":"accepted","rationale":"one contract package keeps the vocabulary hermetic","alternatives":["extend journal"],"owner":"maintainer","scope":"v2 contracts","sources":["specs/v2-contract-vocabulary/design.md"],"revision":2,"supersedes":1}
