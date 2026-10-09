@@ -53,4 +53,6 @@
 
 ## Task 8 — Support matrix, hermeticity, and invalid-case evidence
 
-<!-- pending -->
+- **Produces** (PR #264): `internal/v2contract/SUPPORT.md` (table `| Deliverable | State | Evidence |`; 20 `fixture-tested` rows plus 2 `blocked`), `contract_test.go` with the six acceptance tests, `testdata/invalid/{unknown_authority_key,null_measurement}.json`, `testdata/policy_version.golden.toml`.
+- **For dependents**: adding a record golden under `testdata/records/` without a `SUPPORT.md` row, or a row naming a test that does not exist, fails `TestSupportMatrixMatchesEvidence`. Golden string values must not contain `sk-`, `secret`, `token` or `apikey` (case-insensitive).
+- **Deviation**: Task 2's `run.golden.json` budget words changed to `gpu-hours`/`hours` (the scan flagged `tokens`).
