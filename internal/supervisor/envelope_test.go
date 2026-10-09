@@ -731,3 +731,43 @@ func TestJournaledMalformedRetriesNeverReduceCount(t *testing.T) {
 		t.Fatalf("transport retries seen = %d, want 4: malformed journaled reports must count for nothing", got)
 	}
 }
+
+func TestLaunchRefusedWhenDeadlineExpiresBeforeCommit(t *testing.T) {
+	t.Parallel()
+	// Planned long ago with a 1ms ceiling: the plan passes at its own time,
+	// and by the time the intent commits the deadline is long past.
+	planned := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	short := billing.Ceilings{Execution: time.Millisecond, Repairs: 3, Replans: 2, TransportRetries: 5}
+	for _, c := range []struct {
+		name     string
+		attempts int64
+		verify   bool
+	}{
+		{"first launch", 0, false},
+		{"repair", 1, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			w := newGateWorld(t, gateEnvelope(), c.attempts)
+			if c.verify {
+				w.addVerification(t)
+			}
+			before := w.row(t)
+			plan, err := planLaunchAt(t.Context(), w.j, w.runID, short, planned)
+			if err != nil {
+				t.Fatalf("plan at its own time refused: %v", err)
+			}
+			intents := w.launchIntents(t)
+			err = recordLaunchIntent(t.Context(), w.j, journal.AttemptRow{AttemptID: ids.New("att"), RunID: w.runID, TaskID: "task", AttemptNumber: c.attempts + 1,
+				LaunchTokenSHA256: strings.Repeat("a", 64), WorkspacePath: "/tmp/ws"}, w.prod, plan.commit(t.Context(), w.runID))
+			requireGateRefusal(t, err, "envelope_deadline_exceeded")
+			if got := w.launchIntents(t); got != intents {
+				t.Fatalf("launch intents %d -> %d: an expired launch was admitted", intents, got)
+			}
+			after := w.row(t)
+			if after.RepairsUsed != before.RepairsUsed || after.ReplansUsed != before.ReplansUsed || after.FirstStartAt != before.FirstStartAt {
+				t.Fatalf("a refused launch changed the envelope: %+v -> %+v", before, after)
+			}
+		})
+	}
+}

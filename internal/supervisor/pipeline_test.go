@@ -1532,14 +1532,16 @@ func TestFailedAdmissionHoldsNothing(t *testing.T) {
 
 func TestDeadlineExpiryBlocks(t *testing.T) {
 	f := newFixture(t)
-	// The slow scenario would run for ten minutes; the 1ms execution ceiling
-	// ends it through the stop ladder, with no wait in the test.
+	// The slow scenario would run for ten minutes; the 2s execution ceiling
+	// outlasts the launch (a ceiling that ran out before the intent commits
+	// is refused instead, TestLaunchRefusedWhenDeadlineExpiresBeforeCommit)
+	// and ends the attempt through the stop ladder. The test never sleeps.
 	d, err := admission.Decide(t.Context(), admission.Request{
 		StateDir: f.state, Repo: f.repo, TaskFile: f.task,
 		Adapter: admission.AdapterFake, Billing: admission.BillingLocalScripted,
 		ExecutionProfile: admission.ProfileTrustedHost, Env: os.Environ(),
 		NoChecks: true, Scenario: "slow",
-		EnvelopeFlags: &billing.Ceilings{Execution: time.Millisecond, Repairs: -1, Replans: -1, TransportRetries: -1},
+		EnvelopeFlags: &billing.Ceilings{Execution: 2 * time.Second, Repairs: -1, Replans: -1, TransportRetries: -1},
 	})
 	if err != nil {
 		t.Fatal(err)

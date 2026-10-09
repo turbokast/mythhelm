@@ -152,6 +152,11 @@ func gateLaunchAt(ctx context.Context, j *journal.Journal, runID string, c billi
 	return err
 }
 
+func deadlineError(deadline time.Time) *GateError {
+	return &GateError{Reason: "envelope_deadline_exceeded",
+		Err: fmt.Errorf("%w: execution deadline %s reached", billing.ErrBudgetExhausted, deadline.Format(time.RFC3339))}
+}
+
 // planLaunchAt checks the launch and returns its plan. An attempt after the
 // first is a repair when the run has a verifications row and a replan when
 // it has none (D8); the first attempt starts the execution clock.
@@ -163,8 +168,7 @@ func planLaunchAt(ctx context.Context, j *journal.Journal, runID string, c billi
 	if deadline, expired, err := envelopeDeadline(env, eff, now); err != nil {
 		return launchPlan{}, err
 	} else if expired {
-		return launchPlan{}, &GateError{Reason: "envelope_deadline_exceeded",
-			Err: fmt.Errorf("%w: execution deadline %s reached", billing.ErrBudgetExhausted, deadline.Format(time.RFC3339))}
+		return launchPlan{}, deadlineError(deadline)
 	}
 	plan := launchPlan{startAt: now.UTC(), ceilings: eff}
 	counts := billing.AttemptCounts{Repairs: int(env.RepairsUsed), Replans: int(env.ReplansUsed), TransportRetries: int(env.TransportRetriesSeen)}
@@ -200,7 +204,8 @@ func planLaunchAt(ctx context.Context, j *journal.Journal, runID string, c billi
 // commit counts the planned launch and stamps the first start. It runs in
 // the launch intent's transaction, so a launch whose intent fails counts
 // nothing, and the update itself enforces the ceiling, so two launches
-// planned from the same state cannot both pass (AC-4.2). It increments in
+// planned from the same state cannot both pass (AC-4.2), and a deadline that
+// has passed since the plan refuses it. It increments in
 // place rather than rewriting the row, leaving concurrent ingest updates of
 // the transport count intact.
 func (p launchPlan) commit(ctx context.Context, runID string) func(*sql.Tx) error {
@@ -212,6 +217,12 @@ func (p launchPlan) commit(ctx context.Context, runID string) func(*sql.Tx) erro
 		replans = 1
 	}
 	return func(tx *sql.Tx) error {
+		// The plan was checked earlier; a ceiling that ran out since then
+		// refuses the launch, rather than admitting a worker the deadline
+		// would immediately stop (I21).
+		if now := time.Now(); !now.Before(p.deadline) {
+			return deadlineError(p.deadline)
+		}
 		res, err := tx.ExecContext(ctx, `UPDATE run_envelopes SET repairs_used = repairs_used + ?, replans_used = replans_used + ?,
 			first_start_at = COALESCE(first_start_at, ?), updated_at = ?
 			WHERE run_id = ? AND repairs_used + ? <= ? AND replans_used + ? <= ?`,
