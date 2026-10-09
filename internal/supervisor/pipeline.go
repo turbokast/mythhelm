@@ -125,7 +125,11 @@ func Run(ctx context.Context, d admission.Decision, h Hooks) (Outcome, error) {
 	defer func() { _ = j.Close() }()
 	// New admissions stop while migration owns the state directory or the
 	// ledger has moved past previewed; in-flight runs drain instead (I05).
-	if err := checkMigrationClear(ctx, j, "start a new run"); err != nil {
+	// The guard returns the state-directory lock held: Run keeps it until
+	// the run owns its own lock, so no Drain can enumerate between the
+	// check and the admission.
+	releaseMigration, err := checkMigrationClear(ctx, j, "start a new run")
+	if err != nil {
 		if !errors.Is(err, ErrOwnership) {
 			// A guard that cannot read (a locked ledger, an unreadable
 			// lock) fails like any other pre-admission I/O failure.
@@ -140,9 +144,14 @@ func Run(ctx context.Context, d admission.Decision, h Hooks) (Outcome, error) {
 		return Outcome{}, unavailable(err)
 	}
 	if err := os.MkdirAll(d.RunDir, 0o700); err != nil {
+		releaseMigration()
 		return Outcome{}, unavailable(err)
 	}
 	release, err := AcquireOwner(d.RunDir)
+	// The run directory now exists and the run holds its own lock: any
+	// later Drain enumerates the run and quiesces on that lock, so the
+	// migration lock can go on every exit path from here.
+	releaseMigration()
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -165,25 +174,32 @@ func Run(ctx context.Context, d admission.Decision, h Hooks) (Outcome, error) {
 // quiesces owners, or after the service owns the ledger (I05, I18). The
 // refusal names the v2 ownership_unresolved code and wraps ErrOwnership so
 // the CLI maps it like any ownership failure.
-func checkMigrationClear(ctx context.Context, j *journal.Journal, action string) error {
-	phase, err := migrationPhase(ctx, j)
-	if err != nil {
-		return err
-	}
-	if phasePastPreviewed(phase) {
-		return fmt.Errorf("cannot %s: ownership_unresolved: migration phase is %q: %w",
-			action, phase, ErrOwnership)
-	}
+//
+// On success it returns the state-directory lock held: the caller keeps it
+// until the run holds its own owner lock, closing the check-then-admit race
+// with Drain. The phase is read while the lock is held, so a phase writer
+// under the same lock cannot slip between the read and the admission.
+// Refusals and read failures release the lock before returning.
+func checkMigrationClear(ctx context.Context, j *journal.Journal, action string) (func(), error) {
 	release, err := AcquireOwner(j.StateDir())
 	if err != nil {
 		if errors.Is(err, ErrOwnerHeld) {
-			return fmt.Errorf("cannot %s: ownership_unresolved: migration holds the state directory: %w",
+			return nil, fmt.Errorf("cannot %s: ownership_unresolved: migration holds the state directory: %w",
 				action, ErrOwnership)
 		}
-		return err
+		return nil, err
 	}
-	release()
-	return nil
+	phase, err := migrationPhase(ctx, j)
+	if err != nil {
+		release()
+		return nil, err
+	}
+	if phasePastPreviewed(phase) {
+		release()
+		return nil, fmt.Errorf("cannot %s: ownership_unresolved: migration phase is %q: %w",
+			action, phase, ErrOwnership)
+	}
+	return release, nil
 }
 
 // migrationPhase reads the durable migration phase: not_started when the

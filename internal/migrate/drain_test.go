@@ -653,6 +653,90 @@ func TestRunRefusedPastPreviewed(t *testing.T) {
 	}
 }
 
+// TestRunReleasesMigrationLock // I05: every Run exit after the migration
+// guard leaves the state-directory lock as it found it. Refusals release
+// the guard's hold, failures after a clear guard (an unmakable run
+// directory, a held run lock) release it too, and a refusal on a held lock
+// never disturbs the holder.
+func TestRunReleasesMigrationLock(t *testing.T) {
+	isolateInstanceLock(t)
+	requireFree := func(t *testing.T, dir string) {
+		t.Helper()
+		release, err := supervisor.AcquireOwner(dir)
+		if err != nil {
+			t.Fatalf("AcquireOwner(%s) = %v; want the migration lock released after Run", dir, err)
+		}
+		release()
+	}
+
+	t.Run("refused past previewed releases", func(t *testing.T) {
+		dir := t.TempDir()
+		db := openDrainDB(t, dir)
+		setPhase(t, db, PhaseDrained)
+		_, err := supervisor.Run(t.Context(), admissionDecision(dir), supervisor.Hooks{})
+		if !errors.Is(err, supervisor.ErrOwnership) {
+			t.Fatalf("Run = %v; want ownership refusal", err)
+		}
+		requireFree(t, dir)
+	})
+
+	t.Run("mkdir failure releases", func(t *testing.T) {
+		dir := t.TempDir()
+		db := openDrainDB(t, dir)
+		setPhase(t, db, PhaseNotStarted)
+		// The bare decision carries no run directory, so MkdirAll fails
+		// after the guard clears.
+		_, err := supervisor.Run(t.Context(), admissionDecision(dir), supervisor.Hooks{})
+		var blocked *admission.BlockedError
+		if !errors.As(err, &blocked) || blocked.Code != "persistence_unavailable" {
+			t.Fatalf("Run = %v; want persistence_unavailable past the guard", err)
+		}
+		requireFree(t, dir)
+	})
+
+	t.Run("run lock failure releases", func(t *testing.T) {
+		dir := t.TempDir()
+		db := openDrainDB(t, dir)
+		setPhase(t, db, PhaseNotStarted)
+		runDir := filepath.Join(dir, "runs", "run_held")
+		if err := os.MkdirAll(runDir, 0o700); err != nil {
+			t.Fatalf("mkdir run dir: %v", err)
+		}
+		held, err := supervisor.AcquireOwner(runDir)
+		if err != nil {
+			t.Fatalf("hold run lock: %v", err)
+		}
+		t.Cleanup(held)
+		decision := admission.Decision{StateDir: dir, RunDir: runDir}
+		_, err = supervisor.Run(t.Context(), decision, supervisor.Hooks{})
+		if !errors.Is(err, supervisor.ErrOwnerHeld) {
+			t.Fatalf("Run = %v; want the held run lock", err)
+		}
+		requireFree(t, dir)
+	})
+
+	t.Run("held lock refusal disturbs nothing", func(t *testing.T) {
+		dir := t.TempDir()
+		db := openDrainDB(t, dir)
+		setPhase(t, db, PhaseNotStarted)
+		held, err := supervisor.AcquireOwner(dir)
+		if err != nil {
+			t.Fatalf("hold migration lock: %v", err)
+		}
+		t.Cleanup(held)
+		_, err = supervisor.Run(t.Context(), admissionDecision(dir), supervisor.Hooks{})
+		if !errors.Is(err, supervisor.ErrOwnership) {
+			t.Fatalf("Run = %v; want ownership refusal", err)
+		}
+		if release, err := supervisor.AcquireOwner(dir); !errors.Is(err, supervisor.ErrOwnerHeld) {
+			if err == nil {
+				release()
+			}
+			t.Fatalf("AcquireOwner = %v; want the holder's lock intact after the refusal", err)
+		}
+	})
+}
+
 // TestRecoverRefusedPastPreviewed // I05 (v2 §2): recovery, the last owner
 // site to drain, is refused with ownership_unresolved past previewed or
 // while migration holds the state directory; otherwise it proceeds into
