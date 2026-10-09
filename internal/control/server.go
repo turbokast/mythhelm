@@ -77,7 +77,7 @@ func StatusHandler(db *sql.DB) Handler {
 		}
 		meta, ok := readMetadata(lock)
 		if !ok {
-			return Result{}, newError(CodeCapabilityUnsupported, "no supervisor instance is recorded")
+			return Result{}, newError(CodeProcessLost, "no supervisor instance is recorded")
 		}
 		endpoint, err := EndpointPath()
 		if err != nil {

@@ -1,10 +1,27 @@
 package cli
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/turbokast/mythhelm/internal/control"
 	"github.com/turbokast/mythhelm/internal/supervisor"
 )
+
+func TestExitCodeControlHeldIsOwnership(t *testing.T) {
+	t.Parallel()
+	for name, err := range map[string]error{
+		"root conflict": control.ErrRootConflict,
+		"instance held": control.ErrInstanceHeld,
+	} {
+		if got := exitCode(err); got != ExitOwnership {
+			t.Errorf("exitCode(%s) = %d, want %d", name, got, ExitOwnership)
+		}
+		if got := exitCode(fmt.Errorf("supervisor: %w", err)); got != ExitOwnership {
+			t.Errorf("exitCode(wrapped %s) = %d, want %d", name, got, ExitOwnership)
+		}
+	}
+}
 
 func TestRunExitClassifiedFailures(t *testing.T) {
 	t.Parallel()
