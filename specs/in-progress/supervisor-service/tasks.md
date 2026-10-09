@@ -33,7 +33,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Instance lock and root-conflict refusal
+### Task 1 — Instance lock and root-conflict refusal ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (process ownership, cross-platform lock behaviour)
@@ -55,8 +55,12 @@
   - `TestStaleLockAdoptedWithGenerationBump`: after the holder process is killed, a new acquirer succeeds and records a higher generation; a test double that reuses the old generation fails.
 - **Test plan**: temp state dirs; kill a real holder subprocess for the stale test; build-tagged lock files vetted with cross-`GOOS` vet.
 - **Invariants touched**: I05 (v2 §2: one writer per user/host via the instance lock); I18 (v2 §2: one process owner, no second election).
+- **Status**: ✅ Completed — per-user instance lock with metadata, stale adoption and root-conflict refusal landed; PR #250.
+- **Implementation**: flock/LockFileEx exclusion with metadata classification; every successful acquire adopts with a bumped generation. Gates: go-fmt/go-vet/go-mod-tidy/golangci-lint/govulncheck/hygiene PASS via gate.sh; go-test fails only on pre-existing environmental TestStrictMainBlocksWriteNothing (identical on untouched base). Commit cd7191e.
+- **Spec deviations**: No separate liveness probe gates adoption (design §3): a successful flock proves the previous holder released, so the acquirer always adopts with a higher generation; a pid-liveness gate false-refused live-but-released recorders under other roots and risked pid-reuse false refusals. Observable contract unchanged.
+- **Files modified**: `internal/control/lock.go`, `internal/control/lock_unix.go`, `internal/control/lock_windows.go`, `internal/control/lock_test.go`, `specs/in-progress/supervisor-service/tasks.md`, `specs/in-progress/supervisor-service/handoff.md`.
 
-### Task 2 — Frame codec and NFR-1 ingress enforcement
+### Task 2 — Frame codec and NFR-1 ingress enforcement ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -75,8 +79,12 @@
   - `TestUnknownKeyRejected`: a frame with an unknown key fails naming the key (strict decode, not silent drop).
 - **Test plan**: table-driven fixtures at each boundary; constants referenced from `v2contract`, never copied.
 - **Invariants touched**: I09 (v2 §2: absent measurements stay absent, never zero-filled by decode).
+- **Status**: ✅ Completed — length-prefixed JSON codec with strict decode and `CheckIngress` NFR-1 enforcement, all four acceptance tests passing; PR #251.
+- **Implementation**: `CheckIngress` validates the length prefix, strict-decodes via `v2contract.Decode[Frame]`, then measures depth/refs with a streaming scan and enforces all three dimensions through `v2contract.CheckFrameLimits` verbatim. Depth = max simultaneously open containers (top-level object is 1); refs = string-valued `artifact_id` keys anywhere in the payload. Gates: `go-fmt`, `go-vet` (+ `GOOS=windows`/`darwin` vet on `internal/control`), `go-mod-tidy`, `golangci-lint` PASS; `go test -race ./internal/control/` PASS; full-suite `go-test` fails only on pre-existing `TestStrictMainBlocksWriteNothing` (internal/cli, fails identically on clean origin/main). Commit 5bfd608.
+- **Spec deviations**: (1) Violations are plain `error` values carrying the `protocol_mismatch` code in the message (pinned by `requireMismatch` in every rejection test), not `*v2contract.ControlError`: vocab task 6 (error catalogue + `ControlError`) is unmerged on origin/main so the type does not exist; no parallel code was defined (N1). Follow-up once vocab task 6 lands: return `protocol_mismatch` `*v2contract.ControlError` values keeping the same code string. (3) `internal/control/testdata/depth64.json` and `depth65.json`: acceptance-mandated depth fixtures (`TestDepth64Passes65Fails` pins each depth "by a fixture"); fixture data has no separate Files entry. (2) Started before stream 1 fully shipped (vocab tasks 2, 6, 8 open at branch time): this task consumes only merged Task-1 APIs (limits, `CheckFrameLimits`, `Decode`, `RequestEnvelope`) verbatim, so no unmerged input was needed.
+- **Files modified**: `internal/control/frame.go`, `internal/control/frame_test.go`, `internal/control/testdata/depth64.json`, `internal/control/testdata/depth65.json`, `specs/in-progress/supervisor-service/tasks.md`, `specs/in-progress/supervisor-service/handoff.md`.
 
-### Task 3 — Unix transport and peer authentication
+### Task 3 — Unix transport and peer authentication ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (security primitive, cross-platform behaviour)
@@ -96,6 +104,10 @@
   - `TestNoTCPListener`: `grep -rn 'Listen("tcp"' internal/control` prints nothing and a test asserts no `tcp` network string exists in the package (fails if a TCP path is added).
 - **Test plan**: temp socket dirs; peer-cred tests on linux/darwin; the foreign-UID case uses a stubbed credential source behind an interface.
 - **Invariants touched**: I03 (v2 §2: transport grants no authority; peer identity is platform-observed, never payload-claimed); I18 (v2 §2: one input writer per session).
+- **Status**: ✅ Completed — `Transport`/`Listener`/`Conn`/`Peer`/`ErrNoSupervisor` and the Unix socket transport with same-UID peer auth, all four acceptance tests passing; PR #253.
+- **Implementation**: 0700 socket dir (existing dirs with group/other bits or a foreign owner are refused), 0600 socket; `Accept` yields only same-UID peers and refuses others with a `permission_denied` frame, discarding (never parsing) what they sent; reads bound the prefix by `MaxFrameBytes` before allocating and run `CheckIngress` on received requests. Gates: go-fmt, go-vet (+ darwin/windows vet on `internal/control`), go-mod-tidy, golangci-lint, hygiene, go-test PASS. Commit dfc40ed.
+- **Spec deviations**: (1) `internal/control/transport_peercred_linux.go` and `transport_peercred_darwin.go` (outside Files): `SO_PEERCRED` and `LOCAL_PEERCRED` need different x/sys calls, which one file cannot hold. (2) `Conn` gains `Receive` and `Respond` beyond the design's `Request`-only interface: an accepted connection needs a server-side read/reply path. (3) `permission_denied` is a plain `{code,message}` frame, not `*v2contract.ControlError` (vocab task 6 unmerged); wrap it when that lands.
+- **Files modified**: `internal/control/transport.go`, `internal/control/transport_unix.go`, `internal/control/transport_unix_test.go`, `internal/control/transport_peercred_linux.go`, `internal/control/transport_peercred_darwin.go`, `specs/in-progress/supervisor-service/tasks.md`, `specs/in-progress/supervisor-service/handoff.md`.
 
 ### Task 4 — Windows named-pipe transport
 
@@ -119,7 +131,7 @@
 - **Test plan**: Windows-runner tests; DACL assertion on the pipe; lazy-spawn covered in Task 6.
 - **Invariants touched**: I03 (v2 §2: pipe ACL grants no authority beyond the owning user); I18 (v2 §2: same singleton semantics as Unix).
 
-### Task 5 — Intent server, idempotency ledger and sole-writer transactions
+### Task 5 — Intent server, idempotency ledger and sole-writer transactions ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (persistence schema, concurrency)
@@ -154,8 +166,12 @@
   - `TestMintTokenUnknownAttemptRefused`: `MintToken` for an unknown attempt returns `invalid_contract` and stores nothing.
 - **Test plan**: temp SQLite databases via the existing journal test harness; handler run-count doubles; concurrent duplicate execution race test (`-race`).
 - **Invariants touched**: I23 (v2 §2: single canonical ledger, one tx per mutation); I12 (v2 §2: no replay of effects — repeats replay stored results, never re-execute); I20 (v2 §2: stored results immutable once recorded).
+- **Status**: ✅ Completed — idempotent `Execute`, `Mutate`, `Server`, `StatusHandler`/`AssignHandler` and capability tokens landed over migration `0004_supervisor.sql`; PR #255.
+- **Implementation**: Execute runs the handler and records the operation result in one transaction (Mutate joins it from the handler context); recorded results are immutable by trigger. `ControlError` is not on main, so `control.Error` carries the v2 §4.5 code strings for now. Commit 76b8f17.
+- **Spec deviations**: (1) Migration is `0004_supervisor.sql` with `SchemaVersion` 4, not 0003/3: budget-ledger-s1 task 3 took 0003 first; tests are named `TestMigration0004IsAdditive` and `TestSchemaVersionIs4`; `journal_test.go`, `qualification_test.go` and `ledger_test.go` (outside Files) had only their version literals updated. (2) No `reservations` DDL: the table exists from `0003_ledger.sql` and lacks the host key and `expired` status, so Task 6 must reconcile it. (3) `control.Error`/`control.Code*` stand in for the unmerged `v2contract.ControlError`. (4) `Execute` has no ledger parameter, so the ledger is carried by `control.WithLedger(ctx, db)`. (5) `TestWorkersNeverOpenSQLite` scans worker sources for journal database API use, because `go list -deps ./internal/workers` already lists `modernc.org/sqlite` via the `journal.Event` import in `spool.go`. (6) No outbox table exists in the design DDL, so `TestMutateIsOneTransaction` observes journal, runs and operations rows. (7) Extra tables `capability_tokens` and `run_assignments`, and `control.EndpointPath()`.
+- **Files modified**: `internal/journal/migrations/0004_supervisor.sql`, `internal/journal/journal.go`, `internal/journal/journal_test.go`, `internal/journal/qualification_test.go`, `internal/journal/ledger_test.go`, `internal/control/control.go`, `internal/control/server.go`, `internal/control/ledger.go`, `internal/control/execute_test.go`, `specs/in-progress/supervisor-service/tasks.md`, `specs/in-progress/supervisor-service/handoff.md`.
 
-### Task 6 — Reservations, capability tokens, authority filtering and lazy start
+### Task 6 — Reservations, capability tokens, authority filtering and lazy start ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (concurrency, process spawning)
@@ -185,6 +201,10 @@
   - `TestReadIntentFiltersForeignRepos`: a `read` intent through `Dispatch` returns only in-scope rows — filtered-out repos contribute 0 to counts and no names.
 - **Test plan**: temp state roots; packaged-binary e2e for lazy spawn and status output; detach test asserts that the supervisor remains alive and serves a new control request after the client exits.
 - **Invariants touched**: I05 (v2 §2: host+resource keying, bounds prevent work); I09 (v2 §2: unknown quantities distinct from zero); I06 (v2 §2: client exit transfers nothing — detach test).
+- **Status**: ✅ Completed — reservation manager and handlers, authority-first `Filter`/`read`, the serve loop, lazy detached supervisor start and `mythhelm supervisor status` landed; PR #258.
+- **Implementation**: Reservations are one held row per host, bucket and scope (migration `0005_reservation_host.sql`, additive); bounds refuse with `allowance_exhausted` and record nothing. The supervisor starts in its own session and a racing starter loses the instance lock and exits; `Connect` refuses a supervisor serving another state root. Commit 4098c89.
+- **Spec deviations**: (1) The `reservations` table from `0003_ledger.sql` is reconciled by an additive `0005_reservation_host.sql` (`SchemaVersion` 5) adding `execution_host` and a held-key unique index; `expired` is not added (a table rebuild would be needed), so `orphaned` remains the reconcile state and no expiry reaper ships; `journal_test.go`, `qualification_test.go` and `execute_test.go` (outside Files) only had version literals and the 0004 test's `reservations` comparison adjusted. (2) Files beyond the list: `control/client.go`, `control/default_unix.go`, `control/default_other.go`, `control/e2e_other_test.go`, and a `TestMain` cleanup in `control/lock_test.go`. (3) Bounds source is unspecified by the design: exhausted bucket (`bucket_state`) or an optional `bound` param; `ReserveOptions` gains `Host` and `Bound`. (4) No per-repository entitlement store is specified, so a token-less same-user peer (the operator) reads the repositories it presents; a request carrying an attempt capability token is bounded to that attempt's run repository, read from the ledger (the list can only narrow it). (5) `control.Error` still stands in for the unmerged `v2contract.ControlError`. (6) Heartbeat does not extend `expires_at`; the supervisor has no idle shutdown; non-Unix platforms report `ExitCapability` until task 4. (7) `internal/control/control.go` gains the `CodeAllowanceExhausted` constant (`allowance_exhausted` is a new code returned by `Reserve`). (8) `internal/journal/journal.go` bumps `SchemaVersion` 4→5 for `0005_reservation_host.sql`. (9) `Connect` verifies the connected supervisor serves this command's state root and fails closed with `ErrRootConflict` otherwise (review round 1).
+- **Files modified**: `internal/journal/migrations/0005_reservation_host.sql`, `internal/journal/journal.go`, `internal/journal/journal_test.go`, `internal/journal/qualification_test.go`, `internal/control/control.go`, `internal/control/reserve.go`, `internal/control/filter.go`, `internal/control/server.go`, `internal/control/client.go`, `internal/control/default_unix.go`, `internal/control/default_other.go`, `internal/control/reserve_test.go`, `internal/control/e2e_test.go`, `internal/control/e2e_other_test.go`, `internal/control/execute_test.go`, `internal/control/lock_test.go`, `internal/cli/supervisor.go`, `internal/cli/dispatch.go`, `cmd/mythhelm/main.go`, `specs/in-progress/supervisor-service/tasks.md`, `specs/in-progress/supervisor-service/handoff.md`.
 
 ### Task 7 — Topology ADR and support matrix
 

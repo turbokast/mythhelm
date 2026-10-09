@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/admission"
+	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/integration"
 	"github.com/turbokast/mythhelm/internal/journal"
@@ -67,6 +68,9 @@ type Hooks struct {
 	Event func(journal.Event)
 	// Notice receives status the user must see that is not an event.
 	Notice func(string)
+	// Extension is the operator's decision, on recovering a run blocked at
+	// an envelope ceiling, to raise that ceiling (AC-4.2).
+	Extension *ExtensionGrant
 }
 
 // Outcome is where a run's pipeline stopped.
@@ -152,6 +156,13 @@ type pipeline struct {
 	prod     *Producer
 	out      Outcome
 	rendered int64 // run_sequence of the last event passed to h.Event
+
+	// ceilings are the run's resolved envelope, set at admission; deadline is
+	// when its execution time ends (zero until the first attempt starts), and
+	// deadlineHit records that the stop in progress is the deadline's.
+	ceilings    billing.Ceilings
+	deadline    time.Time
+	deadlineHit bool
 }
 
 func (p *pipeline) run(ctx context.Context) error {
@@ -198,35 +209,94 @@ func (p *pipeline) run(ctx context.Context) error {
 }
 
 // appendAdmission journals the decision with its native side effects: a
-// fresh entitlement declaration and an explicit native-config trust grant
-// commit in the same transaction as the admission event, so a crash
-// between them cannot admit a run whose declaration never persisted.
+// fresh entitlement declaration, an explicit native-config trust grant and
+// the run's resolved envelope commit in the same transaction as the
+// admission event, so a crash between them cannot admit a run whose
+// declaration never persisted. The run's one reservation commits there too;
+// a failed hold rolls the admission back and blocks the run.
 func (p *pipeline) appendAdmission(ctx context.Context) error {
 	d := p.d
+	file, err := d.ProjectConfig.Envelopes.ToCeilings()
+	if err != nil {
+		return errors.Join(err, p.runTo(ctx, RunBlocked, "envelope_config_invalid"))
+	}
+	ceilings := billing.ResolveCeilings(d.EnvelopeFlags, file)
+	p.ceilings = ceilings
 	at := time.Now().UTC()
 	ev, err := newEvent(d.RunID, "", "", "admission.decided", d.Record(), at)
 	if err != nil {
 		return err
 	}
-	var project func(*sql.Tx) error
-	if d.Declaration != nil || d.RecordNativeTrust {
-		decl, trust, digest, repo := d.Declaration, d.RecordNativeTrust, d.NativeConfigDigest, d.RepoIdentity
-		project = func(tx *sql.Tx) error {
-			if decl != nil {
-				if err := journal.InsertDeclaration(ctx, tx, *decl); err != nil {
-					return err
-				}
+	decl, trust, digest, repo := d.Declaration, d.RecordNativeTrust, d.NativeConfigDigest, d.RepoIdentity
+	rec, identityRef := quotaBucketInputs(d)
+	var holdErr error
+	// The envelope and the reservation commit with the admission, so no
+	// admitted run exists without either, and a failed hold leaves nothing
+	// behind (AC-3.2, I21).
+	project := func(tx *sql.Tx) error {
+		if decl != nil {
+			if err := journal.InsertDeclaration(ctx, tx, *decl); err != nil {
+				return err
 			}
-			if trust {
-				return journal.InsertTrustGrant(ctx, tx, admission.NativeConfigTrustKind, repo, digest, at)
-			}
-			return nil
 		}
+		if trust {
+			if err := journal.InsertTrustGrant(ctx, tx, admission.NativeConfigTrustKind, repo, digest, at); err != nil {
+				return err
+			}
+		}
+		if err := journal.UpsertRunEnvelope(ctx, tx, journal.EnvelopeRow{RunID: d.RunID,
+			ExecutionSeconds: int64(ceilings.Execution / time.Second), Repairs: int64(ceilings.Repairs),
+			Replans: int64(ceilings.Replans), TransportRetries: int64(ceilings.TransportRetries),
+			UpdatedAt: at.Format(time.RFC3339Nano)}); err != nil {
+			return err
+		}
+		if _, holdErr = admission.HoldQuotaReservation(ctx, tx, admission.NewJournalReserver(ceilings), d.RunID, rec, identityRef); holdErr != nil {
+			return holdErr
+		}
+		return nil
 	}
 	if err := p.prod.append(ctx, p.j, ev, project); err != nil {
+		if holdErr != nil {
+			// The admission rolled back with the failed hold: block the
+			// run before any worker exists (I02).
+			return errors.Join(err, p.runTo(ctx, RunBlocked, "quota_reservation_failed"))
+		}
 		return err
 	}
+	p.h.Notice(admission.ReservationText(admission.QuotaBucket(rec, identityRef)))
 	return p.flush(ctx)
+}
+
+// endStop finishes a stopping run: cancelled when the user asked for the
+// stop, blocked when the execution deadline did. Either way the stop ladder
+// already ran and the candidate is preserved (I06).
+func (p *pipeline) endStop(ctx context.Context) error {
+	if p.deadlineHit {
+		return p.runTo(ctx, RunBlocked, "envelope_deadline_exceeded")
+	}
+	return p.runTo(ctx, RunCancelled, "")
+}
+
+// blockLaunch turns a refused launch into a blocked run before any attempt
+// is journaled. A gate that could not be evaluated blocks too (I02).
+func (p *pipeline) blockLaunch(ctx context.Context, err error) error {
+	reason := "envelope_unavailable"
+	if gate, ok := errors.AsType[*GateError](err); ok {
+		reason = gate.Reason
+	}
+	return errors.Join(err, p.runTo(ctx, RunBlocked, reason))
+}
+
+// quotaBucketInputs builds the bucket's record from the decision: its
+// harness and surface come from the adapter descriptor, its entitlement
+// class from the admitted billing posture and its identity from the native
+// auth evidence, which the fake adapter has none of (unknown).
+func quotaBucketInputs(d admission.Decision) (qualify.Record, string) {
+	rec := qualify.Record{Key: qualify.Key{Harness: d.Adapter.Harness, Surface: d.Adapter.Surface, EntitlementClass: d.Proposal.Billing.EntitlementClass}}
+	if d.NativeAuth == nil {
+		return rec, ""
+	}
+	return rec, d.NativeAuth.IdentityRef
 }
 
 // snapshot writes the task and clones the admitted revision (AC-3.3).
@@ -271,19 +341,32 @@ func (p *pipeline) attempt(ctx context.Context) error {
 	if stopped, err := p.stopBeforeSpawn(ctx); stopped || err != nil {
 		return err
 	}
+	// The envelope gates the launch before any intent is journaled; the
+	// launch is counted, and the first one starts the execution clock, in
+	// the intent's own transaction (I21, I02).
+	plan, err := planLaunchAt(ctx, p.j, d.RunID, p.ceilings, time.Now().UTC())
+	if err != nil {
+		return p.blockLaunch(ctx, err)
+	}
+	p.deadline = plan.deadline
 	token, err := launchToken()
 	if err != nil {
 		return err
 	}
 	sum := sha256.Sum256([]byte(token))
-	if err := RecordLaunchIntent(ctx, p.j, journal.AttemptRow{
+	if err := recordLaunchIntent(ctx, p.j, journal.AttemptRow{
 		AttemptID:         d.AttemptID,
 		RunID:             d.RunID,
 		TaskID:            d.TaskID,
 		AttemptNumber:     1,
 		LaunchTokenSHA256: hex.EncodeToString(sum[:]),
 		WorkspacePath:     d.Workdir,
-	}, p.prod); err != nil {
+	}, p.prod, plan.commit(ctx, d.RunID)); err != nil {
+		// The update refused the launch the check allowed: the envelope
+		// changed in between.
+		if _, ok := errors.AsType[*GateError](err); ok {
+			return p.blockLaunch(ctx, err)
+		}
 		return err
 	}
 	p.out.AttemptState = AttemptLaunchIntentRecorded
@@ -526,6 +609,12 @@ func (p *pipeline) watch(ctx context.Context, ref AttemptRef, exited <-chan stru
 	defer tick.Stop()
 	interrupts := 0
 	workerGone := false
+	var expiry <-chan time.Time
+	if !p.deadline.IsZero() {
+		timer := time.NewTimer(time.Until(p.deadline))
+		defer timer.Stop()
+		expiry = timer.C
+	}
 	for {
 		// A worker seen gone before this ingest has spooled everything it
 		// ever will.
@@ -566,6 +655,21 @@ func (p *pipeline) watch(ctx context.Context, ref AttemptRef, exited <-chan stru
 			return ctx.Err()
 		case <-exited:
 			workerGone, exited = true, nil
+		case <-expiry:
+			// The execution deadline ends the attempt through the same stop
+			// ladder as a user's stop; conclude reports it as blocked.
+			expiry = nil
+			// A stop the user already asked for stays the user's.
+			p.deadlineHit = p.out.State != RunStopping
+			if err := workers.RequestStop(ref.Dir(), stopRequester); err != nil {
+				return fmt.Errorf("requesting a stop at the deadline: %w", err)
+			}
+			if p.out.State != RunStopping {
+				if err := p.runTo(ctx, RunStopping, ""); err != nil {
+					return err
+				}
+			}
+			p.h.Notice("execution deadline reached; stopping the attempt")
 		case <-p.h.Interrupt:
 			interrupts++
 			if interrupts > 1 {
@@ -621,10 +725,10 @@ func (p *pipeline) conclude(ctx context.Context) error {
 				return err
 			}
 		}
-		return p.runTo(ctx, RunCancelled, "")
+		return p.endStop(ctx)
 	case AttemptSucceededNative, AttemptFailedNative:
 		if stopping {
-			return p.runTo(ctx, RunCancelled, "")
+			return p.endStop(ctx)
 		}
 		if p.out.AttemptState == AttemptFailedNative {
 			// Classified native failures keep their reason at run level

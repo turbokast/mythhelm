@@ -27,6 +27,7 @@ import (
 	"github.com/turbokast/mythhelm/adapters/claudecode"
 	"github.com/turbokast/mythhelm/adapters/fake"
 	"github.com/turbokast/mythhelm/internal/adapter"
+	"github.com/turbokast/mythhelm/internal/contain"
 	"github.com/turbokast/mythhelm/internal/security"
 )
 
@@ -79,6 +80,11 @@ type Launch struct {
 	Env          []string           `json:"env"`
 	PromptPath   string             `json:"prompt_path"` // the task file, delivered on the native's stdin
 	StopLadder   []adapter.StopStep `json:"stop_ladder"`
+	// Containment, when set, runs the native inside the boundary: the worker
+	// spawns `__contain` instead (design §2.2). ProxyAllow is the exact
+	// host:port list its egress proxy forwards to; empty denies everything.
+	Containment *contain.Policy `json:"containment,omitempty"`
+	ProxyAllow  []string        `json:"proxy_allow,omitempty"`
 }
 
 // Identity is worker.json: what the supervisor checks before it accepts a
@@ -221,6 +227,9 @@ func readLaunch(r io.Reader) (Launch, error) {
 	}
 	if len(l.StopLadder) == 0 {
 		problems = append(problems, "empty stop ladder")
+	}
+	if l.Containment != nil && !filepath.IsAbs(l.Containment.Workdir) {
+		problems = append(problems, "containment workdir is not absolute")
 	}
 	for _, step := range l.StopLadder {
 		if step.Grace <= 0 {
@@ -953,20 +962,23 @@ func (l *launcher) Launch(_ context.Context, spec adapter.ProcSpec) (adapter.Own
 	if err := l.w.writeIdentity(); err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(spec.Path, spec.Args...) //nolint:gosec // G204: the admitted argv, no shell
-	// A nil Env would inherit the worker's environment; the child gets
-	// exactly the admitted one.
-	cmd.Dir, cmd.Env, cmd.Stdin, cmd.Stderr = spec.Dir, append([]string{}, spec.Env...), spec.Stdin, l.w.stderr
-	cmd.SysProcAttr = nativeAttr()
-	cmd.WaitDelay = waitDelay
-	stdout, err := cmd.StdoutPipe()
+	cmd, h, err := l.w.launch.command(spec)
 	if err != nil {
 		return nil, err
 	}
+	cmd.Stderr = l.w.stderr
+	cmd.WaitDelay = waitDelay
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		h.stop()
+		return nil, err
+	}
 	if err := cmd.Start(); err != nil {
+		h.stop()
 		return nil, fmt.Errorf("starting the native process: %w", err)
 	}
-	p := &ownedProc{cmd: cmd, stdout: stdout, pgid: nativeGroup(cmd.Process.Pid)}
+	h.started()
+	p := &ownedProc{cmd: cmd, stdout: stdout, pgid: nativeGroup(cmd.Process.Pid), release: h.stop}
 	l.proc = p
 	pid := cmd.Process.Pid
 	l.w.id.NativePID, l.w.id.NativePGID = &pid, p.pgid
@@ -983,6 +995,9 @@ type ownedProc struct {
 	stdout io.Reader
 	pgid   *int
 	waited atomic.Bool
+	// release frees what a contained spawn holds beyond the process: its
+	// egress proxy and prompt copier. Nil for an uncontained native.
+	release func()
 }
 
 func (p *ownedProc) Stdout() io.Reader { return p.stdout }
@@ -990,6 +1005,9 @@ func (p *ownedProc) Stdout() io.Reader { return p.stdout }
 func (p *ownedProc) Wait() adapter.NativeExit {
 	err := p.cmd.Wait()
 	p.waited.Store(true)
+	if p.release != nil {
+		p.release()
+	}
 	exit := adapter.NativeExit{Code: -1}
 	if st := p.cmd.ProcessState; st != nil {
 		exit.Code = st.ExitCode()

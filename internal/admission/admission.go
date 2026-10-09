@@ -15,11 +15,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/turbokast/mythhelm/adapters/claudecode"
 	"github.com/turbokast/mythhelm/adapters/fake"
 	"github.com/turbokast/mythhelm/internal/adapter"
+	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/security"
 	"github.com/turbokast/mythhelm/internal/workspace"
@@ -82,7 +84,7 @@ type Request struct {
 	TaskFile           string   // the task, delivered to the native on stdin
 	Adapter            string   // "claudecode" or "fake"; no default (AC-2.2)
 	Billing            string   // no default (AC-4.1)
-	ExecutionProfile   string   // empty when not given; consent is then asked for
+	ExecutionProfile   string   // empty when not given; restricted is then admitted
 	UseCommitted       bool     // run on the committed HEAD of a dirty checkout
 	Rev                string   // run on this committed revision instead of HEAD
 	Host               string   // empty or "standalone"; "herdr" is unavailable
@@ -91,6 +93,9 @@ type Request struct {
 	TrustProjectConfig string   // sha256:<digest> of the admitted config
 	NoChecks           bool
 	KeepGoing          bool
+	// EnvelopeFlags is the explicit --envelope-* layer, nil when no flag was
+	// given; a negative field is unset. Decide carries it unresolved.
+	EnvelopeFlags *billing.Ceilings
 	// The remaining flags apply only to --adapter claudecode.
 	StripCredentialEnv         bool   // remove credential routes from the child only (AC-4.3)
 	TrustNativeConfig          string // sha256:<digest> of the inventoried native config (AC-2.5)
@@ -144,6 +149,9 @@ type Decision struct {
 	RecordTrust   bool
 	NoChecks      bool
 	KeepGoing     bool
+	// EnvelopeFlags is Request.EnvelopeFlags, unresolved; the file layer is
+	// ProjectConfig.Envelopes. Resolution happens when the run is admitted.
+	EnvelopeFlags *billing.Ceilings
 	// Declaration is the entitlement assertion the supervisor persists
 	// with the admitted event: a fresh --declare-entitlement row, or nil
 	// when billing used a stored row. RecordNativeTrust likewise persists
@@ -180,7 +188,7 @@ func Decide(ctx context.Context, req Request) (Decision, error) {
 		return Decision{}, err
 	}
 	d := Decision{StateDir: req.StateDir, Host: req.Host, Scenario: req.Scenario,
-		NoChecks: req.NoChecks, KeepGoing: req.KeepGoing}
+		NoChecks: req.NoChecks, KeepGoing: req.KeepGoing, EnvelopeFlags: req.EnvelopeFlags}
 	task, err := readTask(req.TaskFile)
 	if err != nil {
 		return Decision{}, err
@@ -426,27 +434,32 @@ func checkCapabilityFlags(req Request) error {
 	case req.Host == HostHerdr:
 		return &BlockedError{Code: "host_unavailable", Field: "--host herdr", Capability: true,
 			Action: "the Herdr bridge is not in this build; run standalone"}
-	case req.ExecutionProfile == ProfileRestricted, req.ExecutionProfile == ProfileInspect:
-		return &BlockedError{Code: "execution_profile_unavailable", Field: "--execution-profile " + req.ExecutionProfile, Capability: true,
-			Action: "sandboxed profiles are not in this build; only trusted-host (not contained) is available"}
+	case req.ExecutionProfile == ProfileInspect:
+		return &BlockedError{Code: "execution_profile_unavailable", Field: "--execution-profile inspect", Capability: true,
+			Action: "read-only enforcement for inspect is not in this build; use restricted or trusted-host"}
 	}
 	return nil
 }
 
+// consentProfile resolves the execution profile. An empty flag admits the
+// safe default, restricted, with no question; trusted-host widens the posture
+// and needs the explicit flag (I04). A contained profile is admitted only on
+// recorded boundary evidence for the host OS and the adapter route.
 func consentProfile(req Request) (Profile, error) {
-	p := Profile{Name: ProfileTrustedHost, Disclosure: trustedHostDisclosure}
-	if req.ExecutionProfile == ProfileTrustedHost {
-		p.Consent = "--execution-profile"
+	switch req.ExecutionProfile {
+	case ProfileTrustedHost:
+		return Profile{Name: ProfileTrustedHost, Consent: "--execution-profile", Disclosure: trustedHostDisclosure}, nil
+	case "", ProfileRestricted:
+		p := Profile{Name: ProfileRestricted, Contained: true, Consent: "--execution-profile"}
+		if req.ExecutionProfile == "" {
+			p.Consent = "default"
+		}
+		if _, err := BoundaryConsult(p.Name, runtime.GOOS, "builtin/"+req.Adapter); err != nil {
+			return Profile{}, err
+		}
 		return p, nil
 	}
-	blocked := &BlockedError{Code: "consent_required", Field: "--execution-profile",
-		Action: "pass --execution-profile trusted-host to run " + trustedHostDisclosure}
-	ok, err := confirm(req, "Execution profile trusted-host: "+trustedHostDisclosure+". Continue?")
-	if err != nil || !ok {
-		return Profile{}, errors.Join(blocked, err)
-	}
-	p.Consent = "interactive"
-	return p, nil
+	return Profile{}, fmt.Errorf("%w: unreachable execution profile %q", ErrInvalid, req.ExecutionProfile)
 }
 
 func confirm(req Request, question string) (bool, error) {

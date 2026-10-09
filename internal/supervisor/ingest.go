@@ -3,17 +3,23 @@ package supervisor
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"time"
 
+	"github.com/turbokast/mythhelm/internal/adapter"
+	"github.com/turbokast/mythhelm/internal/billing"
+	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/workers"
 )
@@ -186,8 +192,139 @@ func projectWorkerEvent(ctx context.Context, tx *sql.Tx, ev journal.Event) error
 			return fmt.Errorf("%w: %s payload: %w", ErrCorruptSpool, ev.Type, err)
 		}
 		return journal.SetNativeSession(ctx, tx, ev.AttemptID, p.SessionID)
+	case "attempt.native_result":
+		return projectUsage(ctx, tx, ev)
+	case "attempt.progress":
+		return projectTransportRetries(ctx, tx, ev)
 	}
 	return nil
+}
+
+// projectTransportRetries recomputes the run's transport retries seen from
+// its journaled progress events. The worker reports a cumulative count per
+// attempt, so each attempt contributes its largest report, and replaying an
+// event changes nothing. A report that is not a non-negative integer is a
+// corrupt spool line, never a count: malformed worker output must not lower
+// the total and slip a run past its transport ceiling (I02). The query
+// counts integer reports only, so an event journaled before this check
+// cannot either. A run with no envelope row has nothing to update.
+func projectTransportRetries(ctx context.Context, tx *sql.Tx, ev journal.Event) error {
+	var p struct {
+		Retries *int64 `json:"retries"`
+	}
+	if err := json.Unmarshal(ev.Payload, &p); err != nil || p.Retries == nil || *p.Retries < 0 {
+		return fmt.Errorf("%w: %s retries is not a non-negative integer", ErrCorruptSpool, ev.Type)
+	}
+	var seen int64
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(m), 0) FROM (
+		SELECT MAX(json_extract(payload, '$.retries')) AS m
+		FROM journal WHERE run_id = ? AND type = 'attempt.progress'
+		AND json_type(payload, '$.retries') = 'integer' AND json_extract(payload, '$.retries') >= 0
+		GROUP BY attempt_id)`, ev.RunID).Scan(&seen); err != nil {
+		return fmt.Errorf("counting transport retries of %s: %w", ev.RunID, err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE run_envelopes SET transport_retries_seen = ?, updated_at = ? WHERE run_id = ?`,
+		seen, ev.ObservedAt.UTC().Format(time.RFC3339Nano), ev.RunID); err != nil {
+		return fmt.Errorf("storing transport retries of %s: %w", ev.RunID, err)
+	}
+	return nil
+}
+
+const retailEquivalent = "retail-equivalent"
+
+// plainDecimal is the quantity text the ledger stores: the decoder may pass
+// other JSON number forms, which stay unreported rather than being converted.
+var plainDecimal = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?$`)
+
+// projectUsage turns a native_result into usage rows inside the ingest
+// transaction (budget-ledger-s1 design §3). Every quantity is this attempt's
+// own increment, so readings are deltas carrying the event's identity.
+// Rows of earlier events are the applied set; a scope with nothing reported
+// is stored as an unknown marker, never as zero (I09 (v2 §7.3)).
+func projectUsage(ctx context.Context, tx *sql.Tx, ev journal.Event) error {
+	var p struct {
+		Usage map[string]adapter.TokenUsage `json:"usage_native_reported"`
+		Cost  *string                       `json:"retail_equivalent_estimate_usd"`
+	}
+	if err := json.Unmarshal(ev.Payload, &p); err != nil {
+		return fmt.Errorf("%w: %s payload: %w", ErrCorruptSpool, ev.Type, err)
+	}
+	harness, err := admittedHarness(ctx, tx, ev.RunID)
+	if err != nil {
+		return err
+	}
+
+	reading := func(scope, unit, quantity string) billing.Reading {
+		return billing.Reading{Scope: scope, Unit: unit, Source: "native-reported", At: ev.ObservedAt, Delta: &quantity,
+			Producer: ev.ProducerID, Sequence: ev.ProducerSequence, HasIdentity: true}
+	}
+	expected := []string{retailEquivalent}
+	var readings []billing.Reading
+	for _, model := range slices.Sorted(maps.Keys(p.Usage)) {
+		expected = append(expected, model)
+		if total := billing.SplitUsage(harness, p.Usage[model]).Total; total != nil {
+			readings = append(readings, reading(model, "tokens", *total))
+		}
+	}
+	if p.Cost != nil && plainDecimal.MatchString(*p.Cost) {
+		readings = append(readings, reading(retailEquivalent, "USD", *p.Cost))
+	}
+
+	existing, err := journal.UsageObservationsTx(ctx, tx, ev.RunID)
+	if err != nil {
+		return err
+	}
+	applied := map[billing.EventID]bool{}
+	for _, o := range existing {
+		if o.ProducerID != "" {
+			applied[billing.EventID{Producer: o.ProducerID, Sequence: o.ProducerSequence}] = true
+		}
+	}
+	n, err := billing.Normalize(readings, expected, applied) //nolint:misspell // the spec names billing.Normalize
+	if err != nil {
+		return fmt.Errorf("projecting usage of %s: %w", ev.EventID, err)
+	}
+
+	for _, k := range slices.SortedFunc(maps.Keys(n.Scopes), func(a, b billing.ScopeKey) int {
+		return cmp.Or(cmp.Compare(a.Scope, b.Scope), cmp.Compare(a.Unit, b.Unit), cmp.Compare(a.Source, b.Source))
+	}) {
+		st := n.Scopes[k]
+		row := journal.UsageRow{ObservationID: ids.New("obs"), RunID: ev.RunID, Scope: k.Scope, Unit: k.Unit, Source: k.Source,
+			Label: string(st.Label), Quantity: "unknown", ObservedAt: ev.ObservedAt.UTC().Format(time.RFC3339Nano)}
+		switch {
+		case st.Total != nil:
+			row.Quantity, row.ProducerID, row.ProducerSequence = *st.Total, ev.ProducerID, ev.ProducerSequence
+		case k.Unit != "":
+			continue // every delta of this identity was already applied
+		}
+		if err := journal.InsertUsageObservation(ctx, tx, row); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// admittedHarness is the harness ID of the run's journaled admission record,
+// the key SplitUsage maps components by. A run with no admission record has
+// an unmapped route.
+func admittedHarness(ctx context.Context, tx *sql.Tx, runID string) (string, error) {
+	var payload string
+	err := tx.QueryRowContext(ctx, `SELECT payload FROM journal WHERE run_id = ? AND type = 'admission.decided' ORDER BY run_sequence DESC LIMIT 1`, runID).Scan(&payload)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading the admission record of %s: %w", runID, err)
+	}
+	var adm struct {
+		Adapter struct {
+			Harness string `json:"harness"`
+		} `json:"adapter"`
+	}
+	if err := json.Unmarshal([]byte(payload), &adm); err != nil {
+		return "", fmt.Errorf("decoding the admission record of %s: %w", runID, err)
+	}
+	return adm.Adapter.Harness, nil
 }
 
 // setAttemptState moves attemptID to state to inside tx, if the state

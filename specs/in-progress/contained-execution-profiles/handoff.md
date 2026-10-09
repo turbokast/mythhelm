@@ -8,23 +8,43 @@
 
 ## Task 1 — Containment contract package
 
-<!-- pending -->
+- **Produces**: `internal/contain/contain.go` exactly as design §4 (Dimension consts, Claim, Coverage, Evidence, Registry, AuthBind, Policy, Availability, ErrUnsupported, ErrMissingCoverage); no `Provider` interface yet.
+- **For dependents**: `Coverage.Missing` returns nil (not empty slice) when nothing is missing, keeps the caller's order, and reports unknown dimensions as missing. A zero `Claim` is unenforced. Registry lookups must return `ok == false` for unknown combinations.
+- **Environment trap**: set `GOTOOLCHAIN=go1.27.1` for golangci-lint, and unset `ANTHROPIC_BASE_URL` in cloud sessions or a supervisor test fails.
+- **Deviations**: None.
 
 ## Task 2 — Linux boundary mechanism
 
-<!-- pending -->
+- **Produces**: `contain.ProbeLinux`, `EnterLinux(ContainSpec) error`, `ContainSpec{Path, Args, Dir, Env, Policy}` (`Args` is the full argv), `PolicyFor`, plus exported `ProbeEnv` and `RunProbeChild`; unexported `nsSysProcAttr()` returns the user+mount `SysProcAttr` (nil off Linux).
+- **For dependents**: `EnterLinux` must run in a process already started with `nsSysProcAttr()`; it needs an absolute `HOME` in `Env`, an existing workdir that does not enclose `HOME` or `/tmp` (it is refused), an existing `HOME` outside `/tmp` (anything else is refused), auth-bind targets under `HOME`, and auth-bind sources that are regular files outside the workdir (a terminal symlink, directory or in-workdir source fails the launch); each source is masked at its original path. `EnterLinux` resolves symlinks in `HOME`, the workdir and `/tmp` first and checks and mounts the resolved paths; `PolicyFor` resolves the existing prefix of HOME, workdir, `/tmp` and each auth source's directory (so both sides of every comparison are real paths) and keeps a missing tail as written; the returned `Policy` carries the configured workdir and binds verbatim. It never returns on success.
+- **Task 4 must**: call `RunProbeChild` from `contain.Main` / `cmd/mythhelm` when `ProbeEnv` is set (`ProbeLinux` runs `<self> __contain`), or `ProbeLinux` reports a spurious failure; export or reuse `nsSysProcAttr` for the worker spawn.
+- **Tests**: the contain test binary acts as its own helper (`TestMain` modes) — the same pattern fits Task 4.
+- **Deviations**: see the entry; the wiring gap above is the only one that changes a later task's input.
 
 ## Task 3 — Filtering egress proxy
 
-<!-- pending -->
+- **Produces**: `internal/contain/proxy.go` exactly as design §4 — `ServeProxy(ctx, allow) (addr, stop, err)` and `ProxyEnv(addr) map[string]string` (keys `HTTPS_PROXY`, `HTTP_PROXY`, `https_proxy`, `http_proxy`, values `http://` + addr). No `Provider` wiring yet.
+- **For dependents (Task 4)**: start the proxy before a contained spawn, fill `Policy.ProxyAddr` with the returned ephemeral `127.0.0.1:port`, and amend the child env with `ProxyEnv` post-admission. `stop` is safe to call twice; cancelling `ctx` also stops the listener.
+- **For dependents**: allowlist entries are exact `host:port` strings matched verbatim against the CONNECT request-target — no normalization, no suffix or port-range matching. `httptest` server URLs need the `http://` prefix stripped to form an entry.
+- **For dependents**: one connection carries exactly one request; denials (403 unlisted, 405 non-CONNECT, 431 over-long headers, 400 malformed, 502 dial failure) all return before any upstream dial. A 502 means the entry was allowlisted but the target refused the TCP dial.
+- **For dependents**: the proxy never claims to block direct egress — keep that residual disclosed, never assert it in later tests.
+- **Environment trap**: the `internal/cli` drift tests read ambient native config from `$HOME`; a real `~/.claude.json` fails `TestStrictMainBlocksWriteNothing` with `untrusted_native_config`. Run gates with an empty `HOME` (keeping `GOPATH`/`GOMODCACHE`/`GOCACHE` on the real cache, and `/usr/bin` first on `PATH` so `python3` avoids the asdf shim, which needs `HOME`).
+- **Deviations**: None.
 
 ## Task 4 — `__contain` command and worker wiring
 
-<!-- pending -->
+- **Produces**: `contain.Command` (`__contain`), `contain.Main(args) int`, `contain.NamespaceAttr()`; `workers.Launch.Containment *contain.Policy` and `Launch.ProxyAllow []string`; `Launch.command(spec)` builds the uncontained or `__contain` command; `cmd/mythhelm` dispatches `__contain`.
+- **For dependents**: whoever builds a `Launch` (Task 9's `launchForAttempt`) sets `Containment` and `ProxyAllow` (the admitted endpoint host:port; empty denies all egress) and an env whose `HOME` lies outside `/tmp`, does not enclose or sit under the workdir, and exists. The worker fills `Policy.ProxyAddr` and the proxy pins itself.
+- **Setup failures**: `__contain` exits 1 (setup) or 2 (invalid spec) with a message on the attempt's captured stderr; the worker records a native exit, not `launch_failed`. Mapping it needs a status channel (not built).
+- **Tests**: both `TestMain`s dispatch `contain.Command`; a native fixture must live outside `/tmp` (the boundary replaces it) — see `TestContainedProxyDenyThroughPinnedEnv`.
+- **Deviations**: `ProxyAllow` and the exported `NamespaceAttr` (see the entry).
 
 ## Task 5 — Admission consult, restricted default, precise refusal
 
-<!-- pending -->
+- **Produces**: `admission.BoundaryConsult(profile, os, route) (contain.Evidence, error)` (exit-7 `*BlockedError` naming each missing dimension; unknown combinations also wrap `contain.ErrMissingCoverage`); `contain.SeedV1()` (key `profile/os/route`; `restricted` and `inspect` × `linux`/`darwin`/`windows` × `builtin/fake`/`builtin/claudecode`); `Profile.Contained` set for `restricted`; `Profile.Consent` is `"default"` for the empty flag.
+- **For dependents**: `Decide` does not yet keep the evidence: Task 8 must carry it to the receipt and Task 9's `launchForAttempt` must build `Launch.Containment`/`ProxyAllow` from the admitted profile. `inspect` is refused in `checkCapabilityFlags`; Task 6 removes that refusal when its enforcement lands. The Claude Code route is refused for `restricted` (credential unenforced) until Task 10 or later binds auth.
+- **Tests**: `restricted` is admitted only on Linux; tests that need it skip elsewhere, and `TestMissingProfileConsentNonInteractiveExit3` asserts the refusal off Linux. Run gates with `HOME` set to an empty directory.
+- **Deviations**: see the entry (inspect still refused; Claude Code route seeded as credential-missing).
 
 ## Task 6 — Inspect read-only enforcement
 

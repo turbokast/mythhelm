@@ -43,7 +43,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Containment contract package
+### Task 1 — Containment contract package ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -80,8 +80,12 @@
   never a zero-value supported record); I14 (v2 §2: every evidence record
   carries version and owner for its nested claims, each with name and
   version).
+- **Status**: ✅ Completed — `internal/contain` ships the contract types, `Missing` aggregator and sentinel errors; PR #242.
+- **Implementation**: `Missing` iterates the required list in order and treats an unknown dimension as missing (fail closed). Tests include a control lookup and a kept mutation-proven failing case. Commit 785b530.
+- **Spec deviations**: None.
+- **Files modified**: `internal/contain/contain.go`, `internal/contain/contain_test.go`, `specs/in-progress/contained-execution-profiles/tasks.md`, `specs/in-progress/contained-execution-profiles/handoff.md`.
 
-### Task 2 — Linux boundary mechanism
+### Task 2 — Linux boundary mechanism ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (syscalls, namespaces, cross-platform probe)
@@ -144,8 +148,12 @@
 - **Invariants touched**: I05 (v2 §2: only this declared mechanism
   substantiates boundary claims); I14 (v2 §2: probe reports version or a
   precise reason, never a guess).
+- **Status**: ✅ Completed — `internal/contain` ships `ProbeLinux`, `EnterLinux`, `ContainSpec` and `PolicyFor` with the non-Linux stubs; PR #247.
+- **Implementation**: The root goes read-only with `mount_setattr(AT_RECURSIVE)` and the workdir and auth files are re-attached from detached `open_tree` clones, so paths under `/tmp` survive the tmpfs. `NO_NEW_PRIVS` is load-bearing: without it root regains capabilities at exec. Commit c68af2e.
+- **Spec deviations**: Beyond the task's design `Produces`, `contain.ProbeEnv` and `contain.RunProbeChild` are exported: the probe re-executes the current binary, whose entry point must call `RunProbeChild` when `ProbeEnv` is set. The mount-step interface, `probeResult` and `probeChild` live in `policy.go` so the denial tests compile on every OS. The wiring is for Task 4; its acceptance does not name it yet.
+- **Files modified**: `internal/contain/enter_linux.go`, `internal/contain/enter_other.go`, `internal/contain/linux_test.go`, `internal/contain/policy.go`, `internal/contain/policy_test.go`, `specs/in-progress/contained-execution-profiles/tasks.md`, `specs/in-progress/contained-execution-profiles/handoff.md`, `specs/in-progress/contained-execution-profiles/scratchpad.md`.
 
-### Task 3 — Filtering egress proxy
+### Task 3 — Filtering egress proxy ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (security primitive: network enforcement point)
@@ -174,8 +182,12 @@
   network.
 - **Invariants touched**: I09 (v2 §2: denials are explicit statuses, and the
   proxy never claims to block direct egress — see the honesty register).
+- **Status**: ✅ Completed — `internal/contain` ships the worker-owned localhost CONNECT-only proxy with exact host:port allowlist denials and the `ProxyEnv` pin map; PR #248.
+- **Implementation**: Exactly one CONNECT per connection is tunnelled, only after an exact allowlist hit; every denial (403/405/431/400) returns before any dial. `stop` is `sync.Once`-safe and ctx cancellation closes the listener. Commit 8532e12.
+- **Spec deviations**: None.
+- **Files modified**: `internal/contain/proxy.go`, `internal/contain/proxy_test.go`, `specs/in-progress/contained-execution-profiles/tasks.md`, `specs/in-progress/contained-execution-profiles/handoff.md`.
 
-### Task 4 — `__contain` command and worker wiring
+### Task 4 — `__contain` command and worker wiring ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (process ownership: new spawn path + re-exec)
@@ -232,8 +244,12 @@
   exactly once per worker, and the launcher still refuses a second launch);
   I06 (v2 §2: stop ladder and group confirmation unchanged — the native keeps
   its process group inside the namespaces).
+- **Status**: ✅ Completed — `__contain` is wired into the worker: a `Launch` with `Containment` spawns it with the proxy started, `ProxyAddr` filled, the proxy env pinned and the prompt forwarded on fd 3; PR #257.
+- **Implementation**: `launcher.Launch` builds its command through `Launch.command`, which keeps the uncontained path byte for byte and otherwise builds `__contain` (cmd.Args, spec on stdin, prompt pipe as `ExtraFiles[0]`); the proxy, prompt copier and pipe ends are released when the native is reaped. Decision record: `docs/decisions/0013-contained-spawn-path.md`. Commit 6f0d8cf.
+- **Spec deviations**: (1) `Launch` also gains `ProxyAllow []string` (the exact host:port list for the proxy): the task names `Containment` only, but `Policy` has no field for the allowlist and the proxy test needs one; Task 5 or 9 fills it from the qualification record. (2) `contain.NamespaceAttr` is exported (it was unexported `nsSysProcAttr` from Task 2) so `workers/contain_linux.go` reuses the clone flags, and `promptToStdin` is added to `internal/contain/enter_linux.go` and `enter_other.go` because the untagged `main.go` cannot call `unix.Dup2`. (3) `TestMain` in `internal/contain/linux_test.go` and `internal/workers/worker_test.go` dispatch `__contain`; the former no longer special-cases `ProbeEnv`, which `contain.Main` now handles. (4) A setup failure inside `__contain` surfaces as a native exit code 1 with stderr, not `launch_failed` (design §2.2); see the ADR consequences. (5) `docs/decisions/0013-contained-spawn-path.md` is outside the task's `Files` list: the task body requires its decision record in the same PR ("carry the decision record for the new spawn path in the same PR", Commits convention in the header).
+- **Files modified**: `cmd/mythhelm/main.go`, `docs/decisions/0013-contained-spawn-path.md`, `internal/contain/main.go`, `internal/contain/main_test.go`, `internal/contain/enter_linux.go`, `internal/contain/enter_other.go`, `internal/contain/linux_test.go`, `internal/workers/worker.go`, `internal/workers/worker_test.go`, `internal/workers/contain.go`, `internal/workers/contain_linux.go`, `internal/workers/contain_other.go`, `internal/workers/contain_test.go`, `specs/in-progress/contained-execution-profiles/tasks.md`, `specs/in-progress/contained-execution-profiles/handoff.md`, `specs/in-progress/contained-execution-profiles/scratchpad.md`.
 
-### Task 5 — Admission consult, restricted default, precise refusal
+### Task 5 — Admission consult, restricted default, precise refusal ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (security decision point + 6 files)
@@ -277,6 +293,10 @@
   blocks without dropping to host authority); I04 (v2 §2: widening to
   `trusted-host` still needs explicit flag or consent); I14 (v2 §2: every
   record versioned with an owner).
+- **Status**: ✅ Completed — admission consults boundary evidence (every missing dimension named in an exit-7 refusal), the empty flag defaults to `restricted` with `Contained == true` and no consent question, and the v1 evidence records are seeded; PR #260.
+- **Implementation**: `consentProfile` resolves the profile and calls `BoundaryConsult(profile, runtime.GOOS, "builtin/"+adapter)`; darwin and windows are seeded as unqualified so a refusal can name all four dimensions, and the Claude Code route on Linux records an unenforced credential claim. Commit 96f3ead.
+- **Spec deviations**: (1) `inspect` stays refused with exit 7 (`checkCapabilityFlags`): its read-only enforcement is Task 6, and admitting it earlier would claim enforcement nothing provides. (2) `TestRestrictedProfileExit7` becomes `TestInspectProfileExit7`: `restricted` is no longer a refusal on Linux. (3) The Claude Code route is seeded with an unenforced credential claim, so `restricted` is refused for it, naming `credential`, until native auth is bound into the boundary. (4) An admitted `restricted` run is not yet launched inside the boundary: `launchForAttempt` (Task 9) builds `Launch.Containment`; Task 5 only decides admission.
+- **Files modified**: `internal/admission/boundary.go`, `internal/admission/boundary_test.go`, `internal/admission/admission.go`, `internal/contain/records.go`, `internal/cli/run.go`, `internal/cli/run_test.go`, `internal/supervisor/pipeline_test.go`, `specs/in-progress/contained-execution-profiles/tasks.md`, `specs/in-progress/contained-execution-profiles/handoff.md`.
 
 ### Task 6 — Inspect read-only enforcement
 

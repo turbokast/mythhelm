@@ -22,6 +22,7 @@ import (
 
 	"github.com/turbokast/mythhelm/adapters/fake"
 	"github.com/turbokast/mythhelm/internal/admission"
+	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/cli"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
@@ -399,31 +400,44 @@ func TestRunNoAdapterFlagExits2(t *testing.T) {
 	}
 }
 
-func TestRestrictedProfileExit7(t *testing.T) {
+func TestInspectProfileExit7(t *testing.T) {
 	t.Parallel()
-	for _, profile := range []string{"restricted", "inspect"} {
-		t.Run(profile, func(t *testing.T) {
-			t.Parallel()
-			f := newFixture(t)
-			args := slices.DeleteFunc(f.fakeRun(), func(a string) bool { return a == "trusted-host" || a == "--execution-profile" })
-			code, _, stderr := f.run(t, append(args, "--execution-profile", profile)...)
-			if code != 7 || !strings.Contains(stderr, "execution_profile_unavailable") {
-				t.Fatalf("exit %d, stderr %q; want exit 7 execution_profile_unavailable", code, stderr)
-			}
-			if rows := f.runs(t); len(rows) != 0 {
-				t.Fatalf("a refused profile recorded %d runs", len(rows))
-			}
-		})
+	f := newFixture(t)
+	args := slices.DeleteFunc(f.fakeRun(), func(a string) bool { return a == "trusted-host" || a == "--execution-profile" })
+	code, _, stderr := f.run(t, append(args, "--execution-profile", "inspect")...)
+	if code != 7 || !strings.Contains(stderr, "execution_profile_unavailable") {
+		t.Fatalf("exit %d, stderr %q; want exit 7 execution_profile_unavailable", code, stderr)
+	}
+	if rows := f.runs(t); len(rows) != 0 {
+		t.Fatalf("a refused profile recorded %d runs", len(rows))
 	}
 }
 
+// TestMissingProfileConsentNonInteractiveExit3 pins the empty-flag default:
+// restricted, with no consent question and never host authority (AC-1.2,
+// AC-1.3). Where the boundary is recorded the run is admitted; elsewhere it
+// is an exit-7 refusal naming each missing dimension.
 func TestMissingProfileConsentNonInteractiveExit3(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	args := slices.DeleteFunc(f.fakeRun(), func(a string) bool { return a == "trusted-host" || a == "--execution-profile" })
 	code, _, stderr := f.run(t, args...)
-	if code != 3 || !strings.Contains(stderr, "consent_required") || !strings.Contains(stderr, "--execution-profile trusted-host") {
-		t.Fatalf("exit %d, stderr %q; want exit 3 naming --execution-profile trusted-host", code, stderr)
+	if strings.Contains(stderr, "consent_required") {
+		t.Fatalf("stderr %q: the empty flag asked for consent", stderr)
+	}
+	if runtime.GOOS == "linux" {
+		if !strings.Contains(stderr, "ended ready_for_review") {
+			t.Fatalf("exit %d, stderr %q; want the restricted default admitted and run", code, stderr)
+		}
+		return
+	}
+	if code != 7 || !strings.Contains(stderr, "execution_profile_unavailable") {
+		t.Fatalf("exit %d, stderr %q; want exit 7 execution_profile_unavailable", code, stderr)
+	}
+	for _, dim := range []string{"filesystem", "process", "network", "credential"} {
+		if !strings.Contains(stderr, dim) {
+			t.Errorf("stderr %q does not name %s", stderr, dim)
+		}
 	}
 }
 
@@ -1363,5 +1377,228 @@ func TestIngestFailureInterruptsRunExit6(t *testing.T) {
 	// run.result reports the attempt as journaled, not as last seen.
 	if res := lastResult(t, strings.Join(stdout, "\n")+"\n"); res["attempt_reason"] != "forged_reason" {
 		t.Fatalf("run.result = %v, want attempt_reason forged_reason", res)
+	}
+}
+
+// envelopeConfig commits a mythhelm.toml with an [envelopes] table and one
+// passing check, and returns its trust digest.
+func (f fixture) envelopeConfig(t *testing.T) string {
+	t.Helper()
+	contents := "schema_version = 1\n[envelopes]\nexecution = \"10m\"\nrepairs = 1\nreplans = 0\n" +
+		"[[checks]]\nname = \"test\"\nargv = [" + strconv.Quote(os.Args[0]) + ", \"__check\", \"pass\"]\ntimeout = \"5s\"\n"
+	if err := os.WriteFile(filepath.Join(f.repo, "mythhelm.toml"), []byte(contents), 0o600); err != nil { // #nosec G703 -- fixture repo is t.TempDir
+		t.Fatal(err)
+	}
+	f.git(t, "add", "mythhelm.toml")
+	f.git(t, "commit", "--quiet", "-m", "add envelopes")
+	_, digest, err := admission.ParseProjectConfig([]byte(contents))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return digest
+}
+
+func (f fixture) decideEnvelope(t *testing.T, digest string, flags *billing.Ceilings) admission.Decision {
+	t.Helper()
+	d, err := admission.Decide(t.Context(), admission.Request{
+		StateDir: f.state, Repo: f.repo, TaskFile: f.task,
+		Adapter: admission.AdapterFake, Billing: admission.BillingLocalScripted,
+		ExecutionProfile: admission.ProfileTrustedHost, Env: os.Environ(),
+		TrustProjectConfig: "sha256:" + digest, EnvelopeFlags: flags,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+func (f fixture) reservations(t *testing.T, runID string) []string {
+	t.Helper()
+	rows, err := rawDB(t, f.state).QueryContext(t.Context(), `SELECT reservation_id FROM reservations WHERE run_id = ? ORDER BY reservation_id`, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func TestAdmissionWritesInitialEnvelope(t *testing.T) {
+	f := newFixture(t)
+	flags := &billing.Ceilings{Execution: -1, Repairs: 5, Replans: -1, TransportRetries: -1}
+	d := f.decideEnvelope(t, f.envelopeConfig(t), flags)
+	var notices []string
+	out, err := supervisor.Run(t.Context(), d, supervisor.Hooks{Notice: func(s string) { notices = append(notices, s) }})
+	if err != nil || out.State != supervisor.RunReadyForReview {
+		t.Fatalf("run = %+v, %v; want ready_for_review", out, err)
+	}
+	file, err := d.ProjectConfig.Envelopes.ToCeilings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := billing.ResolveCeilings(flags, file)
+	// Flag repairs 5 beat file repairs 1; the file's 10m and 0 replans beat
+	// the built-ins; transport retries fall through to the built-in 5.
+	if want != (billing.Ceilings{Execution: 10 * time.Minute, Repairs: 5, Replans: 0, TransportRetries: 5}) {
+		t.Fatalf("test premise: resolved ceilings = %+v", want)
+	}
+	row, err := f.journal(t).RunEnvelope(t.Context(), d.RunID)
+	if err != nil {
+		t.Fatalf("admitted run has no envelope row: %v", err)
+	}
+	got := billing.Ceilings{Execution: time.Duration(row.ExecutionSeconds) * time.Second,
+		Repairs: int(row.Repairs), Replans: int(row.Replans), TransportRetries: int(row.TransportRetries)}
+	if got != want {
+		t.Fatalf("envelope row ceilings = %+v, want %+v", got, want)
+	}
+	// The first attempt is neither a repair nor a replan and the fake run
+	// retries nothing; FirstStartAt is the launch gate's to set (Task 7).
+	if row.RepairsUsed != 0 || row.ReplansUsed != 0 || row.TransportRetriesSeen != 0 {
+		t.Fatalf("a one-attempt run carries usage: %+v", row)
+	}
+
+	// The admitted run holds exactly one reservation, coupled to the bucket,
+	// and the surfaced text says it is local coordination only.
+	ids := f.reservations(t, d.RunID)
+	if len(ids) != 1 {
+		t.Fatalf("reservations = %v, want exactly one", ids)
+	}
+	res, err := f.journal(t).Reservation(t.Context(), ids[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != "held" || res.Quantity != "unknown" || res.Scope == "" || res.Scope != res.Bucket {
+		t.Fatalf("reservation = %+v, want a held, unknown-quantity row with scope = bucket", res)
+	}
+	if !slices.Contains(notices, admission.ReservationText(res.Bucket)) {
+		t.Fatalf("notices %q lack the reservation line", notices)
+	}
+}
+
+func TestHoldFailureBlocksRun(t *testing.T) {
+	f := newFixture(t)
+	d := f.decideEnvelope(t, f.envelopeConfig(t), nil)
+	// Storage refusing the hold is the failure; the journal must exist first.
+	_ = f.journal(t)
+	if _, err := rawDB(t, f.state).ExecContext(t.Context(), `CREATE TRIGGER inject_hold BEFORE INSERT ON reservations BEGIN SELECT RAISE(ABORT, 'injected hold failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	out, err := supervisor.Run(t.Context(), d, supervisor.Hooks{})
+	if err == nil || !strings.Contains(err.Error(), "injected hold failure") {
+		t.Fatalf("Run err = %v, want the hold failure", err)
+	}
+	if out.State != supervisor.RunBlocked || out.Reason != "quota_reservation_failed" {
+		t.Fatalf("outcome = %s (%s), want blocked (quota_reservation_failed)", out.State, out.Reason)
+	}
+	if run := f.onlyRun(t); run.State != string(supervisor.RunBlocked) || run.Reason != "quota_reservation_failed" {
+		t.Fatalf("projected run = %s (%s), want blocked (quota_reservation_failed)", run.State, run.Reason)
+	}
+	// Nothing launched and nothing is held: no partial claim survives.
+	evs := f.events(t, d.RunID)
+	if typeIndex(evs, "attempt.launch_intent_recorded") >= 0 {
+		t.Fatal("a run whose hold failed still recorded a launch intent")
+	}
+	// The hold commits with the admission, so a failed hold leaves neither
+	// the admission event nor the envelope behind (AC-3.2, design §4).
+	if typeIndex(evs, "admission.decided") >= 0 {
+		t.Fatal("admission.decided survived a failed hold: the hold is not in the admission transaction")
+	}
+	if _, err := f.journal(t).RunEnvelope(t.Context(), d.RunID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("RunEnvelope after a failed hold = %v, want no row", err)
+	}
+	if got := f.reservations(t, d.RunID); len(got) != 0 {
+		t.Fatalf("reservations after a failed hold = %v, want none", got)
+	}
+}
+
+func TestFailedAdmissionHoldsNothing(t *testing.T) {
+	f := newFixture(t)
+	// Another run is active, so admission refuses before any hold.
+	j := f.journal(t)
+	other := ids.New("run")
+	now := time.Now()
+	if err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+		return journal.InsertRun(t.Context(), tx, journal.RunRow{RunID: other, State: string(supervisor.RunExecuting), AdapterID: "builtin/fake",
+			SourceRepo: f.repo, TaskSHA256: "t", BillingPosture: "local-scripted", ExecutionProfile: "trusted-host", CreatedAt: now, UpdatedAt: now})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	d := f.decideEnvelope(t, f.envelopeConfig(t), nil)
+	out, err := supervisor.Run(t.Context(), d, supervisor.Hooks{})
+	if out.State != supervisor.RunBlocked || out.Reason != "active_run_exists" {
+		t.Fatalf("run = %s (%s), %v; want blocked (active_run_exists)", out.State, out.Reason, err)
+	}
+	if got := f.reservations(t, d.RunID); len(got) != 0 {
+		t.Fatalf("a refused admission holds %v, want nothing (AC-3.2)", got)
+	}
+}
+
+func TestDeadlineExpiryBlocks(t *testing.T) {
+	f := newFixture(t)
+	// The slow scenario would run for ten minutes; the 2s execution ceiling
+	// outlasts the launch (a ceiling that ran out before the intent commits
+	// is refused instead, TestLaunchRefusedWhenDeadlineExpiresBeforeCommit)
+	// and ends the attempt through the stop ladder. The test never sleeps.
+	d, err := admission.Decide(t.Context(), admission.Request{
+		StateDir: f.state, Repo: f.repo, TaskFile: f.task,
+		Adapter: admission.AdapterFake, Billing: admission.BillingLocalScripted,
+		ExecutionProfile: admission.ProfileTrustedHost, Env: os.Environ(),
+		NoChecks: true, Scenario: "slow",
+		EnvelopeFlags: &billing.Ceilings{Execution: 2 * time.Second, Repairs: -1, Replans: -1, TransportRetries: -1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	out, err := supervisor.Run(ctx, d, supervisor.Hooks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.State != supervisor.RunBlocked || out.Reason != "envelope_deadline_exceeded" {
+		t.Fatalf("outcome = %s (%s), want blocked (envelope_deadline_exceeded)", out.State, out.Reason)
+	}
+	if out.AttemptState != supervisor.AttemptStopped {
+		t.Fatalf("attempt = %s, want stopped through the stop ladder", out.AttemptState)
+	}
+	evs := f.events(t, d.RunID)
+	if typeIndex(evs, "candidate.frozen") < 0 {
+		t.Fatal("no candidate was preserved when the deadline stopped the attempt")
+	}
+	row, err := f.journal(t).RunEnvelope(t.Context(), d.RunID)
+	if err != nil || row.FirstStartAt == "" {
+		t.Fatalf("envelope after launch = %+v, %v; want the first start recorded", row, err)
+	}
+}
+
+func TestGateRefusalBlocksRunBeforeAnyIntent(t *testing.T) {
+	f := newFixture(t)
+	d := f.decideEnvelope(t, f.envelopeConfig(t), nil)
+	// A run whose execution clock started long ago, as after a recovery: the
+	// trigger stamps the first start when the admission writes the envelope.
+	_ = f.journal(t)
+	if _, err := rawDB(t, f.state).ExecContext(t.Context(), `CREATE TRIGGER aged_clock AFTER INSERT ON run_envelopes BEGIN
+		UPDATE run_envelopes SET first_start_at = '2000-01-01T00:00:00Z' WHERE run_id = NEW.run_id; END`); err != nil {
+		t.Fatal(err)
+	}
+	out, err := supervisor.Run(t.Context(), d, supervisor.Hooks{})
+	if err == nil {
+		t.Fatal("a refused launch returned no error")
+	}
+	if out.State != supervisor.RunBlocked || out.Reason != "envelope_deadline_exceeded" {
+		t.Fatalf("outcome = %s (%s), want blocked (envelope_deadline_exceeded)", out.State, out.Reason)
+	}
+	if typeIndex(f.events(t, d.RunID), "attempt.launch_intent_recorded") >= 0 {
+		t.Fatal("a launch the envelope refused still journaled an intent")
 	}
 }

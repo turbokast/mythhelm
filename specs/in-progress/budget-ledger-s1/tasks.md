@@ -12,7 +12,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — billing kernel: types, envelopes, codes
+### Task 1 — billing kernel: types, envelopes, codes ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -32,8 +32,12 @@
   - `TestCodesPinV245Strings`: codes equal exactly `allowance_exhausted` and `budget_exhausted` (stability pin for MH-21 adoption); any other string fails. Fails before: package absent.
 - **Test plan**: Table tests, no I/O; durations asserted exactly (no sleeps).
 - **Invariants touched**: I09 (v2 §2: nil/unknown stays distinct from zero in every type); I10 (v2 §2: no hard-limit advertising in this package — types carry ceilings, never provider caps).
+- **Status**: ✅ Completed — `internal/billing` ships the reading/total types, envelope ceilings, deadline arithmetic and the S1 exhaustion codes; PR #240.
+- **Implementation**: `ResolveCeilings` treats a negative field as unset and zero as set; `Deadline` extends only by quiesced spans (an unresumed quiesced span runs to `now`) and reports expired when `now` is not before the deadline. Commit 8561511.
+- **Spec deviations**: None.
+- **Files modified**: `internal/billing/billing.go`, `internal/billing/envelope.go`, `internal/billing/billing_test.go`, `internal/billing/envelope_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
-### Task 2 — Counter normalization and component split
+### Task 2 — Counter normalization and component split ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -57,8 +61,12 @@
   - `TestSplitUsageUnmappedCombinedOnly`: an unknown route returns the combined total with all components nil; any non-nil component fails. `TestSplitUsageFirstRouteSplits`: the first-route mapping row (keyed by adapter harness ID, the key Task 3 passes) exposes non-overlapping components citing fixture evidence. Fails before: `SplitUsage` absent.
 - **Test plan**: Table tests over inline readings; cross-(scope, unit, source) mismatch cases included so unlike buckets never merge.
 - **Invariants touched**: I09 (v2 §7.3: missing is unknown, never zero; identity-less deltas estimated, AC-2.1/AC-2.2).
+- **Status**: ✅ Completed — `billing.Normalize` and `billing.SplitUsage` with the `claude-code` mapping row landed; PR #246.
+- **Implementation**: Exact decimal sums via scale-aligned `math/big` integers; the baseline literal passes through unchanged. An identity with no baseline whose deltas were all skipped is unknown, not zero. Commit dae117b.
+- **Spec deviations**: None.
+- **Files modified**: `internal/billing/normalize.go`, `internal/billing/normalize_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
-### Task 3 — Migration 0003, ledger rows, ingest projection
+### Task 3 — Migration 0003, ledger rows, ingest projection ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (persistence schema migration)
@@ -85,8 +93,12 @@
   - `TestBucketStateMissingIsNoRows`: `BucketState` on a never-exhausted bucket returns `sql.ErrNoRows`; any other outcome fails. Fails before: accessor absent.
 - **Test plan**: Temp databases migrated from the checked-in fixture chain; golden DDL snapshot; ingest tests through `projectWorkerEvent` with synthetic spool lines.
 - **Invariants touched**: I23 (v2 §5.1: single ledger gains tables, no second store); I09 (v2 §7.3: labels checked, quantity `unknown` distinct from zero); G16 (additive only).
+- **Status**: ✅ Completed — `0003_ledger.sql`, `SchemaVersion` 3, the ledger accessors with `Transact`, and the `native_result` usage projection landed; PR #252.
+- **Implementation**: Each native_result writes one increment row per (scope, unit, source) from `billing.Normalize`, with the run's identified rows as `applied`; missing scopes become `unknown` markers with NULL producer. Route key is the harness ID read from the run's journaled `admission.decided`. Commit a04b539.
+- **Spec deviations**: (1) `internal/journal/journal_test.go` and `internal/journal/qualification_test.go` changed (outside Files): they hard-coded schema version 2. (2) Per-model token rows carry the `SplitUsage` combined total; the design DDL has no component columns, so mapped components are not persisted. (3) A cost that is not plain decimal text is treated as unreported (unknown row), so one odd literal cannot stall spool ingestion. 0003 was free and no MH-21 `reservations` table had landed, so no renumbering or adoption applied.
+- **Files modified**: `internal/journal/migrations/0003_ledger.sql`, `internal/journal/journal.go`, `internal/journal/journal_test.go`, `internal/journal/qualification_test.go`, `internal/journal/ledger.go`, `internal/journal/ledger_test.go`, `internal/supervisor/ingest.go`, `internal/supervisor/ingest_ledger_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
-### Task 4 — Admission reservation coupling
+### Task 4 — Admission reservation coupling ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -109,8 +121,12 @@
   - `go test ./internal/admission/ -run TestUnknownQuotaAdmitsStopAtExhaustion`: the existing AC-7.2 guard still passes (cited, not added). Fails before only on regression (guard).
 - **Test plan**: Fake `Reserver` for unit tests; pipeline test with temp state dir asserting blocked-on-hold-failure.
 - **Invariants touched**: I02 (v2 §7.3: failed hold blocks admission); I10 (v2 §2: local reservation never presented as provider availability, AC-3.3); I04 (v2 §2: one bucket per run, no preauthorised alternative, AC-6.4).
+- **Status**: ✅ Completed — every admitted run now gets its resolved `run_envelopes` row in the admission transaction and one `unknown`-quantity reservation coupled to its bucket; a failed hold blocks the run; PR #256.
+- **Implementation**: `reserve.go` holds inside the caller's transaction with a count-based duplicate check; `appendAdmission` resolves the Decision layers and, in the one admission append, writes the envelope and holds the reservation, so a failed hold rolls the admission back and blocks the run with `quota_reservation_failed`. The bucket record is built from the Decision. Commits bebda35, review fix in the next commit.
+- **Spec deviations**: (1) `Reserver.Reserve(ctx, tx, runID, bucket, owner)` takes the run and the caller's transaction, `HoldQuotaReservation` takes the transaction, and `NewJournalReserver(c)` drops the journal, so the hold commits with the admission (design §4); the design signatures omit the run and use a journal-bound reserver. (2) The bucket's record is built from the Decision (adapter harness and surface, billing posture entitlement class, native auth identity), since the Decision does not carry the consulted record. (3) The duplicate-hold check is a `COUNT` on the caller's transaction in `reserve.go`, not a new journal accessor. (4) The notice names the bucket, not the reservation id, as a random id broke the stable-stderr test `TestE2EJsonlStable`.
+- **Files modified**: `internal/admission/reserve.go`, `internal/admission/reserve_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/pipeline_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
-### Task 5 — Exhaustion signal taxonomy and fake scenarios
+### Task 5 — Exhaustion signal taxonomy and fake scenarios ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (6 files; three are fixtures/tests, but the tier rule is literal)
@@ -131,8 +147,12 @@
   - `go test ./adapters/fake/ -run TestScenariosEmbedded`: the pinned list gains `usage-counters` and `allowance-exhausted` and both parse; an unlisted or unparseable scenario fails. Fails before: names absent from the list.
 - **Test plan**: Synthetic fixtures with `synthetic: true` markers per the adapter rule; scenario playback through the existing fake harness.
 - **Invariants touched**: I14 (v2 §2: fixture-tested taxonomy explicitly labelled, not live-qualified); I09 (v2 §7.3: unknown reset stays unknown).
+- **Status**: ✅ Completed — the claudecode decoder maps the fixture-qualified `allowance_exhausted` class fail-closed and the `usage-counters` and `allowance-exhausted` fake scenarios are embedded; PR #245.
+- **Implementation**: `allowance_exhausted` joins `errorClasses`; the exact class name is the only documented shape, so every other spelling stays `native_error` and `rate_limit` keeps its transient mapping. `NativeError` carries only a class, so reset stays unknown. The synthetic fixture holds three named streams (exhausted, rate-limited, undocumented shape). Commit ffdc9eb.
+- **Spec deviations**: None.
+- **Files modified**: `adapters/claudecode/decode.go`, `adapters/claudecode/decode_test.go`, `adapters/claudecode/testdata/exhaustion/allowance_exhausted.json`, `adapters/fake/scenarios/usage-counters.json`, `adapters/fake/scenarios/allowance-exhausted.json`, `adapters/fake/fake_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
-### Task 6 — Envelope configuration and extension decision
+### Task 6 — Envelope configuration and extension decision ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (recover-path interplay, new control event; 10 files justified: one logical change — the envelope-config chain from flags/config through Decide to Decision — with a test file for each new behavior; splitting config from threading would leave flags that do not compile)
@@ -159,8 +179,12 @@
   - `TestExtensionRejectsUnknownKind`: an unknown kind or a run not blocked for that kind errors; granting fails. Fails before: function absent.
 - **Test plan**: TOML fixtures (valid + each invalid shape); CLI tests through flag parsing plus one `cli.Main` exit-code case; recover tests with temp journals on envelope-blocked runs.
 - **Invariants touched**: I02 (v2 §2: strict decode fails closed; unknown extension never assumed); I21 (v2 §10.3: ceilings configurable but always finite); I20 (v2 §2: extension binds the recorded decision, not a mutable grant).
+- **Status**: ✅ Completed — the `[envelopes]` table, the four `--envelope-*` flags and the recorded `run.extension_granted` decision landed; the flag and file layers reach the `Decision` unresolved; PR #254.
+- **Implementation**: `RequestExtension` journals the event and raises the envelope row in one append; `CheckExtension` is true only when a grant follows the run's latest block for that kind. `Hooks.Extension` carries the operator's decision into `RecoverWithHooks`, which journals it before anything else. Commit 469e067.
+- **Spec deviations**: `internal/supervisor/pipeline.go` is outside the task's Files list: `Hooks.Extension` lives there, as `RecoverWithHooks` has no other channel for the operator's decision.
+- **Files modified**: `internal/admission/admission.go`, `internal/admission/admission_test.go`, `internal/admission/projectconfig.go`, `internal/admission/projectconfig_test.go`, `internal/cli/run.go`, `internal/cli/run_envelope_test.go`, `internal/supervisor/envelope.go`, `internal/supervisor/envelope_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/recover.go`, `internal/supervisor/recover_envelope_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
-### Task 7 — Envelope counting and launch gate
+### Task 7 — Envelope counting and launch gate ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (deadline/stop interplay, gate on the launch path)
@@ -183,6 +207,10 @@
   - `TestDeadlineExpiryBlocks`: an expired deadline blocks with `envelope_deadline_exceeded` via the stop ladder; candidates preserved. Fails before: no deadline (run proceeds).
 - **Test plan**: Temp state dirs; frozen clocks for deadline tests (no sleeps).
 - **Invariants touched**: I21 (v2 §10.3: finite execution, repair, replan, transport envelopes enforced); I06 (v2 §2: deadline stop runs the existing stop ladder, unconfirmed until reconciled); I02 (v2 §2: over-ceiling launch refused).
+- **Status**: ✅ Completed — `GateLaunch` refuses over-ceiling and past-deadline launches before any intent, repairs and replans are counted, progress retries accumulate, and the execution deadline stops the attempt through the stop ladder into a blocked run; PR #259.
+- **Implementation**: `planLaunchAt` reads the envelope row, takes the row's raised value for any kind with a recorded extension, and checks the deadline then the counts; `GateLaunch` is that check alone. The launch is counted, and the first start stamped, by `plan.commit` in the launch intent's own transaction, as a conditional in-place `UPDATE` that enforces the ceiling, after re-checking the deadline at commit time. `projectTransportRetries` rejects a malformed `retries` as a corrupt spool line and recomputes the total from each attempt's largest integer report. `watch` arms a deadline timer; `endStop` ends a deadline stop as blocked. Commits 56008ef and the review-fix commit.
+- **Spec deviations**: (1) `internal/supervisor/state.go` is outside the task's Files: `RecordLaunchIntent` gains an unexported `recordLaunchIntent` that takes an extra projection, so the launch is counted in the intent's transaction. (2) The pipeline runs one attempt per run, so repair and replan refusals are tested on `GateLaunch` and `blockLaunch`, and the pipeline path with an aged clock (a first-launch refusal) and the deadline stop. (3) Task 4's `TestAdmissionWritesInitialEnvelope` no longer asserts an empty `FirstStartAt`, since the run now records its first start (Task 4's hand-off said Task 7 would). (4) `TestDeadlineExpiryBlocks` uses a 2s ceiling, not 1ms: a ceiling that expires before the intent commits is now refused at launch. (5) The execution ceiling is stored in whole seconds, so the row cannot hold a sub-second ceiling; the gate uses the resolved duration unless an extension was granted.
+- **Files modified**: `internal/supervisor/envelope.go`, `internal/supervisor/envelope_test.go`, `internal/supervisor/ingest.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/pipeline_test.go`, `internal/supervisor/state.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
 ### Task 8 — Exhaustion path: preserve, block, schedule, never pay
 

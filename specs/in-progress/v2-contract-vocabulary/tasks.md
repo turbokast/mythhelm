@@ -41,7 +41,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `internal/v2contract/v2contract.go`, `internal/v2contract/scales.go`, `internal/v2contract/codec.go`, `internal/v2contract/scales_test.go`, `internal/v2contract/codec_test.go`, `specs/in-progress/v2-contract-vocabulary/tasks.md`, `specs/in-progress/v2-contract-vocabulary/handoff.md`.
 
-### Task 2 — Execution records: Run, TaskRevision, Attempt
+### Task 2 — Execution records: Run, TaskRevision, Attempt ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -63,8 +63,12 @@
   - `TestMissingIDsRejected`: empty `RunID`/`TaskID`/`AttemptID` each fail `Validate` naming the field, never defaulted.
 - **Test plan**: Golden round-trips via the Task 1 `loadGolden` helper; table tests for validation; synthetic IDs via `ids.New`.
 - **Invariants touched**: I20 (v2 §2: revisions required, digests differ); I09 (v2 §2: missing IDs rejected, never zero); I23 (v2 §5.1: records shaped for the single canonical ledger).
+- **Status**: ✅ Completed — `Run`, `TaskRevision`, `Attempt` with strict `Validate` and three goldens; all six acceptance tests passing; PR #244.
+- **Implementation**: Value-receiver `Validate` checks schema_version 2, non-empty IDs and lifecycle, `Revision >= 1` and every dependency via `RevisionRef.Validate` (error names `dependencies[i]`). Goldens are compact canonical JSON. Commit 1061475.
+- **Spec deviations**: `internal/v2contract/codec_test.go` (outside Files): removed Task 1's `//nolint:unused` on `loadGolden`, now flagged unused-directive because this task's tests call it. `State` fields are `string`, not `RunState`/`TaskState`/`AttemptState`: those types are Task 5's (`lifecycle.go`, outside this task's Files, not on main). Wire shape is identical; Task 5 or 8 retypes them.
+- **Files modified**: `internal/v2contract/records_execution.go`, `internal/v2contract/records_execution_test.go`, `internal/v2contract/testdata/records/run.golden.json`, `internal/v2contract/testdata/records/task_revision.golden.json`, `internal/v2contract/testdata/records/attempt.golden.json`, `internal/v2contract/codec_test.go`, `specs/in-progress/v2-contract-vocabulary/tasks.md`, `specs/in-progress/v2-contract-vocabulary/handoff.md`, `specs/in-progress/v2-contract-vocabulary/scratchpad.md`.
 
-### Task 3 — Decision and evidence records
+### Task 3 — Decision and evidence records ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (7 files; one mechanical pattern across 5 record shapes)
@@ -88,6 +92,10 @@
   - `TestArtifactSizeBytesPresence`: `size_bytes` null and missing each fail naming the field; `size_bytes: 0` passes and round-trips as 0 (zero-byte artifacts valid; null never read as 0).
 - **Test plan**: Golden round-trips via `loadGolden`; enum table tests; absence-vs-zero assertions on optional fields.
 - **Invariants touched**: I09 (v2 §2: uncertainty preserved, absence never zero); I20 (v2 §2: `DesignDecision` revisions ordered via `Supersedes`); I07 lineage (v2 §2: `Verification` is the sole attestation shape).
+- **Status**: ✅ Completed — the five decision and evidence records with strict `Validate`, goldens and all six acceptance tests passing; PR #239.
+- **Implementation**: Unexported helpers carry an `evidence` prefix (`evidenceSchema` etc.) so parallel record tasks in the same package cannot collide. `DesignDecision.Supersedes` must name an earlier revision. The routing golden is the uncertainty case (scores absent, `uncertainty` set). Commits fec56d2, and the lint fix after it. The two files carry a file-level misspell exemption for the spec-mandated `Artifact` name.
+- **Spec deviations**: `internal/v2contract/codec_test.go` (Task 1) lost its `//nolint:unused` directive on `loadGolden`: this task's tests now call the helper, so `nolintlint` flags the directive as unused.
+- **Files modified**: `internal/v2contract/codec_test.go`, `internal/v2contract/records_evidence.go`, `internal/v2contract/records_evidence_test.go`, `internal/v2contract/testdata/records/routing_decision.golden.json`, `internal/v2contract/testdata/records/design_decision.golden.json`, `internal/v2contract/testdata/records/artifact.golden.json`, `internal/v2contract/testdata/records/observation.golden.json`, `internal/v2contract/testdata/records/verification.golden.json`, `specs/in-progress/v2-contract-vocabulary/tasks.md`, `specs/in-progress/v2-contract-vocabulary/handoff.md`.
 
 ### Task 4 — Coordination records ✅ COMPLETED
 
@@ -119,7 +127,7 @@
 - **Spec deviations**: `internal/v2contract/codec_test.go` (outside Files): removed Task 1's provisional `//nolint:unused` on `loadGolden`, now used — keeping it fails `golangci-lint` (`nolintlint`). Comment-only, no behaviour change.
 - **Files modified**: `internal/v2contract/records_coordination.go`, `internal/v2contract/records_coordination_test.go`, `internal/v2contract/testdata/records/context_manifest.golden.json`, `internal/v2contract/testdata/records/message.golden.json`, `internal/v2contract/testdata/records/grant.golden.json`, `internal/v2contract/testdata/records/reservation.golden.json`, `internal/v2contract/testdata/records/policy_version.golden.json`, `internal/v2contract/testdata/records/experiment.golden.json`, `internal/v2contract/codec_test.go`, `specs/in-progress/v2-contract-vocabulary/tasks.md`, `specs/in-progress/v2-contract-vocabulary/handoff.md`, `specs/in-progress/v2-contract-vocabulary/scratchpad.md`.
 
-### Task 5 — Machine-checkable lifecycles
+### Task 5 — Machine-checkable lifecycles ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -138,6 +146,11 @@
   - `TestReconcileRequiresSameLaunch`: mismatched launch IDs fail; equal IDs pass (AC-2.3).
 - **Test plan**: Tables transcribed from design §4.1 (each row: allowed set + sampled forbidden pairs); guard table tests.
 - **Invariants touched**: I06 (v2 §2: terminal entry fenced on resolved ownership); I12 (v2 §2: same-launch reconcile); G04 (v2 §18.3: lifecycle gate tables).
+- **Status**: ✅ Completed — v2 §6.1–§6.2 lifecycle tables with terminal-entry and reconcile guards in `internal/v2contract`, all six acceptance tests passing; PR #238.
+- **Implementation**: Explicit tables plus the blanket active-phase stop/interrupt row and the recovering→reconciled-phase rule; blocked `to == saved` always requires saved eligibility. Commit 62d8495.
+- **Spec deviations**: One interpretation (no stated requirement contradicted): "active phase" read as the 7 forward phases admission…applying; created is pre-admission and blocked/stopping/interrupted/recovering keep their explicit rows. Pinned in `TestRunTableMatchesSpec`.
+- **Files modified**: `internal/v2contract/lifecycle.go`, `internal/v2contract/lifecycle_test.go`, `specs/in-progress/v2-contract-vocabulary/tasks.md`, `specs/in-progress/v2-contract-vocabulary/handoff.md`.
+- **CI evidence**: `go-test` fails only on pre-existing `internal/cli TestStrictMainBlocksWriteNothing`, which fails identically on an untouched origin/main checkout; `internal/cli` does not reference `v2contract`.
 
 ### Task 6 — Error catalogue and adapter mapping ✅ COMPLETED
 
@@ -164,7 +177,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `internal/v2contract/errors.go`, `internal/v2contract/errors_test.go`, `internal/v2contract/testdata/error.golden.json`, `specs/in-progress/v2-contract-vocabulary/tasks.md`, `specs/in-progress/v2-contract-vocabulary/handoff.md`, `specs/in-progress/v2-contract-vocabulary/scratchpad.md`.
 
-### Task 7 — Event v2 envelope and sequence validators
+### Task 7 — Event v2 envelope and sequence validators ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -184,6 +197,10 @@
   - `TestInt64SequencePrecision`: `9223372036854775807` sequences survive a JSON round-trip exactly (AC-9.1 sequence round-trips).
 - **Test plan**: Golden round-trip; reflection tag-set comparison against `journal.Event` (test-only import); validator table tests incl. boundary int64.
 - **Invariants touched**: I23 (v2 §5.1: envelope shaped for the single canonical ledger); I12 (v2 §2: stale generations quarantined, never accepted).
+- **Status**: ✅ Completed — v2 `Envelope` mirroring `journal.Event` plus pure sequence/duplicate/generation validators in `Append` check order; PR #241.
+- **Implementation**: `Validate` requires schema_version 2, non-empty IDs/type, non-negative sequences/generation, non-zero `ObservedAt`, JSON-object payload; `CheckSequence` guards `math.MaxInt64` overflow. Commit 35c0d64.
+- **Spec deviations**: `internal/v2contract/codec_test.go` (outside Files): removed the now-stale `//nolint:unused` on `loadGolden`, which this task's tests call for the first time (nolintlint flags the unused directive).
+- **Files modified**: `internal/v2contract/envelope.go`, `internal/v2contract/envelope_test.go`, `internal/v2contract/testdata/envelope.golden.json`, `internal/v2contract/codec_test.go`, `specs/in-progress/v2-contract-vocabulary/tasks.md`, `specs/in-progress/v2-contract-vocabulary/handoff.md`, `specs/in-progress/v2-contract-vocabulary/scratchpad.md`.
 
 ### Task 8 — Support matrix, hermeticity, and invalid-case evidence
 

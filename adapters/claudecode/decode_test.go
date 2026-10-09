@@ -1,6 +1,7 @@
 package claudecode
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -568,6 +569,81 @@ func TestDecodeCostNeverFloat(t *testing.T) {
 		res, ok := obs[1].(adapter.Result)
 		if !ok || res.CostUSD != tc.want {
 			t.Fatalf("%s cost = %+v, want %q", tc.raw, obs, tc.want)
+		}
+	}
+}
+
+// exhaustionStreams reads the synthetic exhaustion fixture's named stream.
+func exhaustionStreams(t *testing.T, name string) [][]byte {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("testdata", "exhaustion", "allowance_exhausted.json")) // #nosec G304 -- Test reads only its own fixture.
+	if err != nil {
+		t.Fatal(err)
+	}
+	var all map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &all); err != nil {
+		t.Fatal(err)
+	}
+	var synthetic bool
+	if err := json.Unmarshal(all["synthetic"], &synthetic); err != nil || !synthetic {
+		t.Fatalf("fixture must be marked synthetic: %v", err)
+	}
+	var frames []json.RawMessage
+	if err := json.Unmarshal(all[name], &frames); err != nil || len(frames) == 0 {
+		t.Fatalf("fixture stream %q: %v", name, err)
+	}
+	out := make([][]byte, len(frames))
+	for i, f := range frames {
+		out[i] = f
+	}
+	return out
+}
+
+func nativeErrors(obs []adapter.Observation) []adapter.NativeError {
+	var errs []adapter.NativeError
+	for _, ob := range obs {
+		if e, ok := ob.(adapter.NativeError); ok {
+			errs = append(errs, e)
+		}
+	}
+	return errs
+}
+
+func TestDecodeAllowanceExhausted(t *testing.T) {
+	t.Parallel()
+	errs := nativeErrors(decodeAll(exhaustionStreams(t, "allowance_exhausted")))
+	// NativeError carries only the class, so a reset time is never
+	// recorded: reset stays unknown (I09).
+	if len(errs) != 1 || errs[0] != (adapter.NativeError{Class: "allowance_exhausted"}) {
+		t.Fatalf("exhaustion stream errors = %+v, want one allowance_exhausted", errs)
+	}
+	// The string spelling of the same documented class decodes alike.
+	init := []byte(`{"type":"system","subtype":"init","session_id":"s","apiKeySource":"none"}`)
+	errs = nativeErrors(decodeAll([][]byte{init, []byte(`{"type":"assistant","error":"allowance_exhausted"}`)}))
+	if len(errs) != 1 || errs[0].Class != "allowance_exhausted" {
+		t.Fatalf("string spelling errors = %+v, want one allowance_exhausted", errs)
+	}
+}
+
+func TestRateLimitKeepsTransientMapping(t *testing.T) {
+	t.Parallel()
+	errs := nativeErrors(decodeAll(exhaustionStreams(t, "rate_limit")))
+	if len(errs) != 1 || errs[0].Class != "rate_limit" {
+		t.Fatalf("rate-limit stream errors = %+v, want one rate_limit", errs)
+	}
+}
+
+func TestUnknownShapeNeverExhaustion(t *testing.T) {
+	t.Parallel()
+	errs := nativeErrors(decodeAll(exhaustionStreams(t, "unknown_shape")))
+	if len(errs) != 1 || errs[0].Class != "native_error" {
+		t.Fatalf("undocumented shape errors = %+v, want one native_error", errs)
+	}
+	init := []byte(`{"type":"system","subtype":"init","session_id":"s","apiKeySource":"none"}`)
+	for _, spelling := range []string{`"Allowance_Exhausted"`, `"allowance-exhausted"`, `"allowance_exhausted "`, `{"message":"allowance_exhausted"}`, `42`} {
+		errs := nativeErrors(decodeAll([][]byte{init, []byte(`{"type":"assistant","error":` + spelling + `}`)}))
+		if len(errs) != 1 || errs[0].Class != "native_error" {
+			t.Fatalf("error %s decoded to %+v, want one native_error", spelling, errs)
 		}
 	}
 }
