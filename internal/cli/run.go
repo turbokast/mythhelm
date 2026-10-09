@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/turbokast/mythhelm/internal/admission"
 	billingpkg "github.com/turbokast/mythhelm/internal/billing"
+	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/qualify"
 	"github.com/turbokast/mythhelm/internal/statedir"
 	"github.com/turbokast/mythhelm/internal/supervisor"
@@ -223,6 +225,9 @@ func executeRun(r renderer, req admission.Request) (supervisor.Outcome, error) {
 	signal.Notify(interrupts, os.Interrupt)
 	defer signal.Stop(interrupts)
 	out, err := supervisor.Run(ctx, d, supervisor.Hooks{Interrupt: interrupts, Event: r.event, Notice: r.notice})
+	if out.RunID != "" {
+		emitLedgerNotices(ctx, r, d, out.RunID)
+	}
 	if err == nil {
 		code, category := runExit(out)
 		if code != ExitOK {
@@ -230,6 +235,86 @@ func executeRun(r renderer, req admission.Request) (supervisor.Outcome, error) {
 		}
 	}
 	return out, err
+}
+
+// emitLedgerNotices prints the run's ledger lines through the renderer's
+// Notice path, ahead of run.result. Display is best-effort: a run whose
+// ledger cannot be read keeps its result without them, and a failure here
+// never fails the run.
+func emitLedgerNotices(ctx context.Context, r renderer, d admission.Decision, runID string) {
+	view, err := ledgerViewFor(ctx, d, runID)
+	if err != nil {
+		return
+	}
+	for _, line := range view.lines() {
+		r.notice(line)
+	}
+}
+
+// ledgerViewFor gathers the end-of-run ledger view for runID from the
+// journal and the admitted decision: usage rows, the envelope repair
+// ceiling, the admitted checks with their timeout sum, and the bucket's
+// retry schedule. A run the journal never recorded errors, and the caller
+// skips its lines.
+func ledgerViewFor(ctx context.Context, d admission.Decision, runID string) (ledgerView, error) {
+	var view ledgerView
+	j, err := journal.OpenReadOnly(ctx, d.StateDir)
+	if err != nil {
+		return view, err
+	}
+	defer func() { _ = j.Close() }()
+	rows, err := j.UsageObservations(ctx, runID)
+	if err != nil {
+		return view, err
+	}
+	view.usage = rows
+	switch env, err := j.RunEnvelope(ctx, runID); {
+	case err == nil:
+		view.repairs = int(env.Repairs)
+	case errors.Is(err, sql.ErrNoRows):
+		// The admission never wrote its envelope (a rolled-back hold, an
+		// invalid config): resolve the decision's layers as it would have.
+		file, ferr := d.ProjectConfig.Envelopes.ToCeilings()
+		if ferr != nil {
+			file = nil
+		}
+		view.repairs = billingpkg.ResolveCeilings(d.EnvelopeFlags, file).Repairs
+	default:
+		return view, err
+	}
+	bounds := make([]billingpkg.CheckBound, 0, len(d.ProjectConfig.Checks))
+	convertible := true
+	for _, c := range d.ProjectConfig.Checks {
+		timeout := c.Duration()
+		if timeout <= 0 {
+			convertible = false
+			break
+		}
+		bounds = append(bounds, billingpkg.CheckBound{Name: c.Name, Timeout: timeout})
+	}
+	view.checks = len(d.ProjectConfig.Checks)
+	if est, err := billingpkg.EstimateReserve(bounds, billingpkg.Ceilings{Repairs: view.repairs}); convertible && err == nil {
+		view.verifySum, view.verifySumKnown = est.VerifyTimeoutSum, true
+	}
+	bucket, err := supervisor.RunBucket(ctx, j, runID)
+	if err != nil {
+		return view, err
+	}
+	if bucket == "" {
+		return view, nil
+	}
+	row, err := j.BucketState(ctx, bucket)
+	if errors.Is(err, sql.ErrNoRows) {
+		return view, nil
+	}
+	if err != nil {
+		return view, err
+	}
+	view.exhausted, view.retryAt, view.retriesUsed = true, "unknown", int(row.RetriesUsed)
+	if row.ResetAt != nil {
+		view.retryAt = *row.ResetAt
+	}
+	return view, nil
 }
 
 // finish writes run.result for err (nil on success) and returns err, or the
