@@ -19,7 +19,9 @@
 
 ## Task 3 — Decision and evidence records
 
-<!-- pending -->
+- **Produces**: `RoutingDecision`, `DesignDecision` (`DesignDisposition`: `DesignProposed|DesignAccepted|DesignSuperseded`), `Artifact`, `Observation` (`ObservationKind`: `ObservationController|ObservationTool|ObservationNative`), `Verification`, all in `internal/v2contract/records_evidence.go` with value-receiver `Validate()`.
+- **For dependents**: unexported helpers there (`evidenceSchema`, `evidenceNonEmpty`, `evidenceFinite`, `evidenceGitObject`, `isSHA256Hex`) are reusable but not part of the contract. Test helper `evidenceRoundTrip[T](t, rel)` decodes a golden, re-encodes it and compares bytes. Goldens are compact JSON in field order with no trailing newline.
+- No deviations affecting later tasks.
 
 ## Task 4 — Coordination records
 
