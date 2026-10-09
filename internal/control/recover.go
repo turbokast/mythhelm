@@ -50,6 +50,12 @@ const (
 // fresh evidence replays the latest such event instead of re-examining.
 const EventRecoveryDecided = "attempt.recovery_decided"
 
+// handshakeEventPrefix marks a handshake-recorded pass. Handler-recorded
+// passes carry evt_recovery_<operation_id>; handshake records never spawn,
+// so the handler adopts their continuations instead of leaving them
+// unspawned.
+const handshakeEventPrefix = "evt_handshake_"
+
 // Quarantine reasons recorded in the report. Stale generation quarantines
 // under the ownership_unresolved code — fresh ownership cannot be
 // established — with the more specific reason retained.
@@ -148,9 +154,19 @@ type RecoverDeps struct {
 	ExamineCount *atomic.Int64
 }
 
-// RecoverHandler answers the recover intent: it reconciles the run through
-// Reconcile and, on a fresh continued outcome only, launches the admitted
-// continuation. Replays of a stored continuation never relaunch.
+// RecoverHandler answers the recover intent: it reconciles the run and
+// launches the admitted continuation. The served path runs it through
+// ExecuteLong, so the launch is a durable post-commit handoff: reconcile's
+// Mutate commits the admission first, and the spawn runs only after that
+// commit, so a commit failure can never orphan a worker with no durable
+// admission. Under single-transaction Execute (the tests' direct path) the
+// launch runs inside the operation's transaction, the Task 3 shape.
+//
+// Exactly one execution launches each continuation: a fresh continued
+// outcome launches, and so does a replayed one when this operation
+// recorded it (a retry after its own spawn failure) or a spawn-free
+// handshake did (an adoption) — but only while the continuation shows no
+// worker. Concurrent replays of another execution's record never launch.
 func RecoverHandler(d RecoverDeps) Handler {
 	return func(ctx context.Context, _ Peer, in Intent) (Result, error) {
 		var p RecoverParams
@@ -163,7 +179,7 @@ func RecoverHandler(d RecoverDeps) Handler {
 		if d.DB == nil || d.StateDir == "" {
 			return Result{}, newError(CodePersistenceUnavailable, "recover is not available: no ledger is attached")
 		}
-		rep, fresh, err := reconcile(ctx, d, p.RunID, "evt_recovery_"+in.OperationID)
+		rep, fresh, recordEvent, err := reconcile(ctx, d, p.RunID, "evt_recovery_"+in.OperationID)
 		if err != nil {
 			var ce *Error
 			if errors.As(err, &ce) && rep.Outcome != "" {
@@ -180,17 +196,23 @@ func RecoverHandler(d RecoverDeps) Handler {
 			}
 			return Result{}, err
 		}
-		if fresh && rep.Outcome == RecoverContinued {
-			if d.Launch == nil {
-				return Result{}, errors.New("control: no launcher is attached for the continuation")
-			}
-			launch := RecoveryLaunch{RunID: rep.RunID, AttemptID: rep.NewAttemptID,
-				LaunchIDSHA256: launchDigest(rep), WorkspacePath: launchWorkspace(rep)}
-			if err := d.Launch(ctx, launch); err != nil {
-				// Transient: Execute rolls the admission back with the
-				// operation, so the operation_id stays retryable and no
-				// admitted-but-unspawned attempt survives.
+		if rep.Outcome == RecoverContinued {
+			launch, err := shouldLaunch(d.StateDir, rep, fresh, recordEvent, in.OperationID)
+			if err != nil {
 				return Result{}, err
+			}
+			if launch {
+				if d.Launch == nil {
+					return Result{}, errors.New("control: no launcher is attached for the continuation")
+				}
+				l := RecoveryLaunch{RunID: rep.RunID, AttemptID: rep.NewAttemptID,
+					LaunchIDSHA256: launchDigest(rep), WorkspacePath: launchWorkspace(rep)}
+				if err := d.Launch(ctx, l); err != nil {
+					// Transient: the admission stands durable while the
+					// operation_id stays retryable, and the retry
+					// relaunches the still-unspawned continuation.
+					return Result{}, err
+				}
 			}
 		}
 		body, err := json.Marshal(rep)
@@ -198,6 +220,55 @@ func RecoverHandler(d RecoverDeps) Handler {
 			return Result{}, fmt.Errorf("control: encoding the recovery report: %w", err)
 		}
 		return Result{Body: body}, nil
+	}
+}
+
+// shouldLaunch reports whether this execution spawns the report's
+// continuation: a fresh admission always spawns, while a replay spawns
+// only when this operation recorded the pass (its own earlier spawn
+// failed or never stored) or a spawn-free handshake did (an adoption
+// no handshake ever spawns) — and in both replay cases only while no
+// worker runs in the continuation directory. A continuation that cannot
+// be proven unspawned fails the launch loudly instead of spawning beside
+// a possible worker or skipping silently.
+func shouldLaunch(stateDir string, rep RecoveryReport, fresh bool, recordEvent, operationID string) (bool, error) {
+	if fresh {
+		return true, nil
+	}
+	if recordEvent != "evt_recovery_"+operationID && !strings.HasPrefix(recordEvent, handshakeEventPrefix) {
+		return false, nil
+	}
+	return continuationUnspawned(stateDir, rep.RunID, rep.NewAttemptID)
+}
+
+// continuationUnspawned reports whether no worker runs in the
+// continuation's directory: no spool file and no live worker identity. A
+// worker's first act is creating its spool, so a spool proves a worker
+// ran here; the identity probe then closes the hole a deleted spool
+// would open (a second native beside a live worker breaks I12). A
+// directory that cannot be proven either way fails loudly: the launch
+// stays retryable instead of risking a double spawn or a silent skip.
+func continuationUnspawned(stateDir, runID, attemptID string) (bool, error) {
+	dir := workers.AttemptDir(stateDir, runID, attemptID)
+	if _, err := os.Stat(filepath.Join(dir, "spool.jsonl")); err == nil {
+		return false, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, fmt.Errorf("control: stating the continuation spool: %w", err)
+	}
+	observed, err := workers.ReadIdentity(dir)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return true, nil
+	case err != nil:
+		return false, fmt.Errorf("control: the continuation identity is unverifiable: %w", err)
+	}
+	switch probeObservedLiveness(&observed) {
+	case "gone":
+		return true, nil
+	case "unknown":
+		return false, errors.New("control: the continuation worker liveness is unverifiable")
+	default:
+		return false, nil
 	}
 }
 
@@ -210,7 +281,7 @@ func RecoverHandler(d RecoverDeps) Handler {
 // record nothing. Reconcile never launches: only RecoverHandler launches,
 // on a fresh continued outcome.
 func Reconcile(ctx context.Context, d RecoverDeps, runID string) (RecoverOutcome, error) {
-	rep, _, err := reconcile(ctx, d, runID, freshRecoveryEventID(runID))
+	rep, _, _, err := reconcile(ctx, d, runID, freshRecoveryEventID(runID))
 	return rep.Outcome, err
 }
 
@@ -219,18 +290,22 @@ func Reconcile(ctx context.Context, d RecoverDeps, runID string) (RecoverOutcome
 // intent, so concurrent passes serialise on the write lock and the loser
 // replays the winner's record — compares markers with the latest recorded
 // pass, and either replays it (fresh=false, no examination) or examines,
-// records and returns the new outcome (fresh=true).
-func reconcile(ctx context.Context, d RecoverDeps, runID, eventID string) (RecoveryReport, bool, error) {
+// records and returns the new outcome (fresh=true). It also returns the
+// record's event id: the fresh pass's own eventID, or the replayed
+// record's, so the handler can tell its own record from another
+// execution's when deciding a relaunch.
+func reconcile(ctx context.Context, d RecoverDeps, runID, eventID string) (RecoveryReport, bool, string, error) {
 	var out RecoveryReport
 	var fresh bool
+	var recordEvent string
 	var recorded *Error
 	err := Mutate(ctx, d.DB, func(tx *sql.Tx) error {
 		ev, err := gatherEvidence(ctx, tx, d.StateDir, runID)
 		if err != nil {
 			return err
 		}
-		if stored, decidedAt, ok := latestRecoveryReport(tx, runID); ok && shouldReplay(stored, ev, decidedAt) {
-			out, fresh = stored, false
+		if stored, decidedAt, storedEvent, ok := latestRecoveryReport(tx, runID); ok && shouldReplay(stored, ev, decidedAt) {
+			out, fresh, recordEvent = stored, false, storedEvent
 			return nil
 		}
 		if d.ExamineCount != nil {
@@ -240,28 +315,28 @@ func reconcile(ctx context.Context, d RecoverDeps, runID, eventID string) (Recov
 		if rerr != nil {
 			var ce *Error
 			if errors.As(rerr, &ce) && rep.Outcome != "" {
-				out, fresh, recorded = rep, true, ce
+				out, fresh, recordEvent, recorded = rep, true, eventID, ce
 				return nil
 			}
 			return rerr
 		}
-		out, fresh = rep, true
+		out, fresh, recordEvent = rep, true, eventID
 		return nil
 	})
 	if err != nil {
 		// A refusal or a transient failure: nothing was recorded, so
 		// there is no outcome to return.
-		return RecoveryReport{}, false, err
+		return RecoveryReport{}, false, "", err
 	}
 	if out.Outcome == RecoverQuarantined {
 		if fresh {
-			return out, fresh, recorded
+			return out, fresh, recordEvent, recorded
 		}
 		// A replayed quarantine mirrors a fresh one: the outcome with
 		// its failure, so direct callers cannot mistake it for success.
-		return out, false, quarantineError(out.Reason, "", 0, 0)
+		return out, false, recordEvent, quarantineError(out.Reason, "", 0, 0)
 	}
-	return out, fresh, nil
+	return out, fresh, recordEvent, nil
 }
 
 // recoveryEvidence is everything one pass reads: the run's attempts and
@@ -865,9 +940,8 @@ func decideLive(ctx context.Context, tx *sql.Tx, ev *recoveryEvidence, eventID s
 // decideGone reconciles a provably dead worker: a partial frozen candidate
 // is exposed, else a continuation is admitted carrying the same launch
 // identity. Neither path launches; the handler launches a fresh
-// continuation once admitted, still inside Execute's transaction — the
-// launch is not post-commit (see the Task 3 review-round-1 scratchpad
-// note; Task 4 lands the durable handoff with registration).
+// continuation once admitted, after this transaction commits on the
+// served path (the durable post-commit handoff).
 func decideGone(ctx context.Context, tx *sql.Tx, ev *recoveryEvidence, eventID string) (RecoveryReport, error) {
 	for _, c := range ev.markers.Candidates {
 		if c.AttemptID == ev.attempt.AttemptID && c.Partial {
@@ -1039,32 +1113,33 @@ func recordOutcome(ctx context.Context, tx *sql.Tx, ev *recoveryEvidence, eventI
 	return rep, nil
 }
 
-// latestRecoveryReport returns the run's latest recorded pass and when it
-// was decided. A corrupt payload counts as no record: the pass
-// re-examines rather than replaying bytes it cannot read. An unreadable
-// timestamp fails the newborn bound closed (the zero time always expires).
-func latestRecoveryReport(tx *sql.Tx, runID string) (RecoveryReport, time.Time, bool) {
-	var payload, observedAt string
-	err := tx.QueryRow(`SELECT payload, observed_at FROM journal WHERE run_id = ? AND type = ?
-		ORDER BY run_sequence DESC LIMIT 1`, runID, EventRecoveryDecided).Scan(&payload, &observedAt)
+// latestRecoveryReport returns the run's latest recorded pass, when it was
+// decided, and its event id. A corrupt payload counts as no record: the
+// pass re-examines rather than replaying bytes it cannot read. An
+// unreadable timestamp fails the newborn bound closed (the zero time
+// always expires).
+func latestRecoveryReport(tx *sql.Tx, runID string) (RecoveryReport, time.Time, string, bool) {
+	var eventID, payload, observedAt string
+	err := tx.QueryRow(`SELECT event_id, payload, observed_at FROM journal WHERE run_id = ? AND type = ?
+		ORDER BY run_sequence DESC LIMIT 1`, runID, EventRecoveryDecided).Scan(&eventID, &payload, &observedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return RecoveryReport{}, time.Time{}, false
+		return RecoveryReport{}, time.Time{}, "", false
 	}
 	if err != nil {
-		return RecoveryReport{}, time.Time{}, false
+		return RecoveryReport{}, time.Time{}, "", false
 	}
 	var rep RecoveryReport
 	if err := json.Unmarshal([]byte(payload), &rep); err != nil {
-		return RecoveryReport{}, time.Time{}, false
+		return RecoveryReport{}, time.Time{}, "", false
 	}
 	if rep.Outcome == "" || rep.AttemptID == "" {
-		return RecoveryReport{}, time.Time{}, false
+		return RecoveryReport{}, time.Time{}, "", false
 	}
 	decidedAt, err := time.Parse(time.RFC3339Nano, observedAt)
 	if err != nil {
-		return rep, time.Time{}, true
+		return rep, time.Time{}, eventID, true
 	}
-	return rep, decidedAt, true
+	return rep, decidedAt, eventID, true
 }
 
 // shouldReplay reports whether the stored pass still stands. Same target

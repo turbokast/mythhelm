@@ -537,7 +537,37 @@ func (w *worker) run(ctx context.Context) (retErr error) {
 	if err != nil {
 		return w.abort(ctx, sp, sess, out, err)
 	}
-	return w.conclude(ctx, sp, sess, out)
+	if err := w.conclude(ctx, sp, sess, out); err != nil {
+		return err
+	}
+	return w.awaitIfUnsupervised(ctx)
+}
+
+// envelope builds the pinned episode envelope from values the worker
+// already holds: the attempt ID from argv --attempt, the one-use launch
+// identity from the launch, and the supervisor boot generation pinned at
+// admission.
+func (w *worker) envelope() EpisodeEnvelope {
+	return EpisodeEnvelope{AttemptID: w.attemptID, LaunchID: w.launch.LaunchToken, Generation: w.launch.Generation}
+}
+
+// awaitIfUnsupervised enters the reconnect wait when a fenced episode ends
+// under a stale supervisor beat: the episode is finished and spooled, and
+// the worker waits for the supervisor's return instead of starting
+// anything new. An unfenced worker (generation 0, no supervisor holds the
+// lock) and an episode ending under a fresh beat return at once. A spool
+// failure never waits: conclude already returned its error, so the
+// attempt ends interrupted instead of parking blind.
+func (w *worker) awaitIfUnsupervised(ctx context.Context) error {
+	if w.launch.Generation == 0 {
+		return nil
+	}
+	if !SupervisorBeatStale(w.dir, time.Now()) {
+		return nil
+	}
+	env := w.envelope()
+	w.log.Info("supervisor beat stale; awaiting reconnection", "attempt", env.AttemptID, "generation", env.Generation)
+	return AwaitReconnect(ctx, w.dir, env)
 }
 
 // start verifies the pinned native, opens the prompt and launches the

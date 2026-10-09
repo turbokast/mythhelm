@@ -63,13 +63,21 @@ type StopDeps struct {
 // StopHandler answers the stop intent: it verifies the attempt's pinned
 // ladder version and worker identity, persists stop_requested, delivers
 // the request file, waits for the worker's stopped report up to the
-// recorded deadline, and journals the receipt. Under Execute both Mutate
-// scopes join Execute's single transaction, so the bounded wait holds the
-// write lock for up to MaxStopDeadline (design §3 wants the wait outside
-// any transaction; the Task 1 deviation records why it stays here until
-// Execute grows long-handler support). Concurrent duplicates therefore
-// serialise on the write lock: a repeat while the first execution still
-// waits blocks and then replays its stored Result.
+// recorded deadline, and journals the receipt. The served path runs it
+// through ExecuteLong: each Mutate scope commits on its own and the
+// bounded wait holds no transaction, so a waiting stop never wedges other
+// intents; a repeat while the first execution still waits blocks, then
+// replays its stored Result. Under single-transaction Execute (the tests'
+// direct path) both scopes join the one transaction and the wait holds
+// the write lock, the Task 1 deviation ExecuteLong exists to fix.
+//
+// Crash windows on the served path: a stop that persisted stop_requested
+// but died before storing a result re-enters idempotently on the same
+// operation_id (recordStopRequested returns early for its own reason),
+// waiting only the time left on the standing request's deadline. A stop
+// that died between the receipt commit and the result store leaves the
+// attempt terminal, so its retry reports revision_conflict: the stop
+// happened, but its receipt was never stored.
 func StopHandler(d StopDeps) Handler {
 	return func(ctx context.Context, _ Peer, in Intent) (Result, error) {
 		var p StopParams
@@ -120,7 +128,7 @@ func StopHandler(d StopDeps) Handler {
 			}
 		}
 		receipt, err := waitForStoppedReport(ctx, filepath.Join(dir, "spool.jsonl"), p.AttemptID,
-			pinned, time.Now().Add(wait), poll)
+			pinned, stopDeadline(dir, in.OperationID, wait), poll)
 		if err != nil {
 			if errors.Is(err, errStopDeadline) {
 				return recordQuarantine(ctx, d.DB, p.AttemptID, wait)
@@ -216,7 +224,9 @@ func latestLaunched(ctx context.Context, j *journal.Journal, runID, attemptID st
 // recordStopRequested persists the stop_requested transition with the
 // intent's operation_id. A transition the lifecycle forbids — stopping an
 // attempt that already stopped, or a second stop while one is in flight —
-// is revision_conflict.
+// is revision_conflict. Re-entrant for its own operation_id: a repeat
+// after a crash finds stop_requested recorded for itself and returns
+// without writing, so the retry waits on instead of conflicting.
 func recordStopRequested(ctx context.Context, db *sql.DB, operationID, attemptID string) error {
 	return Mutate(ctx, db, func(tx *sql.Tx) error {
 		from, err := journal.CurrentAttemptState(ctx, tx, attemptID)
@@ -226,6 +236,15 @@ func recordStopRequested(ctx context.Context, db *sql.DB, operationID, attemptID
 		if err != nil {
 			return newError(CodePersistenceUnavailable, "reading attempt state: %v", err)
 		}
+		if from == string(v2contract.AttemptStopRequested) {
+			reason, err := attemptReason(ctx, tx, attemptID)
+			if err != nil {
+				return err
+			}
+			if reason == operationID {
+				return nil
+			}
+		}
 		if err := v2contract.CheckAttemptTransition(v2contract.AttemptState(from), v2contract.AttemptStopRequested); err != nil {
 			return newError(CodeRevisionConflict, "attempt %q cannot stop from %s", attemptID, from)
 		}
@@ -234,6 +253,36 @@ func recordStopRequested(ctx context.Context, db *sql.DB, operationID, attemptID
 		}
 		return nil
 	})
+}
+
+// attemptReason reads attemptID's projected reason inside tx.
+func attemptReason(ctx context.Context, tx *sql.Tx, attemptID string) (string, error) {
+	var reason sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT reason FROM attempts WHERE attempt_id = ?`, attemptID).Scan(&reason); err != nil {
+		return "", newError(CodePersistenceUnavailable, "reading attempt reason: %v", err)
+	}
+	return reason.String, nil
+}
+
+// stopDeadline returns the wait deadline for a delivered request: the
+// standing request's recorded time plus the wait when the standing
+// request is this operation's, so a restart repeat waits only the
+// remaining time — or quarantines at once when none remains. Any other
+// shape (no standing request, another operation's, unreadable) waits the
+// full wait from now.
+func stopDeadline(dir, operationID string, wait time.Duration) time.Time {
+	raw, err := os.ReadFile(filepath.Join(dir, "stop.request")) //nolint:gosec // G304: fixed request name under the ledger-resolved attempt directory
+	if err != nil {
+		return time.Now().Add(wait)
+	}
+	var req struct {
+		RequestID   string    `json:"request_id"`
+		RequestedAt time.Time `json:"requested_at"`
+	}
+	if err := json.Unmarshal(raw, &req); err != nil || req.RequestID != operationID || req.RequestedAt.IsZero() {
+		return time.Now().Add(wait)
+	}
+	return req.RequestedAt.Add(wait)
 }
 
 // recordReceipt journals the stopped report as the Result body with the
