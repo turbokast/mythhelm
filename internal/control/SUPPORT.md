@@ -20,7 +20,7 @@ files carry no build tag) or `linux, darwin` (they are tagged
 | `instance-lock` | Per-user instance lock, adoption after a kill with a generation bump, refusal of a second root | fixture-tested | all | `TestSecondInstanceHeld`, `TestLockPathIndependentOfRoot`, `TestRootConflictRefused`, `TestStaleLockAdoptedWithGenerationBump` |
 | `frame-codec` | Length-prefixed frame codec and NFR-1 ingress limits (1 MiB, depth 64, 128 references) | fixture-tested | all | `TestFrameAtExactly1MiBPasses`, `TestOversizeReportsSizeBeforeDecode`, `TestDepth64Passes65Fails`, `TestRefs128Pass129Fail`, `TestCheckIngressSurvivesAdversarialNesting`, `TestUnknownKeyRejected` |
 | `transport-unix` | Unix socket transport with same-UID peer authentication and a 0700 socket directory | fixture-tested | linux, darwin | `TestUnixRoundTrip`, `TestSocketDirIs0700`, `TestForeignUIDRejected`, `TestNoTCPListener`, `TestDialWithoutSupervisor` |
-| `transport-windows-pipe` | User-restricted Windows named-pipe transport | blocked | windows | blocked: supervisor-service task 4 waits for the maintainer to approve the go-winio dependency (OQ-7); `mythhelm supervisor status` exits 7 on Windows until it lands |
+| `transport-windows-pipe` | User-restricted Windows named-pipe transport | fixture-tested | windows | `TestPipeRoundTrip`, `TestPipeDACLCheckRejectsWorldPipe`, `TestPipeDialWithoutSupervisor`, `TestPipeListenRefusesSecondListener`, `TestPipePeerIsSameLogon`, `TestSpawnEnvCarriesWindowsLocators` |
 | `execute-idempotency` | Idempotent `Execute` over the operations ledger (migration 0004): repeats replay, conflicting reuse fails | fixture-tested | all | `TestIdenticalRepeatReplays`, `TestConcurrentDuplicateExecutesOnce`, `TestReusedIDWithDifferentArgsConflicts`, `TestRecordedResultIsImmutable`, `TestMigration0004IsAdditive` |
 | `sole-writer-mutate` | One-transaction `Mutate`; handler writes commit with the result or not at all; workers never open SQLite | fixture-tested | all | `TestMutateIsOneTransaction`, `TestHandlerWritesRollBackWithTheirFailure`, `TestWorkersNeverOpenSQLite` |
 | `capability-tokens` | Attempt-scoped capability tokens, minted at admission and checked per request | fixture-tested | all | `TestTokenMintedAtAdmissionCheckedPerRequest`, `TestTokenScopedToAttempt` |
@@ -35,8 +35,9 @@ files carry no build tag) or `linux, darwin` (they are tagged
 ## Not claimed
 
 - Windows: the instance lock is built and its tests are untagged, so the CI
-  Windows runners build them. There is no Windows transport, hence no Windows
-  control method, lazy start or detach evidence (row `transport-windows-pipe`).
+  Windows runners build them. The named-pipe transport is fixture-tested
+  (row `transport-windows-pipe`); there is still no Windows control method,
+  lazy start or detach evidence.
 - No row is `live-qualified`.
 - A per-repository entitlement store does not exist (`read` scopes an
   operator by the repositories it presents); see the task 6 hand-off.

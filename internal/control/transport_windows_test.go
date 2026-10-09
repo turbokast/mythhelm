@@ -65,9 +65,21 @@ func serveEcho(t *testing.T, l Listener) (wait func()) {
 // ownerOnlyDACL reports why the pipe's DACL is not exactly one allow entry
 // for the current user on a protected DACL.
 func ownerOnlyDACL(pipe string) error {
-	// SE_KERNEL_OBJECT queries the pipe by name; SE_FILE_OBJECT would open it
-	// and fail with ERROR_PIPE_BUSY while the listener holds its instance.
-	sd, err := windows.GetNamedSecurityInfo(pipe, windows.SE_KERNEL_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	// Named pipes have no path form GetNamedSecurityInfo accepts (it fails
+	// with ERROR_INVALID_NAME on \\.\pipe\...), so open the pipe and query
+	// the handle instead.
+	name, err := windows.UTF16PtrFromString(pipe)
+	if err != nil {
+		return err
+	}
+	h, err := windows.CreateFile(name, windows.READ_CONTROL,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil,
+		windows.OPEN_EXISTING, 0, 0)
+	if err != nil {
+		return fmt.Errorf("opening the pipe to read its DACL: %w", err)
+	}
+	defer func() { _ = windows.CloseHandle(h) }()
+	sd, err := windows.GetSecurityInfo(h, windows.SE_KERNEL_OBJECT, windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
 		return fmt.Errorf("reading the pipe DACL: %w", err)
 	}
