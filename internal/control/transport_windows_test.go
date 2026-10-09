@@ -64,19 +64,37 @@ func serveEcho(t *testing.T, l Listener) (wait func()) {
 
 // ownerOnlyDACL reports why the pipe's DACL is not exactly one allow entry
 // for the current user on a protected DACL.
+// openPipeForDACL connects to the pipe, waiting for a listening instance:
+// go-winio creates its first instance disconnected and only makes one
+// connectable once Accept is pending, so an early open fails
+// ERROR_PIPE_BUSY.
+func openPipeForDACL(pipe string) (windows.Handle, error) {
+	name, err := windows.UTF16PtrFromString(pipe)
+	if err != nil {
+		return 0, err
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		h, err := windows.CreateFile(name, windows.READ_CONTROL,
+			windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil,
+			windows.OPEN_EXISTING, 0, 0)
+		if err == nil {
+			return h, nil
+		}
+		if !errors.Is(err, windows.ERROR_PIPE_BUSY) || !time.Now().Before(deadline) {
+			return 0, fmt.Errorf("opening the pipe to read its DACL: %w", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func ownerOnlyDACL(pipe string) error {
 	// Named pipes have no path form GetNamedSecurityInfo accepts (it fails
 	// with ERROR_INVALID_NAME on \\.\pipe\...), so open the pipe and query
 	// the handle instead.
-	name, err := windows.UTF16PtrFromString(pipe)
+	h, err := openPipeForDACL(pipe)
 	if err != nil {
 		return err
-	}
-	h, err := windows.CreateFile(name, windows.READ_CONTROL,
-		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil,
-		windows.OPEN_EXISTING, 0, 0)
-	if err != nil {
-		return fmt.Errorf("opening the pipe to read its DACL: %w", err)
 	}
 	defer func() { _ = windows.CloseHandle(h) }()
 	sd, err := windows.GetSecurityInfo(h, windows.SE_KERNEL_OBJECT, windows.DACL_SECURITY_INFORMATION)
@@ -162,6 +180,14 @@ func TestPipeDACLCheckRejectsWorldPipe(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = l.Close() }()
+	// An accept must be pending before the pipe has a connectable instance;
+	// without it the probe below could only fail with ERROR_PIPE_BUSY.
+	go func() {
+		c, err := l.Accept()
+		if err == nil {
+			_ = c.Close()
+		}
+	}()
 	if err := ownerOnlyDACL(name); err == nil {
 		t.Fatal("ownerOnlyDACL accepted a pipe granting Everyone access")
 	}
