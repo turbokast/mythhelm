@@ -2,7 +2,7 @@
 
 ## Review Summary
 
-- **Range**: 2e1aff4..f61fff8 (PRs #250, #251, #253, #255, #258, #262, #266; fix PRs none)
+- **Range**: 2e1aff4..f61fff8 (PRs #250, #251, #253, #255, #258, #262, #266; fix PRs none in range; post-range fixes #284 and #291, both merged)
 - **Reviewer**: code-reviewer, architect
 - **Findings**: critical 0, important 9, suggestion 12 (confirmed); rejected 0
 - **Open critical**: 0

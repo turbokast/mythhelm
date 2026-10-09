@@ -96,7 +96,9 @@ func AcquireInstance(dir string) (release func(), err error)
 ```
 
 Mechanism follows the `ownerlock.go` precedent (flock on Unix, LockFileEx on
-Windows). Stale locks (dead pid) are adoptable only after a liveness probe, and
+Windows). Stale locks (dead pid) are adopted on successful acquisition of the
+OS lock — a held lock proves the previous holder released, so no separate
+liveness probe gates adoption — and
 adoption bumps the boot generation, which is recorded, reported by `status`,
 and folded into the idempotency digest; enforcement (refusing stale
 generations) is deferred — informational until stream 4 (issue #282).

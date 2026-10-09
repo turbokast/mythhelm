@@ -87,6 +87,6 @@ What later tasks must know:
 
 ## Task 7 — Topology ADR and support matrix
 
-- **Produces** (PR #262): `docs/decisions/0014-service-topology.md` (status `proposed`), `internal/control/SUPPORT.md` and `internal/control/support_test.go` (`TestSupportMatrixMatchesEvidence`, `TestWindowsRowMatchesLanding`).
+- **Produces** (PR #262): `docs/decisions/0014-service-topology.md` (status `accepted`), `internal/control/SUPPORT.md` and `internal/control/support_test.go` (`TestSupportMatrixMatchesEvidence`, `TestWindowsRowMatchesLanding`).
 - **For dependents**: a new control method needs its `method:<name>` row in `SUPPORT.md` in the same change, with evidence tests that exist in `internal/control`; a new non-method deliverable adds its row there and its ID to `shippedDeliverables` in `support_test.go`. A row's `Platforms` (`all`, `linux, darwin`, or `windows`) must match the build tags of its tests. Statuses are `fixture-tested` or `blocked` only.
-- **For dependents**: when task 4 lands `transport_windows.go`, change the `transport-windows-pipe` row to `fixture-tested` with its tests (platform `windows`-built tests need a third platform label in `testPlatforms`), and the ADR's Windows line; `TestWindowsRowMatchesLanding` fails until both agree. The ADR needs the maintainer's review before its status becomes `accepted`.
+- **For dependents**: the `transport-windows-pipe` row is `fixture-tested` with its tests (platform `windows`; `testPlatforms` recognises the label), and the ADR's Windows line is current; `TestWindowsRowMatchesLanding` pins both. The ADR is accepted (maintainer approved 2026-10-09).
