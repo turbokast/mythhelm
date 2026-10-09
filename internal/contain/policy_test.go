@@ -79,3 +79,30 @@ func TestPolicyForRejectsMalformedInput(t *testing.T) {
 		})
 	}
 }
+
+func TestPolicyRejectsWorkdirEnclosingHomeOrTmp(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.VolumeName(home) + string(filepath.Separator)
+	tests := []struct {
+		name, workdir string
+		wantErr       bool
+	}{
+		{"workdir is HOME", home, true},
+		{"workdir is an ancestor of HOME", filepath.Dir(home), true},
+		{"HOME beneath the workdir", filepath.Join(home, "work"), false},
+		{"workdir is the filesystem root", root, true},
+		{"sibling of HOME", filepath.Join(filepath.Dir(home), "elsewhere"), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := PolicyFor("restricted", tc.workdir, false, nil, "")
+			if tc.wantErr && err == nil {
+				t.Fatalf("PolicyFor accepted workdir %q: %+v", tc.workdir, p)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("PolicyFor rejected workdir %q: %v", tc.workdir, err)
+			}
+		})
+	}
+}

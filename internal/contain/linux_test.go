@@ -412,20 +412,29 @@ func TestEnterLinuxRejectsInvalidLayout(t *testing.T) {
 	}
 	home := homeOutsideTmp(t)
 
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
 	tests := []struct {
-		name  string
-		home  string
-		binds []AuthBind
+		name    string
+		workdir string
+		home    string
+		binds   []AuthBind
 	}{
-		{"HOME beneath /tmp", filepath.Join(base, "home"), nil},
-		{"HOME is /tmp", "/tmp", nil},
-		{"HOME is an ancestor of /tmp", "/", nil},
-		{"auth source inside the workdir", home, []AuthBind{{Source: inWork, Target: filepath.Join(home, "token")}}},
+		{"HOME beneath /tmp", workdir, filepath.Join(base, "home"), nil},
+		{"HOME is /tmp", workdir, "/tmp", nil},
+		{"HOME is an ancestor of /tmp", workdir, "/", nil},
+		{"auth source inside the workdir", workdir, home, []AuthBind{{Source: inWork, Target: filepath.Join(home, "token")}}},
+		{"workdir is HOME", home, home, nil},
+		{"workdir is an ancestor of HOME", cwd, home, nil},
+		{"workdir is /", "/", home, nil},
+		{"workdir is /tmp", "/tmp", home, nil},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			p := Policy{Profile: "restricted", Workdir: workdir, AuthBinds: tc.binds}
-			spec := nsSpec(t, "/bin/sh", []string{"sh", "-c", "echo ran"}, baseEnv(workdir, base, tc.home), p)
+			p := Policy{Profile: "restricted", Workdir: tc.workdir, AuthBinds: tc.binds}
+			spec := nsSpec(t, "/bin/sh", []string{"sh", "-c", "echo ran"}, baseEnv(tc.workdir, base, tc.home), p)
 			out, err := runHelper(t, "enter", spec)
 			if err == nil || strings.Contains(out, "ran") {
 				t.Fatalf("invalid layout was accepted: err=%v out=%q", err, out)

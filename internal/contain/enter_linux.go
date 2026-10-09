@@ -91,6 +91,9 @@ func EnterLinux(spec ContainSpec) error {
 		return fmt.Errorf("contain: HOME %q must lie outside /tmp, which gets its own tmpfs", home)
 	}
 	workdir := filepath.Clean(p.Workdir)
+	if within(home, workdir) || within("/tmp", workdir) {
+		return fmt.Errorf("contain: workdir %q encloses $HOME or /tmp, whose tmpfs the workdir mount would cover", workdir)
+	}
 
 	// Detached copies are taken before /tmp and $HOME are covered by tmpfs,
 	// because the workdir or a bind source may live beneath either.

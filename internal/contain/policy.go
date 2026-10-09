@@ -37,6 +37,10 @@ func PolicyFor(profile, workdir string, readonly bool, binds []AuthBind, proxy s
 		return Policy{}, fmt.Errorf("contain: workdir %q is not absolute", workdir)
 	}
 	home := filepath.Clean(os.Getenv("HOME"))
+	workdir = filepath.Clean(workdir)
+	if (home != "." && within(home, workdir)) || within("/tmp", workdir) {
+		return Policy{}, fmt.Errorf("contain: workdir %q encloses $HOME or /tmp", workdir)
+	}
 	admitted := make([]AuthBind, 0, len(binds))
 	for _, b := range binds {
 		if !filepath.IsAbs(b.Source) || !filepath.IsAbs(b.Target) {
@@ -46,14 +50,14 @@ func PolicyFor(profile, workdir string, readonly bool, binds []AuthBind, proxy s
 		if source == filepath.VolumeName(source)+string(filepath.Separator) || (home != "." && within(home, source)) {
 			return Policy{}, fmt.Errorf("contain: auth bind source %q would expose $HOME; bind single files", source)
 		}
-		if within(source, filepath.Clean(workdir)) {
+		if within(source, workdir) {
 			return Policy{}, fmt.Errorf("contain: auth bind source %q lies inside the workdir", source)
 		}
 		admitted = append(admitted, AuthBind{Source: source, Target: filepath.Clean(b.Target)})
 	}
 	return Policy{
 		Profile:   profile,
-		Workdir:   filepath.Clean(workdir),
+		Workdir:   workdir,
 		ReadOnly:  readonly,
 		AuthBinds: admitted,
 		ProxyAddr: proxy,
