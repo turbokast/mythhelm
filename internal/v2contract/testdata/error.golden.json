@@ -1,0 +1,1 @@
+{"code":"tool_failed","owner":"supervisor","operation_id":"op_demo_0001","object":"attempt/att_demo_0001","revision":3,"disposition":"bounded_transient","next_action":"retry with backoff","evidence_refs":["ev_demo_0001"],"detail":{"adapter/claudecode/cause":"exit 1"}}
