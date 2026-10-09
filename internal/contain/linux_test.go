@@ -23,8 +23,8 @@ func TestMain(m *testing.M) {
 	case "plain":
 		os.Exit(helperRun(false))
 	}
-	if os.Getenv(ProbeEnv) != "" {
-		os.Exit(RunProbeChild())
+	if len(os.Args) > 1 && os.Args[1] == Command {
+		os.Exit(Main(os.Args[2:]))
 	}
 	os.Exit(m.Run())
 }
@@ -66,7 +66,7 @@ func runHelper(t *testing.T, mode string, spec ContainSpec) (string, error) {
 	cmd := exec.Command(exe)
 	cmd.Env = append(os.Environ(), helperEnv+"="+mode)
 	cmd.Stdin = bytes.NewReader(in)
-	cmd.SysProcAttr = nsSysProcAttr()
+	cmd.SysProcAttr = NamespaceAttr()
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
