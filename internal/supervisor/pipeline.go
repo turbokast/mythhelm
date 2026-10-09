@@ -123,6 +123,16 @@ func Run(ctx context.Context, d admission.Decision, h Hooks) (Outcome, error) {
 		return Outcome{}, unavailable(err)
 	}
 	defer func() { _ = j.Close() }()
+	// New admissions stop while migration owns the state directory or the
+	// ledger has moved past previewed; in-flight runs drain instead (I05).
+	if err := checkMigrationClear(ctx, j, "start a new run"); err != nil {
+		if !errors.Is(err, ErrOwnership) {
+			// A guard that cannot read (a locked ledger, an unreadable
+			// lock) fails like any other pre-admission I/O failure.
+			return Outcome{}, unavailable(err)
+		}
+		return Outcome{}, err
+	}
 	// The first admitted run seeds the seven v2 §7.2 records; refused
 	// runs never reach Run and seed nothing. A seed failure fails the
 	// run closed: no admission without its honest labels (I14).
@@ -147,6 +157,73 @@ func Run(ctx context.Context, d admission.Decision, h Hooks) (Outcome, error) {
 		err = unavailable(err)
 	}
 	return p.out, err
+}
+
+// checkMigrationClear refuses new supervised work while migration owns the
+// state directory (the migration lock is held) or the ledger has moved past
+// the previewed phase: no legacy admission may start while migration
+// quiesces owners, or after the service owns the ledger (I05, I18). The
+// refusal names the v2 ownership_unresolved code and wraps ErrOwnership so
+// the CLI maps it like any ownership failure.
+func checkMigrationClear(ctx context.Context, j *journal.Journal, action string) error {
+	phase, err := migrationPhase(ctx, j)
+	if err != nil {
+		return err
+	}
+	if phasePastPreviewed(phase) {
+		return fmt.Errorf("cannot %s: ownership_unresolved: migration phase is %q: %w",
+			action, phase, ErrOwnership)
+	}
+	release, err := AcquireOwner(j.StateDir())
+	if err != nil {
+		if errors.Is(err, ErrOwnerHeld) {
+			return fmt.Errorf("cannot %s: ownership_unresolved: migration holds the state directory: %w",
+				action, ErrOwnership)
+		}
+		return err
+	}
+	release()
+	return nil
+}
+
+// migrationPhase reads the durable migration phase: not_started when the
+// ledger predates migration (no table or row), else the recorded phase.
+func migrationPhase(ctx context.Context, j *journal.Journal) (string, error) {
+	phase := "not_started"
+	err := j.Transact(ctx, func(tx *sql.Tx) error {
+		var name string
+		err := tx.QueryRowContext(ctx, `SELECT name FROM sqlite_master
+			WHERE type = 'table' AND name = 'migration_state'`).Scan(&name)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("supervisor: checking migration_state: %w", err)
+		}
+		if err := tx.QueryRowContext(ctx,
+			`SELECT phase FROM migration_state WHERE id = 1`).Scan(&phase); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+			return fmt.Errorf("supervisor: reading migration phase: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return phase, nil
+}
+
+// phasePastPreviewed reports whether phase refuses new legacy admissions:
+// the migrate.Phase values past previewed (internal/migrate/phase.go),
+// which supervisor cannot import without a cycle.
+func phasePastPreviewed(phase string) bool {
+	switch phase {
+	case "drained", "imported", "adopted":
+		return true
+	}
+	return false
 }
 
 type pipeline struct {

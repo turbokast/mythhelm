@@ -44,6 +44,12 @@ func RecoverWithHooks(ctx context.Context, j *journal.Journal, runID string, h H
 	}
 	out := RecoveryOutcome{RunID: runID, State: RunState(row.State), Reason: row.Reason}
 	dir := filepath.Join(j.StateDir(), "runs", runID)
+	// Recovery drains after the other owner sites: it is refused while
+	// migration owns the state directory or the ledger has moved past
+	// previewed, and reconciles migrated runs only once migration ends.
+	if err := checkMigrationClear(ctx, j, "recover the run"); err != nil {
+		return out, err
+	}
 	release, err := AcquireOwner(dir)
 	if err != nil {
 		return out, err
