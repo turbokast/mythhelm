@@ -64,7 +64,7 @@
 - **Test plan**: Golden round-trips via the Task 1 `loadGolden` helper; table tests for validation; synthetic IDs via `ids.New`.
 - **Invariants touched**: I20 (v2 §2: revisions required, digests differ); I09 (v2 §2: missing IDs rejected, never zero); I23 (v2 §5.1: records shaped for the single canonical ledger).
 
-### Task 3 — Decision and evidence records
+### Task 3 — Decision and evidence records ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (7 files; one mechanical pattern across 5 record shapes)
@@ -88,6 +88,10 @@
   - `TestArtifactSizeBytesPresence`: `size_bytes` null and missing each fail naming the field; `size_bytes: 0` passes and round-trips as 0 (zero-byte artifacts valid; null never read as 0).
 - **Test plan**: Golden round-trips via `loadGolden`; enum table tests; absence-vs-zero assertions on optional fields.
 - **Invariants touched**: I09 (v2 §2: uncertainty preserved, absence never zero); I20 (v2 §2: `DesignDecision` revisions ordered via `Supersedes`); I07 lineage (v2 §2: `Verification` is the sole attestation shape).
+- **Status**: ✅ Completed — the five decision and evidence records with strict `Validate`, goldens and all six acceptance tests passing; PR #239.
+- **Implementation**: Unexported helpers carry an `evidence` prefix (`evidenceSchema` etc.) so parallel record tasks in the same package cannot collide. `DesignDecision.Supersedes` must name an earlier revision. The routing golden is the uncertainty case (scores absent, `uncertainty` set). Commit fec56d2.
+- **Spec deviations**: None.
+- **Files modified**: `internal/v2contract/records_evidence.go`, `internal/v2contract/records_evidence_test.go`, `internal/v2contract/testdata/records/routing_decision.golden.json`, `internal/v2contract/testdata/records/design_decision.golden.json`, `internal/v2contract/testdata/records/artifact.golden.json`, `internal/v2contract/testdata/records/observation.golden.json`, `internal/v2contract/testdata/records/verification.golden.json`, `specs/in-progress/v2-contract-vocabulary/tasks.md`, `specs/in-progress/v2-contract-vocabulary/handoff.md`.
 
 ### Task 4 — Coordination records
 
