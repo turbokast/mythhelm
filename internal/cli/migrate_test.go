@@ -504,8 +504,7 @@ func closeHandles(dbs ...*sql.DB) {
 // names its cause instead of just its code.
 func dumpRestoreFailure(t *testing.T, dir string, err error) {
 	t.Helper()
-	var ce *v2contract.ControlError
-	if errors.As(err, &ce) {
+	if ce, ok := errors.AsType[*v2contract.ControlError](err); ok {
 		t.Logf("restore detail: code=%s owner=%s operation=%s next=%q detail=%v",
 			ce.Code, ce.Owner, ce.OperationID, ce.NextAction, ce.Detail)
 	}

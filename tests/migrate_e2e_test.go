@@ -280,8 +280,7 @@ func TestMigrateE2EPackagedBinary(t *testing.T) {
 	// the WAL (no extra checkpoint handle — less file churn on Windows).
 	_ = db.Close()
 	if err := migrate.Restore(context.Background(), info, dir); err != nil {
-		var ce *v2contract.ControlError
-		if errors.As(err, &ce) {
+		if ce, ok := errors.AsType[*v2contract.ControlError](err); ok {
 			t.Logf("restore detail: code=%s operation=%s next=%q detail=%v",
 				ce.Code, ce.OperationID, ce.NextAction, ce.Detail)
 		}
