@@ -349,6 +349,38 @@ func TestProxyCancelClosesActiveTunnel(t *testing.T) {
 	}
 }
 
+func TestProxyStopClosesIdleConnections(t *testing.T) {
+	t.Parallel()
+
+	addr, stop, err := ServeProxy(context.Background(), []string{"127.0.0.1:1"})
+	if err != nil {
+		t.Fatalf("ServeProxy: %v", err)
+	}
+
+	// Idle connections in the request phase, some possibly still between
+	// Accept and registration: every one must observe EOF after the stop,
+	// none may relay past it.
+	const conns = 20
+	opened := make([]net.Conn, 0, conns)
+	for range conns {
+		conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+		if err != nil {
+			t.Fatalf("dial proxy %s: %v", addr, err)
+		}
+		opened = append(opened, conn)
+	}
+	stop()
+	for i, conn := range opened {
+		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		one := make([]byte, 1)
+		if _, err := io.ReadFull(conn, one); err != io.EOF && err != io.ErrUnexpectedEOF {
+			_ = conn.Close()
+			t.Fatalf("conn %d after stop: err %v, want EOF", i, err)
+		}
+		_ = conn.Close()
+	}
+}
+
 func TestServeProxyStopsOnContextCancel(t *testing.T) {
 	t.Parallel()
 

@@ -55,12 +55,14 @@ func ServeProxy(ctx context.Context, allow []string) (addr string, stop func(), 
 	}
 	var mu sync.Mutex
 	active := make(map[net.Conn]struct{})
+	stopped := false
 	var once sync.Once
 	stop = func() {
 		once.Do(func() {
 			_ = ln.Close()
 			mu.Lock()
 			defer mu.Unlock()
+			stopped = true
 			for conn := range active {
 				_ = conn.Close()
 			}
@@ -80,6 +82,15 @@ func ServeProxy(ctx context.Context, allow []string) (addr string, stop func(), 
 			select {
 			case sem <- struct{}{}:
 				mu.Lock()
+				if stopped {
+					// stop() ran between Accept and registration: this
+					// connection is not in active, so close it here or it
+					// would relay past the stop.
+					mu.Unlock()
+					<-sem
+					_ = conn.Close()
+					continue
+				}
 				active[conn] = struct{}{}
 				mu.Unlock()
 				go func() {
