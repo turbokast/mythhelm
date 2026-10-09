@@ -100,7 +100,7 @@ func EnterLinux(spec ContainSpec) error {
 		if !within(b.Target, home) {
 			return fmt.Errorf("contain: auth bind target %q is outside $HOME", b.Target)
 		}
-		if binds[i], err = cloneTree(b.Source); err != nil {
+		if binds[i], err = cloneFile(b.Source); err != nil {
 			return fmt.Errorf("auth bind %q: %w", b.Source, err)
 		}
 	}
@@ -108,6 +108,11 @@ func EnterLinux(spec ContainSpec) error {
 	ops := sysOps{}
 	if err := isolateRoot(ops); err != nil {
 		return err
+	}
+	for _, b := range p.AuthBinds {
+		if err := mask(b.Source); err != nil {
+			return fmt.Errorf("mask auth source %q: %w", b.Source, err)
+		}
 	}
 	for dir, mode := range map[string]uint32{"/tmp": 0o1777, home: 0o700} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -150,6 +155,37 @@ func envValue(env []string, key string) string {
 
 func cloneTree(path string) (int, error) {
 	return unix.OpenTree(unix.AT_FDCWD, path, unix.OPEN_TREE_CLONE|unix.OPEN_TREE_CLOEXEC)
+}
+
+// cloneFile detaches a copy of one regular file. The file is opened without
+// following a terminal symlink and checked through the descriptor, and that
+// same descriptor is cloned, so the path cannot change between check and use.
+func cloneFile(path string) (int, error) {
+	fd, err := unix.Open(path, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return -1, err
+	}
+	defer func() { _ = unix.Close(fd) }()
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil {
+		return -1, err
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFREG {
+		return -1, fmt.Errorf("%s is not a regular file", path)
+	}
+	return unix.OpenTree(fd, "", unix.OPEN_TREE_CLONE|unix.OPEN_TREE_CLOEXEC|unix.AT_EMPTY_PATH)
+}
+
+// mask hides an authorised source at its original path, so only the bind at
+// its target exposes it. The read-only root forbids writing a replacement,
+// but a mount over the file needs no write.
+func mask(path string) error {
+	null, err := cloneTree("/dev/null")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unix.Close(null) }()
+	return unix.MoveMount(null, "", unix.AT_FDCWD, path, unix.MOVE_MOUNT_F_EMPTY_PATH)
 }
 
 // attach mounts a detached tree at target. A directory target that does not

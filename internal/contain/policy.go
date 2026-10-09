@@ -43,7 +43,7 @@ func PolicyFor(profile, workdir string, readonly bool, binds []AuthBind, proxy s
 			return Policy{}, fmt.Errorf("contain: auth bind %q -> %q needs absolute paths", b.Source, b.Target)
 		}
 		source := filepath.Clean(b.Source)
-		if source == string(filepath.Separator) || (home != "." && within(home, source)) {
+		if source == filepath.VolumeName(source)+string(filepath.Separator) || (home != "." && within(home, source)) {
 			return Policy{}, fmt.Errorf("contain: auth bind source %q would expose $HOME; bind single files", source)
 		}
 		admitted = append(admitted, AuthBind{Source: source, Target: filepath.Clean(b.Target)})

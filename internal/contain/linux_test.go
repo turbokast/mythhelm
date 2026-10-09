@@ -294,3 +294,91 @@ func TestEnterLinuxBindsAuthFile(t *testing.T) {
 		t.Fatalf("secret readable without the bind: %q", out)
 	}
 }
+
+func TestEnterLinuxMasksAuthSource(t *testing.T) {
+	requireUserNamespaces(t)
+	base := t.TempDir()
+	workdir := filepath.Join(base, "work")
+	home := filepath.Join(base, "home")
+	for _, d := range []string{workdir, home} {
+		if err := os.Mkdir(d, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The source must sit outside /tmp, $HOME and the workdir, the only
+	// places the boundary already hides or replaces.
+	srcDir, err := os.MkdirTemp(".", "authsrc") //nolint:usetesting // must sit outside /tmp, which t.TempDir uses
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(srcDir) })
+	srcDir, err = filepath.Abs(srcDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const secret = "s3cr3t-bytes"
+	source := filepath.Join(srcDir, "secret")
+	if err := os.WriteFile(source, []byte(secret), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := append(baseEnv(workdir, base, home), "SECRET_SRC="+source)
+	script := `cat "$HOME/token"; echo "|"; cat "$SECRET_SRC"`
+	p := Policy{
+		Profile:   "restricted",
+		Workdir:   workdir,
+		AuthBinds: []AuthBind{{Source: source, Target: filepath.Join(home, "token")}},
+	}
+
+	out, err := runHelper(t, "enter", nsSpec(t, "/bin/sh", []string{"sh", "-c", script}, env, p))
+	if err != nil {
+		t.Fatalf("contained run: %v\n%s", err, out)
+	}
+	if out != secret+"|\n" {
+		t.Fatalf("output = %q, want the secret at the target and nothing at the original path", out)
+	}
+}
+
+func TestEnterLinuxRejectsUnstableAuthSource(t *testing.T) {
+	requireUserNamespaces(t)
+	base := t.TempDir()
+	workdir := filepath.Join(base, "work")
+	home := filepath.Join(base, "home")
+	for _, d := range []string{workdir, home} {
+		if err := os.Mkdir(d, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	regular := filepath.Join(base, "regular")
+	if err := os.WriteFile(regular, []byte("s3cr3t-bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(regular, link); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(base, "dir")
+	if err := os.Mkdir(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, source := range map[string]string{"terminal symlink": link, "directory": dir, "regular file": regular} {
+		t.Run(name, func(t *testing.T) {
+			p := Policy{
+				Profile:   "restricted",
+				Workdir:   workdir,
+				AuthBinds: []AuthBind{{Source: source, Target: filepath.Join(home, "token")}},
+			}
+			spec := nsSpec(t, "/bin/sh", []string{"sh", "-c", `cat "$HOME/token"`}, baseEnv(workdir, base, home), p)
+			out, err := runHelper(t, "enter", spec)
+			if name == "regular file" {
+				if err != nil || out != "s3cr3t-bytes" {
+					t.Fatalf("regular file bind: err=%v out=%q", err, out)
+				}
+				return
+			}
+			if err == nil || strings.Contains(out, "s3cr3t-bytes") {
+				t.Fatalf("%s source was bound: err=%v out=%q", name, err, out)
+			}
+		})
+	}
+}

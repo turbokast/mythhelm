@@ -9,6 +9,8 @@ func TestPolicyRejectsWholeHomeBind(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	secret := filepath.Join(home, ".config", "tool", "token.json")
+	work := filepath.Join(t.TempDir(), "work")
+	root := filepath.VolumeName(home) + string(filepath.Separator)
 
 	tests := []struct {
 		name    string
@@ -17,7 +19,7 @@ func TestPolicyRejectsWholeHomeBind(t *testing.T) {
 	}{
 		{"home itself", home, true},
 		{"home with trailing separator", home + string(filepath.Separator), true},
-		{"root", "/", true},
+		{"root", root, true},
 		{"ancestor of home", filepath.Dir(home), true},
 		{"relative source", "token.json", true},
 		{"single file under home", secret, false},
@@ -25,7 +27,7 @@ func TestPolicyRejectsWholeHomeBind(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			binds := []AuthBind{{Source: tc.source, Target: filepath.Join(home, "token")}}
-			p, err := PolicyFor("restricted", "/work", false, binds, "")
+			p, err := PolicyFor("restricted", work, false, binds, "")
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("PolicyFor accepted bind source %q, got %+v", tc.source, p)
@@ -44,11 +46,12 @@ func TestPolicyRejectsWholeHomeBind(t *testing.T) {
 
 func TestPolicyForCarriesInputs(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	p, err := PolicyFor("inspect", "/work/tree", true, nil, "127.0.0.1:9")
+	work := filepath.Join(t.TempDir(), "work", "tree")
+	p, err := PolicyFor("inspect", work, true, nil, "127.0.0.1:9")
 	if err != nil {
 		t.Fatalf("PolicyFor: %v", err)
 	}
-	want := Policy{Profile: "inspect", Workdir: "/work/tree", ReadOnly: true, ProxyAddr: "127.0.0.1:9"}
+	want := Policy{Profile: "inspect", Workdir: work, ReadOnly: true, ProxyAddr: "127.0.0.1:9"}
 	if p.Profile != want.Profile || p.Workdir != want.Workdir || p.ReadOnly != want.ReadOnly || p.ProxyAddr != want.ProxyAddr || len(p.AuthBinds) != 0 {
 		t.Fatalf("PolicyFor = %+v, want %+v", p, want)
 	}
@@ -56,6 +59,8 @@ func TestPolicyForCarriesInputs(t *testing.T) {
 
 func TestPolicyForRejectsMalformedInput(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	work := filepath.Join(t.TempDir(), "work")
+	src := filepath.Join(t.TempDir(), "src")
 	tests := []struct {
 		name, profile, workdir string
 		binds                  []AuthBind
@@ -63,7 +68,7 @@ func TestPolicyForRejectsMalformedInput(t *testing.T) {
 		{"empty profile", "", "/work", nil},
 		{"empty workdir", "restricted", "", nil},
 		{"relative workdir", "restricted", "work", nil},
-		{"relative bind target", "restricted", "/work", []AuthBind{{Source: "/etc/hostname", Target: "token"}}},
+		{"relative bind target", "restricted", work, []AuthBind{{Source: src, Target: "token"}}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
