@@ -183,7 +183,29 @@
 
 ## Task 7 — NFR-2 SQLite posture proof
 
-<!-- pending -->
+- **Produces**: `TestPragmasPinned` in
+  `internal/journal/pragmas_test.go` (open pragma string pins WAL +
+  synchronous FULL + busy_timeout 5000; every busy_timeout in the
+  package's non-test sources names the design-time 5000);
+  `TestMigrateWritesRunInMutate`, `TestIntegrityCheckOnBackupRestore`
+  and `TestSQLiteEngineHasWALFix` in `internal/migrate/nfr2_test.go`;
+  OQ-8 verdict (engine 3.53.4 from the built binary) recorded in
+  `scratchpad.md`.
+- **For dependents**: `mythhelm version` (plain and `--format jsonl`)
+  now reports `sqlite_version` from `journal.SQLiteVersion`
+  (`internal/journal/engine.go`, `:memory:` open, no state touched) —
+  the OQ-8 surface. The Mutate-scope pin walks top-level
+  `internal/migrate/*.go` (preview/ excluded by construction):
+  `tx.*` calls allowed; `*sql.DB` Exec/Begin/Prepare allowed only for
+  Backup's `VACUUM INTO`; `sql.Open` allowed only for the read-only
+  integrity opens (`readOnlyDSN` or a `mode=ro` literal) — a new
+  direct write fails the test by name and line, so future migrate
+  writes must go through `control.Mutate` or extend the exclusion
+  with a cited reason.
+- **Deviations that change a later task's inputs**: `version --format
+  jsonl` gains the `sqlite_version` field; Task 8's support matrix
+  NFR-2 row is fixture-tested (corrupt-page fixtures, built-binary
+  engine assertion), not live-qualified.
 
 ## Task 8 — Migration ADR and support rows
 
