@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1197,4 +1198,77 @@ func TestRecoverUnservedUntilLaunchLeavesTransaction(t *testing.T) {
 	srv := NewSupervisorServer(nil)
 	_, err := srv.Dispatch(context.Background(), Peer{}, Intent{OperationID: "op_rec_unserved", Method: "recover"})
 	requireCode(t, err, CodeCapabilityUnsupported)
+}
+
+func TestValidPIDBounds(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		pid     int
+		windows bool
+		want    bool
+	}{
+		{-1, false, false},
+		{-1, true, false},
+		{0, false, false},
+		{0, true, false},
+		{1, false, true},
+		{1, true, true},
+		{4242, false, true},
+		{4242, true, true},
+		{math.MaxInt32, false, true},
+		{math.MaxInt32, true, true},
+		{math.MaxInt32 + 1, false, false},
+		{math.MaxInt32 + 1, true, true},
+		{math.MaxUint32, false, false},
+		{math.MaxUint32, true, true},
+		{math.MaxUint32 + 1, false, false},
+		{math.MaxUint32 + 1, true, false},
+	}
+	for _, c := range cases {
+		if got := validPIDFor(c.pid, c.windows); got != c.want {
+			t.Errorf("validPIDFor(%d, windows=%v) = %v, want %v", c.pid, c.windows, got, c.want)
+		}
+	}
+	// The platform wrapper agrees with the table on this platform.
+	if validPID(0) || validPID(-5) || !validPID(1) {
+		t.Fatalf("validPID disagrees on 0/-5/1")
+	}
+}
+
+func TestInvalidPIDsProbeUnknown(t *testing.T) {
+	t.Parallel()
+	t.Run("invalid observed PID quarantines", func(t *testing.T) {
+		t.Parallel()
+		f := newRecoverState(t, "run_rec_badpid_obs", "att_rec_badpid_obs")
+		killWorker(t, f, nil, 2)
+		deadStart := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+		writeWorkerJSON(t, f.stopState, workers.Identity{SchemaVersion: 1, RunID: f.runID,
+			AttemptID: f.attempt, PID: -1, StartTime: deadStart,
+			LaunchToken: f.launchToken, Nonce: "someone-elses-nonce"})
+		outcome, err := f.reconcile(t)
+		requireCode(t, err, CodeOwnershipUnresolved)
+		if outcome != RecoverQuarantined {
+			t.Fatalf("Reconcile = %q, want quarantined: a garbage observed PID proves nothing", outcome)
+		}
+		if rows := attemptRows(t, f.db, f.runID); len(rows) != 1 {
+			t.Fatalf("run holds %d attempts, want one: no admission on an unprovable probe", len(rows))
+		}
+	})
+	t.Run("invalid journaled PID quarantines", func(t *testing.T) {
+		t.Parallel()
+		f := newRecoverState(t, "run_rec_badpid_jrn", "att_rec_badpid_jrn")
+		deadStart := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+		appendNativeLaunched(t, f.j, f.runID, f.attempt, -1, deadStart, nil, 2)
+		writeWorkerJSON(t, f.stopState, workers.Identity{SchemaVersion: 1, RunID: f.runID,
+			AttemptID: f.attempt, PID: -1, StartTime: deadStart,
+			LaunchToken: f.launchToken, Nonce: f.rawNonce})
+		outcome, err := f.reconcile(t)
+		requireCode(t, err, CodeOwnershipUnresolved)
+		if outcome != RecoverQuarantined {
+			t.Fatalf("Reconcile = %q, want quarantined: a garbage journaled PID proves nothing", outcome)
+		}
+		if rows := attemptRows(t, f.db, f.runID); len(rows) != 1 {
+			t.Fatalf("run holds %d attempts, want one: no admission on an unprovable probe", len(rows))
+		}
+	})
 }

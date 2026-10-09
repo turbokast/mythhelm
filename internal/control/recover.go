@@ -10,8 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -559,11 +561,35 @@ func parseLaunchedPayload(raw json.RawMessage) (pid int, start time.Time, native
 	return p.WorkerPID, p.WorkerStart, p.NativePID != nil && *p.NativePID != 0, true
 }
 
+// validPID reports whether pid can name a real process on this platform:
+// positive and within the platform PID width — a DWORD on Windows, a
+// pid_t elsewhere. Anything else fails closed to unknown in the liveness
+// probes, so a garbage PID can neither wrap to another process in the
+// Windows uint32 conversion nor read as a confident gone.
+func validPID(pid int) bool {
+	return validPIDFor(pid, runtime.GOOS == "windows")
+}
+
+// validPIDFor is validPID with the platform as a parameter, so the bounds
+// table-test portably.
+func validPIDFor(pid int, windows bool) bool {
+	if pid <= 0 {
+		return false
+	}
+	if windows {
+		return int64(pid) <= math.MaxUint32
+	}
+	return pid <= math.MaxInt32
+}
+
 // probeLiveness asks the OS about the journaled worker PID: a "live:"
 // marker carrying the probed start time, "gone" for a dead or reused PID,
 // or "unknown" when nothing can be proven.
 func probeLiveness(launched *launchedIdentity) string {
 	if launched == nil {
+		return "unknown"
+	}
+	if !validPID(launched.pid) {
 		return "unknown"
 	}
 	start, err := workers.ProcessStartTime(launched.pid)
@@ -588,6 +614,9 @@ func probeLiveness(launched *launchedIdentity) string {
 func probeObservedLiveness(observed *workers.Identity) string {
 	if observed == nil {
 		return "none"
+	}
+	if !validPID(observed.PID) {
+		return "unknown"
 	}
 	start, err := workers.ProcessStartTime(observed.PID)
 	if errors.Is(err, workers.ErrNoProcess) {
