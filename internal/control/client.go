@@ -99,11 +99,20 @@ func dialOrSpawn(ctx context.Context, t Transport, endpoint string, start func()
 	}
 }
 
+// spawnEnvKeys are the variables that locate the state root and the endpoint:
+// on Unix the XDG and home variables, on Windows the temp directory (instance
+// lock), the user name and %LocalAppData% (state root); SystemRoot keeps the
+// Windows runtime working.
+var spawnEnvKeys = []string{
+	"MYTHHELM_HOME", "XDG_RUNTIME_DIR", "XDG_STATE_HOME", "HOME", "TMPDIR",
+	"TEMP", "TMP", "USERNAME", "USERPROFILE", "LocalAppData", "SystemRoot",
+}
+
 // spawnEnv is the environment a supervisor starts with: the variables that
 // locate its state and its socket, nothing else.
 func spawnEnv() []string {
 	var env []string
-	for _, k := range []string{"MYTHHELM_HOME", "XDG_RUNTIME_DIR", "XDG_STATE_HOME", "HOME", "TMPDIR"} {
+	for _, k := range spawnEnvKeys {
 		if v, ok := os.LookupEnv(k); ok {
 			env = append(env, k+"="+v)
 		}

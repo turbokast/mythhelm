@@ -3,8 +3,6 @@
 package control
 
 import (
-	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -111,7 +109,7 @@ func (t *unixTransport) Dial(path string) (Conn, error) {
 		_ = nc.Close()
 		return nil, fmt.Errorf("control: dial %s: %s: supervisor uid %d is not %d", path, codePermissionDenied, p.UID, t.uid)
 	}
-	return &unixConn{c: nc, peer: p}, nil
+	return &streamConn{c: nc, peer: p}, nil
 }
 
 type unixListener struct {
@@ -133,7 +131,7 @@ func (l *unixListener) Accept() (Conn, error) {
 			l.refuse(nc)
 			continue
 		}
-		return &unixConn{c: nc, peer: p}, nil
+		return &streamConn{c: nc, peer: p}, nil
 	}
 }
 
@@ -168,102 +166,4 @@ func deny(nc *net.UnixConn) {
 	}
 	_ = nc.CloseWrite()
 	_, _ = io.CopyN(io.Discard, nc, v2contract.MaxFrameBytes+prefixLen)
-}
-
-type unixConn struct {
-	c    *net.UnixConn
-	peer Peer
-}
-
-func (c *unixConn) Peer() Peer   { return c.peer }
-func (c *unixConn) Close() error { return c.c.Close() }
-
-func (c *unixConn) Request(ctx context.Context, frame []byte) ([]byte, error) {
-	if err := checkOutgoing(frame); err != nil {
-		return nil, err
-	}
-	defer c.watch(ctx)()
-	if _, err := c.c.Write(frame); err != nil {
-		return nil, fmt.Errorf("control: send request: %w", ctxErr(ctx, err))
-	}
-	return c.readFrame(ctx, false)
-}
-
-func (c *unixConn) Receive(ctx context.Context) ([]byte, error) {
-	defer c.watch(ctx)()
-	return c.readFrame(ctx, true)
-}
-
-func (c *unixConn) Respond(frame []byte) error {
-	if err := checkOutgoing(frame); err != nil {
-		return err
-	}
-	if _, err := c.c.Write(frame); err != nil {
-		return fmt.Errorf("control: send response: %w", err)
-	}
-	return nil
-}
-
-// watch applies ctx's deadline and cancellation to the connection and returns
-// the function that releases them.
-func (c *unixConn) watch(ctx context.Context) func() {
-	if d, ok := ctx.Deadline(); ok {
-		_ = c.c.SetDeadline(d)
-	}
-	stop := context.AfterFunc(ctx, func() { _ = c.c.SetDeadline(time.Unix(1, 0)) })
-	return func() {
-		stop()
-		_ = c.c.SetDeadline(time.Time{})
-	}
-}
-
-// readFrame reads one length-prefixed frame. The prefix is checked against
-// MaxFrameBytes before the payload is allocated or read (NFR-1); ingress
-// frames additionally pass CheckIngress.
-func (c *unixConn) readFrame(ctx context.Context, ingress bool) ([]byte, error) {
-	var prefix [prefixLen]byte
-	if _, err := io.ReadFull(c.c, prefix[:]); err != nil {
-		return nil, fmt.Errorf("control: read frame prefix: %w", ctxErr(ctx, err))
-	}
-	n := binary.BigEndian.Uint32(prefix[:])
-	if n > v2contract.MaxFrameBytes {
-		return nil, fmt.Errorf("control: frame bytes %d exceed limit %d", n, v2contract.MaxFrameBytes)
-	}
-	frame := make([]byte, prefixLen+int(n))
-	copy(frame, prefix[:])
-	if _, err := io.ReadFull(c.c, frame[prefixLen:]); err != nil {
-		return nil, fmt.Errorf("control: read frame payload: %w", ctxErr(ctx, err))
-	}
-	if ingress {
-		if err := CheckIngress(frame); err != nil {
-			return nil, err
-		}
-	}
-	return frame, nil
-}
-
-// ctxErr prefers the context's error: cancellation reaches the connection as
-// an I/O deadline error that hides the cause.
-func ctxErr(ctx context.Context, err error) error {
-	if cerr := ctx.Err(); cerr != nil {
-		return cerr
-	}
-	return err
-}
-
-// checkOutgoing rejects a frame whose length prefix is missing, does not match
-// the bytes that follow, or exceeds MaxFrameBytes: such a frame would
-// desynchronise the stream for every later frame.
-func checkOutgoing(frame []byte) error {
-	if len(frame) < prefixLen {
-		return fmt.Errorf("control: outgoing frame has %d bytes, shorter than the %d-byte prefix", len(frame), prefixLen)
-	}
-	n := binary.BigEndian.Uint32(frame[:prefixLen])
-	if n > v2contract.MaxFrameBytes {
-		return fmt.Errorf("control: outgoing frame bytes %d exceed limit %d", n, v2contract.MaxFrameBytes)
-	}
-	if int(n) != len(frame)-prefixLen {
-		return fmt.Errorf("control: outgoing frame prefix says %d bytes, payload has %d", n, len(frame)-prefixLen)
-	}
-	return nil
 }

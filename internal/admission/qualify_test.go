@@ -460,11 +460,11 @@ func TestExpiredEvidenceIgnored(t *testing.T) {
 	requireVerdict(t, stale, admission.Blocked, "entitlement_not_proven")
 
 	// The expired-only record consults exactly like a not-proven one.
-	comparable := openRegistry(t, t.TempDir())
+	plainReg := openRegistry(t, t.TempDir())
 	unprovenRec := liveRecord(key, []qualify.Evidence{}, liveStop(true))
 	unprovenRec.Entitlement = qualify.Column{Verdict: qualify.NotProven, Evidence: []qualify.Evidence{}}
-	storeRecord(t, comparable, unprovenRec)
-	plain := resolve(t, comparable, probe, manifest, evidence, admission.BillingSubscriptionOnly, admission.ProfileTrustedHost)
+	storeRecord(t, plainReg, unprovenRec)
+	plain := resolve(t, plainReg, probe, manifest, evidence, admission.BillingSubscriptionOnly, admission.ProfileTrustedHost)
 	requireVerdict(t, plain, stale.Verdict, stale.Reason)
 
 	fresh := openRegistry(t, t.TempDir())
