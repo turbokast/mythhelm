@@ -29,6 +29,7 @@ const (
 	CodeRevisionConflict       Code = "revision_conflict"
 	CodePermissionDenied       Code = "permission_denied"
 	CodeCapabilityUnsupported  Code = "capability_unsupported"
+	CodeProcessLost            Code = "process_lost"
 	CodePersistenceUnavailable Code = "persistence_unavailable"
 	CodeAllowanceExhausted     Code = "allowance_exhausted"
 )
@@ -110,8 +111,9 @@ func ledgerFrom(ctx context.Context) (*sql.DB, error) {
 // and the operation's result commit in one transaction (Mutate joins it from
 // the handler's context), so a failure before the commit leaves nothing
 // behind and the operation_id can be retried. An identical repeat (same
-// method, object, params, expected_revision and generation) returns the
-// stored Result; a reused operation_id with different arguments, and an
+// method, object, params, expected_revision, generation and capability
+// token) returns the stored Result; a reused operation_id with different
+// arguments, and an
 // expected_revision that is not the object's current revision, return
 // revision_conflict without running h. Concurrent duplicates serialise on
 // the write lock: the loser returns the winner's stored Result. A malformed
@@ -149,7 +151,11 @@ func intentDigest(i Intent) string {
 	if i.Generation != nil {
 		generation = strconv.FormatInt(*i.Generation, 10)
 	}
-	for _, part := range []string{i.Method, i.Object, params.String(), strconv.FormatInt(i.ExpectedRevision, 10), generation} {
+	// The token digest binds the stored result to the authorising token: a
+	// repeat under a different (or missing) token is a conflicting reuse,
+	// never a replay of another caller's result. An empty token digests
+	// stably, so run-owned intents that carry no token still replay.
+	for _, part := range []string{i.Method, i.Object, params.String(), strconv.FormatInt(i.ExpectedRevision, 10), generation, tokenDigest(i.CapabilityToken)} {
 		_, _ = fmt.Fprintf(sum, "%d:%s;", len(part), part)
 	}
 	return hex.EncodeToString(sum.Sum(nil))
