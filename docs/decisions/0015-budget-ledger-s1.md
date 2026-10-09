@@ -58,7 +58,9 @@ auto-retry (would contradict the exactly-once launch pins).
 **D14 — the reserve gate covers material replans only.** Before dispatching a
 material replan after the first verification, the run must show execution time
 left covering one more verification pass, else it blocks with
-`completion_reserve_shortfall`. Repairs are completion work, not optional work:
+`completion_reserve_shortfall`, and a dispatched replan runs under a derived
+deadline — the execution deadline minus the verify-pass timeout sum — so the
+reserve survives the replan. Repairs are completion work, not optional work:
 gating them on the full repair ceiling would allow at most one repair and
 contradict the admitted 3-repair ceiling. Rejected: gating every
 post-verification attempt (the contradiction) and a count-based replan

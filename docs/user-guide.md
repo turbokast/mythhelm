@@ -126,9 +126,10 @@ decisions behind both postures are in
 
 ### Budget ledger
 
-Every run keeps a budget ledger in the journal: typed usage rows, one quota
-reservation, one envelope row and, when an allowance runs out, one exhausted
-bucket. The ledger records what was observed and what was decided. It never
+Every admitted run keeps a budget ledger in the journal: typed usage rows
+recorded when available, one quota reservation, one envelope row and, when an
+allowance runs out, one exhausted bucket. A run refused at admission — for
+example when its reservation hold fails — leaves no ledger rows. The ledger records what was observed and what was decided. It never
 claims a provider balance, a remaining quota or a price that was actually
 charged; anything MYTHHELM did not observe is reported as `unknown`, never as
 zero.
@@ -169,12 +170,16 @@ strictly: unknown keys, invalid durations and negative counts refuse admission.
 Precedence is flags, then file, then built-ins. Launches past a ceiling are
 refused and the run becomes `blocked` with a reason naming the exhausted
 kind (`envelope_repairs_exhausted`, `envelope_replans_exhausted`,
-`envelope_transport_retries_exhausted`, `envelope_deadline_exceeded`); only a
-recorded operator extension raises a ceiling.
+`envelope_transport_retries_exhausted`, `envelope_deadline_exceeded`).
+Extending a run requires a recorded user or standing-grant decision; S1
+currently supports only the recorded `run.extension_granted` user decision —
+flags and configuration changes cannot raise a ceiling mid-run.
 
 **Completion reserve.** Before dispatching a material replan after the first
 verification, MYTHHELM checks that the execution time left covers one more
-verification pass. The `reserve:` line and the receipt's `billing.reserve`
+verification pass, and a dispatched replan then runs under a derived deadline
+— the execution deadline minus the verify-pass timeout sum — so the reserve
+survives the replan. The `reserve:` line and the receipt's `billing.reserve`
 show this estimate (`verify pass (...) + N repairs`), labelled
 `estimate, not a reserve of provider quota`. It is planning arithmetic, not a
 claim on provider capacity; repairs are never gated by it. For checked runs
