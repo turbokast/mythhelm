@@ -33,3 +33,5 @@
   (TaskRevision shape), which this spec does not need.
 
 ## Discoveries
+
+- Task 2: plain `mount(MS_REMOUNT|MS_BIND|MS_REC)` does not recurse, so the read-only root uses `mount_setattr(AT_RECURSIVE)` (Linux 5.12+); an older kernel makes `ProbeLinux` report the denied `readonly` step. `NO_NEW_PRIVS` is what stops root regaining capabilities at exec.

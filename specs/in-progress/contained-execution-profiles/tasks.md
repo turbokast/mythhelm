@@ -85,7 +85,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `internal/contain/contain.go`, `internal/contain/contain_test.go`, `specs/in-progress/contained-execution-profiles/tasks.md`, `specs/in-progress/contained-execution-profiles/handoff.md`.
 
-### Task 2 — Linux boundary mechanism
+### Task 2 — Linux boundary mechanism ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (syscalls, namespaces, cross-platform probe)
@@ -148,6 +148,10 @@
 - **Invariants touched**: I05 (v2 §2: only this declared mechanism
   substantiates boundary claims); I14 (v2 §2: probe reports version or a
   precise reason, never a guess).
+- **Status**: ✅ Completed — `internal/contain` ships `ProbeLinux`, `EnterLinux`, `ContainSpec` and `PolicyFor` with the non-Linux stubs; PR #247.
+- **Implementation**: The root goes read-only with `mount_setattr(AT_RECURSIVE)` and the workdir and auth files are re-attached from detached `open_tree` clones, so paths under `/tmp` survive the tmpfs. `NO_NEW_PRIVS` is load-bearing: without it root regains capabilities at exec. Commit c68af2e.
+- **Spec deviations**: Beyond the task's design `Produces`, `contain.ProbeEnv` and `contain.RunProbeChild` are exported: the probe re-executes the current binary, whose entry point must call `RunProbeChild` when `ProbeEnv` is set. The mount-step interface, `probeResult` and `probeChild` live in `policy.go` so the denial tests compile on every OS. The wiring is for Task 4; its acceptance does not name it yet.
+- **Files modified**: `internal/contain/enter_linux.go`, `internal/contain/enter_other.go`, `internal/contain/linux_test.go`, `internal/contain/policy.go`, `internal/contain/policy_test.go`, `specs/in-progress/contained-execution-profiles/tasks.md`, `specs/in-progress/contained-execution-profiles/handoff.md`, `specs/in-progress/contained-execution-profiles/scratchpad.md`.
 
 ### Task 3 — Filtering egress proxy
 

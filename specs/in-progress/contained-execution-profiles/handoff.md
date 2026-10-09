@@ -15,7 +15,11 @@
 
 ## Task 2 — Linux boundary mechanism
 
-<!-- pending -->
+- **Produces**: `contain.ProbeLinux`, `EnterLinux(ContainSpec) error`, `ContainSpec{Path, Args, Dir, Env, Policy}` (`Args` is the full argv), `PolicyFor`, plus exported `ProbeEnv` and `RunProbeChild`; unexported `nsSysProcAttr()` returns the user+mount `SysProcAttr` (nil off Linux).
+- **For dependents**: `EnterLinux` must run in a process already started with `nsSysProcAttr()`; it needs an absolute `HOME` in `Env`, existing workdir and `HOME` paths outside `/tmp`, and auth-bind targets under `HOME`. It never returns on success.
+- **Task 4 must**: call `RunProbeChild` from `contain.Main` / `cmd/mythhelm` when `ProbeEnv` is set (`ProbeLinux` runs `<self> __contain`), or `ProbeLinux` reports a spurious failure; export or reuse `nsSysProcAttr` for the worker spawn.
+- **Tests**: the contain test binary acts as its own helper (`TestMain` modes) — the same pattern fits Task 4.
+- **Deviations**: see the entry; the wiring gap above is the only one that changes a later task's input.
 
 ## Task 3 — Filtering egress proxy
 
