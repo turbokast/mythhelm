@@ -71,3 +71,9 @@ against the recorded schedule (no scheduler daemon in S1; D13).
   marker. Task 11's AT-13 counter test needs a `fake.go` decoder extension
   (a spec deviation, as Task 8's `fake.error` frame was) or it can only
   assert the marker, not accumulated deltas.
+- Task 11: confirmed — the test pins the exact marker set with receipt/CLI
+  wiring, and the decoder extension stays unowned follow-up (see the Task
+  11 handoff). Second trap: jsonl run stdout always contains
+  `paid_overage_prevention` (capability field, `unsupported`), so a literal
+  whole-stdout `overage` grep can only run `--plain`; notices print on
+  stdout in plain mode, stderr in jsonl mode.
