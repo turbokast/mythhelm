@@ -303,7 +303,7 @@ func requireGateRefusal(t *testing.T, err error, reason string) {
 // returns the run as projected afterwards.
 func (w *gateWorld) blockedByGate(t *testing.T, gateErr error) journal.RunRow {
 	t.Helper()
-	p := &pipeline{d: admission.Decision{RunID: w.runID}, j: w.j, prod: w.prod, h: Hooks{Event: func(journal.Event) {}, Notice: func(string) {}}, out: Outcome{RunID: w.runID, State: RunExecuting}}
+	p := &pipeline{d: admission.Decision{RunID: w.runID, RunDir: t.TempDir()}, j: w.j, prod: w.prod, h: Hooks{Event: func(journal.Event) {}, Notice: func(string) {}}, out: Outcome{RunID: w.runID, State: RunExecuting}}
 	if err := p.blockLaunch(t.Context(), gateErr); err == nil {
 		t.Fatal("blockLaunch returned nil for a refused launch")
 	}

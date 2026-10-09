@@ -184,7 +184,7 @@
 - **Spec deviations**: `internal/supervisor/pipeline.go` is outside the task's Files list: `Hooks.Extension` lives there, as `RecoverWithHooks` has no other channel for the operator's decision.
 - **Files modified**: `internal/admission/admission.go`, `internal/admission/admission_test.go`, `internal/admission/projectconfig.go`, `internal/admission/projectconfig_test.go`, `internal/cli/run.go`, `internal/cli/run_envelope_test.go`, `internal/supervisor/envelope.go`, `internal/supervisor/envelope_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/recover.go`, `internal/supervisor/recover_envelope_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
-### Task 7 — Envelope counting and launch gate
+### Task 7 — Envelope counting and launch gate ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (deadline/stop interplay, gate on the launch path)
@@ -207,6 +207,10 @@
   - `TestDeadlineExpiryBlocks`: an expired deadline blocks with `envelope_deadline_exceeded` via the stop ladder; candidates preserved. Fails before: no deadline (run proceeds).
 - **Test plan**: Temp state dirs; frozen clocks for deadline tests (no sleeps).
 - **Invariants touched**: I21 (v2 §10.3: finite execution, repair, replan, transport envelopes enforced); I06 (v2 §2: deadline stop runs the existing stop ladder, unconfirmed until reconciled); I02 (v2 §2: over-ceiling launch refused).
+- **Status**: ✅ Completed — `GateLaunch` refuses over-ceiling and past-deadline launches before any intent, repairs and replans are counted, progress retries accumulate, and the execution deadline stops the attempt through the stop ladder into a blocked run; PR #259.
+- **Implementation**: `gateLaunchAt` reads the envelope row, takes the row's raised value for any kind with a recorded extension, checks the deadline then the counts, and counts an allowed attempt after the first. `projectTransportRetries` recomputes the total from each attempt's largest `retries` report. `watch` arms a deadline timer; `endStop` ends a deadline stop as blocked. Commit 56008ef.
+- **Spec deviations**: (1) The pipeline runs one attempt per run, so repair and replan refusals are tested on `GateLaunch` and `blockLaunch`, and the pipeline path with an aged clock (a first-launch refusal) and the deadline stop. (2) Task 4's `TestAdmissionWritesInitialEnvelope` no longer asserts an empty `FirstStartAt`, since the run now records its first start (Task 4's hand-off said Task 7 would). (3) The execution ceiling is stored in whole seconds, so the row cannot hold a sub-second ceiling; the gate uses the resolved duration unless an extension was granted.
+- **Files modified**: `internal/supervisor/envelope.go`, `internal/supervisor/envelope_test.go`, `internal/supervisor/ingest.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/pipeline_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
 ### Task 8 — Exhaustion path: preserve, block, schedule, never pay
 
