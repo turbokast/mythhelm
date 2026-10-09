@@ -11,6 +11,7 @@
 | 3 | `--require-*` flag for users who need the no-egress guarantee as a single command | Not in this spec (honesty register); MH-22 or follow-up may add | Maintainer / nothing in v1 |
 | 4 | Exact first-party endpoint host:port for the proxy allowlist | Resolved from the qualification record at admission; unknown endpoint blocks contained admission (I02) | Task 3+5 / proxy allowlist |
 | 5 | Journal migration number: 0003 in the current tree (only 0001/0002 at `SchemaVersion = 2`); MH-21 streams plan 0003/0004 and MH-16 pins `0005_ledger.sql` on that chain | Task 7 takes the next free number at its start; whoever lands second renumbers | Task 7 |
+| 6 | PID namespace (or other signal restriction) for same-UID sibling isolation | v1 = group ownership + stop ladder only; same-UID signalling is a disclosed residual (§6 honesty register) | Maintainer / nothing in v1 |
 
 ## Research notes
 

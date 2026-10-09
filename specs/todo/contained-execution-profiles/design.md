@@ -1,4 +1,4 @@
-# Contained Execution Profiles — Design
+## Contained Execution Profiles — Design
 
 > How `restricted` and `inspect` get enforced, adversarially tested boundaries
 > on Linux with per-platform native providers that refuse where unavailable
@@ -88,16 +88,19 @@ Per-platform native, no container dependency (Q1, D2). The worker spawns
 `ContainSpec` on stdin (same ≤1 MiB `DisallowUnknownFields` envelope as
 `Launch`). `__contain` then, as root in its own namespaces:
 
-- Filesystem: bind-remount `/` read-only inside the mount namespace (host
-  unaffected); bind `Workdir` read-write (`restricted`) or read-only remount
-  (`inspect`, Q2); fresh tmpfs `/tmp`; scratch tmpfs `$HOME` carrying only
-  the admitted auth binds (§2.6). After setup and before exec, drop all
-  capabilities (empty effective and permitted sets) so the native cannot
-  remount; `NO_NEW_PRIVS` via prctl additionally blocks setuid privilege
-  gain.
+- Filesystem: recursively (`MS_REC`) bind-remount `/` read-only inside
+  the mount namespace (host unaffected), so inherited writable child mounts
+  (e.g. `/dev/shm`) are read-only too; then bind `Workdir` read-write
+  (`restricted`) or read-only remount (`inspect`, Q2); fresh tmpfs `/tmp`;
+  scratch tmpfs `$HOME` carrying only the admitted auth binds (§2.6). After
+  setup and before exec, drop all capabilities (empty effective and
+  permitted sets) so the native cannot remount; `NO_NEW_PRIVS` via prctl
+  additionally blocks setuid privilege gain.
 - Process: existing `Setpgid` ownership plus the user namespace (contained
-  processes hold no capabilities outside it, so no signalling or ptracing
-  host siblings) and the stop ladder unchanged (I06, I18).
+  processes hold no capabilities outside it, so no cross-UID signalling or
+  host-wide capability actions) and the stop ladder unchanged (I06, I18).
+  Signalling same-UID host siblings is NOT blocked in v1 — there is no PID
+  namespace; it is the honesty-register residual (§6).
 - Credential: the existing env allowlist/denylist (`internal/security/env.go`)
   plus the hidden HOME: ambient credential files are unreachable; only
   `AuthBinds` exist.
@@ -222,8 +225,9 @@ never reported (AC-5.2).
 
 `tests/e2e/contain_linux_test.go` (linux-tagged) runs fixture attacks against
 a real contained launch and asserts each FAILS: filesystem write outside the
-workdir, `inspect` workdir write, subprocess (`sh -c`) escape, credential
-file read, evil-host fetch through the proxy env. Every fixture also runs
+workdir, write through an inherited writable child mount, `inspect` workdir
+write, subprocess (`sh -c`) escape, credential file read, evil-host fetch
+through the proxy env. Every fixture also runs
 against `trusted-host` and asserts the attack SUCCEEDS — the failing
 counterfactual proving the test bites. Refusal tests (all OSes) assert exit 7
 with each missing coverage named. v1 evidence records (boundary version,
@@ -358,7 +362,7 @@ MH-22 consumes: receipt `execution_bundle.boundary` and
 | ID | Decision | Rationale |
 |---|---|---|
 | D1 | Boundary attaches in the worker via a `__contain` re-exec, not in-worker syscalls or wrapper scripts | Go cannot run mount setup between fork and exec; a re-exec keeps one spawn site (`launcher.Launch`) and one spec envelope, matching the `__worker` pattern (ADR-0004) |
-| D2 | Linux = user+mount namespaces, RO `/` remount, RW binds, cap-drop + `NO_NEW_PRIVS`; no bubblewrap/container dependency | Q1 per-platform native; the RO-remount design needs no Landlock dependency and probes with a trial unshare plus the mount/remount/tmpfs setup |
+| D2 | Linux = user+mount namespaces, recursive-RO `/` remount, RW binds, cap-drop + `NO_NEW_PRIVS`; no bubblewrap/container dependency | Q1 per-platform native; the RO-remount design needs no Landlock dependency and probes with a trial unshare plus the mount/remount/tmpfs setup |
 | D3 | Network v1 = filtering CONNECT proxy + pinned env; direct egress disclosed, not blocked | Destination-aware blocking needs netns plumbing or eBPF, both out of reach unprivileged; v2 §7.4 explicitly allows refuse-where-unavailable, and a pinned proxy is still an enforced, testable pin |
 | D4 | macOS/Windows v1 = precise refusal, not best-effort containment | No readily usable native boundary (`sandbox-exec` deprecated surface, Job Objects are limits not isolation); NFR-1 blesses refuse-with-blocker over fake enforcement |
 | D5 | `inspect` = same provider, `ReadOnly` policy | Q2 shared mechanism; one evidence set, one adversarial suite |
@@ -373,6 +377,7 @@ MH-22 consumes: receipt `execution_bundle.boundary` and
 | Spec demand | Position |
 |---|---|
 | v2 §8.1 network coverage (full destination enforcement) | Partial: proxy pin enforced + tested; direct egress around the proxy is a disclosed residual recorded in receipt coverage, not a silent gap |
+| v2 §8.1 process coverage (sibling isolation) | Partial: process-group ownership + stop ladder enforced; signalling same-UID host siblings is unblocked (no PID namespace in v1), a disclosed residual, not a silent gap |
 | v2 §8.1 `restricted`/`inspect` on macOS/Windows | Refused in v1 with named missing coverage (NFR-1); follow-up owns Seatbelt/AppContainer qualification |
 | v2 §11.2 revision-bound acceptance | Evaluator isolation + digest only (Q3); binding is MH-22 |
 | AC-4.2 channels beyond the four enumerated | Named residual: helper executables on `PATH` inside the boundary view and terminal escape sequences in task text (latter already sanitized per v2 §8.3 in trusted views only) |

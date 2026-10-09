@@ -88,8 +88,8 @@
 - **Depends on**: Task 1
 - **Change**: Implement the Linux provider: `ProbeLinux` availability check
   (trial unshare plus the mount/remount/tmpfs setup) and `EnterLinux`
-  (user+mount namespaces, read-only `/` remount, read-write or read-only
-  workdir bind, tmpfs `/tmp` and scratch `$HOME` with auth binds,
+  (user+mount namespaces, recursive read-only `/` remount, read-write or
+  read-only workdir bind, tmpfs `/tmp` and scratch `$HOME` with auth binds,
   capability drop, `NO_NEW_PRIVS`), so contained launches get a real native/outer
   boundary (design §2.2, D2). `enter_linux.go` is Linux-only by filename
   suffix (the repo's `proc_linux.go` convention); `enter_other.go` carries
@@ -124,7 +124,8 @@
   - `TestEnterLinuxConfinesFilesystem` (linux-only, skips elsewhere): a
     `ContainSpec` running `/bin/sh -c 'touch $OUTSIDE/pwned; touch
     $WORKDIR/ok'` (`$OUTSIDE` a temp scratch dir outside the workdir) exits
-    with `$OUTSIDE/pwned` absent and `$WORKDIR/ok` present; the
+    with `$OUTSIDE/pwned` absent and `$WORKDIR/ok` present; a write through
+    an inherited writable child mount (tmpfs) fails too; the
     same spec with `ReadOnly` set leaves `$WORKDIR/ok` absent too; running
     the spec uncontained creates `$OUTSIDE/pwned`, proving the fixture bites.
   - `TestEnterLinuxDropsCapabilities` (linux-only, skips elsewhere): a
@@ -490,9 +491,10 @@
   - `internal/contain/records.go`
 - **Acceptance**:
   - `TestRestrictedEscapeFixturesFail` (linux-only): filesystem write
-    outside the workdir, `sh -c` subprocess escape, ambient credential-file
+    outside the workdir, write through an inherited writable child mount
+    (e.g. `/dev/shm`), `sh -c` subprocess escape, ambient credential-file
     read, and evil-host fetch through the proxy env each FAIL inside a
-    `restricted` run; the same four each SUCCEED on `trusted-host`
+    `restricted` run; the same five each SUCCEED on `trusted-host`
     (counterfactual in the same test binary — deleting the contained run
     makes the test fail).
   - `TestInspectWriteFails` (linux-only): a workdir write fails under
