@@ -9,11 +9,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
+	"github.com/turbokast/mythhelm/adapters/claudecode"
 	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/contain"
@@ -500,19 +503,7 @@ func (p *pipeline) attempt(ctx context.Context) error {
 		return err
 	}
 
-	lp := d.Proposal
-	proc, err := workers.Spawn(p.exe, d.StateDir, d.RunID, d.AttemptID, workers.Launch{
-		LaunchToken:  token,
-		TaskID:       d.TaskID,
-		AdapterID:    d.Adapter.ID,
-		Path:         lp.Spec.Path,
-		NativeSHA256: d.Probe.SHA256,
-		Args:         lp.Spec.Args,
-		Dir:          lp.Spec.Dir,
-		Env:          lp.Spec.Env,
-		PromptPath:   filepath.Join(d.RunDir, taskFile),
-		StopLadder:   lp.StopLadder,
-	})
+	proc, err := workers.Spawn(p.exe, d.StateDir, d.RunID, d.AttemptID, launchForAttempt(d, token))
 	if err != nil {
 		// Spawn kills a worker it could not hand the launch to, and a
 		// worker without its launch starts nothing.
@@ -553,6 +544,67 @@ func (p *pipeline) attempt(ctx context.Context) error {
 		p.h.Notice(fmt.Sprintf("worker pid %d has not exited %s after its attempt ended", proc.Pid, reapTimeout))
 	}
 	return nil
+}
+
+// launchForAttempt builds the worker launch for an admitted attempt. It is
+// pure in the AC-4.2 sense: every output derives from the admitted decision
+// or the fresh token, so journaled model output (attempt.native_result rows
+// included) is not an input and can never reach the launch.
+// pipeline_launch_test.go pins the consumed Decision fields and this
+// signature, so a new input fails the pin until reviewed.
+func launchForAttempt(d admission.Decision, token string) workers.Launch {
+	lp := d.Proposal
+	l := workers.Launch{
+		LaunchToken:  token,
+		TaskID:       d.TaskID,
+		AdapterID:    d.Adapter.ID,
+		Path:         lp.Spec.Path,
+		NativeSHA256: d.Probe.SHA256,
+		Args:         lp.Spec.Args,
+		Dir:          lp.Spec.Dir,
+		Env:          lp.Spec.Env,
+		PromptPath:   filepath.Join(d.RunDir, taskFile),
+		StopLadder:   lp.StopLadder,
+	}
+	if d.Profile.Contained {
+		policy, err := contain.PolicyForProfile(d.Profile.Name, d.Workdir, nil, "")
+		if err != nil {
+			// Unreachable for admitted decisions: the profile name is
+			// fixed, the workdir is validated absolute, and binds are nil.
+			// It must never fail open into an uncontained run, so the
+			// fallback is a zero policy: not absolute, hence an invalid
+			// launch the worker refuses with exit 2 before starting
+			// anything.
+			l.Containment = &contain.Policy{}
+		} else {
+			l.Containment = &policy
+		}
+		// ProxyAddr stays empty: the worker fills it with its ephemeral
+		// proxy choice at runtime (design §2.3). ProxyAllow stays empty
+		// too: empty denies all egress, and the claudecode route is refused
+		// for contained profiles, so no first-party endpoint is admitted
+		// yet.
+	}
+	if len(lp.Manifest.Digests) > 0 {
+		l.UserConfigDigests = maps.Clone(lp.Manifest.Digests)
+		l.UserConfigPaths = claudecode.AdmittedConfigPathsForEnv(specHome(lp.Spec.Env), d.Workdir, lp.Spec.Env)
+	}
+	return l
+}
+
+// specHome is the HOME entry of the admitted child env, or "" when the env
+// carries none. Later duplicates win, matching security.BuildEnv and the
+// worker's re-inventory HOME, so the paths below always bind the same home
+// the pre-exec re-hash re-inventories (design §2.9, I20). A missing HOME
+// yields no mapping, and the worker then fails the launch closed.
+func specHome(env []string) string {
+	home := ""
+	for _, kv := range env {
+		if value, ok := strings.CutPrefix(kv, "HOME="); ok {
+			home = value
+		}
+	}
+	return home
 }
 
 // planAttempt gates the next launch and returns its plan with the deadline

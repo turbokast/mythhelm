@@ -49,6 +49,8 @@ func TestMain(m *testing.M) {
 	}
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case contain.Command:
+			os.Exit(contain.Main(os.Args[2:]))
 		case "__check":
 			switch os.Args[2] {
 			case "pass":
@@ -409,13 +411,65 @@ func TestRunNoAdapterFlagExits2(t *testing.T) {
 	}
 }
 
+// requireBoundary skips unless the Linux boundary mechanism is available
+// here. Non-Linux callers pin the refusal instead and never call this.
+func requireBoundary(t *testing.T) {
+	t.Helper()
+	if a := contain.ProbeLinux(); !a.Supported {
+		t.Skipf("boundary unavailable here: %s", a.Reason)
+	}
+}
+
+// outsideTmpDir makes a directory outside /tmp, which the boundary replaces
+// with its own tmpfs, so a contained child HOME survives EnterLinux. It
+// tries the test temp root, the package directory and /var/tmp in turn and
+// skips when none qualifies.
+func outsideTmpDir(t *testing.T) string {
+	t.Helper()
+	tmp, err := filepath.EvalSymlinks("/tmp")
+	if err != nil {
+		t.Skipf("cannot resolve /tmp: %v", err)
+	}
+	outside := func(dir string) bool {
+		real, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			return false
+		}
+		rel, err := filepath.Rel(tmp, real)
+		return err == nil && (rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+	}
+	for _, parent := range []string{os.TempDir(), ".", "/var/tmp"} {
+		dir, err := os.MkdirTemp(parent, "suphome") //nolint:usetesting // must sit outside /tmp, which t.TempDir uses
+		if err != nil {
+			continue
+		}
+		if outside(dir) {
+			t.Cleanup(func() { _ = os.RemoveAll(dir) })
+			abs, err := filepath.Abs(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return abs
+		}
+		_ = os.RemoveAll(dir)
+	}
+	t.Skip("no writable directory outside /tmp for the contained test HOME")
+	return ""
+}
+
 // TestInspectProfileAdmission pins inspect's admission: admitted where its
 // boundary is recorded (Linux), an exit-7 refusal everywhere else.
 func TestInspectProfileAdmission(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
+	if runtime.GOOS == "linux" {
+		requireBoundary(t)
+		f.home = outsideTmpDir(t)
+	}
 	args := slices.DeleteFunc(f.fakeRun(), func(a string) bool { return a == "trusted-host" || a == "--execution-profile" })
-	code, _, stderr := f.run(t, append(args, "--execution-profile", "inspect")...)
+	// Inspect mounts the workdir read-only, so the run uses the write-free
+	// readonly scenario; happy's demo.txt write would fail by design.
+	code, _, stderr := f.run(t, append(args, "--execution-profile", "inspect", "--scenario", "readonly")...)
 	if runtime.GOOS == "linux" {
 		if !strings.Contains(stderr, "ended ready_for_review") {
 			t.Fatalf("exit %d, stderr %q; want inspect admitted and run", code, stderr)
@@ -437,6 +491,10 @@ func TestInspectProfileAdmission(t *testing.T) {
 func TestMissingProfileConsentNonInteractiveExit3(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
+	if runtime.GOOS == "linux" {
+		requireBoundary(t)
+		f.home = outsideTmpDir(t)
+	}
 	args := slices.DeleteFunc(f.fakeRun(), func(a string) bool { return a == "trusted-host" || a == "--execution-profile" })
 	code, _, stderr := f.run(t, args...)
 	if strings.Contains(stderr, "consent_required") {
@@ -1633,7 +1691,9 @@ func TestChecksRefusedUnderInspect(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("inspect is qualified on Linux only")
 	}
+	requireBoundary(t)
 	f := newFixture(t)
+	f.home = outsideTmpDir(t)
 	marker := filepath.Join(t.TempDir(), "check-ran")
 	contents := "schema_version = 1\n[[checks]]\nname = \"test\"\nargv = [" + strconv.Quote(os.Args[0]) +
 		", \"__check\", \"marker\", " + strconv.Quote(marker) + "]\ntimeout = \"5s\"\n"
@@ -1647,7 +1707,9 @@ func TestChecksRefusedUnderInspect(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := slices.DeleteFunc(f.checkedRun(digest, "--format", "jsonl"), func(a string) bool { return a == "trusted-host" || a == "--execution-profile" })
-	code, stdout, stderr := f.run(t, append(args, "--execution-profile", "inspect")...)
+	// Inspect mounts the workdir read-only, so the attempt runs the
+	// write-free readonly scenario; the checks are still refused.
+	code, stdout, stderr := f.run(t, append(args, "--execution-profile", "inspect", "--scenario", "readonly")...)
 	if code != 5 {
 		t.Fatalf("exit %d, stderr %q; want exit 5 (verification unavailable)", code, stderr)
 	}
