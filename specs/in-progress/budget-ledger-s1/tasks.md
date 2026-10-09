@@ -273,7 +273,7 @@
 - **Spec deviations**: Review round 1 (CodeRabbit, all three confirmed): (1) `EstimateReserve` returns `(ReserveEstimate, error)` and refuses with `ErrReserveOverflow` when the timeout sum cannot be represented — admission bounds each timeout below but not their sum, and a wrapped-negative reserve would defeat the gate; the caller blocks the launch per the documented I02 rule. (2) the `reserveStart` fixture floats with the test clock instead of a fixed 2026-10-09 date — the tests commit with the real clock, so the fixed date would fail every run past its deadline (proven by simulating a past fixture). (3) `launchPlan` carries the shortened `replanDeadline` and `commit` refuses once it has passed, so a slot is never consumed for an attempt with no drafting time; pinned by new `TestCommitRefusesPastReplanDeadline`. All of (3) lives in `internal/supervisor/envelope.go`, outside the task's Files: the replan deadline rides the commit path Task 7 built there, and no other file can refuse the slot. Review round 2 (CodeRabbit): the commit-path replan refusal reports `completion_reserve_shortfall` instead of the generic `envelope_deadline_exceeded`, matching the plan-path reason for the same limit.
 - **Files modified**: `internal/billing/reserve.go`, `internal/billing/reserve_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/envelope.go`, `internal/supervisor/envelope_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
-### Task 10 — Receipt and CLI ledger surfaces
+### Task 10 — Receipt and CLI ledger surfaces ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -295,6 +295,10 @@
   - `TestNoHardLimitAnywhere`: golden receipt + golden CLI output contain no hard-limit phrasing; the check anchors to the receipt `billing` object and the notice lines (not file-wide). Fails before: members absent.
 - **Test plan**: Golden JSON receipt plus golden notice lines; TUI packages untouched (no TUI files in this task).
 - **Invariants touched**: I09 (v2 §7.3: labels preserved to the surface; unknown never zero, AC-1.4/AC-7.1); I10 (v2 §2: no advertised hard limit, O3).
+- **Status**: ✅ Completed — receipts and `run` output render typed usage, the estimate-only reserve, unknown remaining and the retry schedule; PR #288.
+- **Implementation**: `RunBucket` names the run's bucket for both surfaces; the CLI lines emit from `executeRun` ahead of `run.result` through the Notice path. The receipt verify pass is exact for waived suites and unknown otherwise, because check timeouts are not journaled. Commit a7319ad; review fix fa54657; merged origin/main as 5d19245.
+- **Spec deviations**: (1) The receipt `reserve` carries the repair ceiling and the Task 9 note always, but the verify pass is exact only for `--no-checks` runs (0 checks, 0s) and `unknown` for checked runs: check names and timeouts live only in the in-memory Decision and no task journals them, so a checked receipt cannot reconstruct the pass (I09: unknown, never invented). (2) The four lines emit from `executeRun` immediately ahead of `finish`'s `run.result` rather than inside `finish`: `finish`'s signature is shared with `demo`/`recover` (outside this task's Files) and the admitted checks exist only in `executeRun`'s Decision. (3) The full-screen TUI and accessible-stream presentations do not render the lines: the TUI owns its screen, and the accessible path skips `finish` by design with its wiring in `tui.go` (outside this task's Files).
+- **Files modified**: `internal/supervisor/receipt.go`, `internal/supervisor/receipt_test.go`, `internal/cli/render.go`, `internal/cli/render_test.go`, `internal/cli/run.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`, `specs/in-progress/budget-ledger-s1/scratchpad.md`.
 
 ### Task 11 — AT-13 end-to-end and NFR-1 run-path latency
 

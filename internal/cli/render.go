@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/turbokast/mythhelm/internal/admission"
+	billingpkg "github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
 )
@@ -229,6 +231,51 @@ func plainEvent(ev journal.Event) string {
 		return "verification: " + p.text("result")
 	}
 	return cell(ev.Type)
+}
+
+// ledgerView is everything the end-of-run ledger notice lines render: the
+// run's usage rows, its completion reserve, and its bucket's retry schedule.
+// verifySumKnown is false when the timeout sum cannot be represented;
+// retryAt carries the reset time or "unknown" and matters only when the
+// bucket exhausted.
+type ledgerView struct {
+	usage          []journal.UsageRow
+	checks         int
+	verifySum      time.Duration
+	verifySumKnown bool
+	repairs        int
+	exhausted      bool
+	retryAt        string
+	retriesUsed    int
+}
+
+// lines renders the usage, reserve, remaining and next retry notice lines in
+// that order. Stored values are terminal-sanitised and empties render
+// unknown, never blank (I09); no line advertises a hard spending or token
+// bound (I10).
+func (v ledgerView) lines() []string {
+	var out []string
+	if len(v.usage) == 0 {
+		out = append(out, "usage: none recorded")
+	}
+	for _, o := range v.usage {
+		out = append(out, fmt.Sprintf("usage: %s %s %s (%s, %s)",
+			cellOrUnknown(o.Scope), cellOrUnknown(o.Quantity), cellOrUnknown(o.Unit),
+			cellOrUnknown(o.Label), cellOrUnknown(o.Source)))
+	}
+	sum := "unknown"
+	if v.verifySumKnown {
+		sum = v.verifySum.String()
+	}
+	out = append(out, fmt.Sprintf("reserve: verify pass (%d checks, %s) + %d repairs (%s)",
+		v.checks, sum, v.repairs, billingpkg.ReserveNote))
+	out = append(out, "remaining: unknown")
+	at := "none"
+	if v.exhausted {
+		at = cellOrUnknown(v.retryAt)
+	}
+	out = append(out, fmt.Sprintf("next retry: %s (used %d of %d)", at, v.retriesUsed, admission.MaxBucketRetries))
+	return out
 }
 
 func admissionLines(p payload) string {
