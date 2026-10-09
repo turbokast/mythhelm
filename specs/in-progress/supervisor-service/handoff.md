@@ -64,7 +64,13 @@ What later tasks must know:
 
 ## Task 5 — Intent server, idempotency ledger and sole-writer transactions
 
-<!-- pending -->
+- **Produces** (PR #255): `control.Intent` (+`Validate`), `Result`, `Handler`, `Execute`, `Mutate`, `Server` (`NewServer`, `Register`, `Dispatch`), `StatusHandler`, `AssignHandler`, `MintToken`, `CheckToken`, `EndpointPath`, `WithLedger`, and `control.Error` with `Code*` constants, in `control.go`, `ledger.go`, `server.go`. Migration `0004_supervisor.sql` (`operations`, `capability_tokens`, `run_assignments`), `SchemaVersion` 4.
+- **For dependents**: attach the ledger with `control.WithLedger(ctx, db)` before `Dispatch`/`Execute`; without it they fail closed. `Execute` returns a handler's `*control.Error` as both `Result.Error` and the error, and stores it: a repeat replays the same failure. Any other handler error is transient: the claim is released and a retry runs the handler again. Return `Result.Revision` (the object's new revision); `Execute` requires `expected_revision` to equal the object's latest recorded revision and refuses a second in-flight operation on the same object.
+- **For dependents**: `reservations` was created by `0003_ledger.sql` (budget-ledger-s1), not by this migration. It has no execution-host key and no `expired` status; Task 6 must rebuild or extend it before keying by host (design §8). Its accessors live in `internal/journal/ledger.go`.
+- **For dependents**: `control.Error` replaces `*v2contract.ControlError` until v2-contract-vocabulary task 6 lands; swap it then and keep the code strings. `control.Error` matches by code under `errors.Is`.
+- **For dependents**: a claim left by a crashed process stays `claimed`; its callers wait up to 30 seconds and then get `persistence_unavailable`. Reconciling such claims belongs to the supervisor startup path (stream 3 or 4).
+- **For dependents**: capability token digests live in `capability_tokens`, not on `attempts`; `MintToken` rotates on re-mint. `CheckToken` is for Task 6's handlers to call per request. The control socket path is `EndpointPath()`, beside the instance lock.
+- **Traps**: `internal/workers` already depends on `modernc.org/sqlite` through `journal.Event`; AC-6.1 is pinned by a source scan, not `go list`. Run tests with `ANTHROPIC_BASE_URL` unset and lint with `GOTOOLCHAIN=go1.27.1`; the status test sets `XDG_RUNTIME_DIR`, so it is not parallel.
 
 ## Task 6 — Reservations, capability tokens, authority filtering and lazy start
 
