@@ -318,14 +318,15 @@ func TestMapAdapterFailure(t *testing.T) {
 	if got.Error() != wantErr {
 		t.Errorf("Error() = %q, want %q", got.Error(), wantErr)
 	}
-	// Code — not message — drives transitions.
-	matched := false
-	switch got.Code {
-	case v2contract.CodeToolFailed:
-		matched = true
+	// Code — not message — drives transitions: the same code with a
+	// different cause takes the same branch.
+	other := v2contract.MapAdapterFailure(
+		v2contract.CodeToolFailed, "owner2", "op2", "adapter/other", errors.New("different"))
+	if other.Code != got.Code {
+		t.Errorf("same-code errors differ: %q vs %q", other.Code, got.Code)
 	}
-	if !matched {
-		t.Errorf("transition switch did not match code %q", got.Code)
+	if other.Error() == got.Error() {
+		t.Errorf("distinct failures share Error() text %q", got.Error())
 	}
 	ineligible := v2contract.MapAdapterFailure(
 		v2contract.CodeEntitlementIneligible, "owner1", "op1", "adapter/native", errors.New("nope"))
