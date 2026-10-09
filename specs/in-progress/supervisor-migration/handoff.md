@@ -146,7 +146,40 @@
 
 ## Task 6 — `mythhelm migrate` with hermetic preview
 
-<!-- pending -->
+- **Produces**: `preview.Plan` + `PreviewPlan(ctx, db)` in
+  `internal/migrate/preview/plan.go` (runs with derived task ids and
+  verbatim postures, 4 owner sites in drain order, pending schema steps,
+  backup target); `migrate.Apply(ctx, db, plan)` in
+  `internal/migrate/apply.go` (Drain → Backup → Import → Adopt with
+  `previewed → drained → imported → adopted` phase records);
+  `mythhelm migrate --preview/--apply [--yes] [--format]` in
+  `internal/cli/migrate.go` (+ `dispatch.go` registration) printing plan
+  and receipt (plain/jsonl); tests in `internal/cli/migrate_test.go`
+  and `tests/migrate_e2e_test.go`.
+- **For dependents**: every `internal/migrate` ledger write runs inside
+  `control.Mutate` (Task 7: no `sql.Open` in `apply.go`; `*sql.DB` use
+  is read-only `Query`; the only `Exec` paths are `tx.*` inside
+  `Mutate` plus `Backup`'s excluded `VACUUM INTO`). Quarantine
+  envelopes (`migration.quarantined`, deterministic
+  `migration-quarantined-<runID>`, producer `migration` generation 0)
+  persist in one post-backup `Mutate`; dedupe strips `quarantined_at`
+  before comparing. Resume: `drained` re-drains and reuses the backup
+  by digest, `imported` adopts directly, `adopted` no-ops; imports skip
+  by `task_revisions` markers. `migration_state` carries `started_at`,
+  `backup_path`, `build_version` after the first apply.
+- **For Task 7**: `preview` imports only stdlib + `v2contract`
+  (hermeticity pinned by `TestPreviewHermetic`); mirror constants
+  (`dbName`, schema version, migration filenames) are pinned by
+  `TestPreviewMirrorsPinned` — the next schema bump must sweep
+  `preview/plan.go` too. The e2e restores and compares v1 projections
+  byte-identically.
+- **Deviations that change a later task's inputs**: `Plan.Runs` is
+  `[]preview.Run`, not `[]migrate.ImportResult` (import cycle — same
+  JSON shape); quarantine append mirrors `appendTx` like Task 3's
+  `appendImported` (consolidation follow-up covers both); Task 4's
+  `TestApplyRefusedDuringMigration` now lives in
+  `internal/cli/migrate_test.go` (import cycle — assertions unchanged);
+  build-identity refusal is schema-only (build strings unordered).
 
 ## Task 7 — NFR-2 SQLite posture proof
 

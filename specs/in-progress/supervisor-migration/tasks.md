@@ -147,7 +147,7 @@
   - `Restore` drops stale `-wal`/`-shm` sidecars and installs via write-then-rename: both follow from "copies back" onto a live state dir and keep a failed restore from leaving a half-written ledger.
 - **Files modified**: `internal/migrate/backup.go`, `internal/migrate/backup_test.go`, `specs/in-progress/supervisor-migration/tasks.md`, `specs/in-progress/supervisor-migration/handoff.md`, `specs/in-progress/supervisor-migration/scratchpad.md`.
 
-### Task 6 — `mythhelm migrate` with hermetic preview
+### Task 6 — `mythhelm migrate` with hermetic preview ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (CLI surface, hermetic preview, resumable apply, packaged-binary e2e)
@@ -172,6 +172,19 @@
   - `TestApplyResumesAfterFailure`: a killed mid-import apply resumes without duplicating imported runs (import markers, never replay).
 - **Test plan**: `cli.Main` with temp state dirs; packaged-binary e2e; kill-injection resume test.
 - **Invariants touched**: I13 (v2 §2: preview needs no credentials or network); I12 (resume by markers, never replay); I23 (adopt hands the ledger to the service once).
+- **Status**: ✅ Completed — `migrate --preview`/`--apply` CLI with hermetic read-only plan, Drain → Backup → Import → Adopt receipt flow and marker-based resume; PR #297.
+- **Implementation**: `PreviewPlan` derives runs/postures, owner sites, pending schema steps and the backup target from a read-only handle (tolerates pre-v2 schemas; refuses newer with `schema_too_new`); `Apply` reuses `Drain`/`Backup`/`ImportRun`, persists `migration.quarantined` envelopes post-backup, records `previewed → drained → imported → adopted`, reuses the backup by digest on resume and aborts fatal on post-drain surprise runs; CLI prints plan + receipt (plain/jsonl) with exit mapping (newer-schema → 2, ownership → 6). Fixtures are true v1 databases (0001 only). Commits 18532a5, df8a3a5.
+- **Spec deviations**:
+  - `preview.Plan.Runs` uses the preview-local `Run` type (same JSON as `migrate.ImportResult`): importing `internal/migrate` from `preview` would cycle, since `Apply` consumes the plan.
+  - Quarantine envelopes append with statements mirroring `appendTx` (same reason as Task 3's `appendImported` deviation): Task 2's `appendTx` is unexported and unreachable cross-package, and db-level `Append` inside `Mutate` would contend. The consolidation follow-up now covers both mirrors.
+  - `internal/migrate/drain_test.go` (outside Files): moved `TestApplyRefusedDuringMigration` + `runApplyMain` to `internal/cli/migrate_test.go`, assertions unchanged — the migrate command made `cli` import `migrate`, so migrate's internal test files can no longer drive `cli.Main` (import cycle in test).
+  - `Plan.BackupTo` always names `mythhelm.db.bak-migration-v7`: apply migrates the schema first, so the backup is always post-migration version (reads "0004" as 0007 per Task 1).
+  - Build-identity downgrade refusal is schema-only: `build_version` is recorded in `migration_state` but never compared (build strings are unordered); only a newer schema refuses.
+  - Bare `migrate` previews; `--apply` prints the preview first and requires `--yes` (exit 0 without it, nothing written).
+  - The migration lock spans post-Drain through Adopt, not the `Drain` call itself (`Drain` acquires the same pair internally and flock re-acquire would refuse); a post-Drain surprise run aborts fatal with `ownership_unresolved` per the Task 4 handoff.
+  - Resume short-circuits: `imported` adopts directly, `adopted` succeeds as a no-op; `drained` re-drains for a fresh quiesce and report.
+  - `TestApplyResumesAfterFailure` simulates the kill with a mid-import `invalid_contract` failure (corrupt v1 row) + fix + re-apply through `cli.Main`, not a literal SIGKILL: the resume path (phase + markers + backup reuse) is identical and deterministic.
+- **Files modified**: `internal/migrate/preview/plan.go`, `internal/migrate/apply.go`, `internal/cli/migrate.go`, `internal/cli/dispatch.go`, `internal/cli/migrate_test.go`, `tests/migrate_e2e_test.go`, `internal/migrate/drain_test.go`, `specs/in-progress/supervisor-migration/tasks.md`, `specs/in-progress/supervisor-migration/handoff.md`, `specs/in-progress/supervisor-migration/scratchpad.md`.
 
 ### Task 7 — NFR-2 SQLite posture proof
 
