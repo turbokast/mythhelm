@@ -96,9 +96,13 @@ func AcquireInstance(dir string) (release func(), err error)
 ```
 
 Mechanism follows the `ownerlock.go` precedent (flock on Unix, LockFileEx on
-Windows). Stale locks (dead pid) are adoptable only after a liveness probe, and
-adoption bumps the boot generation, which fences stale control generations per
-v2 §3.1. Run ownership becomes assignments under the supervisor: the 4
+Windows). Stale locks (dead pid) are adopted on successful acquisition of the
+OS lock — a held lock proves the previous holder released, so no separate
+liveness probe gates adoption — and
+adoption bumps the boot generation, which is recorded, reported by `status`,
+and folded into the idempotency digest; enforcement (refusing stale
+generations) is deferred — informational until stream 4 (issue #282).
+Run ownership becomes assignments under the supervisor: the 4
 per-run `AcquireOwner` sites keep working during the migration period; stream 3
 drains them (honesty register).
 
@@ -380,7 +384,10 @@ unfiltered.
 |---|---|
 | AC-5.1 "run ownership as assignments" | Partially met: `assign` method and instance lock ship; the 4 per-run `AcquireOwner` sites remain until stream 3 drains them (no coexisting *service* writers, but the legacy path still runs pre-migration by design). |
 | AC-6.1 v2 event append in the mutation tx | Partially met: tx scope and outbox shape ship; the `Append` v2-acceptance change is a stream-3 task (OQ-9 decision, v2c§6). |
-| Windows pipe transport (OQ-7) | Blocked until the maintainer approves the go-winio dependency; Unix ships independently. |
+| AC-6.3 operator scope | Partially met: attempt-token callers are bounded to their repository; a token-less operator reads whatever repositories it presents (no per-repository entitlement store; disclosed in `SUPPORT.md`). |
+| Boot-generation fencing | Informational until stream 4: generation is recorded, reported and digested but never enforced (issue #282). |
+| Lock/socket state roots | Assumption: host-local. Two hosts sharing one `MYTHHELM_HOME` run two supervisors on one ledger (SQLite serializes; the logical one-writer breaks). |
+| Windows pipe transport (OQ-7) | Shipped: go-winio v0.6.3 approved; `transport_windows.go` fixture-tested (task 4). |
 | Windows service registration | Deferred: lazy process only (D5); follow-up after stream 4. |
 | Stop/recover control methods | Deferred to stream 4 (`supervised-stop-recover`); unknown methods return `capability_unsupported`. |
 | NFR-2 SQLite posture (WAL-reset proof, integrity checks) | Deferred to stream 3, which owns the migration-period ledger hardening. |

@@ -64,9 +64,11 @@ record (spec-authoring rule; design D8).
 - The ledger gains migrations 0004 (`operations`, `capability_tokens`,
   `run_assignments`) and 0005 (`reservations.execution_host`); both are
   additive.
-- Not done here: Windows transport (blocked on the go-winio dependency
-  decision), the stop and recover control methods (stream 4), draining the
+- Not done here: the stop and recover control methods (stream 4), draining the
   per-run owner sites (stream 3), and a per-repository entitlement store.
+  (Windows transport landed in this spec: go-winio v0.6.3 approved per OQ-7,
+  `transport_windows.go` shipped by task 4, matrix row `transport-windows-pipe`
+  fixture-tested.)
 
 NFR-3 platform rows (Go tests that pin each claim; `internal/control/SUPPORT.md`
 is the checked matrix, and `TestSupportMatrixMatchesEvidence` keeps it in step
@@ -78,6 +80,6 @@ with the code):
 | Process: lazy spawn, single supervisor under a start race | linux, darwin | `TestLazySpawnThenStatus`, `TestConcurrentSpawnBecomesClient`, `TestRootsRacingOneWinnerNeverBothAttach` |
 | Detach: the supervisor stays up and serves a new request after its client exits | linux, darwin | `TestSupervisorSurvivesClientExit` |
 | Transport and peer authentication | linux, darwin | `TestUnixRoundTrip`, `TestForeignUIDRejected`, `TestNoTCPListener` |
-| Windows named pipe | windows | blocked: `TestWindowsRowMatchesLanding` pins the row to the landing of task 4 |
+| Windows named pipe | windows | `TestPipeRoundTrip`, `TestPipeDACLCheckRejectsWorldPipe`, `TestPipePeerIsSameLogon`, `TestGoWinioPinned` |
 
 All run with `CGO_ENABLED=0`. No row is live-qualified.
