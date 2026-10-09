@@ -1,6 +1,7 @@
 package control_test
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"os"
@@ -70,6 +71,17 @@ func TestFrameAtExactly1MiBPasses(t *testing.T) {
 	requireMismatch(t, overErr, "MaxFrameBytes+1")
 	if !strings.Contains(overErr.Error(), "exceed limit") {
 		t.Fatalf("CheckIngress at MaxFrameBytes+1 error = %q, want size-limit mention", overErr)
+	}
+}
+
+func TestOversizeReportsSizeBeforeDecode(t *testing.T) {
+	// Oversize and malformed: the size gate runs before any parsing, so
+	// the violation reports the size error, never a decode error.
+	payload := append([]byte(`{"operation_id":`), bytes.Repeat([]byte("9"), v2contract.MaxFrameBytes)...)
+	err := control.CheckIngress(prefixFrame(payload))
+	requireMismatch(t, err, "oversize malformed")
+	if !strings.Contains(err.Error(), "exceed limit") {
+		t.Fatalf("error = %q, want size error to precede decode", err)
 	}
 }
 

@@ -95,6 +95,12 @@ func CheckIngress(frame []byte) error {
 }
 
 func checkIngress(frame []byte) error {
+	// Size first: reject oversize frames before parsing any of them, so
+	// enforcement never depends on the caller bounding input beforehand
+	// and an oversize frame reports the size error, not a decode error.
+	if err := v2contract.CheckFrameLimits(len(frame), 0, 0); err != nil {
+		return fmt.Errorf("control: ingress frame rejected: %w", err)
+	}
 	payload, err := splitPrefix(frame)
 	if err != nil {
 		return err
