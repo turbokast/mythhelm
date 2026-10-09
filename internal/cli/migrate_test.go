@@ -499,6 +499,29 @@ func closeHandles(dbs ...*sql.DB) {
 	}
 }
 
+// restoreWithRetry runs Restore, retrying briefly on failure. Windows
+// CI runners scan freshly closed files (Defender/indexer), holding the
+// live database open past the last close; the copy-back rename then
+// fails with "Access is denied" until the scan releases it. The retry
+// only outlasts that transient window: every attempt is side-effect
+// free until its rename (staging uses a fresh temp name, the removed
+// sidecars were provably empty), so a deterministic failure still fails
+// loudly after the last attempt.
+func restoreWithRetry(t *testing.T, info migrate.BackupInfo, dir string) {
+	t.Helper()
+	const attempts = 12
+	var err error
+	for i := range attempts {
+		if err = migrate.Restore(context.Background(), info, dir); err == nil {
+			return
+		}
+		t.Logf("restore attempt %d: %v", i+1, err)
+		time.Sleep(300 * time.Millisecond)
+	}
+	dumpRestoreFailure(t, dir, err)
+	t.Fatalf("Restore: %v", err)
+}
+
 // dumpRestoreFailure logs the catalogue detail (hidden from the Error
 // string) and the state dir contents, so a CI-only Restore failure
 // names its cause instead of just its code.
@@ -610,10 +633,7 @@ func TestBackupHoldsDrainedWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	closeHandles(db, writer, backup)
-	if err := migrate.Restore(context.Background(), info, dir); err != nil {
-		dumpRestoreFailure(t, dir, err)
-		t.Fatalf("Restore: %v", err)
-	}
+	restoreWithRetry(t, info, dir)
 	restored := openMigRaw(t, dir)
 	if got := v1Projections(t, restored); got != liveV1 {
 		t.Errorf("restored v1 projections differ:\n%s\n%s", got, liveV1)

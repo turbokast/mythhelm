@@ -174,6 +174,28 @@ func e2eV1Projections(t *testing.T, db *sql.DB) string {
 	return b.String()
 }
 
+// e2eRestoreWithRetry runs Restore, retrying briefly on failure (see
+// restoreWithRetry in internal/cli/migrate_test.go: Windows CI runners
+// hold freshly closed files open for scanning, and the copy-back
+// rename fails until they release it).
+func e2eRestoreWithRetry(t *testing.T, info migrate.BackupInfo, dir string) {
+	t.Helper()
+	const attempts = 12
+	var err error
+	for i := range attempts {
+		if err = migrate.Restore(context.Background(), info, dir); err == nil {
+			return
+		}
+		t.Logf("restore attempt %d: %v", i+1, err)
+		time.Sleep(300 * time.Millisecond)
+	}
+	if ce, ok := errors.AsType[*v2contract.ControlError](err); ok {
+		t.Logf("restore detail: code=%s operation=%s next=%q detail=%v",
+			ce.Code, ce.OperationID, ce.NextAction, ce.Detail)
+	}
+	t.Fatalf("Restore: %v", err)
+}
+
 // TestMigrateE2EPackagedBinary: fixture v1 dir → preview → apply → v2
 // assertions → restore → byte-identical v1 projections, against the
 // built binary.
@@ -279,13 +301,7 @@ func TestMigrateE2EPackagedBinary(t *testing.T) {
 	// Restore requires every handle closed: the last close checkpoints
 	// the WAL (no extra checkpoint handle — less file churn on Windows).
 	_ = db.Close()
-	if err := migrate.Restore(context.Background(), info, dir); err != nil {
-		if ce, ok := errors.AsType[*v2contract.ControlError](err); ok {
-			t.Logf("restore detail: code=%s operation=%s next=%q detail=%v",
-				ce.Code, ce.OperationID, ce.NextAction, ce.Detail)
-		}
-		t.Fatalf("Restore: %v", err)
-	}
+	e2eRestoreWithRetry(t, info, dir)
 	restored := openE2ERaw(t, filepath.Join(dir, journal.DBName))
 	if got := e2eV1Projections(t, restored); got != liveV1 {
 		t.Errorf("restored v1 projections differ:\n%s\n%s", got, liveV1)
