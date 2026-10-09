@@ -774,8 +774,9 @@ func TestLaunchRefusedWhenDeadlineExpiresBeforeCommit(t *testing.T) {
 
 // reserveWorld is a run whose execution clock started at reserveStart under a
 // 10-minute ceiling, gated by a pipeline that carries the given admitted
-// checks.
-var reserveStart = time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+// checks. The start floats with the test clock: the tests commit with the
+// real clock, so a fixed date would expire and fail every run past it.
+var reserveStart = time.Now().UTC().Truncate(time.Second)
 
 func newReserveWorld(t *testing.T, env journal.EnvelopeRow, attempts int64, verified bool, checks ...admission.CheckConfig) (*gateWorld, *pipeline) {
 	t.Helper()
@@ -891,6 +892,30 @@ func TestReplanDeadlineLeavesReserve(t *testing.T) {
 	}
 	if want := full.Add(-3 * time.Minute); !deadline.Equal(want) {
 		t.Fatalf("replan deadline = %v, want execution deadline minus the 3m verify sum = %v", deadline, want)
+	}
+}
+
+func TestCommitRefusesPastReplanDeadline(t *testing.T) {
+	t.Parallel()
+	w, p := newReserveWorld(t, gateEnvelope(), 1, false, reserveChecks("1m", "2m")...)
+	plan, deadline, err := p.planAttempt(t.Context(), reserveStart.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !plan.replanDeadline.Equal(deadline) {
+		t.Fatalf("plan replan deadline = %v, want the returned replan deadline %v", plan.replanDeadline, deadline)
+	}
+	intents := w.launchIntents(t)
+	before := w.row(t)
+	plan.replanDeadline = time.Now().Add(-time.Minute)
+	err = recordLaunchIntent(t.Context(), w.j, journal.AttemptRow{AttemptID: ids.New("att"), RunID: w.runID, TaskID: "task", AttemptNumber: 2,
+		LaunchTokenSHA256: strings.Repeat("a", 64), WorkspacePath: "/tmp/ws"}, w.prod, plan.commit(t.Context(), w.runID))
+	requireGateRefusal(t, err, "envelope_deadline_exceeded")
+	if got := w.launchIntents(t); got != intents {
+		t.Fatalf("launch intents %d -> %d: a refused replan journaled an intent", intents, got)
+	}
+	if after := w.row(t); after != before {
+		t.Fatalf("a refused launch changed the envelope: %+v -> %+v", before, after)
 	}
 }
 

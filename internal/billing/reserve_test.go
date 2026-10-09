@@ -1,6 +1,7 @@
 package billing
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -10,15 +11,32 @@ import (
 func TestEstimateQuantifiesVerifyPass(t *testing.T) {
 	t.Parallel()
 	checks := []CheckBound{{"vet", 30 * time.Second}, {"test", 5 * time.Minute}, {"lint", 90 * time.Second}}
-	got := EstimateReserve(checks, Ceilings{Execution: time.Hour, Repairs: 3, Replans: 2, TransportRetries: 5})
+	got, err := EstimateReserve(checks, Ceilings{Execution: time.Hour, Repairs: 3, Replans: 2, TransportRetries: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := ReserveEstimate{VerifyPassChecks: 3, VerifyTimeoutSum: 7 * time.Minute, RepairCeiling: 3,
 		Note: "estimate, not a reserve of provider quota"}
 	if got != want {
 		t.Errorf("EstimateReserve = %+v, want %+v", got, want)
 	}
-	empty := EstimateReserve(nil, Ceilings{Repairs: 0})
+	empty, err := EstimateReserve(nil, Ceilings{Repairs: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if empty.VerifyPassChecks != 0 || empty.VerifyTimeoutSum != 0 || empty.RepairCeiling != 0 || empty.Note != want.Note {
 		t.Errorf("EstimateReserve(no checks, 0 repairs) = %+v, want zero quantities with the note", empty)
+	}
+}
+
+func TestEstimateReserveRefusesOverflow(t *testing.T) {
+	t.Parallel()
+	huge := []CheckBound{{"a", 1752000 * time.Hour}, {"b", 1752000 * time.Hour}}
+	if _, err := EstimateReserve(huge, BuiltInCeilings()); !errors.Is(err, ErrReserveOverflow) {
+		t.Fatalf("EstimateReserve(huge timeouts) err = %v, want ErrReserveOverflow", err)
+	}
+	if _, err := EstimateReserve([]CheckBound{{"neg", -time.Second}}, BuiltInCeilings()); !errors.Is(err, ErrReserveOverflow) {
+		t.Fatalf("EstimateReserve(negative timeout) err = %v, want ErrReserveOverflow", err)
 	}
 }
 
@@ -57,7 +75,10 @@ func TestReserveNeverHardTokenClaim(t *testing.T) {
 			t.Errorf("ReserveEstimate field %s names a quantity of provider quota", f.Name)
 		}
 	}
-	est := EstimateReserve([]CheckBound{{"a", time.Second}}, BuiltInCeilings())
+	est, err := EstimateReserve([]CheckBound{{"a", time.Second}}, BuiltInCeilings())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(est.Note, "estimate") || !strings.Contains(est.Note, "not a reserve of provider quota") {
 		t.Errorf("Note = %q, want it to pin estimate-only", est.Note)
 	}

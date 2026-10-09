@@ -133,7 +133,11 @@ type launchPlan struct {
 	kind     string // "repairs", "replans", or "" for the first attempt
 	startAt  time.Time
 	deadline time.Time
-	ceilings billing.Ceilings
+	// replanDeadline is the execution deadline minus the completion reserve,
+	// set for replans only; the attempt must still have drafting time when
+	// its intent commits.
+	replanDeadline time.Time
+	ceilings       billing.Ceilings
 }
 
 // GateLaunch refuses a launch that would exceed the run's finite envelope: a
@@ -219,9 +223,15 @@ func (p launchPlan) commit(ctx context.Context, runID string) func(*sql.Tx) erro
 	return func(tx *sql.Tx) error {
 		// The plan was checked earlier; a ceiling that ran out since then
 		// refuses the launch, rather than admitting a worker the deadline
-		// would immediately stop (I21).
-		if now := time.Now(); !now.Before(p.deadline) {
+		// would immediately stop (I21). A replan additionally refuses once
+		// its shortened deadline has passed, so a slot is never consumed
+		// for an attempt with no drafting time left.
+		now := time.Now()
+		if !now.Before(p.deadline) {
 			return deadlineError(p.deadline)
+		}
+		if !p.replanDeadline.IsZero() && !now.Before(p.replanDeadline) {
+			return deadlineError(p.replanDeadline)
 		}
 		res, err := tx.ExecContext(ctx, `UPDATE run_envelopes SET repairs_used = repairs_used + ?, replans_used = replans_used + ?,
 			first_start_at = COALESCE(first_start_at, ?), updated_at = ?

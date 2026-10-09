@@ -270,8 +270,8 @@
 - **Invariants touched**: I10 (v2 §2: reserve is an estimate, never an advertised hard token reserve, AC-5.2); I21 (v2 §10.3: completion budgeted before optional work).
 - **Status**: ✅ Completed — completion reserve estimator, replan gate with `completion_reserve_shortfall`, and derived replan deadline, with all nine acceptance tests passing; PR #270.
 - **Implementation**: `pipeline.planAttempt` runs `replanReserve` (replans only: a prior attempt and `IsReplan`) before `planLaunchAt`, and returns the execution deadline minus `VerifyTimeoutSum` for replans. A non-positive `CheckConfig.Duration()` blocks the launch as `envelope_unavailable`. Commit fbb93a2.
-- **Spec deviations**: None.
-- **Files modified**: `internal/billing/reserve.go`, `internal/billing/reserve_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/envelope_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
+- **Spec deviations**: Review round 1 (CodeRabbit, all three confirmed): (1) `EstimateReserve` returns `(ReserveEstimate, error)` and refuses with `ErrReserveOverflow` when the timeout sum cannot be represented — admission bounds each timeout below but not their sum, and a wrapped-negative reserve would defeat the gate; the caller blocks the launch per the documented I02 rule. (2) the `reserveStart` fixture floats with the test clock instead of a fixed 2026-10-09 date — the tests commit with the real clock, so the fixed date would fail every run past its deadline (proven by simulating a past fixture). (3) `launchPlan` carries the shortened `replanDeadline` and `commit` refuses once it has passed, so a slot is never consumed for an attempt with no drafting time; pinned by new `TestCommitRefusesPastReplanDeadline`.
+- **Files modified**: `internal/billing/reserve.go`, `internal/billing/reserve_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/envelope.go`, `internal/supervisor/envelope_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
 
 ### Task 10 — Receipt and CLI ledger surfaces
 

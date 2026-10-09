@@ -473,6 +473,9 @@ func (p *pipeline) planAttempt(ctx context.Context, now time.Time) (launchPlan, 
 	if err != nil {
 		return launchPlan{}, time.Time{}, err
 	}
+	if reserve > 0 {
+		plan.replanDeadline = plan.deadline.Add(-reserve)
+	}
 	return plan, plan.deadline.Add(-reserve), nil
 }
 
@@ -513,7 +516,10 @@ func (p *pipeline) replanReserve(ctx context.Context, now time.Time) (time.Durat
 	if !deadline.IsZero() {
 		left = max(deadline.Sub(now), 0)
 	}
-	est := billing.EstimateReserve(checks, eff)
+	est, err := billing.EstimateReserve(checks, eff)
+	if err != nil {
+		return 0, err
+	}
 	if !billing.RemainderCoversReserve(billing.ExecutionRemainder{TimeLeft: left}, est) {
 		return 0, &GateError{Reason: "completion_reserve_shortfall", Err: fmt.Errorf("%w: %s left, a verification pass of %d checks needs %s (%s)",
 			billing.ErrBudgetExhausted, left, est.VerifyPassChecks, est.VerifyTimeoutSum, est.Note)}

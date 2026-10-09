@@ -1,6 +1,15 @@
 package billing
 
-import "time"
+import (
+	"errors"
+	"fmt"
+	"math"
+	"time"
+)
+
+// ErrReserveOverflow refuses a verification reserve whose timeout sum cannot
+// be represented: admitting it would wrap negative and defeat the gate.
+var ErrReserveOverflow = errors.New("billing: check timeout sum overflows the reserve")
 
 // ReserveNote is the label every reserve carries: the S1 reserve is estimated
 // data, never provider quota (I10).
@@ -23,13 +32,17 @@ type CheckBound struct {
 }
 
 // EstimateReserve quantifies one execution of the check list within its
-// timeouts, plus the repair ceiling.
-func EstimateReserve(checks []CheckBound, c Ceilings) ReserveEstimate {
+// timeouts, plus the repair ceiling. A timeout the sum cannot hold fails
+// closed: the launch is blocked rather than gated on a wrapped value.
+func EstimateReserve(checks []CheckBound, c Ceilings) (ReserveEstimate, error) {
 	est := ReserveEstimate{VerifyPassChecks: len(checks), RepairCeiling: c.Repairs, Note: ReserveNote}
 	for _, check := range checks {
+		if check.Timeout < 0 || est.VerifyTimeoutSum > time.Duration(math.MaxInt64-check.Timeout) {
+			return ReserveEstimate{}, fmt.Errorf("%w: check %q timeout %s", ErrReserveOverflow, check.Name, check.Timeout)
+		}
 		est.VerifyTimeoutSum += check.Timeout
 	}
-	return est
+	return est, nil
 }
 
 // ExecutionRemainder is the execution time a run has left.
