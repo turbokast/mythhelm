@@ -20,6 +20,7 @@ import (
 	"github.com/turbokast/mythhelm/adapters/claudecode"
 	"github.com/turbokast/mythhelm/adapters/fake"
 	"github.com/turbokast/mythhelm/internal/adapter"
+	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/security"
 	"github.com/turbokast/mythhelm/internal/workspace"
@@ -91,6 +92,9 @@ type Request struct {
 	TrustProjectConfig string   // sha256:<digest> of the admitted config
 	NoChecks           bool
 	KeepGoing          bool
+	// EnvelopeFlags is the explicit --envelope-* layer, nil when no flag was
+	// given; a negative field is unset. Decide carries it unresolved.
+	EnvelopeFlags *billing.Ceilings
 	// The remaining flags apply only to --adapter claudecode.
 	StripCredentialEnv         bool   // remove credential routes from the child only (AC-4.3)
 	TrustNativeConfig          string // sha256:<digest> of the inventoried native config (AC-2.5)
@@ -144,6 +148,9 @@ type Decision struct {
 	RecordTrust   bool
 	NoChecks      bool
 	KeepGoing     bool
+	// EnvelopeFlags is Request.EnvelopeFlags, unresolved; the file layer is
+	// ProjectConfig.Envelopes. Resolution happens when the run is admitted.
+	EnvelopeFlags *billing.Ceilings
 	// Declaration is the entitlement assertion the supervisor persists
 	// with the admitted event: a fresh --declare-entitlement row, or nil
 	// when billing used a stored row. RecordNativeTrust likewise persists
@@ -180,7 +187,7 @@ func Decide(ctx context.Context, req Request) (Decision, error) {
 		return Decision{}, err
 	}
 	d := Decision{StateDir: req.StateDir, Host: req.Host, Scenario: req.Scenario,
-		NoChecks: req.NoChecks, KeepGoing: req.KeepGoing}
+		NoChecks: req.NoChecks, KeepGoing: req.KeepGoing, EnvelopeFlags: req.EnvelopeFlags}
 	task, err := readTask(req.TaskFile)
 	if err != nil {
 		return Decision{}, err

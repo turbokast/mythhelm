@@ -67,6 +67,9 @@ type Hooks struct {
 	Event func(journal.Event)
 	// Notice receives status the user must see that is not an event.
 	Notice func(string)
+	// Extension is the operator's decision, on recovering a run blocked at
+	// an envelope ceiling, to raise that ceiling (AC-4.2).
+	Extension *ExtensionGrant
 }
 
 // Outcome is where a run's pipeline stopped.
