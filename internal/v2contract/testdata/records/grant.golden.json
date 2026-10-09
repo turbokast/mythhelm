@@ -1,0 +1,1 @@
+{"schema_version":2,"grant_id":"grt_demo_0001","use":"standing","effect":"fs.write","target":"/tmp/scratch","artifact_id":"art_demo_0002","expected_state":"idle","expires_at":"2026-10-10T12:00:00Z","revoked":false,"operation_id":"op_demo_0001","reconciliation":"manual-review"}
