@@ -87,7 +87,7 @@
   - Test-only files outside the task list: `internal/supervisor/pipeline_test.go` (per-fixture instance locks, per the task's test plan), `internal/cli/render_test.go` (lock fixture for the in-process run), `tests/e2e/tui_test.go` (redact `nonce_sha256` as volatile), `internal/control/pinning_test.go` (sentinel mapping plus the corrupt-lock case, review round 1).
 - **Files modified**: `internal/workers/worker.go`, `internal/workers/worker_test.go`, `internal/workers/worker_unix_test.go`, `internal/workers/worker_windows_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/pinning_test.go`, `internal/supervisor/pipeline_test.go`, `internal/cli/render.go`, `internal/cli/render_test.go`, `tests/e2e/tui_test.go`, `internal/control/pinning.go`, `internal/control/lock.go`, `internal/control/pinning_test.go`, `specs/in-progress/supervised-stop-recover/tasks.md`, `specs/in-progress/supervised-stop-recover/handoff.md`, `specs/in-progress/supervised-stop-recover/scratchpad.md`.
 
-### Task 3 — One-pass recovery through the supervisor
+### Task 3 — One-pass recovery through the supervisor ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (process ownership, liveness, persistence)
@@ -106,6 +106,18 @@
   - `TestRecoveryNeverReplaysEffects`: a recovery fixture with an ambiguous irreversible effect yields `external_effect_uncertain` and no native launch (assert the launcher fake records zero `Launch` calls).
 - **Test plan**: Table-driven tests on a temp ledger with scripted worker liveness (Task 1's `MatchIdentity` over a scripted observed identity), scripted spool contents, and a recording launcher fake; golden outcome events.
 - **Invariants touched**: I12 (v2 §6.4: reconcile before retry; replay never replays effects); I06 (v2 §2: ownership unresolved stays out of terminal states via `CheckTerminalEntry`).
+- **Status**: ✅ Completed — idempotent `recover` method with one-pass `Reconcile` choosing exactly one outcome and recording it as a journaled report; PR #296.
+- **Implementation**: `Reconcile` gathers journal, file and liveness evidence in one `Mutate`, compares evidence markers with the latest `attempt.recovery_decided` record, and either replays it or examines, transitions and records exactly one outcome; only `RecoverHandler` launches, on a fresh `continued`. Commit d4002417afd3262b375b3e82e15852d9730ff9d3.
+- **Spec deviations**:
+  - `Reconcile` takes `RecoverDeps`, not bare `*sql.DB`: the pinned `(db, runID)` signature cannot observe worker.json nonces (NFR-5), spool bytes, or the launcher. Task 4 calls `Reconcile(ctx, deps, runID)`.
+  - `RecoverDeps` carries no `*journal.Journal`: the pass reads the journal table through its own transaction (D3 atomicity), which the `Journal` handle cannot join.
+  - Stale journal generation quarantines under `ownership_unresolved` with reason `stale_generation` retained in the report.
+  - Ambiguous-effect uncertainty records a `quarantined` outcome and reports `external_effect_uncertain`, keeping the four outcomes exhaustive while the code names the cause.
+  - A continued-from-quarantined attempt keeps its `quarantined` verdict (the lifecycle forbids `quarantined→interrupted`); the outcome event records the continuation beside it.
+  - `CodeExternalEffectUncertain` is declared in `recover.go`: `control.go` predates the stream-4 codes (Task 1 precedent).
+  - I06 holds structurally, not via a `CheckTerminalEntry` call: no recovery path enters a terminal state (asserted per outcome in `TestReconcileChoosesOneOutcome`); the check guards run states this task never moves.
+  - `internal/control/lock_test.go` gains a `sleeper` test-helper branch in `TestMain`: `recover_test.go` spawns sleeper children and the helper must live in the package `TestMain` alongside the existing `lockholder` branch (8 lines, test-only).
+- **Files modified**: `internal/control/recover.go`, `internal/control/server.go`, `internal/control/recover_test.go`, `internal/control/lock_test.go`, `specs/in-progress/supervised-stop-recover/tasks.md`, `specs/in-progress/supervised-stop-recover/handoff.md`, `specs/in-progress/supervised-stop-recover/scratchpad.md`.
 
 ### Task 4 — Supervisor-loss envelope and reconnect handshake
 

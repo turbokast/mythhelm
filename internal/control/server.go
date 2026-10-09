@@ -143,6 +143,13 @@ func (s *Server) RegisterStop(d StopDeps) error {
 	return s.Register("stop", StopHandler(d))
 }
 
+// RegisterRecover binds the recover method to s. Like RegisterStop, it
+// stays out of NewSupervisorServer until Task 4 folds it in with its
+// support-matrix rows.
+func (s *Server) RegisterRecover(d RecoverDeps) error {
+	return s.Register("recover", RecoverHandler(d))
+}
+
 // NewSupervisorServer binds every method the supervisor serves to db.
 func NewSupervisorServer(db *sql.DB) *Server {
 	return NewServer(map[string]Handler{

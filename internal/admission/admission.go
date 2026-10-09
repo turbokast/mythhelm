@@ -274,6 +274,7 @@ func decideFake(ctx context.Context, req Request, d Decision) (Decision, error) 
 	case err != nil:
 		return Decision{}, fmt.Errorf("preparing adapter %s: %w", d.Adapter.ID, err)
 	}
+	d.Proposal.Overrides = append(d.Proposal.Overrides, boundaryDeltas(d.Profile)...)
 	return d, nil
 }
 
@@ -365,6 +366,7 @@ func decideClaudeCode(ctx context.Context, req Request, d Decision) (Decision, e
 	d.Proposal.Billing = posture
 	d.Proposal.Overrides = append(deltas, d.Proposal.Overrides...)
 	d.Proposal.Manifest = adapter.ConfigManifest{Digests: manifest.Digests}
+	d.Proposal.Overrides = append(d.Proposal.Overrides, boundaryDeltas(d.Profile)...)
 	if req.DeclareEntitlement != "" {
 		d.Declaration = decl
 	}
@@ -440,6 +442,16 @@ func checkCapabilityFlags(req Request) error {
 			Action: "the Herdr bridge is not in this build; run standalone"}
 	}
 	return nil
+}
+
+// boundaryDeltas reports the boundary restrictions of an admitted contained
+// profile as fidelity deltas (AC-4.3). A profile admitted without boundary
+// evidence (trusted-host) carries none.
+func boundaryDeltas(p Profile) []adapter.ConfigDelta {
+	if !p.Contained || p.Boundary == nil {
+		return nil
+	}
+	return BoundaryDeltas(*p.Boundary)
 }
 
 // consentProfile resolves the execution profile. An empty flag admits the

@@ -320,7 +320,7 @@
 - **Spec deviations**: (1) Per-attempt delta accumulation is not exercised end to end: the fake surfaces no usage or cost, so the S1 route journals only the retail-equivalent unknown marker; AC-2.1 deltas stay pinned at unit level by `TestNormalizeDeltaAppliedOnce`, `TestNormalizeRepeatedDeltaCountedOnce`, `TestNativeResultAttemptsAccumulate` and `TestNativeResultRepresentedDeltaDropped`. Exercising deltas end to end needs a fake-decoder extension outside this task's Files (follow-up scoped in the handoff). (2) The exhaustion marker sweep covers the receipt, stdout and stderr: stderr carries notices and the outcome summary, so it rides along with the task's receipt + CLI output.
 - **Files modified**: `tests/e2e/ledger_s1_test.go`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`, `specs/in-progress/budget-ledger-s1/scratchpad.md`.
 
-### Task 12 — Ledger user documentation and decision record
+### Task 12 — Ledger user documentation and decision record ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -336,3 +336,7 @@
   - No documented sentence advertises a hard spending or token limit: `sed -n '/^## Billing/,/^## /p' docs/user-guide.md | grep -qiE "hard (limit|cap)|spending limit|token limit"` exits non-zero, and a planted hard-limit sentence fails the check (verified by temporary insertion during review, not committed).
 - **Test plan**: No Go test asserts prose; each item is a recorded shell command with a failing counterfactual (absent section before the change).
 - **Invariants touched**: None (docs only; Tasks 7, 8 and 10 keep I21/I02/I09/I10 — this task describes, not changes, behavior).
+- **Status**: ✅ Completed — the user guide documents the S1 ledger, envelopes and exhaustion behavior under `## Billing`, and ADR 0015 records decisions D1–D3, D6, D13, D14; PR #295.
+- **Implementation**: `docs/user-guide.md` gains a `### Budget ledger` subsection (usage rows, remaining/next-retry, envelopes, completion reserve, exhaustion, reservations); `docs/decisions/0015-budget-ledger-s1.md` is the new ADR. The ADR ships `Status: proposed`: acceptance is the maintainer's flip to `accepted` (see Spec deviations). Commit 0dfab85.
+- **Spec deviations**: (1) The ADR carries `Status: proposed`, not `accepted`: a worker self-accepting its own decision record would be spec self-approval, so the `Status: accepted` acceptance grep fails until the maintainer flips `docs/decisions/0015-budget-ledger-s1.md` line 3 to `accepted`. (2) `tasks.md` and `handoff.md` updated per the completion convention, as in Tasks 1–11.
+- **Files modified**: `docs/user-guide.md`, `docs/decisions/0015-budget-ledger-s1.md`, `specs/in-progress/budget-ledger-s1/tasks.md`, `specs/in-progress/budget-ledger-s1/handoff.md`.
