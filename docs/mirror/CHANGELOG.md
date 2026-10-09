@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - mythhelm doctor qualification section: per-harness progress, columns, evidence revisions and drift triggers in plain and JSONL output (#204)
 - Strict subscription-only runs now consult the qualification registry first and report qualification reasons (inspectable via mythhelm doctor); admission still refuses until included-only entitlements are verifiable (#205)
 - Release pipeline: version-tag releases build cross-platform archives with checksums, SBOMs and provenance attestations; the checksum list is signed, operators can dry-run via test/* tags and users can verify per docs/release-process.md (#217)
+- Supervisor service: per-user supervisor with authenticated local IPC, idempotent intents, reservations and capability tokens; mythhelm supervisor starts it lazily (#258)
 
 ## [0.0.1] - 2026-10-06
 
