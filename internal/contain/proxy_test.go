@@ -3,6 +3,7 @@ package contain
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -373,9 +374,18 @@ func TestProxyStopClosesIdleConnections(t *testing.T) {
 	for i, conn := range opened {
 		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 		one := make([]byte, 1)
-		if _, err := io.ReadFull(conn, one); err != io.EOF && err != io.ErrUnexpectedEOF {
+		// Any close outcome is fine (EOF for accepted connections, a
+		// reset for ones still in the listener backlog when it closed);
+		// only a still-open connection — a read timeout — fails.
+		n, err := io.ReadFull(conn, one)
+		if err == nil {
 			_ = conn.Close()
-			t.Fatalf("conn %d after stop: err %v, want EOF", i, err)
+			t.Fatalf("conn %d relayed %d bytes past stop", i, n)
+		}
+		var nerr net.Error
+		if errors.As(err, &nerr) && nerr.Timeout() {
+			_ = conn.Close()
+			t.Fatalf("conn %d still open after stop (read timed out)", i)
 		}
 		_ = conn.Close()
 	}
