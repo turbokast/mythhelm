@@ -161,7 +161,7 @@ Add a dispatch step: before starting a task attempt, append the `run_start` row 
 
 - **Decision**: approved
 - **Date**: 2026-10-09
-- **Pull request**: pending
+- **Pull request**: #306
 - **Eval**: `worktree-merge-review-own-diff`
 - **Rationale**: A tree-diff against main on a stale branch shows other specs' merged work as deletions, and that misread recurred across four reviews in one run (#261 to #264); reviewing merge-base..HEAD shows only the branch's own change. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
 - **Source spec**: `v2-contract-vocabulary`
