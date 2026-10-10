@@ -172,15 +172,15 @@ func writeWorkerJSON(t *testing.T, f *stopState, id workers.Identity) {
 	}
 }
 
-// writeStopped spools one attempt.stopped line for the attempt, as the
-// worker's spool.emit would: a journal.Event envelope per line.
-func writeStopped(t *testing.T, f *stopState, payload string, seq int64) {
+// writeSpoolEvent appends one journal.Event envelope line to the attempt's
+// spool, as the worker's spool.emit would.
+func writeSpoolEvent(t *testing.T, f *stopState, typ, payload string, seq int64) {
 	t.Helper()
 	line, err := json.Marshal(journal.Event{
-		SchemaVersion: journal.EnvelopeVersion, EventID: "evt_stopped_" + f.attempt,
+		SchemaVersion: journal.EnvelopeVersion, EventID: fmt.Sprintf("evt_%s_%d_%s", typ, seq, f.attempt),
 		RunID: f.runID, AttemptID: f.attempt, ProducerID: "wrk_" + f.attempt,
 		ProducerSequence: seq, Generation: 1, ObservedAt: time.Now().UTC(),
-		Type: "attempt.stopped", Payload: json.RawMessage(payload),
+		Type: typ, Payload: json.RawMessage(payload),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -197,6 +197,15 @@ func writeStopped(t *testing.T, f *stopState, payload string, seq int64) {
 	if _, err := spool.Write(append(line, '\n')); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// writeStopped spools the worker's answer to a stop request: the
+// attempt.stop_requested line the worker emits when it takes the request,
+// then the attempt.stopped report.
+func writeStopped(t *testing.T, f *stopState, payload string, seq int64) {
+	t.Helper()
+	writeSpoolEvent(t, f, "attempt.stop_requested", `{"requested_by":"op_test"}`, seq-1)
+	writeSpoolEvent(t, f, "attempt.stopped", payload, seq)
 }
 
 func stopIntent(t *testing.T, op, attemptID, version string) Intent {
@@ -743,7 +752,7 @@ func TestScanStoppedRereadsAfterTruncation(t *testing.T) {
 	f := newStopState(t, "run_stop_trunc", "att_stop_trunc")
 	writeStopped(t, f, `{"confirmed":true,"sent":[{"signal":"interrupt","grace":1000000000},{"signal":"terminate","grace":2000000000}],"ladder_version":"stop-ladder/v1","unresolved_pids":[]}`, 2)
 	spool := filepath.Join(f.attemptDir(), "spool.jsonl")
-	first, consumed := scanStopped(spool, f.attempt, f.version, 0)
+	first, consumed, requested := scanStopped(spool, f.attempt, f.version, 0, false)
 	if first == nil || !first.Confirmed || len(first.Sent) != 2 {
 		t.Fatalf("first scan receipt = %+v, want the two-step confirmed report", first)
 	}
@@ -760,11 +769,65 @@ func TestScanStoppedRereadsAfterTruncation(t *testing.T) {
 	if st.Size() >= consumed {
 		t.Fatalf("rotated spool size = %d, want it below the old offset %d", st.Size(), consumed)
 	}
-	second, next := scanStopped(spool, f.attempt, f.version, consumed)
+	second, next, _ := scanStopped(spool, f.attempt, f.version, consumed, requested)
 	if second == nil || !second.Confirmed || len(second.Sent) != 0 {
 		t.Fatalf("scan after truncation receipt = %+v, want the fresh report from the new content", second)
 	}
 	if next != st.Size() {
 		t.Fatalf("scan after truncation offset = %d, want the full new size %d", next, st.Size())
+	}
+}
+
+// A worker that concluded before any stop request still spools its
+// attempt.stopped line (every conclusion emits one). That line is not an
+// answer to a later request: the stop must not relabel the attempt
+// stopped or confirm it (AC-1.2, I06, I09).
+func TestStopIgnoresStoppedReportSpooledBeforeTheRequest(t *testing.T) {
+	t.Parallel()
+	f := newStopState(t, "run_stop_early", "att_stop_early")
+	writeSpoolEvent(t, f, "attempt.stopped", `{"confirmed":true,"sent":[],"ladder_version":"stop-ladder/v1"}`, 2)
+	deps := f.deps()
+	deps.WaitDeadline = 150 * time.Millisecond
+	_, err := Execute(f.ctx(t), StopHandler(deps), Peer{}, stopIntent(t, "op_stop_early", f.attempt, f.version))
+	requireCode(t, err, CodeCancelIncomplete)
+	if got := attemptState(t, f.db, f.attempt); got != "quarantined" {
+		t.Fatalf("attempt state = %q, want quarantined, never stopped by a report that predates the request", got)
+	}
+}
+
+// The request seen by one scan carries to the next, and a spool that shrinks
+// forgets it: a stopped line in the replacement content needs its own
+// request line before it.
+func TestScanStoppedCarriesTheRequestAcrossScansAndForgetsItOnTruncation(t *testing.T) {
+	t.Parallel()
+	f := newStopState(t, "run_stop_carry", "att_stop_carry")
+	spool := filepath.Join(f.attemptDir(), "spool.jsonl")
+	const report = `{"confirmed":true,"sent":[],"ladder_version":"stop-ladder/v1"}`
+
+	writeSpoolEvent(t, f, "attempt.stop_requested", `{"requested_by":"op_carry"}`, 2)
+	rep, off, requested := scanStopped(spool, f.attempt, f.version, 0, false)
+	if rep != nil || !requested {
+		t.Fatalf("request-only scan = %+v requested=%v, want no receipt and the request recorded", rep, requested)
+	}
+	writeSpoolEvent(t, f, "attempt.stopped", report, 3)
+	rep, off, requested = scanStopped(spool, f.attempt, f.version, off, requested)
+	if rep == nil || !requested {
+		t.Fatalf("stopped-only scan = %+v requested=%v, want the report that follows the earlier request", rep, requested)
+	}
+
+	if err := os.Truncate(spool, 0); err != nil {
+		t.Fatal(err)
+	}
+	writeSpoolEvent(t, f, "attempt.stopped", report, 4)
+	st, err := os.Stat(spool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Size() >= off {
+		t.Fatalf("rotated spool size = %d, want it below the old offset %d", st.Size(), off)
+	}
+	rep, _, requested = scanStopped(spool, f.attempt, f.version, off, requested)
+	if rep != nil || requested {
+		t.Fatalf("scan after truncation = %+v requested=%v, want the old request forgotten and the bare stopped line ignored", rep, requested)
 	}
 }

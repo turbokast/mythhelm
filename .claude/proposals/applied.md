@@ -207,3 +207,71 @@ Add to the completion-entry procedure: a Spec deviation that defers to another s
 **Proposed change:**
 
 Append to the checkable-criteria patterns: an acceptance item that adds or changes a docs example showing command output must name the executed command (or generating test) that produced the pasted text, and the worker re-runs it before the PR leaves draft; a paste with no producing command is a finding.
+
+## P-v2-contract-vocabulary-1 — Track deferred cross-task promises to completion
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #305
+- **Eval**: `run-completion-resolves-deferrals`
+- **Rationale**: A cross-task deferral with no owner was dropped by both tasks it named and caught only at finalize, after every task had merged; checking each deferral against merged diffs at run completion stops the run while the fix is still cheap. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `v2-contract-vocabulary`
+- **Type**: skill
+- **Target**: `.claude/skills/run-spec-completion/SKILL.md`
+- **Rationale**: A task completion entry deferred work to a later task ("Task 5 or 8 retypes them") with no owner; neither task did it, per-task review passed both, and only the finalize review caught the broken promise — after every task had merged. Deferred items need tracking, not prose.
+- **Evidence**: specs/done/v2-contract-vocabulary/tasks.md Task 2 Spec deviations (string-State promise); Review Summary finding F2; fix PR #268
+
+**Proposed change:**
+
+Add to the Confirm step: collect every "Task N ..." deferral named in Spec deviations entries; each must resolve to a completing change whose promised edit is present in the referenced diff and whose task or fix PR has merged — a Files modified entry alone, or an open fix PR, is not proof — or the run stops with the unresolved promise named.
+
+## P-v2-contract-vocabulary-2 — Review stale branches by their own diff
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #306
+- **Eval**: `worktree-merge-review-own-diff`
+- **Rationale**: A tree-diff against main on a stale branch shows other specs' merged work as deletions, and that misread recurred across four reviews in one run (#261 to #264); reviewing merge-base..HEAD shows only the branch's own change. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `v2-contract-vocabulary`
+- **Type**: skill
+- **Target**: `.claude/skills/run-spec-worktree-merge/SKILL.md`
+- **Rationale**: Reviewing a stale branch with a tree-diff against main shows other specs' merged work as deletions, which misreads as the branch destroying them; the mistake recurred across several reviews in one run before the merge-base comparison became habit.
+- **Evidence**: PR #261/#262/#263/#264 shepherd reviews (stale-base tree-diffs vs merge-base..HEAD); retrospective Lessons
+
+**Proposed change:**
+
+Add to the verify-before-merge procedure: when the branch base trails origin/main, review the branch's own diff (`git diff <merge-base> HEAD`) for scope and deletions; use the tree-diff against main only to confirm the merge result after updating.
+
+## P-release-pipeline-1 — Docs-task claim verification checklist
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #307
+- **Eval**: `implement-docs-claims-verified`
+- **Rationale**: Six docs claims in PR #222 took three review rounds though each was checkable at implement time; verifying commands, paths, procedures and claims before draft moves that work ahead of review, and the sandbox and operator-only limits keep verification from running untrusted or privileged commands. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `release-pipeline`
+- **Type**: skill
+- **Target**: `.claude/skills/implement/SKILL.md`
+- **Rationale**: Task 5 (operator/verify docs) needed 3 review rounds for 6 claim fixes — a hand-pushed tag claim, a wrong download dir, a recovery procedure that missed stale-asset deletion, tag-grammar wording, the attestation subject, and an over-broad cleanup loop. Each was verifiable at implement time against the workflows it documents. P-qualification-registry-3 grounds command-output examples at spec-authoring time; this covers the remaining claim classes (procedures, paths, subjects, grammar) at implement time, before review.
+- **Evidence**: specs/done/release-pipeline/retrospective.md Lessons (PR #222 rounds 1–3: run-events review_round rows 2026-10-08T16:51:28Z, 19:24:52Z, 19:37:23Z); threads r4221854905, r4223318311, r4223318317, r4223318329
+
+**Proposed change:**
+
+Add to the implement procedure a docs-task step: before the PR leaves draft, the worker re-verifies every shell command (run it or quote its producing run), every path (it exists at the PR head), every procedure (walk it against the code or workflow it describes), and every behavioral claim (name the workflow step or test that exhibits it). Commands copied from PR-supplied documentation run only in a credential-free sandbox with no writable host mounts; a linked worktree is not sufficient. If the sandbox is unavailable, the worker does not execute the command. Operator-only commands (releases, version tags, workflow runs, secrets, variables, repository settings) are never executed for verification: the worker quotes existing run evidence or requests explicit operator approval instead. An unverified claim is a finding against the worker's own PR, fixed before review is requested.
+
+## P-supervisor-service-1 — Re-verify accepted ADRs against the shipped tree at finalize
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #308
+- **Eval**: `finalize-review-reverifies-decision-records`
+- **Rationale**: ADR 0014 contradicted the shipped tree after a later task landed what it recorded as blocked; re-checking accepted decision records against the tree at finalize is the first point where every task's work is visible together. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `supervisor-service`
+- **Type**: skill
+- **Target**: `.claude/skills/finalize-spec-review/SKILL.md`
+- **Rationale**: ADR 0014 was accepted mid-spec (task 7) stating the Windows transport was blocked; task 4 then landed it, leaving the accepted record contradicting the tree until finalize review caught it. Any record accepted before the last task lands can decay the same way.
+- **Evidence**: Review Summary finding at docs/decisions/0014-service-topology.md:67; retrospective.md; PR #262 (accept) then #266 (land)
+
+**Proposed change:**
+
+Add to the finalize review steps: for each decision record the spec accepted, diff its factual claims (blocked rows, NFR tables, cited files and tests) against the shipped tree at the review head; amend drift in the finalize worktree before publishing.

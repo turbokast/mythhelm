@@ -34,8 +34,9 @@ const stopPollInterval = 100 * time.Millisecond
 // Spool event types the stop Handler reads. The worker emits them (Task 2);
 // the handler only matches them.
 const (
-	stoppedEvent  = "attempt.stopped"
-	launchedEvent = "attempt.launched"
+	stoppedEvent       = "attempt.stopped"
+	stopRequestedEvent = "attempt.stop_requested"
+	launchedEvent      = "attempt.launched"
 )
 
 // maxStoppedLine bounds one spool line the stop wait scans: the 1 MiB
@@ -354,14 +355,18 @@ func recordQuarantine(ctx context.Context, db *sql.DB, attemptID string, wait ti
 // waitForStoppedReport polls the spool for the attempt's stopped report
 // until the deadline, following the supervisor Ingest line discipline:
 // complete lines past a byte offset, a torn last line left for the next
-// poll. Reports that fail validation are skipped, never confirmed. A
-// missing or unreadable spool means the worker has not reported yet. It
-// returns errStopDeadline when the deadline expires with no valid report.
+// poll. Reports that fail validation are skipped, never confirmed, and so
+// is a report that precedes the worker's attempt.stop_requested line: a
+// worker that concluded before the request still spools a stopped line,
+// which does not answer it. A missing or unreadable spool means the worker
+// has not reported yet. It returns errStopDeadline when the deadline
+// expires with no valid report.
 func waitForStoppedReport(ctx context.Context, spoolPath, attemptID, pinned string, deadline time.Time, poll time.Duration) (*StopReceipt, error) {
 	var offset int64
+	requested := false
 	for {
-		receipt, next := scanStopped(spoolPath, attemptID, pinned, offset)
-		offset = next
+		var receipt *StopReceipt
+		receipt, offset, requested = scanStopped(spoolPath, attemptID, pinned, offset, requested)
 		if receipt != nil {
 			return receipt, nil
 		}
@@ -379,48 +384,59 @@ func waitForStoppedReport(ctx context.Context, spoolPath, attemptID, pinned stri
 }
 
 // scanStopped reads the complete spool lines past offset and returns the
-// last valid stopped report for the attempt, with the offset past every
-// complete line consumed. Oversize lines are corrupt and skipped; a torn
-// last line is left for the next poll.
-func scanStopped(spoolPath, attemptID, pinned string, offset int64) (*StopReceipt, int64) {
+// last valid stopped report for the attempt that follows a stop_requested
+// line, with the offset past every complete line consumed and whether a
+// stop_requested line has been seen (requested carries it between polls).
+// Oversize lines are corrupt and skipped; a torn last line is left for the
+// next poll.
+func scanStopped(spoolPath, attemptID, pinned string, offset int64, requested bool) (*StopReceipt, int64, bool) {
 	f, err := os.Open(spoolPath) //nolint:gosec // G304: fixed spool name under the ledger-resolved attempt directory
 	if err != nil {
-		return nil, offset
+		return nil, offset, requested
 	}
 	defer func() { _ = f.Close() }()
 	if st, err := f.Stat(); err != nil || st.Size() < offset {
 		if err != nil {
-			return nil, offset
+			return nil, offset, requested
 		}
 		// The spool shrank (rotation or rewrite): re-read from the
 		// start so a stopped report already in the new content is
 		// not skipped past into a wrongful timeout.
-		offset = 0
+		offset, requested = 0, false
 	}
 	if _, err := f.Seek(offset, io.SeekStart); err != nil {
-		return nil, offset
+		return nil, offset, requested
 	}
 	data, err := io.ReadAll(io.LimitReader(f, maxStoppedLine+1))
 	if err != nil {
-		return nil, offset
+		return nil, offset, requested
 	}
 	complete, torn := splitCompleteLines(data)
 	if len(complete) == 0 && len(data) == maxStoppedLine+1 {
 		// No newline in a full chunk: the line exceeds the bound, so it
 		// is corrupt. Skip the chunk; fragments of it can never parse
 		// as a report.
-		return nil, offset + int64(len(data))
+		return nil, offset + int64(len(data)), requested
 	}
 	var receipt *StopReceipt
 	for _, line := range complete {
-		if !strings.Contains(string(line), stoppedEvent) {
-			continue
-		}
-		if rep, ok := parseStoppedReport(line, attemptID, pinned); ok {
-			receipt = rep
+		switch {
+		case strings.Contains(string(line), stopRequestedEvent):
+			requested = requested || isStopRequested(line, attemptID)
+		case requested && strings.Contains(string(line), stoppedEvent):
+			if rep, ok := parseStoppedReport(line, attemptID, pinned); ok {
+				receipt = rep
+			}
 		}
 	}
-	return receipt, offset + int64(len(data)-len(torn))
+	return receipt, offset + int64(len(data)-len(torn)), requested
+}
+
+// isStopRequested reports whether line is the attempt's stop_requested
+// event, the worker's record that it took a stop request.
+func isStopRequested(line []byte, attemptID string) bool {
+	var ev journal.Event
+	return json.Unmarshal(line, &ev) == nil && ev.Type == stopRequestedEvent && ev.AttemptID == attemptID
 }
 
 // splitCompleteLines splits data into newline-terminated lines and the

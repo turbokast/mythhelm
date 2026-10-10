@@ -30,6 +30,11 @@ var ErrNoSupervisorLock = errors.New("control: no live supervisor lock")
 
 var errLockHeld = errors.New("lock held")
 
+const (
+	metadataSettle = time.Second
+	metadataPoll   = 2 * time.Millisecond
+)
+
 // lockMetadata is the instance-lock file content: which state root the
 // holder serves, which process holds it, when it started, and the boot
 // generation fencing stale control generations (design §3).
@@ -101,7 +106,8 @@ func AcquireInstance(dir string) (func(), error) {
 	})
 	root := canonicalRoot(dir)
 	var gen uint64 = 1
-	if meta, ok := readMetadata(path); ok {
+	// Read without waiting: this process holds the flock, so no writer is mid-record.
+	if meta, err := parseMetadata(path); err == nil {
 		gen = meta.Generation + 1
 	}
 	if err := writeMetadata(f, lockMetadata{
@@ -180,7 +186,26 @@ func readMetadata(path string) (lockMetadata, bool) {
 // returns the read or parse error, so callers that fail closed can tell
 // an absent lock (os.ErrNotExist: genuinely unfenced) from a present
 // but unreadable one.
+//
+// The holder records itself in place on the flocked file: the file exists
+// empty between creation and the first write, and writeMetadata truncates
+// before it writes. A reader landing in either window sees an empty or
+// partial record that is complete moments later, so an unparseable file
+// is re-read for up to metadataSettle before the parse error is returned.
+// A file that stays unparseable still fails closed.
 func readMetadataErr(path string) (lockMetadata, error) {
+	deadline := time.Now().Add(metadataSettle)
+	for {
+		meta, err := parseMetadata(path)
+		var syntax *json.SyntaxError
+		if !errors.As(err, &syntax) || !time.Now().Before(deadline) {
+			return meta, err
+		}
+		time.Sleep(metadataPoll)
+	}
+}
+
+func parseMetadata(path string) (lockMetadata, error) {
 	var meta lockMetadata
 	raw, err := os.ReadFile(path) //nolint:gosec // G304: path is built by LockPath, never from caller input
 	if err != nil {

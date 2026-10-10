@@ -212,7 +212,7 @@ func Main(args []string) int {
 	if err := fl.Parse(args); err != nil {
 		return 2
 	}
-	if !filepath.IsAbs(*state) || !validID(*runID) || !validID(*attemptID) || fl.NArg() > 0 {
+	if !filepath.IsAbs(*state) || !ValidID(*runID) || !ValidID(*attemptID) || fl.NArg() > 0 {
 		log.Error("invalid worker invocation", "args", args)
 		return 2
 	}
@@ -230,9 +230,9 @@ func Main(args []string) int {
 	return 0
 }
 
-// validID accepts the IDs MYTHHELM generates: letters, digits and '_'. An ID
+// ValidID accepts the IDs MYTHHELM generates: letters, digits and '_'. An ID
 // is a path component, so nothing else is allowed.
-func validID(id string) bool {
+func ValidID(id string) bool {
 	if id == "" || len(id) > 64 {
 		return false
 	}
