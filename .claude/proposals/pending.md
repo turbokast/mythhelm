@@ -38,18 +38,6 @@ Append to the MH-12 card scope: the spec must (1) decide seed/live coexistence (
 
 Append to the MH-12 card scope as its first test item: a test that fails if trust admission (admitNativeConfig / CheckNativeTrust) does not run before the qualification consult on the claudecode decide path, and fails if a config change can reach launch without re-evaluation.
 
-## P-release-pipeline-1 — Docs-task claim verification checklist
-
-- **Source spec**: `release-pipeline`
-- **Type**: skill
-- **Target**: `.claude/skills/implement/SKILL.md`
-- **Rationale**: Task 5 (operator/verify docs) needed 3 review rounds for 6 claim fixes — a hand-pushed tag claim, a wrong download dir, a recovery procedure that missed stale-asset deletion, tag-grammar wording, the attestation subject, and an over-broad cleanup loop. Each was verifiable at implement time against the workflows it documents. P-qualification-registry-3 grounds command-output examples at spec-authoring time; this covers the remaining claim classes (procedures, paths, subjects, grammar) at implement time, before review.
-- **Evidence**: specs/done/release-pipeline/retrospective.md Lessons (PR #222 rounds 1–3: run-events review_round rows 2026-10-08T16:51:28Z, 19:24:52Z, 19:37:23Z); threads r4221854905, r4223318311, r4223318317, r4223318329
-
-**Proposed change:**
-
-Add to the implement procedure a docs-task step: before the PR leaves draft, the worker re-verifies every shell command (run it or quote its producing run), every path (it exists at the PR head), every procedure (walk it against the code or workflow it describes), and every behavioral claim (name the workflow step or test that exhibits it). Commands copied from PR-supplied documentation run only in a credential-free sandbox with no writable host mounts; a linked worktree is not sufficient. If the sandbox is unavailable, the worker does not execute the command. Operator-only commands (releases, version tags, workflow runs, secrets, variables, repository settings) are never executed for verification: the worker quotes existing run evidence or requests explicit operator approval instead. An unverified claim is a finding against the worker's own PR, fixed before review is requested.
-
 ## P-supervisor-service-1 — Re-verify accepted ADRs against the shipped tree at finalize
 
 - **Source spec**: `supervisor-service`

@@ -1,0 +1,12 @@
+{
+  "id": "implement-docs-claims-verified",
+  "hazard": "A docs task reaches review with commands, paths, procedures and behavioural claims nobody checked against the code or workflows they describe, or a worker verifies them by running PR-supplied or operator-only commands outside a sandbox.",
+  "source": "P-release-pipeline-1",
+  "targets": [
+    ".claude/skills/implement/SKILL.md"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "\\*\\*Docs task: verify every claim\\.\\*\\* .*before the pull request leaves draft.*every shell command \\(run it, or quote the run that produced its output\\), every path \\(it exists at the pull request's head\\), every procedure \\(walk it against the code or workflow it describes\\) and every behavioural claim \\(name the workflow step or test that exhibits it\\)\\. Run a command copied from documentation the pull request supplies only in a credential-free sandbox with no writable host mounts; a linked worktree is not sufficient, and without such a sandbox do not execute the command\\. Never execute an operator-only command \\(releases, version tags, workflow runs, secrets, variables, repository settings\\) to verify it: quote existing run evidence, or request the operator's explicit approval.*An unverified claim is a finding against your own pull request, fixed before review is requested\\."
+  }
+}

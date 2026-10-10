@@ -241,3 +241,20 @@ Add to the Confirm step: collect every "Task N ..." deferral named in Spec devia
 **Proposed change:**
 
 Add to the verify-before-merge procedure: when the branch base trails origin/main, review the branch's own diff (`git diff <merge-base> HEAD`) for scope and deletions; use the tree-diff against main only to confirm the merge result after updating.
+
+## P-release-pipeline-1 — Docs-task claim verification checklist
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #307
+- **Eval**: `implement-docs-claims-verified`
+- **Rationale**: Six docs claims in PR #222 took three review rounds though each was checkable at implement time; verifying commands, paths, procedures and claims before draft moves that work ahead of review, and the sandbox and operator-only limits keep verification from running untrusted or privileged commands. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `release-pipeline`
+- **Type**: skill
+- **Target**: `.claude/skills/implement/SKILL.md`
+- **Rationale**: Task 5 (operator/verify docs) needed 3 review rounds for 6 claim fixes — a hand-pushed tag claim, a wrong download dir, a recovery procedure that missed stale-asset deletion, tag-grammar wording, the attestation subject, and an over-broad cleanup loop. Each was verifiable at implement time against the workflows it documents. P-qualification-registry-3 grounds command-output examples at spec-authoring time; this covers the remaining claim classes (procedures, paths, subjects, grammar) at implement time, before review.
+- **Evidence**: specs/done/release-pipeline/retrospective.md Lessons (PR #222 rounds 1–3: run-events review_round rows 2026-10-08T16:51:28Z, 19:24:52Z, 19:37:23Z); threads r4221854905, r4223318311, r4223318317, r4223318329
+
+**Proposed change:**
+
+Add to the implement procedure a docs-task step: before the PR leaves draft, the worker re-verifies every shell command (run it or quote its producing run), every path (it exists at the PR head), every procedure (walk it against the code or workflow it describes), and every behavioral claim (name the workflow step or test that exhibits it). Commands copied from PR-supplied documentation run only in a credential-free sandbox with no writable host mounts; a linked worktree is not sufficient. If the sandbox is unavailable, the worker does not execute the command. Operator-only commands (releases, version tags, workflow runs, secrets, variables, repository settings) are never executed for verification: the worker quotes existing run evidence or requests explicit operator approval instead. An unverified claim is a finding against the worker's own PR, fixed before review is requested.
