@@ -50,3 +50,5 @@ TUI behaviour is qualified by the G09 evidence record in the repository
 - macOS MDM preferences and remote cached managed policy as certified trust
   sources; the settings inventory covers files only.
 - In S1, stop and recover run locally from the CLI; the supervisor service does not serve them. Routing them through journal ingest is a follow-up (#348).
+- `mythhelm recover` is refused on a state root whose migration phase is `drained`, `imported` or `adopted`, so a migrated run has no recover command yet (#369).
+- Stop and recover authorise a caller by same-user peer identity. A per-run capability token is a follow-up (#356).
