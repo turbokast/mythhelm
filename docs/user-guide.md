@@ -232,12 +232,15 @@ legacy run as a one-task run. Imported runs keep their IDs, billing
 posture and evidence, and stay unverified. Without `--yes`, `--apply`
 prints the preview and writes nothing.
 
-While `--apply` runs, migration holds the instance, state-directory and
-run-owner locks, so the legacy `run`, `recover` and `apply` commands
-refuse. They keep refusing once the `drained` phase is recorded, which
-the same run does right after the backup; a migration interrupted before
-that record leaves the phase at `previewed`, where they are admitted
-again. A fresh apply never overwrites a backup: an unrecorded stale
+Preview, including `--apply` without `--yes`, takes no migration locks
+and writes nothing. Once `--apply --yes` starts the migration, it holds
+the instance and state-directory locks, and each run's owner lock from
+the drain through backup, import and adoption, so the legacy `run`,
+`recover` and `apply` commands refuse while those locks are held. The
+`previewed` phase does not refuse legacy commands by itself: a migration
+interrupted before it records `drained` leaves the phase at `previewed`,
+and they are admitted again once the locks are released. From `drained`
+onward the phase refuses them even after the locks are released. A fresh apply never overwrites a backup: an unrecorded stale
 backup at the default path must be moved
 aside first. A backup the ledger has recorded is reused for the resume,
 verified by its digest, and must stay in place: moving it aside makes
