@@ -144,4 +144,4 @@ Add to the task-breakdown method: when a task enforces an invariant or acceptanc
 
 **Proposed change:**
 
-Add to step 3: for each behaviour a page describes as available, name the command or flag that reaches it today. State a behaviour that only tests or a library call reach as not yet reachable, with the tracking issue, and state a signal that rests on a synthetic fixture as such (I14).
+Add to step 3: for each behaviour a page describes as available, name the command or flag that reaches it today. State when a behaviour is reachable only through tests or a library call and not through the documented command or flag, and include the tracking issue. State a signal that rests on a synthetic fixture as such (I14).

@@ -88,7 +88,7 @@ Foreign changes in range: 20d1ccc supervised-stop-recover task 4 (#311): supervi
 
 ## Effort
 
-dispatched=12 returned=11 failed=0; attempts 12 over 12 tasks; first-pass 7/12 as the log records them; review rounds 3; wall-clock 2026-10-09T00:41:24Z → 2026-10-09T20:15:45Z (first `run_start`, last logged `merge`; the log has no `merge` row for tasks 2, 3, 4, 6, 7, so the summary shows them unmerged though origin/main holds their merges)
+dispatched=12 returned=11 failed=0 (12 `dispatch` rows; 11 `return` rows, none for tasks 8 and 9 and two for task 5, whose duplicate PR #249 was closed; so `unaccounted` names tasks 8 and 9, and the count of 11 is not 12 minus 2); attempts 12 over 12 tasks; first-pass 7/12 as the log records them; review rounds 3; wall-clock 2026-10-09T00:41:24Z → 2026-10-09T20:15:45Z (first `run_start`, last logged `merge`; the log has no `merge` row for tasks 2, 3, 4, 6, 7, so the summary shows them unmerged though origin/main holds their merges)
 
 ```text
 dispatched=12 returned=11 failed=0
