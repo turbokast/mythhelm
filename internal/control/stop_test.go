@@ -595,17 +595,73 @@ func TestStopOnTerminalAttemptConflicts(t *testing.T) {
 	}
 }
 
-// TestStopUnservedUntilWaitLeavesTransaction pins the Task 1 deviation:
-// the stop wait holds Execute's write transaction for up to
-// MaxStopDeadline, so stop stays out of the served set until Execute
-// grows long-handler support. Serving it earlier would wedge every other
-// mutating intent past busy_timeout for the whole wait. Task 4 deletes
-// this test when it lands the fix with registration.
-func TestStopUnservedUntilWaitLeavesTransaction(t *testing.T) {
+// writeStopRequestAt stands a stop.request with a controlled timestamp, as
+// RequestStop would have written it at at.
+func writeStopRequestAt(t *testing.T, dir, requestID string, at time.Time) {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{"request_id": requestID, "requested_at": at.UTC().Format(time.RFC3339Nano)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "stop.request"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestStopRestartRepeatReenters pins the served crash window: when a stop
+// persisted stop_requested and delivered its request but died before
+// storing a result, the same operation_id re-enters idempotently —
+// instead of conflicting — and completes on the worker's report.
+func TestStopRestartRepeatReenters(t *testing.T) {
 	t.Parallel()
-	srv := NewSupervisorServer(nil)
-	_, err := srv.Dispatch(context.Background(), Peer{}, Intent{OperationID: "op_stop_unserved", Method: "stop"})
-	requireCode(t, err, CodeCapabilityUnsupported)
+	f := newStopState(t, "run_stop_restart", "att_stop_restart")
+	const op = "op_stop_restart"
+	if _, err := f.db.Exec(`UPDATE attempts SET state = 'stop_requested', reason = ? WHERE attempt_id = ?`,
+		op, f.attempt); err != nil {
+		t.Fatal(err)
+	}
+	writeStopRequestAt(t, f.attemptDir(), op, time.Now().UTC())
+	writeStopped(t, f, `{"confirmed":true,"sent":[{"signal":"kill","grace":1000000000}],"ladder_version":"stop-ladder/v1"}`, 2)
+	res, err := ExecuteLong(f.ctx(t), StopHandler(f.deps()), Peer{}, stopIntent(t, op, f.attempt, f.version))
+	if err != nil {
+		t.Fatalf("restart repeat: %v", err)
+	}
+	var receipt StopReceipt
+	if err := json.Unmarshal(res.Body, &receipt); err != nil {
+		t.Fatal(err)
+	}
+	if !receipt.Confirmed || receipt.LadderVersion != f.version {
+		t.Fatalf("receipt = %+v, want the confirmed pinned receipt", receipt)
+	}
+	if got := attemptState(t, f.db, f.attempt); got != "stopped" {
+		t.Fatalf("attempt state = %q, want stopped", got)
+	}
+}
+
+// TestStopRestartAfterDeadlineQuarantinesAtOnce pins the remaining-time
+// rule: a restart repeat waits only the time left on the recorded
+// request's deadline, so a request whose deadline already passed
+// quarantines at once instead of waiting another full deadline.
+func TestStopRestartAfterDeadlineQuarantinesAtOnce(t *testing.T) {
+	t.Parallel()
+	f := newStopState(t, "run_stop_expired", "att_stop_expired")
+	const op = "op_stop_expired"
+	if _, err := f.db.Exec(`UPDATE attempts SET state = 'stop_requested', reason = ? WHERE attempt_id = ?`,
+		op, f.attempt); err != nil {
+		t.Fatal(err)
+	}
+	writeStopRequestAt(t, f.attemptDir(), op, time.Now().Add(-time.Hour).UTC())
+	deps := f.deps()
+	deps.WaitDeadline = 30 * time.Second
+	start := time.Now()
+	_, err := ExecuteLong(f.ctx(t), StopHandler(deps), Peer{}, stopIntent(t, op, f.attempt, f.version))
+	requireCode(t, err, CodeCancelIncomplete)
+	if elapsed := time.Since(start); elapsed >= 10*time.Second {
+		t.Fatalf("expired restart repeat waited %s, want the quarantine at once", elapsed)
+	}
+	if got := attemptState(t, f.db, f.attempt); got != "quarantined" {
+		t.Fatalf("attempt state = %q, want quarantined", got)
+	}
 }
 
 // TestScanStoppedRereadsAfterTruncation pins the shrink path: when the
