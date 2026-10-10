@@ -185,9 +185,10 @@ type Session interface {
 // InterruptReport says which stop signals were sent and whether the process
 // group was confirmed gone. A sent signal is not a confirmed stop (I06).
 type InterruptReport struct {
-	Sent      []StopSignal `json:"sent"`
-	Confirmed bool         `json:"confirmed"`
-	Errors    []string     `json:"errors,omitempty"`
+	Sent         []StopSignal `json:"sent"`
+	Acknowledged string       `json:"acknowledged,omitempty"` // "yes", "no" or "unknown"; empty when the adapter does not report
+	Confirmed    bool         `json:"confirmed"`
+	Errors       []string     `json:"errors,omitempty"`
 }
 
 // stopPollInterval is how often ClimbLadder checks whether the group is gone.
@@ -382,6 +383,10 @@ type Capabilities struct {
 	QuotaRemaining    Tri `json:"quota_remaining"`
 	HardMonetaryLimit Tri `json:"hard_monetary_limit"`
 	NativeSubagents   Tri `json:"native_subagents"`
+	// Reconnect and ModelMetadata are empty when the adapter does not report
+	// them, which is distinct from Unknown (I09).
+	Reconnect     Tri `json:"reconnect,omitempty"`
+	ModelMetadata Tri `json:"model_metadata,omitempty"`
 }
 
 // Sandbox is the containment part of a capability record.
