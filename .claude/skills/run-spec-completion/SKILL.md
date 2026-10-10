@@ -21,6 +21,8 @@ The last phase of `/run-spec`, and the report every stop prints.
 ## On success
 
 1. **Confirm from origin/main, not the local checkout.** `git fetch origin`, then `python3 scripts/harness/runspec.py status <(git show origin/main:specs/in-progress/<spec>/tasks.md)`: `incomplete` is empty and `marker_mismatch` is empty. For each task the run merged, `runspec.py verify-merged` already printed `verdict=merged`; re-run it for any task the run adopted from an earlier session.
+
+   **Deferrals.** Collect every "Task N ..." deferral named in a **Spec deviations** entry of that `tasks.md`. Each must resolve to a completing change: the promised edit is present in the referenced diff (`gh pr diff <n>`), and the task or fix pull request that carries it has merged. A **Files modified** entry alone, or an open fix pull request, is not proof. An unresolved deferral stops the run (§On stop) with the promise named in `Reason:`.
 2. **Lifecycle pull request.** From a fresh worktree of origin/main: `scripts/harness/spec-lifecycle.sh move <spec> unfinalized`, commit both paths, push `docs/<alias>-implemented`, and open `docs(spec): <spec> implemented, awaiting finalize`. Merge it through `/run-spec-worktree-merge` with `pr-check --lifecycle`, then `git fetch origin` and confirm `specs/unfinalized/<spec>/` on origin/main. Record `python3 scripts/harness/runspec.py event --spec <spec> --kind lifecycle --detail "in-progress -> unfinalized" --result ok`.
 3. **Report**, then record `run_end`.
 

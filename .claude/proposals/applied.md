@@ -174,6 +174,57 @@ Add a dispatch step: before starting a task attempt, append the `run_start` row 
 
 In the Spec deviations rule, add: a review-round addition that stays inside the task's Files list and is consistent with the design is still named, one line each, marked consistent (e.g. "- Added the Contents:write permission qualification in review round 1 (consistent with design §3)"). None. is reserved for a task whose merged diff the worker's own commits fully describe.
 
+## P-supervisor-service-2 — Stand-in deviations must name their tracked follow-up
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #304
+- **Eval**: `completion-stand-in-cites-follow-up`
+- **Rationale**: Four stand-in deviations waited on another spec's task with no follow-up, so the parallel error vocabulary the spec forbids went live untracked (#283); requiring a filed follow-up turns each silent promise into a tracked one. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `supervisor-service`
+- **Type**: skill
+- **Target**: `.claude/skills/task-completion/SKILL.md`
+- **Rationale**: Four tasks recorded `control.Error` stand-ins "until vocab task 6 lands"; vocab task 6 landed and no follow-up existed, so the parallel error vocabulary the spec norm forbids went live untracked. A stand-in without a tracked trigger is a silent promise.
+- **Evidence**: tasks.md Spec deviations of tasks 2, 3, 5, 6; Review Summary finding F1; issue #283
+
+**Proposed change:**
+
+Add to the completion-entry procedure: a Spec deviation that defers to another spec's unmerged work must cite the tracking follow-up (issue or proposal id) that fires when the blocker lands; file that follow-up before the entry is written.
+
+## P-qualification-registry-3 — Ground docs command-output examples in executed commands
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #309
+- **Eval**: n/a
+- **Rationale**: A docs example verified only by reading shipped output the command never prints past two reviewers; requiring the producing command makes examples checkable, the same way behaviour criteria already need a failing state. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `qualification-registry`
+- **Type**: knowledge
+- **Target**: `knowledge/spec-authoring.md`
+- **Rationale**: A docs task shipped a command-output example with values the command never prints (wrong surface and verdicts); per-task review and one spec reviewer both eyeballed it as correct, and only the second spec reviewer checked it against the code. Examples verified by reading are verified by nobody. The checkable-criteria pattern already demands a failing state for behaviour; docs examples need the same grounding rule.
+- **Evidence**: specs/done/qualification-registry/retrospective.md Review Summary finding 3 (docs/user-guide.md:59 vs internal/qualify/seed.go); fixed in the finalize PR
+
+**Proposed change:**
+
+Append to the checkable-criteria patterns: an acceptance item that adds or changes a docs example showing command output must name the executed command (or generating test) that produced the pasted text, and the worker re-runs it before the PR leaves draft; a paste with no producing command is a finding.
+
+## P-v2-contract-vocabulary-1 — Track deferred cross-task promises to completion
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #305
+- **Eval**: `run-completion-resolves-deferrals`
+- **Rationale**: A cross-task deferral with no owner was dropped by both tasks it named and caught only at finalize, after every task had merged; checking each deferral against merged diffs at run completion stops the run while the fix is still cheap. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `v2-contract-vocabulary`
+- **Type**: skill
+- **Target**: `.claude/skills/run-spec-completion/SKILL.md`
+- **Rationale**: A task completion entry deferred work to a later task ("Task 5 or 8 retypes them") with no owner; neither task did it, per-task review passed both, and only the finalize review caught the broken promise — after every task had merged. Deferred items need tracking, not prose.
+- **Evidence**: specs/done/v2-contract-vocabulary/tasks.md Task 2 Spec deviations (string-State promise); Review Summary finding F2; fix PR #268
+
+**Proposed change:**
+
+Add to the Confirm step: collect every "Task N ..." deferral named in Spec deviations entries; each must resolve to a completing change whose promised edit is present in the referenced diff and whose task or fix PR has merged — a Files modified entry alone, or an open fix PR, is not proof — or the run stops with the unresolved promise named.
+
 ## P-v2-contract-vocabulary-2 — Review stale branches by their own diff
 
 - **Decision**: approved

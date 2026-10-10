@@ -114,3 +114,22 @@ overrides `design.md` — conflicts go back to the designer.
   fixture fails loudly instead of silently passing if the engine ever
   stops detecting it. Local gate note from earlier tasks still
   applies: run the full suite with a clean `HOME`.
+- **Task 8**: the support matrix pins exactly the 6 shipped rows and
+  `TestSupportMatrixMatchesEvidence` resolves every evidence ref to a
+  real test, checks platform claims against build tags, and maps every
+  `internal/migrate` + `preview` export to a row — an exported
+  declaration without a row fails (behaviour inside an existing export
+  or unexported code is not detected), with self-mutations proving each defect class
+  is reported. ADR 0016 stays `proposed` until the maintainer accepts
+  it (flip `docs/decisions/0016-migration-import.md:3`); the
+  `nfr2-proof` row is `fixture-tested` (Task 7 merged before this PR). Lint note: the
+  repo pins UK spelling (`behaviour`, misspell locale UK) — the matrix
+  test was fixed for it during this task's gates.
+- **Task 8 gate environment**: `internal/cli` `TestStrictMainBlocksWriteNothing`
+  fails on a clean `origin/main` when `$HOME` holds a Claude config with
+  hooks/MCP (admission returns `untrusted_native_config` before the
+  expected reason) and passes with a throwaway `$HOME`; run the Go gates
+  with one. `adapters/claudecode` passed 15/15 alone; under 32 concurrent
+  `-race` copies its probe tests fail with `signal: killed` from
+  `runProbe`'s fixed 10s `CommandContext` deadline (`probe.go:104`), so a
+  loaded machine, not this branch, explains an isolated failure there.

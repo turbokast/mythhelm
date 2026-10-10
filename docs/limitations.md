@@ -39,6 +39,11 @@ TUI behaviour is qualified by the G09 evidence record in the repository
 - Plugins, routing and releases — all still planned.
 - Narrow adapter coverage: the scripted fake adapter plus a Claude Code
   adapter. Native Claude execution is refused on Windows by design (exit 7).
+- Allowance exhaustion is recognised only from a synthetic fixture shape; no
+  recorded native run produces it, so on a real route the bucket is not
+  recorded and the retry schedule never starts.
+- A run's repair, replan and transport-retry ceilings are checked at launch
+  only, and no command records an envelope extension.
 - `subscription-only` billing always blocks: no native surface qualifies an
   included-only boundary yet.
 - The OAuth-token exception is unwired and refused at both gates.

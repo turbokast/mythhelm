@@ -106,6 +106,10 @@ type Request struct {
 	// Confirm asks the user a yes/no question. It is nil under
 	// --non-interactive, and then every question blocks instead (AC-1.4).
 	Confirm func(question string) (bool, error)
+	// ProbeBoundary checks that the contained boundary can be entered on
+	// this host now. Nil means contain.ProbeLinux; tests inject a fake so
+	// they need no real namespaces.
+	ProbeBoundary func() contain.Availability
 }
 
 // Task is the admitted task file.
@@ -457,7 +461,9 @@ func boundaryDeltas(p Profile) []adapter.ConfigDelta {
 // consentProfile resolves the execution profile. An empty flag admits the
 // safe default, restricted, with no question; trusted-host widens the posture
 // and needs the explicit flag (I04). A contained profile is admitted only on
-// recorded boundary evidence for the host OS and the adapter route.
+// recorded boundary evidence for the host OS and the adapter route, and only
+// when the runtime probe shows the boundary can be entered on this host now;
+// the probed version becomes the evidence's version.
 func consentProfile(req Request) (Profile, error) {
 	switch req.ExecutionProfile {
 	case ProfileTrustedHost:
@@ -474,6 +480,20 @@ func consentProfile(req Request) (Profile, error) {
 		if err != nil {
 			return Profile{}, err
 		}
+		probe := req.ProbeBoundary
+		if probe == nil {
+			probe = contain.ProbeLinux
+		}
+		avail := probe()
+		if !avail.Supported {
+			return Profile{}, &BlockedError{
+				Code:       "execution_profile_unavailable",
+				Field:      fmt.Sprintf("--execution-profile %s on %s: the boundary cannot be entered: %s", p.Name, runtime.GOOS, avail.Reason),
+				Action:     "pass --execution-profile trusted-host to run with your host authority, not contained",
+				Capability: true,
+			}
+		}
+		ev.Version = avail.Version
 		p.Boundary = &ev
 		return p, nil
 	}

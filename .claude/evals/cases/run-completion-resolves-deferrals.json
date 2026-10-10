@@ -1,0 +1,12 @@
+{
+  "id": "run-completion-resolves-deferrals",
+  "hazard": "A completion entry defers work to a later task with no owner, no task does it, and the broken promise surfaces only at finalize review after every task has merged.",
+  "source": "P-v2-contract-vocabulary-1",
+  "targets": [
+    ".claude/skills/run-spec-completion/SKILL.md"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "(?s)(?=.*Collect every \"Task N \\.\\.\\.\" deferral named in a \\*\\*Spec deviations\\*\\* entry)(?=.*the promised edit is present in the referenced diff)(?=.*the task or fix pull request that carries it has merged)(?=.*A \\*\\*Files modified\\*\\* entry alone, or an open fix pull request, is not proof)(?=.*An unresolved deferral stops the run)"
+  }
+}

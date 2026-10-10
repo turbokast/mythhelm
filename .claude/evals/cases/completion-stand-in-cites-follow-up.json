@@ -1,0 +1,12 @@
+{
+  "id": "completion-stand-in-cites-follow-up",
+  "hazard": "A completion entry records a stand-in that waits on another spec's unmerged work with no tracked follow-up, so the stand-in outlives the blocker untracked.",
+  "source": "P-supervisor-service-2",
+  "targets": [
+    ".claude/skills/task-completion/SKILL.md"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "A deviation that defers to another spec's unmerged work .* cites the tracked follow-up that fires when that work lands, an issue `#<n>` or a proposal id; file the follow-up before you write the entry"
+  }
+}

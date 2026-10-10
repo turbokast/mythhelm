@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/admission"
+	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/security"
@@ -223,6 +224,11 @@ func RecoverWithHooks(ctx context.Context, j *journal.Journal, runID string, h H
 			}
 		}()
 	}
+	// The execution clock lives in the journaled envelope, so the recovering
+	// supervisor enforces the same deadline the launch did (I21, AC-4.1).
+	if err := p.recoverDeadline(ctx); err != nil {
+		return out, err
+	}
 	err = p.watch(ctx, AttemptRef{StateDir: d.StateDir, RunID: runID, AttemptID: a.AttemptID}, exited)
 	if err == nil && !p.out.Detached && p.out.State != RunInterrupted {
 		// The candidate row and its journal event commit together. A freeze that
@@ -247,6 +253,28 @@ func RecoverWithHooks(ctx context.Context, j *journal.Journal, runID string, h H
 		}
 	}
 	return out, err
+}
+
+// recoverDeadline re-derives the execution deadline from the run's journaled
+// envelope, with any extension granted since launch (AC-4.2). A run whose
+// envelope cannot be read is not watched without a deadline (I02).
+func (p *pipeline) recoverDeadline(ctx context.Context) error {
+	row, err := p.j.RunEnvelope(ctx, p.d.RunID)
+	if err != nil {
+		return err
+	}
+	base := billing.Ceilings{Execution: time.Duration(row.ExecutionSeconds) * time.Second, Repairs: int(row.Repairs),
+		Replans: int(row.Replans), TransportRetries: int(row.TransportRetries)}
+	env, eff, err := effectiveCeilings(ctx, p.j, p.d.RunID, base)
+	if err != nil {
+		return err
+	}
+	deadline, _, err := envelopeDeadline(env, eff, time.Now())
+	if err != nil {
+		return err
+	}
+	p.ceilings, p.deadline = eff, deadline
+	return nil
 }
 
 // descendantsResolved trusts a confirmed group stop and the worker's

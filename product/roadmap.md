@@ -8,7 +8,6 @@
 Cards with a spec, being specified or implemented.
 
 - **MH-12** Strict subscription-only qualification for Claude Code (implementing, stage 1, score 3.8; spec `claude-strict-subscription`; [#33](https://github.com/turbokast/mythhelm/issues/33))
-- **MH-16** Quota observations and the budget ledger (specced, stage 1, score 3.3; spec `budget-ledger-s1`; [#37](https://github.com/turbokast/mythhelm/issues/37))
 - **MH-13** Contained execution profiles: restricted and inspect (specced, stage 1, score 3.5; spec `contained-execution-profiles`; [#34](https://github.com/turbokast/mythhelm/issues/34))
 
 ## Next
