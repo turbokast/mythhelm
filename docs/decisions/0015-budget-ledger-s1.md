@@ -32,7 +32,7 @@ also claimed 0003, so whoever lands second renumbers, and the second
 MH-21 (unbounded stall) and an uncoordinated 0003 (landing order would silently
 break a peer).
 
-**D3 — the run owner is the sole ledger writer.** The S1 run path has no
+**D3 — the run owner writes its own run's S1 ledger rows.** The S1 run path has no
 service, so whichever process holds the run's owner lock (ADR 0005) writes that
 run's ledger rows inside its own transactions — usage rows with the ingest
 append, the envelope row and the reservation with the admission append. MH-21
@@ -78,8 +78,10 @@ replan ceiling).
 - One ledger store: the journal gains tables, never a second database; the
   usage, envelope and admission-hold writes commit with the run event they
   describe, so a failed hold rolls the admission back instead of leaving a
-  partial claim. Reservation release and orphan marking are separate
-  transactions that carry no run event.
+  partial claim. Releasing the reservation when the run concludes, and
+  orphan marking, are separate transactions that carry no run event; the
+  exhaustion path releases it in the same transaction as the run's state
+  change.
 - Unknown stays unknown to the surface: receipts and CLI lines render
   `unknown`, never zero or an invented balance, and money is always an
   estimate, never a charge.
