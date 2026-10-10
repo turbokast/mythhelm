@@ -2,9 +2,9 @@
 
 ### Dependencies
 
-- Prerequisites: `specs/*/qualification-registry/` (done), `specs/*/budget-ledger-s1/` (unfinalized, all tasks done). Sequencing against in-progress specs (requirements § Dependencies): Tasks 2, 8 and 9 edit `internal/admission/*`, `internal/workers/worker.go` and `internal/supervisor/pipeline.go`, so they start after `specs/*/supervised-stop-recover/` Task 4 and `specs/*/claude-strict-subscription/` Task 5 (and its Q1 `UnresolvedSources` edit) have merged; `claude-strict-subscription` Task 7 is a maintainer live run sharing no files and is not a gate. Tasks 1 and 3 to 7 touch only `internal/adapter` and the new `adapters/codex` and may start earlier. `contained-execution-profiles` Task 11 requires a record or refusal test per accepted route, in its own `tests/e2e/contain_refusal_test.go` enumeration: Task 2 carries the Codex refusal test in `internal/admission/boundary_test.go`, and whichever of the two lands second extends the other's enumeration within its own Files (adding `tests/e2e/contain_refusal_test.go` to that task's Files if needed).
+- Prerequisites: `specs/*/qualification-registry/` (done), `specs/*/budget-ledger-s1/` (done). Sequencing (requirements § Dependencies, OQ4): Tasks 2, 8 and 9 edit `internal/admission/*`, `internal/workers/worker.go` and `internal/supervisor/pipeline.go`, so they follow `specs/*/supervised-stop-recover/` Task 4, which is complete (#311). Resolved 2026-10-10 by the maintainer (Q-29): no wait on MH-12 Task 5; no task waits on `claude-strict-subscription`. Tasks 1 and 3 to 7 touch only `internal/adapter` and the new `adapters/codex` and may start earlier. `contained-execution-profiles` Task 11 (merged, #310) requires a record or refusal test per accepted route: Task 2 carries the Codex refusal tests in `internal/admission/boundary_test.go` and in `tests/e2e/contain_refusal_test.go`.
 - Order: {1, 2} first (disjoint Files); {3} after 1; {4, 6, 7} after 3 (disjoint Files); {5} after 3 and 4; {8} after 2, 5, 6, 7; {9} after 5, 6, 8; {10} after 8; {11} after 9, 10; {12} after 11.
-- External waits are prose only (`runspec.py` reads `Depends on` alone): Tasks 2, 8 and 9 carry the waits as notes in their `Depends on` field and the operator holds them.
+- The one external prerequisite, `supervised-stop-recover` Task 4, is merged (#311), so no task carries an external wait; `runspec.py` reads `Depends on` alone.
 - Maintainer questions do not block tasks: OQ1/OQ6/OQ9/OQ10 are held at their defaults and every task's tests pin the default behaviour; an answer arrives as a new reviewed requirement, not a silent edit.
 - **Gates for every task.** `gofmt -w` on touched Go files first, then from the tree root `gofmt -l .` (prints nothing), `go vet ./...`, `go test -race ./...`, `go mod tidy -diff` (prints nothing), and `scripts/ci/check-public-hygiene.sh`. Architect review for Tasks 2, 8 and 9 (seam crossing).
 - **Completion convention.** Append ` ✅ COMPLETED` to the heading, keep every original field, and add `Status` (`✅ Completed — …; PR #<n>`), `Implementation` (at most 3 lines, plus the commit SHA), `Spec deviations` (`None`, or each with its reason) and `Files modified`. Every task appends a scratchpad note under Discoveries.
@@ -35,7 +35,7 @@
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
-- **Depends on**: None (also waits for `specs/*/supervised-stop-recover/` Task 4 and `specs/*/claude-strict-subscription/` Task 5; see Dependencies)
+- **Depends on**: None (`specs/*/supervised-stop-recover/` Task 4 is merged, #311; see Dependencies)
 - **Change**: Replace the `claudecode`/`fake` branches in `Decide`, `validate` and `dataDestinations` with a package-private `harnessDecider` table (D1), add `AdapterCodex`, extend the `--adapter` list and per-adapter flag help; the codex entry uses a local `codexAdapterID = "builtin/codex"` constant (pinned equal to `codex.AdapterID` in Task 8) and its `decide` blocks with `adapter_not_available` until Task 8; add the restricted/inspect refusal test for `builtin/codex` (N7) so a CLI that accepts `codex` already has it.
 - **Files**:
   - `internal/admission/admission.go` (table, Decide, validate, dataDestinations)
@@ -44,6 +44,7 @@
   - `internal/cli/run.go` (flag help text)
   - `internal/supervisor/pipeline_test.go` (unknown-adapter case moves off `codex`)
   - `internal/admission/boundary_test.go` (Codex refusal test; `contain` cannot import `admission`)
+  - `tests/e2e/contain_refusal_test.go` (codex cases in `TestUnsupportedRefusalPrecise`)
 - **Produces**: `AdapterCodex = "codex"`; package-private `harnessDecider`
 - **Acceptance**:
   - `TestDecideDispatchesByTable`: a stub table passed to `decideWith` has its `decide` called, which calls a stub adapter's `Prepare` and returns its proposal; removing the row makes it fail (AC-1.1).
@@ -51,6 +52,7 @@
   - `TestValidateClaudeFlagRules`: one case per Claude-only flag keeps today's accept/reject for `claudecode` and `fake`; an entry that loosened a rule fails it.
   - `TestCodexDeclarationFlagRefused`: `--declare-entitlement` and `--strip-credential-env` with `--adapter codex` are `ErrInvalid` from `validate`, the single refusal site (OQ8, OQ6 defaults).
   - `TestRestrictedAndInspectRefuseCodex`: both profiles with route `builtin/codex` are refused through `admission.ConsultRegistry`'s unknown-key path naming the route, and `contain.SeedV1` has no Codex key (N7).
+  - `TestUnsupportedRefusalPrecise` (extended, `contained-execution-profiles` Task 11): `restricted/codex` and `inspect/codex` exit 7 on every OS with `execution_profile_unavailable`, the route `builtin/codex` and `missing coverage: filesystem, process, network, credential` in stderr, and no run recorded; dropping the codex cases leaves the CLI accepting a route with no refusal test (N7).
   - The existing `internal/admission` and `internal/supervisor` tests pass with only the AC-1.3 edits.
 - **Test plan**: Table-driven over `validate`; stub registered in the test only.
 - **Invariants touched**: I11 (registration stays package-private); I14 (no capability advertised before evidence); I02 (unknown boundary refused).
@@ -171,7 +173,7 @@
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
-- **Depends on**: Task 2, Task 5, Task 6, Task 7 (also waits for `specs/*/supervised-stop-recover/` Task 4 and `specs/*/claude-strict-subscription/` Task 5; see Dependencies)
+- **Depends on**: Task 2, Task 5, Task 6, Task 7 (`specs/*/supervised-stop-recover/` Task 4 is merged, #311; see Dependencies)
 - **Change**: Split `ResolveQualification` into a wrapper and `ResolveQualificationKey` (D2), extract `ResolveBillingStrict`, add `NativeConfig`/`CheckNativeTrustConfig` (D17), map `codex.ErrCapability` to exit 7, and implement `decideCodex` (design §4) in the table.
 - **Files**:
   - `internal/admission/qualify.go` (ResolveQualificationKey)
@@ -179,7 +181,7 @@
   - `internal/admission/native.go` (admitNativeTrust over NativeConfig)
   - `internal/admission/admission.go` (decideCodex)
   - `internal/admission/codex_test.go` (new)
-  - `internal/admission/qualify_test.go` (parity test)
+  - `internal/admission/qualify_test.go` (parity test; its `TestMain` also dispatches the Codex fixture executable)
   - `internal/admission/export_test.go` (`decideCodexWith`)
 - **Produces**: `admission.ResolveQualificationKey(ctx, reg, observed qualify.Key, billing string) (Eligibility, error)`; `admission.ResolveBillingStrict(ctx, elig Eligibility) (BillingPosture, error)`; `admission.NativeConfig{Digests map[string]string; Digest string; Hooks int; MCPServers []string; RequiresTrust bool}`; `admission.CheckNativeTrustConfig(ctx, j, repoID string, cfg NativeConfig, explicitDigest string) (bool, error)`
 - **Acceptance**:
@@ -200,7 +202,7 @@
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
-- **Depends on**: Task 5, Task 6, Task 8 (also waits for `specs/*/supervised-stop-recover/` Task 4; see Dependencies)
+- **Depends on**: Task 5, Task 6, Task 8 (`specs/*/supervised-stop-recover/` Task 4 is merged, #311; see Dependencies)
 - **Change**: Add `builtin/codex` to the worker adapters map, select config-path sources by adapter ID in `pipeline.go` (`d.Adapter.ID`) and `contain.go` (`l.AdapterID`, including the list of blob source names the worker does not re-hash against disk), and skip the Claude `billing_route_mismatch` check for `builtin/codex` (D12).
 - **Files**:
   - `internal/workers/worker.go` (adapters map, route-check skip)
@@ -242,6 +244,7 @@
 - **Change**: Run the production binary with `--adapter codex` and a fixture executable: every billing mode ends blocked or refused with its code, and doctor shows the Codex row.
 - **Files**:
   - `tests/e2e/codex_qualification_test.go`
+  - `tests/e2e/main_test.go` (`TestMain` builds and dispatches the Codex fixture executable)
 - **Acceptance**:
   - `TestCodexBillingModesAllRefuseOrBlock`: with `--execution-profile trusted-host`, `--billing subscription-only` exits blocked with `no_qualification_record` (unknown auth category, D13) and `subscription-declared` and `local-scripted` exit blocked with `billing_unsupported_for_adapter` (D3); a variant admitting the declared mode fails the second leg.
   - `TestCodexDoctorRowEndToEnd`: `mythhelm doctor` on a state directory seeded through `qualify.EnsureSeeded` prints the Codex row `planned` with `failing: fidelity, entitlement, lifecycle` and its `next_test` line.

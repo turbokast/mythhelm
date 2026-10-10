@@ -9,7 +9,7 @@
 | OQ1 | Primary structured Codex surface (app-server vs exec) and fixture baseline version | App-server primary; synthetic fixture version; `exec` gets no code (D5) | Maintainer; blocks the real argv constant and frame schema (Tasks 4, 5) |
 | OQ2 | Can Codex prevent paid continuation in an included plan; auxiliary coverage | Strict admission blocks (Task 8) | Maintainer with the security reviewer; blocks any `live-qualified` record |
 | OQ3 | Live-test allowance grant for Codex | None; record stays at most `fixture-tested` | Maintainer (allowance grant) |
-| OQ4 | Order against `claude-strict-subscription` and `contained-execution-profiles` | Tasks 2, 8, 9 after the named in-progress tasks merge | Maintainer (delivery order) |
+| OQ4 | Order against `claude-strict-subscription` and `contained-execution-profiles` | Resolved 2026-10-10 by the maintainer (Q-29): no wait on MH-12 Task 5 | Maintainer (delivery order) |
 | OQ5 | Codex first vs second route | Evidence-only, no comparison task | Maintainer |
 | OQ6 | Startup config sources, managed policy and credential locations | Enumerated sources only; every other source is an unresolved gap that blocks strict (D11) | Maintainer, from vendor documentation; blocks Task 6 paths |
 | OQ7 | Shipped progress of the Codex row | `planned`; no seed change (D4) | Maintainer |
