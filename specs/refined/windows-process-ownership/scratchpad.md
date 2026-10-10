@@ -14,7 +14,7 @@
 | OQ-9 | Reconcile `supervised-stop-recover`'s Windows Job Object rows | This spec owns them; that spec reconciles through its lifecycle | Owner of that spec; Task ordering |
 | OQ-10 | Follow-up card for filesystem, terminal and shell rows (N5) | File a card after approval | Maintainer; MH-11 shipping claim |
 | OQ-11 | Is kill-on-close plus confirmed worker death I24 evidence? | No; ownership stays unresolved | Maintainer, ADR; Task 6 |
-| OQ-13 | Accept the residual suspended-native window, or create the process directly in the job (`PROC_THREAD_ATTRIBUTE_JOB_LIST`)? | Accept; recovery names the native, never cleans it (AC-6.3) | `architect` review with OQ-3; blocks Task 3 and Task 6 |
+| OQ-13 | Accept the residual suspended-native window, or create the process directly in the job (`PROC_THREAD_ATTRIBUTE_JOB_LIST`)? | Accept the recorded-but-unassigned window; recovery names but never signals the native. Before PID and `native_start_time` are recorded, ownership stays unresolved (AC-6.3) | `architect` review with OQ-3; blocks Task 3 and Task 6 |
 | OQ-12 | ADR number 0016 collides with `0016-migration-import.md` on main; the spec uses 0017 | Reconcile at merge if 0017 is taken | Task 1 |
 
 ## Research notes
