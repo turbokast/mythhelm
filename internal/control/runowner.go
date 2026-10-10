@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/turbokast/mythhelm/internal/ownerlock"
+	"github.com/turbokast/mythhelm/internal/workers"
 )
 
 // acquireRunOwner takes the run's owner lock before stop or recover writes
@@ -14,8 +15,12 @@ import (
 // refuses the intent with ownership_unresolved before anything is written:
 // the refusal is retryable once the owner is gone. A run with no directory
 // cannot be owned, so it fails closed the same way rather than reasoning
-// over absent evidence.
+// over absent evidence. The run id is validated before it is used as a path
+// component, and a malformed one is invalid_contract.
 func acquireRunOwner(stateDir, runID, intent string) (release func(), err error) {
+	if !workers.ValidID(runID) {
+		return nil, newError(CodeInvalidContract, "%s needs a valid run id", intent)
+	}
 	release, err = ownerlock.Acquire(filepath.Join(stateDir, "runs", runID))
 	switch {
 	case errors.Is(err, ownerlock.ErrHeld):
