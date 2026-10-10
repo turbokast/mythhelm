@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode"
+	"unicode/utf8"
 )
 
 // matrixRow is one row of SUPPORT.md: a shipped (or blocked) deliverable,
@@ -116,6 +118,17 @@ func testFilePlatforms(name string, raw []byte) string {
 	return "unsupported: " + platforms
 }
 
+// isGoTestName applies go test's rule: the name starts with Test and the next
+// rune is not lowercase; TestMain is the entry point, not a test.
+func isGoTestName(name string) bool {
+	rest, ok := strings.CutPrefix(name, "Test")
+	if !ok || name == "TestMain" {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(rest)
+	return !unicode.IsLower(r)
+}
+
 // evidenceTestPlatforms maps every "pkg.TestName" in the evidence packages to
 // the platforms its file is built for: "all", "linux, darwin" or one GOOS.
 func evidenceTestPlatforms(t *testing.T) map[string]string {
@@ -137,7 +150,7 @@ func evidenceTestPlatforms(t *testing.T) map[string]string {
 				t.Fatal(err)
 			}
 			for _, d := range f.Decls {
-				if fn, ok := d.(*ast.FuncDecl); ok && fn.Recv == nil && strings.HasPrefix(fn.Name.Name, "Test") && fn.Name.Name != "TestMain" {
+				if fn, ok := d.(*ast.FuncDecl); ok && fn.Recv == nil && isGoTestName(fn.Name.Name) {
 					out[pkg+"."+fn.Name.Name] = platforms
 				}
 			}
@@ -370,6 +383,24 @@ func TestMigrationADRNamesDecisions(t *testing.T) {
 	}
 	if !adrStatusOK(src) {
 		t.Error("ADR has no `- Status:` line reading proposed or accepted (acceptance is the maintainer's to grant)")
+	}
+}
+
+func TestIsGoTestNameFollowsGoTestRule(t *testing.T) {
+	t.Parallel()
+	for name, want := range map[string]bool{
+		"Test":       true,
+		"TestA":      true,
+		"Test_x":     true,
+		"Test1":      true,
+		"Testhelper": false,
+		"TestMain":   false,
+		"Benchmark":  false,
+		"helper":     false,
+	} {
+		if got := isGoTestName(name); got != want {
+			t.Errorf("isGoTestName(%q) = %v, want %v", name, got, want)
+		}
 	}
 }
 
