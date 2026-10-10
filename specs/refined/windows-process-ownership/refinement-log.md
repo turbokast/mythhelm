@@ -31,7 +31,7 @@ Validators dispatched=3 returned=3 failed=0. Round 1: Needs revision (5 blocking
 
 ## Design-fix pass (maintainer-approved, Q-26)
 
-- `parentJob` defined exactly (design §2.2, D11, Task 3): `IsProcessInJob` false gives `(false, nil)`; true reads `LimitFlags` of `QueryInformationJobObject(0, JobObjectExtendedLimitInformation)` for `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`; any API error is an error. The spike is a CI run on `windows-latest` and `windows-11-arm`; a runner already in a kill-on-close job gets stubbed lifecycle tests and no `supported` row (D11).
+- `parentJob` defined exactly (design §2.2, D11, Task 3): `IsProcessInJob` false gives `(false, nil)`; true reads `LimitFlags` of `QueryInformationJobObject(0, JobObjectExtendedLimitInformation)` for `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`; any API error is an error. The spike is a CI run on `windows-latest` and `windows-11-arm`; a runner already in a kill-on-close job stops Task 3 after the spike and escalates to the maintainer (Q-30, D11).
 - Launch boundaries (design §2.5, AC-6.3, Task 6): the persisted state is only worker.json, so boundaries (i) and (ii) are indistinguishable and (iii) to (v) share one record; all end `ownership_unresolved`. `TestLaunchBoundaryCrashOutcomes` is split into a workers-package record test and a supervisor-package outcome test, with a named hook per boundary (`afterJob` and `afterSpawn` are new).
 - Mechanical re-grounding: citations moved to origin/main bc65309; the supervised-stop-recover and supervisor-migration overlaps are merged, not in flight.
 
