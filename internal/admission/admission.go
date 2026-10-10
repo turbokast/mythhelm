@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/turbokast/mythhelm/adapters/claudecode"
@@ -32,6 +33,7 @@ import (
 const (
 	AdapterFake       = "fake"
 	AdapterClaudeCode = "claudecode"
+	AdapterCodex      = "codex"
 
 	BillingSubscriptionOnly     = "subscription-only"
 	BillingSubscriptionDeclared = "subscription-declared"
@@ -84,7 +86,7 @@ type Request struct {
 	StateDir           string   // absolute state directory
 	Repo               string   // a directory inside the user's repository
 	TaskFile           string   // the task, delivered to the native on stdin
-	Adapter            string   // "claudecode" or "fake"; no default (AC-2.2)
+	Adapter            string   // "claudecode", "codex" or "fake"; no default (AC-2.2)
 	Billing            string   // no default (AC-4.1)
 	ExecutionProfile   string   // empty when not given; restricted is then admitted
 	UseCommitted       bool     // run on the committed HEAD of a dirty checkout
@@ -98,7 +100,8 @@ type Request struct {
 	// EnvelopeFlags is the explicit --envelope-* layer, nil when no flag was
 	// given; a negative field is unset. Decide carries it unresolved.
 	EnvelopeFlags *billing.Ceilings
-	// The remaining flags apply only to --adapter claudecode.
+	// The remaining flags apply only to the adapters whose harnessDecider
+	// flags allow them.
 	StripCredentialEnv         bool   // remove credential routes from the child only (AC-4.3)
 	TrustNativeConfig          string // sha256:<digest> of the inventoried native config (AC-2.5)
 	DeclareEntitlement         string // plan=<class>,extra-usage=disabled (AC-4.2)
@@ -190,10 +193,48 @@ func requiredCapabilities(c adapter.CapabilityRecord) map[string]adapter.Tri {
 	return map[string]adapter.Tri{"structured_events": c.Capabilities.StructuredEvents}
 }
 
+// codexAdapterID is codex.AdapterID until the adapter package exists.
+const codexAdapterID = "builtin/codex"
+
+// flagSet names the optional run flags a harness accepts; validate refuses
+// any other flag given with that harness.
+type flagSet struct {
+	stripCredentialEnv, trustNativeConfig, declareEntitlement, allowUntestedNativeVersion, scenario bool
+}
+
+// harnessDecider is one admittable harness: how it is named on the command
+// line, its adapter ID, where its data goes, the flags it takes and the
+// admission path that resolves its launch. The table is package-private
+// so no code outside this module can register a harness (I11).
+type harnessDecider struct {
+	name        string
+	adapterID   string
+	destination string
+	decide      func(context.Context, Request, Decision) (Decision, error)
+	flags       flagSet
+}
+
+func defaultDeciders() []harnessDecider {
+	return []harnessDecider{
+		{name: AdapterClaudeCode, adapterID: claudecode.AdapterID, destination: "first-party native API over the network",
+			decide: decideClaudeCode,
+			flags:  flagSet{stripCredentialEnv: true, trustNativeConfig: true, declareEntitlement: true, allowUntestedNativeVersion: true}},
+		{name: AdapterCodex, adapterID: codexAdapterID, destination: "first-party native API over the network",
+			decide: decideCodex,
+			flags:  flagSet{trustNativeConfig: true, allowUntestedNativeVersion: true}},
+		{name: AdapterFake, adapterID: fake.New().Descriptor().ID, destination: "no network (scripted fake agent)",
+			decide: decideFake, flags: flagSet{scenario: true}},
+	}
+}
+
 // Decide admits or refuses req. A refusal is a *BlockedError, an error
 // wrapping ErrInvalid or workspace.ErrGitTooOld, or an unexpected error.
 func Decide(ctx context.Context, req Request) (Decision, error) {
-	if err := validate(&req); err != nil {
+	return decideWith(ctx, defaultDeciders(), req)
+}
+
+func decideWith(ctx context.Context, table []harnessDecider, req Request) (Decision, error) {
+	if err := validateWith(table, &req); err != nil {
 		return Decision{}, err
 	}
 	d := Decision{StateDir: req.StateDir, Host: req.Host, Scenario: req.Scenario,
@@ -210,11 +251,8 @@ func Decide(ctx context.Context, req Request) (Decision, error) {
 		return Decision{}, err
 	}
 
-	if req.Adapter == AdapterClaudeCode {
-		d, err = decideClaudeCode(ctx, req, d)
-	} else {
-		d, err = decideFake(ctx, req, d)
-	}
+	i := slices.IndexFunc(table, func(h harnessDecider) bool { return h.name == req.Adapter })
+	d, err = table[i].decide(ctx, req, d)
 	if err != nil {
 		return Decision{}, err
 	}
@@ -280,6 +318,12 @@ func decideFake(ctx context.Context, req Request, d Decision) (Decision, error) 
 	}
 	d.Proposal.Overrides = append(d.Proposal.Overrides, boundaryDeltas(d.Profile)...)
 	return d, nil
+}
+
+// decideCodex refuses every run until the Codex adapter is wired (Task 8).
+func decideCodex(_ context.Context, _ Request, _ Decision) (Decision, error) {
+	return Decision{}, &BlockedError{Code: "adapter_not_available", Field: "--adapter " + AdapterCodex, Capability: true,
+		Action: "the Codex adapter is not available in this build"}
 }
 
 // decideClaudeCode admits a native run through the design §6.2 steps: the
@@ -377,33 +421,52 @@ func decideClaudeCode(ctx context.Context, req Request, d Decision) (Decision, e
 	return d, nil
 }
 
-func validate(req *Request) error {
+// adapterList renders names as "a, b or c".
+func adapterList(names []string) string {
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " or " + names[len(names)-1]
+}
+
+func validateWith(table []harnessDecider, req *Request) error {
 	var problems []string
-	switch req.Adapter {
-	case "":
-		problems = append(problems, "--adapter is required (claudecode or fake); there is no default and no fallback")
-	case AdapterFake:
-		if req.Scenario == "" {
+	names := make([]string, len(table))
+	for i, h := range table {
+		names[i] = h.name
+	}
+	i := slices.IndexFunc(table, func(h harnessDecider) bool { return h.name == req.Adapter })
+	switch {
+	case req.Adapter == "":
+		problems = append(problems, fmt.Sprintf("--adapter is required (%s); there is no default and no fallback", adapterList(names)))
+	case i < 0:
+		problems = append(problems, fmt.Sprintf("--adapter must be %s, got %q", adapterList(names), req.Adapter))
+	default:
+		for _, f := range []struct {
+			flag  string
+			given bool
+			ok    func(flagSet) bool
+		}{
+			{"--strip-credential-env", req.StripCredentialEnv, func(f flagSet) bool { return f.stripCredentialEnv }},
+			{"--trust-native-config", req.TrustNativeConfig != "", func(f flagSet) bool { return f.trustNativeConfig }},
+			{"--declare-entitlement", req.DeclareEntitlement != "", func(f flagSet) bool { return f.declareEntitlement }},
+			{"--allow-untested-native-version", req.AllowUntestedNativeVersion, func(f flagSet) bool { return f.allowUntestedNativeVersion }},
+			{"--scenario", req.Scenario != "", func(f flagSet) bool { return f.scenario }},
+		} {
+			if !f.given || f.ok(table[i].flags) {
+				continue
+			}
+			var allowed []string
+			for _, h := range table {
+				if f.ok(h.flags) {
+					allowed = append(allowed, h.name)
+				}
+			}
+			problems = append(problems, fmt.Sprintf("%s applies only to --adapter %s", f.flag, adapterList(allowed)))
+		}
+		if table[i].flags.scenario && req.Scenario == "" {
 			req.Scenario = "happy"
 		}
-		if req.StripCredentialEnv {
-			problems = append(problems, "--strip-credential-env applies only to --adapter claudecode")
-		}
-		if req.TrustNativeConfig != "" {
-			problems = append(problems, "--trust-native-config applies only to --adapter claudecode")
-		}
-		if req.DeclareEntitlement != "" {
-			problems = append(problems, "--declare-entitlement applies only to --adapter claudecode")
-		}
-		if req.AllowUntestedNativeVersion {
-			problems = append(problems, "--allow-untested-native-version applies only to --adapter claudecode")
-		}
-	case AdapterClaudeCode:
-		if req.Scenario != "" {
-			problems = append(problems, "--scenario applies only to --adapter fake")
-		}
-	default:
-		problems = append(problems, fmt.Sprintf("--adapter must be claudecode or fake, got %q", req.Adapter))
 	}
 	switch req.Billing {
 	case "":
@@ -662,11 +725,10 @@ func (d Decision) Record() Record {
 
 func dataDestinations(adapterID string) []string {
 	out := []string{"local state directory"}
-	switch adapterID {
-	case fake.New().Descriptor().ID:
-		out = append(out, "no network (scripted fake agent)")
-	case claudecode.AdapterID:
-		out = append(out, "first-party native API over the network")
+	for _, h := range defaultDeciders() {
+		if h.adapterID == adapterID {
+			out = append(out, h.destination)
+		}
 	}
 	return out
 }

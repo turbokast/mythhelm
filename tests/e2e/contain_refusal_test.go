@@ -24,28 +24,32 @@ import (
 // missing dimension, and record nothing (no drop to host authority). On
 // Linux the fake route is admitted (the enforcement tests cover it), so the
 // Linux legs refuse the claudecode route, whose credential claim is
-// unenforced; off Linux every contained combination refuses.
+// unenforced; off Linux every contained combination refuses. The Codex
+// route has no record at all, so it refuses all four dimensions on every OS
+// (N7 of codex-native-adapter): a CLI that accepts --adapter codex needs this
+// refusal test.
 func TestUnsupportedRefusalPrecise(t *testing.T) {
 	type refusalCase struct {
 		profile string
 		adapter string
 		missing string
 	}
-	var cases []refusalCase
+	four := "missing coverage: filesystem, process, network, credential"
+	cases := []refusalCase{
+		{"restricted", "codex", four},
+		{"inspect", "codex", four},
+	}
 	if runtime.GOOS == "linux" {
 		credential := "missing coverage: credential"
-		cases = []refusalCase{
-			{"restricted", "claudecode", credential},
-			{"inspect", "claudecode", credential},
-		}
+		cases = append(cases,
+			refusalCase{"restricted", "claudecode", credential},
+			refusalCase{"inspect", "claudecode", credential})
 	} else {
-		four := "missing coverage: filesystem, process, network, credential"
-		cases = []refusalCase{
-			{"restricted", "fake", four},
-			{"inspect", "fake", four},
-			{"restricted", "claudecode", four},
-			{"inspect", "claudecode", four},
-		}
+		cases = append(cases,
+			refusalCase{"restricted", "fake", four},
+			refusalCase{"inspect", "fake", four},
+			refusalCase{"restricted", "claudecode", four},
+			refusalCase{"inspect", "claudecode", four})
 	}
 	for _, c := range cases {
 		t.Run(c.profile+"/"+c.adapter, func(t *testing.T) {
@@ -62,6 +66,9 @@ func TestUnsupportedRefusalPrecise(t *testing.T) {
 			}
 			if !strings.Contains(stderr, c.missing) {
 				t.Errorf("stderr lacks %q:\n%s", c.missing, stderr)
+			}
+			if route := "builtin/" + c.adapter; !strings.Contains(stderr, route) {
+				t.Errorf("stderr does not name the route %s:\n%s", route, stderr)
 			}
 			if entries, err := os.ReadDir(filepath.Join(e.state, "runs")); err == nil && len(entries) != 0 {
 				t.Errorf("a refused run recorded %d runs", len(entries))

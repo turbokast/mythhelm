@@ -510,7 +510,7 @@ func TestRunNoAdapterFlagExits2(t *testing.T) {
 		want string
 	}{
 		{name: "missing adapter", args: base, want: "--adapter is required"},
-		{name: "unknown adapter is not a fallback", args: append(slices.Clone(base), "--adapter", "codex"), want: `--adapter must be claudecode or fake, got "codex"`},
+		{name: "unknown adapter is not a fallback", args: append(slices.Clone(base), "--adapter", "opencode"), want: `--adapter must be claudecode, codex or fake, got "opencode"`},
 		{name: "missing billing", args: []string{"run", "--task-file", f.task, "--adapter", "fake", "--non-interactive"}, want: "--billing is required"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

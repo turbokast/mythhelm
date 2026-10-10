@@ -219,3 +219,33 @@ func TestTrustedHostStillNeedsConsent(t *testing.T) {
 		}
 	}
 }
+
+// TestRestrictedAndInspectRefuseCodex pins N7: no boundary evidence exists for
+// the Codex route, so both contained profiles are refused through the
+// registry's unknown-key path on every OS (I02).
+func TestRestrictedAndInspectRefuseCodex(t *testing.T) {
+	t.Parallel()
+	for key := range contain.SeedV1() {
+		if strings.HasSuffix(key, "/builtin/codex") {
+			t.Errorf("SeedV1 holds %q: a Codex record needs a boundary qualification, not a seed edit", key)
+		}
+	}
+	for _, profile := range []string{"restricted", "inspect"} {
+		for _, goos := range []string{"linux", "darwin", "windows"} {
+			t.Run(profile+"/"+goos, func(t *testing.T) {
+				t.Parallel()
+				_, err := admission.BoundaryConsult(profile, goos, "builtin/codex")
+				blocked, ok := errors.AsType[*admission.BlockedError](err)
+				if !ok || !blocked.Capability || blocked.Code != "execution_profile_unavailable" {
+					t.Fatalf("err = %v, want a capability (exit 7) execution_profile_unavailable refusal", err)
+				}
+				if !errors.Is(err, contain.ErrMissingCoverage) {
+					t.Errorf("err = %v, want the unknown-key path (contain.ErrMissingCoverage)", err)
+				}
+				if want := profile + " on " + goos + "/builtin/codex: missing coverage: filesystem, process, network, credential"; !strings.Contains(blocked.Field, want) {
+					t.Errorf("Field = %q, want it to contain %q", blocked.Field, want)
+				}
+			})
+		}
+	}
+}

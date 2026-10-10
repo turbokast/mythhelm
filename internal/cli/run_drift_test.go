@@ -350,6 +350,7 @@ func strictRun(t *testing.T, state string) (int, string) {
 		}
 	}
 	t.Setenv("MYTHHELM_HOME", state)
+	t.Setenv("HOME", t.TempDir()) // the native inventory reads the user's settings: never the developer's
 	t.Chdir(repo)
 	code, stdout, _ := runMain("run", "--task-file", filepath.Join(repo, "task.md"), "--adapter", "claudecode",
 		"--billing", "subscription-only", "--execution-profile", "trusted-host", "--no-checks",
