@@ -374,3 +374,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: budget-ledger-s1 finalized and in specs/done/
 - **Cards**: MH-16
 - **Evidence**: PR #335, main CI green at 5fe5282
+
+### D-87 — 2026-10-10: MH-4 → specced (codex-native-adapter)
+- **Type**: lifecycle-sync
+- **Decision**: MH-4 moved to specced
+- **Rationale**: codex-native-adapter reached todo (spec approved by PR #312)
+- **Cards**: MH-4
+- **Evidence**: PR #312, c3dfaaa
