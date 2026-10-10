@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/turbokast/mythhelm/internal/buildinfo"
+	"github.com/turbokast/mythhelm/internal/journal"
 )
 
 func runMain(args ...string) (code int, stdout, stderr string) {
@@ -141,12 +142,24 @@ func TestHelpExits0(t *testing.T) {
 }
 
 type versionObject struct {
-	Type      string `json:"type"`
-	Version   string `json:"version"`
-	Commit    string `json:"commit"`
-	GoVersion string `json:"go_version"`
-	OS        string `json:"os"`
-	Arch      string `json:"arch"`
+	Type          string `json:"type"`
+	Version       string `json:"version"`
+	Commit        string `json:"commit"`
+	GoVersion     string `json:"go_version"`
+	OS            string `json:"os"`
+	Arch          string `json:"arch"`
+	SQLiteVersion string `json:"sqlite_version"`
+}
+
+// wantEngineVersion is the SQLite engine version this test binary links:
+// in-process, it is the same driver the version command reports.
+func wantEngineVersion(t *testing.T) string {
+	t.Helper()
+	v, err := journal.SQLiteVersion(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
 }
 
 func TestVersionReportsBuildInfo(t *testing.T) {
@@ -159,7 +172,7 @@ func TestVersionReportsBuildInfo(t *testing.T) {
 		if code != int(ExitOK) {
 			t.Fatalf("exit code = %d, want 0 (stderr %q)", code, stderr)
 		}
-		for _, want := range []string{"v1.2.3-test", "0123abcdef", runtime.Version(), runtime.GOOS + "/" + runtime.GOARCH} {
+		for _, want := range []string{"v1.2.3-test", "0123abcdef", runtime.Version(), runtime.GOOS + "/" + runtime.GOARCH, "sqlite: " + wantEngineVersion(t)} {
 			if !strings.Contains(stdout, want) {
 				t.Errorf("stdout = %q, want it to contain %q", stdout, want)
 			}
@@ -172,7 +185,7 @@ func TestVersionReportsBuildInfo(t *testing.T) {
 			t.Fatalf("exit code = %d, want 0 (stderr %q)", code, stderr)
 		}
 		got := decodeSingleVersionObject(t, stdout)
-		want := versionObject{Type: "version", Version: "v1.2.3-test", Commit: "0123abcdef", GoVersion: runtime.Version(), OS: runtime.GOOS, Arch: runtime.GOARCH}
+		want := versionObject{Type: "version", Version: "v1.2.3-test", Commit: "0123abcdef", GoVersion: runtime.Version(), OS: runtime.GOOS, Arch: runtime.GOARCH, SQLiteVersion: wantEngineVersion(t)}
 		if got != want {
 			t.Errorf("version object = %+v, want %+v", got, want)
 		}

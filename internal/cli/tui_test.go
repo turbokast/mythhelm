@@ -640,15 +640,17 @@ func TestUntouchedVerbsStable(t *testing.T) {
 		normalise := func(s string) string {
 			s = regexp.MustCompile(`(?m)^commit: .*$`).ReplaceAllString(s, "commit: TEST")
 			s = regexp.MustCompile(`(?m)^go: .*$`).ReplaceAllString(s, "go: TEST")
-			return regexp.MustCompile(`(?m)^platform: .*$`).ReplaceAllString(s, "platform: TEST")
+			s = regexp.MustCompile(`(?m)^platform: .*$`).ReplaceAllString(s, "platform: TEST")
+			return regexp.MustCompile(`(?m)^sqlite: .*$`).ReplaceAllString(s, "sqlite: TEST")
 		}
 		code, out, stderr := runMain("version")
 		if code != 0 || stderr != "" {
 			t.Fatalf("version = %d/%q/%q, want exit 0 and no stderr", code, out, stderr)
 		}
-		// The commit, toolchain and platform lines vary by checkout and
-		// machine; the template around them is the stable contract.
-		if want, got := "mythhelm devel\ncommit: TEST\ngo: TEST\nplatform: TEST\n", normalise(out); got != want {
+		// The commit, toolchain, platform and engine lines vary by
+		// checkout and machine; the template around them is the stable
+		// contract.
+		if want, got := "mythhelm devel\ncommit: TEST\ngo: TEST\nplatform: TEST\nsqlite: TEST\n", normalise(out); got != want {
 			t.Fatalf("version template = %q, want %q", got, want)
 		}
 	})
