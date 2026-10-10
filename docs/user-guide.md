@@ -240,9 +240,10 @@ the drain through backup, import and adoption, so the legacy `run`,
 `previewed` phase does not refuse legacy commands by itself: a migration
 interrupted before it records `drained` leaves the phase at `previewed`,
 and they are admitted again once the locks are released. From `drained`
-onward the phase refuses them even after the locks are released. A fresh apply never overwrites a backup: an unrecorded stale
-backup at the default path must be moved
-aside first. A backup the ledger has recorded is reused for the resume,
+onward the phase refuses them even after the locks are released.
+
+A fresh apply never overwrites a backup: an unrecorded stale backup at
+the default path must be moved aside first. A backup the ledger has recorded is reused for the resume,
 verified by its digest, and must stay in place: moving it aside makes
 the next apply refuse. No command restores the backup yet
 ([#320](https://github.com/turbokast/mythhelm/issues/320)), and a
