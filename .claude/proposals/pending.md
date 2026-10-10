@@ -98,3 +98,27 @@ Add to the task-breakdown method: when an acceptance criterion needs a state to 
 **Proposed change:**
 
 In step 1, write the range to a run-unique path such as `<tmp>/<run-id>/<spec>-range.json`, and in step 3 require the dispatch prompt to state the base and head it expects, so a reviewer that reads a file with different values stops instead of reviewing it.
+
+## P-supervised-stop-recover-1 — Test the next owner against what a new writer leaves behind
+
+- **Source spec**: `supervised-stop-recover`
+- **Type**: skill
+- **Target**: `.claude/skills/spec-decomposition/SKILL.md`
+- **Rationale**: Two criticals reached the whole-spec review because each task tested a handler against its own fixtures. A control handler wrote attempt state that a live legacy owner holds, and wrote it without a journal event or spool ingest, so the next legacy owner failed ingest and blocked admissions. The per-task review saw only the writer. Naming the reader of the state the task writes, and testing it, would have shown the fault in the task.
+- **Evidence**: Review Summary criticals C3 and N1 (`internal/control/runowner.go:20-33`, `internal/control/server.go:178-187`), fixed by #336 and #350; `specs/done/supervised-stop-recover/tasks.md` Tasks 1, 3 and 4 acceptance, which pin the handlers and never run a later owner against their output.
+
+**Proposed change:**
+
+Add to the task-breakdown method: when a task adds a writer to state that another component reads or owns (a projection column, a table, a spool, a lock-protected directory), the task's Acceptance lists a test that runs the next reader or owner against what the writer left, through the registered production entry point, and a test that the writer refuses while another owner holds the state. A task that cannot name the reader says so in its Spec deviations.
+
+## P-supervised-stop-recover-2 — Fixture processes are reaped by identity and released before cleanup
+
+- **Source spec**: `supervised-stop-recover`
+- **Type**: rule
+- **Target**: `.claude/rules/test-quality.md`
+- **Rationale**: Three test failures on three platforms came from fixtures that spawn long-lived processes and leave cleanup to the end of the test. A parked worker held a file open and Windows could not delete the temporary directory. A cleanup that identified a worker by PID alone waited on a recycled PID. A probe scanned for a fresh process once and read its environment before the kernel had recorded it. Each needed its own test-only fix after the task merged.
+- **Evidence**: `specs/done/supervised-stop-recover/tasks.md` Task 4 Spec deviations (`TestIngestFailureInterruptsRunExit6`, CI run 38003475427); #340 (Windows ARM, run 38038748783); #337 (Linux ARM, run 38034542400, mechanism measured in the pull request).
+
+**Proposed change:**
+
+Add under Required: A fixture that starts a process registers its release when it starts, not at the end of the test. The release matches the process by PID and start identity before it signals or waits on it, wakes anything that parks the process until the test ends, and fails the test when the process outlives the deadline. A probe that looks for a process it just started polls with a deadline until the process is visible instead of scanning once.
