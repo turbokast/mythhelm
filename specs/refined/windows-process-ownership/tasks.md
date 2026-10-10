@@ -53,7 +53,7 @@
 - **Domain/agent**: go-implementer
 - **Budget**: complex (process ownership and cross-platform behaviour)
 - **Depends on**: Task 1, Task 2
-- **Change**: Create the Job Object, start the native suspended, assign it, resume it, and fail closed on every step, so no descendant exists outside the job (FR-1). First step: a spike run in CI on both Windows jobs (`windows-latest` and `windows-11-arm`): a throwaway test logs `IsProcessInJob(GetCurrentProcess(), 0)` and, when true, `QueryInformationJobObject(0, JobObjectExtendedLimitInformation)` `LimitFlags`; the run ids and the logged values per runner go in `scratchpad.md` (OQ-3, D11). A compile-only check under `GOOS=windows` is not the spike. `parentJob` is defined in design §2.2: `(false, nil)` when the worker is in no job; otherwise `(LimitFlags & JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE != 0, nil)`; any API error is returned as an error. If a runner reports `(true, nil)`, the production check stays, the lifecycle tests on that runner replace `parentJob` with a stub returning `(false, nil)` and say so in their names, and that architecture gets no `supported` matrix row from stubbed tests (D11).
+- **Change**: Create the Job Object, start the native suspended, assign it, resume it, and fail closed on every step, so no descendant exists outside the job (FR-1). First step: a spike run in CI on both Windows jobs (`windows-latest` and `windows-11-arm`): a throwaway test logs `IsProcessInJob(GetCurrentProcess(), 0)` and, when true, `QueryInformationJobObject(0, JobObjectExtendedLimitInformation)` `LimitFlags`; the run ids and the logged values per runner go in `scratchpad.md` (OQ-3, D11). A compile-only check under `GOOS=windows` is not the spike. `parentJob` is defined in design §2.2: `(false, nil)` when the worker is in no job; otherwise `(LimitFlags & JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE != 0, nil)`; any API error is returned as an error. If the spike shows any Windows runner reporting `(true, nil)` from `parentJob` (it already sits inside a kill-on-close job), Task 3 stops after the spike and escalates to the maintainer before changing production code; the options then are breakaway at spawn, or refusal with the out-of-process tests reworked. Stubbing `parentJob` in the lifecycle tests is not an option, because a stub cannot reach out-of-process workers (D11).
 - **Files**:
   - `internal/workers/job_windows.go` (jobObject, newJob, assign, terminate, members, close, resume helper, lazy kernel32 bindings)
   - `internal/workers/job_other.go` (`//go:build !windows`, empty `jobObject`)
@@ -211,14 +211,14 @@
 - **Domain/agent**: go-implementer
 - **Budget**: standard
 - **Depends on**: Task 7, Task 9
-- **Change**: Correct the Windows statements in the user docs to the tested subset (AC-5.4) and mark ADR 0004 as superseded.
+- **Change**: Correct the Windows statements in the user docs to the tested subset (AC-5.4), state that a launch is refused inside a kill-on-close job (D11, honesty register), and mark ADR 0004 as superseded.
 - **Files**:
   - `docs/limitations.md` (the Windows lines claiming recovery and exit 7)
   - `README.md` (the Windows line)
   - `docs/decisions/0004-slice-process-model.md` (status line pointing to the superseding ADR)
   - `internal/processsupport/docs_test.go` (new)
 - **Acceptance**:
-  - `TestDocsMatchWindowsMatrix` (new, in `internal/processsupport/docs_test.go`): every Windows (arch, surface) pair the three docs name as supported is a row of the matrix, the docs name the untested subset, and `docs/limitations.md` contains no unqualified sentence that recovery works on Windows (checked by anchoring on its Windows paragraph, not a file-wide match). Fails before: the doc claims recovery on Windows.
+  - `TestDocsMatchWindowsMatrix` (new, in `internal/processsupport/docs_test.go`): every Windows (arch, surface) pair the three docs name as supported is a row of the matrix, the docs name the untested subset and the launch refusal inside a kill-on-close job, and `docs/limitations.md` contains no unqualified sentence that recovery works on Windows (checked by anchoring on its Windows paragraph, not a file-wide match). Fails before: the doc claims recovery on Windows.
   - `scripts/ci/check-public-hygiene.sh` passes.
 - **Invariants touched**: I14 (documentation claims only tested subsets).
 
