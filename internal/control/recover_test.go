@@ -590,6 +590,23 @@ func TestRecoverRefusedWhileALiveOwnerHoldsTheRun(t *testing.T) { // N2, I18, I2
 	}
 }
 
+func TestRecoverFailsClosedWithoutARunDirectory(t *testing.T) { // I23, v2 §6.4
+	t.Parallel()
+	f := newRecoverState(t, "run_rec_nodir", "att_rec_nodir")
+	killWorker(t, f, nil, 2)
+	if err := os.RemoveAll(filepath.Join(f.dir, "runs", f.runID)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Execute(f.ctx(t), RecoverHandler(f.deps()), Peer{}, recoverIntent(t, "op_rec_nodir", f.runID))
+	requireCode(t, err, CodeOwnershipUnresolved)
+	if rows := attemptRows(t, f.db, f.runID); len(rows) != 1 {
+		t.Fatalf("run holds %d attempts, want one: no continuation without ownership", len(rows))
+	}
+	if n := f.launcher.count(); n != 0 {
+		t.Fatalf("launcher ran %d times, want zero", n)
+	}
+}
+
 func TestRecoveryNeverReplaysEffects(t *testing.T) { // I12 (v2 §6.2)
 	t.Parallel()
 	native := 4242
