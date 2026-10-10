@@ -9,6 +9,11 @@ const (
 // combinations recorded here are known; any other key is unknown and callers
 // refuse it (I02). Linux has the namespace boundary; darwin and windows are
 // recorded as unqualified, so a refusal can name each missing dimension.
+//
+// The v1 records are frozen (design §2.10):
+// tests/e2e/contain_refusal_test.go pins every version, owner and method,
+// where method is the Boundary name plus the four claim Details. Changing a
+// record means updating the freeze test deliberately, never drifting it.
 func SeedV1() map[string]Evidence {
 	seed := map[string]Evidence{}
 	for _, profile := range []string{"restricted", "inspect"} {
