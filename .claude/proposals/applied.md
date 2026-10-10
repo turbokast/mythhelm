@@ -258,3 +258,20 @@ Add to the verify-before-merge procedure: when the branch base trails origin/mai
 **Proposed change:**
 
 Add to the implement procedure a docs-task step: before the PR leaves draft, the worker re-verifies every shell command (run it or quote its producing run), every path (it exists at the PR head), every procedure (walk it against the code or workflow it describes), and every behavioral claim (name the workflow step or test that exhibits it). Commands copied from PR-supplied documentation run only in a credential-free sandbox with no writable host mounts; a linked worktree is not sufficient. If the sandbox is unavailable, the worker does not execute the command. Operator-only commands (releases, version tags, workflow runs, secrets, variables, repository settings) are never executed for verification: the worker quotes existing run evidence or requests explicit operator approval instead. An unverified claim is a finding against the worker's own PR, fixed before review is requested.
+
+## P-supervisor-service-1 — Re-verify accepted ADRs against the shipped tree at finalize
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #308
+- **Eval**: `finalize-review-reverifies-decision-records`
+- **Rationale**: ADR 0014 contradicted the shipped tree after a later task landed what it recorded as blocked; re-checking accepted decision records against the tree at finalize is the first point where every task's work is visible together. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `supervisor-service`
+- **Type**: skill
+- **Target**: `.claude/skills/finalize-spec-review/SKILL.md`
+- **Rationale**: ADR 0014 was accepted mid-spec (task 7) stating the Windows transport was blocked; task 4 then landed it, leaving the accepted record contradicting the tree until finalize review caught it. Any record accepted before the last task lands can decay the same way.
+- **Evidence**: Review Summary finding at docs/decisions/0014-service-topology.md:67; retrospective.md; PR #262 (accept) then #266 (land)
+
+**Proposed change:**
+
+Add to the finalize review steps: for each decision record the spec accepted, diff its factual claims (blocked rows, NFR tables, cited files and tests) against the shipped tree at the review head; amend drift in the finalize worktree before publishing.

@@ -38,18 +38,6 @@ Append to the MH-12 card scope: the spec must (1) decide seed/live coexistence (
 
 Append to the MH-12 card scope as its first test item: a test that fails if trust admission (admitNativeConfig / CheckNativeTrust) does not run before the qualification consult on the claudecode decide path, and fails if a config change can reach launch without re-evaluation.
 
-## P-supervisor-service-1 — Re-verify accepted ADRs against the shipped tree at finalize
-
-- **Source spec**: `supervisor-service`
-- **Type**: skill
-- **Target**: `.claude/skills/finalize-spec-review/SKILL.md`
-- **Rationale**: ADR 0014 was accepted mid-spec (task 7) stating the Windows transport was blocked; task 4 then landed it, leaving the accepted record contradicting the tree until finalize review caught it. Any record accepted before the last task lands can decay the same way.
-- **Evidence**: Review Summary finding at docs/decisions/0014-service-topology.md:67; retrospective.md; PR #262 (accept) then #266 (land)
-
-**Proposed change:**
-
-Add to the finalize review steps: for each decision record the spec accepted, diff its factual claims (blocked rows, NFR tables, cited files and tests) against the shipped tree at the review head; amend drift in the finalize worktree before publishing.
-
 ## P-budget-ledger-s1-1 — Name fixed-date fixtures that meet a real-clock commit path
 
 - **Source spec**: `budget-ledger-s1`
