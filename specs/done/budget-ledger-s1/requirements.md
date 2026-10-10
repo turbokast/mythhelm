@@ -78,7 +78,7 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 ### FR-7 — Unknown quota stays unknown (§7.3, I02, I09)
 
 - **AC-7.1** [I09, §7.3] Unknown remaining quantity shall be shown in receipts and CLI run output as `unknown`, never as zero or a remaining balance.
-- **AC-7.2** [I02, §7.3] Unknown remaining quantity alone shall not block a qualified stop-at-exhaustion route; the route is allowed only when exhaustion reliably waits or stops rather than charges. *Amended 2026-10-10 (maintainer decision Q-20):* S1 records no quota reset, so after one exhaustion the bucket stays refused (AC-6.2 holds; this AC is met only until the first exhaustion). Recording resets and clearing the refusal is deferred to [#327](https://github.com/turbokast/mythhelm/issues/327).
+- **AC-7.2** [I02, §7.3] Unknown remaining quantity alone shall not block a qualified stop-at-exhaustion route; the route is allowed only when exhaustion reliably waits or stops rather than charges. *Amended 2026-10-10 (maintainer decision Q-20):* S1 records no quota reset, so once an exhaustion's AC-6.2 retries are spent the bucket stays refused, and a later exhaustion does not restart the schedule (AC-6.2 holds; this AC is met only until the first exhaustion's retries are spent). Recording resets and clearing the refusal is deferred to [#327](https://github.com/turbokast/mythhelm/issues/327).
 
 ## Non-Functional Requirements
 
