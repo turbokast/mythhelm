@@ -167,13 +167,19 @@ mythhelm run --envelope-execution 45m --envelope-repairs 5 ...
 `[envelopes]` table in `mythhelm.toml` sets the middle layer
 (`execution = "45m"`, `repairs = 5`, `replans`, `transport_retries`), decoded
 strictly: unknown keys, invalid durations and negative counts refuse admission.
+The file is read only for runs that admit checks: a `--no-checks` run ignores
+the `[envelopes]` table and uses flags and built-ins.
 Precedence is flags, then file, then built-ins. Launches past a ceiling are
 refused and the run becomes `blocked` with a reason naming the exhausted
 kind (`envelope_repairs_exhausted`, `envelope_replans_exhausted`,
 `envelope_transport_retries_exhausted`, `envelope_deadline_exceeded`).
-Extending a run requires a recorded user or standing-grant decision; S1
-currently supports only the recorded `run.extension_granted` user decision —
-flags and configuration changes cannot raise a ceiling mid-run.
+Each S1 run launches a single attempt, so only the execution ceiling stops a
+live run, whether the launching supervisor or `mythhelm recover` is watching
+it; the repair, replan and transport-retry ceilings are checked at launch only
+(#328). Extending a run requires a recorded user or standing-grant decision;
+S1 can record only the `run.extension_granted` user decision, no command
+records one yet, and a `blocked` run is not relaunched by `mythhelm recover`
+(#329). Flags and configuration changes cannot raise a ceiling mid-run.
 
 **Completion reserve.** Before dispatching a material replan after the first
 verification, MYTHHELM checks that the execution time left covers one more
@@ -193,8 +199,15 @@ candidate and session artifacts, ends `blocked` with reason
 new runs on the same bucket are refused with `allowance_exhausted`; the
 operator may retry on the recorded schedule (backoff 1m, 5m, 15m, then stop
 when the reset is unknown, at most 3 retries), and MYTHHELM itself launches
-nothing automatically. The run's reservation is released only after the
-attempt reaches terminal state.
+nothing automatically. Once the 3 retries are spent the bucket refuses new
+runs for good: S1 records no reset, so nothing clears the row and no command
+does either (#327, awaiting a maintainer decision). The run's reservation is
+released only after the attempt reaches terminal state.
+
+The exhaustion signal is synthetic. The Claude Code decoder recognises it from
+a fixture shape (`allowance_exhausted`) that no recorded native run has
+produced; on a real route an exhausted allowance surfaces as a provider-limit
+or billing error and the bucket is not recorded.
 
 **Reservations.** Admission holds exactly one quota reservation coupled to the
 run's bucket, with quantity `unknown`. The reservation is

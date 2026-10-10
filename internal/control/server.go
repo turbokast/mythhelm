@@ -20,11 +20,12 @@ import (
 type Server struct {
 	mu      sync.RWMutex
 	methods map[string]Handler
+	long    map[string]bool
 }
 
 // NewServer builds a Server with the given method bindings.
 func NewServer(handlers map[string]Handler) *Server {
-	s := &Server{methods: make(map[string]Handler, len(handlers))}
+	s := &Server{methods: make(map[string]Handler, len(handlers)), long: map[string]bool{}}
 	maps.Copy(s.methods, handlers)
 	return s
 }
@@ -41,14 +42,32 @@ func (s *Server) Register(method string, h Handler) error {
 	return nil
 }
 
-// Dispatch runs the intent's method through Execute. An unregistered method
-// returns capability_unsupported without touching the ledger.
+// RegisterLong binds method to h as a long handler: Dispatch runs it
+// through ExecuteLong, so waits and post-commit launches hold no ledger
+// transaction. A duplicate registration is an error naming the method.
+func (s *Server) RegisterLong(method string, h Handler) error {
+	if err := s.Register(method, h); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.long[method] = true
+	return nil
+}
+
+// Dispatch runs the intent's method through Execute, or through
+// ExecuteLong for a method bound with RegisterLong. An unregistered
+// method returns capability_unsupported without touching the ledger.
 func (s *Server) Dispatch(ctx context.Context, peer Peer, intent Intent) (Result, error) {
 	s.mu.RLock()
 	h, ok := s.methods[intent.Method]
+	long := s.long[intent.Method]
 	s.mu.RUnlock()
 	if !ok {
 		return Result{}, newError(CodeCapabilityUnsupported, "method %q is not supported", intent.Method)
+	}
+	if long {
+		return ExecuteLong(ctx, h, peer, intent)
 	}
 	return Execute(ctx, h, peer, intent)
 }
@@ -135,24 +154,26 @@ func AssignHandler(db *sql.DB) Handler {
 	}
 }
 
-// RegisterStop binds the stop method to s. It stays out of
-// NewSupervisorServer until Task 4 folds the stop and recover methods into
-// the served set with their support-matrix rows, so the matrix test keeps
-// passing without a stop row meanwhile.
+// RegisterStop binds the stop method to s as a long handler: the spool
+// wait runs outside any transaction. It is part of the served set (see
+// NewSupervisorServer).
 func (s *Server) RegisterStop(d StopDeps) error {
-	return s.Register("stop", StopHandler(d))
+	return s.RegisterLong("stop", StopHandler(d))
 }
 
-// RegisterRecover binds the recover method to s. Like RegisterStop, it
-// stays out of NewSupervisorServer until Task 4 folds it in with its
-// support-matrix rows.
+// RegisterRecover binds the recover method to s as a long handler: the
+// continuation launch is a post-commit handoff. It is part of the served
+// set (see NewSupervisorServer).
 func (s *Server) RegisterRecover(d RecoverDeps) error {
-	return s.Register("recover", RecoverHandler(d))
+	return s.RegisterLong("recover", RecoverHandler(d))
 }
 
-// NewSupervisorServer binds every method the supervisor serves to db.
-func NewSupervisorServer(db *sql.DB) *Server {
-	return NewServer(map[string]Handler{
+// NewSupervisorServer binds every method the supervisor serves: the six
+// short intents on db, plus the stop and recover long intents on the
+// ledger handle, the journal beside it, the state directory, and the
+// continuation launcher (nil fails a fresh continuation closed).
+func NewSupervisorServer(db *sql.DB, j *journal.Journal, stateDir string, launch func(context.Context, RecoveryLaunch) error) *Server {
+	srv := NewServer(map[string]Handler{
 		"status":    StatusHandler(db),
 		"assign":    AssignHandler(db),
 		"reserve":   ReserveHandler(db),
@@ -160,6 +181,10 @@ func NewSupervisorServer(db *sql.DB) *Server {
 		"heartbeat": HeartbeatHandler(db),
 		"read":      ReadHandler(db),
 	})
+	// The methods are fresh names on a fresh server: registration cannot fail.
+	_ = srv.RegisterStop(StopDeps{DB: db, Journal: j, StateDir: stateDir})
+	_ = srv.RegisterRecover(RecoverDeps{DB: db, StateDir: stateDir, Launch: launch})
+	return srv
 }
 
 // OpenLedger migrates the state database in dir and returns the supervisor's

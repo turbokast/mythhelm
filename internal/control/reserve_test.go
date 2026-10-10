@@ -119,7 +119,7 @@ func TestReserveRejectsUnknownOwnerAndEmptyFields(t *testing.T) {
 func supervisorFixture(t *testing.T) (*sql.DB, context.Context, *Server) {
 	t.Helper()
 	db, _ := openLedger(t)
-	return db, WithLedger(t.Context(), db), NewSupervisorServer(db)
+	return db, WithLedger(t.Context(), db), NewSupervisorServer(db, nil, "", nil)
 }
 
 func params(t *testing.T, v any) json.RawMessage {
