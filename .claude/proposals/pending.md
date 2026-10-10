@@ -122,3 +122,27 @@ Add to the task-breakdown method: when a task enforces an invariant or acceptanc
 
 Add to step 3: for each behaviour a page describes as available, name the command or flag that reaches it today. State when a behaviour is reachable only through tests or a library call and not through the documented command or flag, and include the tracking issue. State a signal that rests on a synthetic fixture as such (I14).
 
+
+## P-supervisor-migration-1 — Test a cross-task guarantee at the composed entry point
+
+- **Source spec**: `supervisor-migration`
+- **Type**: skill
+- **Target**: `.claude/skills/spec-decomposition/SKILL.md`
+- **Rationale**: A requirement that a lock stays held from the drain through the backup and import spanned two tasks: one produced `Drain`, the next consumed it in `Apply`. Each task tested its own function, and eight per-task reviews and gates passed while the lock was released between the two calls. Only the whole-spec review found it, as a critical, and a fix pull request was needed before finalize. No task owned a test of the composed behaviour, so nothing prompted one.
+- **Evidence**: Review Summary critical finding 2 (`internal/migrate/drain.go`, `internal/migrate/apply.go` before fix PR #324); tasks.md Task 4 Spec deviations (lock held alongside the instance lock); `TestApplyHoldsLocksAcrossDrainAndBackup` fails against the pre-fix code
+
+**Proposed change:**
+
+Add to the task-breakdown method: when an acceptance criterion needs a state to hold across steps produced by different tasks (a lock held, a snapshot taken, a phase unchanged), the task that composes the steps lists a test through the composed entry point that asserts the state between the steps, for example by a seam that runs between them. A test of each step alone does not satisfy it.
+
+## P-supervisor-migration-2 — Name the finalize range artifact after its spec
+
+- **Source spec**: `supervisor-migration`
+- **Type**: skill
+- **Target**: `.claude/skills/finalize-spec-review/SKILL.md`
+- **Rationale**: Step 1 writes the range to `<tmp>/range.json`, a fixed name. Two finalize runs sharing one session scratchpad overwrote each other's file, and both reviewers were handed another spec's base and head. They noticed because the brief also named the range; a brief without it would have reviewed the wrong spec's diff.
+- **Evidence**: the code-reviewer and architect reports of this run each name a base `0ffc42d` and head `82b6fd3` for the file that this run wrote with base `3e5907c`; the file later failed to parse as JSON (`Extra data`)
+
+**Proposed change:**
+
+In step 1, write the range to `<tmp>/<spec>-range.json`, and in step 3 require the dispatch prompt to state the base and head it expects, so a reviewer that reads a file with different values stops instead of reviewing it.

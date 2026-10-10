@@ -218,6 +218,30 @@ The billing, persistence and process-ownership decisions behind the ledger are
 in
 [ADR 0015](https://github.com/turbokast/mythhelm/blob/main/docs/decisions/0015-budget-ledger-s1.md).
 
+## Migrating an existing state directory
+
+`mythhelm migrate` brings a state directory written by the legacy per-run
+writer onto the v2 ledger. `mythhelm migrate --preview` (the default)
+prints the plan, the runs to import and the owners to drain, using no
+credentials and no network, and writes nothing. `mythhelm migrate --apply
+--yes` repeats the preview, then drains the legacy run owners (an owner
+still holding its lock at the deadline stops the migration with
+`ownership_unresolved`, exit 6), takes a backup next to the ledger as
+`mythhelm.db.bak-migration-v7` with a `.json` sidecar, and imports every
+legacy run as a one-task run. Imported runs keep their IDs, billing
+posture and evidence, and stay unverified. Without `--yes`, `--apply`
+prints the preview and writes nothing.
+
+Once the backup is taken the legacy `run`, `recover` and `apply` commands
+refuse. The backup is never overwritten: move an existing one aside before
+applying again. No command restores the backup yet
+([#320](https://github.com/turbokast/mythhelm/issues/320)), and a
+migration interrupted between the backup and the drain record can reuse a
+backup that misses later legacy writes
+([#341](https://github.com/turbokast/mythhelm/issues/341)). The decisions
+behind the migration are in
+[ADR 0016](https://github.com/turbokast/mythhelm/blob/main/docs/decisions/0016-migration-import.md).
+
 ## Limitations
 
 The [limitations register]({{ site.baseurl }}/limitations.html) lists what is

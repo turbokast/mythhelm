@@ -59,16 +59,18 @@ and verifying posture at import (I15 forbids manufacturing entitlement).
 (`internal/migrate/drain.go`, `Drain`; the order is pinned as
 `preview.Owners`: `internal/cli/apply.go`, `internal/cli/tui.go`,
 `internal/supervisor/pipeline.go`, `internal/supervisor/recover.go`).
-Migration holds the instance lock plus the state-dir owner lock for its
-whole run, so no service writer starts and no new legacy admission lands
-mid-migration; the four `AcquireOwner` sites quiesce in order with a
-bounded re-enumeration for admission racers, and a lock still held past
-the deadline aborts with `ownership_unresolved` — nothing half-adopted.
-`Drain` writes no ledger row, so the backup taken next holds every
-accepted write including in-flight completions. Adoption reuses the live
-launch identity and never relaunches; dead workers quarantine with
-launch identity and evidence refs, and their `migration.quarantined`
-envelopes persist post-backup from the `DrainReport` (ledger-native per
+`Apply` takes the instance lock and the state-dir owner lock once, and
+holds them with every run's owner lock from the drain through backup,
+import and adoption, so no service writer starts and no legacy
+admission, `recover` or `apply` passes its guard between any two steps;
+the four `AcquireOwner` sites quiesce in order with a bounded
+re-enumeration for admission racers, and a lock still held past the
+deadline aborts with `ownership_unresolved` — nothing half-adopted.
+The drain writes no ledger row, so the backup taken next, still under
+those locks, holds every accepted write including in-flight completions.
+Adoption reuses the live launch identity and never relaunches; dead
+workers quarantine with launch identity and evidence refs, and their
+`migration.quarantined` envelopes persist post-backup from the `DrainReport` (ledger-native per
 D4, so stream 4 reconciles them with ordinary machinery). Past
 `previewed`, new runs, recovery and apply refuse with
 `ownership_unresolved` naming the phase (guards in `pipeline.go`,
@@ -106,10 +108,13 @@ critical payloads must never be silently stored).
 
 **Resume by markers, never by replay** (`internal/migrate/apply.go`).
 The `migration_state` phase row names the failed step
-(`previewed → drained → imported → adopted`); re-apply reuses the backup
-by digest, skips imported runs by their `task_revisions` markers,
-re-drains from `drained`, adopts directly from `imported`, and no-ops
-from `adopted`. A post-drain surprise run aborts fatal. Rejected:
+(`previewed → drained → imported → adopted`); re-apply reuses a recorded
+backup by digest and refuses a backup that is missing, half-written or
+present at the default path without a record, skips imported runs by
+their `task_revisions` markers, re-drains from `drained`, adopts
+directly from `imported`, and no-ops from `adopted`. A run that appears
+during the drain aborts with `ownership_unresolved`; the held locks keep
+out any later one. Rejected:
 replaying effects (I12) and re-importing without markers.
 
 ## Consequences
@@ -125,7 +130,9 @@ replaying effects (I12) and re-importing without markers.
 - One writer per directory holds across the transition
   (`TestDrainRefusesWhileLockHeld`, `TestDrainAdoptsSameLaunch`,
   `TestDrainWritesNothing`, `TestDrainQuarantinesDeadWorker`,
-  `TestRunRefusedPastPreviewed`, `TestApplyRefusedDuringMigration`).
+  `TestRunRefusedPastPreviewed`, `TestApplyRefusedDuringMigration`,
+  `TestApplyHoldsLocksAcrossDrainAndBackup`,
+  `TestApplyRefusesStaleBackupAtDefaultPath`).
 - The way back is tested and refusals write nothing
   (`TestBackupRestoreRoundTrip`, `TestRestoreNewerSchemaRefuses`,
   `TestRestoreDigestMismatchRefuses`, `TestBackupRefusesOverwrite`).
