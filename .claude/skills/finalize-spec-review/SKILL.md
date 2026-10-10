@@ -43,7 +43,9 @@ Step 2 of `/finalize-spec`. Each task's pull request was reviewed on its own; th
    - **important**: fixed in a pull request, filed as a GitHub issue, or turned into a proposal by `/finalize-spec-retrospective`. Name which.
    - **suggestion**: kept in the list; no action required.
 
-6. **Write the Review Summary** at the top of `specs/unfinalized/<spec>/retrospective.md` in the working tree (create the file with the title `# <spec> — Retrospective`; replace an existing `## Review Summary` section, keep every other section):
+6. **Re-verify each decision record the spec accepted against the shipped tree.** A record accepted before the spec's last task merged can describe a state a later task changed. For every `docs/decisions/*.md` in `files` whose `Status` at `head` is `accepted`, check each factual claim against the tree at `head`: every row it marks blocked, deferred or unsupported is still not shipped, every NFR or limit table matches the code and tests, every file it cites exists (strip a `:line` suffix first, then `git cat-file -e <head>:<path>`), and every test it cites is declared in a test file (`git grep -nE 'func <TestName>\(' <head> -- '*_test.go'`; a bare name search also matches the record's own citation). Amend each drifted claim in the working tree the Review Summary goes to, committing nothing, so the finalize pull request carries it, and record it as a confirmed `important` finding with the disposition `amended in finalize`. A drift that contradicts the decision itself rather than a fact it records is an escalation: superseding a decision is the maintainers' call.
+
+7. **Write the Review Summary** at the top of `specs/unfinalized/<spec>/retrospective.md` in the working tree (create the file with the title `# <spec> — Retrospective`; replace an existing `## Review Summary` section, keep every other section):
 
    ```markdown
    ## Review Summary
@@ -63,7 +65,7 @@ Step 2 of `/finalize-spec`. Each task's pull request was reviewed on its own; th
 
    `scripts/ci/lint-agent-harness.sh` (check `finalize`) refuses a spec in `done/` whose `Open critical` is not 0 or whose summary lacks one of the five fields.
 
-7. **Report** to the caller: the counts, and each open critical finding with its anchor. `/finalize-spec` stops while any is open.
+8. **Report** to the caller: the counts, and each open critical finding with its anchor. `/finalize-spec` stops while any is open.
 
 ## Output
 

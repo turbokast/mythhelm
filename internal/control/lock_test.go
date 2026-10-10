@@ -2,6 +2,7 @@ package control
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -197,5 +198,102 @@ func TestStaleLockAdoptedWithGenerationBump(t *testing.T) {
 	}
 	if meta.Root != canonicalRoot(dir) {
 		t.Fatalf("adopted root = %q, want %q", meta.Root, canonicalRoot(dir))
+	}
+}
+
+// TestReadMetadataWaitsOutIncompleteRecord pins the reader side of the
+// holder's recording window: AcquireInstance creates the lock file empty
+// and writeMetadata truncates before it writes, so a concurrent reader (a
+// spawn site's CurrentGeneration, another process's status read) can see
+// an empty or partial record that is complete a moment later. The reader
+// must wait that out rather than report unexpected end of JSON input.
+func TestReadMetadataWaitsOutIncompleteRecord(t *testing.T) { // I02
+	want := lockMetadata{Root: "/state/root", PID: 4242, StartedAt: time.Unix(1700000000, 0).UTC(), Generation: 7}
+	full, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	tests := []struct {
+		name string
+		seen []byte
+	}{
+		{name: "empty file", seen: nil},
+		{name: "partial record", seen: full[:len(full)/2]},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "supervisor.lock")
+			if err := os.WriteFile(path, tt.seen, 0o600); err != nil {
+				t.Fatalf("seeding incomplete record: %v", err)
+			}
+			finish := make(chan struct{})
+			go func() {
+				defer close(finish)
+				time.Sleep(50 * time.Millisecond)
+				if err := os.WriteFile(path, append(full, '\n'), 0o600); err != nil {
+					t.Errorf("completing record: %v", err)
+				}
+			}()
+			got, err := readMetadataErr(path)
+			<-finish
+			if err != nil {
+				t.Fatalf("readMetadataErr during the recording window: %v, want the completed record", err)
+			}
+			if got != want {
+				t.Fatalf("readMetadataErr = %+v, want %+v", got, want)
+			}
+		})
+	}
+}
+
+// TestReadMetadataDuringRewriteNeverFails drives the real writer against a
+// concurrent reader: writeMetadata truncates the flocked file before it
+// writes, and a long record followed by a short one makes every rewrite
+// pass through an empty file.
+func TestReadMetadataDuringRewriteNeverFails(t *testing.T) { // I02
+	path := filepath.Join(t.TempDir(), "supervisor.lock")
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) //nolint:gosec // G304: path is under t.TempDir()
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	roots := []string{"/a/very/long/state/root/" + strings.Repeat("x", 200), "/r"}
+	if err := writeMetadata(f, lockMetadata{Root: roots[1], PID: 1, Generation: 1}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	const rewrites = 200
+	writerErr := make(chan error, 1)
+	go func() {
+		for i := range rewrites {
+			if err := writeMetadata(f, lockMetadata{Root: roots[i%2], PID: 1, Generation: uint64(i)}); err != nil {
+				writerErr <- err
+				return
+			}
+		}
+		writerErr <- nil
+	}()
+
+	reads, failures := 0, 0
+	var firstFailure error
+	for done := false; !done; {
+		select {
+		case err := <-writerErr:
+			if err != nil {
+				t.Fatalf("writeMetadata: %v", err)
+			}
+			done = true
+		default:
+		}
+		if _, err := readMetadataErr(path); err != nil {
+			failures++
+			if firstFailure == nil {
+				firstFailure = err
+			}
+		}
+		reads++
+	}
+	if failures != 0 {
+		t.Fatalf("%d of %d reads failed during rewrites, first: %v", failures, reads, firstFailure)
 	}
 }

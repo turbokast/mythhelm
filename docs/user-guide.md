@@ -218,6 +218,41 @@ The billing, persistence and process-ownership decisions behind the ledger are
 in
 [ADR 0015](https://github.com/turbokast/mythhelm/blob/main/docs/decisions/0015-budget-ledger-s1.md).
 
+## Migrating an existing state directory
+
+`mythhelm migrate` brings a state directory written by the legacy per-run
+writer onto the v2 ledger. `mythhelm migrate --preview` (the default)
+prints the plan, the runs to import and the owners to drain, using no
+credentials and no network, and writes nothing. `mythhelm migrate --apply
+--yes` repeats the preview, then drains the legacy run owners (an owner
+still holding its lock at the deadline stops the migration with
+`ownership_unresolved`, exit 6), takes a backup next to the ledger as
+`mythhelm.db.bak-migration-v7` with a `.json` sidecar, and imports every
+legacy run as a one-task run. Imported runs keep their IDs, billing
+posture and evidence, and stay unverified. Without `--yes`, `--apply`
+prints the preview and writes nothing.
+
+Preview, including `--apply` without `--yes`, takes no migration locks
+and writes nothing. Once `--apply --yes` starts the migration, it holds
+the instance and state-directory locks, and each run's owner lock from
+the drain through backup, import and adoption, so the legacy `run`,
+`recover` and `apply` commands refuse while those locks are held. The
+`previewed` phase does not refuse legacy commands by itself: a migration
+interrupted before it records `drained` leaves the phase at `previewed`,
+and they are admitted again once the locks are released. From `drained`
+onward the phase refuses them even after the locks are released.
+
+A fresh apply never overwrites a backup: an unrecorded stale backup at
+the default path must be moved aside first. A backup the ledger has recorded is reused for the resume,
+verified by its digest, and must stay in place: moving it aside makes
+the next apply refuse. No command restores the backup yet
+([#320](https://github.com/turbokast/mythhelm/issues/320)), and a
+migration interrupted between the backup and the drain record can reuse a
+backup that misses later legacy writes
+([#341](https://github.com/turbokast/mythhelm/issues/341)). The decisions
+behind the migration are in
+[ADR 0016](https://github.com/turbokast/mythhelm/blob/main/docs/decisions/0016-migration-import.md).
+
 ## Limitations
 
 The [limitations register]({{ site.baseurl }}/limitations.html) lists what is
