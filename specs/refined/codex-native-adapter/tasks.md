@@ -257,10 +257,10 @@
 - **Files**:
   - `docs/limitations.md`
   - `README.md` ("Supported now" list)
-  - `docs/decisions/0016-codex-adapter-admission.md`
+  - `docs/decisions/0018-codex-adapter-admission.md`
 - **Acceptance**:
   - `grep -n 'codex' README.md` anchored to the "Supported now" list prints a line stating Codex is not yet a supported adapter, and the list still names `--adapter fake|claudecode`; with the line removed the anchored grep prints nothing.
   - `grep -n '^### Codex' docs/limitations.md` prints one heading, and the section under it names fidelity, entitlement and lifecycle as unproven (a region-anchored grep over that section prints three matches; with the section removed it prints none).
-  - `docs/decisions/0016-codex-adapter-admission.md` has Status, Context, Decision, Consequences sections and cites D1, D3, D10 and D12; `ls docs/decisions` shows no other file with the same number (renumber to the next free number if taken); `scripts/ci/check-public-hygiene.sh` exits 0.
+  - `docs/decisions/0018-codex-adapter-admission.md` has Status, Context, Decision, Consequences sections and cites D1, D3, D10 and D12; `ls docs/decisions` shows no other file with the same number (0016 is taken by `0016-migration-import.md` and the MH-11 spec claims 0017; renumber to the next free number if 0018 is taken); `scripts/ci/check-public-hygiene.sh` exits 0.
 - **Test plan**: Commands run from the tree root; sections anchored by heading.
 - **Invariants touched**: I14, G10 (published limitations); I15 (the billing decision D3 is recorded).
