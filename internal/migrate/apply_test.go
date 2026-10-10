@@ -119,3 +119,34 @@ func TestApplyHoldsLocksAcrossDrainAndBackup(t *testing.T) {
 		release()
 	}
 }
+
+// TestApplyRefusesMissingRecordedBackup // AC-7.4: a resume whose recorded
+// backup is gone cannot take a replacement, since the ledger may already
+// hold migration rows: Apply refuses, creates nothing at the default path
+// and leaves the phase where it was.
+func TestApplyRefusesMissingRecordedBackup(t *testing.T) {
+	isolateInstanceLock(t)
+	dir := t.TempDir()
+	db := openDrainDB(t, dir)
+	insertRun(t, db, "run_existing", "completed")
+	recorded := filepath.Join(dir, "gone.bak")
+	if _, err := db.Exec(`UPDATE migration_state SET phase = 'drained', backup_path = ? WHERE id = 1`, recorded); err != nil {
+		t.Fatalf("record backup: %v", err)
+	}
+
+	_, err := Apply(t.Context(), db, preview.Plan{})
+	var ce *v2contract.ControlError
+	if !errors.As(err, &ce) || ce.Code != v2contract.CodeInvalidContract {
+		t.Fatalf("Apply with a missing recorded backup = %v; want invalid_contract", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "mythhelm.db.bak-migration-v7")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("default-path backup stat = %v; want none taken", err)
+	}
+	phase, _, err := readMigrationState(t.Context(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if phase != string(PhaseDrained) {
+		t.Errorf("phase = %q; want drained unchanged", phase)
+	}
+}
