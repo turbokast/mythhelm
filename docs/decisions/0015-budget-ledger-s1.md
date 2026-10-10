@@ -32,11 +32,13 @@ also claimed 0003, so whoever lands second renumbers, and the second
 MH-21 (unbounded stall) and an uncoordinated 0003 (landing order would silently
 break a peer).
 
-**D3 — the run owner is the sole ledger writer.** No service exists in S1, so
-whichever process holds the run's owner lock (ADR 0005) writes that run's
-ledger rows inside its own transactions — usage rows with the ingest append,
-the envelope row and the reservation with the admission append. MH-21 adopts
-the tables later. Rejected: inventing a service inside this slice (MH-21's
+**D3 — the run owner is the sole ledger writer.** The S1 run path has no
+service, so whichever process holds the run's owner lock (ADR 0005) writes that
+run's ledger rows inside its own transactions — usage rows with the ingest
+append, the envelope row and the reservation with the admission append. MH-21
+adopts the tables later; since ADR 0014 its control plane also writes
+`reservations` (with an execution host), so the run owner is the sole writer of
+its run's S1 rows only. Rejected: inventing a service inside this slice (MH-21's
 scope).
 
 **D6 — S1 built-in ceilings are 30m/3/2/5.** The fallback envelope is 30
@@ -73,9 +75,11 @@ replan ceiling).
   `ReserveEstimate`) shared by admission, ingest, gates, receipts and the CLI;
   exhaustion codes are the exact strings `allowance_exhausted` and
   `budget_exhausted` for MH-21 to adopt.
-- One ledger store: the journal gains tables, never a second database; every
-  ledger write commits with the run event it describes, so a failed hold rolls
-  the admission back instead of leaving a partial claim.
+- One ledger store: the journal gains tables, never a second database; the
+  usage, envelope and admission-hold writes commit with the run event they
+  describe, so a failed hold rolls the admission back instead of leaving a
+  partial claim. Reservation release and orphan marking are separate
+  transactions that carry no run event.
 - Unknown stays unknown to the surface: receipts and CLI lines render
   `unknown`, never zero or an invented balance, and money is always an
   estimate, never a charge.

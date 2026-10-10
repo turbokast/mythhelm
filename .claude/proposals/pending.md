@@ -109,3 +109,39 @@ Add to the finalize review steps: for each decision record the spec accepted, di
 **Proposed change:**
 
 Add to the completion-entry procedure: a Spec deviation that defers to another spec's unmerged work must cite the tracking follow-up (issue or proposal id) that fires when the blocker lands; file that follow-up before the entry is written.
+
+## P-budget-ledger-s1-1 — Name fixed-date fixtures that meet a real-clock commit path
+
+- **Source spec**: `budget-ledger-s1`
+- **Type**: rule
+- **Target**: `.claude/rules/test-quality.md`
+- **Rationale**: Two tests in one spec launched at a hard-coded timestamp while the production path under test committed with the real clock and enforced a deadline. Once the real clock passed the fixture's deadline, the tests failed everywhere. The first (Task 9's reserve fixture) was caught in a review round; the second (Task 7's first-launch test) reached main and turned its CI red until a fix pull request floated the start. The existing "Deterministic" bullet says to inject time but does not name this shape, and both authors followed the letter of it by fixing the start instead of the clock.
+- **Evidence**: tasks.md Task 9 Spec deviations (2); main CI run on the Task 9 merge commit (job Go (windows-11-arm), `TestFirstLaunchStartsClockOnce`: deadline 12:10:00Z passed at 12:10:18Z); fix PR #276
+
+**Proposed change:**
+
+Add to the "Deterministic" bullet: a fixture that pins a wall-clock timestamp must also pin the clock the code under test reads. When the code under test reads the real clock, derive the fixture's times from `time.Now()` (or inject the clock); a hard-coded date plus a deadline or expiry is a test that fails on a schedule.
+
+## P-budget-ledger-s1-2 — List every entry path of a per-run guarantee in its task
+
+- **Source spec**: `budget-ledger-s1`
+- **Type**: skill
+- **Target**: `.claude/skills/spec-decomposition/SKILL.md`
+- **Rationale**: The execution-deadline task armed the deadline on the launch path and listed I21 under Invariants touched. The recovery path builds its own pipeline, so a run reattached after the launching supervisor died had no deadline. Every per-task review and gate passed; only the whole-spec review found it, as a critical, and a fix pull request was needed before finalize. A task that enforces an invariant on "every run" names no paths, so nothing prompts the author or the reviewer to enumerate them.
+- **Evidence**: Review Summary critical finding, `internal/supervisor/recover.go` before fix PR #317; tasks.md Task 7 Invariants touched
+
+**Proposed change:**
+
+Add to the task-breakdown method: when a task enforces an invariant or acceptance criterion that must hold for every run (a ceiling, a stop, a record), its Acceptance lists each path that reaches the run (launch, recover, resume, retry) and names one test per path, or says why a path cannot occur.
+
+## P-budget-ledger-s1-3 — Document only behaviour a command can reach
+
+- **Source spec**: `budget-ledger-s1`
+- **Type**: skill
+- **Target**: `.claude/skills/update-docs/SKILL.md`
+- **Rationale**: The user guide for the ledger described four ceilings, envelope extensions, the exhaustion schedule and the `[envelopes]` table as working, written from the design. The code behind each was reachable only from tests, ignored on a documented path, or fed by a synthetic fixture. The finalize review raised four important findings of this one class, and the guide was corrected at finalize. Step 2 of the skill reads statements against the code at the head but never asks whether a command reaches that code.
+- **Evidence**: Review Summary findings on `docs/user-guide.md` (ceilings, extension, exhaustion signal, `--no-checks`); issues #328, #329
+
+**Proposed change:**
+
+Add to step 3: for each behaviour a page describes as available, name the command or flag that reaches it today. State a behaviour that only tests or a library call reach as not yet reachable, with the tracking issue, and state a signal that rests on a synthetic fixture as such (I14).
