@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -568,6 +569,44 @@ func TestContinuationKeepsLaunchIdentity(t *testing.T) { // FR-2 AC-2.3
 	})
 }
 
+func TestRecoverRefusedWhileALiveOwnerHoldsTheRun(t *testing.T) { // N2, I18, I23, v2 §6.4
+	t.Parallel()
+	f := newRecoverState(t, "run_rec_owned", "att_rec_owned")
+	killWorker(t, f, nil, 2)
+	holdRunOwner(t, f.dir, f.runID)
+	_, err := Execute(f.ctx(t), RecoverHandler(f.deps()), Peer{}, recoverIntent(t, "op_rec_owned", f.runID))
+	requireCode(t, err, CodeOwnershipUnresolved)
+	if got := attemptState(t, f.db, f.attempt); got != "running" {
+		t.Fatalf("attempt state = %q, want running: nothing is written under another owner", got)
+	}
+	if rows := attemptRows(t, f.db, f.runID); len(rows) != 1 {
+		t.Fatalf("run holds %d attempts, want one: no continuation under another owner", len(rows))
+	}
+	if evs := recoveryEvents(t, f.j, f.runID); len(evs) != 0 {
+		t.Fatalf("journal holds %d recovery outcomes, want none", len(evs))
+	}
+	if n := f.launcher.count(); n != 0 {
+		t.Fatalf("launcher ran %d times, want zero", n)
+	}
+}
+
+func TestRecoverFailsClosedWithoutARunDirectory(t *testing.T) { // I23, v2 §6.4
+	t.Parallel()
+	f := newRecoverState(t, "run_rec_nodir", "att_rec_nodir")
+	killWorker(t, f, nil, 2)
+	if err := os.RemoveAll(filepath.Join(f.dir, "runs", f.runID)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Execute(f.ctx(t), RecoverHandler(f.deps()), Peer{}, recoverIntent(t, "op_rec_nodir", f.runID))
+	requireCode(t, err, CodeOwnershipUnresolved)
+	if rows := attemptRows(t, f.db, f.runID); len(rows) != 1 {
+		t.Fatalf("run holds %d attempts, want one: no continuation without ownership", len(rows))
+	}
+	if n := f.launcher.count(); n != 0 {
+		t.Fatalf("launcher ran %d times, want zero", n)
+	}
+}
+
 func TestRecoveryNeverReplaysEffects(t *testing.T) { // I12 (v2 §6.2)
 	t.Parallel()
 	native := 4242
@@ -576,9 +615,10 @@ func TestRecoveryNeverReplaysEffects(t *testing.T) { // I12 (v2 §6.2)
 		live    bool
 		settled string // "", "journaled" or "spooled"
 		uncert  bool
+		adopt   bool
 	}{
 		{name: "dead worker with ambiguous native effect is uncertain", live: false, uncert: true},
-		{name: "live worker with ambiguous native effect is uncertain", live: true, uncert: true},
+		{name: "live identity-matched worker with a running native is adopted", live: true, adopt: true},
 		{name: "journaled native result settles the effect", live: false, settled: "journaled"},
 		{name: "spooled native result settles the effect", live: false, settled: "spooled"},
 	}
@@ -599,7 +639,8 @@ func TestRecoveryNeverReplaysEffects(t *testing.T) { // I12 (v2 §6.2)
 					"attempt.native_result", "evt_spool_nresult_1"))
 			}
 			res, err := Execute(f.ctx(t), RecoverHandler(f.deps()), Peer{}, recoverIntent(t, "op_rec_fx", f.runID))
-			if c.uncert {
+			switch {
+			case c.uncert:
 				requireCode(t, err, CodeExternalEffectUncertain)
 				if string(CodeExternalEffectUncertain) != string(v2contract.CodeExternalEffectUncertain) {
 					t.Fatalf("control code %q differs from the v2 catalogue string", CodeExternalEffectUncertain)
@@ -617,7 +658,20 @@ func TestRecoveryNeverReplaysEffects(t *testing.T) { // I12 (v2 §6.2)
 				if rows := attemptRows(t, f.db, f.runID); len(rows) != 1 {
 					t.Fatalf("run holds %d attempts, want one: uncertainty starts nothing", len(rows))
 				}
-			} else {
+			case c.adopt:
+				if err != nil {
+					t.Fatalf("recover: %v", err)
+				}
+				if rep := decodeReport(t, res.Body); rep.Outcome != RecoverReconnected {
+					t.Fatalf("outcome = %q, want reconnected: the same live worker is adopted (AC-2.1)", rep.Outcome)
+				}
+				if got := attemptState(t, f.db, f.attempt); got != "running" {
+					t.Fatalf("attempt state = %q, want running: adoption moves nothing", got)
+				}
+				if n := f.launcher.count(); n != 0 {
+					t.Fatalf("launcher ran %d times for an adopted worker, want zero", n)
+				}
+			default:
 				if err != nil {
 					t.Fatalf("recover: %v", err)
 				}
@@ -809,12 +863,9 @@ func TestRegisterRecoverDuplicate(t *testing.T) {
 	if err := srv.RegisterRecover(f.deps()); err == nil {
 		t.Fatalf("second RegisterRecover succeeded, want the duplicate named")
 	}
-	// recover stays out of the served set until Task 4 folds it in with
-	// its support-matrix rows (the Task 1 stop precedent).
-	for _, m := range servedMethods() {
-		if m == "recover" {
-			t.Fatalf("NewSupervisorServer serves recover before Task 4 wires it")
-		}
+	// recover is folded into the served set with its support-matrix rows.
+	if !slices.Contains(servedMethods(), "recover") {
+		t.Fatal("NewSupervisorServer does not serve recover")
 	}
 }
 
@@ -1187,17 +1238,162 @@ func TestEventlessContinuationExpiresToQuarantine(t *testing.T) {
 	}
 }
 
-// TestRecoverUnservedUntilLaunchLeavesTransaction pins the Task 3
-// review-round-1 deferral: the continuation launch runs inside Execute's
-// transaction, so a commit failure after a successful spawn would orphan a
-// worker with no durable admission. recover stays out of the served set
-// until Task 4 lands the durable post-commit handoff. Task 4 deletes this
-// test when it lands the fix with registration.
-func TestRecoverUnservedUntilLaunchLeavesTransaction(t *testing.T) {
+// flakyLauncher fails its first launch, then records the rest: a spawn
+// failure after the admission committed.
+type flakyLauncher struct {
+	mu     sync.Mutex
+	calls  int
+	fails  int
+	bodies []RecoveryLaunch
+}
+
+func (l *flakyLauncher) launch(_ context.Context, r RecoveryLaunch) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.calls++
+	if l.calls == 1 {
+		l.fails++
+		return errors.New("spawn failed")
+	}
+	l.bodies = append(l.bodies, r)
+	return nil
+}
+
+// TestRecoverRetriesFailedLaunch pins the durable post-commit handoff: a
+// spawn failure after the admission committed leaves exactly one admitted
+// continuation, and the same operation_id relaunches it instead of
+// admitting another or replaying continued without a worker.
+func TestRecoverRetriesFailedLaunch(t *testing.T) {
 	t.Parallel()
-	srv := NewSupervisorServer(nil)
-	_, err := srv.Dispatch(context.Background(), Peer{}, Intent{OperationID: "op_rec_unserved", Method: "recover"})
-	requireCode(t, err, CodeCapabilityUnsupported)
+	f := newRecoverState(t, "run_rec_flaky", "att_rec_flaky")
+	killWorker(t, f, nil, 2)
+	flaky := &flakyLauncher{}
+	deps := f.deps()
+	deps.Launch = flaky.launch
+	h := RecoverHandler(deps)
+	in := recoverIntent(t, "op_rec_flaky", f.runID)
+	if _, err := ExecuteLong(f.ctx(t), h, Peer{}, in); err == nil {
+		t.Fatal("recover with a failing launcher returned no error")
+	} else if _, ok := errors.AsType[*Error](err); ok {
+		t.Fatalf("err = %v, want a transient failure, not a stored one", err)
+	}
+	rep, err := func() (RecoveryReport, error) {
+		res, err := ExecuteLong(f.ctx(t), h, Peer{}, in)
+		if err != nil {
+			return RecoveryReport{}, err
+		}
+		return decodeReport(t, res.Body), nil
+	}()
+	if err != nil {
+		t.Fatalf("retry after the spawn failure: %v", err)
+	}
+	if rep.Outcome != RecoverContinued {
+		t.Fatalf("outcome = %q, want continued", rep.Outcome)
+	}
+	flaky.mu.Lock()
+	calls, fails, launched := flaky.calls, flaky.fails, len(flaky.bodies)
+	flaky.mu.Unlock()
+	if calls != 2 || fails != 1 || launched != 1 {
+		t.Fatalf("launcher calls = %d (%d fails, %d recorded), want the failure plus one relaunch", calls, fails, launched)
+	}
+	if rows := attemptRows(t, f.db, f.runID); len(rows) != 2 {
+		t.Fatalf("run holds %d attempts, want the recovered one plus one continuation: the retry replayed, not re-admitted", len(rows))
+	}
+	if got := f.examined.Load(); got != 1 {
+		t.Fatalf("examination passes = %d, want one: the retry replayed the record", got)
+	}
+	if evs := recoveryEvents(t, f.j, f.runID); len(evs) != 1 {
+		t.Fatalf("journal holds %d recovery outcomes, want one", len(evs))
+	}
+}
+
+// TestRecoverAdoptsHandshakeContinuation pins the handshake/recover split:
+// the handshake records a continued outcome without spawning, and a later
+// recover adopts the handshake-admitted continuation by launching it —
+// unless a worker already runs there, in which case it launches nothing.
+func TestRecoverAdoptsHandshakeContinuation(t *testing.T) {
+	t.Parallel()
+	t.Run("unspawned continuation launches", func(t *testing.T) {
+		t.Parallel()
+		f := newRecoverState(t, "run_rec_adopt", "att_rec_adopt")
+		killWorker(t, f, nil, 2)
+		_, rep, err := Reconnect(t.Context(), ReconnectDeps{DB: f.db, StateDir: f.dir}, f.runID)
+		if err != nil {
+			t.Fatalf("handshake: %v", err)
+		}
+		if rep.Outcome != RecoverContinued || rep.NewAttemptID == "" {
+			t.Fatalf("handshake report = %+v, want an admitted continuation", rep)
+		}
+		res, err := ExecuteLong(f.ctx(t), RecoverHandler(f.deps()), Peer{}, recoverIntent(t, "op_rec_adopt", f.runID))
+		if err != nil {
+			t.Fatalf("adopting recover: %v", err)
+		}
+		if got := decodeReport(t, res.Body); got.Outcome != RecoverContinued || got.NewAttemptID != rep.NewAttemptID {
+			t.Fatalf("adopting report = %+v, want the handshake's continuation", got)
+		}
+		if n := f.launcher.count(); n != 1 {
+			t.Fatalf("launcher ran %d times, want exactly one adoption launch", n)
+		}
+		if got := f.examined.Load(); got != 0 {
+			t.Fatalf("examination passes = %d, want zero: the adoption replays the handshake's record", got)
+		}
+		if evs := recoveryEvents(t, f.j, f.runID); len(evs) != 1 {
+			t.Fatalf("journal holds %d recovery outcomes, want the handshake's one", len(evs))
+		}
+	})
+	t.Run("spawned continuation launches nothing", func(t *testing.T) {
+		t.Parallel()
+		f := newRecoverState(t, "run_rec_adopted", "att_rec_adopted")
+		killWorker(t, f, nil, 2)
+		_, rep, err := Reconnect(t.Context(), ReconnectDeps{DB: f.db, StateDir: f.dir}, f.runID)
+		if err != nil {
+			t.Fatalf("handshake: %v", err)
+		}
+		// A worker runs in the continuation directory: the adoption
+		// must not spawn a second.
+		contDir := workers.AttemptDir(f.dir, f.runID, rep.NewAttemptID)
+		if err := os.MkdirAll(contDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(contDir, "spool.jsonl"), []byte("{}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		res, err := ExecuteLong(f.ctx(t), RecoverHandler(f.deps()), Peer{}, recoverIntent(t, "op_rec_adopted", f.runID))
+		if err != nil {
+			t.Fatalf("adopting recover: %v", err)
+		}
+		if got := decodeReport(t, res.Body); got.Outcome != RecoverContinued {
+			t.Fatalf("adopting report = %+v, want continued", got)
+		}
+		if n := f.launcher.count(); n != 0 {
+			t.Fatalf("launcher ran %d times beside a live spool, want zero", n)
+		}
+	})
+	t.Run("dead worker identity without a spool launches nothing", func(t *testing.T) {
+		t.Parallel()
+		f := newRecoverState(t, "run_rec_deadid", "att_rec_deadid")
+		killWorker(t, f, nil, 2)
+		_, rep, err := Reconnect(t.Context(), ReconnectDeps{DB: f.db, StateDir: f.dir}, f.runID)
+		if err != nil {
+			t.Fatalf("handshake: %v", err)
+		}
+		// A worker wrote its identity here and is gone, its spool removed:
+		// it may have launched the native, so nothing relaunches (I12).
+		sleeper := startSleeper(t)
+		start, err := workers.ProcessStartTime(sleeper.Process.Pid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		killSleeper(t, sleeper)
+		writeWorkerJSONAt(t, workers.AttemptDir(f.dir, f.runID, rep.NewAttemptID), workers.Identity{SchemaVersion: 1,
+			RunID: f.runID, AttemptID: rep.NewAttemptID, PID: sleeper.Process.Pid, StartTime: start})
+		if _, err := ExecuteLong(f.ctx(t), RecoverHandler(f.deps()), Peer{}, recoverIntent(t, "op_rec_deadid", f.runID)); err != nil {
+			t.Fatalf("adopting recover: %v", err)
+		}
+		if n := f.launcher.count(); n != 0 {
+			t.Fatalf("launcher ran %d times beside a dead worker's identity, want zero", n)
+		}
+	})
 }
 
 func TestValidPIDBounds(t *testing.T) {

@@ -361,3 +361,16 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: release-pipeline reached done
 - **Cards**: MH-7
 - **Evidence**: PR #274, main CI green 7/7 at 4fa5d9a
+
+### D-85 — 2026-10-10: MH-16 → implementing (budget-ledger-s1)
+- **Type**: lifecycle-sync
+- **Decision**: MH-16 moved to implementing
+- **Rationale**: budget-ledger-s1 reached in-progress (run-spec, 12 tasks merged); this sync was missed at run start
+- **Cards**: MH-16
+
+### D-86 — 2026-10-10: MH-16 → shipped (budget-ledger-s1)
+- **Type**: lifecycle-sync
+- **Decision**: MH-16 moved to shipped
+- **Rationale**: budget-ledger-s1 finalized and in specs/done/
+- **Cards**: MH-16
+- **Evidence**: PR #335, main CI green at 5fe5282

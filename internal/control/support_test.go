@@ -171,12 +171,12 @@ func supportProblems(rows []supportRow, methods []string, tests map[string]strin
 // shippedDeliverables are the non-method rows, sorted. A new deliverable
 // adds its row here and to SUPPORT.md together.
 var shippedDeliverables = []string{
-	"capability-tokens", "execute-idempotency", "frame-codec", "instance-lock",
-	"lazy-start", "sole-writer-mutate", "transport-unix", "transport-windows-pipe",
+	"capability-tokens", "envelope-reconnect", "execute-idempotency", "frame-codec", "instance-lock",
+	"lazy-start", "pinned-ladder", "sole-writer-mutate", "transport-unix", "transport-windows-pipe",
 }
 
 func servedMethods() []string {
-	srv := NewSupervisorServer(nil)
+	srv := NewSupervisorServer(nil, nil, "", nil)
 	var out []string
 	for m := range srv.methods {
 		out = append(out, m)

@@ -110,18 +110,6 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Summary**: Qualify Codex as a native harness independently across fidelity, subscription entitlement, stop/recovery and session continuity. It may become the first credible included-only route or a later second route; qualification evidence determines order, with no SDK or same-model substitution.
 - **Notes**: Requires MH-10 records and effective startup/trust controls. Restaged to S1 so first-route selection is evidence-led; being the second named adapter is not a product requirement.
 
-### MH-16: Quota observations and the budget ledger
-- **Status**: specced
-- **Stage**: 1
-- **Gates**: G05
-- **Score**: 3.3 = (value 4 + urgency 5 + risk 4) / effort 4
-- **Spec**: `budget-ledger-s1`
-- **Issue**: [#37](https://github.com/turbokast/mythhelm/issues/37)
-- **Source**: Master Specification v2 §§7–8, 10, 12–13; W03/W04/W11; historical issue #37
-- **Summary**: Record typed observed/reported/estimated/declared/unknown usage and coupled quota reservations, finite run limits and foreground completion reserves. Enforce only established boundaries; exhaustion pauses or stops safely without paid fallback, while unknown remaining quota stays distinct from zero.
-- **Premise-grounded**: 2026-10-08 — estimate-only HOLDS; source-sections HOLDS; MH-10 HOLDS; MH-21 PARTIAL (plan only, sequences behind); no-ledger HOLDS; fail-today HOLDS; unknown-quota HOLDS
-- **Notes**: S1 needs the basic ledger/envelopes for one-agent delivery; multi-profile and experiment scheduling extend it in S2/S4. Requires MH-10 billing semantics and durable supervisor contracts; no provider hard-cap claim from cancellation alone.
-
 ### MH-23: Complete TUI intervention, accessibility and safe declarative themes
 - **Status**: triaged
 - **Stage**: 1
@@ -342,6 +330,18 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Summary**: Create a versioned seven-harness qualification registry with independent fidelity, entitlement, lifecycle/trust and platform/host evidence, drift triggers and next tests for blocked routes. Prove a credible first included-only route through authorised tests; neither subscription sign-in nor a user declaration establishes no paid continuation.
 - **Premise-grounded**: 2026-10-07 — subscription-only blocks HOLDS; probe HOLDS; no registry HOLDS; seven-harness HOLDS; issue section refs PARTIAL (v2 governs); no live usage authorised HOLDS
 - **Notes**: S0 blocker and first product prerequisite; currently subscription-only always blocks. Unknown mandatory entitlement/no-overage evidence blocks, while unknown remaining quota alone need not block an otherwise qualified stop-at-exhaustion route. No live usage or account changes are authorised by this card.
+
+### MH-16: Quota observations and the budget ledger
+- **Status**: shipped
+- **Stage**: 1
+- **Gates**: G05
+- **Score**: 3.3 = (value 4 + urgency 5 + risk 4) / effort 4
+- **Spec**: `budget-ledger-s1`
+- **Issue**: [#37](https://github.com/turbokast/mythhelm/issues/37)
+- **Source**: Master Specification v2 §§7–8, 10, 12–13; W03/W04/W11; historical issue #37
+- **Summary**: Record typed observed/reported/estimated/declared/unknown usage and coupled quota reservations, finite run limits and foreground completion reserves. Enforce only established boundaries; exhaustion pauses or stops safely without paid fallback, while unknown remaining quota stays distinct from zero.
+- **Premise-grounded**: 2026-10-08 — estimate-only HOLDS; source-sections HOLDS; MH-10 HOLDS; MH-21 PARTIAL (plan only, sequences behind); no-ledger HOLDS; fail-today HOLDS; unknown-quota HOLDS
+- **Notes**: S1 needs the basic ledger/envelopes for one-agent delivery; multi-profile and experiment scheduling extend it in S2/S4. Requires MH-10 billing semantics and durable supervisor contracts; no provider hard-cap claim from cancellation alone.
 
 ### MH-18: Adopt SemVer or CalVer for releases
 - **Status**: shipped

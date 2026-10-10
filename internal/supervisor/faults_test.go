@@ -134,6 +134,14 @@ func seedLaunch(t *testing.T, f fixture, scenario string, trustConfig ...string)
 	if err := supervisor.TransitionRun(t.Context(), j, d.RunID, supervisor.RunExecuting, "", prod); err != nil {
 		t.Fatal(err)
 	}
+	// Admission commits the envelope and the launch starts its clock, so
+	// every run a recovery meets has both.
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := rawDB(t, f.state).ExecContext(t.Context(), `INSERT INTO run_envelopes
+		(run_id, execution_seconds, repairs, replans, transport_retries, first_start_at, pause_spans, updated_at)
+		VALUES (?, 600, 1, 0, 3, ?, '[]', ?)`, d.RunID, now, now); err != nil {
+		t.Fatal(err)
+	}
 	token := strings.Repeat("1", 64)
 	sum := sha256.Sum256([]byte(token))
 	if err := supervisor.RecordLaunchIntent(t.Context(), j, journal.AttemptRow{AttemptID: d.AttemptID, RunID: d.RunID, TaskID: d.TaskID, AttemptNumber: 1, LaunchTokenSHA256: hex.EncodeToString(sum[:]), WorkspacePath: d.Workdir}, prod); err != nil {
@@ -204,6 +212,31 @@ func TestCrashAfterLaunchIntentBeforeAck(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("worker acknowledgements %d", count)
+	}
+}
+
+// TestRecoverArmsExecutionDeadline: a run whose launching supervisor died has
+// its execution clock in the journaled envelope; the recovering supervisor
+// enforces the same deadline the launch path would (I21, AC-4.1), so a
+// deadline that already passed stops the reattached worker and blocks the run.
+func TestRecoverArmsExecutionDeadline(t *testing.T) {
+	f := newFixture(t)
+	d, _, _ := seedLaunch(t, f, "slow")
+	started := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339Nano)
+	if _, err := rawDB(t, f.state).ExecContext(t.Context(), `UPDATE run_envelopes SET first_start_at = ? WHERE run_id = ?`, started, d.RunID); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	out, err := supervisor.RecoverWithHooks(ctx, f.journal(t), d.RunID, supervisor.Hooks{})
+	if err != nil {
+		t.Fatalf("RecoverWithHooks: %v", err)
+	}
+	if out.State != supervisor.RunBlocked || out.Reason != "envelope_deadline_exceeded" {
+		t.Fatalf("outcome = %s (%s), want blocked (envelope_deadline_exceeded)", out.State, out.Reason)
+	}
+	if out.AttemptState != supervisor.AttemptStopped {
+		t.Fatalf("attempt = %s, want stopped through the stop ladder", out.AttemptState)
 	}
 }
 
