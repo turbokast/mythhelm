@@ -210,7 +210,7 @@
   - Extra files beyond the task Files list: `internal/journal/engine.go` (new `journal.SQLiteVersion` helper — the binary needs a surface exposing `SELECT sqlite_version()` for the OQ-8 assertion), `internal/cli/dispatch.go` (`version` reports `sqlite_version` in plain and jsonl), `internal/cli/dispatch_test.go` and `internal/cli/tui_test.go` (version-object and version-template assertions move with the new field).
 - **Files modified**: `internal/journal/pragmas_test.go`, `internal/migrate/nfr2_test.go`, `internal/journal/engine.go`, `internal/cli/dispatch.go`, `internal/cli/dispatch_test.go`, `internal/cli/tui_test.go`, `specs/in-progress/supervisor-migration/tasks.md`, `specs/in-progress/supervisor-migration/handoff.md`, `specs/in-progress/supervisor-migration/scratchpad.md`.
 
-### Task 8 — Migration ADR and support rows
+### Task 8 — Migration ADR and support rows ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -225,3 +225,11 @@
   - The ADR names the OQ-1/OQ-2 decisions, the import mapping, and the drain order with file cites; review confirms no claim the code does not keep.
 - **Test plan**: matrix-vs-deliverables assertion following the stream-1/2 precedent; reviewer read of the ADR against the merged code.
 - **Invariants touched**: I14 (v2 §2: versioned evidence or explicitly unsupported); None beyond evidence (docs describe shipped behavior).
+- **Status**: ✅ Completed — Migration/import ADR recorded and the spec's support matrix published with its assertion; PR #302.
+- **Implementation**: ADR 0016 (proposed — acceptance is the maintainer's) pins OQ-1/OQ-2, the import mapping and the drain order with file cites; `SUPPORT.md` lists exactly the 6 shipped rows, all `fixture-tested` (`nfr2-proof` cites Task 7's merged pins); `support_test.go` resolves every evidence ref to a real test, checks platform claims against build tags, maps every `migrate`/`preview` export to a row, and self-mutates each defect class; review round 1 hardened the build-constraint scan and the ADR status check. Commits 4f7989a, 638222b, 11c63da and the origin/main merge that flipped `nfr2-proof` once Task 7 landed.
+- **Spec deviations**:
+  - Review round 1 added `testFilePlatforms` and `adrStatusOK` to `support_test.go` with their tests: an unrecognised build constraint is reported as an unsupported platform instead of skipped, and the ADR check reads the first `- Status:` line (inside the task's `Files` list, consistent with the task's acceptance).
+  - Review round 2 made `adrStatusOK` compare the trimmed status value exactly (`proposed` or `accepted`, so `unaccepted` is refused) and narrowed the hand-off and scratchpad claim to unlisted exported declarations, since the matrix test cannot detect new behaviour inside an existing export (a consistent clarification; `tasks.md` acceptance text unchanged).
+  - Review round 3 added `isGoTestName` to `support_test.go` so the evidence scan counts only functions `go test` runs (`Testhelper` is not a test), and the ADR landed at `docs/decisions/0016-migration-import.md`, the number that resolves the task's `docs/decisions/NNNN-migration-import.md` placeholder (both inside the task's `Files`, consistent with its acceptance).
+  - The `nfr2-proof` row ships `fixture-tested` citing Task 7's four merged tests, not `blocked` as first drafted, because Task 7 merged before this PR (consistent with the Task 7 hand-off and the task's `fixture-tested or blocked` acceptance).
+- **Files modified**: `docs/decisions/0016-migration-import.md`, `internal/migrate/SUPPORT.md`, `internal/migrate/support_test.go`, `specs/in-progress/supervisor-migration/tasks.md`, `specs/in-progress/supervisor-migration/handoff.md`, `specs/in-progress/supervisor-migration/scratchpad.md`.
