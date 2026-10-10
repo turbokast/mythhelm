@@ -141,8 +141,8 @@ func (f fixture) releaseWorkers(t *testing.T) {
 	}
 	for _, dir := range dirs {
 		id, err := workers.ReadIdentity(dir)
-		if err != nil {
-			continue
+		if err != nil || id.PID == os.Getpid() {
+			continue // no identity yet, or one a test forged with its own PID
 		}
 		_ = workers.RequestStop(dir, "test-cleanup")
 		deadline := time.Now().Add(time.Minute)
