@@ -207,3 +207,20 @@ Add to the completion-entry procedure: a Spec deviation that defers to another s
 **Proposed change:**
 
 Append to the checkable-criteria patterns: an acceptance item that adds or changes a docs example showing command output must name the executed command (or generating test) that produced the pasted text, and the worker re-runs it before the PR leaves draft; a paste with no producing command is a finding.
+
+## P-v2-contract-vocabulary-1 — Track deferred cross-task promises to completion
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #305
+- **Eval**: `run-completion-resolves-deferrals`
+- **Rationale**: A cross-task deferral with no owner was dropped by both tasks it named and caught only at finalize, after every task had merged; checking each deferral against merged diffs at run completion stops the run while the fix is still cheap. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `v2-contract-vocabulary`
+- **Type**: skill
+- **Target**: `.claude/skills/run-spec-completion/SKILL.md`
+- **Rationale**: A task completion entry deferred work to a later task ("Task 5 or 8 retypes them") with no owner; neither task did it, per-task review passed both, and only the finalize review caught the broken promise — after every task had merged. Deferred items need tracking, not prose.
+- **Evidence**: specs/done/v2-contract-vocabulary/tasks.md Task 2 Spec deviations (string-State promise); Review Summary finding F2; fix PR #268
+
+**Proposed change:**
+
+Add to the Confirm step: collect every "Task N ..." deferral named in Spec deviations entries; each must resolve to a completing change whose promised edit is present in the referenced diff and whose task or fix PR has merged — a Files modified entry alone, or an open fix PR, is not proof — or the run stops with the unresolved promise named.
