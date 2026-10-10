@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Run envelopes: finite ceilings for execution time, repairs, replans and transport retries, set with --envelope-* flags or an [envelopes] table in mythhelm.toml; today the execution deadline is the one that stops a live run and blocks it (#259)
 - Completion reserve: before a material replan the run checks that the time left covers one more verification pass, and reports the estimate as an estimate (#270)
 - Allowance exhaustion handling: the run keeps its candidate, blocks, and new runs on that bucket are refused on a recorded operator retry schedule, with nothing purchased or switched automatically; the exhaustion signal is a synthetic shape until a native one is qualified (#263)
+- `mythhelm migrate` previews the move of a legacy state directory to the v2 ledger without credentials or network, and `mythhelm migrate --apply --yes` drains the legacy run owners, backs up the ledger and imports every legacy run as a one-task run with its IDs, billing posture and evidence kept (#277, #285, #286, #287, #292, #297, #301, #302, #324)
 
 ### Fixed
 
