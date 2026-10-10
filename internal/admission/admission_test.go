@@ -1,12 +1,16 @@
 package admission_test
 
 import (
+	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/billing"
 )
@@ -78,5 +82,179 @@ func TestDecideCarriesEnvelopeLayers(t *testing.T) {
 	d = decideEnvelopes(t, "[envelopes]\nrepairs = 1", nil)
 	if d.EnvelopeFlags != nil {
 		t.Fatalf("Decision.EnvelopeFlags = %+v, want nil when no flag was given", d.EnvelopeFlags)
+	}
+}
+
+// stubAdapter is the adapter a stub table row prepares; it counts Prepare calls.
+type stubAdapter struct{ prepares int }
+
+func (*stubAdapter) Descriptor() adapter.Descriptor {
+	return adapter.Descriptor{ID: "builtin/stub", Version: "1", Harness: "stub", Surface: "stub"}
+}
+
+func (*stubAdapter) Probe(context.Context, adapter.ProbeInput) (adapter.Probe, error) {
+	return adapter.Probe{}, errors.New("stub: not probed")
+}
+
+func (*stubAdapter) Capabilities(adapter.Probe) adapter.CapabilityRecord {
+	return adapter.CapabilityRecord{}
+}
+
+func (s *stubAdapter) Prepare(context.Context, adapter.PrepareInput) (adapter.LaunchProposal, error) {
+	s.prepares++
+	return adapter.LaunchProposal{
+		Spec:         adapter.ProcSpec{Path: "/stub/native"},
+		Billing:      adapter.BillingPosture{Mode: admission.BillingLocalScripted},
+		Capabilities: adapter.CapabilityRecord{Capabilities: adapter.Capabilities{StructuredEvents: adapter.Supported}},
+	}, nil
+}
+
+func (*stubAdapter) Start(context.Context, adapter.LaunchProposal, adapter.Launcher) (adapter.Session, error) {
+	return nil, errors.New("stub: not started")
+}
+
+func stubRequest(t *testing.T, name string) admission.Request {
+	t.Helper()
+	task := filepath.Join(t.TempDir(), "task.md")
+	if err := os.WriteFile(task, []byte("# Stub task\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return admission.Request{StateDir: t.TempDir(), TaskFile: task, Adapter: name,
+		Billing: admission.BillingLocalScripted, ExecutionProfile: admission.ProfileTrustedHost}
+}
+
+func TestDecideDispatchesByTable(t *testing.T) {
+	t.Parallel()
+	stub := &stubAdapter{}
+	decide := func(ctx context.Context, _ admission.Request, d admission.Decision) (admission.Decision, error) {
+		var err error
+		d.Adapter = stub.Descriptor()
+		d.Proposal, err = stub.Prepare(ctx, adapter.PrepareInput{})
+		return d, err
+	}
+
+	d, err := admission.DecideWithHarness(t.Context(), stubRequest(t, "stub"), "stub", decide)
+	if err != nil {
+		t.Fatalf("Decide through a stub row: %v", err)
+	}
+	if d.Proposal.Spec.Path != "/stub/native" || d.Adapter.ID != "builtin/stub" || stub.prepares != 1 {
+		t.Errorf("proposal path %q, adapter %q, Prepare calls %d; want the stub row's decide to run once",
+			d.Proposal.Spec.Path, d.Adapter.ID, stub.prepares)
+	}
+
+	// Without the row the same request is an unknown adapter.
+	_, err = admission.Decide(t.Context(), stubRequest(t, "stub"))
+	if !errors.Is(err, admission.ErrInvalid) || !strings.Contains(err.Error(), `got "stub"`) {
+		t.Errorf("Decide with the row absent: err = %v, want ErrInvalid naming the adapter", err)
+	}
+}
+
+func validRequest(adapterName string) admission.Request {
+	return admission.Request{StateDir: filepath.Join(os.TempDir(), "state"), TaskFile: "task.md", Adapter: adapterName,
+		Billing: admission.BillingSubscriptionOnly}
+}
+
+func TestValidateAdapterText(t *testing.T) {
+	t.Parallel()
+	req := validRequest("x")
+	err := admission.Validate(&req)
+	if !errors.Is(err, admission.ErrInvalid) || !strings.Contains(err.Error(), `--adapter must be claudecode, codex or fake, got "x"`) {
+		t.Errorf("unknown adapter: err = %v", err)
+	}
+	req = validRequest("")
+	err = admission.Validate(&req)
+	if err == nil || !strings.Contains(err.Error(), "--adapter is required (claudecode, codex or fake)") {
+		t.Errorf("missing adapter: err = %v", err)
+	}
+	req = validRequest("codex")
+	if err := admission.Validate(&req); err != nil {
+		t.Errorf("--adapter codex: %v", err)
+	}
+}
+
+func TestValidateClaudeFlagRules(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		flag                      string
+		set                       func(*admission.Request)
+		claudecode, codex, fakeOK bool
+	}{
+		{"--strip-credential-env", func(r *admission.Request) { r.StripCredentialEnv = true }, true, false, false},
+		{"--trust-native-config", func(r *admission.Request) { r.TrustNativeConfig = "sha256:abc" }, true, true, false},
+		{"--declare-entitlement", func(r *admission.Request) { r.DeclareEntitlement = "plan=pro,extra-usage=disabled" }, true, false, false},
+		{"--allow-untested-native-version", func(r *admission.Request) { r.AllowUntestedNativeVersion = true }, true, true, false},
+		{"--scenario", func(r *admission.Request) { r.Scenario = "happy" }, false, false, true},
+	} {
+		for adapterName, want := range map[string]bool{"claudecode": tc.claudecode, "codex": tc.codex, "fake": tc.fakeOK} {
+			t.Run(tc.flag+" with "+adapterName, func(t *testing.T) {
+				t.Parallel()
+				req := validRequest(adapterName)
+				tc.set(&req)
+				err := admission.Validate(&req)
+				if want && err != nil {
+					t.Errorf("rejected: %v", err)
+				}
+				if !want && (!errors.Is(err, admission.ErrInvalid) || !strings.Contains(err.Error(), tc.flag+" applies only to --adapter")) {
+					t.Errorf("accepted or wrong error: %v", err)
+				}
+			})
+		}
+	}
+}
+
+func TestValidateFakeDefaultsScenarioToHappy(t *testing.T) {
+	t.Parallel()
+	req := validRequest("fake")
+	if err := admission.Validate(&req); err != nil {
+		t.Fatal(err)
+	}
+	if req.Scenario != "happy" {
+		t.Errorf("Scenario = %q, want happy", req.Scenario)
+	}
+}
+
+func TestCodexDeclarationFlagRefused(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		flag string
+		set  func(*admission.Request)
+	}{
+		{"--declare-entitlement", func(r *admission.Request) { r.DeclareEntitlement = "plan=pro,extra-usage=disabled" }},
+		{"--strip-credential-env", func(r *admission.Request) { r.StripCredentialEnv = true }},
+	} {
+		t.Run(tc.flag, func(t *testing.T) {
+			t.Parallel()
+			req := validRequest("codex")
+			tc.set(&req)
+			err := admission.Validate(&req)
+			if !errors.Is(err, admission.ErrInvalid) || !strings.Contains(err.Error(), tc.flag+" applies only to --adapter claudecode") {
+				t.Errorf("err = %v, want ErrInvalid naming %s", err, tc.flag)
+			}
+		})
+	}
+}
+
+func TestDecideCodexIsNotAvailableYet(t *testing.T) {
+	t.Parallel()
+	_, err := admission.Decide(t.Context(), stubRequest(t, "codex"))
+	blocked, ok := errors.AsType[*admission.BlockedError](err)
+	if !ok || blocked.Code != "adapter_not_available" || !blocked.Capability {
+		t.Errorf("err = %v, want a capability (exit 7) adapter_not_available refusal", err)
+	}
+}
+
+// consentProfile derives the boundary route as builtin/<name>; a row whose
+// adapter ID differs would be consulted under one route and launched under
+// another (I02).
+func TestHarnessRowsMatchBoundaryRoute(t *testing.T) {
+	t.Parallel()
+	routes := admission.HarnessRoutes()
+	if len(routes) != 3 {
+		t.Fatalf("default table has %d rows, want claudecode, codex and fake: %v", len(routes), routes)
+	}
+	for name, id := range routes {
+		if id != "builtin/"+name {
+			t.Errorf("row %s has adapter ID %q, want builtin/%s", name, id, name)
+		}
 	}
 }
