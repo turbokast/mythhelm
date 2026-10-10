@@ -21,7 +21,7 @@ The two critical findings of the first review (on 83f72ca) were fixed by PR #324
 | important | Evidence that cannot fail, NFR-2 pin gap, preview shows source files not owners, stale SUPPORT/doc text | `internal/migrate/drain_test.go:430-436`, `internal/migrate/preview/plan.go:47-54` | issue #323 |
 | important | A recorded backup is reused while the phase is still `previewed`: `recordBackup` and `recordPhase(drained)` are two transactions, legacy writes are admitted between them (AC-7.4, design §5). The part of the first critical that #324 did not cover | `internal/migrate/apply.go:141-148`, `internal/migrate/apply.go:264-273`, `internal/supervisor/pipeline.go:245-251` | issue #341 |
 | important | A run that finishes during the drain is classified on the pre-lock state and journaled as quarantined (design §4, I09, I23) | `internal/migrate/drain.go:130-157`, `internal/migrate/drain.go:293-296` | issue #342 |
-| important | ADR 0016 stale after #324: lock-span wording and "post-drain surprise run aborts fatal" / "re-apply reuses the backup by digest" | `docs/decisions/0016-migration-import.md:62-70`, `docs/decisions/0016-migration-import.md:109-112` | fixed in the finalize pull request (ADR status stays `proposed`) |
+| important | ADR 0016 stale after #324: lock-span wording and "post-drain surprise run aborts fatal" / "re-apply reuses the backup by digest" | `docs/decisions/0016-migration-import.md:62-70`, `docs/decisions/0016-migration-import.md:109-112` | fixed in the finalize pull request; ADR 0016 is now `accepted` (maintainer acceptance, commit "docs(decisions): accept ADR 0016", 2026-10-10) |
 | suggestion | No update/delete-abort triggers on `task_revisions`, `policies`, `grants` (I20) | `internal/journal/migrations/0007_v2contracts.sql:11-31` | kept |
 | suggestion | `migration_state.schema_version` is a literal 7, never advanced | `internal/journal/migrations/0007_v2contracts.sql:42` | kept |
 | suggestion | Backups land at the state root, not `backups/` (master §5.1) | `internal/migrate/backup.go:68` | kept |
@@ -69,7 +69,7 @@ Open question for the maintainers (not a finding against this spec): `internal/c
 
 ## Effort
 
-dispatched=8 returned=5 failed=4 (runspec.py summary; `unaccounted=task 7 (1 dispatch)`); attempts 8 over 8 tasks; first-pass 6/8; review rounds 8; wall-clock 2026-10-08T23:31:47Z → 2026-10-10T01:29:58Z (last task merge); fix PR #324 merged 2026-10-10T07:28:28Z; finalize started five times from 2026-10-10T06:28:55Z (run-events lifecycle rows; the first stopped at review on the two criticals).
+dispatched=8 returned=5 failed=4 (`python3 scripts/harness/runspec.py summary --spec supervisor-migration` prints exactly these and `unaccounted=task 7 (1 dispatch)`; `dispatched` counts `dispatch` events, `returned` counts `return` events and `failed` counts `fail` and `lost` events, each per event, so `returned + failed` can exceed `dispatched`: task 1 has one `fail` and no `return` after its single dispatch, task 8 has three `lost` events and no `return` after its single dispatch, and task 7 has neither, which is the unaccounted dispatch; all three merged without a second dispatch); attempts 8 over 8 tasks; first-pass 6/8; review rounds 8; wall-clock 2026-10-08T23:31:47Z → 2026-10-10T01:29:58Z (last task merge); fix PR #324 merged 2026-10-10T07:28:28Z; finalize started five times from 2026-10-10T06:28:55Z (run-events lifecycle rows; the first stopped at review on the two criticals).
 
 | Task | Agent | Attempts | Review rounds | PR | Merged | First pass |
 |---|---|---|---|---|---|---|

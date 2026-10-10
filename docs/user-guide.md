@@ -232,9 +232,16 @@ legacy run as a one-task run. Imported runs keep their IDs, billing
 posture and evidence, and stay unverified. Without `--yes`, `--apply`
 prints the preview and writes nothing.
 
-Once the backup is taken the legacy `run`, `recover` and `apply` commands
-refuse. The backup is never overwritten: move an existing one aside before
-applying again. No command restores the backup yet
+While `--apply` runs, migration holds the instance, state-directory and
+run-owner locks, so the legacy `run`, `recover` and `apply` commands
+refuse. They keep refusing once the `drained` phase is recorded, which
+the same run does right after the backup; a migration interrupted before
+that record leaves the phase at `previewed`, where they are admitted
+again. A fresh apply never overwrites a backup: an unrecorded stale
+backup at the default path must be moved
+aside first. A backup the ledger has recorded is reused for the resume,
+verified by its digest, and must stay in place: moving it aside makes
+the next apply refuse. No command restores the backup yet
 ([#320](https://github.com/turbokast/mythhelm/issues/320)), and a
 migration interrupted between the backup and the drain record can reuse a
 backup that misses later legacy writes
