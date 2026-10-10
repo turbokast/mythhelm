@@ -34,8 +34,9 @@ const stopPollInterval = 100 * time.Millisecond
 // Spool event types the stop Handler reads. The worker emits them (Task 2);
 // the handler only matches them.
 const (
-	stoppedEvent  = "attempt.stopped"
-	launchedEvent = "attempt.launched"
+	stoppedEvent       = "attempt.stopped"
+	stopRequestedEvent = "attempt.stop_requested"
+	launchedEvent      = "attempt.launched"
 )
 
 // maxStoppedLine bounds one spool line the stop wait scans: the 1 MiB
@@ -61,15 +62,25 @@ type StopDeps struct {
 }
 
 // StopHandler answers the stop intent: it verifies the attempt's pinned
-// ladder version and worker identity, persists stop_requested, delivers
+// ladder version, takes the run's owner lock for the whole stop (a live
+// owner refuses it with ownership_unresolved before anything is written),
+// verifies the worker identity, persists stop_requested, delivers
 // the request file, waits for the worker's stopped report up to the
-// recorded deadline, and journals the receipt. Under Execute both Mutate
-// scopes join Execute's single transaction, so the bounded wait holds the
-// write lock for up to MaxStopDeadline (design §3 wants the wait outside
-// any transaction; the Task 1 deviation records why it stays here until
-// Execute grows long-handler support). Concurrent duplicates therefore
-// serialise on the write lock: a repeat while the first execution still
-// waits blocks and then replays its stored Result.
+// recorded deadline, and journals the receipt. The served path runs it
+// through ExecuteLong: each Mutate scope commits on its own and the
+// bounded wait holds no transaction, so a waiting stop never wedges other
+// intents; a repeat while the first execution still waits blocks, then
+// replays its stored Result. Under single-transaction Execute (the tests'
+// direct path) both scopes join the one transaction and the wait holds
+// the write lock, the Task 1 deviation ExecuteLong exists to fix.
+//
+// Crash windows on the served path: a stop that persisted stop_requested
+// but died before storing a result re-enters idempotently on the same
+// operation_id (recordStopRequested returns early for its own reason),
+// waiting only the time left on the standing request's deadline. A stop
+// that died between the receipt commit and the result store leaves the
+// attempt terminal, so its retry reports revision_conflict: the stop
+// happened, but its receipt was never stored.
 func StopHandler(d StopDeps) Handler {
 	return func(ctx context.Context, _ Peer, in Intent) (Result, error) {
 		var p StopParams
@@ -94,6 +105,11 @@ func StopHandler(d StopDeps) Handler {
 			return Result{}, newError(CodeRevisionConflict,
 				"stop ladder version %q does not match the pinned version %q", p.LadderVersion, pinned)
 		}
+		release, err := acquireRunOwner(d.StateDir, runID, "stop")
+		if err != nil {
+			return Result{}, err
+		}
+		defer release()
 		dir := workers.AttemptDir(d.StateDir, runID, p.AttemptID)
 		if err := checkWorkerIdentity(ctx, d.Journal, dir, runID, p.AttemptID, digest); err != nil {
 			return Result{}, err
@@ -120,7 +136,7 @@ func StopHandler(d StopDeps) Handler {
 			}
 		}
 		receipt, err := waitForStoppedReport(ctx, filepath.Join(dir, "spool.jsonl"), p.AttemptID,
-			pinned, time.Now().Add(wait), poll)
+			pinned, stopDeadline(dir, in.OperationID, wait), poll)
 		if err != nil {
 			if errors.Is(err, errStopDeadline) {
 				return recordQuarantine(ctx, d.DB, p.AttemptID, wait)
@@ -216,7 +232,9 @@ func latestLaunched(ctx context.Context, j *journal.Journal, runID, attemptID st
 // recordStopRequested persists the stop_requested transition with the
 // intent's operation_id. A transition the lifecycle forbids — stopping an
 // attempt that already stopped, or a second stop while one is in flight —
-// is revision_conflict.
+// is revision_conflict. Re-entrant for its own operation_id: a repeat
+// after a crash finds stop_requested recorded for itself and returns
+// without writing, so the retry waits on instead of conflicting.
 func recordStopRequested(ctx context.Context, db *sql.DB, operationID, attemptID string) error {
 	return Mutate(ctx, db, func(tx *sql.Tx) error {
 		from, err := journal.CurrentAttemptState(ctx, tx, attemptID)
@@ -226,6 +244,15 @@ func recordStopRequested(ctx context.Context, db *sql.DB, operationID, attemptID
 		if err != nil {
 			return newError(CodePersistenceUnavailable, "reading attempt state: %v", err)
 		}
+		if from == string(v2contract.AttemptStopRequested) {
+			reason, err := attemptReason(ctx, tx, attemptID)
+			if err != nil {
+				return err
+			}
+			if reason == operationID {
+				return nil
+			}
+		}
 		if err := v2contract.CheckAttemptTransition(v2contract.AttemptState(from), v2contract.AttemptStopRequested); err != nil {
 			return newError(CodeRevisionConflict, "attempt %q cannot stop from %s", attemptID, from)
 		}
@@ -234,6 +261,36 @@ func recordStopRequested(ctx context.Context, db *sql.DB, operationID, attemptID
 		}
 		return nil
 	})
+}
+
+// attemptReason reads attemptID's projected reason inside tx.
+func attemptReason(ctx context.Context, tx *sql.Tx, attemptID string) (string, error) {
+	var reason sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT reason FROM attempts WHERE attempt_id = ?`, attemptID).Scan(&reason); err != nil {
+		return "", newError(CodePersistenceUnavailable, "reading attempt reason: %v", err)
+	}
+	return reason.String, nil
+}
+
+// stopDeadline returns the wait deadline for a delivered request: the
+// standing request's recorded time plus the wait when the standing
+// request is this operation's, so a restart repeat waits only the
+// remaining time — or quarantines at once when none remains. Any other
+// shape (no standing request, another operation's, unreadable) waits the
+// full wait from now.
+func stopDeadline(dir, operationID string, wait time.Duration) time.Time {
+	raw, err := os.ReadFile(filepath.Join(dir, "stop.request")) //nolint:gosec // G304: fixed request name under the ledger-resolved attempt directory
+	if err != nil {
+		return time.Now().Add(wait)
+	}
+	var req struct {
+		RequestID   string    `json:"request_id"`
+		RequestedAt time.Time `json:"requested_at"`
+	}
+	if err := json.Unmarshal(raw, &req); err != nil || req.RequestID != operationID || req.RequestedAt.IsZero() {
+		return time.Now().Add(wait)
+	}
+	return req.RequestedAt.Add(wait)
 }
 
 // recordReceipt journals the stopped report as the Result body with the
@@ -298,14 +355,18 @@ func recordQuarantine(ctx context.Context, db *sql.DB, attemptID string, wait ti
 // waitForStoppedReport polls the spool for the attempt's stopped report
 // until the deadline, following the supervisor Ingest line discipline:
 // complete lines past a byte offset, a torn last line left for the next
-// poll. Reports that fail validation are skipped, never confirmed. A
-// missing or unreadable spool means the worker has not reported yet. It
-// returns errStopDeadline when the deadline expires with no valid report.
+// poll. Reports that fail validation are skipped, never confirmed, and so
+// is a report that precedes the worker's attempt.stop_requested line: a
+// worker that concluded before the request still spools a stopped line,
+// which does not answer it. A missing or unreadable spool means the worker
+// has not reported yet. It returns errStopDeadline when the deadline
+// expires with no valid report.
 func waitForStoppedReport(ctx context.Context, spoolPath, attemptID, pinned string, deadline time.Time, poll time.Duration) (*StopReceipt, error) {
 	var offset int64
+	requested := false
 	for {
-		receipt, next := scanStopped(spoolPath, attemptID, pinned, offset)
-		offset = next
+		var receipt *StopReceipt
+		receipt, offset, requested = scanStopped(spoolPath, attemptID, pinned, offset, requested)
 		if receipt != nil {
 			return receipt, nil
 		}
@@ -323,48 +384,59 @@ func waitForStoppedReport(ctx context.Context, spoolPath, attemptID, pinned stri
 }
 
 // scanStopped reads the complete spool lines past offset and returns the
-// last valid stopped report for the attempt, with the offset past every
-// complete line consumed. Oversize lines are corrupt and skipped; a torn
-// last line is left for the next poll.
-func scanStopped(spoolPath, attemptID, pinned string, offset int64) (*StopReceipt, int64) {
+// last valid stopped report for the attempt that follows a stop_requested
+// line, with the offset past every complete line consumed and whether a
+// stop_requested line has been seen (requested carries it between polls).
+// Oversize lines are corrupt and skipped; a torn last line is left for the
+// next poll.
+func scanStopped(spoolPath, attemptID, pinned string, offset int64, requested bool) (*StopReceipt, int64, bool) {
 	f, err := os.Open(spoolPath) //nolint:gosec // G304: fixed spool name under the ledger-resolved attempt directory
 	if err != nil {
-		return nil, offset
+		return nil, offset, requested
 	}
 	defer func() { _ = f.Close() }()
 	if st, err := f.Stat(); err != nil || st.Size() < offset {
 		if err != nil {
-			return nil, offset
+			return nil, offset, requested
 		}
 		// The spool shrank (rotation or rewrite): re-read from the
 		// start so a stopped report already in the new content is
 		// not skipped past into a wrongful timeout.
-		offset = 0
+		offset, requested = 0, false
 	}
 	if _, err := f.Seek(offset, io.SeekStart); err != nil {
-		return nil, offset
+		return nil, offset, requested
 	}
 	data, err := io.ReadAll(io.LimitReader(f, maxStoppedLine+1))
 	if err != nil {
-		return nil, offset
+		return nil, offset, requested
 	}
 	complete, torn := splitCompleteLines(data)
 	if len(complete) == 0 && len(data) == maxStoppedLine+1 {
 		// No newline in a full chunk: the line exceeds the bound, so it
 		// is corrupt. Skip the chunk; fragments of it can never parse
 		// as a report.
-		return nil, offset + int64(len(data))
+		return nil, offset + int64(len(data)), requested
 	}
 	var receipt *StopReceipt
 	for _, line := range complete {
-		if !strings.Contains(string(line), stoppedEvent) {
-			continue
-		}
-		if rep, ok := parseStoppedReport(line, attemptID, pinned); ok {
-			receipt = rep
+		switch {
+		case strings.Contains(string(line), stopRequestedEvent):
+			requested = requested || isStopRequested(line, attemptID)
+		case requested && strings.Contains(string(line), stoppedEvent):
+			if rep, ok := parseStoppedReport(line, attemptID, pinned); ok {
+				receipt = rep
+			}
 		}
 	}
-	return receipt, offset + int64(len(data)-len(torn))
+	return receipt, offset + int64(len(data)-len(torn)), requested
+}
+
+// isStopRequested reports whether line is the attempt's stop_requested
+// event, the worker's record that it took a stop request.
+func isStopRequested(line []byte, attemptID string) bool {
+	var ev journal.Event
+	return json.Unmarshal(line, &ev) == nil && ev.Type == stopRequestedEvent && ev.AttemptID == attemptID
 }
 
 // splitCompleteLines splits data into newline-terminated lines and the
@@ -385,7 +457,9 @@ func splitCompleteLines(data []byte) (complete [][]byte, torn []byte) {
 // report. The envelope decodes strictly; the payload decodes leniently
 // with required fields checked: confirmed and sent must be present, sent
 // must hold known signals with positive graces, and the ladder version
-// must equal the pinned one.
+// must equal the pinned one. The receipt is confirmed only when the
+// worker also resolved every descendant: unresolved PIDs or identities,
+// or a failed descendant scan, make it unconfirmed.
 func parseStoppedReport(line []byte, attemptID, pinned string) (*StopReceipt, bool) {
 	dec := json.NewDecoder(bytes.NewReader(line))
 	dec.DisallowUnknownFields()
@@ -397,10 +471,12 @@ func parseStoppedReport(line []byte, attemptID, pinned string) (*StopReceipt, bo
 		return nil, false
 	}
 	var payload struct {
-		Confirmed      *bool            `json:"confirmed"`
-		Sent           *json.RawMessage `json:"sent"`
-		LadderVersion  *string          `json:"ladder_version"`
-		UnresolvedPIDs []int            `json:"unresolved_pids"`
+		Confirmed      *bool             `json:"confirmed"`
+		Sent           *json.RawMessage  `json:"sent"`
+		LadderVersion  *string           `json:"ladder_version"`
+		UnresolvedPIDs []int             `json:"unresolved_pids"`
+		DescendantScan string            `json:"descendant_scan"`
+		Identities     []json.RawMessage `json:"unresolved_identities"`
 	}
 	if err := json.Unmarshal(ev.Payload, &payload); err != nil {
 		return nil, false
@@ -422,6 +498,12 @@ func parseStoppedReport(line []byte, attemptID, pinned string) (*StopReceipt, bo
 			return nil, false
 		}
 	}
+	// A confirmed group with escaped descendants, or a descendant scan
+	// that failed, leaves ownership unresolved: the worker concludes the
+	// attempt interrupted in both cases, so the receipt is not confirmed
+	// (AC-1.2, I09).
+	confirmed := *payload.Confirmed && len(payload.UnresolvedPIDs) == 0 &&
+		len(payload.Identities) == 0 && payload.DescendantScan != "failed"
 	return &StopReceipt{AttemptID: attemptID, LadderVersion: pinned, Sent: sent,
-		Confirmed: *payload.Confirmed, UnresolvedPIDs: payload.UnresolvedPIDs}, true
+		Confirmed: confirmed, UnresolvedPIDs: payload.UnresolvedPIDs}, true
 }

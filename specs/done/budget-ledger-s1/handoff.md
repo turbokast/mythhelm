@@ -74,6 +74,6 @@
 
 ## Task 12 — Ledger user documentation and decision record
 
-- **Produces**: `docs/user-guide.md` `### Budget ledger` subsection under `## Billing`; `docs/decisions/0015-budget-ledger-s1.md` recording D1–D3, D6, D13, D14 with `Status: proposed`.
-- **For dependents**: final task; no dependents. The maintainer accepts the ADR by flipping its line 3 to `Status: accepted`.
+- **Produces**: `docs/user-guide.md` `### Budget ledger` subsection under `## Billing`; `docs/decisions/0015-budget-ledger-s1.md` recording D1–D3, D6, D13, D14 (landed `Status: proposed`; now `accepted`).
+- **For dependents**: final task; no dependents. The maintainer has accepted the ADR (line 3 is `Status: accepted`).
 - **Traps**: the Billing prose must keep the no-hard-phrasing grep green (`hard (limit|cap)|spending limit|token limit`, case-insensitive); `ceiling` and `unknown` are the safe words.
