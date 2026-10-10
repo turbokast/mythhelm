@@ -2,7 +2,7 @@
 
 dispatched=3 returned=3 failed=0
 
-Verdict: Good enough after 3 rounds (non-interactive, auto-confirmed). No FAIL remained in the final assessment. The round-3 fixes were applied but not re-assessed, because three rounds is the cap.
+Authoring refinement result: Good enough after 3 rounds (non-interactive, auto-confirmed). This is separate from the `/spec` validation result below, which remains Needs revision and did not reach Ready for implementation. The round-3 fixes were not reassessed because three rounds is the cap.
 
 ## Round 1 — Needs human input (D6 FAIL; D1–D5, D7, D8 NEEDS_WORK)
 

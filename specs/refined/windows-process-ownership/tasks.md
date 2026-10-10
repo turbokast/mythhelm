@@ -119,6 +119,7 @@
 - **Acceptance**:
   - `TestLaunchRecordsNativeStartTimeWindows` (Windows): worker.json and the `attempt.launched` payload carry `native_start_time` equal to `ProcessStartTime(native_pid)`. Fails before: field absent.
   - `TestUnixLaunchRecordUnchanged` (Unix): the serialized Identity for a fixed fixture equals the golden file captured on main, so the field is absent and not zero (N4, I09).
+  - `TestStartTimeReadFailureTerminatesJob` (Windows, `startTime` replaced with an error): after the resume the job is terminated and empty, the attempt ends `failed_native`/`launch_failed`, and with termination also failing it ends `interrupted`/`stop_unconfirmed`. Fails before: the field and seam are absent.
   - `TestIngestAcceptsLaunchedWithStartTime`: an `attempt.launched` event with the extra field ingests without error and leaves the `attempts` row columns as before.
 - **Invariants touched**: I09 (absent is `unknown`), I12 (launch identity is matched, not replayed), I18 (match on PID and start identity).
 
