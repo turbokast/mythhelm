@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -426,5 +427,50 @@ func TestLongStaleExpectedRevisionConflicts(t *testing.T) {
 	}
 	if runs.Load() != 2 {
 		t.Fatalf("handler ran %d times, want the two accepted intents only", runs.Load())
+	}
+}
+
+// TestLongClaimInsertFailureSurfaces pins that a ledger failure while
+// claiming is persistence_unavailable, not a lost race to retry forever.
+func TestLongClaimInsertFailureSurfaces(t *testing.T) {
+	t.Parallel()
+	db, _ := openLedger(t)
+	if _, err := db.Exec(`CREATE TRIGGER refuse_claims BEFORE INSERT ON operations BEGIN SELECT RAISE(ABORT, 'disk full'); END`); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(WithLedger(t.Context(), db), 5*time.Second)
+	defer cancel()
+	var runs atomic.Int32
+	h := func(context.Context, Peer, Intent) (Result, error) { runs.Add(1); return Result{}, nil }
+	_, err := ExecuteLong(ctx, h, Peer{}, intent("op_long_refused", "probe"))
+	ce, ok := errors.AsType[*Error](err)
+	if !ok || ce.Code != CodePersistenceUnavailable || !strings.Contains(ce.Message, "disk full") {
+		t.Fatalf("err = %v, want persistence_unavailable naming the failure", err)
+	}
+	if runs.Load() != 0 {
+		t.Fatalf("handler ran %d times without a claim", runs.Load())
+	}
+}
+
+// TestLongHandlerRunsUnderClaimBound pins that a handler's context ends
+// before its claim can be adopted, so a live handler is never run twice.
+func TestLongHandlerRunsUnderClaimBound(t *testing.T) {
+	t.Parallel()
+	db, _ := openLedger(t)
+	ctx := WithLedger(t.Context(), db)
+	var left time.Duration
+	h := func(hctx context.Context, _ Peer, _ Intent) (Result, error) {
+		deadline, ok := hctx.Deadline()
+		if !ok {
+			return Result{}, errors.New("handler context has no deadline")
+		}
+		left = time.Until(deadline)
+		return Result{}, nil
+	}
+	if _, err := ExecuteLong(ctx, h, Peer{}, intent("op_long_bound", "probe")); err != nil {
+		t.Fatal(err)
+	}
+	if left <= 0 || left >= maxClaimAge {
+		t.Fatalf("handler had %v to run, want a positive bound below the %v claim age", left, maxClaimAge)
 	}
 }

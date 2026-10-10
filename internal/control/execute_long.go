@@ -14,9 +14,12 @@ const (
 	longPollInterval = 20 * time.Millisecond
 	// maxClaimAge bounds one long execution: a claim older than this is
 	// adopted (its execution died with its supervisor). It exceeds
-	// MaxStopDeadline plus delivery and receipt margins; a long handler
-	// must finish within it.
+	// MaxStopDeadline plus delivery and receipt margins; runLong cancels a
+	// handler at handlerBudget.
 	maxClaimAge = 5 * time.Minute
+	// handlerBudget bounds a handler's context below maxClaimAge, so a
+	// live handler's claim is never old enough for a duplicate to adopt.
+	handlerBudget = maxClaimAge - time.Minute
 )
 
 // ExecuteLong runs h at most once per operation_id (I12), like Execute,
@@ -133,30 +136,27 @@ func claimFresh(at string) bool {
 
 // insertClaim revision-checks and claims a new operation. It reports
 // false when a concurrent claimant won the insert, so the caller
-// re-reads and polls. A checkRevision refusal is revision_conflict.
+// re-reads and polls; every other failure is returned. A checkRevision
+// refusal is revision_conflict.
 func insertClaim(ctx context.Context, db *sql.DB, in Intent, digest string) (bool, error) {
 	claimed := false
 	err := Mutate(ctx, db, func(tx *sql.Tx) error {
 		if err := checkRevision(ctx, tx, in); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO operations (operation_id, method, object, digest, state, claimed_at)
-			VALUES (?, ?, ?, ?, 'claimed', ?)`, in.OperationID, in.Method, in.Object, digest, now()); err != nil {
+		res, err := tx.ExecContext(ctx, `INSERT INTO operations (operation_id, method, object, digest, state, claimed_at)
+			VALUES (?, ?, ?, ?, 'claimed', ?) ON CONFLICT (operation_id) DO NOTHING`, in.OperationID, in.Method, in.Object, digest, now())
+		if err != nil {
 			return newError(CodePersistenceUnavailable, "claiming operation: %v", err)
 		}
-		claimed = true
+		n, err := res.RowsAffected()
+		if err != nil {
+			return newError(CodePersistenceUnavailable, "claiming operation: %v", err)
+		}
+		claimed = n == 1
 		return nil
 	})
-	if err != nil {
-		var ce *Error
-		if errors.As(err, &ce) && ce.Code == CodeRevisionConflict {
-			return false, err
-		}
-		// A lost insert races a concurrent claimant (or a refusal that
-		// landed first): re-read and follow whatever is stored now.
-		return false, nil
-	}
-	return claimed, nil
+	return claimed, err
 }
 
 // adoptClaim steals a stale claim with a compare-and-swap on its
@@ -221,7 +221,9 @@ func runLong(ctx context.Context, db *sql.DB, h Handler, peer Peer, in Intent, d
 			panic(p)
 		}
 	}()
-	res, herr := h(ctx, peer, in)
+	hctx, cancel := context.WithTimeout(ctx, handlerBudget)
+	defer cancel()
+	res, herr := h(hctx, peer, in)
 	var ce *Error
 	switch {
 	case herr == nil:

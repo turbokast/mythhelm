@@ -241,13 +241,14 @@ func shouldLaunch(stateDir string, rep RecoveryReport, fresh bool, recordEvent, 
 	return continuationUnspawned(stateDir, rep.RunID, rep.NewAttemptID)
 }
 
-// continuationUnspawned reports whether no worker runs in the
-// continuation's directory: no spool file and no live worker identity. A
+// continuationUnspawned reports whether no worker ever ran in the
+// continuation's directory: no spool file and no worker identity. A
 // worker's first act is creating its spool, so a spool proves a worker
-// ran here; the identity probe then closes the hole a deleted spool
-// would open (a second native beside a live worker breaks I12). A
-// directory that cannot be proven either way fails loudly: the launch
-// stays retryable instead of risking a double spawn or a silent skip.
+// ran here; an identity proves one did even when its spool was removed,
+// live or gone, since a gone worker may have launched its native and a
+// relaunch would replay it (I12). A directory that cannot be proven
+// either way fails loudly: the launch stays retryable instead of risking
+// a double spawn or a silent skip.
 func continuationUnspawned(stateDir, runID, attemptID string) (bool, error) {
 	dir := workers.AttemptDir(stateDir, runID, attemptID)
 	if _, err := os.Stat(filepath.Join(dir, "spool.jsonl")); err == nil {
@@ -262,14 +263,10 @@ func continuationUnspawned(stateDir, runID, attemptID string) (bool, error) {
 	case err != nil:
 		return false, fmt.Errorf("control: the continuation identity is unverifiable: %w", err)
 	}
-	switch probeObservedLiveness(&observed) {
-	case "gone":
-		return true, nil
-	case "unknown":
+	if probeObservedLiveness(&observed) == "unknown" {
 		return false, errors.New("control: the continuation worker liveness is unverifiable")
-	default:
-		return false, nil
 	}
+	return false, nil
 }
 
 // Reconcile examines launch intent, process identity, unacknowledged spool

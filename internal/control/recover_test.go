@@ -1316,6 +1316,31 @@ func TestRecoverAdoptsHandshakeContinuation(t *testing.T) {
 			t.Fatalf("launcher ran %d times beside a live spool, want zero", n)
 		}
 	})
+	t.Run("dead worker identity without a spool launches nothing", func(t *testing.T) {
+		t.Parallel()
+		f := newRecoverState(t, "run_rec_deadid", "att_rec_deadid")
+		killWorker(t, f, nil, 2)
+		_, rep, err := Reconnect(t.Context(), ReconnectDeps{DB: f.db, StateDir: f.dir}, f.runID)
+		if err != nil {
+			t.Fatalf("handshake: %v", err)
+		}
+		// A worker wrote its identity here and is gone, its spool removed:
+		// it may have launched the native, so nothing relaunches (I12).
+		sleeper := startSleeper(t)
+		start, err := workers.ProcessStartTime(sleeper.Process.Pid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		killSleeper(t, sleeper)
+		writeWorkerJSONAt(t, workers.AttemptDir(f.dir, f.runID, rep.NewAttemptID), workers.Identity{SchemaVersion: 1,
+			RunID: f.runID, AttemptID: rep.NewAttemptID, PID: sleeper.Process.Pid, StartTime: start})
+		if _, err := ExecuteLong(f.ctx(t), RecoverHandler(f.deps()), Peer{}, recoverIntent(t, "op_rec_deadid", f.runID)); err != nil {
+			t.Fatalf("adopting recover: %v", err)
+		}
+		if n := f.launcher.count(); n != 0 {
+			t.Fatalf("launcher ran %d times beside a dead worker's identity, want zero", n)
+		}
+	})
 }
 
 func TestValidPIDBounds(t *testing.T) {
