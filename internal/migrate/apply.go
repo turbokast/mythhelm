@@ -7,14 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/buildinfo"
 	"github.com/turbokast/mythhelm/internal/control"
 	"github.com/turbokast/mythhelm/internal/migrate/preview"
-	"github.com/turbokast/mythhelm/internal/supervisor"
 	"github.com/turbokast/mythhelm/internal/v2contract"
 )
 
@@ -52,6 +50,10 @@ type quarantinePayload struct {
 	Reason            string `json:"reason"`
 }
 
+// afterDrain is a test seam called once the drain has quiesced every run
+// and before the backup.
+var afterDrain func()
+
 // Apply executes Drain → Backup → Import → Adopt for the previewed plan
 // (supervisor-migration design §6). Drain quiesces without writing;
 // Backup copies the quiesced ledger; Import records phase drained,
@@ -64,11 +66,13 @@ type quarantinePayload struct {
 // step's single VACUUM INTO is the design-excluded file copy. On step
 // failure Apply returns the drain report with the error and the phase
 // row names the last completed step, so --apply is resumable: the drain
-// re-quiesces, the backup is reused by digest (never re-taken over an
-// existing one), quarantine envelopes dedupe by event_id, and imported
+// re-quiesces, the recorded backup is reused by digest (never re-taken
+// over an existing one, and an unrecorded backup already at the default
+// path is refused, not reused), quarantine envelopes dedupe by event_id, and imported
 // runs skip by their import markers — resume never replays effects
-// (I12). A run that appears after the drain aborts with
-// ownership_unresolved: post-drain admissions are fatal, never silent.
+// (I12). The instance, state-directory and every run's owner lock are
+// held from before the drain to the return, so no run can appear or be
+// touched by a legacy recover or apply between steps.
 //
 // The caller migrates the schema first (journal.Open or
 // control.OpenLedger): Apply fails fast when migration_state is missing.
@@ -98,40 +102,32 @@ func Apply(ctx context.Context, db *sql.DB, plan preview.Plan) (DrainReport, err
 		}
 	}
 
-	report, err := Drain(ctx, db)
+	stateDir, err := drainStateDir(ctx, db)
 	if err != nil {
 		return DrainReport{}, err
 	}
-	stateDir, err := drainStateDir(ctx, db)
+	// The migration locks for the whole run (design §4): the instance
+	// lock, the state directory's owner lock and, from the drain, every
+	// run's owner lock stay held through backup, import and adoption, so
+	// no service writer starts and no legacy recover or apply passes its
+	// guard between any two steps.
+	releaseLocks, err := acquireMigrationLocks("apply", stateDir)
 	if err != nil {
-		return report, err
+		return DrainReport{}, err
 	}
-	// The migration lock for the rest of the run (design §4): while it
-	// is held no service writer starts and no legacy admission proceeds.
-	// Drain acquired and released the same pair internally, so the lock
-	// cannot span the Drain call itself; the surprise check below closes
-	// the microsecond window between Drain's release and this acquire.
-	releaseInstance, err := control.AcquireInstance(stateDir)
+	defer releaseLocks()
+	report, releaseRuns, err := drainLocked(ctx, db, stateDir)
 	if err != nil {
-		return report, lockError("apply", err,
-			"a supervisor is already running; stop it and retry the migration")
+		return DrainReport{}, err
 	}
-	defer releaseInstance()
-	releaseMigration, err := supervisor.AcquireOwner(stateDir)
-	if err != nil {
-		return report, lockError("apply", err,
-			"another migration holds the state directory; retry after it finishes")
+	defer releaseRuns()
+	if afterDrain != nil {
+		afterDrain()
 	}
-	defer releaseMigration()
 
 	current, err := currentRunIDs(ctx, db, stateDir)
 	if err != nil {
 		return report, err
-	}
-	if surprise := findSurprise(current, report); surprise != "" {
-		return report, applyError(v2contract.CodeOwnershipUnresolved, "apply", surprise,
-			"retry the migration after it settles",
-			"run %s started during the drain; nothing past the drain ran", surprise)
 	}
 	// Before the first ledger write: a stale plan refuses with no backup
 	// taken and no phase advanced.
@@ -237,8 +233,7 @@ func recordPhase(ctx context.Context, db *sql.DB, phase Phase) error {
 }
 
 // currentRunIDs lists every v1 run through Drain's own enumeration, so
-// the surprise check compares like with like by construction and can
-// never drift from what Drain quiesced.
+// the plan check compares like with like by construction.
 func currentRunIDs(ctx context.Context, db *sql.DB, stateDir string) ([]string, error) {
 	runs, err := enumerateRuns(ctx, db, stateDir)
 	if err != nil {
@@ -251,41 +246,22 @@ func currentRunIDs(ctx context.Context, db *sql.DB, stateDir string) ([]string, 
 	return ids, nil
 }
 
-// findSurprise names the first current run the drain report does not know:
-// an admission that landed between Drain's release and the migration
-// lock. Empty means the quiesce still covers every run.
-func findSurprise(current []string, report DrainReport) string {
-	known := map[string]bool{}
-	for _, id := range report.Drained {
-		known[id] = true
-	}
-	for _, id := range report.Adopted {
-		known[id] = true
-	}
-	for _, id := range report.Quarantined {
-		known[id] = true
-	}
-	for _, id := range current {
-		if !known[id] {
-			return id
-		}
-	}
-	return ""
-}
-
-// backupOrReuse takes the pre-migration backup, or reuses a valid one a
-// previous attempt already took: Backup never overwrites, so a resume
-// must not call it blindly. Both backup and sidecar present verifies by
-// digest; exactly one present is a half-state the operator moves aside;
-// neither present takes a fresh backup — unless a backup was recorded,
-// in which case the recorded pre-migration copy is irreplaceable (a
-// resume may already hold committed migration rows) and its absence
-// refuses.
+// backupOrReuse takes the pre-migration backup, or reuses the one a
+// previous attempt recorded. With no backup recorded the copy must be
+// taken now, after this attempt's drain, or it would miss writes accepted
+// since (a restore resets migration_state, and a crash can fall between
+// the backup and its record): Backup refuses to overwrite, so a backup
+// already at the default path is left for the operator to move aside
+// rather than reused unverified. A recorded backup verifies by digest
+// when backup and sidecar are both present; exactly one present is a
+// half-state the operator moves aside; neither present refuses, since a
+// resume may already hold committed migration rows and the recorded
+// pre-migration copy is irreplaceable.
 func backupOrReuse(ctx context.Context, db *sql.DB, stateDir, recorded string) (BackupInfo, error) {
-	candidate := recorded
-	if candidate == "" {
-		candidate = filepath.Join(stateDir, fmt.Sprintf("%s.bak-migration-v%d", dbName, supportedSchemaVersion))
+	if recorded == "" {
+		return Backup(ctx, db, stateDir)
 	}
+	candidate := recorded
 	_, dstErr := os.Lstat(candidate)
 	_, scErr := os.Lstat(candidate + ".json")
 	switch {
@@ -296,16 +272,9 @@ func backupOrReuse(ctx context.Context, db *sql.DB, stateDir, recorded string) (
 		}
 		return info, nil
 	case errors.Is(dstErr, os.ErrNotExist) && errors.Is(scErr, os.ErrNotExist):
-		if recorded != "" {
-			// A resume may already hold committed imports or
-			// quarantine envelopes: a fresh copy would not be
-			// pre-migration state, so the recorded backup is
-			// irreplaceable — refuse rather than re-take.
-			return BackupInfo{}, applyError(v2contract.CodeInvalidContract, "apply", "",
-				"restore the recorded pre-migration backup to its path before re-applying",
-				"recorded backup %s is missing; refusing to replace the pre-migration backup", recorded)
-		}
-		return Backup(ctx, db, stateDir)
+		return BackupInfo{}, applyError(v2contract.CodeInvalidContract, "apply", "",
+			"restore the recorded pre-migration backup to its path before re-applying",
+			"recorded backup %s is missing; refusing to replace the pre-migration backup", recorded)
 	case errors.Is(dstErr, os.ErrNotExist) || errors.Is(scErr, os.ErrNotExist):
 		return BackupInfo{}, applyError(v2contract.CodeInvalidContract, "apply", "",
 			"move the half-written backup aside; mythhelm never overwrites one",

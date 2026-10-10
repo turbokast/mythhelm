@@ -92,4 +92,8 @@
 
 ## Task 11 — Adversarial suite and frozen v1 evidence
 
-<!-- pending -->
+- **Produces**: `tests/e2e/contain_linux_test.go` (`TestRestrictedEscapeFixturesFail`, `TestInspectWriteFails`, fixture helpers), `tests/e2e/contain_refusal_test.go` (`TestUnsupportedRefusalPrecise`, `TestEvidenceRecordsVersioned`); `records.go` gains a freeze comment only.
+- **For dependents**: changing any `SeedV1` record (version, owner, boundary, a claim Name/Detail) or adding a profile, OS or route key fails `TestEvidenceRecordsVersioned` on purpose: update the freeze test in the same change and add an enforcement or refusal test for the new key.
+- **For dependents**: any e2e `TestMain` that can run `ProbeLinux` must dispatch `contain.Command` first (done in `tests/e2e/main_test.go`).
+- **Environment trap**: the Linux fixtures skip where unprivileged user namespaces are restricted (Ubuntu 24.04 AppArmor default); verify them in a privileged container or on a CI runner, and a skipped run proves nothing.
+- **Deviations**: see the entry (`main_test.go` edited outside the Files list); no input change for later tasks.

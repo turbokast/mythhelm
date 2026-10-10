@@ -218,7 +218,9 @@ CHECKS=$((CHECKS + 1))
 RC=$(bash_payload 'gh release create v1' "$PROJ" "$SID" | HOOK_JQ_PROBE=jq-not-installed "$HOOK" 2>/dev/null; echo $?)
 [[ "$RC" == 2 ]] || fail "[jq missing blocks gh] got $RC"
 CHECKS=$((CHECKS + 1))
-RC=$(bash_payload 'ls' "$PROJ" "$SID" | HOOK_JQ_PROBE=jq-not-installed "$HOOK" 2>/dev/null; echo $?)
+# Without jq the prefilter scans the raw payload, so a random mktemp cwd can
+# itself contain "gh"; use a fixed cwd so only the command is under test.
+RC=$(bash_payload 'ls' "/nonexistent/proj" "$SID" | HOOK_JQ_PROBE=jq-not-installed "$HOOK" 2>/dev/null; echo $?)
 [[ "$RC" == 0 ]] || fail "[jq missing allows ls] got $RC"
 
 finish

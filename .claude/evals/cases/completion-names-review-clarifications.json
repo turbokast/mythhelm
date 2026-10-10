@@ -1,0 +1,12 @@
+{
+  "id": "completion-names-review-clarifications",
+  "hazard": "A completion entry says Spec deviations None while review rounds added consistent clarifications, so the finalize review must rediscover them by diffing.",
+  "source": "P-release-tagging-1",
+  "targets": [
+    ".claude/skills/task-completion/SKILL.md"
+  ],
+  "grader": {
+    "type": "must-match",
+    "pattern": "A review-round addition that stays inside the `Files` list and is consistent with the design is still named, one line each, marked consistent.*`None\\.` is reserved for a task whose merged diff the worker's own commits fully describe"
+  }
+}

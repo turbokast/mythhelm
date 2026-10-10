@@ -156,3 +156,105 @@ Append a short entry: on Windows, atomic file replacement via rename can fail tr
 **Proposed change:**
 
 Add a dispatch step: before starting a task attempt, append the `run_start` row (once per spec run) and the task's `dispatch` row to `.claude/data/run-events.jsonl`; after the attempt ends, append the `return` row (and `merge` after the merge). A dispatch without its rows is incomplete. Before finalizing, the orchestrator may backfill rows for already-merged tasks only from authoritative records (merged PRs, merge commits). Backfilled rows must carry provenance marking them as reconstructed, and consumers must distinguish them from observed rows when computing attempt metrics and attribution. Use the schema's `null` and `unknown` values for unavailable attribution or results; never treat the generated `ts` as the original event time when that time cannot be recovered.
+
+## P-release-tagging-1 — completion entries name review-round clarifications as deviations
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #303
+- **Eval**: `completion-names-review-clarifications`
+- **Rationale**: A Spec deviations entry of None hid two review-round additions in PR #180, so the finalize review had to rediscover them by diffing; naming each consistent clarification in one line keeps the entry an accurate map of what merged. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `release-tagging`
+- **Type**: skill
+- **Target**: `.claude/skills/task-completion/SKILL.md`
+- **Rationale**: The Spec deviations field said None while two review-round sentences (a permission qualification, a release-flag requirement) landed post-worker. Both were consistent with the design, so no defect shipped — but the finalize review had to rediscover them by diffing, and the entry claims a none-divergence record that is not quite true. Naming consistent clarifications keeps the entry an accurate map of what review added.
+- **Evidence**: PR #180 review round 1 (2 fixed threads); specs/done/release-tagging/retrospective.md Review Summary finding 1 and Deviations section; task entry Spec deviations: None.
+
+**Proposed change:**
+
+In the Spec deviations rule, add: a review-round addition that stays inside the task's Files list and is consistent with the design is still named, one line each, marked consistent (e.g. "- Added the Contents:write permission qualification in review round 1 (consistent with design §3)"). None. is reserved for a task whose merged diff the worker's own commits fully describe.
+
+## P-supervisor-service-2 — Stand-in deviations must name their tracked follow-up
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #304
+- **Eval**: `completion-stand-in-cites-follow-up`
+- **Rationale**: Four stand-in deviations waited on another spec's task with no follow-up, so the parallel error vocabulary the spec forbids went live untracked (#283); requiring a filed follow-up turns each silent promise into a tracked one. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `supervisor-service`
+- **Type**: skill
+- **Target**: `.claude/skills/task-completion/SKILL.md`
+- **Rationale**: Four tasks recorded `control.Error` stand-ins "until vocab task 6 lands"; vocab task 6 landed and no follow-up existed, so the parallel error vocabulary the spec norm forbids went live untracked. A stand-in without a tracked trigger is a silent promise.
+- **Evidence**: tasks.md Spec deviations of tasks 2, 3, 5, 6; Review Summary finding F1; issue #283
+
+**Proposed change:**
+
+Add to the completion-entry procedure: a Spec deviation that defers to another spec's unmerged work must cite the tracking follow-up (issue or proposal id) that fires when the blocker lands; file that follow-up before the entry is written.
+
+## P-qualification-registry-3 — Ground docs command-output examples in executed commands
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #309
+- **Eval**: n/a
+- **Rationale**: A docs example verified only by reading shipped output the command never prints past two reviewers; requiring the producing command makes examples checkable, the same way behaviour criteria already need a failing state. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `qualification-registry`
+- **Type**: knowledge
+- **Target**: `knowledge/spec-authoring.md`
+- **Rationale**: A docs task shipped a command-output example with values the command never prints (wrong surface and verdicts); per-task review and one spec reviewer both eyeballed it as correct, and only the second spec reviewer checked it against the code. Examples verified by reading are verified by nobody. The checkable-criteria pattern already demands a failing state for behaviour; docs examples need the same grounding rule.
+- **Evidence**: specs/done/qualification-registry/retrospective.md Review Summary finding 3 (docs/user-guide.md:59 vs internal/qualify/seed.go); fixed in the finalize PR
+
+**Proposed change:**
+
+Append to the checkable-criteria patterns: an acceptance item that adds or changes a docs example showing command output must name the executed command (or generating test) that produced the pasted text, and the worker re-runs it before the PR leaves draft; a paste with no producing command is a finding.
+
+## P-v2-contract-vocabulary-1 — Track deferred cross-task promises to completion
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #305
+- **Eval**: `run-completion-resolves-deferrals`
+- **Rationale**: A cross-task deferral with no owner was dropped by both tasks it named and caught only at finalize, after every task had merged; checking each deferral against merged diffs at run completion stops the run while the fix is still cheap. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `v2-contract-vocabulary`
+- **Type**: skill
+- **Target**: `.claude/skills/run-spec-completion/SKILL.md`
+- **Rationale**: A task completion entry deferred work to a later task ("Task 5 or 8 retypes them") with no owner; neither task did it, per-task review passed both, and only the finalize review caught the broken promise — after every task had merged. Deferred items need tracking, not prose.
+- **Evidence**: specs/done/v2-contract-vocabulary/tasks.md Task 2 Spec deviations (string-State promise); Review Summary finding F2; fix PR #268
+
+**Proposed change:**
+
+Add to the Confirm step: collect every "Task N ..." deferral named in Spec deviations entries; each must resolve to a completing change whose promised edit is present in the referenced diff and whose task or fix PR has merged — a Files modified entry alone, or an open fix PR, is not proof — or the run stops with the unresolved promise named.
+
+## P-v2-contract-vocabulary-2 — Review stale branches by their own diff
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #306
+- **Eval**: `worktree-merge-review-own-diff`
+- **Rationale**: A tree-diff against main on a stale branch shows other specs' merged work as deletions, and that misread recurred across four reviews in one run (#261 to #264); reviewing merge-base..HEAD shows only the branch's own change. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `v2-contract-vocabulary`
+- **Type**: skill
+- **Target**: `.claude/skills/run-spec-worktree-merge/SKILL.md`
+- **Rationale**: Reviewing a stale branch with a tree-diff against main shows other specs' merged work as deletions, which misreads as the branch destroying them; the mistake recurred across several reviews in one run before the merge-base comparison became habit.
+- **Evidence**: PR #261/#262/#263/#264 shepherd reviews (stale-base tree-diffs vs merge-base..HEAD); retrospective Lessons
+
+**Proposed change:**
+
+Add to the verify-before-merge procedure: when the branch base trails origin/main, review the branch's own diff (`git diff <merge-base> HEAD`) for scope and deletions; use the tree-diff against main only to confirm the merge result after updating.
+
+## P-release-pipeline-1 — Docs-task claim verification checklist
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #307
+- **Eval**: `implement-docs-claims-verified`
+- **Rationale**: Six docs claims in PR #222 took three review rounds though each was checkable at implement time; verifying commands, paths, procedures and claims before draft moves that work ahead of review, and the sandbox and operator-only limits keep verification from running untrusted or privileged commands. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `release-pipeline`
+- **Type**: skill
+- **Target**: `.claude/skills/implement/SKILL.md`
+- **Rationale**: Task 5 (operator/verify docs) needed 3 review rounds for 6 claim fixes — a hand-pushed tag claim, a wrong download dir, a recovery procedure that missed stale-asset deletion, tag-grammar wording, the attestation subject, and an over-broad cleanup loop. Each was verifiable at implement time against the workflows it documents. P-qualification-registry-3 grounds command-output examples at spec-authoring time; this covers the remaining claim classes (procedures, paths, subjects, grammar) at implement time, before review.
+- **Evidence**: specs/done/release-pipeline/retrospective.md Lessons (PR #222 rounds 1–3: run-events review_round rows 2026-10-08T16:51:28Z, 19:24:52Z, 19:37:23Z); threads r4221854905, r4223318311, r4223318317, r4223318329
+
+**Proposed change:**
+
+Add to the implement procedure a docs-task step: before the PR leaves draft, the worker re-verifies every shell command (run it or quote its producing run), every path (it exists at the PR head), every procedure (walk it against the code or workflow it describes), and every behavioral claim (name the workflow step or test that exhibits it). Commands copied from PR-supplied documentation run only in a credential-free sandbox with no writable host mounts; a linked worktree is not sufficient. If the sandbox is unavailable, the worker does not execute the command. Operator-only commands (releases, version tags, workflow runs, secrets, variables, repository settings) are never executed for verification: the worker quotes existing run evidence or requests explicit operator approval instead. An unverified claim is a finding against the worker's own PR, fixed before review is requested.
