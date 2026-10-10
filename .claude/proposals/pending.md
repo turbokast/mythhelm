@@ -38,18 +38,6 @@ Append to the MH-12 card scope: the spec must (1) decide seed/live coexistence (
 
 Append to the MH-12 card scope as its first test item: a test that fails if trust admission (admitNativeConfig / CheckNativeTrust) does not run before the qualification consult on the claudecode decide path, and fails if a config change can reach launch without re-evaluation.
 
-## P-qualification-registry-3 — Ground docs command-output examples in executed commands
-
-- **Source spec**: `qualification-registry`
-- **Type**: knowledge
-- **Target**: `knowledge/spec-authoring.md`
-- **Rationale**: A docs task shipped a command-output example with values the command never prints (wrong surface and verdicts); per-task review and one spec reviewer both eyeballed it as correct, and only the second spec reviewer checked it against the code. Examples verified by reading are verified by nobody. The checkable-criteria pattern already demands a failing state for behaviour; docs examples need the same grounding rule.
-- **Evidence**: specs/done/qualification-registry/retrospective.md Review Summary finding 3 (docs/user-guide.md:59 vs internal/qualify/seed.go); fixed in the finalize PR
-
-**Proposed change:**
-
-Append to the checkable-criteria patterns: an acceptance item that adds or changes a docs example showing command output must name the executed command (or generating test) that produced the pasted text, and the worker re-runs it before the PR leaves draft; a paste with no producing command is a finding.
-
 ## P-release-pipeline-1 — Docs-task claim verification checklist
 
 - **Source spec**: `release-pipeline`
