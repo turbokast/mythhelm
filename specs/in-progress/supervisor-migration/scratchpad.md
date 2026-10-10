@@ -117,8 +117,9 @@ overrides `design.md` — conflicts go back to the designer.
 - **Task 8**: the support matrix pins exactly the 6 shipped rows and
   `TestSupportMatrixMatchesEvidence` resolves every evidence ref to a
   real test, checks platform claims against build tags, and maps every
-  `internal/migrate` + `preview` export to a row — new behaviour
-  without a row fails, with self-mutations proving each defect class
+  `internal/migrate` + `preview` export to a row — an exported
+  declaration without a row fails (behaviour inside an existing export
+  or unexported code is not detected), with self-mutations proving each defect class
   is reported. ADR 0016 stays `proposed` until the maintainer accepts
   it (flip `docs/decisions/0016-migration-import.md:3`); the
   `nfr2-proof` row is `fixture-tested` (Task 7 merged before this PR). Lint note: the

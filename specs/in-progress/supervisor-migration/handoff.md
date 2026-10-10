@@ -220,8 +220,10 @@
 - **For dependents**: the matrix test resolves every evidence ref to a
   real test function in `migrate`/`journal`/`cli`/`tests`, checks the
   platform claims against build tags, and maps every exported
-  declaration of `internal/migrate` and `preview` to a row — adding
-  behaviour without a row fails. Nothing here claims
+  declaration of `internal/migrate` and `preview` to a row — adding an
+  exported declaration without a row fails; new behaviour inside an
+  existing export or unexported code is not detected by this test and
+  stays with review. Nothing here claims
   `live-qualified`.
 - **Deviations that change a later task's inputs**: none — docs plus
   assertion only, no behaviour changed. Task 7 merged first, so the

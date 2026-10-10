@@ -348,8 +348,9 @@ const migrationADR = "../../docs/decisions/0016-migration-import.md"
 // accepted; later lines mentioning a status do not count.
 func adrStatusOK(src string) bool {
 	for line := range strings.SplitSeq(src, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "- Status:") {
-			return strings.Contains(line, "proposed") || strings.Contains(line, "accepted")
+		if status, ok := strings.CutPrefix(strings.TrimSpace(line), "- Status:"); ok {
+			status = strings.TrimSpace(status)
+			return status == "proposed" || status == "accepted"
 		}
 	}
 	return false
@@ -382,6 +383,9 @@ func TestADRStatusReadsTheFirstStatusLine(t *testing.T) {
 		"rejected first, a later line is proposed": {"- Status: rejected\n- Status: proposed\n", false},
 		"accepted":       {"# ADR\n- Status: accepted\n", true},
 		"no status line": {"# ADR\nproposed\n", false},
+		"unaccepted":     {"- Status: unaccepted\n", false},
+		"improposed":     {"- Status: improposed\n", false},
+		"padded":         {"  - Status:  accepted  \n", true},
 	} {
 		if got := adrStatusOK(tc.src); got != tc.want {
 			t.Errorf("%s: adrStatusOK = %v, want %v", name, got, tc.want)
