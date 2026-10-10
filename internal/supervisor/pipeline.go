@@ -930,10 +930,21 @@ func verifyIdentity(id workers.Identity, pid int, tokenSHA256 [32]byte) error {
 }
 
 // watch ingests the spool until the attempt reaches a terminal state, the
-// worker is lost, or the caller detaches.
+// worker is lost, or the caller detaches. Every successful Ingest also
+// writes the supervisor beat the worker polls for loss and return
+// (design §5); a failed Ingest writes none.
 func (p *pipeline) watch(ctx context.Context, ref AttemptRef, exited <-chan struct{}) error {
 	tick := time.NewTicker(ingestInterval)
 	defer tick.Stop()
+	// The boot generation only changes across supervisor restarts, so it
+	// is read once. An unreadable lock writes unfenced beats (generation
+	// 0, the pinAdmission fallback) rather than failing the watch; the
+	// beat asserts presence only, never authority.
+	var beatGen int64
+	if gen, err := control.CurrentGeneration(ref.StateDir); err == nil {
+		beatGen = gen
+	}
+	var beats uint64
 	interrupts := 0
 	workerGone := false
 	var expiry <-chan time.Time
@@ -962,6 +973,11 @@ func (p *pipeline) watch(ctx context.Context, ref AttemptRef, exited <-chan stru
 			}
 			return nil
 		}
+		// After Ingest only: the beat proves this supervisor journaled
+		// the spool. Best-effort — a lost beat reads stale for one tick
+		// and the next tick rewrites it.
+		beats++
+		_ = control.WriteSupervisorBeat(ref.Dir(), beatGen, beats, time.Now().UTC())
 		if err := p.flush(ctx); err != nil {
 			return err
 		}

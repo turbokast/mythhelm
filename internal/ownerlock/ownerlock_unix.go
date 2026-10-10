@@ -1,6 +1,6 @@
 //go:build unix
 
-package supervisor
+package ownerlock
 
 import (
 	"errors"

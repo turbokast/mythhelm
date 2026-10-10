@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -121,7 +122,77 @@ func newFixture(t *testing.T) fixture {
 	}
 	f.git(t, "add", "README.md")
 	f.git(t, "commit", "--quiet", "-m", "initial")
+	t.Cleanup(func() { f.releaseWorkers(t) })
 	return f
+}
+
+// releaseWorkers ends every worker the fixture's runs left behind before
+// the temp directories go. A fenced worker whose supervisor is gone (the
+// run exited 6, or was detached) finishes its episode and then waits for
+// the supervisor's return holding its spool open; Windows cannot delete
+// a held file. Fresh supervisor beats are that return, so the worker
+// exits; a worker still mid-episode is asked to stop first.
+func (f fixture) releaseWorkers(t *testing.T) {
+	t.Helper()
+	dirs, err := filepath.Glob(filepath.Join(f.state, "runs", "*", "attempts", "*"))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	for _, dir := range dirs {
+		id, err := workers.ReadIdentity(dir)
+		if err != nil || id.PID == os.Getpid() {
+			continue // no identity yet, or one a test forged with its own PID
+		}
+		_ = workers.RequestStop(dir, "test-cleanup")
+		deadline := time.Now().Add(time.Minute)
+		for beat := uint64(1); !workerGone(id); beat++ {
+			if time.Now().After(deadline) {
+				t.Errorf("worker %d of %s outlived the test", id.PID, dir)
+				break
+			}
+			_ = control.WriteSupervisorBeat(dir, 1, beat, time.Now())
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+}
+
+// workerGone reports whether the worker id names no longer runs. A PID that
+// answers with another start time belongs to a process that reused it
+// (Windows recycles PIDs within seconds), never to the worker. Windows can
+// wait on a foreign process handle; elsewhere signal 0 probes it.
+func workerGone(id workers.Identity) bool {
+	if start, err := workers.ProcessStartTime(id.PID); err == nil && !start.Equal(id.StartTime) {
+		return true
+	}
+	p, err := os.FindProcess(id.PID)
+	if err != nil {
+		return true
+	}
+	if runtime.GOOS != "windows" {
+		return p.Signal(syscall.Signal(0)) != nil
+	}
+	done := make(chan struct{})
+	go func() { _, _ = p.Wait(); close(done) }()
+	select {
+	case <-done:
+		return true
+	case <-time.After(50 * time.Millisecond):
+		return false
+	}
+}
+
+func TestWorkerGoneTreatsReusedPIDAsGone(t *testing.T) {
+	start, err := workers.ProcessStartTime(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workerGone(workers.Identity{PID: os.Getpid(), StartTime: start}) {
+		t.Fatal("a live process with the recorded start time reads gone")
+	}
+	if !workerGone(workers.Identity{PID: os.Getpid(), StartTime: start.Add(-time.Hour)}) {
+		t.Fatal("a live process with another start time (a reused PID) reads alive")
+	}
 }
 
 func (f fixture) git(t *testing.T, args ...string) string {
