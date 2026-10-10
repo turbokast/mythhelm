@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Completion reserve: before a material replan the run checks that the time left covers one more verification pass, and reports the estimate as an estimate (#270)
 - Allowance exhaustion handling: the run keeps its candidate, blocks, and new runs on that bucket are refused on a recorded operator retry schedule, with nothing purchased or switched automatically; the exhaustion signal is a synthetic shape until a native one is qualified (#263)
 - `mythhelm migrate` previews the move of a legacy state directory to the v2 ledger without credentials or network, and `mythhelm migrate --apply --yes` drains the legacy run owners, backs up the ledger and imports every legacy run as a one-task run with its IDs, billing posture and evidence kept (#277, #285, #286, #287, #292, #297, #301, #302, #324)
+- Stop ladder pinned at admission: a run records the ladder version when it is admitted, a stop climbs that ladder rung by rung, and the stop record names the version, the signals sent and the processes left unresolved; the JSONL stream shows an attempt.admission_pinned line (#298)
+- Worker supervisor-loss envelope: when the supervisor's beat goes stale a worker finishes only its current episode, spools the result and waits for the supervisor instead of starting new work, and a worker whose spool fails stops instead of running blind (#311)
 
 ### Fixed
 
