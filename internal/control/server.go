@@ -155,25 +155,28 @@ func AssignHandler(db *sql.DB) Handler {
 }
 
 // RegisterStop binds the stop method to s as a long handler: the spool
-// wait runs outside any transaction. It is part of the served set (see
-// NewSupervisorServer).
+// wait runs outside any transaction. NewSupervisorServer does not call it:
+// in S1 stop runs locally from the CLI.
 func (s *Server) RegisterStop(d StopDeps) error {
 	return s.RegisterLong("stop", StopHandler(d))
 }
 
 // RegisterRecover binds the recover method to s as a long handler: the
-// continuation launch is a post-commit handoff. It is part of the served
-// set (see NewSupervisorServer).
+// continuation launch is a post-commit handoff. NewSupervisorServer does
+// not call it: in S1 recover runs locally from the CLI.
 func (s *Server) RegisterRecover(d RecoverDeps) error {
 	return s.RegisterLong("recover", RecoverHandler(d))
 }
 
 // NewSupervisorServer binds every method the supervisor serves: the six
-// short intents on db, plus the stop and recover long intents on the
-// ledger handle, the journal beside it, the state directory, and the
-// continuation launcher (nil fails a fresh continuation closed).
-func NewSupervisorServer(db *sql.DB, j *journal.Journal, stateDir string, launch func(context.Context, RecoveryLaunch) error) *Server {
-	srv := NewServer(map[string]Handler{
+// short intents on db. Stop and recover are not served in S1 (Q-27): the
+// handlers write attempt state with no journal event and no spool ingest,
+// so a served request would leave the next owner ingesting a worker's
+// stop_requested against a stopped attempt. They answer
+// capability_unsupported and write nothing; the CLI runs both locally under
+// run ownership.
+func NewSupervisorServer(db *sql.DB) *Server {
+	return NewServer(map[string]Handler{
 		"status":    StatusHandler(db),
 		"assign":    AssignHandler(db),
 		"reserve":   ReserveHandler(db),
@@ -181,10 +184,6 @@ func NewSupervisorServer(db *sql.DB, j *journal.Journal, stateDir string, launch
 		"heartbeat": HeartbeatHandler(db),
 		"read":      ReadHandler(db),
 	})
-	// The methods are fresh names on a fresh server: registration cannot fail.
-	_ = srv.RegisterStop(StopDeps{DB: db, Journal: j, StateDir: stateDir})
-	_ = srv.RegisterRecover(RecoverDeps{DB: db, StateDir: stateDir, Launch: launch})
-	return srv
 }
 
 // OpenLedger migrates the state database in dir and returns the supervisor's

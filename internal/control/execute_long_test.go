@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -306,81 +307,58 @@ func TestLongConcurrentDuplicateExecutesOnce(t *testing.T) {
 	}
 }
 
-// TestServedStopAndRecoverAreLong pins the fold: the supervisor serves the
-// stop and recover methods through the long path with their dependencies
-// threaded, so a served stop completes on its report and a served recover
-// reconnects a live worker without launching.
-func TestServedStopAndRecoverAreLong(t *testing.T) {
+// TestServedStopAndRecoverAreRefused pins Q-27 option A: in S1 the
+// supervisor service does not serve stop or recover. Both write attempt
+// state with no journal event and no spool ingest, so the next legacy owner
+// would ingest the worker's own stop_requested against an attempt already
+// stopped (the forbidden stopped -> stop_requested transition). A served
+// request is capability_unsupported and writes nothing: no operations row,
+// no attempt state, no stop request file.
+func TestServedStopAndRecoverAreRefused(t *testing.T) {
 	t.Parallel()
-	f := newRecoverState(t, "run_srv_fold", "att_srv_fold")
-	writeStopped(t, f.stopState, `{"confirmed":true,"sent":[{"signal":"kill","grace":1000000000}],"ladder_version":"stop-ladder/v1"}`, 2)
-	srv := NewSupervisorServer(f.db, f.j, f.dir, f.launcher.launch)
-	res, err := srv.Dispatch(f.ctx(t), Peer{}, stopIntent(t, "op_srv_stop", f.attempt, f.version))
-	if err != nil {
-		t.Fatalf("served stop: %v", err)
-	}
-	var receipt StopReceipt
-	if err := json.Unmarshal(res.Body, &receipt); err != nil {
-		t.Fatal(err)
-	}
-	if !receipt.Confirmed {
-		t.Fatalf("served stop receipt = %+v, want confirmed", receipt)
-	}
-	g := newRecoverState(t, "run_srv_fold2", "att_srv_fold2")
-	srv2 := NewSupervisorServer(g.db, g.j, g.dir, g.launcher.launch)
-	res, err = srv2.Dispatch(g.ctx(t), Peer{}, recoverIntent(t, "op_srv_rec", g.runID))
-	if err != nil {
-		t.Fatalf("served recover: %v", err)
-	}
-	if rep := decodeReport(t, res.Body); rep.Outcome != RecoverReconnected {
-		t.Fatalf("served recover outcome = %q, want reconnected", rep.Outcome)
-	}
-	if n := g.launcher.count(); n != 0 {
-		t.Fatalf("launcher ran %d times on a reconnect, want zero", n)
-	}
-	_, err = srv.Dispatch(f.ctx(t), Peer{}, Intent{OperationID: "op_srv_nope", Method: "nope"})
-	requireCode(t, err, CodeCapabilityUnsupported)
-}
-
-// TestServedStopWaitHoldsNoLedgerLock pins the registration, not just the
-// executor: a stop dispatched through the supervisor server waits for its
-// report without holding the ledger's write lock, so a served assign
-// completes while the stop is still standing.
-func TestServedStopWaitHoldsNoLedgerLock(t *testing.T) {
-	t.Parallel()
-	f := newStopState(t, "run_srv_free", "att_srv_free")
-	srv := NewSupervisorServer(f.db, f.j, f.dir, nil)
-	done := make(chan error, 1)
+	f := newRecoverState(t, "run_srv_refuse", "att_srv_refuse")
+	srv := NewSupervisorServer(f.db)
+	before := attemptState(t, f.db, f.attempt)
+	server, client := net.Pipe()
+	done := make(chan struct{})
 	go func() {
-		_, err := srv.Dispatch(f.ctx(t), Peer{}, stopIntent(t, "op_srv_free", f.attempt, f.version))
-		done <- err
+		defer close(done)
+		serveConn(f.ctx(t), &streamConn{c: server}, srv)
 	}()
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		if _, ok := stopRequestID(t, f); ok {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the served stop never delivered its request")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	start := time.Now()
-	assign := Intent{OperationID: "op_srv_free_assign", Method: "assign", Object: f.runID}
-	if _, err := srv.Dispatch(f.ctx(t), Peer{}, assign); err != nil {
-		t.Fatalf("served assign during a waiting served stop: %v", err)
-	}
-	if elapsed := time.Since(start); elapsed >= 4*time.Second {
-		t.Fatalf("served assign took %s beside a waiting stop, want it unblocked", elapsed)
-	}
-	writeStopped(t, f, `{"confirmed":true,"sent":[{"signal":"kill","grace":1000000000}],"ladder_version":"stop-ladder/v1"}`, 2)
-	select {
-	case err := <-done:
+	conn := &streamConn{c: client}
+	for name, in := range map[string]Intent{
+		"stop":    stopIntent(t, "op_srv_stop", f.attempt, f.version),
+		"recover": recoverIntent(t, "op_srv_rec", f.runID),
+	} {
+		frame, err := Encode(in)
 		if err != nil {
-			t.Fatalf("served stop: %v", err)
+			t.Fatal(err)
 		}
-	case <-time.After(30 * time.Second):
-		t.Fatal("the served stop never finished after its report")
+		reply, err := conn.Request(f.ctx(t), frame)
+		if err != nil {
+			t.Fatalf("served %s: %v", name, err)
+		}
+		var res Result
+		if err := json.Unmarshal(reply[prefixLen:], &res); err != nil {
+			t.Fatalf("served %s: decoding reply: %v", name, err)
+		}
+		if res.Error == nil || res.Error.Code != CodeCapabilityUnsupported {
+			t.Errorf("served %s: reply error = %v, want capability_unsupported", name, res.Error)
+		}
+	}
+	_ = client.Close()
+	<-done
+	if got := attemptState(t, f.db, f.attempt); got != before {
+		t.Errorf("attempt state = %q after refused requests, want %q unchanged", got, before)
+	}
+	if n := count(t, f.db, "operations"); n != 0 {
+		t.Errorf("operations rows = %d, want none written by refused requests", n)
+	}
+	if id, ok := stopRequestID(t, f.stopState); ok {
+		t.Errorf("a stop request %q was delivered to the worker, want none", id)
+	}
+	if n := f.launcher.count(); n != 0 {
+		t.Errorf("launcher ran %d times, want zero", n)
 	}
 }
 

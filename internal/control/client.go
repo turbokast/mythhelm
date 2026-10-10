@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/ids"
-	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/statedir"
 )
 
@@ -183,14 +182,6 @@ func RunSupervisor(ctx context.Context, dir string) error {
 		return err
 	}
 	defer func() { _ = db.Close() }()
-	// The stop intent reads admission pins through the journal handle,
-	// which stays open beside the ledger handle for the supervisor's
-	// lifetime.
-	j, err := journal.Open(ctx, dir)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = j.Close() }()
 	t, err := DefaultTransport()
 	if err != nil {
 		return err
@@ -208,7 +199,5 @@ func RunSupervisor(ctx context.Context, dir string) error {
 	if err != nil {
 		return err
 	}
-	// No continuation launcher is wired yet: a fresh continued outcome
-	// fails closed with no launcher attached, retryable once one is.
-	return Serve(ctx, l, NewSupervisorServer(db, j, dir, nil), db)
+	return Serve(ctx, l, NewSupervisorServer(db), db)
 }
