@@ -32,7 +32,7 @@ func (j *jobObject) members() ([]ProcessIdentity, error) // JobObjectBasicProces
 func (j *jobObject) close() error
 ```
 
-`job_other.go` declares `type jobObject struct{}`; `ownedProc` gains `job *jobObject` (nil off Windows). `GetHandleInformation`, `IsProcessInJob` and the process-id-list struct are not in `golang.org/x/sys` v0.48.0; they are bound through `windows.NewLazySystemDLL("kernel32.dll")` in `job_windows.go` (D7).
+`job_other.go` declares `type jobObject struct{}`; `ownedProc` gains `job *jobObject` (nil off Windows). `GetHandleInformation`, `IsProcessInJob`, the process-id-list struct and the `STILL_ACTIVE` constant (259, defined locally) are not in `golang.org/x/sys` v0.48.0; they are bound through `windows.NewLazySystemDLL("kernel32.dll")` in `job_windows.go` (D7).
 
 Launch on Windows (default method, D2): `newJob` → `cmd.Start()` with `CREATE_SUSPENDED` added to `nativeAttr()` → open the process → `job.assign` → resume the main thread (`CreateToolhelp32Snapshot`, `Thread32First/Next`, `OpenThread`, `ResumeThread`) → record `native_pid` and `native_start_time`. If `ProcessStartTime` fails after the resume, the launch is treated as failed: the worker terminates the job, confirms it empty and ends `failed_native`/`launch_failed`; if emptiness cannot be confirmed the attempt ends `interrupted`/`stop_unconfirmed` (a native whose identity cannot be recorded must not run, as `identityErr` does today, `worker.go:1087-1090`). The `jobOps` struct carries a `startTime func(pid int) (time.Time, error)` field for the test. The native cannot start a child before it is in the job. The job handle is created non-inheritable (AC-1.2). The worker already inside a kill-on-close job it has not left is detected by `QueryInformationJobObject` with a nil handle (the spike in Task 3 confirms the call and its not-in-a-job result); it and any assignment failure fail the launch (AC-1.6, OQ-3 default).
 
@@ -98,7 +98,7 @@ The fake agent's only child-spawning step, `spawn_escapee`, is Unix-only (`adapt
 | D12 | Windows-only bounded stop wait | Without a deadline a surviving native hangs the worker; making the wait common changes the Unix loop (N4). |
 | D9 | Matrix in a leaf package `internal/processsupport` | `internal/workers` imports both adapters, so a matrix there would create an import cycle; the leaf serves both adapters from one source (AC-5.2). |
 
-An ADR (`docs/decisions/0016-windows-process-ownership.md`, number to be reconciled with `specs/*/supervisor-migration` Task 8) records D1–D4, D8, D11 and OQ-11, and supersedes the Windows statements of ADR 0004 (Task 1).
+An ADR (`docs/decisions/0017-windows-process-ownership.md`, 0016 is taken by `0016-migration-import.md` on main) records D1–D4, D8, D11 and OQ-11, and supersedes the Windows statements of ADR 0004 (Task 1).
 
 ### 4. Honesty register
 

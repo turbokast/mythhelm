@@ -19,9 +19,9 @@
 - **Depends on**: None
 - **Change**: Decide OQ-1 (kill-on-close vs surviving job), OQ-8 (native start time scope) and OQ-11 (whether kill-on-close plus confirmed worker death is I24 evidence), and record them, with D8, in an ADR that supersedes the Windows statements of ADR 0004. Tasks 3 to 7 implement the defaults (a, Windows-only, no) unless the ADR says otherwise.
 - **Files**:
-  - `docs/decisions/0016-windows-process-ownership.md` (the number is reconciled with `specs/*/supervisor-migration/` Task 8)
+  - `docs/decisions/0017-windows-process-ownership.md` (0016 is taken by `0016-migration-import.md` on main)
 - **Acceptance**:
-  - The ADR (whatever number the reconciliation gives it, found with `ls docs/decisions/ | grep windows-process-ownership`) has a `Decision` section where `grep -nE "OQ-1|OQ-8|OQ-11"` finds all three, and cites v2 §6.4 and I24. Fails before: no file.
+  - The ADR (whatever number the reconciliation gives it, found with `ls docs/decisions/ | grep windows-process-ownership`) has a `Decision` section where `grep -nwE "OQ-1|OQ-8|OQ-11"` finds all three, and cites v2 §6.4 and I24. Fails before: no file.
   - A `Supersedes` line names ADR 0004 and its process-model, stop-ladder and capability statements (cited by heading; `grep -n "Windows" docs/decisions/0004-slice-process-model.md` finds them). Fails before: no file.
   - If a decision differs from its default, the ADR lists the tasks and ACs that change.
 - **Invariants touched**: I06 (v2 §6.4: a stop stays unconfirmed until reconciliation), I18 (one process owner per attempt), I24 (a lease or heartbeat timeout is not proof a writer stopped).
