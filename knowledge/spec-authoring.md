@@ -146,6 +146,7 @@ Each pattern is a defect shape that passes a casual review, and what catches it.
 - **Uncovered error branches.** A function whose documented failure returns have no acceptance item ships those branches untested.
 - **Self-confirming fixtures.** A tool that generates fixtures, tested only on its own output, proves consistency with itself and nothing about real input.
 - **Measurements that cannot tell their states apart.** A query or count without a fixture where the result differs from the all-clean value cannot show it discriminates anything.
+- **Output examples verified by reading.** A docs example of command output passes review on its look, even with values or a surface the command never prints. An acceptance item that adds or changes one names the executed command (or generating test) that produced the pasted text, and the worker re-runs it before opening the pull request; a paste with no producing command is a finding.
 
 ## Patterns that keep Files lists complete
 

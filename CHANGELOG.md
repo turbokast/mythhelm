@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Strict subscription-only runs now consult the qualification registry first and report qualification reasons (inspectable via mythhelm doctor); admission still refuses until included-only entitlements are verifiable (#205)
 - Release pipeline: version-tag releases build cross-platform archives with checksums, SBOMs and provenance attestations; the checksum list is signed, operators can dry-run via test/* tags and users can verify per docs/release-process.md (#217)
 - Supervisor service: per-user supervisor with authenticated local IPC, idempotent intents, reservations and capability tokens; mythhelm supervisor starts it lazily (#258)
+- Usage ledger: each run records native usage quantities with their source and label, keeping unknown distinct from zero, and the receipt and run output show them as estimates, never as charges (#288)
+- Local quota reservation: each admitted run holds one reservation coupled to its billing bucket, shown as local coordination and not as provider availability (#256)
+- Run envelopes: finite ceilings for execution time, repairs, replans and transport retries, set with --envelope-* flags or an [envelopes] table in mythhelm.toml; today the execution deadline is the one that stops a live run and blocks it (#259)
+- Completion reserve: before a material replan the run checks that the time left covers one more verification pass, and reports the estimate as an estimate (#270)
+- Allowance exhaustion handling: the run keeps its candidate, blocks, and new runs on that bucket are refused on a recorded operator retry schedule, with nothing purchased or switched automatically; the exhaustion signal is a synthetic shape until a native one is qualified (#263)
+
+### Fixed
+
+- A run recovered after its supervisor died now enforces its execution deadline (#317)
 
 ## [0.0.1] - 2026-10-06
 

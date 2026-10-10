@@ -62,8 +62,10 @@ var errDrainTimeout = errors.New("migrate: owner lock held past the drain deadli
 //
 // Drain holds the instance lock for its whole run, so no service writer
 // starts mid-drain, and the state directory's owner lock, so no legacy
-// admission starts mid-drain; both release before Drain returns. On any
-// failure Drain returns a zero report: nothing is half-adopted.
+// admission starts mid-drain; it also holds every run's owner lock until
+// it returns. All release before Drain returns. On any failure Drain
+// returns a zero report: nothing is half-adopted. Apply does not call
+// Drain: it takes the same locks once and keeps them past the backup.
 func Drain(ctx context.Context, db *sql.DB) (DrainReport, error) {
 	if db == nil {
 		return DrainReport{}, persistenceError("drain", "the ledger handle is nil")
@@ -75,32 +77,60 @@ func Drain(ctx context.Context, db *sql.DB) (DrainReport, error) {
 	if err != nil {
 		return DrainReport{}, err
 	}
+	releaseLocks, err := acquireMigrationLocks("drain", stateDir)
+	if err != nil {
+		return DrainReport{}, err
+	}
+	defer releaseLocks()
+	report, releaseRuns, err := drainLocked(ctx, db, stateDir)
+	if err != nil {
+		return DrainReport{}, err
+	}
+	releaseRuns()
+	return report, nil
+}
+
+// acquireMigrationLocks takes the instance lock and the state directory's
+// owner lock, the pair that keeps service writers and legacy admissions
+// out. The returned release frees both.
+func acquireMigrationLocks(operation, stateDir string) (func(), error) {
 	releaseInstance, err := control.AcquireInstance(stateDir)
 	if err != nil {
-		return DrainReport{}, lockError("drain", err,
+		return nil, lockError(operation, err,
 			"a supervisor is already running; stop it and retry the migration")
 	}
-	defer releaseInstance()
 	releaseMigration, err := supervisor.AcquireOwner(stateDir)
 	if err != nil {
-		return DrainReport{}, lockError("drain", err,
+		releaseInstance()
+		return nil, lockError(operation, err,
 			"another migration holds the state directory; retry after it finishes")
 	}
-	defer releaseMigration()
+	return func() {
+		releaseMigration()
+		releaseInstance()
+	}, nil
+}
 
+// drainLocked quiesces every run while the caller holds the locks from
+// acquireMigrationLocks. On success it returns the report and the release
+// of every run's owner lock, which the caller keeps for as long as no
+// legacy recover or apply may touch those runs; on failure it has already
+// released them.
+func drainLocked(ctx context.Context, db *sql.DB, stateDir string) (DrainReport, func(), error) {
 	deadline := drainDeadline(ctx)
 	var releases []func()
-	defer func() {
+	releaseAll := func() {
 		for _, release := range releases {
 			release()
 		}
-	}()
+	}
 	seen := map[string]bool{}
 	report := DrainReport{}
 	for pass := range drainStabilizePasses {
 		runs, err := enumerateRuns(ctx, db, stateDir)
 		if err != nil {
-			return DrainReport{}, err
+			releaseAll()
+			return DrainReport{}, nil, err
 		}
 		fresh := runs[:0]
 		for _, r := range runs {
@@ -110,24 +140,27 @@ func Drain(ctx context.Context, db *sql.DB) (DrainReport, error) {
 			}
 		}
 		if len(fresh) == 0 {
-			return report, nil
+			return report, releaseAll, nil
 		}
 		if pass == drainStabilizePasses-1 {
-			return DrainReport{}, ownershipError("drain", fresh[0].id,
+			releaseAll()
+			return DrainReport{}, nil, ownershipError("drain", fresh[0].id,
 				fmt.Sprintf("run %s started during the drain; retry the migration after it settles", fresh[0].id))
 		}
 		for _, r := range fresh {
 			release, err := quiesceRun(ctx, stateDir, r.id, deadline)
 			if err != nil {
-				return DrainReport{}, err
+				releaseAll()
+				return DrainReport{}, nil, err
 			}
 			releases = append(releases, release)
 			if err := classifyRun(ctx, db, stateDir, &report, r); err != nil {
-				return DrainReport{}, err
+				releaseAll()
+				return DrainReport{}, nil, err
 			}
 		}
 	}
-	return report, nil
+	return report, releaseAll, nil
 }
 
 // drainRun is one enumerated v1 run awaiting quiesce.

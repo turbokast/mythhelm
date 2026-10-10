@@ -91,6 +91,17 @@ func TestSeededEvidenceIsVersionedAndOwned(t *testing.T) {
 
 func decideProfile(t *testing.T, profile string, confirm func(string) (bool, error)) (admission.Decision, error) {
 	t.Helper()
+	return decideProfileProbed(t, profile, confirm, availableProbe)
+}
+
+const probedVersion = "mythhelm-restricted/1 linux 6.8.0-synthetic"
+
+func availableProbe() contain.Availability {
+	return contain.Availability{Supported: true, Version: probedVersion}
+}
+
+func decideProfileProbed(t *testing.T, profile string, confirm func(string) (bool, error), probe func() contain.Availability) (admission.Decision, error) {
+	t.Helper()
 	repo, task := envelopeRepo(t, "")
 	_, digest, err := admission.ParseProjectConfig(envelopesConfig(""))
 	if err != nil {
@@ -100,7 +111,65 @@ func decideProfile(t *testing.T, profile string, confirm func(string) (bool, err
 		StateDir: t.TempDir(), Repo: repo, TaskFile: task, Adapter: admission.AdapterFake,
 		Billing: admission.BillingLocalScripted, ExecutionProfile: profile,
 		TrustProjectConfig: "sha256:" + digest, Env: os.Environ(), Confirm: confirm,
+		ProbeBoundary: probe,
 	})
+}
+
+// A contained profile is admitted only when the boundary can be entered on
+// this host now: a host without usable unprivileged user namespaces refuses
+// with exit 7, naming the probe's reason, before anything is admitted
+// (AC-1.2, I02).
+func TestContainedProfileRefusedWhenBoundaryProbeFails(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the restricted boundary is qualified on Linux only")
+	}
+	const reason = "user namespaces unavailable: operation not permitted"
+	for _, profile := range []string{"", admission.ProfileRestricted, admission.ProfileInspect} {
+		t.Run("profile="+profile, func(t *testing.T) {
+			d, err := decideProfileProbed(t, profile, nil, func() contain.Availability {
+				return contain.Availability{Reason: reason}
+			})
+			var blocked *admission.BlockedError
+			if !errors.As(err, &blocked) || !blocked.Capability || blocked.Code != "execution_profile_unavailable" {
+				t.Fatalf("err = %v, want a capability (exit 7) execution_profile_unavailable refusal", err)
+			}
+			if !strings.Contains(blocked.Field, reason) {
+				t.Errorf("refusal %q does not name the probe's reason %q", blocked.Field, reason)
+			}
+			if d.RunID != "" || d.Profile.Contained || d.Profile.Boundary != nil {
+				t.Errorf("a refused run admitted %+v", d.Profile)
+			}
+		})
+	}
+}
+
+// The probed version replaces the registry record's version in the admitted
+// evidence, so the receipt reports the boundary that was actually entered
+// (AC-3.2, I09, I14).
+func TestContainedProfileBindsProbedVersion(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the restricted boundary is qualified on Linux only")
+	}
+	for _, profile := range []string{admission.ProfileRestricted, admission.ProfileInspect} {
+		d, err := decideProfileProbed(t, profile, nil, availableProbe)
+		if err != nil {
+			t.Fatalf("%s: %v", profile, err)
+		}
+		if d.Profile.Boundary == nil || d.Profile.Boundary.Version != probedVersion {
+			t.Errorf("%s: boundary = %+v, want version %q from the probe", profile, d.Profile.Boundary, probedVersion)
+		}
+	}
+}
+
+// trusted-host enters no boundary, so it never probes.
+func TestTrustedHostDoesNotProbeBoundary(t *testing.T) {
+	_, err := decideProfileProbed(t, admission.ProfileTrustedHost, nil, func() contain.Availability {
+		t.Error("trusted-host probed the boundary")
+		return contain.Availability{}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRestrictedDefaultNoFlag(t *testing.T) {
