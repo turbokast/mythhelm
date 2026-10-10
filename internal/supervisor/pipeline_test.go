@@ -146,7 +146,7 @@ func (f fixture) releaseWorkers(t *testing.T) {
 		}
 		_ = workers.RequestStop(dir, "test-cleanup")
 		deadline := time.Now().Add(time.Minute)
-		for beat := uint64(1); !processGone(id.PID); beat++ {
+		for beat := uint64(1); !workerGone(id); beat++ {
 			if time.Now().After(deadline) {
 				t.Errorf("worker %d of %s outlived the test", id.PID, dir)
 				break
@@ -157,10 +157,15 @@ func (f fixture) releaseWorkers(t *testing.T) {
 	}
 }
 
-// processGone reports whether no process answers to pid. Windows can wait
-// on a foreign process handle; elsewhere signal 0 probes it.
-func processGone(pid int) bool {
-	p, err := os.FindProcess(pid)
+// workerGone reports whether the worker id names no longer runs. A PID that
+// answers with another start time belongs to a process that reused it
+// (Windows recycles PIDs within seconds), never to the worker. Windows can
+// wait on a foreign process handle; elsewhere signal 0 probes it.
+func workerGone(id workers.Identity) bool {
+	if start, err := workers.ProcessStartTime(id.PID); err == nil && !start.Equal(id.StartTime) {
+		return true
+	}
+	p, err := os.FindProcess(id.PID)
 	if err != nil {
 		return true
 	}
@@ -174,6 +179,19 @@ func processGone(pid int) bool {
 		return true
 	case <-time.After(50 * time.Millisecond):
 		return false
+	}
+}
+
+func TestWorkerGoneTreatsReusedPIDAsGone(t *testing.T) {
+	start, err := workers.ProcessStartTime(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workerGone(workers.Identity{PID: os.Getpid(), StartTime: start}) {
+		t.Fatal("a live process with the recorded start time reads gone")
+	}
+	if !workerGone(workers.Identity{PID: os.Getpid(), StartTime: start.Add(-time.Hour)}) {
+		t.Fatal("a live process with another start time (a reused PID) reads alive")
 	}
 }
 
