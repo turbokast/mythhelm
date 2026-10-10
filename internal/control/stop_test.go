@@ -15,6 +15,7 @@ import (
 
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/journal"
+	"github.com/turbokast/mythhelm/internal/ownerlock"
 	"github.com/turbokast/mythhelm/internal/v2contract"
 	"github.com/turbokast/mythhelm/internal/workers"
 )
@@ -462,6 +463,75 @@ func TestStopUnconfirmedReportYieldsInterruptedReceipt(t *testing.T) { // I06 (v
 	if got := attemptState(t, f.db, f.attempt); got != "interrupted" {
 		t.Fatalf("attempt state = %q, want interrupted", got)
 	}
+}
+
+func TestStopUnresolvedDescendantsAreNotConfirmed(t *testing.T) { // AC-1.2, I06 (v2 §6.4), I09 (v2 §4.2)
+	t.Parallel()
+	cases := []struct{ name, extra string }{
+		{"descendant scan failed", `"unresolved_pids":[],"descendant_scan":"failed","unresolved_identities":[]`},
+		{"unresolved pids", `"unresolved_pids":[4242],"descendant_scan":"proc-environ","unresolved_identities":[]`},
+		{"unresolved identities", `"unresolved_pids":[],"descendant_scan":"proc-environ","unresolved_identities":[{"pid":4242,"start_time":"2026-01-01T00:00:00Z"}]`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			f := newStopState(t, "run_stop_desc", "att_stop_desc")
+			writeStopped(t, f, `{"confirmed":true,"sent":[{"signal":"kill","grace":1000000000}],"ladder_version":"stop-ladder/v1",`+c.extra+`}`, 2)
+			res, err := Execute(f.ctx(t), StopHandler(f.deps()), Peer{}, stopIntent(t, "op_stop_desc", f.attempt, f.version))
+			if err != nil {
+				t.Fatalf("stop: %v", err)
+			}
+			var receipt StopReceipt
+			if err := json.Unmarshal(res.Body, &receipt); err != nil {
+				t.Fatal(err)
+			}
+			if receipt.Confirmed {
+				t.Fatalf("receipt = %+v, want confirmed=false: descendants are unresolved", receipt)
+			}
+			if got := attemptState(t, f.db, f.attempt); got != "interrupted" {
+				t.Fatalf("attempt state = %q, want interrupted, never stopped", got)
+			}
+		})
+	}
+}
+
+// holdRunOwner takes the run's owner lock the way a live legacy pipeline
+// does, for the life of the test.
+func holdRunOwner(t *testing.T, stateDir, runID string) {
+	t.Helper()
+	release, err := ownerlock.Acquire(filepath.Join(stateDir, "runs", runID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(release)
+}
+
+func TestStopRefusedWhileALiveOwnerHoldsTheRun(t *testing.T) { // N2, I18, I23, v2 §6.4
+	t.Parallel()
+	f := newStopState(t, "run_stop_owned", "att_stop_owned")
+	holdRunOwner(t, f.dir, f.runID)
+	_, err := Execute(f.ctx(t), StopHandler(f.deps()), Peer{}, stopIntent(t, "op_stop_owned", f.attempt, f.version))
+	requireCode(t, err, CodeOwnershipUnresolved)
+	if got := attemptState(t, f.db, f.attempt); got != "running" {
+		t.Fatalf("attempt state = %q, want running: nothing is written under another owner", got)
+	}
+	if got, ok := stopRequestID(t, f); ok {
+		t.Fatalf("refused stop left stop.request %q", got)
+	}
+}
+
+func TestStopReleasesTheRunOwnerWhenDone(t *testing.T) { // v2 §6.4
+	t.Parallel()
+	f := newStopState(t, "run_stop_rel", "att_stop_rel")
+	writeStopped(t, f, `{"confirmed":true,"sent":[{"signal":"kill","grace":1000000000}],"ladder_version":"stop-ladder/v1"}`, 2)
+	if _, err := Execute(f.ctx(t), StopHandler(f.deps()), Peer{}, stopIntent(t, "op_stop_rel", f.attempt, f.version)); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	release, err := ownerlock.Acquire(filepath.Join(f.dir, "runs", f.runID))
+	if err != nil {
+		t.Fatalf("owner lock still held after the stop returned: %v", err)
+	}
+	release()
 }
 
 func TestStopLedgerUnavailablePersistenceUnavailable(t *testing.T) {

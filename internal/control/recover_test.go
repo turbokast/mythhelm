@@ -569,6 +569,27 @@ func TestContinuationKeepsLaunchIdentity(t *testing.T) { // FR-2 AC-2.3
 	})
 }
 
+func TestRecoverRefusedWhileALiveOwnerHoldsTheRun(t *testing.T) { // N2, I18, I23, v2 §6.4
+	t.Parallel()
+	f := newRecoverState(t, "run_rec_owned", "att_rec_owned")
+	killWorker(t, f, nil, 2)
+	holdRunOwner(t, f.dir, f.runID)
+	_, err := Execute(f.ctx(t), RecoverHandler(f.deps()), Peer{}, recoverIntent(t, "op_rec_owned", f.runID))
+	requireCode(t, err, CodeOwnershipUnresolved)
+	if got := attemptState(t, f.db, f.attempt); got != "running" {
+		t.Fatalf("attempt state = %q, want running: nothing is written under another owner", got)
+	}
+	if rows := attemptRows(t, f.db, f.runID); len(rows) != 1 {
+		t.Fatalf("run holds %d attempts, want one: no continuation under another owner", len(rows))
+	}
+	if evs := recoveryEvents(t, f.j, f.runID); len(evs) != 0 {
+		t.Fatalf("journal holds %d recovery outcomes, want none", len(evs))
+	}
+	if n := f.launcher.count(); n != 0 {
+		t.Fatalf("launcher ran %d times, want zero", n)
+	}
+}
+
 func TestRecoveryNeverReplaysEffects(t *testing.T) { // I12 (v2 §6.2)
 	t.Parallel()
 	native := 4242
@@ -577,9 +598,10 @@ func TestRecoveryNeverReplaysEffects(t *testing.T) { // I12 (v2 §6.2)
 		live    bool
 		settled string // "", "journaled" or "spooled"
 		uncert  bool
+		adopt   bool
 	}{
 		{name: "dead worker with ambiguous native effect is uncertain", live: false, uncert: true},
-		{name: "live worker with ambiguous native effect is uncertain", live: true, uncert: true},
+		{name: "live identity-matched worker with a running native is adopted", live: true, adopt: true},
 		{name: "journaled native result settles the effect", live: false, settled: "journaled"},
 		{name: "spooled native result settles the effect", live: false, settled: "spooled"},
 	}
@@ -600,7 +622,8 @@ func TestRecoveryNeverReplaysEffects(t *testing.T) { // I12 (v2 §6.2)
 					"attempt.native_result", "evt_spool_nresult_1"))
 			}
 			res, err := Execute(f.ctx(t), RecoverHandler(f.deps()), Peer{}, recoverIntent(t, "op_rec_fx", f.runID))
-			if c.uncert {
+			switch {
+			case c.uncert:
 				requireCode(t, err, CodeExternalEffectUncertain)
 				if string(CodeExternalEffectUncertain) != string(v2contract.CodeExternalEffectUncertain) {
 					t.Fatalf("control code %q differs from the v2 catalogue string", CodeExternalEffectUncertain)
@@ -618,7 +641,20 @@ func TestRecoveryNeverReplaysEffects(t *testing.T) { // I12 (v2 §6.2)
 				if rows := attemptRows(t, f.db, f.runID); len(rows) != 1 {
 					t.Fatalf("run holds %d attempts, want one: uncertainty starts nothing", len(rows))
 				}
-			} else {
+			case c.adopt:
+				if err != nil {
+					t.Fatalf("recover: %v", err)
+				}
+				if rep := decodeReport(t, res.Body); rep.Outcome != RecoverReconnected {
+					t.Fatalf("outcome = %q, want reconnected: the same live worker is adopted (AC-2.1)", rep.Outcome)
+				}
+				if got := attemptState(t, f.db, f.attempt); got != "running" {
+					t.Fatalf("attempt state = %q, want running: adoption moves nothing", got)
+				}
+				if n := f.launcher.count(); n != 0 {
+					t.Fatalf("launcher ran %d times for an adopted worker, want zero", n)
+				}
+			default:
 				if err != nil {
 					t.Fatalf("recover: %v", err)
 				}
