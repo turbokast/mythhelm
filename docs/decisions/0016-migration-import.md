@@ -1,6 +1,6 @@
 # 0016. Supervisor migration and legacy import
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-09
 
 ## Context
