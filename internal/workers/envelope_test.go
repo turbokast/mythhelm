@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -408,6 +409,36 @@ func TestSupervisorBeatLossAndReturn(t *testing.T) {
 	}
 }
 
+// startMarkedSleeper starts a sleeper carrying marker and returns once the
+// descendant scan sees it. Start returns when execve closes its close-on-exec
+// pipe, before the kernel has recorded the new image's environment: until
+// then /proc/<pid>/environ reads empty with no error, for around 100us
+// (500us at worst measured), so an immediate scan can miss a live process.
+func startMarkedSleeper(t *testing.T, marker string) *exec.Cmd {
+	t.Helper()
+	sleeper := exec.Command("sleep", "60")
+	sleeper.Env = append(os.Environ(), marker)
+	sleeper.Dir = t.TempDir()
+	if err := sleeper.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sleeper.Process.Kill(); _ = sleeper.Wait() })
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		marked, err := markedPIDs(marker)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if slices.Contains(marked, sleeper.Process.Pid) {
+			return sleeper
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the marker-carrying sleeper %d was not found within 5s: the probe is blind", sleeper.Process.Pid)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestUnsupervisedWorkerStartsNothing(t *testing.T) {
 	t.Parallel()
 	a := newAttempt(t)
@@ -428,20 +459,7 @@ func TestUnsupervisedWorkerStartsNothing(t *testing.T) {
 		}
 		// The probe is load-bearing: a misbehaving worker that starts a
 		// new task trips it.
-		sleeper := exec.Command("sleep", "60")
-		sleeper.Env = append(os.Environ(), attemptMarker(a.attemptID))
-		sleeper.Dir = t.TempDir()
-		if err := sleeper.Start(); err != nil {
-			t.Fatal(err)
-		}
-		defer func() { _ = sleeper.Process.Kill() }()
-		marked, err = markedPIDs(attemptMarker(a.attemptID))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(marked) == 0 {
-			t.Fatal("a marker-carrying sleeper was not found: the probe is blind")
-		}
+		sleeper := startMarkedSleeper(t, attemptMarker(a.attemptID))
 		if err := sleeper.Process.Kill(); err != nil {
 			t.Fatal(err)
 		}
