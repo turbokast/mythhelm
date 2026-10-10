@@ -242,3 +242,19 @@ func TestDecideCodexIsNotAvailableYet(t *testing.T) {
 		t.Errorf("err = %v, want a capability (exit 7) adapter_not_available refusal", err)
 	}
 }
+
+// consentProfile derives the boundary route as builtin/<name>; a row whose
+// adapter ID differs would be consulted under one route and launched under
+// another (I02).
+func TestHarnessRowsMatchBoundaryRoute(t *testing.T) {
+	t.Parallel()
+	routes := admission.HarnessRoutes()
+	if len(routes) != 3 {
+		t.Fatalf("default table has %d rows, want claudecode, codex and fake: %v", len(routes), routes)
+	}
+	for name, id := range routes {
+		if id != "builtin/"+name {
+			t.Errorf("row %s has adapter ID %q, want builtin/%s", name, id, name)
+		}
+	}
+}

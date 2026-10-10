@@ -12,3 +12,12 @@ func DecideWithHarness(ctx context.Context, req Request, name string,
 
 // Validate is the request validation over the default table.
 func Validate(req *Request) error { return validateWith(defaultDeciders(), req) }
+
+// HarnessRoutes maps each default row's command-line name to its adapter ID.
+func HarnessRoutes() map[string]string {
+	routes := map[string]string{}
+	for _, h := range defaultDeciders() {
+		routes[h.name] = h.adapterID
+	}
+	return routes
+}

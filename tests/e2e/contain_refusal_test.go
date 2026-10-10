@@ -145,6 +145,18 @@ func TestEvidenceRecordsVersioned(t *testing.T) {
 			}
 		}
 	}
+	// The Codex route is accepted by the CLI and deliberately unrecorded: every
+	// contained combination must reach the unknown-key refusal (N7).
+	for _, profile := range profiles {
+		for _, goos := range oses {
+			if _, ok := seed[profile+"/"+goos+"/builtin/codex"]; ok {
+				t.Errorf("%s/%s/builtin/codex has a record; Codex has no boundary evidence", profile, goos)
+			}
+			if _, err := admission.BoundaryConsult(profile, goos, "builtin/codex"); !errors.Is(err, contain.ErrMissingCoverage) {
+				t.Errorf("%s/%s/builtin/codex consult = %v, want %v", profile, goos, err, contain.ErrMissingCoverage)
+			}
+		}
+	}
 	_, err := admission.BoundaryConsult("restricted", "plan9", "builtin/fake")
 	if !errors.Is(err, contain.ErrMissingCoverage) {
 		t.Fatalf("unknown OS consult = %v, want %v", err, contain.ErrMissingCoverage)
