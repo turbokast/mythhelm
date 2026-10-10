@@ -15,7 +15,11 @@
 
 ## Task 2 — Per-harness decider table, adapter validation and containment refusal
 
-<!-- pending -->
+- **Produces**: `admission.AdapterCodex = "codex"`; unexported `harnessDecider{name, adapterID, destination, decide, flags}`, `flagSet`, `defaultDeciders()`, `decideWith(ctx, table, req)`, `validateWith(table, req)`; `internal/admission/export_test.go` exposes `DecideWithHarness` and `Validate`.
+- **For Task 8**: replace the `decideCodex` stub in `internal/admission/admission.go` (it returns `adapter_not_available`, `Capability: true`) and swap the local `codexAdapterID = "builtin/codex"` for `codex.AdapterID`, pinning equality with `TestCodexAdapterIDMatches`. The codex row's flags already allow `--trust-native-config` and `--allow-untested-native-version` and refuse `--declare-entitlement` and `--strip-credential-env` in `validate`, the single refusal site.
+- **For Task 8**: `consentProfile` runs before the table dispatch and derives the route as `"builtin/"+req.Adapter`, so restricted/inspect with codex are refused (exit 7, `missing coverage: filesystem, process, network, credential`) before `decideCodex` runs; `SeedV1` has no Codex key and `TestRestrictedAndInspectRefuseCodex` fails if one is added.
+- **For Task 11**: `tests/e2e/contain_refusal_test.go` already carries the codex refusal cases on every OS; `--adapter codex` with `trusted-host` currently exits 7 with `adapter_not_available`.
+- **Trap**: `internal/cli.TestStrictMainBlocksWriteNothing` read the developer's real `~/.claude/settings.json` hooks until `strictRun` set a temp `HOME`; a native-inventory test must isolate `HOME`.
 
 ## Task 3 — Codex adapter: probe, compatibility, capabilities
 

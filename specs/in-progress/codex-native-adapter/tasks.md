@@ -35,7 +35,7 @@
 - **Spec deviations**: `adapters/fake/fake_test.go` is outside the task's `Files` list: `TestCapabilityRecordUnknownNotOptimistic` required every `Tri` field to hold a tri-state value, so the unset `omitempty` `Reconnect`/`ModelMetadata` (which serialise unchanged, AC-1.5) failed it on CI. `checkTri` now accepts an empty `Tri` only on a field tagged `omitempty`; `TestTriProblemsAcceptsOnlyUnsetOmitemptyEntries` keeps the broken inputs (empty without `omitempty`, invalid value with it).
 - **Files modified**: `internal/adapter/adapter.go`, `internal/adapter/adapter_test.go`, `adapters/fake/fake_test.go`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
-### Task 2 — Per-harness decider table, adapter validation and containment refusal
+### Task 2 — Per-harness decider table, adapter validation and containment refusal ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -60,6 +60,13 @@
   - The existing `internal/admission` and `internal/supervisor` tests pass with only the AC-1.3 edits.
 - **Test plan**: Table-driven over `validate`; stub registered in the test only.
 - **Invariants touched**: I11 (registration stays package-private); I14 (no capability advertised before evidence); I02 (unknown boundary refused).
+- **Status**: ✅ Completed — `Decide`, `validate` and `dataDestinations` read a package-private `harnessDecider` table with `claudecode`, `codex` and `fake` rows, `--adapter codex` is accepted and its decider blocks with `adapter_not_available` (exit 7) until Task 8, and both contained profiles refuse `builtin/codex` in unit and CLI tests; PR #353.
+- **Implementation**: `defaultDeciders()` returns a fresh table per call; `decideWith(ctx, table, req)` and `validateWith(table, req)` take it as an argument and `export_test.go` appends a stub row (no package state mutated). Flag rules derive from each row's `flagSet`; the codex row takes `--trust-native-config` and `--allow-untested-native-version` and refuses `--declare-entitlement` and `--strip-credential-env`. Commits 90974e4, plus the architect-review follow-up (`TestHarnessRowsMatchBoundaryRoute`, Codex unrecorded-route check in `TestEvidenceRecordsVersioned`).
+- **Spec deviations**:
+  - `internal/cli/run_drift_test.go` (outside the `Files` list): `strictRun` sets `HOME` to a temp dir. On unmodified origin/main `TestStrictMainBlocksWriteNothing` failed whenever the developer's real `~/.claude/settings.json` declares hooks (`untrusted_native_config` instead of the asserted reason); CI's clean `HOME` was unaffected.
+  - For `--adapter fake`, the `validate` error for `--trust-native-config` and `--allow-untested-native-version` now reads `applies only to --adapter claudecode or codex` (derived from the table; no test pinned the old text; consistent with design §4).
+  - `dataDestinations` reads a `destination` field on the table row rather than a switch (design §4 "added through the table").
+- **Files modified**: `internal/admission/admission.go`, `internal/admission/export_test.go`, `internal/admission/admission_test.go`, `internal/admission/boundary_test.go`, `internal/cli/run.go`, `internal/cli/run_drift_test.go`, `internal/supervisor/pipeline_test.go`, `tests/e2e/contain_refusal_test.go`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
 ### Task 3 — Codex adapter: probe, compatibility, capabilities
 
