@@ -61,7 +61,9 @@ type StopDeps struct {
 }
 
 // StopHandler answers the stop intent: it verifies the attempt's pinned
-// ladder version and worker identity, persists stop_requested, delivers
+// ladder version, takes the run's owner lock for the whole stop (a live
+// owner refuses it with ownership_unresolved before anything is written),
+// verifies the worker identity, persists stop_requested, delivers
 // the request file, waits for the worker's stopped report up to the
 // recorded deadline, and journals the receipt. The served path runs it
 // through ExecuteLong: each Mutate scope commits on its own and the
@@ -102,6 +104,11 @@ func StopHandler(d StopDeps) Handler {
 			return Result{}, newError(CodeRevisionConflict,
 				"stop ladder version %q does not match the pinned version %q", p.LadderVersion, pinned)
 		}
+		release, err := acquireRunOwner(d.StateDir, runID, "stop")
+		if err != nil {
+			return Result{}, err
+		}
+		defer release()
 		dir := workers.AttemptDir(d.StateDir, runID, p.AttemptID)
 		if err := checkWorkerIdentity(ctx, d.Journal, dir, runID, p.AttemptID, digest); err != nil {
 			return Result{}, err
@@ -434,7 +441,9 @@ func splitCompleteLines(data []byte) (complete [][]byte, torn []byte) {
 // report. The envelope decodes strictly; the payload decodes leniently
 // with required fields checked: confirmed and sent must be present, sent
 // must hold known signals with positive graces, and the ladder version
-// must equal the pinned one.
+// must equal the pinned one. The receipt is confirmed only when the
+// worker also resolved every descendant: unresolved PIDs or identities,
+// or a failed descendant scan, make it unconfirmed.
 func parseStoppedReport(line []byte, attemptID, pinned string) (*StopReceipt, bool) {
 	dec := json.NewDecoder(bytes.NewReader(line))
 	dec.DisallowUnknownFields()
@@ -446,10 +455,12 @@ func parseStoppedReport(line []byte, attemptID, pinned string) (*StopReceipt, bo
 		return nil, false
 	}
 	var payload struct {
-		Confirmed      *bool            `json:"confirmed"`
-		Sent           *json.RawMessage `json:"sent"`
-		LadderVersion  *string          `json:"ladder_version"`
-		UnresolvedPIDs []int            `json:"unresolved_pids"`
+		Confirmed      *bool             `json:"confirmed"`
+		Sent           *json.RawMessage  `json:"sent"`
+		LadderVersion  *string           `json:"ladder_version"`
+		UnresolvedPIDs []int             `json:"unresolved_pids"`
+		DescendantScan string            `json:"descendant_scan"`
+		Identities     []json.RawMessage `json:"unresolved_identities"`
 	}
 	if err := json.Unmarshal(ev.Payload, &payload); err != nil {
 		return nil, false
@@ -471,6 +482,12 @@ func parseStoppedReport(line []byte, attemptID, pinned string) (*StopReceipt, bo
 			return nil, false
 		}
 	}
+	// A confirmed group with escaped descendants, or a descendant scan
+	// that failed, leaves ownership unresolved: the worker concludes the
+	// attempt interrupted in both cases, so the receipt is not confirmed
+	// (AC-1.2, I09).
+	confirmed := *payload.Confirmed && len(payload.UnresolvedPIDs) == 0 &&
+		len(payload.Identities) == 0 && payload.DescendantScan != "failed"
 	return &StopReceipt{AttemptID: attemptID, LadderVersion: pinned, Sent: sent,
-		Confirmed: *payload.Confirmed, UnresolvedPIDs: payload.UnresolvedPIDs}, true
+		Confirmed: confirmed, UnresolvedPIDs: payload.UnresolvedPIDs}, true
 }

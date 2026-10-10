@@ -154,13 +154,15 @@ type RecoverDeps struct {
 	ExamineCount *atomic.Int64
 }
 
-// RecoverHandler answers the recover intent: it reconciles the run and
-// launches the admitted continuation. The served path runs it through
-// ExecuteLong, so the launch is a durable post-commit handoff: reconcile's
-// Mutate commits the admission first, and the spawn runs only after that
-// commit, so a commit failure can never orphan a worker with no durable
-// admission. Under single-transaction Execute (the tests' direct path) the
-// launch runs inside the operation's transaction, the Task 3 shape.
+// RecoverHandler answers the recover intent: it takes the run's owner lock
+// (a live owner refuses it with ownership_unresolved before anything is
+// written), reconciles the run and launches the admitted continuation.
+// The served path runs it through ExecuteLong, so the launch is a durable
+// post-commit handoff: reconcile's Mutate commits the admission first, and
+// the spawn runs only after that commit, so a commit failure can never
+// orphan a worker with no durable admission. Under single-transaction
+// Execute (the tests' direct path) the launch runs inside the operation's
+// transaction, the Task 3 shape.
 //
 // Exactly one execution launches each continuation: a fresh continued
 // outcome launches, and so does a replayed one when this operation
@@ -179,6 +181,11 @@ func RecoverHandler(d RecoverDeps) Handler {
 		if d.DB == nil || d.StateDir == "" {
 			return Result{}, newError(CodePersistenceUnavailable, "recover is not available: no ledger is attached")
 		}
+		release, err := acquireRunOwner(d.StateDir, p.RunID, "recover")
+		if err != nil {
+			return Result{}, err
+		}
+		defer release()
 		rep, fresh, recordEvent, err := reconcile(ctx, d, p.RunID, "evt_recovery_"+in.OperationID)
 		if err != nil {
 			var ce *Error
@@ -809,8 +816,10 @@ func scanSpoolFacts(spoolPath, attemptID string, offset int64) (facts []spoolFac
 // decideOutcome chooses exactly one outcome from gathered evidence and
 // records it with the pass's transitions, in that order:
 //
-//  1. Effects first (I12): a native launched with no later result,
-//     journaled or spooled, is ambiguous and irreversible — quarantine with
+//  1. Effects (I12): a native launched with no later result, journaled or
+//     spooled, is ambiguous and irreversible unless the same identity-matched
+//     worker is still live — then the native is simply running and the worker
+//     is adopted (AC-2.1). Otherwise quarantine with
 //     external_effect_uncertain, never retry by replay.
 //  2. Unverifiable spool: unacknowledged bytes past the readable bound may
 //     hide an effect no journaled event settles, so the pass quarantines
@@ -829,13 +838,14 @@ func decideOutcome(ctx context.Context, tx *sql.Tx, ev *recoveryEvidence, eventI
 	if ev.transient != nil {
 		return RecoveryReport{}, ev.transient
 	}
-	if ambiguousEffect(ev) {
+	class := classifyWorker(ev)
+	if class != workerSameLive && ambiguousEffect(ev) {
 		return recordQuarantineOutcome(ctx, tx, ev, eventID, reasonExternalEffectUncertain, "", 0, 0)
 	}
 	if ev.unverified {
 		return recordQuarantineOutcome(ctx, tx, ev, eventID, reasonSpoolUnverifiable, "", 0, 0)
 	}
-	switch classifyWorker(ev) {
+	switch class {
 	case workerSameLive:
 		return decideLive(ctx, tx, ev, eventID)
 	case workerGone:
