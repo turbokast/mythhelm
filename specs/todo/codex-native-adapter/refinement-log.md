@@ -41,3 +41,11 @@ Counts below are validator dispatches only; the refine-loop dispatch accounting 
 | 3 | 1/1/0 | Needs revision | 14 (1 blocking, 13 advisory); applied, not re-validated |
 
 The three-round cap of `/spec-fix-and-report` was reached with a "Needs revision" verdict on round 3. All round-3 findings were fixed in the text, but no fourth validator ran, so the spec has no "Ready for implementation" verdict and stays in `specs/refined/` instead of moving to `todo/`. A maintainer decides whether to run `/spec codex-native-adapter` again for a fresh validation.
+
+## Fresh validation round (authorised by the maintainer, Q-19)
+
+| Round | dispatched/returned/failed | Verdict | Findings |
+|---|---|---|---|
+| 4 (fresh context, worktree at origin/main `fd68167` merged) | 1/1/0 | Ready for implementation | 18 (0 blocking, 18 advisory) |
+
+Lint (specs) exit 0 in the same round. The ADR in Task 12 was renumbered from 0016 to 0018 before the round (0016 is `0016-migration-import.md` on main; the MH-11 spec claims 0017). No selector dry-match applied: the spec embeds no `go test -run` command. The 18 advisory findings were not applied in this round (one validation round was authorised, and an edit after a Ready verdict would be unvalidated); they are listed in the pull request description. The validator recommended fixing findings 1 to 4 (OQ4 wait on `claude-strict-subscription`, Task 2 e2e refusal file, stale dependency statuses and baseline, Task 11/8 fixture file) before `/run-spec`.
