@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -318,15 +319,35 @@ func TestServedStopAndRecoverAreRefused(t *testing.T) {
 	f := newRecoverState(t, "run_srv_refuse", "att_srv_refuse")
 	srv := NewSupervisorServer(f.db)
 	before := attemptState(t, f.db, f.attempt)
+	server, client := net.Pipe()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		serveConn(f.ctx(t), &streamConn{c: server}, srv)
+	}()
+	conn := &streamConn{c: client}
 	for name, in := range map[string]Intent{
 		"stop":    stopIntent(t, "op_srv_stop", f.attempt, f.version),
 		"recover": recoverIntent(t, "op_srv_rec", f.runID),
 	} {
-		_, err := srv.Dispatch(f.ctx(t), Peer{}, in)
-		if !errors.Is(err, &Error{Code: CodeCapabilityUnsupported}) {
-			t.Errorf("served %s: err = %v, want capability_unsupported", name, err)
+		frame, err := Encode(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reply, err := conn.Request(f.ctx(t), frame)
+		if err != nil {
+			t.Fatalf("served %s: %v", name, err)
+		}
+		var res Result
+		if err := json.Unmarshal(reply[prefixLen:], &res); err != nil {
+			t.Fatalf("served %s: decoding reply: %v", name, err)
+		}
+		if res.Error == nil || res.Error.Code != CodeCapabilityUnsupported {
+			t.Errorf("served %s: reply error = %v, want capability_unsupported", name, res.Error)
 		}
 	}
+	_ = client.Close()
+	<-done
 	if got := attemptState(t, f.db, f.attempt); got != before {
 		t.Errorf("attempt state = %q after refused requests, want %q unchanged", got, before)
 	}
