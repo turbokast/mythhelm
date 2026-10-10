@@ -28,8 +28,8 @@
 Round 3 (the last allowed) returned `Needs revision`: 3 blocking findings (GroupGone versus `classify`, no stop deadline mechanism, no way to inject matrix rows) were fixed afterwards but not re-validated; 14 advisory findings are open for the next `/spec windows-process-ownership` run:
 
 - `jobOps` seam: no `windows.Handle` in cross-platform `worker.go`; seam for failing `TerminateProcess` on the suspended native; signature of Task 6's identity probe helper.
-- Task 6 crash points: boundaries (i), (ii) and (iv) have no named injection point; AC-3.2 supervisor restart has no Windows test.
-- Task 3 spike must be a real run on `windows-latest` and `windows-11-arm` (parent-job query result, kill-on-close job membership), with defined behaviour per outcome (D11).
+- Task 6 crash points: resolved in the Q-26 pass (six hooks, a workers-package record test and a supervisor-package outcome test, design §2.5); AC-3.2 supervisor restart still has no Windows test beyond boundary (iii).
+- Task 3 spike: now specified as a CI run on both Windows jobs with `parentJob` defined exactly (design §2.2, D11, Task 3); the run ids and logged values are recorded here when the spike runs.
 - `launch_error` scope: Windows only (N4) and which error text may be recorded (native paths).
 - Tasks 10 and 11 each mix docs and core files; `TestDocsMatchWindowsMatrix` needs fixed anchors (the "Supported today" bullet, `docs/limitations.md:14-15`) and all four docs of AC-5.4.
 - No named test for NFR-3, NFR-4, AC-2.4, AC-3.3 (crash-behaviour column).
