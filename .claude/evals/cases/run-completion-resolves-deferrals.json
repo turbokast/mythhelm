@@ -7,6 +7,6 @@
   ],
   "grader": {
     "type": "must-match",
-    "pattern": "(?s)(?=.*Collect every \"Task N \\.\\.\\.\" deferral named in a \\*\\*Spec deviations\\*\\* entry)(?=.*the promised edit is present in the referenced diff)(?=.*the task or fix pull request that carries it has merged)(?=.*an open fix pull request, is not proof)(?=.*An unresolved deferral stops the run)"
+    "pattern": "(?s)(?=.*Collect every \"Task N \\.\\.\\.\" deferral named in a \\*\\*Spec deviations\\*\\* entry)(?=.*the promised edit is present in the referenced diff)(?=.*the task or fix pull request that carries it has merged)(?=.*A \\*\\*Files modified\\*\\* entry alone, or an open fix pull request, is not proof)(?=.*An unresolved deferral stops the run)"
   }
 }
