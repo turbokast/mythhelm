@@ -26,3 +26,5 @@
 - `internal/admission/admission.go` `decideClaudeCode` is the ordered template for `decideCodex`.
 
 ## Discoveries
+
+- Task 2: the admission table is rebuilt by `defaultDeciders()` on each call, so tests pass their own table to `decideWith` and nothing mutates package state. `validate` defaults `Scenario` to `happy` for any row with the scenario flag (only fake). A native-inventory test in `internal/cli` that does not set `HOME` reads the developer's real `~/.claude` hooks (`TestStrictMainBlocksWriteNothing` failed on unmodified origin/main for that reason).
