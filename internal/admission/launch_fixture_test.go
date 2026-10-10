@@ -49,6 +49,7 @@ func decideFakeProfile(t *testing.T, taskBytes []byte, profile string) admission
 		Billing: admission.BillingLocalScripted, ExecutionProfile: profile,
 		TrustProjectConfig: "sha256:" + digest,
 		Env:                []string{"PATH=/usr/bin:/bin", "HOME=" + t.TempDir()},
+		ProbeBoundary:      availableProbe,
 	})
 	if err != nil {
 		t.Fatal(err)

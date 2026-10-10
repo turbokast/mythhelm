@@ -38,4 +38,9 @@
 
 ## Task 4 — Supervisor-loss envelope and reconnect handshake
 
-<!-- pending -->
+- **Produces**: `workers.EpisodeEnvelope{AttemptID, LaunchID, Generation}`, `CheckEnvelope` (wrong launch/attempt/generation is `revision_conflict`), `AwaitReconnect`, `ReadSupervisorBeat`, `SupervisorBeatStale`; `control.SupervisorBeat`, `MaxSupervisorBeatAge` (300ms, mirrored in `workers` with cross-referencing tests), `WriteSupervisorBeat`, `Reconnect(ctx, ReconnectDeps{DB, StateDir}, runID) (token, RecoveryReport, error)`, `ExecuteLong`, `Server.RegisterLong`; `NewSupervisorServer(db, journal, stateDir, launch)` now serves `stop` and `recover`.
+- **Produces, differs from design**: loss is evaluated once at episode end, not continuously mid-episode (stale-throughout behaves identically); duplicate-of-live-claim on the long path polls then replays (block-then-replay), not independent bounded waits; stale long claims are adopted after `maxClaimAge` (5m).
+- **For dependents**: generation 0 means unfenced: the worker never enters the reconnect wait and the pipeline writes generation-0 beats when the lock is unreadable. The watch loop is the only beat writer, after `Ingest` only; the legacy recover path inherits it through `watch`.
+- **For dependents**: production `RunSupervisor` serves the folded methods with a nil launcher, so a fresh `continued` recover fails closed and is retryable (admission stands) until a caller wires a real launcher.
+- **Traps**: `Reconnect` mints only on `reconnected` and rotates the token on repeat; it records its pass under an `evt_handshake_*` event id which `recover` adopts (never relaunches the handshake's own unspawned continuation as a replay). A retry after a stop-receipt commit crash reports `revision_conflict` (documented crash window).
+- **Deviations changing later inputs**: `Reconnect` has no production caller and no tracked follow-up exists (service-path return detection plus token delivery); whoever wires the supervisor-return path must also decide how the minted token reaches the worker.

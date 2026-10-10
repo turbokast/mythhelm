@@ -567,7 +567,7 @@
 - **Spec deviations**: `AdmittedConfigPathsForEnv(home, workdir, env)` is added beside the specified `AdmittedConfigPaths`: the config root depends on the admitted child env (`CLAUDE_CONFIG_DIR`), which the two-argument form cannot see; the new form mirrors `InventorySettingsForEnv` so Task 9 can bind it exactly.
 - **Files modified**: `adapters/claudecode/settings.go`, `adapters/claudecode/settings_test.go`, `adapters/claudecode/launch_test.go`, `specs/in-progress/contained-execution-profiles/tasks.md`, `specs/in-progress/contained-execution-profiles/handoff.md`, `specs/in-progress/contained-execution-profiles/scratchpad.md`.
 
-### Task 11 — Adversarial suite and frozen v1 evidence
+### Task 11 — Adversarial suite and frozen v1 evidence ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (cross-platform behavior + adversarial coverage)
@@ -605,3 +605,7 @@
 - **Invariants touched**: I14 (v2 §2: every advertised claim has versioned
   evidence or an explicit refusal); G07 (v2 §18.3: adversarial tests
   substantiate each claimed enforced boundary).
+- **Status**: ✅ Completed — the five escape fixtures fail contained and succeed on trusted-host, `inspect` write fails, refusals name every missing dimension on all OSes, and the v1 records are frozen by an exact version/owner/method pin; PR #310.
+- **Implementation**: `TestEvidenceRecordsVersioned` pins each `SeedV1` record's identity, version, owner, boundary and the exact four claims (method = name plus Details) and asserts the key set exactly; the Linux fixtures run as admitted checks, and the evil-fetch leg drives the packaged `__contain` with the worker's policy shape because only the worker starts the proxy. Commit 87afe72.
+- **Spec deviations**: `tests/e2e/main_test.go` is edited outside the Files list: `TestMain` dispatches `__contain` before the build so `ProbeLinux`'s re-exec of the test binary does not run the suite as its own child. `internal/contain/records.go` changes only a freeze comment (the records are already versioned).
+- **Files modified**: `tests/e2e/contain_linux_test.go`, `tests/e2e/contain_refusal_test.go`, `tests/e2e/main_test.go`, `internal/contain/records.go`, `specs/in-progress/contained-execution-profiles/tasks.md`, `specs/in-progress/contained-execution-profiles/handoff.md`, `specs/in-progress/contained-execution-profiles/scratchpad.md`.

@@ -156,3 +156,37 @@ Append a short entry: on Windows, atomic file replacement via rename can fail tr
 **Proposed change:**
 
 Add a dispatch step: before starting a task attempt, append the `run_start` row (once per spec run) and the task's `dispatch` row to `.claude/data/run-events.jsonl`; after the attempt ends, append the `return` row (and `merge` after the merge). A dispatch without its rows is incomplete. Before finalizing, the orchestrator may backfill rows for already-merged tasks only from authoritative records (merged PRs, merge commits). Backfilled rows must carry provenance marking them as reconstructed, and consumers must distinguish them from observed rows when computing attempt metrics and attribution. Use the schema's `null` and `unknown` values for unavailable attribution or results; never treat the generated `ts` as the original event time when that time cannot be recovered.
+
+## P-release-tagging-1 — completion entries name review-round clarifications as deviations
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #303
+- **Eval**: `completion-names-review-clarifications`
+- **Rationale**: A Spec deviations entry of None hid two review-round additions in PR #180, so the finalize review had to rediscover them by diffing; naming each consistent clarification in one line keeps the entry an accurate map of what merged. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `release-tagging`
+- **Type**: skill
+- **Target**: `.claude/skills/task-completion/SKILL.md`
+- **Rationale**: The Spec deviations field said None while two review-round sentences (a permission qualification, a release-flag requirement) landed post-worker. Both were consistent with the design, so no defect shipped — but the finalize review had to rediscover them by diffing, and the entry claims a none-divergence record that is not quite true. Naming consistent clarifications keeps the entry an accurate map of what review added.
+- **Evidence**: PR #180 review round 1 (2 fixed threads); specs/done/release-tagging/retrospective.md Review Summary finding 1 and Deviations section; task entry Spec deviations: None.
+
+**Proposed change:**
+
+In the Spec deviations rule, add: a review-round addition that stays inside the task's Files list and is consistent with the design is still named, one line each, marked consistent (e.g. "- Added the Contents:write permission qualification in review round 1 (consistent with design §3)"). None. is reserved for a task whose merged diff the worker's own commits fully describe.
+
+## P-supervisor-service-2 — Stand-in deviations must name their tracked follow-up
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #304
+- **Eval**: `completion-stand-in-cites-follow-up`
+- **Rationale**: Four stand-in deviations waited on another spec's task with no follow-up, so the parallel error vocabulary the spec forbids went live untracked (#283); requiring a filed follow-up turns each silent promise into a tracked one. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `supervisor-service`
+- **Type**: skill
+- **Target**: `.claude/skills/task-completion/SKILL.md`
+- **Rationale**: Four tasks recorded `control.Error` stand-ins "until vocab task 6 lands"; vocab task 6 landed and no follow-up existed, so the parallel error vocabulary the spec norm forbids went live untracked. A stand-in without a tracked trigger is a silent promise.
+- **Evidence**: tasks.md Spec deviations of tasks 2, 3, 5, 6; Review Summary finding F1; issue #283
+
+**Proposed change:**
+
+Add to the completion-entry procedure: a Spec deviation that defers to another spec's unmerged work must cite the tracking follow-up (issue or proposal id) that fires when the blocker lands; file that follow-up before the entry is written.
