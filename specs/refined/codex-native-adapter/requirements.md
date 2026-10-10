@@ -91,7 +91,7 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 
 ### FR-6 — Native session continuity facts (v2 §4.4, §9.2, I12)
 
-- **AC-6.1** [v2 §4.4] The adapter shall capture the native thread/session identity and effort/model metadata when the native reports them, and record `unknown` when it does not.
+- **AC-6.1** [v2 §4.4] The adapter shall capture the native thread/session identity when the native reports it, and record it empty (unknown) when it does not; effort and model metadata remain `unknown` until a later seam change gives `SessionStarted` a field for them (design honesty register). `Capabilities.ModelMetadata` declares a capability and is not a capture path.
 - **AC-6.2** [I12 (v2 §2), v2 §4.4] The adapter shall report resume and reconnect in `adapter.Capabilities` as supported, unsupported or `unknown`; and no code path shall patch a private native store. Implementing resume or reconnect behaviour is not in this spec (N4).
 
 ### FR-7 — Registry records, doctor and ordering (v2 §7.1, §18.3, I14, G02, G05)
@@ -99,7 +99,7 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 - **AC-7.1** [I14 (v2 §2), G02 (v2 §18.3)] The Codex record shall carry fidelity, entitlement and security/lifecycle evidence as independent columns; a pass in one shall not change another.
 - **AC-7.2** [I14 (v2 §2)] Only fixture evidence shall move the record to `fixture-tested`; `live-qualified` requires a live evidence record naming exact build, platform and account class.
 - **AC-7.3** [v2 §17.1, G10 (v2 §18.3)] `mythhelm doctor` shall show the Codex row with its progress, each column verdict other than `proven` named as failing, and the next test in plain output as well as JSONL (plain output omits it today), as `failing: <column>[, <column>]` on the row and `next_test: <text>` on the line below (pinned by a test), keeping the existing (harness, surface) row order that `doctor_test.go` pins.
-- **AC-7.4** [v2 §7.2] A table test shall show identical registry records under the `claude-code` and `codex` keys yielding identical `ResolveQualification` verdicts, so no code path prefers a harness by name.
+- **AC-7.4** [v2 §7.2] A table test shall show identical registry records under the `claude-code` and `codex` keys yielding identical `ResolveQualificationKey` verdicts (the caller-supplied-key function; `ResolveQualification` stays the Claude wrapper), so no code path prefers a harness by name.
 - **AC-7.5** [I04, I16 (v2 §2), G12 (v2 §18.3)] If the observed key's `Harness`, `ProviderEndpoint` or `AuthCategory` (`internal/qualify/qualify.go` `Key`) matches no record, then strict admission shall block with `no_qualification_record` (exit 3 as for Claude Code); a test varies each of the three fields in turn.
 
 ## Non-Functional Requirements

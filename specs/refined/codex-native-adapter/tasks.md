@@ -72,7 +72,7 @@
 - **Acceptance**:
   - `TestProbeReturnsIdentityWithoutModelTask`: against a `TestMain` re-exec fixture executable, `Probe` returns absolute path, version, SHA-256, OS, arch and the fixture records one invocation, `--version`, and no model task (AC-2.1).
   - `TestCompatibilityUntestedBlocksWithoutOverride`: an untested version yields `ErrCapability` unless `AllowUntestedNativeVersion` (AC-2.2).
-  - `TestCapabilitiesUnknownNeverDefaultSupported`: Resume, LiveSteer, ApprovalBridge, UsageTokens, Reconnect, ModelMetadata are `unknown`; changing one to `Supported` in `Capabilities` fails the test (AC-2.3).
+  - `TestCapabilitiesUnknownNeverDefaultSupported`: StructuredEvents, Resume, LiveSteer, ApprovalBridge, UsageTokens, Reconnect, ModelMetadata are `unknown`; changing one to `Supported` in `Capabilities` fails the test (AC-2.3).
   - `TestProbeBoundedOutput`: a fixture printing over 4 KiB or sleeping past the timeout fails closed.
 - **Test plan**: `TestMain` re-exec helper as in `adapters/claudecode/probe_test.go`; synthetic version strings.
 - **Invariants touched**: I01 (unmodified executable); I09 (unknown stays unknown); I14.

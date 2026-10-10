@@ -32,6 +32,8 @@ AC-3.1 was reverted to forbid any native process before trust (design §4 invent
 
 ## /spec validation record
 
+Counts below are validator dispatches only; the refine-loop dispatch accounting (dispatched=4 returned=3 failed=1) is at the top of this file.
+
 | Round | dispatched/returned/failed | Verdict | Findings |
 |---|---|---|---|
 | 1 | 1/1/0 | Needs revision | 20 (8 blocking); applied |
