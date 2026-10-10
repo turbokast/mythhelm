@@ -224,3 +224,20 @@ Append to the checkable-criteria patterns: an acceptance item that adds or chang
 **Proposed change:**
 
 Add to the Confirm step: collect every "Task N ..." deferral named in Spec deviations entries; each must resolve to a completing change whose promised edit is present in the referenced diff and whose task or fix PR has merged — a Files modified entry alone, or an open fix PR, is not proof — or the run stops with the unresolved promise named.
+
+## P-v2-contract-vocabulary-2 — Review stale branches by their own diff
+
+- **Decision**: approved
+- **Date**: 2026-10-09
+- **Pull request**: #306
+- **Eval**: `worktree-merge-review-own-diff`
+- **Rationale**: A tree-diff against main on a stale branch shows other specs' merged work as deletions, and that misread recurred across four reviews in one run (#261 to #264); reviewing merge-base..HEAD shows only the branch's own change. (Reason drafted by the agent at the maintainer's request and adopted by the maintainer.)
+- **Source spec**: `v2-contract-vocabulary`
+- **Type**: skill
+- **Target**: `.claude/skills/run-spec-worktree-merge/SKILL.md`
+- **Rationale**: Reviewing a stale branch with a tree-diff against main shows other specs' merged work as deletions, which misreads as the branch destroying them; the mistake recurred across several reviews in one run before the merge-base comparison became habit.
+- **Evidence**: PR #261/#262/#263/#264 shepherd reviews (stale-base tree-diffs vs merge-base..HEAD); retrospective Lessons
+
+**Proposed change:**
+
+Add to the verify-before-merge procedure: when the branch base trails origin/main, review the branch's own diff (`git diff <merge-base> HEAD`) for scope and deletions; use the tree-diff against main only to confirm the merge result after updating.
