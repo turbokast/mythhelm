@@ -145,4 +145,4 @@ Add to the task-breakdown method: when an acceptance criterion needs a state to 
 
 **Proposed change:**
 
-In step 1, write the range to `<tmp>/<spec>-range.json`, and in step 3 require the dispatch prompt to state the base and head it expects, so a reviewer that reads a file with different values stops instead of reviewing it.
+In step 1, write the range to a run-unique path such as `<tmp>/<run-id>/<spec>-range.json`, and in step 3 require the dispatch prompt to state the base and head it expects, so a reviewer that reads a file with different values stops instead of reviewing it.
