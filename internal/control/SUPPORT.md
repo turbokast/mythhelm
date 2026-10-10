@@ -31,9 +31,7 @@ files carry no build tag) or `linux, darwin` (they are tagged
 | `method:release` | `release` intent: release with recorded evidence | fixture-tested | all | `TestReleaseIntentViaExecute` |
 | `method:heartbeat` | `heartbeat` intent: refresh a held reservation | fixture-tested | all | `TestHeartbeatIntentViaExecute` |
 | `method:read` | `read` intent: authority filtered before rows are counted; token callers bounded to their repository | fixture-tested | all | `TestReadIntentFiltersForeignRepos`, `TestFilterHidesForeignRepos`, `TestReadIntentTokenBindsRepoEntitlement` |
-| `method:stop` | `stop` intent: versioned ladder stop with pinned identity, idempotent receipt or quarantine (served long: the wait holds no transaction) | fixture-tested | all | `TestStopIntentWritesRequestFile`, `TestStopDeadlineQuarantines`, `TestStopConfirmedReceiptAssemblesFromStoppedReport`, `TestLongStopFreesOtherIntents` |
-| `method:recover` | `recover` intent: one-pass reconcile with exactly one outcome and post-commit continuation launch | fixture-tested | all | `TestReconcileChoosesOneOutcome`, `TestSecondPassWithoutFreshEvidenceReplays`, `TestContinuationKeepsLaunchIdentity`, `TestRecoveryNeverReplaysEffects`, `TestRecoverRetriesFailedLaunch` |
-| `pinned-ladder` | Versioned stop ladder pinned at admission; mismatch refuses without signalling | fixture-tested | all | `TestStopLadderValidation`, `TestStopVersionMismatchWritesNoRequest` |
+| `pinned-ladder` | Versioned stop ladder pinned at admission; mismatch refuses without signalling (handler-level; stop is not served in S1) | fixture-tested | all | `TestStopLadderValidation`, `TestStopVersionMismatchWritesNoRequest` |
 | `envelope-reconnect` | Supervisor-loss envelope beats and the reconcile-then-mint-token handshake; old generations never fresh | fixture-tested | all | `TestReconnectReconcilesFirst`, `TestOldGenerationNeverFresh`, `TestWriteSupervisorBeat`, `TestHermeticNoCredentialsOrNetwork` |
 
 ## Not claimed
@@ -43,5 +41,10 @@ files carry no build tag) or `linux, darwin` (they are tagged
   (row `transport-windows-pipe`); the untagged method tests also run on the
   Windows leg. There is still no Windows lazy start or detach evidence.
 - No row is `live-qualified`.
+- `stop` and `recover` are not served in S1 (Q-27, option A): the service
+  answers them `capability_unsupported` and writes nothing, and the CLI runs
+  both locally under run ownership (`TestServedStopAndRecoverAreRefused`).
+  The handlers stay for the follow-up that routes them through journal
+  ingest (issue #348).
 - A per-repository entitlement store does not exist (`read` scopes an
   operator by the repositories it presents); see the task 6 hand-off.

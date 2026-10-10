@@ -176,7 +176,7 @@ var shippedDeliverables = []string{
 }
 
 func servedMethods() []string {
-	srv := NewSupervisorServer(nil, nil, "", nil)
+	srv := NewSupervisorServer(nil)
 	var out []string
 	for m := range srv.methods {
 		out = append(out, m)

@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -862,10 +861,6 @@ func TestRegisterRecoverDuplicate(t *testing.T) {
 	}
 	if err := srv.RegisterRecover(f.deps()); err == nil {
 		t.Fatalf("second RegisterRecover succeeded, want the duplicate named")
-	}
-	// recover is folded into the served set with its support-matrix rows.
-	if !slices.Contains(servedMethods(), "recover") {
-		t.Fatal("NewSupervisorServer does not serve recover")
 	}
 }
 

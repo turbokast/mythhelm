@@ -49,3 +49,4 @@ TUI behaviour is qualified by the G09 evidence record in the repository
 - The OAuth-token exception is unwired and refused at both gates.
 - macOS MDM preferences and remote cached managed policy as certified trust
   sources; the settings inventory covers files only.
+- In S1, stop and recover run locally from the CLI; the supervisor service does not serve them. Routing them through journal ingest is a follow-up (#348).
