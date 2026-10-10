@@ -98,18 +98,6 @@ Add to the verify-before-merge procedure: when the branch base trails origin/mai
 
 Add to the finalize review steps: for each decision record the spec accepted, diff its factual claims (blocked rows, NFR tables, cited files and tests) against the shipped tree at the review head; amend drift in the finalize worktree before publishing.
 
-## P-supervisor-service-2 — Stand-in deviations must name their tracked follow-up
-
-- **Source spec**: `supervisor-service`
-- **Type**: skill
-- **Target**: `.claude/skills/task-completion/SKILL.md`
-- **Rationale**: Four tasks recorded `control.Error` stand-ins "until vocab task 6 lands"; vocab task 6 landed and no follow-up existed, so the parallel error vocabulary the spec norm forbids went live untracked. A stand-in without a tracked trigger is a silent promise.
-- **Evidence**: tasks.md Spec deviations of tasks 2, 3, 5, 6; Review Summary finding F1; issue #283
-
-**Proposed change:**
-
-Add to the completion-entry procedure: a Spec deviation that defers to another spec's unmerged work must cite the tracking follow-up (issue or proposal id) that fires when the blocker lands; file that follow-up before the entry is written.
-
 ## P-budget-ledger-s1-1 — Name fixed-date fixtures that meet a real-clock commit path
 
 - **Source spec**: `budget-ledger-s1`
@@ -145,3 +133,4 @@ Add to the task-breakdown method: when a task enforces an invariant or acceptanc
 **Proposed change:**
 
 Add to step 3: for each behaviour a page describes as available, name the command or flag that reaches it today. State when a behaviour is reachable only through tests or a library call and not through the documented command or flag, and include the tracking issue. State a signal that rests on a synthetic fixture as such (I14).
+
