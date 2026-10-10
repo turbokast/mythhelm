@@ -26,3 +26,5 @@
 - `internal/admission/admission.go` `decideClaudeCode` is the ordered template for `decideCodex`.
 
 ## Discoveries
+
+- Task 1: `internal/adapter` had no tests before; its new `adapter_test.go` is external (`adapter_test`) and `fakeProc` there is the pattern for `OwnedProc` fakes. `TestStrictMainBlocksWriteNothing` (`internal/cli/run_drift_test.go`) depends on the real home's user-level native config and fails locally with `untrusted_native_config` where that config declares hooks; it also fails on unmodified `origin/main` code.

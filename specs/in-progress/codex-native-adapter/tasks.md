@@ -14,7 +14,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Seam additions: Acknowledged, Reconnect, ModelMetadata
+### Task 1 — Seam additions: Acknowledged, Reconnect, ModelMetadata ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -30,6 +30,10 @@
   - `TestClimbLadderSentAndConfirmed` (new; no test references `ClimbLadder` today): with a fake `OwnedProc` that ignores interrupt, `Sent` lists interrupt, terminate, kill in order and `Confirmed` turns true only once `GroupGone` holds; a ladder that set `Confirmed` after sending fails it.
 - **Test plan**: Table tests over a fake `OwnedProc`; inline expected JSON (no goldens).
 - **Invariants touched**: I09 (v2 §2: unset is distinct from `unknown`); I06 (`Confirmed` semantics pinned, not changed).
+- **Status**: ✅ Completed — `InterruptReport.Acknowledged`, `Capabilities.Reconnect` and `Capabilities.ModelMetadata` added with `omitempty`, and `ClimbLadder`'s `Sent`/`Confirmed` semantics pinned by test; PR #352.
+- **Implementation**: Three `omitempty` fields in `internal/adapter/adapter.go`; `internal/adapter/adapter_test.go` is new (a fake `OwnedProc` with 40ms graces, JSON key sets compared exactly). Commit 2c8ce25.
+- **Spec deviations**: None.
+- **Files modified**: `internal/adapter/adapter.go`, `internal/adapter/adapter_test.go`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
 ### Task 2 — Per-harness decider table, adapter validation and containment refusal
 
