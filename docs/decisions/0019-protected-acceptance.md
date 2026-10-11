@@ -69,7 +69,9 @@ REPLACE` fires no delete trigger unless `recursive_triggers` is set, so a
 BEFORE INSERT trigger closes it. No earlier table is altered (ADR 0016); a
 verification without a binding row was recorded before schema 8 and reads
 `Bound == false`. `InsertVerification` always writes the binding row, so the
-absence means only that. The migration also advances
+absence means only that, and it first requires an attestation to decode as
+that verification's `v2contract.Verification` with a matching digest, because
+the table cannot be corrected afterwards. The migration also advances
 `migration_state.schema_version` to 8, so the identity that table records
 matches `PRAGMA user_version`. `journal.EnsurePolicy` reads first and inserts
 only when the row is absent: an identical digest is a no-op and a different

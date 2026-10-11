@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -179,8 +180,7 @@ func TestVerificationBindingRoundTrip(t *testing.T) { // I20 (v2 §2): the bindi
 	j, _ := openTemp(t)
 	seedRun(t, j, "run_full")
 	seedRun(t, j, "run_bare")
-	seedRun(t, j, "run_orphan_digest")
-	seedRun(t, j, "run_bad_json")
+	seedRun(t, j, "run_rejected")
 
 	att, digest := attestationFor(t, "ver_full")
 	overhead := int64(42)
@@ -209,24 +209,66 @@ func TestVerificationBindingRoundTrip(t *testing.T) { // I20 (v2 §2): the bindi
 		t.Errorf("bare verification = %+v, want Bound true and every binding field empty", bare)
 	}
 
+	own, ownDigest := attestationFor(t, "ver_rejected")
+	other, otherDigest := attestationFor(t, "ver_other")
 	for name, tc := range map[string]struct {
-		run  string
 		edit func(*VerificationRow)
 	}{
-		"attestation without digest": {"run_orphan_digest", func(v *VerificationRow) { v.Attestation = att }},
-		"digest without attestation": {"run_orphan_digest", func(v *VerificationRow) { v.AttestationDigest = digest }},
-		"attestation that is not JSON": {"run_bad_json", func(v *VerificationRow) {
-			v.Attestation, v.AttestationDigest = []byte("{not json"), digest
+		"attestation without digest": {func(v *VerificationRow) { v.Attestation = own }},
+		"digest without attestation": {func(v *VerificationRow) { v.AttestationDigest = ownDigest }},
+		"attestation that is not JSON": {func(v *VerificationRow) {
+			v.Attestation, v.AttestationDigest = []byte("{not json"), ownDigest
+		}},
+		"JSON that is not a verification record": {func(v *VerificationRow) {
+			v.Attestation, v.AttestationDigest = []byte("{}"), "sha256:"+strings.Repeat("0", 64)
+		}},
+		"digest that is not the attestation's": {func(v *VerificationRow) {
+			v.Attestation, v.AttestationDigest = own, "sha256:"+strings.Repeat("0", 64)
+		}},
+		"attestation of another verification": {func(v *VerificationRow) {
+			v.Attestation, v.AttestationDigest = other, otherDigest
 		}},
 	} {
-		v := verificationRow(tc.run, "ver_bad")
+		v := verificationRow("run_rejected", "ver_rejected")
 		tc.edit(&v)
 		if err := insertVerificationRow(t, j, v); err == nil {
-			t.Errorf("%s: InsertVerification accepted the row, want the CHECK to reject it", name)
+			t.Errorf("%s: InsertVerification accepted the row, want it rejected", name)
 		}
-		if _, err := j.LatestVerification(ctx, tc.run); !errors.Is(err, ErrNotFound) {
+		if _, err := j.LatestVerification(ctx, "run_rejected"); !errors.Is(err, ErrNotFound) {
 			t.Errorf("%s: LatestVerification = %v, want ErrNotFound (the verification rolled back with its binding)", name, err)
 		}
+	}
+
+	good := verificationRow("run_rejected", "ver_rejected")
+	good.Attestation, good.AttestationDigest = own, ownDigest
+	if err := insertVerificationRow(t, j, good); err != nil {
+		t.Errorf("the matching attestation and digest was rejected: %v", err)
+	}
+}
+
+// The Go checks above reject a malformed binding first; these statements
+// reach the schema's own CHECKs directly, so they stay proven (teeth).
+func TestBindingChecksRejectMalformedRows(t *testing.T) {
+	ctx := t.Context()
+	j, _ := openTemp(t)
+	seedRun(t, j, "run_1")
+	now := formatTime(time.Now().UTC())
+	if _, err := j.db.ExecContext(ctx, `INSERT INTO verifications (verification_id, run_id, candidate_commit, config_sha256, result, started_at, finished_at)
+		VALUES ('ver_1', 'run_1', 'c', 'cfg', 'passed', ?, ?)`, now, now); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, stmt string }{
+		{"attestation without digest", `INSERT INTO verification_bindings (verification_id, attestation) VALUES ('ver_1', '{}')`},
+		{"digest without attestation", `INSERT INTO verification_bindings (verification_id, digest) VALUES ('ver_1', 'sha256:x')`},
+		{"attestation that is not JSON", `INSERT INTO verification_bindings (verification_id, attestation, digest) VALUES ('ver_1', '{not json', 'sha256:x')`},
+	} {
+		_, err := j.db.ExecContext(ctx, tc.stmt)
+		if err == nil || !strings.Contains(err.Error(), "CHECK constraint failed") {
+			t.Errorf("%s: err = %v, want the CHECK constraint to reject it", tc.name, err)
+		}
+	}
+	if _, err := j.db.ExecContext(ctx, `INSERT INTO verification_bindings (verification_id, attestation, digest) VALUES ('ver_1', '{}', 'sha256:x')`); err != nil {
+		t.Errorf("a paired, valid-JSON attestation and digest was refused by the schema: %v", err)
 	}
 }
 
@@ -330,5 +372,35 @@ func TestEnsurePolicyIdempotentAndConflict(t *testing.T) { // I20 (v2 §2)
 	invalid.PolicyID = ""
 	if err := ensure(invalid); err == nil || errors.Is(err, ErrPolicyConflict) {
 		t.Errorf("EnsurePolicy with an invalid record = %v, want a validation error, not a conflict", err)
+	}
+}
+
+// Every transaction is BEGIN IMMEDIATE (journal.go pragmas, _txlock), so the
+// read-then-insert in EnsurePolicy runs under the write lock and concurrent
+// identical callers serialise: all return nil and one row remains.
+func TestEnsurePolicyConcurrentIdenticalWritesAreIdempotent(t *testing.T) {
+	ctx := t.Context()
+	j, _ := openTemp(t)
+	const writers = 8
+	errs := make(chan error, writers)
+	var wg sync.WaitGroup
+	for range writers {
+		wg.Go(func() {
+			errs <- j.Transact(ctx, func(tx *sql.Tx) error { return EnsurePolicy(ctx, tx, p1Policy()) })
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Errorf("concurrent EnsurePolicy = %v, want nil for an identical record", err)
+		}
+	}
+	var n int
+	if err := j.db.QueryRowContext(ctx, `SELECT count(*) FROM policies WHERE policy_id = 'P1' AND version = 1`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("policies holds %d rows for P1 v1 after %d concurrent identical writes, want 1", n, writers)
 	}
 }

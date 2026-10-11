@@ -104,6 +104,9 @@ func InsertVerification(ctx context.Context, tx *sql.Tx, v VerificationRow) erro
 			return fmt.Errorf("journal: inserting verification evaluator: %w", err)
 		}
 	}
+	if err := checkAttestation(v); err != nil {
+		return err
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO verification_bindings
 		(verification_id, reason, attestation, digest, overhead_ms) VALUES (?, ?, ?, ?, ?)`,
 		v.ID, v.Reason, nullable(string(v.Attestation)), nullable(v.AttestationDigest), v.OverheadMS)
@@ -122,6 +125,27 @@ func InsertVerification(ctx context.Context, tx *sql.Tx, v VerificationRow) erro
 		if err != nil {
 			return fmt.Errorf("journal: inserting check %s: %w", c.Name, err)
 		}
+	}
+	return nil
+}
+
+// checkAttestation rejects a binding the immutable table could not later
+// correct: an attestation that is not a valid v2contract.Verification of this
+// verification, or whose digest is not the v2contract.Digest of that record.
+// A digest with no attestation is left to the table's CHECK.
+func checkAttestation(v VerificationRow) error {
+	if len(v.Attestation) == 0 {
+		return nil
+	}
+	att, err := v2contract.Decode[v2contract.Verification](v.Attestation)
+	if err != nil {
+		return fmt.Errorf("journal: verification %s attestation: %w", v.ID, err)
+	}
+	if att.VerificationID != v.ID {
+		return fmt.Errorf("journal: verification %s carries the attestation of %s", v.ID, att.VerificationID)
+	}
+	if want := v2contract.Digest(att); v.AttestationDigest != want {
+		return fmt.Errorf("journal: verification %s attestation digest %q is not %q", v.ID, v.AttestationDigest, want)
 	}
 	return nil
 }
@@ -541,7 +565,9 @@ var ErrPolicyConflict = errors.New("journal: policy version stored with differen
 // v2contract.Digest) exists. A row with the same id and version and another
 // digest returns ErrPolicyConflict and changes nothing. It reads first and
 // then inserts: the immutability triggers abort any insert over an existing
-// key, so INSERT OR IGNORE cannot express "already there".
+// key, so INSERT OR IGNORE cannot express "already there". Every journal
+// transaction is BEGIN IMMEDIATE (_txlock), so concurrent callers serialise on
+// the write lock and the second one reads the first one's row.
 func EnsurePolicy(ctx context.Context, tx *sql.Tx, p v2contract.PolicyVersion) error {
 	if err := p.Validate(); err != nil {
 		return fmt.Errorf("journal: policy %s v%d: %w", p.PolicyID, p.Version, err)
