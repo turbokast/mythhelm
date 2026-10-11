@@ -77,7 +77,7 @@
 - **Test plan**: Real SQLite in temp directories; the schema-7 fixture is built by opening with the shipped migrations up to 0007 through the test helper used by `migrate_tables_test.go`.
 - **Invariants touched**: I20 (v2 §2: policies and bindings are immutable by trigger); I23 (v2 §2: one canonical ledger, the binding is a row beside the verification, not a second store); I09 (v2 §2: an absent binding is `Bound == false`, never a default verdict).
 
-### Task 3 — Evaluator seam and three-state check result
+### Task 3 — Evaluator seam and three-state check result ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -94,6 +94,11 @@
   - `TestPassedNeedsEveryCheckPassed`: two checks, one `not_run` after an unavailable one, give `unavailable`, never `passed`.
 - **Test plan**: Fixture check scripts in temp worktrees as in the existing `verify_test.go`; contained leg skips off Linux or where `ProbeLinux` fails, with the skip reason asserted non-empty.
 - **Invariants touched**: I07 (v2 §11.2: the candidate cannot change the argv or evaluator it is judged by); I09 (v2 §2: unavailable is not failed and not passed).
+
+- **Status**: ✅ Completed — `EvaluatorFor` is the one evaluator computation, `MaxEvidenceBytes` is exported and `RunChecksWithPolicy` returns the three-state result; PR #405.
+- **Implementation**: `evaluatorOf` became `EvaluatorFor(opts, checks)` and forces `ReadOnly` and no auth binds itself; the result rule is a switch over statuses (failed or timed_out, else any other non-passed, else passed). `pipeline.go` is untouched: it still treats any non-`passed` result as not ready. Commit 5fd8a81.
+- **Spec deviations**: None.
+- **Files modified**: `internal/integration/verify.go`, `internal/integration/verify_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
 ### Task 4 — Pin the acceptance policy at admission
 
