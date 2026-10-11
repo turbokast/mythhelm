@@ -5,9 +5,9 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -47,9 +47,7 @@ func TestInventoryDigestsChangeWithSource(t *testing.T) { // AC-3.3
 	ref := inventoryBlobs(t, base)
 	for name := range ProjectSources {
 		changed := map[string][]byte{}
-		for k, v := range base {
-			changed[k] = v
-		}
+		maps.Copy(changed, base)
 		changed[name] = append(slices.Clone(base[name]), '\n')
 		m := inventoryBlobs(t, changed)
 		if m.Digests[name] == ref.Digests[name] || m.Digests[name] == "" {
@@ -208,18 +206,12 @@ func TestInventoryFailsClosed(t *testing.T) {
 	if _, err := InventorySettingsForEnv("relative-home", workdir, nil); !errors.Is(err, ErrCapability) {
 		t.Fatalf("relative home: err = %v, want ErrCapability", err)
 	}
-	if runtime.GOOS != "windows" && os.Geteuid() != 0 {
-		locked := t.TempDir()
-		writeFile(t, filepath.Join(locked, ".codex", "config.json"), `{}`)
-		if err := os.Chmod(filepath.Join(locked, ".codex"), 0); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = os.Chmod(filepath.Join(locked, ".codex"), 0o700) })
-		if _, err := InventorySettingsForEnv(locked, t.TempDir(), nil); !errors.Is(err, ErrCapability) {
-			t.Fatalf("unreadable home: err = %v, want ErrCapability", err)
-		}
+	blockedHome := t.TempDir()
+	writeFile(t, filepath.Join(blockedHome, ".codex"), "not a directory")
+	if _, err := InventorySettingsForEnv(blockedHome, t.TempDir(), nil); !errors.Is(err, ErrCapability) {
+		t.Fatalf("unreadable home: err = %v, want ErrCapability", err)
 	}
-	for name, blob := range map[string]string{
+	for name, blob := range map[string]string{ //nolint:gosec // Synthetic config fixtures, not credentials.
 		"invalid json":      `{`,
 		"credential key":    `{"api_key":"SENTINEL"}`,
 		"auth method pin":   `{"preferred_auth_method":"apikey"}`,
@@ -270,7 +262,7 @@ func TestNoNativeStoreWrites(t *testing.T) { // AC-6.2, I12
 		if strings.HasSuffix(f, "_test.go") {
 			continue
 		}
-		raw, err := os.ReadFile(f)
+		raw, err := os.ReadFile(f) //nolint:gosec // Globbed package source file.
 		if err != nil {
 			t.Fatal(err)
 		}
