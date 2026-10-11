@@ -1704,6 +1704,10 @@ func TestHoldFailureBlocksRun(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "injected hold failure") {
 		t.Fatalf("Run err = %v, want the hold failure", err)
 	}
+	// The CLI maps a *GateError to exit 3, matching the receipt (#325).
+	if gate, ok := errors.AsType[*supervisor.GateError](err); !ok || gate.Reason != "quota_reservation_failed" {
+		t.Fatalf("Run err = %v, want a *GateError with reason quota_reservation_failed", err)
+	}
 	if out.State != supervisor.RunBlocked || out.Reason != "quota_reservation_failed" {
 		t.Fatalf("outcome = %s (%s), want blocked (quota_reservation_failed)", out.State, out.Reason)
 	}

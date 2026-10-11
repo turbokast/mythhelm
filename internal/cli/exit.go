@@ -55,6 +55,7 @@ func exitCode(err error) ExitCode {
 	var usage usageError
 	var outcome *outcomeError
 	var blocked *admission.BlockedError
+	var gate *supervisor.GateError
 	switch {
 	case err == nil, errors.Is(err, flag.ErrHelp):
 		return ExitOK
@@ -65,7 +66,7 @@ func exitCode(err error) ExitCode {
 		return ExitInvalid
 	case errors.As(err, &blocked) && blocked.Capability, errors.Is(err, workspace.ErrGitTooOld):
 		return ExitCapability
-	case errors.As(err, &blocked):
+	case errors.As(err, &blocked), errors.As(err, &gate):
 		return ExitBlocked
 	case errors.Is(err, supervisor.ErrOwnerHeld), errors.Is(err, supervisor.ErrOwnership),
 		errors.Is(err, control.ErrRootConflict), errors.Is(err, control.ErrInstanceHeld):

@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
+	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/control"
 	"github.com/turbokast/mythhelm/internal/supervisor"
 )
@@ -19,6 +21,23 @@ func TestExitCodeControlHeldIsOwnership(t *testing.T) {
 		}
 		if got := exitCode(fmt.Errorf("supervisor: %w", err)); got != ExitOwnership {
 			t.Errorf("exitCode(wrapped %s) = %d, want %d", name, got, ExitOwnership)
+		}
+	}
+}
+
+func TestExitCodeRefusedLaunchIsBlocked(t *testing.T) {
+	t.Parallel()
+	for name, err := range map[string]error{
+		"envelope gate":       &supervisor.GateError{Reason: "envelope_deadline_exceeded", Err: errors.New("deadline passed")},
+		"allowance exhausted": &supervisor.GateError{Reason: "allowance_exhausted", Err: billing.ErrAllowanceExhausted},
+	} {
+		for _, e := range []error{err, errors.Join(err, errors.New("run blocked"))} {
+			if got := exitCode(e); got != ExitBlocked {
+				t.Errorf("exitCode(%s) = %d, want %d", name, got, ExitBlocked)
+			}
+			if got := errorCategory(e); got != "admission_blocked" {
+				t.Errorf("errorCategory(%s) = %q, want admission_blocked", name, got)
+			}
 		}
 	}
 }
