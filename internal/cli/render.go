@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -155,7 +156,7 @@ func (p payload) text(keys ...string) string {
 	case string:
 		return cell(v)
 	case float64:
-		return fmt.Sprint(v)
+		return strconv.FormatFloat(v, 'f', -1, 64)
 	default:
 		b, err := json.Marshal(v)
 		if err != nil {
