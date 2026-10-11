@@ -32,7 +32,12 @@
 
 ## Task 4 — Codex adapter: stream decoder, usage and error mapping
 
-<!-- pending -->
+- **Produces**: `codex.Decode(r io.Reader, send func(adapter.Observation)) adapter.NativeExit` and unexported `decodeWith(table map[string]string, lim ndjson.Limits, r, send)`. It sends `ProtocolCounters` last, always, and sets `NativeExit.Err` when no `result` frame arrived or the reader failed. No design difference.
+- **For Task 5**: `Decode` never sets `Code` or `Signal`; the session merges the process exit with its `Err`. Call it from the stdout goroutine only, and do not import `os/exec` in `launch.go` or `decode.go`.
+- **For Task 5**: `SessionStarted` carries only `SessionID` (empty when unreported); the worker's `billing_route_mismatch` check must stay skipped for `builtin/codex` (D12).
+- **For later tasks**: the error table is empty by default (D7); a cited OQ10 source fills it in one place, and `rate_limit` and `allowance_exhausted` are the only non-default classes it may name.
+- Fixtures are `testdata/streams/*.jsonl`, every frame marked `_synthetic`; the frame schema is a placeholder for OQ1/OQ10.
+- Trap: in this sandbox `ANTHROPIC_BASE_URL` is set and fails `internal/cli` tests with `credential_route_override`; unset it. Four `internal/supervisor` restricted-boundary tests also fail identically on the base here.
 
 ## Task 5 — Codex adapter: prepare, launch session, stop ladder, single writer
 
