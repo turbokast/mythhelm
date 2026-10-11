@@ -3,9 +3,10 @@
 One row per deliverable of the supervisor service (spec `supervisor-service`;
 decision record [ADR 0014](../../docs/decisions/0014-service-topology.md)).
 `support_test.go` reads this file: it must list exactly the shipped
-deliverables and every control method the supervisor serves, and each row's
-evidence must be tests that exist in this package, built for the platforms the
-row claims.
+deliverables and every control method the supervisor serves. A
+`fixture-tested` row's evidence must be tests that exist in this package, built
+for the platforms the row claims; a `blocked` row names no tests, and its
+evidence starts with `blocked:` and gives the reason.
 
 Statuses are `fixture-tested` and `blocked`. Nothing here is `live-qualified`:
 no row has run against a live multi-client deployment. `fixture-tested` means
