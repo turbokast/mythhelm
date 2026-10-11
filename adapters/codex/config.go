@@ -44,11 +44,17 @@ func GapSources(unresolved []string) []string {
 }
 
 // ProjectSources maps the project source names to their repo-relative paths.
-// The paths are placeholders confirmed by OQ6.
+// The JSON paths are placeholders confirmed by OQ6; the TOML path only
+// detects the format the native documents, so a present file blocks.
 var ProjectSources = map[string]string{
 	"project_instructions": "AGENTS.md",
 	"project_config":       ".codex/config.json",
+	"project_config_toml":  ".codex/config.toml",
 }
+
+// unparsedSources are enumerated so their presence is seen, but this
+// inventory cannot read their format yet: a present one blocks (I02).
+var unparsedSources = []string{"user_config_toml", "project_config_toml"}
 
 const userConfigName = "user_config"
 
@@ -76,8 +82,11 @@ func configHome(home string, env []string) string {
 // sources is the enumerated inventory list in digest order. Both the
 // inventory and the admitted-path mapping build on it.
 func sources(home, workdir string, env []string) []configSource {
-	list := []configSource{{userConfigName, filepath.Join(configHome(home, env), "config.json")}}
-	for _, name := range []string{"project_instructions", "project_config"} {
+	list := []configSource{
+		{userConfigName, filepath.Join(configHome(home, env), "config.json")},
+		{"user_config_toml", filepath.Join(configHome(home, env), "config.toml")},
+	}
+	for _, name := range []string{"project_instructions", "project_config", "project_config_toml"} {
 		list = append(list, configSource{name, filepath.Join(workdir, filepath.FromSlash(ProjectSources[name]))})
 	}
 	return list
@@ -137,6 +146,9 @@ func inventorySettings(home, workdir string, env []string, blobs map[string][]by
 		}
 		if !present {
 			continue
+		}
+		if slices.Contains(unparsedSources, src.name) {
+			return Manifest{}, configBlock("native_config_unreadable", src.name)
 		}
 		if src.name != "project_instructions" {
 			if err := manifest.addConfig(src.name, raw); err != nil {
@@ -243,6 +255,10 @@ func readSource(path string) ([]byte, bool, error) {
 		return nil, true, fmt.Errorf("%w: native_config_unreadable: %s", ErrCapability, filepath.Base(path))
 	}
 	defer func() { _ = f.Close() }()
+	opened, err := f.Stat()
+	if err != nil || !os.SameFile(info, opened) || !opened.Mode().IsRegular() {
+		return nil, true, fmt.Errorf("%w: %s", ErrNonRegularSource, filepath.Base(path))
+	}
 	raw, err := io.ReadAll(io.LimitReader(f, maxConfigBytes+1))
 	if err != nil || len(raw) > maxConfigBytes {
 		return nil, true, fmt.Errorf("%w: native_config_unreadable: %s", ErrCapability, filepath.Base(path))

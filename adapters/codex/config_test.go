@@ -47,6 +47,9 @@ func TestInventoryDigestsChangeWithSource(t *testing.T) { // AC-3.3
 	base := map[string][]byte{"project_instructions": []byte("be careful"), "project_config": []byte(`{}`)}
 	ref := inventoryBlobs(t, base)
 	for name := range ProjectSources {
+		if strings.HasSuffix(name, "_toml") {
+			continue
+		}
 		changed := map[string][]byte{}
 		maps.Copy(changed, base)
 		changed[name] = append(slices.Clone(base[name]), '\n')
@@ -189,6 +192,21 @@ func TestHooksCountedAndTrustRequired(t *testing.T) { // AC-3.1
 	mcpOnly := inventoryBlobs(t, map[string][]byte{"project_config": []byte(`{"mcp_servers":{"s":{}}}`)})
 	if !mcpOnly.RequiresTrust {
 		t.Fatal("an MCP server must require trust")
+	}
+}
+
+func TestInventoryBlocksPresentTOML(t *testing.T) { // I02: a format this inventory cannot read is never "no config"
+	t.Parallel()
+	home, workdir := t.TempDir(), t.TempDir()
+	if _, err := InventoryAdmittedProject(home, workdir, map[string][]byte{"project_config_toml": []byte("[mcp_servers.s]\n")}, nil); err == nil || !strings.Contains(err.Error(), "native_config_unreadable") {
+		t.Fatalf("project TOML: err = %v, want native_config_unreadable", err)
+	}
+	writeFile(t, filepath.Join(home, ".codex", "config.toml"), "[mcp_servers.s]\n")
+	if _, err := InventorySettingsForEnv(home, workdir, nil); err == nil || !strings.Contains(err.Error(), "native_config_unreadable") {
+		t.Fatalf("user TOML: err = %v, want native_config_unreadable", err)
+	}
+	if _, err := InventoryAdmittedProject(t.TempDir(), workdir, map[string][]byte{}, nil); err != nil {
+		t.Fatalf("no TOML present: %v", err)
 	}
 }
 
