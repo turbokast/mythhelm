@@ -8,7 +8,12 @@
 
 ## Task 1 — Acceptance vocabulary package
 
-<!-- pending -->
+- **Produces**: `internal/acceptance` with the exact API of design §2.1 (PR #398); no difference from the design's `Produces` line.
+- **Reasons**: `Decide` and `DecideStatuses` return `checks_failed` for `failed`, `checks_unavailable` or `no_checks_ran` for `unavailable`, `evaluator_pin_missing` or `evaluator_digest_mismatch` for `invalid`, and an empty reason for `passed`.
+- **Binding.Diff**: dimension names are `candidate`, `contract`, `check_definition`, `evaluator`, `environment`; use them verbatim in gate and review messages.
+- **Digests**: `NewPin(taskID, bareHex)` and `WithChecks(bareHex...)` take bare hex and store `sha256:` forms; `Pin.PolicyDigest` is already prefixed (`v2contract.Digest`). `Attest` stores the slices and maps it is given.
+- **Immutability**: `TestP1DigestPinned` pins the P1 digest; a change to P1 is a new `PolicyVersion`, never an edit.
+- **Unverified**: the journaled payload value `NOT RUN` labels `NOT RUN` but `Unverified()` is false for it; convert with `ResultNotRun` where the predicate is needed.
 
 ## Task 2 — Schema 8: verification bindings and immutable policies
 

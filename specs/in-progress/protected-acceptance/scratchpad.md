@@ -33,6 +33,8 @@
 
 ## Discoveries
 
+- Task 1: `Result("NOT RUN").Unverified()` is false by design (the spec says exactly `not_run` and `unavailable`); renderers label the payload value, gates test the stored `result` column.
+
 ## Validation findings left open (run 3, round 1: Ready for implementation, 0 blocking)
 
 Ten advisory findings are open for the implementing tasks; the first two are worth settling before Tasks 5 and 7 start.
