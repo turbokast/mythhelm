@@ -293,7 +293,7 @@
   - Changed `docs/user-guide.md`, outside the task's `Files` list: its Doctor section carries the plain row example pinned to the `qualLine` format, and the `qualification-registry` hand-off requires a plain-line change to update it in the same change.
 - **Files modified**: `internal/cli/doctor.go`, `internal/cli/doctor_test.go`, `internal/cli/testdata/doctor_qualification.jsonl`, `docs/user-guide.md`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
-### Task 11 — End-to-end: Codex stays blocked and refused
+### Task 11 — End-to-end: Codex stays blocked and refused ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -307,6 +307,10 @@
   - `TestCodexDoctorRowEndToEnd`: `mythhelm doctor` on a state directory seeded through `qualify.EnsureSeeded` prints the Codex row `planned` with `failing: fidelity, entitlement, lifecycle` and its `next_test` line.
 - **Test plan**: Existing e2e helpers; fixture executable built in `TestMain`; scrubbed parent environment.
 - **Invariants touched**: I13 (no credentials in tests); I15; I02.
+- **Status**: ✅ Completed — the built binary run with `--adapter codex` and a fixture native blocks every billing mode (`no_qualification_record` after one `--version` probe, `billing_unsupported_for_adapter` before any native process) and doctor over a seeded registry shows the Codex row planned with `failing: fidelity, entitlement, lifecycle` and its `next_test`; PR #402.
+- **Implementation**: `TestMain` dispatches a copy of the test binary installed as `codex` to `codexFixtureMain`, which logs its argv beside itself so the tests assert whether and how the native ran. Red-first: fixture not dispatched -> subscription-only exits 7 FAIL; admitting subscription-declared in `decideCodexWith` -> FAIL; `failingColumns` ignoring unknown -> FAIL; dropping the `next_test` line -> FAIL; each restored -> PASS. Commit 1c942c2.
+- **Spec deviations**: None.
+- **Files modified**: `tests/e2e/codex_qualification_test.go`, `tests/e2e/main_test.go`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
 ### Task 12 — Document the Codex limits and record the decisions
 

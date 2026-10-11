@@ -87,7 +87,9 @@
 
 ## Task 11 — End-to-end: Codex stays blocked and refused
 
-<!-- pending -->
+- **Produces**: `tests/e2e/codex_qualification_test.go` with `TestCodexBillingModesAllRefuseOrBlock`, `TestCodexDoctorRowEndToEnd` and the helpers `codexFixtureMain`, `installFakeCodex` (returns the PATH directory) and `fixtureInvocations`; `tests/e2e/main_test.go` `TestMain` dispatches a binary named `codex` or `codex.exe` to the fixture. No design difference.
+- **For Task 12**: the doctor text the guide describes matches what the e2e pins: the Codex row ends ` failing: fidelity, entitlement, lifecycle` and the next line is `  next_test: Qualify native-managed sign-in, approvals and effort metadata; authority: maintainer live-test grant`.
+- **Trap**: no Codex run is admittable through the binary (D13), so the e2e cannot cover the `protocol_mismatch` stop or the worker config re-inventory (#389 F1/F2); those stay in the Task 9 worker tests. A later task that makes a Codex run admittable must extend the fixture, which answers only `--version` and exits 9 on any other argv.
 
 ## Task 12 — Document the Codex limits and record the decisions
 
