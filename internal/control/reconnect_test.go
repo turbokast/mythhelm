@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -381,6 +382,63 @@ func TestHermeticNoCredentialsOrNetwork(t *testing.T) {
 		t.Fatalf("journal holds %d recovery outcomes, want one", len(evs))
 	}
 	var values []string
+	for _, raw := range []json.RawMessage{reportJSON, evs[0].Payload} {
+		values = append(values, jsonStringValues(t, raw)...)
+	}
+	if len(values) == 0 {
+		t.Fatal("the golden walk visited no values: it proves nothing")
+	}
+	for _, v := range values {
+		for _, hit := range []string{planted, "sk-", "secret", "token", "apiKey"} {
+			if strings.Contains(v, hit) {
+				t.Fatalf("golden value %q contains %q", v, hit)
+			}
+		}
+	}
+	// The walker is load-bearing: a decoy golden carrying a planted
+	// secret trips it.
+	decoyValues := jsonStringValues(t, []byte(`{"outer":{"list":[{"k":"sk-decoy-value"}]}}`))
+	if !slices.Contains(decoyValues, "sk-decoy-value") {
+		t.Fatalf("the decoy walk returned %q, want the planted sk-decoy-value", decoyValues)
+	}
+
+	// Structural: no net.Dial/DialContext call in the new non-test code.
+	// (control necessarily imports net for its Unix-socket listener, so
+	// the go list -deps absence pattern cannot apply here.)
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files = slices.DeleteFunc(files, func(name string) bool { return strings.HasSuffix(name, "_test.go") })
+	files = append(files, filepath.Join("..", "workers", "envelope.go"))
+	if len(files) <= 3 {
+		t.Fatalf("the dial scan visited %d files, want more than three: %v", len(files), files)
+	}
+	for _, name := range files {
+		raw, err := os.ReadFile(filepath.Clean(name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if hits := dialCalls(t, name, raw); len(hits) != 0 {
+			t.Fatalf("%s dials the network: %s", name, strings.Join(hits, ", "))
+		}
+	}
+	// The check is load-bearing: a fixture with a planted net.Dial fails it.
+	fixture := "package p\nimport \"net\"\nfunc f() { _, _ = net.Dial(\"tcp\", \"x\"); _, _ = net.Dial(\"tcp\", \"y\") }\n"
+	if hits := dialCalls(t, "fixture.go", []byte(fixture)); len(hits) != 2 {
+		t.Fatalf("the planted fixture reported %d dial calls, want 2", len(hits))
+	}
+}
+
+// jsonStringValues returns every string value in a JSON document, descending
+// into objects and arrays.
+func jsonStringValues(t *testing.T, raw []byte) []string {
+	t.Helper()
+	var decoded any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	var values []string
 	var walk func(v any)
 	walk = func(v any) {
 		switch v := v.(type) {
@@ -396,70 +454,8 @@ func TestHermeticNoCredentialsOrNetwork(t *testing.T) {
 			values = append(values, v)
 		}
 	}
-	for _, raw := range []json.RawMessage{reportJSON, evs[0].Payload} {
-		var decoded any
-		if err := json.Unmarshal(raw, &decoded); err != nil {
-			t.Fatal(err)
-		}
-		walk(decoded)
-	}
-	if len(values) == 0 {
-		t.Fatal("the golden walk visited no values: it proves nothing")
-	}
-	for _, v := range values {
-		for _, hit := range []string{planted, "sk-", "secret", "token", "apiKey"} {
-			if strings.Contains(v, hit) {
-				t.Fatalf("golden value %q contains %q", v, hit)
-			}
-		}
-	}
-	// The walker is load-bearing: a decoy golden carrying a planted
-	// secret trips it.
-	var decoy any
-	if err := json.Unmarshal([]byte(`{"nested":[{"k":"sk-decoy-value"}]}`), &decoy); err != nil {
-		t.Fatal(err)
-	}
-	tripped, visited := false, 0
-	var walkDecoy func(v any)
-	walkDecoy = func(v any) {
-		switch v := v.(type) {
-		case map[string]any:
-			for _, item := range v {
-				walkDecoy(item)
-			}
-		case []any:
-			for _, item := range v {
-				walkDecoy(item)
-			}
-		case string:
-			visited++
-			if strings.Contains(v, "sk-decoy") {
-				tripped = true
-			}
-		}
-	}
-	walkDecoy(decoy)
-	if visited == 0 || !tripped {
-		t.Fatalf("the decoy walk visited %d values and tripped=%v, want the planted sk-decoy found", visited, tripped)
-	}
-
-	// Structural: no net.Dial/DialContext call in the new non-test code.
-	// (control necessarily imports net for its Unix-socket listener, so
-	// the go list -deps absence pattern cannot apply here.)
-	for _, name := range []string{"reconnect.go", "execute_long.go", filepath.Join("..", "workers", "envelope.go")} {
-		raw, err := os.ReadFile(filepath.Clean(name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if hits := dialCalls(t, name, raw); len(hits) != 0 {
-			t.Fatalf("%s dials the network: %s", name, strings.Join(hits, ", "))
-		}
-	}
-	// The check is load-bearing: a fixture with a planted net.Dial fails it.
-	fixture := "package p\nimport \"net\"\nfunc f() { _, _ = net.Dial(\"tcp\", \"x\"); _, _ = net.Dial(\"tcp\", \"y\") }\n"
-	if hits := dialCalls(t, "fixture.go", []byte(fixture)); len(hits) != 2 {
-		t.Fatalf("the planted fixture reported %d dial calls, want 2", len(hits))
-	}
+	walk(decoded)
+	return values
 }
 
 // dialCalls lists the net.Dial/DialContext call sites in one Go source file.
