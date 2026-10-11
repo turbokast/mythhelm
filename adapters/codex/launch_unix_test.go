@@ -66,7 +66,7 @@ func TestStopLadderEscalates(t *testing.T) { // AC-5.1, AC-5.2
 	in := prepareInput(t)
 	ready := filepath.Join(t.TempDir(), "ready")
 	in.Probe = writeNative(t, "#!/bin/sh\ntrap '' INT TERM\n: > "+ready+"\nwhile :; do sleep 0.05; done\n")
-	a := New()
+	a := testAdapter()
 	lp, err := a.Prepare(context.Background(), in)
 	if err != nil {
 		t.Fatal(err)

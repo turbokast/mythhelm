@@ -32,6 +32,10 @@ func writeNative(t *testing.T, content string) adapter.Probe {
 	return adapter.Probe{Executable: path, Version: fixtureVersion, SHA256: sum, OS: "linux", Arch: "amd64"}
 }
 
+// testAdapter pins goos so Prepare succeeds on every host; the Windows refusal
+// has its own test.
+func testAdapter() *codexAdapter { return &codexAdapter{probeTimeout: probeTimeout, goos: "linux"} }
+
 func prepareInput(t *testing.T) adapter.PrepareInput {
 	t.Helper()
 	return adapter.PrepareInput{
@@ -58,7 +62,7 @@ func TestPrepareRefusesChangedHash(t *testing.T) { // AC-2.4
 	if err := os.WriteFile(in.Probe.Executable, []byte("#!/bin/sh\nswapped\n"), 0o700); err != nil { // #nosec G306 -- Test executable must be runnable.
 		t.Fatal(err)
 	}
-	_, err := New().Prepare(context.Background(), in)
+	_, err := testAdapter().Prepare(context.Background(), in)
 	if got := blockedCode(t, err); got != "native_binary_changed" {
 		t.Fatalf("code = %q, want native_binary_changed", got)
 	}
@@ -68,19 +72,19 @@ func TestPrepareRefusesToolRulesAndPassthrough(t *testing.T) { // AC-1.4, D15
 	t.Parallel()
 	in := prepareInput(t)
 	in.AllowedTools = []string{"Bash(go build *)"}
-	_, err := New().Prepare(context.Background(), in)
+	_, err := testAdapter().Prepare(context.Background(), in)
 	if got := blockedCode(t, err); got != "native_tool_rules_unsupported" {
 		t.Fatalf("tool rules code = %q", got)
 	}
 	in = prepareInput(t)
 	in.Passthrough = []string{"GOPATH"}
-	_, err = New().Prepare(context.Background(), in)
+	_, err = testAdapter().Prepare(context.Background(), in)
 	if got := blockedCode(t, err); got != "native_passthrough_unsupported" {
 		t.Fatalf("passthrough code = %q", got)
 	}
 
 	in = prepareInput(t)
-	lp, err := New().Prepare(context.Background(), in)
+	lp, err := testAdapter().Prepare(context.Background(), in)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +120,7 @@ func TestPrepareRefusesWindows(t *testing.T) { // N6
 
 func TestPrepareRecordsFidelityDeltas(t *testing.T) { // AC-3.2, D16
 	t.Parallel()
-	lp, err := New().Prepare(context.Background(), prepareInput(t))
+	lp, err := testAdapter().Prepare(context.Background(), prepareInput(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +145,7 @@ func TestPrepareEnvAllowlistDropsCanary(t *testing.T) { // NFR-1
 	t.Parallel()
 	in := prepareInput(t)
 	in.Env = append(in.Env, "OPENAI_API_KEY=canary-secret", "CODEX_ACCESS_TOKEN=canary-secret", "MYTHHELM_ATTEMPT_ID=forged")
-	lp, err := New().Prepare(context.Background(), in)
+	lp, err := testAdapter().Prepare(context.Background(), in)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +160,7 @@ func TestPrepareEnvAllowlistDropsCanary(t *testing.T) { // NFR-1
 
 func TestStopLadderValues(t *testing.T) { // D8
 	t.Parallel()
-	lp, err := New().Prepare(context.Background(), prepareInput(t))
+	lp, err := testAdapter().Prepare(context.Background(), prepareInput(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +203,7 @@ func drain(t *testing.T, s adapter.Session) ([]adapter.Observation, adapter.Nati
 
 func TestSecondStartOnSameAdapterRefused(t *testing.T) { // AC-5.3, D10
 	t.Parallel()
-	a := New()
+	a := testAdapter()
 	lp, err := a.Prepare(context.Background(), prepareInput(t))
 	if err != nil {
 		t.Fatal(err)
@@ -254,7 +258,7 @@ func TestStartLaunchesOnlyThroughLauncher(t *testing.T) {
 			}
 		}
 	}
-	a := New()
+	a := testAdapter()
 	lp, err := a.Prepare(context.Background(), prepareInput(t))
 	if err != nil {
 		t.Fatal(err)
@@ -281,7 +285,7 @@ func TestStartLaunchesOnlyThroughLauncher(t *testing.T) {
 
 func TestStartMergesStreamErrorIntoExit(t *testing.T) {
 	t.Parallel()
-	a := New()
+	a := testAdapter()
 	lp, err := a.Prepare(context.Background(), prepareInput(t))
 	if err != nil {
 		t.Fatal(err)
@@ -326,7 +330,7 @@ func TestSessionDrainsStdoutAfterEarlyDecodeStop(t *testing.T) {
 		_ = pw.Close()
 		close(proc.finished)
 	}()
-	a := New()
+	a := testAdapter()
 	lp, err := a.Prepare(context.Background(), prepareInput(t))
 	if err != nil {
 		t.Fatal(err)
