@@ -366,7 +366,7 @@ func (p *pipeline) appendAdmission(ctx context.Context) error {
 			if errors.Is(holdErr, billing.ErrAllowanceExhausted) {
 				reason = "allowance_exhausted"
 			}
-			return errors.Join(err, p.runTo(ctx, RunBlocked, reason))
+			return errors.Join(&GateError{Reason: reason, Err: err}, p.runTo(ctx, RunBlocked, reason))
 		}
 		return err
 	}
