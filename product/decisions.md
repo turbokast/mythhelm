@@ -381,3 +381,24 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: codex-native-adapter reached todo (spec approved by PR #312)
 - **Cards**: MH-4
 - **Evidence**: PR #312, c3dfaaa
+
+### D-90 — 2026-10-11: MH-21 → shipped (epic: 4 streams)
+- **Type**: lifecycle-sync
+- **Decision**: MH-21 moved to shipped with Spec v2-contract-vocabulary, supervisor-service, supervisor-migration, supervised-stop-recover
+- **Rationale**: all four streams finalized and in specs/done/: vocab #273, service #290, migration #343, stop-recover #371; held until the last stream shipped (escalation 2026-10-09)
+- **Cards**: MH-21
+- **Evidence**: PRs #273, #290, #343, #371
+
+### D-91 — 2026-10-11: MH-4 → implementing (codex-native-adapter)
+- **Type**: lifecycle-sync
+- **Decision**: MH-4 moved to implementing
+- **Rationale**: codex-native-adapter moved to specs/in-progress/ in #349 and Task 2 merged in #353
+- **Cards**: MH-4
+- **Evidence**: PRs #349, #353
+
+### D-92 — 2026-10-11: MH-11 → specced (windows-process-ownership)
+- **Type**: lifecycle-sync
+- **Decision**: MH-11 moved to specced with Spec windows-process-ownership
+- **Rationale**: spec approved by the maintainer's merge of #313 and landed in specs/todo/
+- **Cards**: MH-11
+- **Evidence**: PR #313
