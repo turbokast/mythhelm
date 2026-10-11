@@ -13,7 +13,6 @@ import (
 
 	"github.com/turbokast/mythhelm/adapters/claudecode"
 	"github.com/turbokast/mythhelm/adapters/codex"
-	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/qualify"
 )
@@ -221,7 +220,7 @@ func TestCodexDecideOrder(t *testing.T) { // I02 (v2 §2), D11, D13, D15
 	t.Run("unknown auth category blocks after the probe", func(t *testing.T) {
 		w := newCodexWorld(t)
 		_, err := admission.Decide(t.Context(), w.request(repoWith(t, nil), t.TempDir()))
-		requireBlock(t, err, "no_qualification_record")
+		_ = requireBlock(t, err, "no_qualification_record")
 		if n := w.invocations(t); n != 1 {
 			t.Fatalf("fixture invocations = %d, want exactly the one version probe", n)
 		}
@@ -231,12 +230,12 @@ func TestCodexDecideOrder(t *testing.T) { // I02 (v2 §2), D11, D13, D15
 		stateDir := t.TempDir()
 		openRegistry(t, stateDir)
 		_, err := admission.DecideCodexWith(t.Context(), w.request(repoWith(t, nil), stateDir), nativeManaged)
-		requireBlock(t, err, "entitlement_not_proven")
+		_ = requireBlock(t, err, "entitlement_not_proven")
 	})
 	t.Run("no registry skips the gap gate", func(t *testing.T) {
 		w := newCodexWorld(t)
 		_, err := admission.DecideCodexWith(t.Context(), w.request(repoWith(t, nil), missingStateDir(t)), nativeManaged)
-		requireBlock(t, err, "no_qualification_record")
+		_ = requireBlock(t, err, "no_qualification_record")
 	})
 	for name, tc := range map[string]struct{ config, code string }{
 		"passthrough": {"[environment]\npassthrough = [\"EXAMPLE_VAR\"]", "native_passthrough_unsupported"},
@@ -252,7 +251,7 @@ func TestCodexDecideOrder(t *testing.T) { // I02 (v2 §2), D11, D13, D15
 			req := w.request(repoWith(t, map[string]string{"mythhelm.toml": string(cfg)}), t.TempDir())
 			req.NoChecks, req.TrustProjectConfig = false, "sha256:"+digest
 			_, err = admission.DecideCodexWith(t.Context(), req, nativeManaged)
-			requireBlock(t, err, tc.code)
+			_ = requireBlock(t, err, tc.code)
 			if n := w.invocations(t); n != 0 {
 				t.Fatalf("fixture invocations = %d, want 0 before the project rules are refused", n)
 			}
@@ -274,7 +273,7 @@ func TestCodexUntrustedConfigBlocksBeforeProbe(t *testing.T) { // I01 (v2 §2), 
 	req := w.request(repo, missingStateDir(t))
 	req.TrustNativeConfig = blocked.Field
 	_, err = admission.DecideCodexWith(t.Context(), req, nativeManaged)
-	requireBlock(t, err, "no_qualification_record")
+	_ = requireBlock(t, err, "no_qualification_record")
 	if n := w.invocations(t); n != 1 {
 		t.Fatalf("fixture invocations after trust = %d, want the one version probe", n)
 	}
@@ -290,7 +289,7 @@ func TestCodexInventoryUsesChildEnvironment(t *testing.T) { // I01 (v2 §2), AC-
 		req := w.request(repoWith(t, nil), missingStateDir(t))
 		req.Env = append(os.Environ(), "CODEX_HOME="+elsewhere)
 		_, err := admission.DecideCodexWith(t.Context(), req, nativeManaged)
-		requireBlock(t, err, "no_qualification_record")
+		_ = requireBlock(t, err, "no_qualification_record")
 	})
 	t.Run("home comes from the child HOME", func(t *testing.T) {
 		w := newCodexWorld(t)
@@ -304,7 +303,7 @@ func TestCodexInventoryUsesChildEnvironment(t *testing.T) { // I01 (v2 §2), AC-
 		req := w.request(repoWith(t, nil), t.TempDir())
 		req.Env = append(os.Environ(), "HOME="+childHome)
 		_, err := admission.DecideCodexWith(t.Context(), req, nativeManaged)
-		requireBlock(t, err, "untrusted_native_config")
+		_ = requireBlock(t, err, "untrusted_native_config")
 	})
 }
 
@@ -315,7 +314,7 @@ func TestCodexNonStrictBillingRefused(t *testing.T) { // I15 (v2 §2), D3
 			req := w.request(repoWith(t, nil), t.TempDir())
 			req.Billing = mode
 			_, err := admission.Decide(t.Context(), req)
-			requireBlock(t, err, "billing_unsupported_for_adapter")
+			_ = requireBlock(t, err, "billing_unsupported_for_adapter")
 			if n := w.invocations(t); n != 0 {
 				t.Fatalf("fixture invocations = %d, want 0 for a refused billing mode", n)
 			}
@@ -388,5 +387,4 @@ func TestCodexAdapterIDMatches(t *testing.T) {
 	if got := admission.HarnessRoutes()[admission.AdapterCodex]; got != codex.AdapterID {
 		t.Fatalf("admission table adapter ID %q != codex.AdapterID %q", got, codex.AdapterID)
 	}
-	var _ adapter.Adapter = codex.New()
 }
