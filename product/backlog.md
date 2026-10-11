@@ -54,11 +54,11 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: MH-10 supplies versioned records. Existing subscription-declared Claude dogfood remains unverified; preserve strict blocking until effective configuration, all auxiliary/child routes and paid-continuation prevention are proven. Claude need not be the first route.
 
 ### MH-22: Protected acceptance and a complete v2 one-agent workflow
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 1
 - **Gates**: G01, G03, G05, G06, G07
 - **Score**: 3.8 = (value 5 + urgency 5 + risk 5) / effort 4
-- **Spec**: (none)
+- **Spec**: `protected-acceptance`
 - **Issue**: [#128](https://github.com/turbokast/mythhelm/issues/128)
 - **Source**: Master Specification v2 §§4, 8, 10–11, 15; Implementation Plan W04; issues #72–#76
 - **Summary**: Extend the existing snapshot/check/review/apply flow to deterministic P1 with strict qualified admission, protected acceptance bound to exact revisions, finite repair/resource envelopes and truthful receipts. Preserve an unverified candidate when checks are unavailable; candidate edits cannot weaken its protected evaluator.
