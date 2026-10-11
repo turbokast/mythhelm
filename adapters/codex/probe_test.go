@@ -28,7 +28,7 @@ func TestMain(m *testing.M) {
 
 func fakeCodex() int {
 	if path := os.Getenv("FAKE_LOG"); path != "" {
-		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) // #nosec G304 G302 -- Fake helper writes only the log its isolated test fixture names.
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) // #nosec G304 G302 G703 -- Fake helper writes only the log its isolated test fixture names.
 		if err != nil {
 			return 9
 		}
@@ -88,7 +88,7 @@ func TestProbeReturnsIdentityWithoutModelTask(t *testing.T) { // I01 (v2 §2), A
 	if !filepath.IsAbs(p.Executable) {
 		t.Fatalf("executable %q is not absolute", p.Executable)
 	}
-	invoked, err := os.ReadFile(log)
+	invoked, err := os.ReadFile(log) // #nosec G304 -- The log path is under t.TempDir.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestProbeResolvesSymlinkedExecutable(t *testing.T) { // I01 (v2 §2)
 	if err := os.Symlink(in.ExecutableOverride, link); err != nil {
 		t.Fatal(err)
 	}
-	real, err := filepath.EvalSymlinks(in.ExecutableOverride)
+	target, err := filepath.EvalSymlinks(in.ExecutableOverride)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,8 +116,8 @@ func TestProbeResolvesSymlinkedExecutable(t *testing.T) { // I01 (v2 §2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Executable != real {
-		t.Fatalf("executable = %q, want the symlink target %q", p.Executable, real)
+	if p.Executable != target {
+		t.Fatalf("executable = %q, want the symlink target %q", p.Executable, target)
 	}
 }
 
@@ -130,7 +130,7 @@ func TestProbeResolvesCodexOnPATH(t *testing.T) {
 	if err := os.Symlink(in.ExecutableOverride, filepath.Join(bin, "codex")); err != nil {
 		t.Fatal(err)
 	}
-	real, err := filepath.EvalSymlinks(in.ExecutableOverride)
+	target, err := filepath.EvalSymlinks(in.ExecutableOverride)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,8 +140,8 @@ func TestProbeResolvesCodexOnPATH(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Executable != real {
-		t.Fatalf("executable = %q, want %q resolved from PATH", p.Executable, real)
+	if p.Executable != target {
+		t.Fatalf("executable = %q, want %q resolved from PATH", p.Executable, target)
 	}
 }
 
