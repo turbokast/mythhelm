@@ -77,7 +77,10 @@
 
 ## Task 10 — Doctor: failing columns and next test in plain output
 
-<!-- pending -->
+- **Produces**: in `internal/cli/doctor.go`, plain qualification rows end with ` failing: <column>[, <column>]` (column order fidelity, entitlement, lifecycle; any verdict other than `proven`, including unknown, is failing) and the next line is `  next_test: <text>` when the record has one. Unexported `failingColumns`. JSONL is unchanged, pinned by `testdata/doctor_qualification.jsonl`. No design difference.
+- **For Task 11**: a doctor e2e over a seeded registry sees the Codex row as `codex × unknown: planned (fidelity unknown, entitlement unknown, lifecycle unknown) [evidence 1 revs, latest none; drift clean] failing: fidelity, entitlement, lifecycle`, then the seeded `next_test` line; match the row on the `failing:` suffix, not the old `]$` ending.
+- **For Task 12**: `docs/user-guide.md` Doctor section already describes the failing text and the next-test line; `README.md` and `docs/limitations.md` need no doctor change.
+- Test helpers in `doctor_test.go`: `recordColumns(t, dir, harnesses, fidelity, entitlement, lifecycle)` records new revisions with chosen verdicts; `qualificationSection` returns rows plus next_test lines, `qualificationLines` only the rows.
 
 ## Task 11 — End-to-end: Codex stays blocked and refused
 
