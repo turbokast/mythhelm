@@ -290,9 +290,10 @@ func latestEvidenceID(rec qualify.Record) string {
 	return latest
 }
 
-// qualificationPlain renders the qualification section: a header plus one
-// line per record, or one honest line when the registry is unavailable or
-// holds no records yet.
+// qualificationPlain renders the qualification section: a header plus, per
+// record, one row (ending in ` failing: <column>[, <column>]` when a column
+// is not proven) and a `  next_test: <text>` line below it, or one honest
+// line when the registry is unavailable or holds no records yet.
 func qualificationPlain(q map[string]any) []string {
 	if status, ok := q["status"].(string); ok {
 		return []string{"qualification: " + status}
@@ -307,12 +308,32 @@ func qualificationPlain(q map[string]any) []string {
 		if !ok {
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("%s × %s: %s (fidelity %s, entitlement %s, lifecycle %s) [evidence %d revs, latest %s; drift %s]",
+		line := fmt.Sprintf("%s × %s: %s (fidelity %s, entitlement %s, lifecycle %s) [evidence %d revs, latest %s; drift %s]",
 			m["harness"], m["surface"], m["progress"],
 			columnVerdict(m["fidelity"]), columnVerdict(m["entitlement"]), columnVerdict(m["lifecycle"]),
-			m["evidence_revisions"], m["latest_evidence"], m["drift"]))
+			m["evidence_revisions"], m["latest_evidence"], m["drift"])
+		if failing := failingColumns(m); len(failing) > 0 {
+			line += " failing: " + strings.Join(failing, ", ")
+		}
+		lines = append(lines, line)
+		if next, _ := m["next_test"].(string); next != "" {
+			lines = append(lines, "  next_test: "+next)
+		}
 	}
 	return lines
+}
+
+// failingColumns names, in column order, every column whose verdict is not
+// proven. A missing or unknown verdict is failing: nothing reads as proven
+// without evidence (I09).
+func failingColumns(rec map[string]any) []string {
+	var failing []string
+	for _, col := range []string{"fidelity", "entitlement", "lifecycle"} {
+		if columnVerdict(rec[col]) != string(qualify.Proven) {
+			failing = append(failing, col)
+		}
+	}
+	return failing
 }
 
 // columnVerdict reads one rendered column's verdict, defaulting to unknown

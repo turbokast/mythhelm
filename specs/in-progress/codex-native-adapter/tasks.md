@@ -269,7 +269,7 @@
   - `TestCodexConfigPathsAndInventoryUsed` has two halves, one in `internal/supervisor/pipeline_launch_test.go` (the path selector) and one in `internal/workers/worker_test.go` (the worker re-inventory); `TestCodexBlobSourcesNotRehashedAgainstDisk` and `TestCodexSessionNotInterruptedForEmptyAPIKeySource` are in `worker_test.go`, `TestWorkerStartsCodexByDescriptor` in `worker_unix_test.go` (consistent with the acceptance).
 - **Files modified**: `adapters/codex/decode.go`, `adapters/codex/decode_test.go`, `adapters/codex/launch.go`, `adapters/codex/launch_test.go`, `internal/adapter/adapter.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/pipeline_launch_test.go`, `internal/workers/contain.go`, `internal/workers/worker.go`, `internal/workers/worker_test.go`, `internal/workers/worker_unix_test.go`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
-### Task 10 — Doctor: failing columns and next test in plain output
+### Task 10 — Doctor: failing columns and next test in plain output ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -285,6 +285,11 @@
   - `TestDoctorJSONLUnchanged`: the `qualification` object of the JSONL output (host-specific facts excluded) equals `testdata/doctor_qualification.jsonl`, recorded from the unmodified code before the change; adding a field to a record fails it.
 - **Test plan**: Existing doctor harness with the seeded registry; the golden is captured in the task's first commit.
 - **Invariants touched**: I09 (unknown renders as failing, never proven); I14.
+- **Status**: ✅ Completed — plain `doctor` rows end with ` failing: <column>[, <column>]` for every column not `proven` and carry a `  next_test: <text>` line below, with the JSONL `qualification` object pinned byte for byte by a golden recorded before the change; PR #396.
+- **Implementation**: `qualificationPlain` appends `failingColumns(m)` (an unknown or missing verdict is failing, I09) and the record's `next_test`; `qualLine` gained the optional failing suffix and the order pin moved to `TestDoctorOrderUnchanged`. Commits 2036753 (golden and `TestDoctorJSONLUnchanged`, recorded from unmodified code), b52b90d.
+- **Spec deviations**:
+  - Changed `docs/user-guide.md`, outside the task's `Files` list: its Doctor section carries the plain row example pinned to the `qualLine` format, and the `qualification-registry` hand-off requires a plain-line change to update it in the same change.
+- **Files modified**: `internal/cli/doctor.go`, `internal/cli/doctor_test.go`, `internal/cli/testdata/doctor_qualification.jsonl`, `docs/user-guide.md`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
 ### Task 11 — End-to-end: Codex stays blocked and refused
 

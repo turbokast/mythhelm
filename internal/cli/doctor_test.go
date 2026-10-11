@@ -270,12 +270,16 @@ func seedQualification(t *testing.T, dir string) {
 
 // qualLine matches one plain qualification record line:
 // <harness> × <surface>: <progress> (fidelity <v>, entitlement <v>,
-// lifecycle <v>) [evidence <n> revs, latest <ev-id>; drift <state>].
-var qualLine = regexp.MustCompile(`^([a-z0-9-]+) × (.+?): (planned|documented-candidate|fixture-tested|live-qualified|experimental|blocked|unsupported) \(fidelity (proven|not-proven|unknown), entitlement (proven|not-proven|unknown), lifecycle (proven|not-proven|unknown)\) \[evidence ([0-9]+) revs, latest (\S+); drift (.+)\]$`)
+// lifecycle <v>) [evidence <n> revs, latest <ev-id>; drift <state>], followed
+// by ` failing: <column>[, <column>]` when a column is not proven (AC-7.3).
+var qualLine = regexp.MustCompile(`^([a-z0-9-]+) × (.+?): (planned|documented-candidate|fixture-tested|live-qualified|experimental|blocked|unsupported) \(fidelity (proven|not-proven|unknown), entitlement (proven|not-proven|unknown), lifecycle (proven|not-proven|unknown)\) \[evidence ([0-9]+) revs, latest (\S+); drift (.+)\]( failing: (?:fidelity|entitlement|lifecycle)(?:, (?:fidelity|entitlement|lifecycle))*)?$`)
 
-// qualificationLines returns the record lines of the plain qualification
-// section: every line after the `qualification:` header.
-func qualificationLines(t *testing.T, stdout string) []string {
+// nextTestPrefix starts the line below each record row (AC-7.3).
+const nextTestPrefix = "  next_test: "
+
+// qualificationSection returns every line after the `qualification:` header:
+// each record row followed by its next_test line.
+func qualificationSection(t *testing.T, stdout string) []string {
 	t.Helper()
 	lines := strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
 	for i, line := range lines {
@@ -285,6 +289,19 @@ func qualificationLines(t *testing.T, stdout string) []string {
 	}
 	t.Fatalf("plain output has no qualification section:\n%s", stdout)
 	return nil
+}
+
+// qualificationLines returns the record rows of the plain qualification
+// section, without the next_test lines below them.
+func qualificationLines(t *testing.T, stdout string) []string {
+	t.Helper()
+	var rows []string
+	for _, line := range qualificationSection(t, stdout) {
+		if !strings.HasPrefix(line, nextTestPrefix) {
+			rows = append(rows, line)
+		}
+	}
+	return rows
 }
 
 func TestDoctorShowsQualification(t *testing.T) {
@@ -309,7 +326,6 @@ func TestDoctorShowsQualification(t *testing.T) {
 		"cursor":      "planned",
 		"antigravity": "planned",
 	}
-	var harnesses []string
 	for _, line := range got {
 		m := qualLine.FindStringSubmatch(line)
 		if m == nil {
@@ -317,7 +333,6 @@ func TestDoctorShowsQualification(t *testing.T) {
 			continue
 		}
 		harness, surface, progress := m[1], m[2], m[3]
-		harnesses = append(harnesses, harness)
 		if surface != "unknown" {
 			t.Errorf("%s surface = %q, want unknown (unestablished seed)", harness, surface)
 		}
@@ -338,10 +353,163 @@ func TestDoctorShowsQualification(t *testing.T) {
 		if m[9] != "clean" {
 			t.Errorf("%s drift = %q, want clean (unknown pins cannot drift)", harness, m[9])
 		}
+		if m[10] != " failing: fidelity, entitlement, lifecycle" {
+			t.Errorf("%s failing = %q, want all three columns (unknown is never proven, I09)", harness, m[10])
+		}
 	}
-	wantOrder := []string{"antigravity", "claude-code", "codex", "cursor", "kimi", "muse", "opencode"}
-	if !slices.Equal(harnesses, wantOrder) {
-		t.Errorf("harness order = %v, want %v (harness, surface order)", harnesses, wantOrder)
+}
+
+// recordColumns records a new revision of every seeded record whose harness
+// is in harnesses, with the given column verdicts. A proven column carries
+// the evidence the registry requires.
+func recordColumns(t *testing.T, dir string, harnesses []string, fidelity, entitlement, lifecycle qualify.Verdict) {
+	t.Helper()
+	reg, err := qualify.Open(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	column := func(v qualify.Verdict, id string) qualify.Column {
+		if v != qualify.Proven {
+			return qualify.Column{Verdict: v}
+		}
+		return qualify.Column{Verdict: v, Evidence: []qualify.Evidence{{
+			ID: id, Method: "offline-fixture", Suite: "doctor", Result: "pass",
+			Label: qualify.Observed, Source: "test", At: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		}}}
+	}
+	for _, rec := range qualify.SeedV1() {
+		if !slices.Contains(harnesses, rec.Key.Harness) {
+			continue
+		}
+		rec.Fidelity = column(fidelity, "ev_fidelity")
+		rec.Entitlement = column(entitlement, "ev_entitlement")
+		rec.Lifecycle = column(lifecycle, "ev_lifecycle")
+		rec.Digest = ""
+		if err := reg.Record(t.Context(), rec); err != nil {
+			t.Fatalf("Record %s: %v", rec.Key.Harness, err)
+		}
+	}
+	if err := reg.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// seedNextTest returns the seeded next_test text of harness.
+func seedNextTest(t *testing.T, harness string) string {
+	t.Helper()
+	for _, rec := range qualify.SeedV1() {
+		if rec.Key.Harness == harness {
+			return rec.NextTest
+		}
+	}
+	t.Fatalf("no seed record for %s", harness)
+	return ""
+}
+
+// TestDoctorPlainShowsFailingAndNextTest pins AC-7.3: a row names every
+// column that is not proven as ` failing: <column>[, <column>]`, in column
+// order, and the line below it is `  next_test: <text>`. A row whose columns
+// are all proven carries no failing token (I09: unknown reads as failing,
+// never proven).
+func TestDoctorPlainShowsFailingAndNextTest(t *testing.T) {
+	// Not parallel: points MYTHHELM_HOME at a seeded temp state dir.
+	all := []string{"antigravity", "claude-code", "codex", "cursor", "kimi", "muse", "opencode"}
+	tests := []struct {
+		name        string
+		record      func(t *testing.T, dir string)
+		wantFailing map[string]string
+		noFailing   bool
+	}{
+		{
+			name:        "seeded unknown columns all fail",
+			record:      func(*testing.T, string) {},
+			wantFailing: map[string]string{"codex": " failing: fidelity, entitlement, lifecycle"},
+		},
+		{
+			name: "a proven fidelity is not listed",
+			record: func(t *testing.T, dir string) {
+				recordColumns(t, dir, []string{"codex"}, qualify.Proven, qualify.Unknown, qualify.NotProven)
+			},
+			wantFailing: map[string]string{"codex": " failing: entitlement, lifecycle"},
+		},
+		{
+			name: "one not-proven column is the only failing one",
+			record: func(t *testing.T, dir string) {
+				recordColumns(t, dir, []string{"codex"}, qualify.Proven, qualify.NotProven, qualify.Proven)
+			},
+			wantFailing: map[string]string{"codex": " failing: entitlement"},
+		},
+		{
+			name: "every column proven prints no failing token",
+			record: func(t *testing.T, dir string) {
+				recordColumns(t, dir, all, qualify.Proven, qualify.Proven, qualify.Proven)
+			},
+			wantFailing: map[string]string{"codex": ""},
+			noFailing:   true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := stateHome(t)
+			seedQualification(t, dir)
+			tc.record(t, dir)
+
+			code, stdout, stderr := runMain("doctor")
+			if code != 0 {
+				t.Fatalf("exit %d, stderr %q", code, stderr)
+			}
+			section := qualificationSection(t, stdout)
+			rows := 0
+			for i, line := range section {
+				if strings.HasPrefix(line, nextTestPrefix) {
+					continue
+				}
+				rows++
+				m := qualLine.FindStringSubmatch(line)
+				if m == nil {
+					t.Fatalf("line does not match the record shape:\n%s", line)
+				}
+				if want, ok := tc.wantFailing[m[1]]; ok && m[10] != want {
+					t.Errorf("%s failing = %q, want %q", m[1], m[10], want)
+				}
+				if tc.noFailing && strings.Contains(line, "failing:") {
+					t.Errorf("%s names a failing column with every column proven: %s", m[1], line)
+				}
+				wantNext := nextTestPrefix + seedNextTest(t, m[1])
+				if i+1 >= len(section) || section[i+1] != wantNext {
+					t.Errorf("%s: line below the row = %q, want %q", m[1], section[min(i+1, len(section)-1)], wantNext)
+				}
+			}
+			if rows != len(all) {
+				t.Errorf("qualification section holds %d rows, want %d:\n%s", rows, len(all), stdout)
+			}
+		})
+	}
+}
+
+// TestDoctorOrderUnchanged pins the (harness, surface) row order of the plain
+// qualification section, which AC-7.3 keeps while the rows gain a failing
+// token and a next_test line.
+func TestDoctorOrderUnchanged(t *testing.T) {
+	// Not parallel: points MYTHHELM_HOME at a seeded temp state dir.
+	dir := stateHome(t)
+	seedQualification(t, dir)
+
+	code, stdout, stderr := runMain("doctor")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	var harnesses []string
+	for _, line := range qualificationLines(t, stdout) {
+		m := qualLine.FindStringSubmatch(line)
+		if m == nil {
+			t.Fatalf("line does not match the record shape:\n%s", line)
+		}
+		harnesses = append(harnesses, m[1])
+	}
+	want := []string{"antigravity", "claude-code", "codex", "cursor", "kimi", "muse", "opencode"}
+	if !slices.Equal(harnesses, want) {
+		t.Errorf("harness order = %v, want %v (harness, surface order)", harnesses, want)
 	}
 }
 
@@ -729,5 +897,34 @@ func TestDoctorStillWritesNothing(t *testing.T) {
 	}
 	if diff := diffHashes(before, hashFiles(t, dir)); diff == "" {
 		t.Fatal("the comparison missed a planted marker file; it cannot prove read-only")
+	}
+}
+
+// TestDoctorJSONLUnchanged pins the JSONL qualification object byte for byte
+// against testdata/doctor_qualification.jsonl, recorded from the code before
+// the plain-output change, so a field added to a record fails it (AC-7.3).
+// The object carries no host-specific fact: OS and architecture live only in
+// the registry key, which doctor does not render.
+func TestDoctorJSONLUnchanged(t *testing.T) {
+	// Not parallel: points MYTHHELM_HOME at a seeded temp state dir.
+	dir := stateHome(t)
+	seedQualification(t, dir)
+
+	code, stdout, stderr := runMain("doctor", "--format", "jsonl")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	var rep struct {
+		Qualification json.RawMessage `json:"qualification"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &rep); err != nil {
+		t.Fatalf("doctor jsonl: %v\n%s", err, stdout)
+	}
+	want, err := os.ReadFile(filepath.Join("testdata", "doctor_qualification.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(rep.Qualification) + "\n"; got != string(want) {
+		t.Errorf("qualification object differs from testdata/doctor_qualification.jsonl:\n got: %s\nwant: %s", got, want)
 	}
 }

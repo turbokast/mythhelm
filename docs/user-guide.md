@@ -51,21 +51,27 @@ go run ./cmd/mythhelm doctor
 
 `mythhelm doctor` is a read-only prerequisite report: it writes nothing,
 creates no state and prints no credential values. Its last section,
-`qualification:`, lists one line per harness record in the qualification
-registry:
+`qualification:`, lists each harness record in the qualification registry
+as one row and a next-test line:
 
 ```text
 qualification:
-claude-code × unknown: blocked (fidelity unknown, entitlement unknown, lifecycle unknown) [evidence 1 revs, latest none; drift clean]
+claude-code × unknown: blocked (fidelity unknown, entitlement unknown, lifecycle unknown) [evidence 1 revs, latest none; drift clean] failing: fidelity, entitlement, lifecycle
+  next_test: Prove included-only entitlement across the AT-03 routes with authorised tests; authority: maintainer allowance (MH-12)
 ```
 
-Each line reads `<harness> × <surface>: <progress> (fidelity <v>,
+Each row reads `<harness> × <surface>: <progress> (fidelity <v>,
 entitlement <v>, lifecycle <v>) [evidence <n> revs, latest <ev-id>; drift
 <state>]`: the qualification progress (`planned`, `blocked`, `unsupported`
 and the other honest labels), the three independent column verdicts
 (`proven`, `not-proven` or `unknown`), how many evidence revisions the
 record holds, the latest evidence id, and the drift state (`clean`, or the
-reason the pinned binary or configuration no longer matches).
+reason the pinned binary or configuration no longer matches). A row ends
+with ` failing: <column>[, <column>]` naming every column that is not
+`proven`, in the order fidelity, entitlement, lifecycle; a column with no
+verdict yet counts as failing, and a row whose three columns are all proven
+has no `failing:` text. The line below each row, `  next_test: <text>`, is the
+next test that could advance that record and the authority it needs.
 
 When the state directory cannot be read the section says so instead of
 guessing — `qualification: unavailable (<reason>)` — and an existing but
