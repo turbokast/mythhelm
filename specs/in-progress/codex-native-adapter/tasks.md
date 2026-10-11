@@ -203,7 +203,7 @@
 - **Spec deviations**: None; review round 1 (consistent with design §5): `FixtureDraft` leaves `Digest` unset, because `Registry.Record` assigns the revision before it checks a presented digest, so a revision-1 digest would fail every later draft of the same key.
 - **Files modified**: `adapters/codex/qualify.go`, `adapters/codex/qualify_test.go`, `adapters/codex/testdata/qualification/routes.json`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
-### Task 8 — Admission: ResolveQualificationKey, neutral trust and the Codex decider
+### Task 8 — Admission: ResolveQualificationKey, neutral trust and the Codex decider ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -231,6 +231,14 @@
   - `TestCodexAdapterIDMatches`: the `internal/admission` constant `codexAdapterID` equals `codex.AdapterID`.
 - **Test plan**: Temp-dir registry with hand-built records; fixture executable from Task 3; real files and git in temp dirs.
 - **Invariants touched**: I02, I15 (strict blocks on unknown); I04 (key change is a new route); I19; I01.
+- **Status**: ✅ Completed — `ResolveQualificationKey`, `ResolveBillingStrict`, `NativeConfig`/`CheckNativeTrustConfig`, the `codex.ErrCapability` exit-7 mapping and `decideCodex` (design §4 order) landed; the Codex inventory runs over the launch's child environment only (#389 F2); PR #390.
+- **Implementation**: `decideCodexWith(ctx, req, d, authCategory)` is reached through `export_test.go` `DecideCodexWith`; home and config root come from the `security.BuildEnv` result, so a parent `CODEX_HOME` is never followed. `readAdmittedBlobs` and `admitNativeTrust` take the source map and harness label; `eligibilityBlock` is shared with the Claude path. Commit 44c3874.
+- **Spec deviations**:
+  - `internal/admission/admission_test.go` (outside the `Files` list): deleted `TestDecideCodexIsNotAvailableYet`, whose premise (`adapter_not_available`) ended with this task.
+  - `codexAdapterID` is gone in favour of `codex.AdapterID`; `TestCodexAdapterIDMatches` pins the derived route `"builtin/"+AdapterCodex` and the table row to it.
+  - `purchasedCreditPreventable` is tested in `TestPurchasedCreditPreventableNeedsUnexpiredPreventableEvidence`, and `TestCodexInventoryUsesChildEnvironment` is added for #389 F2 (both consistent with the acceptance).
+  - `billing_unsupported_for_adapter` is a policy block (exit 3) and the unknown-auth block `Field` is `auth_category=unknown`; the spec fixes neither.
+- **Files modified**: `internal/admission/admission.go`, `internal/admission/admission_test.go`, `internal/admission/billing.go`, `internal/admission/native.go`, `internal/admission/qualify.go`, `internal/admission/codex_test.go`, `internal/admission/qualify_test.go`, `internal/admission/export_test.go`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`.
 
 ### Task 9 — Register Codex in workers, supervisor and runtime route check
 

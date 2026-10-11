@@ -66,7 +66,10 @@
 
 ## Task 8 — Admission: ResolveQualificationKey, neutral trust and the Codex decider
 
-<!-- pending -->
+- **Produces**: `admission.ResolveQualificationKey`, `ResolveBillingStrict`, `NativeConfig`, `CheckNativeTrustConfig` as specified; `decideCodex` implements design §4. Unexported `decideCodexWith`, `purchasedCreditPreventable`, `eligibilityBlock`, `claudeNativeConfig`, `admitCodexNativeConfig`, `envHome`; `export_test.go` exposes `DecideCodexWith` and `PurchasedCreditPreventable`. No design difference.
+- **For Task 9**: no Codex run is admittable (D13), so the worker and pipeline paths cannot be driven through `Decide`; the admitted proposal's `Manifest.Digests` keys are `user_config`, `project_instructions`, `project_config`, and `admission.Record` carries `AllowedTools` from the Claude config only.
+- **For #389 F2**: the inventory runs over the `security.BuildEnv` result and takes `HOME`/`USERPROFILE` from it. `CODEX_HOME` is not allowlisted, so a user's value is dropped without a ConfigDelta; the maintainers' decision (keep it for the child, or record a delta) is still open and would change `internal/security/env.go` and `codex.Prepare`.
+- **Trap**: `OpenQualificationRegistry` returns a registry for an existing state dir without a database, so the gap gate fires; use a non-existent dir (`missingStateDir`) to test the no-registry leg. The fake native is the test binary copied as `codex` on `PATH`; it logs each invocation to `invocations.log` beside itself.
 
 ## Task 9 — Register Codex in workers, supervisor and runtime route check
 
