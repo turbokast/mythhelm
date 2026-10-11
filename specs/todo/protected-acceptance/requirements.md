@@ -44,9 +44,9 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 
 ### FR-1 — Acceptance bound to exact revisions (§11, I07, I20, G06)
 
-- **AC-1.1** [I07, AT-23] When checks evaluate a candidate, the system shall bind the verdict to the exact candidate revision, task-contract revision, check-definition revisions and environment identity, and record all four with the verdict.
+- **AC-1.1** [I07, AT-23] When checks evaluate a candidate, the system shall bind the verdict to the exact candidate revision, task-contract revision, check-definition revisions and environment identity, and record all four with the verdict. The environment identity is a partial, non-secret fingerprint (operating system, architecture, verifier and the names of the check environment's variables); variable values and the checks' own tool versions are `unknown`, as the design's honesty register states.
 - **AC-1.2** [I20, AT-23, G03] If any bound revision changes after evaluation (new candidate commit, amended contract, changed check definitions), then the prior verdict shall not apply to the new revision; re-evaluation is required.
-- **AC-1.3** [§11, AT-24] When checks are unavailable (no check definitions, no runner, or an environment that cannot run them), the system shall preserve the candidate as unverified rather than failing it or passing it silently.
+- **AC-1.3** [§11, AT-24] When checks are unavailable after admission produced a candidate (no runner, or an environment that cannot run them), or are waived by `--no-checks`, the system shall preserve the candidate as unverified rather than failing it or passing it silently. An empty or absent check list is refused at admission (exit 3) before any candidate exists, so it is outside this criterion.
 
 ### FR-2 — Protected evaluator (§11, I07, G07)
 

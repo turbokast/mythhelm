@@ -28,7 +28,7 @@
 - `refinement-log.md` records a Q-14 about waiting for MH-21; that is resolved (MH-21 shipped, D-90). This table's Q-14 is a new question.
 
 - Re-grounding (2026-10-11, origin/main 31cb991): MH-21 shipped (D-90), MH-16 S1 shipped, MH-13 code merged (11 tasks) with its spec in `unfinalized/`, MH-12 implementing with Tasks 5 and 7 held. Issues #72-#76 all OPEN (`gh issue view <n> --json state`).
-- `importRuns` skips any run with a `task_revisions` row (`internal/migrate/apply.go:573`), which is why D2 writes no row for new runs.
+- `importRuns` skips any run with a `task_revisions` row (`internal/migrate/apply.go:573`), so a pre-existing row would make a later `migrate --apply` skip that run; `ImportRun` itself writes the row when it imports a run without a marker (`internal/migrate/import.go:170-176`), which is why D2 writes no row for new runs.
 - The TUI already withholds "verified" unless the passed row's candidate equals the frozen one (`internal/tui/mission.go:17`); the apply gate did not. Task 6 closes that asymmetry.
 
 ## Discoveries

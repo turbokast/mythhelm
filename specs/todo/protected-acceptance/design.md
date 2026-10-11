@@ -148,7 +148,8 @@ func GitObjectOf(hex string) (v2contract.GitObject, error)
 
 // EnvironmentID is "sha256:<hex>" over goos, goarch, verifier and the sorted
 // names (never values) of the variables the checks ran with. Tool versions of
-// the checks' own commands are not identified (honesty register).
+// the checks' own commands are not identified (honesty register), so this is
+// a partial, non-secret fingerprint and receipts describe it as such.
 func EnvironmentID(goos, goarch, verifier string, envNames []string) string
 
 // Attest builds the canonical attestation of an executed verification:
