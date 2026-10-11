@@ -73,8 +73,11 @@
 
 ## Task 9 — Register Codex in workers, supervisor and runtime route check
 
-<!-- pending -->
-
+- **Produces**: `builtin/codex` in the worker adapter map (`internal/workers/worker.go`); `adapter.ProtocolMismatch = "protocol_mismatch"` (`internal/adapter/adapter.go`); unexported `admittedConfigPaths` (pipeline), `Launch.blobSource` and `Launch.verifyCodexInventory` (`internal/workers/contain.go`). Design difference: the `protocol_mismatch` seam (#389 F1) is not in the design.
+- **For Task 11**: a Codex attempt whose stream stops early (malformed `result` or a read error) ends `stopped/protocol_mismatch` with `requested_by` `worker`, and the run ends `failed/protocol_error` (exit 4), never `cancelled`; a user stop that also arrived stays a cancellation. `Decode` sends the class once, before `ProtocolCounters`. A stream that merely ends without a result still ends as before (`result_unobserved` or the native exit).
+- **For Task 11**: the e2e fixture native for the worker is the test binary re-executed (`codexFixtureCommand` in `internal/workers/worker_test.go`, modes `success` and `malformed-result`); no Codex run is admittable through `Decide` (D13), so a worker or pipeline test builds a `workers.Launch` or `admission.Decision` directly.
+- **For dependents**: the drained-line count after an early stop is in the exit error text (`N lines (M bytes) discarded after the stream stopped`), logged by the worker as `native exit not fully observed`; it is not a journal event. The Claude adapter is unchanged: its `protocol_error` observation does not stop the worker and it still stalls on a full pipe (#389).
+- **Trap**: the worker re-inventories Codex config over `launch.Env` HOME and `launch.Dir`; a config source that appears between admission and exec (for example `~/.codex/config.toml`) fails the launch with `native_config_unreadable`, and project sources are skipped (blob-admitted).
 ## Task 10 — Doctor: failing columns and next test in plain output
 
 <!-- pending -->

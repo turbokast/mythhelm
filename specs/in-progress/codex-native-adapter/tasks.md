@@ -240,7 +240,7 @@
   - `billing_unsupported_for_adapter` is a policy block (exit 3) and the unknown-auth block `Field` is `auth_category=unknown`; the spec fixes neither.
 - **Files modified**: `internal/admission/admission.go`, `internal/admission/admission_test.go`, `internal/admission/billing.go`, `internal/admission/native.go`, `internal/admission/qualify.go`, `internal/admission/codex_test.go`, `internal/admission/qualify_test.go`, `internal/admission/export_test.go`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`.
 
-### Task 9 — Register Codex in workers, supervisor and runtime route check
+### Task 9 — Register Codex in workers, supervisor and runtime route check ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -260,6 +260,14 @@
   - `TestClaudeConfigPathsUnchanged`: the existing Claude launch and contain tests pass unmodified; the Claude digest-to-path map is byte-equal to its pre-change output.
 - **Test plan**: Fixture executable; existing worker harness.
 - **Invariants touched**: I14; I02; I18; I15 (route check not silently weakened for Claude).
+- **Status**: ✅ Completed — `builtin/codex` is in the worker adapter map, skips the Claude route check (D12), selects its config-path inventory in the pipeline and the worker's pre-exec re-verification, and #389 F1 is settled (a stopped-early Codex stream makes the worker stop the attempt on `protocol_mismatch`); PR #397.
+- **Implementation**: `worker.observe` requests a worker stop on `adapter.ProtocolMismatch` through the existing identity-checked `interrupt`, the attempt ends `stopped/protocol_mismatch` and `pipeline.conclude` fails the run `protocol_error`; `codex.Decode` sends the class before the counters and the session wraps the counted drained lines into `exit.Err`. `Launch.blobSource` and `verifyCodexInventory` select the Codex inventory by `l.AdapterID`; `admittedConfigPaths` selects it by `d.Adapter.ID`. Commit 641a8c9.
+- **Spec deviations**:
+  - #389 F1 is settled here (the architect review requires it before Codex is startable): new `adapter.ProtocolMismatch` in `internal/adapter/adapter.go`, emission in `adapters/codex/decode.go`, the drained-line count in `adapters/codex/launch.go`, and their tests in `adapters/codex/decode_test.go`, `adapters/codex/launch_test.go` and `internal/workers/worker_unix_test.go`, all outside the `Files` list. The adapter session never calls `ClimbLadder` (I18).
+  - `internal/supervisor/pipeline.go` also maps `stopped/protocol_mismatch` to a failed run (`protocol_error`): AC-5.7 lets a recorded stop end only `stopped` or `interrupted`, so without it the run would read as a user cancellation. `TestStoppedProtocolMismatchFailsRun` lives in `pipeline_launch_test.go`.
+  - The Claude adapter's stall-on-full-pipe behaviour (also in #389) is not fixed by this change and is left unchanged; its `protocol_error` observation still does not stop the worker.
+  - `TestCodexConfigPathsAndInventoryUsed` has two halves, one in `internal/supervisor/pipeline_launch_test.go` (the path selector) and one in `internal/workers/worker_test.go` (the worker re-inventory); `TestCodexBlobSourcesNotRehashedAgainstDisk` and `TestCodexSessionNotInterruptedForEmptyAPIKeySource` are in `worker_test.go`, `TestWorkerStartsCodexByDescriptor` in `worker_unix_test.go` (consistent with the acceptance).
+- **Files modified**: `adapters/codex/decode.go`, `adapters/codex/decode_test.go`, `adapters/codex/launch.go`, `adapters/codex/launch_test.go`, `internal/adapter/adapter.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/pipeline_launch_test.go`, `internal/workers/contain.go`, `internal/workers/worker.go`, `internal/workers/worker_test.go`, `internal/workers/worker_unix_test.go`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
 ### Task 10 — Doctor: failing columns and next test in plain output
 
