@@ -68,7 +68,7 @@
   - `dataDestinations` reads a `destination` field on the table row rather than a switch (design §4 "added through the table").
 - **Files modified**: `internal/admission/admission.go`, `internal/admission/export_test.go`, `internal/admission/admission_test.go`, `internal/admission/boundary_test.go`, `internal/cli/run.go`, `internal/cli/run_drift_test.go`, `internal/supervisor/pipeline_test.go`, `tests/e2e/contain_refusal_test.go`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
-### Task 3 — Codex adapter: probe, compatibility, capabilities
+### Task 3 — Codex adapter: probe, compatibility, capabilities ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -89,6 +89,10 @@
   - `TestProbeBoundedOutput`: a fixture printing over 4 KiB or sleeping past the timeout fails closed.
 - **Test plan**: `TestMain` re-exec helper as in `adapters/claudecode/probe_test.go`; synthetic version strings.
 - **Invariants touched**: I01 (unmodified executable); I09 (unknown stays unknown); I14.
+- **Status**: ✅ Completed — `adapters/codex` with `New`, `Descriptor`, a bounded `--version` `Probe` (SHA-256, symlinks resolved), version compatibility against a synthetic fixture version, and an all-`unknown` `Capabilities`; PR #373.
+- **Implementation**: Fixture version is the synthetic `0.0.0` and the banner regex `codex-cli X.Y.Z` is a placeholder until OQ1; `Probe` limits are 5s and 4096 bytes, held on the adapter (`probeTimeout`) so the timeout test needs no sleep. `boundedOutput` holds its buffer by name because an embedded `bytes.Buffer` promotes `ReadFrom`, which `io.Copy` prefers over the limiting `Write`. `stub.go` is inert until Task 5, whose Files list names `adapters/codex/stub.go (deleted)` and whose acceptance includes `TestStartLaunchesOnlyThroughLauncher`: `Start` with a counting launcher shows exactly one `Launch`. Commits 79ca63b, a2c7083, 283c403.
+- **Spec deviations**: `adapters/fake/fake_test.go` is outside the task's `Files` list: `TestAdaptersDoNotImportOsExec` exempted only `claudecode/probe.go`, so the Codex probe (which runs the bounded `--version`) failed the full `go test`; the exemption now also names `codex/probe.go`, and `TestImportsOsExecDetects` keeps a flagged `codex/launch.go` case. This PR is stacked on #352 (Task 1), so it carries Task 1's commits until #352 merges.
+- **Files modified**: `adapters/codex/doc.go`, `adapters/codex/probe.go`, `adapters/codex/compat.go`, `adapters/codex/probe_test.go`, `adapters/codex/compat_test.go`, `adapters/codex/stub.go`, `adapters/fake/fake_test.go`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
 ### Task 4 — Codex adapter: stream decoder, usage and error mapping
 

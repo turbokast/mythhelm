@@ -23,7 +23,12 @@
 
 ## Task 3 — Codex adapter: probe, compatibility, capabilities
 
-<!-- pending -->
+- **Produces**: package `adapters/codex`: `AdapterID = "builtin/codex"`, `New() adapter.Adapter` (unexported `*codexAdapter{probeTimeout}`), `ErrCapability`, `Descriptor` (`Version "1"`, `Harness "codex"`, `Surface "native-app-server (structured)"`), `Probe`, `Capabilities`. Unexported: `descriptor()`, `compatibility(version, allowUntested)`, `fixtureVersion = "0.0.0"`, `maxProbeOutput = 4096`, `fileSHA256`, `runProbe`. No design difference.
+- **For Task 4 and 6/7**: `fixtureVersion` is the synthetic `0.0.0`; the version banner `codex-cli X.Y.Z` is a placeholder for OQ1. `Capabilities` sets every native fact (including `Reconnect`, `ModelMetadata`) to `unknown`; `Platform` is `supported` only on linux and darwin. Qualification reads `<compatibility>; planned`.
+- **For Task 5**: delete `adapters/codex/stub.go` (it defines `ErrNotImplemented` and the `Prepare`/`Start` stubs on `*codexAdapter`). `codexAdapter` has only `probeTimeout`; add the one-`Start` guard field there. Re-hash with `fileSHA256(p.Executable)` for `native_binary_changed`.
+- **Trap (os/exec guard)**: `adapters/fake/fake_test.go` `TestAdaptersDoNotImportOsExec` allows `os/exec` only in `claudecode/probe.go` and `codex/probe.go`; `launch.go` and `decode.go` must not import it.
+- **Trap (bounded writer)**: do not embed `bytes.Buffer` in a limiting `io.Writer`: the promoted `ReadFrom` bypasses `Write`, so `io.Copy` (used by `os/exec`) never enforces the limit. `adapters/claudecode/probe.go` `boundedOutput` has this defect (its 1 MiB bound is unenforced); not changed here.
+- Tests: `TestMain` in `probe_test.go` re-executes the test binary as the fake native when `GO_WANT_FAKECODEX=1` (env `FAKE_OUT`, `FAKE_EXIT`, `FAKE_SLEEP`, `FAKE_LOG`); reuse `fakeProbeInput` for Prepare tests.
 
 ## Task 4 — Codex adapter: stream decoder, usage and error mapping
 
