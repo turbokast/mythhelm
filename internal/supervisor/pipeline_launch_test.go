@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/adapters/claudecode"
+	"github.com/turbokast/mythhelm/adapters/codex"
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/contain"
@@ -374,5 +375,89 @@ func TestLaunchForAttemptBadContainmentFailsClosed(t *testing.T) {
 	}
 	if back.Containment == nil || back.Containment.Workdir != "" {
 		t.Fatalf("round-tripped containment = %+v; want the zero policy intact", back.Containment)
+	}
+}
+
+// A worker that stopped a native on a protocol mismatch ended the attempt
+// stopped, but the run failed on the protocol: it is not a cancellation the
+// user asked for (#389 F1).
+func TestStoppedProtocolMismatchFailsRun(t *testing.T) {
+	tests := []struct {
+		name       string
+		reason     string
+		wantState  RunState
+		wantReason string
+	}{
+		{name: "a worker stop on a protocol mismatch fails the run", reason: adapter.ProtocolMismatch, wantState: RunFailed, wantReason: "protocol_error"},
+		{name: "a plain stop still ends cancelled", reason: "", wantState: RunCancelled, wantReason: ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newGateWorld(t, gateEnvelope(), 0)
+			attemptID := w.addAttempt(t)
+			p := &pipeline{
+				d:    admission.Decision{RunID: w.runID, AttemptID: attemptID, RunDir: t.TempDir()},
+				j:    w.j,
+				prod: w.prod,
+				h:    Hooks{Event: func(journal.Event) {}, Notice: func(string) {}},
+				out:  Outcome{RunID: w.runID, State: RunExecuting, AttemptState: AttemptStopped, AttemptReason: tc.reason},
+			}
+			if err := p.conclude(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			run, err := w.j.Run(t.Context(), w.runID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if RunState(run.State) != tc.wantState || run.Reason != tc.wantReason {
+				t.Fatalf("run projected %s/%s, want %s/%s", run.State, run.Reason, tc.wantState, tc.wantReason)
+			}
+		})
+	}
+}
+
+// t9home is the HOME entry of the decision's admitted child env.
+func t9home(d admission.Decision) string {
+	home := ""
+	for _, kv := range d.Proposal.Spec.Env {
+		if value, ok := strings.CutPrefix(kv, "HOME="); ok {
+			home = value
+		}
+	}
+	return home
+}
+
+func TestCodexConfigPathsAndInventoryUsed(t *testing.T) { // AC-3.1, D11
+	t.Parallel()
+	d := t9decision(t)
+	d.Adapter.ID = codex.AdapterID
+	d.Proposal.Manifest = adapter.ConfigManifest{Digests: map[string]string{
+		"user_config": strings.Repeat("c", 64), "project_instructions": strings.Repeat("d", 64),
+	}}
+	l := launchForAttempt(d, t9token)
+	want := codex.AdmittedConfigPathsForEnv(t9home(d), d.Workdir, d.Proposal.Spec.Env)
+	if !reflect.DeepEqual(l.UserConfigPaths, want) {
+		t.Fatalf("paths = %v, want the Codex map %v", l.UserConfigPaths, want)
+	}
+	for key := range d.Proposal.Manifest.Digests {
+		if l.UserConfigPaths[key] == "" {
+			t.Errorf("Codex manifest key %q has no path; the worker would fail the launch", key)
+		}
+	}
+}
+
+func TestClaudeConfigPathsUnchanged(t *testing.T) { // I15
+	t.Parallel()
+	d := t9decision(t)
+	d.Adapter.ID = claudecode.New().Descriptor().ID
+	l := launchForAttempt(d, t9token)
+	want := claudecode.AdmittedConfigPathsForEnv(t9home(d), d.Workdir, d.Proposal.Spec.Env)
+	if !reflect.DeepEqual(l.UserConfigPaths, want) {
+		t.Fatalf("paths = %v, want the Claude map %v", l.UserConfigPaths, want)
+	}
+	for key := range d.Proposal.Manifest.Digests {
+		if l.UserConfigPaths[key] == "" {
+			t.Errorf("Claude manifest key %q has no path", key)
+		}
 	}
 }

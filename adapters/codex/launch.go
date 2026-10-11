@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -124,16 +125,22 @@ func (s *launchSession) Observations() <-chan adapter.Observation { return s.obs
 func (s *launchSession) Done() <-chan adapter.NativeExit          { return s.done }
 
 // run decodes stdout until it ends, then reaps the process. Decode can stop
-// before EOF, so stdout is drained: a native blocked on a full pipe could
-// otherwise never exit for Wait to return.
+// before EOF, after sending protocol_mismatch so the worker stops the native
+// through its own interrupt. Until the native is gone, stdout is drained and
+// counted: a native blocked on a full pipe could otherwise never exit for
+// Wait to return.
 func (s *launchSession) run() {
 	stdout := s.proc.Stdout()
 	decoded := Decode(stdout, s.send)
 	close(s.obs)
-	_, _ = io.Copy(io.Discard, stdout)
+	var drained lineCounter
+	_, _ = io.Copy(&drained, stdout)
 	exit := s.proc.Wait()
 	if exit.Err == nil {
 		exit.Err = decoded.Err
+		if decoded.Err != nil && drained.bytes > 0 {
+			exit.Err = fmt.Errorf("%w; %d lines (%d bytes) discarded after the stream stopped", decoded.Err, drained.lines, drained.bytes)
+		}
 	}
 	s.done <- exit
 	close(s.done)
@@ -162,4 +169,13 @@ func (s *launchSession) Interrupt(ctx context.Context) adapter.InterruptReport {
 	rep := adapter.ClimbLadder(ctx, s.proc, s.ladder)
 	rep.Acknowledged = acknowledgedUnknown
 	return rep
+}
+
+// lineCounter is an io.Writer that counts the newlines and bytes written.
+type lineCounter struct{ lines, bytes int64 }
+
+func (c *lineCounter) Write(p []byte) (int, error) {
+	c.lines += int64(bytes.Count(p, []byte{'\n'}))
+	c.bytes += int64(len(p))
+	return len(p), nil
 }
