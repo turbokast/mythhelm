@@ -731,3 +731,32 @@ func TestDoctorStillWritesNothing(t *testing.T) {
 		t.Fatal("the comparison missed a planted marker file; it cannot prove read-only")
 	}
 }
+
+// TestDoctorJSONLUnchanged pins the JSONL qualification object byte for byte
+// against testdata/doctor_qualification.jsonl, recorded from the code before
+// the plain-output change, so a field added to a record fails it (AC-7.3).
+// The object carries no host-specific fact: OS and architecture live only in
+// the registry key, which doctor does not render.
+func TestDoctorJSONLUnchanged(t *testing.T) {
+	// Not parallel: points MYTHHELM_HOME at a seeded temp state dir.
+	dir := stateHome(t)
+	seedQualification(t, dir)
+
+	code, stdout, stderr := runMain("doctor", "--format", "jsonl")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	var rep struct {
+		Qualification json.RawMessage `json:"qualification"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &rep); err != nil {
+		t.Fatalf("doctor jsonl: %v\n%s", err, stdout)
+	}
+	want, err := os.ReadFile(filepath.Join("testdata", "doctor_qualification.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(rep.Qualification) + "\n"; got != string(want) {
+		t.Errorf("qualification object differs from testdata/doctor_qualification.jsonl:\n got: %s\nwant: %s", got, want)
+	}
+}
