@@ -24,7 +24,8 @@ import (
 	"github.com/turbokast/mythhelm/internal/workspace"
 )
 
-const maxEvidence = 1 << 20
+// MaxEvidenceBytes bounds the evidence kept per check.
+const MaxEvidenceBytes = 1 << 20
 
 // CheckResult is the recorded outcome of one admitted check.
 type CheckResult struct {
@@ -98,7 +99,7 @@ func RunChecksWithPolicy(ctx context.Context, cand Candidate, cfg admission.Proj
 		policy = &p
 	}
 	var err error
-	if v.Evaluator, err = evaluatorOf(policy, cfg.Checks); err != nil {
+	if v.Evaluator, err = EvaluatorFor(opts, cfg.Checks); err != nil {
 		return v, err
 	}
 	if err := ensureRealDir(filepath.Dir(v.Workdir)); err != nil {
@@ -116,7 +117,7 @@ func RunChecksWithPolicy(ctx context.Context, cand Candidate, cfg admission.Proj
 	defer func() {
 		_, _ = workspace.Git(context.Background(), cand.Workspace, false, "worktree", "remove", "--force", v.Workdir)
 	}()
-	bad, unavailable := false, false
+	failed, unavailable := false, false
 	for _, check := range cfg.Checks {
 		result := CheckResult{Name: check.Name, Argv: redactedArgv(check.Argv)}
 		if unavailable && !opts.KeepGoing {
@@ -127,27 +128,33 @@ func RunChecksWithPolicy(ctx context.Context, cand Candidate, cfg admission.Proj
 			if err != nil {
 				return v, err
 			}
-			if result.Status != "passed" {
-				bad = true
-			}
-			if result.Status == "unavailable" {
-				unavailable = true
-			}
+		}
+		switch result.Status {
+		case "passed":
+		case "failed", "timed_out":
+			failed = true
+		default:
+			unavailable = true
 		}
 		v.Checks = append(v.Checks, result)
 	}
-	if bad {
+	switch {
+	case failed:
 		v.Result = "failed"
-	} else {
+	case unavailable:
+		v.Result = "unavailable"
+	default:
 		v.Result = "passed"
 	}
 	v.FinishedAt = time.Now().UTC()
 	return v, nil
 }
 
-// evaluatorOf digests the evaluator: the boundary and canonical check policy
-// when contained, "host" otherwise, plus every admitted check definition.
-func evaluatorOf(policy *contain.Policy, checks []admission.CheckConfig) (contain.Evaluator, error) {
+// EvaluatorFor digests the evaluator opts select for checks: the boundary and
+// the canonical check policy (read-only, no credential binds) when contained,
+// "host" otherwise, plus every admitted check definition. The admission pin and
+// the ran verification both call it, so they cannot drift (design D12).
+func EvaluatorFor(opts RunOptions, checks []admission.CheckConfig) (contain.Evaluator, error) {
 	digests := make([]string, len(checks))
 	for i, c := range checks {
 		b, err := json.Marshal(struct {
@@ -162,10 +169,12 @@ func evaluatorOf(policy *contain.Policy, checks []admission.CheckConfig) (contai
 		sum := sha256.Sum256(b)
 		digests[i] = hex.EncodeToString(sum[:])
 	}
-	if policy == nil {
+	if opts.Policy == nil {
 		return contain.EvaluatorDigest("host", "", contain.Policy{}, digests), nil
 	}
-	return contain.EvaluatorDigest(contain.BoundaryName, contain.BoundaryVersion, *policy, digests), nil
+	policy := *opts.Policy
+	policy.ReadOnly, policy.AuthBinds = true, nil
+	return contain.EvaluatorDigest(contain.BoundaryName, contain.BoundaryVersion, policy, digests), nil
 }
 
 // errCheckExecutableNotFound marks a check whose argv resolves to nothing:
@@ -309,8 +318,8 @@ func runCheck(ctx context.Context, dir, evidenceDir string, check admission.Chec
 		}
 	}
 	redacted := []byte(security.Redact(string(raw)))
-	if len(redacted) > maxEvidence {
-		redacted = redacted[len(redacted)-maxEvidence:]
+	if len(redacted) > MaxEvidenceBytes {
+		redacted = redacted[len(redacted)-MaxEvidenceBytes:]
 	}
 	evidence := filepath.Join(evidenceDir, check.Name+".log")
 	if err := ensureRealDir(evidenceDir); err != nil {
@@ -347,12 +356,12 @@ func (b *tailBuffer) Write(p []byte) (int, error) {
 	defer b.mu.Unlock()
 	n := len(p)
 	b.count += int64(n)
-	if n >= maxEvidence {
-		b.data = append(b.data[:0], p[n-maxEvidence:]...)
+	if n >= MaxEvidenceBytes {
+		b.data = append(b.data[:0], p[n-MaxEvidenceBytes:]...)
 	} else {
 		b.data = append(b.data, p...)
-		if len(b.data) > maxEvidence {
-			b.data = append(b.data[:0], b.data[len(b.data)-maxEvidence:]...)
+		if len(b.data) > MaxEvidenceBytes {
+			b.data = append(b.data[:0], b.data[len(b.data)-MaxEvidenceBytes:]...)
 		}
 	}
 	return n, nil
