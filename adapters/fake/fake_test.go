@@ -702,7 +702,7 @@ func importsOsExec(t *testing.T, fsys fs.FS) (scanned int, offenders []string) {
 		}
 		scanned++
 		for _, imp := range f.Imports {
-			if imp.Path.Value == `"os/exec"` && path != "claudecode/probe.go" {
+			if imp.Path.Value == `"os/exec"` && path != "claudecode/probe.go" && path != "codex/probe.go" {
 				offenders = append(offenders, path)
 			}
 		}
@@ -732,10 +732,12 @@ func TestImportsOsExecDetects(t *testing.T) {
 		"x/bad_test.go":        {Data: []byte("package x\nimport \"os/exec\"\n")},
 		"claudecode/probe.go":  {Data: []byte("package claudecode\nimport \"os/exec\"\n")},
 		"claudecode/launch.go": {Data: []byte("package claudecode\nimport (\n\t\"fmt\"\n\t\"os/exec\"\n)\n")},
+		"codex/probe.go":       {Data: []byte("package codex\nimport \"os/exec\"\n")},
+		"codex/launch.go":      {Data: []byte("package codex\nimport \"os/exec\"\n")},
 	}
 	_, offenders := importsOsExec(t, fsys)
 	slices.Sort(offenders)
-	if want := []string{"claudecode/launch.go", "x/aliased.go", "x/bad.go"}; !slices.Equal(offenders, want) {
+	if want := []string{"claudecode/launch.go", "codex/launch.go", "x/aliased.go", "x/bad.go"}; !slices.Equal(offenders, want) {
 		t.Errorf("offenders = %q, want %q", offenders, want)
 	}
 }
