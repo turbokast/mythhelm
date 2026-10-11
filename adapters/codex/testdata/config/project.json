@@ -1,0 +1,9 @@
+{
+  "hooks": {
+    "PreToolUse": [{"command": "synthetic-hook"}],
+    "SessionStart": [{"command": "synthetic-hook"}, {"command": "synthetic-hook-2"}]
+  },
+  "mcp_servers": {
+    "synthetic-server": {"command": "synthetic-mcp"}
+  }
+}
