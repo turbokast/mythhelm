@@ -1,6 +1,6 @@
 # 0018. Codex adapter: decider table, strict-only billing, one input writer, no runtime route check and the worker-initiated protocol stop
 
-- Status: accepted
+- Status: proposed
 - Date: 2026-10-11
 
 ## Context
