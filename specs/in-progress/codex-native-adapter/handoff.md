@@ -41,7 +41,11 @@
 
 ## Task 5 — Codex adapter: prepare, launch session, stop ladder, single writer
 
-<!-- pending -->
+- **Produces**: `codex.Argv(bin string) []string` (placeholder `{bin, "app-server"}`, D5/OQ1), `Prepare` and `Start` on `*codexAdapter` in `adapters/codex/launch.go`; `stub.go` and `ErrNotImplemented` are gone. No design difference.
+- **For dependents**: `Prepare` returns `*BlockedError` codes `native_binary_changed`, `native_tool_rules_unsupported`, `native_passthrough_unsupported`; `Start` returns `input_writer_conflict` on a second call on the same adapter value. Ladder is interrupt 5s, terminate 10s, kill 5s; `Interrupt` sets `Acknowledged:"unknown"`.
+- `Prepare` leaves `Billing` and `Manifest` zero for admission (Task 2). Fidelity deltas use `Kind:"fidelity"`, names `instructions skills hooks mcp children context`, value `unobservable`.
+- `codexAdapter` has test-only `goos` (empty means host) and an atomic `started` guard; tests build `&codexAdapter{goos: "windows"}`.
+- Trap: in a container whose PID 1 reaps slowly, `kill(-pgid,0)` still succeeds on an orphaned zombie, so a real-process ladder test confirms only at the kill grace; keep that grace generous.
 
 ## Task 6 — Codex adapter: effective configuration inventory, trust inputs and gaps
 

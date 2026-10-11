@@ -122,7 +122,7 @@
   - Review round 1 (consistent with design §5 and v2 §9.7): a malformed `result` frame is terminal, and an unknown frame no longer fixes an empty session id.
 - **Files modified**: `adapters/codex/decode.go`, `adapters/codex/decode_test.go`, `adapters/codex/testdata/streams/success.jsonl`, `adapters/codex/testdata/streams/error.jsonl`, `adapters/codex/testdata/streams/unknown_type.jsonl`, `adapters/codex/testdata/streams/truncated.jsonl`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`.
 
-### Task 5 — Codex adapter: prepare, launch session, stop ladder, single writer
+### Task 5 — Codex adapter: prepare, launch session, stop ladder, single writer ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -146,6 +146,11 @@
   - `TestStartLaunchesOnlyThroughLauncher`: `launch.go` and `decode.go` import no `os/exec`; `Start` with a counting launcher shows exactly one `Launch`.
 - **Test plan**: Fake `Launcher` and `OwnedProc` as in the Claude launch tests; ladder test with a Unix build tag.
 - **Invariants touched**: I06 (sent is not confirmed); I18 (one owner, one writer); I01; I15 (no unscreened passthrough).
+- **Status**: ✅ Completed — `Prepare` and `Start` implemented with refusals, fidelity deltas, single launch, `Decode` pump and the stop ladder reporting `Acknowledged:"unknown"`; PR #388.
+- **Implementation**: `Start` guards with an atomic on the adapter before `Launch`; the session forwards `Decode` observations (dropping only Progress and reporting the count in `ProtocolCounters`) and merges `Decode`'s error into the process exit. Commit aa7ea1a.
+- **Spec deviations**: The branch is `claude/codex-native-adapter-task-5-zcnp4d`, the one the session designates. `adapters/codex/probe.go` is outside the Files list: it gains the `goos` and `started` fields on `codexAdapter`, as the Task 3 hand-off directs.
+- **Files modified**: `adapters/codex/launch.go`, `adapters/codex/launch_test.go`, `adapters/codex/launch_unix_test.go`, `adapters/codex/probe.go`, `adapters/codex/stub.go`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`.
+
 
 ### Task 6 — Codex adapter: effective configuration inventory, trust inputs and gaps ✅ COMPLETED
 
