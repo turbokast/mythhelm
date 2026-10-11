@@ -6,17 +6,19 @@ title: User guide
 # User guide
 
 MYTHHELM is the open-source command deck for native coding agents. This guide
-covers installation and the scripted quickstart. MYTHHELM is
-**pre-alpha**: there is no usable release yet, so read
+covers installation, the scripted quickstart, running a task, stopping and
+recovering runs, execution profiles, billing postures, the budget ledger and
+state migration. MYTHHELM is **pre-alpha**: the only release, v0.0.1, is a
+source tag with no binary archives, so read
 [Limitations]({{ site.baseurl }}/limitations.html) before relying on anything
 here.
 
 ## Installation
 
-MYTHHELM needs Go 1.27 or newer. `go.mod` pins the toolchain, so with the
-default `GOTOOLCHAIN=auto` an older `go` command downloads the right version
-the first time it runs. Nothing else is required: no accounts, credentials or
-network services.
+There are no binary archives yet, so build from source. MYTHHELM needs Go 1.27
+or newer. `go.mod` pins the toolchain, so with the default `GOTOOLCHAIN=auto`
+an older `go` command downloads the right version the first time it runs.
+Nothing else is required: no accounts, credentials or network services.
 
 ```sh
 git clone https://github.com/turbokast/mythhelm.git
@@ -47,12 +49,170 @@ prerequisite report. It writes nothing and prints no credential values:
 go run ./cmd/mythhelm doctor
 ```
 
+## Running a task
+
+`mythhelm run` runs one task through one native agent attempt, then freezes
+the result as a candidate you can review and apply. This example uses the
+scripted fake adapter, so it needs no credentials and no network:
+
+```sh
+mythhelm run --adapter fake --billing local-scripted \
+  --task-file task.md --execution-profile trusted-host
+mythhelm runs list
+mythhelm review <run-id>
+mythhelm apply <run-id> --to-branch mythhelm/demo
+```
+
+`--adapter`, `--billing` and `--task-file` are required, with no defaults. The
+task file is Markdown and reaches the agent on stdin. Admission refuses the run
+with exit code 3 and a reason code, rather than guessing, when:
+
+- the checkout has uncommitted changes (`dirty_checkout`): commit them, or pass
+  `--use-committed` (or `--rev <rev>`) to run on the committed revision;
+- Git has no `user.name` and `user.email` (`git_identity_unavailable`);
+- the revision has no `mythhelm.toml` with at least one `[[checks]]` entry
+  (`no_checks_configured`): commit one, or pass `--no-checks`, which waives the
+  checks and ends the run `ready_for_review (unverified)` with exit code 5;
+- the committed `mythhelm.toml` is not trusted yet (`untrusted_project_config`):
+  review it, then pass the digest the refusal prints as
+  `--trust-project-config sha256:<digest>`;
+- another run is still active (`active_run_exists`). One run at a time is
+  allowed per state directory; created, admission, executing, verifying,
+  applying, stopping, interrupted and recovering runs all count.
+
+`mythhelm review <run-id>` prints the candidate's validation flags, the check
+evidence and the candidate diff (`--no-diff` omits the diff). `mythhelm apply`
+creates a new local branch at the candidate commit and leaves your checkout
+untouched. It needs `--to-branch`, plus `--accept-flags` when the candidate has
+validation flags or `--accept-unverified` when its checks did not pass. It
+applies only a run that is `ready_for_review`: a run that ended
+`failed (verification_failed)` has no way to hand over its candidate yet
+([#380](https://github.com/turbokast/mythhelm/issues/380)). The candidate commit
+carries a `MYTHHELM-Run: <run-id>` trailer and your Git author, so rewrite it
+before you publish it if that matters to you.
+
+On a TTY, `run`, `review` and `demo` open the TUI. Without one, or with
+`TERM=dumb`, the output is linear, and `run` also takes `--plain`,
+`--format jsonl` and `--accessible`.
+
+## Execution profiles
+
+`--execution-profile` sets how much host authority the native process gets:
+
+- `restricted` is the default. It runs the native, and the project checks, in a
+  boundary: a user and mount namespace with a read-only root, only the working
+  directory writable, no capabilities, ambient credential files unreachable and
+  network access routed through a worker-owned filtering proxy.
+- `inspect` is `restricted` with a read-only working directory. Its project
+  checks are not run, so the candidate stays unverified.
+- `trusted-host` runs with your host authority. Every surface states it
+  verbatim: `runs with your host authority and is not adversarially contained`.
+
+The boundary exists on Linux only, and only where the runtime probe can enter
+it (it needs the host to allow unprivileged user and mount namespaces).
+When it cannot be entered, admission does not fall back to your host authority:
+it refuses with exit code 7 and `execution_profile_unavailable`, naming the
+reason, and tells you to pass `--execution-profile trusted-host` if you accept
+running uncontained. The same refusal applies on macOS and Windows, which have
+no qualified boundary, and to the Claude Code route on every OS, where the
+refusal reads `missing coverage: credential` because native authentication is
+not yet bound into the boundary. Today a real Claude Code run therefore needs
+`--execution-profile trusted-host`.
+
+The Linux boundary has two stated gaps. The proxy is pinned through
+`HTTPS_PROXY` and `HTTP_PROXY`, so the native can unset them: direct network
+egress is not blocked. There is no PID namespace, so signalling other processes
+of the same user on the host is not blocked either.
+
+## Stop, recover and list runs
+
+`mythhelm stop <run-id>` writes a stop request for the run's worker, after
+checking that the worker is the one recorded for the run. It returns at once.
+The worker owns the signalling and climbs the stop ladder pinned when the run
+was admitted (for Claude Code, SIGTERM and then SIGKILL, each with a grace
+period), then journals what it sent and which processes it could not resolve.
+The command prints `stop requested — waiting for worker confirmation` until the
+worker confirms, and `stopped — worker confirmed no remaining processes` once
+it has. A stop request is not a confirmed stop: if the worker cannot show that
+the process group and its descendants are gone, the run is not reported
+stopped. In a foreground run without the TUI, the first Ctrl-C requests a stop
+and the second detaches, printing `stop not yet confirmed; run 'mythhelm recover
+<run-id>'` and exiting with code 6.
+
+`mythhelm recover <run-id>` takes over a run whose supervising process went
+away, without launching any native work. It takes the run's owner lock,
+verifies the worker's identity (PID, start time and launch nonce, never the PID
+alone) and then does one of three things: reattach to a live worker, finish
+freezing and verifying a run whose native result was already recorded, or
+quarantine a lost worker. A quarantined run ends `interrupted` and `recover`
+exits with code 6, `ownership_unresolved`, because MYTHHELM will not guess
+whether the native is still writing. A quarantined run counts as active, so it
+blocks every later run, and no command resolves a worker that was killed
+outright yet ([#391](https://github.com/turbokast/mythhelm/issues/391)).
+
+Both commands run locally from the CLI. The supervisor service does not serve
+them in this build ([#348](https://github.com/turbokast/mythhelm/issues/348)),
+and neither authorises its caller beyond the owner-only (0700) state
+directory; a per-run capability token is a follow-up
+([#356](https://github.com/turbokast/mythhelm/issues/356)).
+
+`mythhelm runs list` prints the runs in the local state, newest first, as a
+table of run, state, adapter, update time and repository. `--limit N` (default
+20) bounds it and `--format jsonl` prints one `run_row` object per run,
+including its billing posture and execution profile. It opens the database
+read-only and creates nothing.
+
+## Supervisor
+
+`mythhelm supervisor status` prints the per-user supervisor service's process
+ID, generation, state root and endpoint, starting the service first if it is not
+running:
+
+```text
+pid:        <pid>
+generation: <n>
+root:       <state directory>
+endpoint:   <socket path>
+```
+
+There is one supervisor per user. It starts lazily as a detached
+`mythhelm __supervisor` process and keeps running after the command that started
+it exits. It has no idle shutdown and no service registration, so stop it with
+an ordinary signal. Control is a private local socket with a same-user peer
+check (a Unix socket on Linux and macOS, a named pipe on Windows); no network
+listener exists. A supervisor that serves one state directory refuses to be used
+for another. The Windows pipe transport is covered by tests, but lazy start has
+only Linux and macOS evidence.
+
+The service holds the ledger's sole writer, reservations and idempotent
+intents, but runs do not go through it yet: `run`, `recover` and `apply` still
+take a per-run owner lock. Its decisions are in
+[ADR 0014](https://github.com/turbokast/mythhelm/blob/main/docs/decisions/0014-service-topology.md).
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Succeeded |
+| 1 | Unexpected internal error |
+| 2 | Invalid arguments or configuration |
+| 3 | Admission, policy or approval blocked, including a run that ends `blocked` |
+| 4 | Native execution failed |
+| 5 | Verification failed or unavailable (`--no-checks` ends here) |
+| 6 | Interrupted, recovery required or ownership unresolved |
+| 7 | A required adapter, platform or boundary capability is unavailable |
+| 130 | Foreground cancellation completed |
+
+With `--format jsonl` the result object carries the exit code and an error
+category such as `admission_blocked` or `ownership_unresolved`.
+
 ## Doctor
 
 `mythhelm doctor` is a read-only prerequisite report: it writes nothing,
 creates no state and prints no credential values. Its last section,
 `qualification:`, lists each harness record in the qualification registry
-as one row and a next-test line:
+as one row and a next-test line, one row per seeded harness (this excerpt
+shows one of seven):
 
 ```text
 qualification:
@@ -115,8 +275,13 @@ and that you checked extra usage is disabled:
 
 ```sh
 mythhelm run --adapter claudecode --billing subscription-declared \
-  --declare-entitlement plan=pro,extra-usage=disabled ...
+  --declare-entitlement plan=pro,extra-usage=disabled \
+  --execution-profile trusted-host ...
 ```
+
+`--execution-profile trusted-host` is needed today because the default
+`restricted` profile is refused for the Claude Code route (see
+[Execution profiles](#execution-profiles)).
 
 The declaration is user-declared, never verified: MYTHHELM does not check it,
 and the run is labelled `entitlement: user-declared, NOT verified by MYTHHELM;
@@ -225,6 +390,13 @@ in
 [ADR 0015](https://github.com/turbokast/mythhelm/blob/main/docs/decisions/0015-budget-ledger-s1.md).
 
 ## Migrating an existing state directory
+
+**Do not run `mythhelm migrate --apply --yes` unless you accept its
+consequences.** The supervisor service does not serve runs yet, so once the
+migration reaches phase `adopted`, `mythhelm run`, `recover` and `apply` are
+refused with `ownership_unresolved` (exit 6) naming the phase, and no command
+restores the backup. `review`, `runs list` and `stop` keep working. Preview is
+always safe.
 
 `mythhelm migrate` brings a state directory written by the legacy per-run
 writer onto the v2 ledger. `mythhelm migrate --preview` (the default)

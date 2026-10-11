@@ -8,7 +8,7 @@ Releases follow [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 Example version strings: `v0.1.0` for an S1-style preview release, `v1.2.3` for a later stable release. The shapes are illustrative of the scheme; the exact tag format is owned by MH-19, whose tag format and mechanics carry this scheme.
 
-Scope is release versions only; dev strings such as unstamped-build markers are out of scope and continue untouched. MH-7 implements the tag-triggered GoReleaser pipeline under this scheme. MH-7's spec extends this document with the pipeline sections; nothing here assumes pipeline details MH-7 has not designed.
+Scope is release versions only; dev strings such as unstamped-build markers are out of scope and continue untouched. MH-7 implemented the tag-triggered GoReleaser pipeline under this scheme, and the Pipeline section below describes it. The pipeline has run only as a dry run on a `test/*` tag (`test/2026-10-09-mh7`); the only published release, `v0.0.1`, predates it and has no assets.
 
 ## Tag discipline
 
@@ -25,7 +25,7 @@ gh api repos/turbokast/mythhelm/rulesets
 
 The listed `Protect main` ruleset is the observed baseline. Any ruleset or tag-protection change stays an operator action.
 
-Trigger contract for MH-7 to implement: Pushing a release tag starts the release pipeline, with publication creating `vX.Y.Z` at the target merge and the tag push matching the `v*` filter triggering the pipeline. No release artifact ships without its tag, since the pipeline requires tag context. Failure rule: a pipeline run from a malformed or unauthorized tag fails closed with no partial release, where non-matching tags never match the trigger filter and an aborted run publishes nothing.
+Trigger contract, as implemented by the pipeline below: Pushing a release tag starts the release pipeline, with publication creating `vX.Y.Z` at the target merge and the tag push matching the `v*` filter triggering the pipeline. No release artifact ships without its tag, since the pipeline requires tag context. Failure rule: a pipeline run from a malformed or unauthorized tag fails closed with no partial release, where non-matching tags never match the trigger filter and an aborted run publishes nothing.
 
 Release scope for tagging: every published release including pre-releases gets a tag, with the dotted marker rule above; drafts are never tagged, since a draft is not a release. A pre-release draft is marked as a prerelease before publishing, so the published RC carries GitHub's prerelease flag and never appears as stable.
 
