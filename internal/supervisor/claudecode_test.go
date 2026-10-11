@@ -109,6 +109,7 @@ func installFakeClaude(t *testing.T, cfg fakeClaudeConfig) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 }
 
 func fakeAuth(t *testing.T) map[string]any {

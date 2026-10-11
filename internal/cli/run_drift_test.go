@@ -351,6 +351,7 @@ func strictRun(t *testing.T, state string) (int, string) {
 	}
 	t.Setenv("MYTHHELM_HOME", state)
 	t.Setenv("HOME", t.TempDir()) // the native inventory reads the user's settings: never the developer's
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	t.Chdir(repo)
 	code, stdout, _ := runMain("run", "--task-file", filepath.Join(repo, "task.md"), "--adapter", "claudecode",
 		"--billing", "subscription-only", "--execution-profile", "trusted-host", "--no-checks",
@@ -368,6 +369,22 @@ func strictRun(t *testing.T, state string) (int, string) {
 	}
 	t.Fatalf("no run.result in stdout:\n%s", stdout)
 	return 0, ""
+}
+
+// TestStrictRunIgnoresAmbientClaudeConfigDir keeps strictRun isolated from a
+// CLAUDE_CONFIG_DIR holding a hook. Not parallel: it sets process environment.
+func TestStrictRunIgnoresAmbientClaudeConfigDir(t *testing.T) {
+	fakeClaudeOnPath(t)
+	cfg := t.TempDir()
+	hook := `{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"true"}]}]}}`
+	if err := os.WriteFile(filepath.Join(cfg, "settings.json"), []byte(hook), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", cfg)
+
+	if code, reason := strictRun(t, filepath.Join(t.TempDir(), "absent-state")); code != int(ExitBlocked) || reason != "no_qualification_record" {
+		t.Errorf("exit %d reason %q, want %d no_qualification_record", code, reason, ExitBlocked)
+	}
 }
 
 // TestStrictMainBlocksWriteNothing drives the packaged entry point to the
