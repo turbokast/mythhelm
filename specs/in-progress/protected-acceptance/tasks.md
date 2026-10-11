@@ -15,7 +15,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Acceptance vocabulary package
+### Task 1 — Acceptance vocabulary package ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (a new package of about ten exported abstractions that every later task builds on)
@@ -39,6 +39,10 @@
   - `TestResultLabelVerbatim`: `not_run`, `unavailable` and the payload value `NOT RUN` label `NOT RUN`, `invalid` labels `INVALID`, an unlisted value labels `unknown`; `Unverified()` is true for exactly `not_run` and `unavailable`.
 - **Test plan**: Pure table tests, no I/O.
 - **Invariants touched**: I07 (v2 §2: a verdict is defined only with its candidate, contract, check definition and environment binding); I09 (v2 §2: a missing dimension never matches and an empty check list never passes); I20 (v2 §2: P1 is an immutable, digest-pinned revision).
+- **Status**: ✅ Completed — `internal/acceptance` ships the pure verdict, binding, pin, P1 and decision vocabulary of design §2.1; PR #398.
+- **Implementation**: The exact §2.1 API; `Decide` returns `checks_failed` for a failed or timed-out verdict and an empty reason for `passed`; `EnvironmentID` hashes length-prefixed fields. Commit 8f29082.
+- **Spec deviations**: None.
+- **Files modified**: `internal/acceptance/acceptance.go`, `internal/acceptance/acceptance_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
 ### Task 2 — Schema 8: verification bindings and immutable policies
 
