@@ -147,8 +147,9 @@
 - **Test plan**: Fake `Launcher` and `OwnedProc` as in the Claude launch tests; ladder test with a Unix build tag.
 - **Invariants touched**: I06 (sent is not confirmed); I18 (one owner, one writer); I01; I15 (no unscreened passthrough).
 - **Status**: ✅ Completed — `Prepare` and `Start` implemented with refusals, fidelity deltas, single launch, `Decode` pump and the stop ladder reporting `Acknowledged:"unknown"`; PR #388.
-- **Implementation**: `Start` guards with an atomic on the adapter before `Launch`; the session forwards `Decode` observations (dropping only Progress and reporting the count in `ProtocolCounters`) and merges `Decode`'s error into the process exit. Commit aa7ea1a.
+- **Implementation**: `Start` guards with an atomic on the adapter before `Launch`; the session forwards `Decode` observations (dropping only Progress and reporting the count in `ProtocolCounters`) and merges `Decode`'s error into the process exit. Commits aa7ea1a, b63b12d.
 - **Spec deviations**: The branch is `claude/codex-native-adapter-task-5-zcnp4d`, the one the session designates. `adapters/codex/probe.go` is outside the Files list: it gains the `goos` and `started` fields on `codexAdapter`, as the Task 3 hand-off directs.
+  - Review round 1 (consistent with design §5): the session drains stdout after `Decode` returns so a native cannot block on a full pipe when decoding stops early.
 - **Files modified**: `adapters/codex/launch.go`, `adapters/codex/launch_test.go`, `adapters/codex/launch_unix_test.go`, `adapters/codex/probe.go`, `adapters/codex/stub.go`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`.
 
 

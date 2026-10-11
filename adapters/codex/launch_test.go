@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/turbokast/mythhelm/internal/adapter"
 )
@@ -292,5 +293,56 @@ func TestStartMergesStreamErrorIntoExit(t *testing.T) {
 	_, exit := drain(t, s)
 	if exit.Err == nil {
 		t.Fatal("exit.Err = nil, want the incomplete-stream error from Decode")
+	}
+}
+
+// pipeProc models a native that cannot exit until its stdout is fully read.
+type pipeProc struct {
+	r        *io.PipeReader
+	finished chan struct{}
+}
+
+func (p *pipeProc) Stdout() io.Reader             { return p.r }
+func (*pipeProc) Signal(adapter.StopSignal) error { return nil }
+func (p *pipeProc) Wait() adapter.NativeExit {
+	<-p.finished
+	return adapter.NativeExit{}
+}
+func (*pipeProc) GroupGone() bool { return true }
+
+type pipeLauncher struct{ proc *pipeProc }
+
+func (l pipeLauncher) Launch(context.Context, adapter.ProcSpec) (adapter.OwnedProc, error) {
+	return l.proc, nil
+}
+
+func TestSessionDrainsStdoutAfterEarlyDecodeStop(t *testing.T) {
+	t.Parallel()
+	pr, pw := io.Pipe()
+	proc := &pipeProc{r: pr, finished: make(chan struct{})}
+	go func() {
+		_, _ = io.WriteString(pw, `{"type":"result","is_error":"yes"}`+"\n")
+		_, _ = io.WriteString(pw, strings.Repeat(`{"type":"turn"}`+"\n", 100_000))
+		_ = pw.Close()
+		close(proc.finished)
+	}()
+	a := New()
+	lp, err := a.Prepare(context.Background(), prepareInput(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := a.Start(context.Background(), lp, pipeLauncher{proc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	finished := make(chan adapter.NativeExit, 1)
+	go func() { _, exit := drain(t, s); finished <- exit }()
+	select {
+	case exit := <-finished:
+		if exit.Err == nil {
+			t.Fatal("exit.Err = nil, want the malformed result error")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("session hung: stdout was not drained after Decode stopped early, so the native could not exit")
 	}
 }

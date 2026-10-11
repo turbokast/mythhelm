@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -122,10 +123,14 @@ type launchSession struct {
 func (s *launchSession) Observations() <-chan adapter.Observation { return s.obs }
 func (s *launchSession) Done() <-chan adapter.NativeExit          { return s.done }
 
-// run decodes stdout until it ends, then reaps the process.
+// run decodes stdout until it ends, then reaps the process. Decode can stop
+// before EOF, so stdout is drained: a native blocked on a full pipe could
+// otherwise never exit for Wait to return.
 func (s *launchSession) run() {
-	decoded := Decode(s.proc.Stdout(), s.send)
+	stdout := s.proc.Stdout()
+	decoded := Decode(stdout, s.send)
 	close(s.obs)
+	_, _ = io.Copy(io.Discard, stdout)
 	exit := s.proc.Wait()
 	if exit.Err == nil {
 		exit.Err = decoded.Err
