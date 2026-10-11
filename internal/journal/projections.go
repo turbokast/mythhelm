@@ -1,6 +1,7 @@
 package journal
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -131,7 +132,8 @@ func InsertVerification(ctx context.Context, tx *sql.Tx, v VerificationRow) erro
 
 // checkAttestation rejects a binding the immutable table could not later
 // correct: an attestation that is not a valid v2contract.Verification of this
-// verification, or whose digest is not the v2contract.Digest of that record.
+// verification and candidate, is not its canonical encoding, or whose digest is
+// not the v2contract.Digest of that record.
 // A digest with no attestation is left to the table's CHECK.
 func checkAttestation(v VerificationRow) error {
 	if len(v.Attestation) == 0 {
@@ -143,6 +145,16 @@ func checkAttestation(v VerificationRow) error {
 	}
 	if att.VerificationID != v.ID {
 		return fmt.Errorf("journal: verification %s carries the attestation of %s", v.ID, att.VerificationID)
+	}
+	if att.Candidate.Value != v.CandidateCommit {
+		return fmt.Errorf("journal: verification %s judged candidate %s but its attestation names %s", v.ID, v.CandidateCommit, att.Candidate.Value)
+	}
+	canonical, err := json.Marshal(att)
+	if err != nil {
+		return fmt.Errorf("journal: verification %s attestation: %w", v.ID, err)
+	}
+	if !bytes.Equal(canonical, v.Attestation) {
+		return fmt.Errorf("journal: verification %s attestation is not the canonical encoding of its record", v.ID)
 	}
 	if want := v2contract.Digest(att); v.AttestationDigest != want {
 		return fmt.Errorf("journal: verification %s attestation digest %q is not %q", v.ID, v.AttestationDigest, want)

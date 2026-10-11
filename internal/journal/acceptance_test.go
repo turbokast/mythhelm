@@ -40,12 +40,21 @@ func p1Policy() v2contract.PolicyVersion {
 	}
 }
 
+// fixtureCandidate is the candidate commit of every verificationRow and of
+// the attestations attestationFor builds for them.
+var fixtureCandidate = strings.Repeat("a", 40)
+
 func attestationFor(t *testing.T, verificationID string) ([]byte, string) {
+	t.Helper()
+	return attestationOf(t, verificationID, fixtureCandidate)
+}
+
+func attestationOf(t *testing.T, verificationID, candidate string) ([]byte, string) {
 	t.Helper()
 	att := v2contract.Verification{
 		SchemaVersion:            v2contract.SchemaVersion,
 		VerificationID:           verificationID,
-		Candidate:                v2contract.GitObject{Format: "sha1", Value: strings.Repeat("a", 40)},
+		Candidate:                v2contract.GitObject{Format: "sha1", Value: candidate},
 		Environment:              "linux/amd64",
 		AcceptanceContractDigest: "sha256:" + strings.Repeat("b", 64),
 		CheckDefinition:          "sha256:" + strings.Repeat("c", 64),
@@ -68,7 +77,7 @@ func insertVerificationRow(t *testing.T, j *Journal, v VerificationRow) error {
 
 func verificationRow(runID, id string) VerificationRow {
 	now := time.Now().UTC()
-	return VerificationRow{ID: id, RunID: runID, CandidateCommit: "c", ConfigSHA256: "cfg", Result: "passed", StartedAt: now, FinishedAt: now}
+	return VerificationRow{ID: id, RunID: runID, CandidateCommit: fixtureCandidate, ConfigSHA256: "cfg", Result: "passed", StartedAt: now, FinishedAt: now}
 }
 
 // insertSchema7Verification writes a verification the way a schema-7 build
@@ -211,6 +220,11 @@ func TestVerificationBindingRoundTrip(t *testing.T) { // I20 (v2 §2): the bindi
 
 	own, ownDigest := attestationFor(t, "ver_rejected")
 	other, otherDigest := attestationFor(t, "ver_other")
+	elsewhere, elsewhereDigest := attestationOf(t, "ver_rejected", strings.Repeat("e", 40))
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, own, "", "  "); err != nil {
+		t.Fatal(err)
+	}
 	for name, tc := range map[string]struct {
 		edit func(*VerificationRow)
 	}{
@@ -227,6 +241,12 @@ func TestVerificationBindingRoundTrip(t *testing.T) { // I20 (v2 §2): the bindi
 		}},
 		"attestation of another verification": {func(v *VerificationRow) {
 			v.Attestation, v.AttestationDigest = other, otherDigest
+		}},
+		"attestation of another candidate": {func(v *VerificationRow) {
+			v.Attestation, v.AttestationDigest = elsewhere, elsewhereDigest
+		}},
+		"attestation that is not the canonical encoding": {func(v *VerificationRow) {
+			v.Attestation, v.AttestationDigest = indented.Bytes(), ownDigest
 		}},
 	} {
 		v := verificationRow("run_rejected", "ver_rejected")
