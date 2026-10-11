@@ -841,15 +841,11 @@ func (w *worker) observe(sp *spool, ob adapter.Observation, prog *progress, out 
 		}
 		// An adapter that can no longer observe the stream leaves the native
 		// running unobserved: the worker stops it through its own
-		// identity-checked interrupt (I18). A stop already requested keeps
-		// its requester, and a route violation keeps its reason.
-		if o.Class == adapter.ProtocolMismatch {
-			if out.stopBy == "" {
-				out.stopBy = "worker"
-			}
-			if out.stopReason == "" {
-				out.stopReason = adapter.ProtocolMismatch
-			}
+		// identity-checked interrupt (I18). Only a stop the worker starts
+		// itself carries the reason: a stop already requested, by the user
+		// or for a route violation, keeps its requester and reason.
+		if o.Class == adapter.ProtocolMismatch && out.stopBy == "" {
+			out.stopBy, out.stopReason = "worker", adapter.ProtocolMismatch
 		}
 	case adapter.Result:
 		out.result = &o

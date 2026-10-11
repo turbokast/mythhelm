@@ -155,6 +155,7 @@ func (a attempt) codexLaunch(t *testing.T, mode string) Launch {
 		t.Fatal(err)
 	}
 	l.AdapterID, l.Path, l.NativeSHA256, l.Args = codex.AdapterID, os.Args[0], digest, []string{codexFixtureCommand, mode}
+	l.Env = []string{"HOME=" + t.TempDir(), "PATH=" + os.Getenv("PATH")}
 	return l
 }
 
@@ -1245,7 +1246,7 @@ func TestProtocolMismatchRequestsWorkerStop(t *testing.T) { // #389 F1, I18
 		wantReason string
 	}{
 		{name: "protocol_mismatch asks the worker to stop", class: adapter.ProtocolMismatch, wantStopBy: "worker", wantReason: adapter.ProtocolMismatch},
-		{name: "an earlier user stop keeps its requester", class: adapter.ProtocolMismatch, before: outcome{stopBy: "user"}, wantStopBy: "user", wantReason: adapter.ProtocolMismatch},
+		{name: "an earlier user stop stays a user stop with no reason", class: adapter.ProtocolMismatch, before: outcome{stopBy: "user"}, wantStopBy: "user"},
 		{name: "an earlier route violation keeps its reason", class: adapter.ProtocolMismatch, before: outcome{stopBy: "worker", stopReason: "billing_route_mismatch"}, wantStopBy: "worker", wantReason: "billing_route_mismatch"},
 		{name: "another native error asks for no stop", class: "native_error"},
 	}
@@ -1336,5 +1337,45 @@ func TestCodexConfigPathsAndInventoryUsed(t *testing.T) { // D11, I20
 	delete(c.launch.UserConfigPaths, "user_config")
 	if err := c.launch.verifyUserConfig(); err == nil || !strings.Contains(err.Error(), "no inventoried path") {
 		t.Fatalf("verifyUserConfig without a path = %v, want the no inventoried path failure", err)
+	}
+}
+
+// Admission found no Codex config, so the manifest is empty and the pipeline
+// maps no paths. The re-inventory is then the only guard against a config
+// that appears before exec (D12).
+func TestCodexConfigAppearingAfterEmptyAdmissionFailsLaunch(t *testing.T) { // I20, A6
+	t.Parallel()
+	home, workdir := t.TempDir(), t.TempDir()
+	launch := Launch{AdapterID: codex.AdapterID, Dir: workdir, Env: []string{"HOME=" + home}}
+	if err := launch.verifyUserConfig(); err != nil {
+		t.Fatalf("verifyUserConfig with no config anywhere = %v, want nil", err)
+	}
+
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "a plain config", body: `{}`, want: `"user_config" changed after admission`},
+		{name: "a config carrying a credential key", body: `{"api_key":"synthetic"}`, want: "native_settings_credential_override"},
+		{name: "a config carrying hooks", body: `{"hooks":{"pre":[{}]}}`, want: `"user_config" changed after admission`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			home := t.TempDir()
+			writeConfigFile(t, filepath.Join(home, ".codex", "config.json"), tc.body)
+			l := Launch{AdapterID: codex.AdapterID, Dir: t.TempDir(), Env: []string{"HOME=" + home}}
+			if err := l.verifyUserConfig(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("verifyUserConfig = %v, want a failure containing %q", err, tc.want)
+			}
+		})
+	}
+
+	// Other adapters keep their behaviour: an empty manifest verifies nothing.
+	claude := Launch{AdapterID: "builtin/claudecode", Dir: t.TempDir(), Env: []string{"HOME=" + home}}
+	writeConfigFile(t, filepath.Join(home, ".codex", "config.json"), `{}`)
+	if err := claude.verifyUserConfig(); err != nil {
+		t.Fatalf("Claude verifyUserConfig with an empty manifest = %v, want nil", err)
 	}
 }

@@ -153,9 +153,11 @@ func (l Launch) containedCommand(spec adapter.ProcSpec) (*exec.Cmd, spawnHooks, 
 // (design §2.9, I20). Every digest key needs a path mapping — a missing
 // mapping fails the launch, never skips — and every mapped mutable source
 // must still match its admitted digest. It returns nil when the launch
-// carries no digests. Errors name sources and paths, never file content.
+// carries no digests, except for Codex: its re-inventory is the only
+// post-admission guard, so a config that appeared after an empty admission
+// fails the launch (D12). Errors name sources and paths, never file content.
 func (l Launch) verifyUserConfig() error {
-	if len(l.UserConfigDigests) == 0 {
+	if len(l.UserConfigDigests) == 0 && l.AdapterID != codex.AdapterID {
 		return nil
 	}
 	for _, source := range slices.Sorted(maps.Keys(l.UserConfigDigests)) {
