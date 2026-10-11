@@ -198,10 +198,10 @@ func TestHooksCountedAndTrustRequired(t *testing.T) { // AC-3.1
 func TestInventoryBlocksPresentTOML(t *testing.T) { // I02: a format this inventory cannot read is never "no config"
 	t.Parallel()
 	home, workdir := t.TempDir(), t.TempDir()
-	if _, err := InventoryAdmittedProject(home, workdir, map[string][]byte{"project_config_toml": []byte("[mcp_servers.s]\n")}, nil); err == nil || !strings.Contains(err.Error(), "native_config_unreadable") {
+	if _, err := InventoryAdmittedProject(home, workdir, map[string][]byte{"project_config_toml": []byte("{}")}, nil); err == nil || !strings.Contains(err.Error(), "native_config_unreadable") {
 		t.Fatalf("project TOML: err = %v, want native_config_unreadable", err)
 	}
-	writeFile(t, filepath.Join(home, ".codex", "config.toml"), "[mcp_servers.s]\n")
+	writeFile(t, filepath.Join(home, ".codex", "config.toml"), "{}")
 	if _, err := InventorySettingsForEnv(home, workdir, nil); err == nil || !strings.Contains(err.Error(), "native_config_unreadable") {
 		t.Fatalf("user TOML: err = %v, want native_config_unreadable", err)
 	}
