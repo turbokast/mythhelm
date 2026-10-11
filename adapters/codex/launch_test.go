@@ -218,9 +218,8 @@ func TestSecondStartOnSameAdapterRefused(t *testing.T) { // AC-5.3, D10
 	}
 
 	var names []string
-	typ := reflect.TypeOf(s)
-	for i := range typ.NumMethod() {
-		names = append(names, typ.Method(i).Name)
+	for m := range reflect.TypeOf(s).Methods() {
+		names = append(names, m.Name)
 	}
 	if want := []string{"Done", "Interrupt", "Observations"}; !slices.Equal(names, want) {
 		t.Fatalf("Session methods = %q, want %q: no write method", names, want)
@@ -230,13 +229,11 @@ func TestSecondStartOnSameAdapterRefused(t *testing.T) { // AC-5.3, D10
 func TestAdapterHasNoReplayPath(t *testing.T) { // AC-5.4, AC-6.2
 	t.Parallel()
 	var got, want []string
-	typ := reflect.TypeOf(New())
-	for i := range typ.NumMethod() {
-		got = append(got, typ.Method(i).Name)
+	for m := range reflect.TypeOf(New()).Methods() {
+		got = append(got, m.Name)
 	}
-	iface := reflect.TypeFor[adapter.Adapter]()
-	for i := range iface.NumMethod() {
-		want = append(want, iface.Method(i).Name)
+	for m := range reflect.TypeFor[adapter.Adapter]().Methods() {
+		want = append(want, m.Name)
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("exported methods = %q, want exactly the adapter.Adapter set %q", got, want)
