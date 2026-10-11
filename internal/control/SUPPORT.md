@@ -3,9 +3,10 @@
 One row per deliverable of the supervisor service (spec `supervisor-service`;
 decision record [ADR 0014](../../docs/decisions/0014-service-topology.md)).
 `support_test.go` reads this file: it must list exactly the shipped
-deliverables and every control method the supervisor serves, and each row's
-evidence must be tests that exist in this package, built for the platforms the
-row claims.
+deliverables and every control method the supervisor serves. A
+`fixture-tested` row's evidence must be tests that exist in this package, built
+for the platforms the row claims; a `blocked` row names no tests, and its
+evidence starts with `blocked:` and gives the reason.
 
 Statuses are `fixture-tested` and `blocked`. Nothing here is `live-qualified`:
 no row has run against a live multi-client deployment. `fixture-tested` means
@@ -32,7 +33,8 @@ files carry no build tag) or `linux, darwin` (they are tagged
 | `method:heartbeat` | `heartbeat` intent: refresh a held reservation | fixture-tested | all | `TestHeartbeatIntentViaExecute` |
 | `method:read` | `read` intent: authority filtered before rows are counted; token callers bounded to their repository | fixture-tested | all | `TestReadIntentFiltersForeignRepos`, `TestFilterHidesForeignRepos`, `TestReadIntentTokenBindsRepoEntitlement` |
 | `pinned-ladder` | Versioned stop ladder pinned at admission; mismatch refuses without signalling (handler-level; stop is not served in S1) | fixture-tested | all | `TestStopLadderValidation`, `TestStopVersionMismatchWritesNoRequest` |
-| `envelope-reconnect` | Supervisor-loss envelope beats and the reconcile-then-mint-token handshake; old generations never fresh | fixture-tested | all | `TestReconnectReconcilesFirst`, `TestOldGenerationNeverFresh`, `TestWriteSupervisorBeat`, `TestHermeticNoCredentialsOrNetwork` |
+| `envelope-reconnect` | Supervisor-loss envelope beats (written by the supervisor's watch loop); the reconcile-then-mint-token handshake `control.Reconnect` as a function only, with no production caller; old generations never fresh | fixture-tested | all | `TestReconnectReconcilesFirst`, `TestOldGenerationNeverFresh`, `TestWriteSupervisorBeat`, `TestHermeticNoCredentialsOrNetwork` |
+| `windows-job-object` | Windows Job Object confirmation semantics (NFR-5) | blocked | windows | blocked: no Job Object exists (deferred, N7; `internal/workers/proc_windows.go`), so the Windows worker reports `descendant_scan` as `unavailable` and claims nothing about descendants |
 
 ## Not claimed
 
@@ -42,9 +44,16 @@ files carry no build tag) or `linux, darwin` (they are tagged
   Windows leg. There is still no Windows lazy start or detach evidence.
 - No row is `live-qualified`.
 - `stop` and `recover` are not served in S1 (Q-27, option A): the service
-  answers them `capability_unsupported` and writes nothing, and the CLI runs
-  both locally under run ownership (`TestServedStopAndRecoverAreRefused`).
+  answers them `capability_unsupported` and writes nothing
+  (`TestServedStopAndRecoverAreRefused`). The CLI runs both locally:
+  `mythhelm recover` under the run owner lock, while `mythhelm stop` takes no
+  owner lock, writing an atomic stop request that the worker acknowledges in
+  its own journal entry.
   The handlers stay for the follow-up that routes them through journal
   ingest (issue #348).
+- The reconnect handshake is not wired: nothing in production calls
+  `control.Reconnect` yet; only the supervisor beat
+  (`control.WriteSupervisorBeat`, from `internal/supervisor/pipeline.go`) runs
+  in production.
 - A per-repository entitlement store does not exist (`read` scopes an
   operator by the repositories it presents); see the task 6 hand-off.

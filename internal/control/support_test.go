@@ -172,7 +172,7 @@ func supportProblems(rows []supportRow, methods []string, tests map[string]strin
 // adds its row here and to SUPPORT.md together.
 var shippedDeliverables = []string{
 	"capability-tokens", "envelope-reconnect", "execute-idempotency", "frame-codec", "instance-lock",
-	"lazy-start", "pinned-ladder", "sole-writer-mutate", "transport-unix", "transport-windows-pipe",
+	"lazy-start", "pinned-ladder", "sole-writer-mutate", "transport-unix", "transport-windows-pipe", "windows-job-object",
 }
 
 func servedMethods() []string {
