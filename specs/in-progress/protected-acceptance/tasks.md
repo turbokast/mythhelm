@@ -40,7 +40,7 @@
 - **Test plan**: Pure table tests, no I/O.
 - **Invariants touched**: I07 (v2 §2: a verdict is defined only with its candidate, contract, check definition and environment binding); I09 (v2 §2: a missing dimension never matches and an empty check list never passes); I20 (v2 §2: P1 is an immutable, digest-pinned revision).
 
-### Task 2 — Schema 8: verification bindings and immutable policies
+### Task 2 — Schema 8: verification bindings and immutable policies ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (persistence schema and migration)
@@ -72,6 +72,10 @@
   - `grep -q "Status: proposed" docs/decisions/0019-protected-acceptance.md` and, for each of D1, D2, D5, D7, D8, D10, D14, D18, D19, D20, D21 and D23, `grep -qw "<id>"` on the file succeeds; exits non-zero before (file absent).
 - **Test plan**: Real SQLite in temp directories; the schema-7 fixture is built by opening with the shipped migrations up to 0007 through the test helper used by `migrate_tables_test.go`.
 - **Invariants touched**: I20 (v2 §2: policies and bindings are immutable by trigger); I23 (v2 §2: one canonical ledger, the binding is a row beside the verification, not a second store); I09 (v2 §2: an absent binding is `Bound == false`, never a default verdict).
+- **Status**: ✅ Completed — schema 8 ships `verification_bindings`, abort triggers on it and on `policies`, the extended `VerificationRow`/`InsertVerification`/`LatestVerification`, `EnsurePolicy`/`ErrPolicyConflict`, every version mirror and pin, and ADR 0019 (proposed); PR #400.
+- **Implementation**: `InsertVerification` always writes the binding row, so `Bound == false` means only "recorded before schema 8"; BEFORE INSERT triggers close `INSERT OR REPLACE`; 0008 also advances `migration_state.schema_version` to 8. Backup-name pins derive from `journal.SchemaVersion`. ADR number 0019 re-checked free (0001-0016 on disk; 0017 and 0018 claimed by other specs). Commit 2993119.
+- **Spec deviations**: Three changes outside the Files list, each mechanical: `internal/migrate/SUPPORT.md` (the evidence test `TestSchemaVersionIs7` is renamed `TestSchemaVersionIs8`, and `TestSupportMatrixMatchesEvidence` reads that name), `docs/user-guide.md` (backup name `bak-migration-v8`) and migration 0008's `UPDATE migration_state SET schema_version = 8` (data only; `TestMigrationStateStartsNotStarted` pins that column to `SchemaVersion`). `TestMigration0007CreatesV2Tables` now opens `migrations[:7]` so it keeps testing 0007's objects. The preview step-list test for a schema-7 database (validation finding 10) is the new subtest `TestPreviewMirrorsPinned/schema_7_database_lists_only_migration_0008` in `internal/cli/migrate_test.go`.
+- **Files modified**: `internal/journal/migrations/0008_acceptance.sql`, `internal/journal/journal.go`, `internal/journal/projections.go`, `internal/journal/acceptance_test.go`, `internal/journal/journal_test.go`, `internal/journal/qualification_test.go`, `internal/journal/migrate_tables_test.go`, `internal/journal/evaluator_test.go`, `internal/migrate/backup.go`, `internal/migrate/preview/plan.go`, `internal/migrate/apply_test.go`, `internal/migrate/SUPPORT.md`, `internal/cli/migrate_test.go`, `tests/migrate_e2e_test.go`, `docs/decisions/0019-protected-acceptance.md`, `docs/user-guide.md`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
 ### Task 3 — Evaluator seam and three-state check result
 
