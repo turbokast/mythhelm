@@ -353,3 +353,25 @@ func TestCliUsageNotices(t *testing.T) {
 		t.Errorf("ledger lines end at %d with result at %d, want the lines before run.result", last, result)
 	}
 }
+
+func TestPayloadTextNumbers(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		p    payload
+		want string
+	}{
+		{"seven digit pid prints as digits", payload{"pid": float64(1745146)}, "1745146"},
+		{"fraction keeps its fraction", payload{"pid": 0.25}, "0.25"},
+		{"zero prints as 0", payload{"pid": float64(0)}, "0"},
+		{"absent key is unknown", payload{}, "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tt.p.text("pid"); got != tt.want {
+				t.Fatalf("text = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
