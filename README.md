@@ -26,6 +26,7 @@ Supported now:
 - `mythhelm supervisor`: per-user supervisor service, lazily started, with authenticated local IPC (Unix socket, Windows named pipe).
 - Linux, macOS and Windows. Native Claude execution is refused on Windows by design (exit 7); the scripted adapter runs everywhere.
 - Dogfood billing postures `local-scripted` and `subscription-declared` (user-declared, never verified by MYTHHELM).
+- Codex is not yet a supported adapter: `--adapter codex` has fixture-tested adapter code only, its registry row stays `planned`, and every run blocks or is refused (see [Codex limits](docs/limitations.md#codex)).
 
 Not supported yet:
 
