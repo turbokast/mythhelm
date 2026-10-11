@@ -1030,6 +1030,37 @@ func TestFinalRunJournaled(t *testing.T) {
 	}
 }
 
+// TestRunAccessibleLiveSurfacesFinalCheckError drives the fast-run fallback:
+// supervision ends before the wait sees the run, and the final check fails
+// to read the journal. The read error must come back from the live stream,
+// never an empty stream that exits with only the run's code (#399).
+func TestRunAccessibleLiveSurfacesFinalCheckError(t *testing.T) {
+	t.Parallel()
+	readErr := errors.New("journal read boom")
+	supervise := func(context.Context, supervisor.Hooks) (supervisor.Outcome, error) {
+		return supervisor.Outcome{}, nil
+	}
+	wait := func(ctx context.Context, _, _ string) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	final := func(_, _ string) (bool, error) { return false, readErr }
+	var out, errBuf bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		_, err := runAccessibleLiveWith(Stdio{Out: &out, Err: &errBuf}, t.TempDir(), "run_fast", 0, supervise, wait, final)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, readErr) {
+			t.Fatalf("runAccessibleLiveWith = %v, want the final check's read error", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("runAccessibleLiveWith wedged after supervision ended")
+	}
+}
+
 // TestRunAccessibleLiveEndsOnStrandedRun pins the live stream's shutdown
 // when the pipeline fails after journaling: the run sits in created,
 // which the terminal watch never observes as terminal, so supervision

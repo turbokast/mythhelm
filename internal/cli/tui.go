@@ -284,6 +284,15 @@ func runInspectTUI(deps tuiDeps, stateDir, runID string, opts tuiOptions) error 
 // next-after trailer is its last line, and the returned error already
 // carries the outcome's exit code.
 func runAccessibleLive(stdio Stdio, stateDir, runID string, after int64, supervise superviseFunc) (supervisor.Outcome, error) {
+	return runAccessibleLiveWith(stdio, stateDir, runID, after, supervise, waitForRunJournaled, finalRunJournaled)
+}
+
+// runAccessibleLiveWith is runAccessibleLive with the journal checks passed
+// in, so a test can drive the fast-run fallback deterministically.
+func runAccessibleLiveWith(stdio Stdio, stateDir, runID string, after int64, supervise superviseFunc,
+	wait func(ctx context.Context, stateDir, runID string) error,
+	final func(stateDir, runID string) (bool, error),
+) (supervisor.Outcome, error) {
 	interrupts := make(chan os.Signal, 2)
 	signal.Notify(interrupts, os.Interrupt)
 	defer signal.Stop(interrupts)
@@ -312,7 +321,7 @@ func runAccessibleLive(stdio Stdio, stateDir, runID string, after int64, supervi
 		// The pipeline journals run.created after it starts; the stream's
 		// initial Load must wait for that row, or a fast startup fails
 		// with "not found" and the run exits 1 with no stream at all.
-		if err := waitForRunJournaled(ctx, stateDir, runID); err != nil {
+		if err := wait(ctx, stateDir, runID); err != nil {
 			if ctx.Err() == nil {
 				streamDone <- err
 				return
@@ -322,7 +331,7 @@ func runAccessibleLive(stdio Stdio, stateDir, runID string, after int64, supervi
 			// pipeline failed before journaling, so there is nothing
 			// to stream and the outcome below carries the exit; a read
 			// error surfaces rather than an empty stream.
-			found, ferr := finalRunJournaled(stateDir, runID)
+			found, ferr := final(stateDir, runID)
 			if ferr != nil || !found {
 				streamDone <- ferr
 				return
@@ -398,7 +407,7 @@ func finalRunJournaled(stateDir, runID string) (bool, error) {
 	t := time.NewTicker(accessibleRunWaitPace)
 	defer t.Stop()
 	for {
-		found, err := runJournaled(context.Background(), stateDir, runID)
+		found, err := runJournaled(ctx, stateDir, runID)
 		if errors.Is(err, journal.ErrNoDatabase) || errors.Is(err, journal.ErrNotFound) {
 			return false, nil
 		}
