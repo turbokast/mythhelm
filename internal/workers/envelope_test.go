@@ -181,31 +181,57 @@ func TestSupervisorBeatStale(t *testing.T) {
 	}
 }
 
+// awaitWithLiveBeats runs AwaitReconnect, asserts it does not return while
+// no beat exists, then beats every 20ms with beatGeneration, as a live
+// supervisor does, until AwaitReconnect returns or 10s pass. A single write
+// goes stale before a loaded machine schedules the poller.
+func awaitWithLiveBeats(t *testing.T, dir string, env EpisodeEnvelope, beatGeneration int64) error {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	done := make(chan error, 1)
+	go func() { done <- AwaitReconnect(ctx, dir, env) }()
+	select {
+	case err := <-done:
+		t.Fatalf("AwaitReconnect returned %v with no beat written", err)
+	case <-time.After(awaitPollInterval * 3):
+	}
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	deadline := time.After(10 * time.Second)
+	for n := uint64(1); ; n++ {
+		writeBeatFile(t, dir, n, time.Now().UTC(), beatGeneration)
+		select {
+		case err := <-done:
+			return err
+		case <-deadline:
+			t.Fatal("AwaitReconnect did not return under fresh beats")
+		case <-tick.C:
+		}
+	}
+}
+
 func TestAwaitReconnectReturnsOnFreshBeat(t *testing.T) {
+	t.Parallel()
+	env := EpisodeEnvelope{AttemptID: "att_1", LaunchID: "tok_abc", Generation: 1}
+	if err := awaitWithLiveBeats(t, t.TempDir(), env, 1); err != nil {
+		t.Fatalf("AwaitReconnect = %v, want nil on a fresh beat", err)
+	}
+}
+
+func TestAwaitReconnectIgnoresOldBeat(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	env := EpisodeEnvelope{AttemptID: "att_1", LaunchID: "tok_abc", Generation: 1}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 	done := make(chan error, 1)
-	go func() { done <- AwaitReconnect(context.Background(), dir, env) }()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		select {
-		case err := <-done:
-			t.Fatalf("AwaitReconnect returned %v with no beat written", err)
-		case <-time.After(awaitPollInterval * 3):
-			writeBeatFile(t, dir, 9, time.Now().UTC(), 1)
-			select {
-			case err := <-done:
-				if err != nil {
-					t.Fatalf("AwaitReconnect = %v, want nil on a fresh beat", err)
-				}
-				return
-			case <-time.After(10 * time.Second):
-				t.Fatal("AwaitReconnect did not return after a fresh beat")
-			}
-		case <-time.After(time.Until(deadline)):
-			t.Fatal("timed out driving AwaitReconnect")
-		}
+	go func() { done <- AwaitReconnect(ctx, dir, env) }()
+	writeBeatFile(t, dir, 1, time.Now().Add(-2*MaxSupervisorBeatAge).UTC(), 1)
+	select {
+	case err := <-done:
+		t.Fatalf("AwaitReconnect returned %v on a beat older than MaxSupervisorBeatAge", err)
+	case <-time.After(awaitPollInterval * 10):
 	}
 }
 
@@ -215,19 +241,9 @@ func TestAwaitReconnectReturnsOnFreshBeat(t *testing.T) {
 // treats the mismatch as permission to improvise.
 func TestAwaitReconnectAcceptsAnyGeneration(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
 	env := EpisodeEnvelope{AttemptID: "att_1", LaunchID: "tok_abc", Generation: 1}
-	done := make(chan error, 1)
-	go func() { done <- AwaitReconnect(context.Background(), dir, env) }()
-	time.Sleep(awaitPollInterval * 3)
-	writeBeatFile(t, dir, 3, time.Now().UTC(), 2)
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("AwaitReconnect = %v, want nil on a fresh new-generation beat", err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("AwaitReconnect did not return on a fresh new-generation beat")
+	if err := awaitWithLiveBeats(t, t.TempDir(), env, 2); err != nil {
+		t.Fatalf("AwaitReconnect = %v, want nil on a fresh new-generation beat", err)
 	}
 }
 
