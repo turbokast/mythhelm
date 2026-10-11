@@ -32,11 +32,11 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 ## Open
 
 ### MH-11: Windows process-tree ownership
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 1
 - **Gates**: G04
 - **Score**: 4.3 = (value 4 + urgency 5 + risk 4) / effort 3
-- **Spec**: (none)
+- **Spec**: `windows-process-ownership`
 - **Issue**: [#32](https://github.com/turbokast/mythhelm/issues/32)
 - **Source**: Master Specification v2 §§6, 17; W03/W14; historical issue #32
 - **Summary**: Job Objects and process-tree ownership for workers on Windows, so detach, stop, crash and orphan handling pass there as they do on Unix. The dogfood slice keeps the seam and blocks the native adapter on Windows (its non-goal N7).
@@ -100,7 +100,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: Requires MH-21 and MH-22; pair with MH-23. Alternative native surfaces need their own G12 qualification; no Herdr-only inference or second scheduler.
 
 ### MH-4: Codex native adapter and included-only qualification
-- **Status**: specced
+- **Status**: implementing
 - **Stage**: 1
 - **Gates**: G02, G04, G05
 - **Score**: 3.3 = (value 5 + urgency 5 + risk 3) / effort 4
@@ -121,18 +121,6 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Summary**: Finish detach, stop confirmation, recovery and review journeys on typed core controls, with keyboard-complete accessible output and human screen-reader evidence. Add safe declarative themes/keymaps and visible critical controls without making the S3 executable plugin protocol a prerequisite.
 - **Premise-grounded**: Confirmed: MH-2 is shipped as the historical TUI slice; README and issues #106/#107 record exit/detach gaps and limited human accessibility evidence. The remaining work does not reopen or relabel MH-2.
 - **Notes**: Requires durable core control and the v2 one-agent workflow for complete journey acceptance; pairs with MH-3 for Herdr. Value 4: core usability; risk 4: misleading lifecycle/hidden controls; effort 4: interaction and human evidence.
-
-### MH-21: Canonical v2 contracts and durable supervisor migration
-- **Status**: triaged
-- **Stage**: 1
-- **Gates**: G04, G16
-- **Score**: 3.0 = (value 5 + urgency 5 + risk 5) / effort 5
-- **Spec**: (none)
-- **Issue**: [#127](https://github.com/turbokast/mythhelm/issues/127)
-- **Source**: Master Specification v2 §§3–6; Implementation Plan W01/W03; ADRs 0003–0005 and 0007
-- **Summary**: Define revisioned task, event, policy and authority contracts, then migrate to one per-user supervisor with authenticated local control and global reservations. Preserve worker-owned processes and v1 evidence through explicit backup, drain/adopt/quarantine and restore; UI exit must not own execution.
-- **Premise-grounded**: Confirmed at eb349c2: internal/supervisor and ADR 0005 use per-run owners; internal/journal/migrations/0001_init.sql has no v2 task/policy tables. This is a migration, not an already delivered daemon.
-- **Notes**: W01 contract review precedes dispatch APIs; W03 can use fake adapters before live qualification. Value 5: S1 continuity; risk 5: duplicate launch, loss and stale authority; effort 5: cross-domain epic. Split implementation into reviewed lifecycle specs before task execution.
 
 ### MH-24: Scoped context, task dependencies and stale-evidence invalidation
 - **Status**: triaged
@@ -375,6 +363,18 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Source**: OpenSSF passing criterion warnings_strict (SUGGESTED); openssf-badge design §3; Master Specification v2 §§17–18; W16
 - **Summary**: The lint set is golangci-lint standard plus bodyclose, errorlint, gosec, misspell and nolintlint (verified in .golangci.yml) — solid but not maximal, so warnings_strict is Unmet. Evaluate and enable the strictest practical further linters and fix the resulting fallout.
 - **Premise-grounded**: 2026-10-05 — 7 claims, 6 HOLDS, 1 PARTIAL, 0 UNVERIFIABLE; v2 §§17-18/W16 PARTIAL (no explicit lint demand; W16 gates language carries it); warnings_strict Unmet + standard-plus-five config HOLDS
+
+### MH-21: Canonical v2 contracts and durable supervisor migration
+- **Status**: shipped
+- **Stage**: 1
+- **Gates**: G04, G16
+- **Score**: 3.0 = (value 5 + urgency 5 + risk 5) / effort 5
+- **Spec**: `v2-contract-vocabulary`, `supervisor-service`, `supervisor-migration`, `supervised-stop-recover`
+- **Issue**: [#127](https://github.com/turbokast/mythhelm/issues/127)
+- **Source**: Master Specification v2 §§3–6; Implementation Plan W01/W03; ADRs 0003–0005 and 0007
+- **Summary**: Define revisioned task, event, policy and authority contracts, then migrate to one per-user supervisor with authenticated local control and global reservations. Preserve worker-owned processes and v1 evidence through explicit backup, drain/adopt/quarantine and restore; UI exit must not own execution.
+- **Premise-grounded**: Confirmed at eb349c2: internal/supervisor and ADR 0005 use per-run owners; internal/journal/migrations/0001_init.sql has no v2 task/policy tables. This is a migration, not an already delivered daemon.
+- **Notes**: W01 contract review precedes dispatch APIs; W03 can use fake adapters before live qualification. Value 5: S1 continuity; risk 5: duplicate launch, loss and stale authority; effort 5: cross-domain epic. Split implementation into reviewed lifecycle specs before task execution.
 
 ### MH-32: TUI terminal recording (FR-3 follow-up)
 - **Status**: shipped

@@ -7,26 +7,25 @@
 
 Cards with a spec, being specified or implemented.
 
+- **MH-11** Windows process-tree ownership (specced, stage 1, score 4.3; spec `windows-process-ownership`; [#32](https://github.com/turbokast/mythhelm/issues/32))
 - **MH-12** Strict subscription-only qualification for Claude Code (implementing, stage 1, score 3.8; spec `claude-strict-subscription`; [#33](https://github.com/turbokast/mythhelm/issues/33))
 - **MH-13** Contained execution profiles: restricted and inspect (specced, stage 1, score 3.5; spec `contained-execution-profiles`; [#34](https://github.com/turbokast/mythhelm/issues/34))
-- **MH-4** Codex native adapter and included-only qualification (specced, stage 1, score 3.3; spec `codex-native-adapter`; [#25](https://github.com/turbokast/mythhelm/issues/25))
+- **MH-4** Codex native adapter and included-only qualification (implementing, stage 1, score 3.3; spec `codex-native-adapter`; [#25](https://github.com/turbokast/mythhelm/issues/25))
 
 ## Next
 
 The five highest-scored cards without a spec in an earlier stage, the current stage or the next stage.
 
-- **MH-11** Windows process-tree ownership (triaged, stage 1, score 4.3; [#32](https://github.com/turbokast/mythhelm/issues/32))
 - **MH-22** Protected acceptance and a complete v2 one-agent workflow (triaged, stage 1, score 3.8; [#128](https://github.com/turbokast/mythhelm/issues/128))
 - **MH-17** Account profiles and exhaustion handoff (triaged, stage 2, score 3.7; [#82](https://github.com/turbokast/mythhelm/issues/82))
 - **MH-3** Herdr bridge: single-pane experience with scoped status (triaged, stage 1, score 3.3; [#24](https://github.com/turbokast/mythhelm/issues/24))
 - **MH-23** Complete TUI intervention, accessibility and safe declarative themes (triaged, stage 1, score 3.3; [#129](https://github.com/turbokast/mythhelm/issues/129))
+- **MH-24** Scoped context, task dependencies and stale-evidence invalidation (triaged, stage 2, score 3.0; [#130](https://github.com/turbokast/mythhelm/issues/130))
 
 ## Later
 
 Every other open card, by score.
 
-- **MH-21** Canonical v2 contracts and durable supervisor migration (triaged, stage 1, score 3.0; [#127](https://github.com/turbokast/mythhelm/issues/127))
-- **MH-24** Scoped context, task dependencies and stale-evidence invalidation (triaged, stage 2, score 3.0; [#130](https://github.com/turbokast/mythhelm/issues/130))
 - **MH-25** Scoped export, retention, erasure and tested restoration (triaged, stage 2, score 3.0; [#131](https://github.com/turbokast/mythhelm/issues/131))
 - **MH-5** Routing across authorised profiles (triaged, stage 2, score 2.5; [#26](https://github.com/turbokast/mythhelm/issues/26))
 - **MH-27** Bounded protected experiments for routes, context and prompts (triaged, stage 4, score 2.5; [#133](https://github.com/turbokast/mythhelm/issues/133))
