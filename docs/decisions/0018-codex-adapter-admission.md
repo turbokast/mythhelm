@@ -76,12 +76,15 @@ pipe would stall it. Four rules follow:
   `protocol_mismatch` when no stop is already running, and the journal gets
   `attempt.stop_requested` with `requested_by` `worker` and
   `attempt.native_error` with the class.
-- The attempt ends `stopped` with reason `protocol_mismatch`. `classify`
-  gives a recorded stop only `stopped` (or `interrupted` when the stop is
-  unconfirmed), so the failure is carried by the reason, not a new state.
-- The run ends `failed` with reason `protocol_error`, exit 4, never
+- A confirmed stop ends the attempt `stopped` with reason
+  `protocol_mismatch`. `classify` gives a recorded stop only `stopped` (or
+  `interrupted` when the stop is unconfirmed or descendants escaped), so the
+  failure is carried by the reason, not a new state.
+- The run then ends `failed` with reason `protocol_error`, exit 4, never
   `cancelled`: `conclude` maps an attempt stopped on `protocol_mismatch` to
-  `RunFailed` when the run is not itself stopping.
+  `RunFailed` when the run is not itself stopping. An unconfirmed stop ends
+  the attempt `interrupted/stop_unconfirmed`, and the run `interrupted` after
+  quarantine.
 - A stop already in progress keeps its requester and reason. A user stop
   (`mythhelm stop`, the TUI, Ctrl-C) keeps requester `user` and an empty
   reason, so the run still ends `cancelled`; a route-violation stop keeps
