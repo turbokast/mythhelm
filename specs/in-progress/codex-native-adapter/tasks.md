@@ -167,7 +167,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `adapters/codex/config.go`, `adapters/codex/config_test.go`, `adapters/codex/testdata/config/project.json`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
-### Task 7 — Codex adapter: fixture qualification drafts and route inventory
+### Task 7 — Codex adapter: fixture qualification drafts and route inventory ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -187,6 +187,10 @@
   - The existing `internal/qualify` seed pin (7 records, `codex` `planned`) passes unmodified, so no `exec` row was added (AC-2.5).
 - **Test plan**: Pure functions; keys compared with `qualify.KeyHash`.
 - **Invariants touched**: I14 (versioned evidence); I15 (entitlement not inferred from sign-in); I09.
+- **Status**: ✅ Completed — `ObservedKey`, `AuthCategory`, `FixtureDraft` and the closed five-route AC-4.2 inventory landed in `adapters/codex`, with fixtures unable to prove any column and entitlement `not-proven` with `purchased_credit:unknown`; PR #377.
+- **Implementation**: `FixtureEvidence{Fidelity, Lifecycle, Entitlement qualify.Verdict}` is the draft input (zero value is unknown; `proven` or out-of-scale returns `ErrFixtureCannotProve`; entitlement is always recorded `not-proven`). `AuthCategory` always returns `unknown` because no non-secret status source is defined. The route list is embedded and parsed per call, so callers cannot mutate it. Commit 944401d.
+- **Spec deviations**: None; review round 1 (consistent with design §5): `FixtureDraft` leaves `Digest` unset, because `Registry.Record` assigns the revision before it checks a presented digest, so a revision-1 digest would fail every later draft of the same key.
+- **Files modified**: `adapters/codex/qualify.go`, `adapters/codex/qualify_test.go`, `adapters/codex/testdata/qualification/routes.json`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
 ### Task 8 — Admission: ResolveQualificationKey, neutral trust and the Codex decider
 
