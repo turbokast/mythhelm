@@ -142,7 +142,7 @@
 - **Test plan**: Fake `Launcher` and `OwnedProc` as in the Claude launch tests; ladder test with a Unix build tag.
 - **Invariants touched**: I06 (sent is not confirmed); I18 (one owner, one writer); I01; I15 (no unscreened passthrough).
 
-### Task 6 — Codex adapter: effective configuration inventory, trust inputs and gaps
+### Task 6 — Codex adapter: effective configuration inventory, trust inputs and gaps ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -162,6 +162,10 @@
   - `TestNoNativeStoreWrites`: non-test sources of the package contain no `os.WriteFile`, `os.Create` or `os.OpenFile`; a planted sample file with one is flagged (AC-6.2).
 - **Test plan**: Injected file opener; synthetic project fixture; no credential values in fixtures.
 - **Invariants touched**: I19 (never read credential contents); I02 (unknown mandatory evidence blocks); I03.
+- **Status**: ✅ Completed — `adapters/codex/config.go` inventories the enumerated user and project sources into a `Manifest`, maps them to admitted paths, and reports `UnresolvedSources`/`GapSources`; stacked on #373; PR #375.
+- **Implementation**: Sources are `user_config` (`$CODEX_HOME/config.json`), `project_instructions` (`AGENTS.md`) and `project_config` (`.codex/config.json`), placeholders per D11/OQ6; admitted project blobs never touch disk. Config is decoded as JSON with duplicate top-level keys rejected, and `api_key`, `openai_api_key` or `preferred_auth_method` block. The reader is injected into the unexported `inventorySettings` so the opener test can record every open. Commit 2ca8881.
+- **Spec deviations**: None.
+- **Files modified**: `adapters/codex/config.go`, `adapters/codex/config_test.go`, `adapters/codex/testdata/config/project.json`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
 ### Task 7 — Codex adapter: fixture qualification drafts and route inventory
 
