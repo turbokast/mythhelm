@@ -35,10 +35,13 @@ grep -q '^progress: 3 ' "$log"
 # Everything up to the third turn is the take's output; anything the process
 # printed after the kill decision is a race and never part of the transcript.
 sed '/^progress: 3 /q' "$log"
-kill -KILL "$pid"
 status=0
-# The shell announces the SIGKILL on stderr with a pid; the exit status is the evidence.
-{ wait "$pid" || status=$?; } 2>/dev/null
+# The shell announces the SIGKILL on stderr with a pid, at the kill or at the
+# wait depending on when it reaps the child; the exit status is the evidence.
+{
+	kill -KILL "$pid"
+	wait "$pid" || status=$?
+} 2>/dev/null
 test "$status" -eq 137
 echo "exit status $status"
 
