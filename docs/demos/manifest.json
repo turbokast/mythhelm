@@ -53,6 +53,45 @@
           "qualifier": "TestAccessibleOrderedStream"
         }
       ]
+    },
+    {
+      "name": "hero",
+      "tape": "docs/demos/hero.tape",
+      "artifact": "docs/demos/hero.gif",
+      "transcript": "docs/demos/hero.transcript.txt",
+      "binary_version": "v0.0.0-20261006124821-179bba4ceae9",
+      "binary_commit": "179bba4ceae958f9591e9fedb056f70da59ce40c",
+      "vhs_version": "v0.12.1",
+      "capabilities": [
+        {
+          "name": "offline scripted run",
+          "qualifier": "TestDemoOfflineNoCredentials"
+        },
+        {
+          "name": "live mission view",
+          "qualifier": "TestMissionShowsRequiredFacts"
+        },
+        {
+          "name": "recover reattaches after the supervisor is killed and the run completes",
+          "qualifier": "TestRecoverAfterSupervisorKilledReattachesAndCompletes"
+        },
+        {
+          "name": "recovery never relaunches the native",
+          "qualifier": "TestRecoverNeverRelaunchesNative"
+        },
+        {
+          "name": "revision-attached verification",
+          "qualifier": "TestVerificationMismatchLabelsRevisions"
+        },
+        {
+          "name": "billing posture labels",
+          "qualifier": "TestStatusStripKindLabels"
+        },
+        {
+          "name": "candidate diff review",
+          "qualifier": "TestParseHunks"
+        }
+      ]
     }
   ]
 }

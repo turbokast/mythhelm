@@ -84,6 +84,7 @@ if test "$REPIN" -eq 0; then
 	recording_dirt="$(git status --porcelain -- \
 		'*.go' 'go.mod' 'go.sum' "$SED" "${tapes[@]}" \
 		'adapters/fake/scenarios/*.json' \
+		"$DEMOS/hero-*.sh" \
 		'internal/journal/migrations/*.sql' \
 		'mods/themes/*.toml')"
 	if test -n "$recording_dirt"; then
@@ -128,6 +129,13 @@ regen_transcript() {
 			cat "$tmpdir/tui.t2"
 		} >"$2"
 		;;
+	hero)
+		# The taped take drives the TUI; this linear companion runs the same
+		# commands (run, SIGKILL, runs list, recover, review) with stdout and
+		# stderr merged, in a scratch directory of its own.
+		(HERO_BIN="$BIN" HERO_TMP="$(mktemp -d "$tmpdir/mythhelm-hero.XXXXXX")" "$DEMOS/hero-transcript.sh" 2>&1) | sed -E -f "$SED" >"$2"
+		test "${PIPESTATUS[0]}" -eq 0
+		;;
 	*)
 		echo "record.sh: recording '$1' has no transcript pipeline; add one here (never in the manifest)" >&2
 		exit 2
@@ -160,7 +168,7 @@ done
 
 echo "record.sh: render the GIFs from the checked-in tapes"
 for n in $names; do
-	vhs "$(field "$n" tape)"
+	HERO_BIN="$BIN" HERO_TMP="$(mktemp -d "$tmpdir/mythhelm-hero.XXXXXX")" vhs "$(field "$n" tape)"
 done
 
 echo "record.sh: verify"
@@ -187,6 +195,17 @@ assert_labels() { # assert_labels <name> <transcript>
 		test "$(grep -c '^candidate: ' "$2")" -eq 1
 		test "$(grep -c '^next action: ' "$2")" -eq 1
 		test "$(grep -c '^actions: ' "$2")" -eq 1
+		;;
+	hero)
+		# The run and the recovery each replay the admission decision, which
+		# carries the SCRIPTED label; recovery reattaches to the original
+		# worker (one notice) and ends the run once.
+		test "$(grep -c '^  SCRIPTED: fake adapter' "$2")" -eq 2
+		test "$(grep -c '^reattached to worker pid ' "$2")" -eq 1
+		test "$(grep -c '^exit status 137$' "$2")" -eq 1
+		test "$(grep -c '^result: ready_for_review; exit 0' "$2")" -eq 1
+		test "$(grep -c '^State: ready_for_review$' "$2")" -eq 1
+		test "$(grep -c '^attempt: worker pid ' "$2")" -eq 2
 		;;
 	*)
 		echo "record.sh: recording '$1' has no label assertions; add them here" >&2

@@ -1,4 +1,11 @@
+/^run: admission$/{
+n
+b
+}
+/^reservation held on bucket/d
 s#[^[:space:]]*mythhelm-demo-(repo|state)-[0-9]+#<TMPDIR>/mythhelm-demo-\1-XXX#g
+s#[^[:space:]]*mythhelm-hero\.[A-Za-z0-9]+#<TMPDIR>/mythhelm-hero#g
+s#[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z#<TIME>#g
 s#run_[0-9A-Z]{26}#run_XXX#g
 s#att_[0-9A-Z]{26}#att_XXX#g
 s#(worker pid )[0-9]+(\.[0-9]+e[+][0-9]+)?#\1NNN#g
@@ -12,4 +19,4 @@ s#^goal: (unknown|Demo task)$#goal: <LIVE-SAMPLE>#
 s#^run state: (created|admission) \(reason: none\)$#run state: <LIVE-SAMPLE> (reason: none)#
 s#^admission: (unknown|adapter builtin/fake 0\.1\.0 \(scripted-child-process \(ndjson\)\); qualified: false; paid continuation: not-applicable)$#admission: <LIVE-SAMPLE>#
 /^event [0-9]+: receipt\.written$/d
-s#^next-after: (21|22)$#next-after: <LIVE-CURSOR>#
+s#^next-after: (21|22|23)$#next-after: <LIVE-CURSOR>#
