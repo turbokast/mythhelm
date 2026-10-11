@@ -94,6 +94,7 @@ func installFakeClaude(t *testing.T, cfg fakeClaudeConfig) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 }
 
 // fixtureSHA256 is a fixed native digest the consult tests build keys from.

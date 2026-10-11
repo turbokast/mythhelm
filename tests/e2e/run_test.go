@@ -54,7 +54,7 @@ func (e env) withParent(t *testing.T) []string {
 	out := slices.DeleteFunc(os.Environ(), func(kv string) bool {
 		name, _, _ := strings.Cut(kv, "=")
 		return slices.Contains([]string{"HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_STATE_HOME",
-			"MYTHHELM_HOME", "GIT_CONFIG_NOSYSTEM", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
+			"MYTHHELM_HOME", "CLAUDE_CONFIG_DIR", "GIT_CONFIG_NOSYSTEM", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
 			"GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
 			"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
 			"http_proxy", "https_proxy", "all_proxy",
