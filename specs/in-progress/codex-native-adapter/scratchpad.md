@@ -27,4 +27,6 @@
 
 ## Discoveries
 
+- Task 1: `internal/adapter` had no tests before; its new `adapter_test.go` is external (`adapter_test`) and `fakeProc` there is the pattern for `OwnedProc` fakes. `TestStrictMainBlocksWriteNothing` (`internal/cli/run_drift_test.go`) depends on the real home's user-level native config and fails locally with `untrusted_native_config` where that config declares hooks; it also fails on unmodified `origin/main` code.
+- Task 1 (mechanism): `TestStrictMainBlocksWriteNothing` fails with the real HOME (`exit 3 reason "untrusted_native_config"`) and passes in 0.58s with an empty temporary HOME, on origin/main code as well. A `Tri` field added with `omitempty` serialises unset, so tests that walk `Capabilities` by reflection must tolerate an empty `omitempty` entry. Task 2 (#353) now isolates HOME in `strictRun`, so the test no longer depends on it.
 - Task 2: the admission table is rebuilt by `defaultDeciders()` on each call, so tests pass their own table to `decideWith` and nothing mutates package state. `validate` defaults `Scenario` to `happy` for any row with the scenario flag (only fake). A native-inventory test in `internal/cli` that does not set `HOME` reads the developer's real `~/.claude` hooks (`TestStrictMainBlocksWriteNothing` failed on unmodified origin/main for that reason).

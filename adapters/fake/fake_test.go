@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"go/parser"
 	"go/token"
 	"io"
@@ -610,15 +611,64 @@ func TestCapabilityRecordUnknownNotOptimistic(t *testing.T) {
 
 func checkTri(t *testing.T, v reflect.Value, path string) {
 	t.Helper()
+	for _, problem := range triProblems(v, path, false) {
+		t.Error(problem)
+	}
+}
+
+// triProblems lists every Tri field that holds something other than one of
+// the three values. An empty field tagged omitempty is "not reported by this
+// adapter" (I09), which is distinct from unknown, so it is not a problem.
+func triProblems(v reflect.Value, path string, omitEmpty bool) []string {
 	switch {
 	case v.Type() == reflect.TypeFor[adapter.Tri]():
-		if s := adapter.Tri(v.String()); s != adapter.Supported && s != adapter.Unsupported && s != adapter.Unknown {
-			t.Errorf("%s = %q, not a tri-state value", path, s)
+		s := adapter.Tri(v.String())
+		if s == adapter.Supported || s == adapter.Unsupported || s == adapter.Unknown || (s == "" && omitEmpty) {
+			return nil
 		}
+		return []string{fmt.Sprintf("%s = %q, not a tri-state value", path, s)}
 	case v.Kind() == reflect.Struct:
+		var out []string
 		for i := range v.NumField() {
-			checkTri(t, v.Field(i), path+"."+v.Type().Field(i).Name)
+			f := v.Type().Field(i)
+			omit := strings.Contains(f.Tag.Get("json"), ",omitempty")
+			out = append(out, triProblems(v.Field(i), path+"."+f.Name, omit)...)
 		}
+		return out
+	}
+	return nil
+}
+
+func TestTriProblemsAcceptsOnlyUnsetOmitemptyEntries(t *testing.T) {
+	type rec struct {
+		Plain adapter.Tri `json:"plain"`
+		Opt   adapter.Tri `json:"opt,omitempty"`
+	}
+	tests := []struct {
+		name string
+		v    rec
+		want []string
+	}{
+		{name: "unset omitempty entry is not a problem", v: rec{Plain: adapter.Unknown}},
+		{name: "set omitempty entry holding a tri value is fine", v: rec{Plain: adapter.Unknown, Opt: adapter.Supported}},
+		{
+			name: "empty entry without omitempty is flagged",
+			v:    rec{Opt: adapter.Unknown},
+			want: []string{`r.Plain = "", not a tri-state value`},
+		},
+		{
+			name: "invalid value on an omitempty entry is flagged",
+			v:    rec{Plain: adapter.Unknown, Opt: "maybe"},
+			want: []string{`r.Opt = "maybe", not a tri-state value`},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := triProblems(reflect.ValueOf(tc.v), "r", false)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("problems = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
