@@ -240,7 +240,7 @@
   - `billing_unsupported_for_adapter` is a policy block (exit 3) and the unknown-auth block `Field` is `auth_category=unknown`; the spec fixes neither.
 - **Files modified**: `internal/admission/admission.go`, `internal/admission/admission_test.go`, `internal/admission/billing.go`, `internal/admission/native.go`, `internal/admission/qualify.go`, `internal/admission/codex_test.go`, `internal/admission/qualify_test.go`, `internal/admission/export_test.go`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`.
 
-### Task 9 — Register Codex in workers, supervisor and runtime route check
+### Task 9 — Register Codex in workers, supervisor and runtime route check ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -260,6 +260,16 @@
   - `TestClaudeConfigPathsUnchanged`: the existing Claude launch and contain tests pass unmodified; the Claude digest-to-path map is byte-equal to its pre-change output.
 - **Test plan**: Fixture executable; existing worker harness.
 - **Invariants touched**: I14; I02; I18; I15 (route check not silently weakened for Claude).
+- **Status**: ✅ Completed — `builtin/codex` is in the worker adapter map, skips the Claude route check (D12), selects its config-path inventory in the pipeline and the worker's pre-exec re-verification, and #389 F1 is settled (a stopped-early Codex stream makes the worker stop the attempt on `protocol_mismatch`); PR #397.
+- **Implementation**: `worker.observe` requests a worker stop on `adapter.ProtocolMismatch` through the existing identity-checked `interrupt` only when no stop is running (`out.stopBy == ""`), so a user stop or a route-violation stop keeps its requester and reason; the worker-started stop ends the attempt `stopped/protocol_mismatch` and `pipeline.conclude` fails the run `protocol_error`, while a user stop still ends it cancelled; `codex.Decode` sends the class before the counters and the session wraps the counted drained lines into `exit.Err`. `Launch.blobSource` and `verifyCodexInventory` select the Codex inventory by `l.AdapterID`; `admittedConfigPaths` selects it by `d.Adapter.ID`. `verifyUserConfig` runs the Codex re-inventory even when admission held no digests. Commit 641a8c9.
+- **Spec deviations**:
+  - #389 F1 is settled here (the architect review requires it before Codex is startable): new `adapter.ProtocolMismatch` in `internal/adapter/adapter.go`, emission in `adapters/codex/decode.go`, the drained-line count in `adapters/codex/launch.go`, and their tests in `adapters/codex/decode_test.go`, `adapters/codex/launch_test.go` and `internal/workers/worker_unix_test.go`, all outside the `Files` list. The adapter session never calls `ClimbLadder` (I18).
+  - `internal/supervisor/pipeline.go` also maps `stopped/protocol_mismatch` to a failed run (`protocol_error`): AC-5.7 lets a recorded stop end only `stopped` or `interrupted`, so without it the run would read as a user cancellation. `TestStoppedProtocolMismatchFailsRun` lives in `pipeline_launch_test.go`.
+  - Architect review A1: `worker.observe` qualifies a stop as `protocol_mismatch` only when the worker starts it (`out.stopBy == ""`); a user stop (`mythhelm stop`, the TUI, the stop-file poll) already running stays a user stop with an empty reason and the run ends cancelled, because the supervisor's `stopping` state is in memory and a stop-file stop never enters it. `TestProtocolMismatchRequestsWorkerStop` pins it.
+  - Architect review A2/A6: `Launch.verifyUserConfig` no longer returns early on an empty admitted manifest for `builtin/codex`, so a `~/.codex/config.json` that appears after an admission that found none fails the launch (the Codex re-inventory is its only post-admission guard, D12); other adapters still verify nothing on an empty manifest. `TestCodexConfigAppearingAfterEmptyAdmissionFailsLaunch` pins it; the e2e Codex launch fixture now pins `HOME` to a temp dir.
+  - The Claude adapter's stall-on-full-pipe behaviour (also in #389) is not fixed by this change and is left unchanged; its `protocol_error` observation still does not stop the worker.
+  - `TestCodexConfigPathsAndInventoryUsed` has two halves, one in `internal/supervisor/pipeline_launch_test.go` (the path selector) and one in `internal/workers/worker_test.go` (the worker re-inventory); `TestCodexBlobSourcesNotRehashedAgainstDisk` and `TestCodexSessionNotInterruptedForEmptyAPIKeySource` are in `worker_test.go`, `TestWorkerStartsCodexByDescriptor` in `worker_unix_test.go` (consistent with the acceptance).
+- **Files modified**: `adapters/codex/decode.go`, `adapters/codex/decode_test.go`, `adapters/codex/launch.go`, `adapters/codex/launch_test.go`, `internal/adapter/adapter.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/pipeline_launch_test.go`, `internal/workers/contain.go`, `internal/workers/worker.go`, `internal/workers/worker_test.go`, `internal/workers/worker_unix_test.go`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
 ### Task 10 — Doctor: failing columns and next test in plain output ✅ COMPLETED
 
@@ -283,7 +293,7 @@
   - Changed `docs/user-guide.md`, outside the task's `Files` list: its Doctor section carries the plain row example pinned to the `qualLine` format, and the `qualification-registry` hand-off requires a plain-line change to update it in the same change.
 - **Files modified**: `internal/cli/doctor.go`, `internal/cli/doctor_test.go`, `internal/cli/testdata/doctor_qualification.jsonl`, `docs/user-guide.md`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
-### Task 11 — End-to-end: Codex stays blocked and refused
+### Task 11 — End-to-end: Codex stays blocked and refused ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -297,6 +307,10 @@
   - `TestCodexDoctorRowEndToEnd`: `mythhelm doctor` on a state directory seeded through `qualify.EnsureSeeded` prints the Codex row `planned` with `failing: fidelity, entitlement, lifecycle` and its `next_test` line.
 - **Test plan**: Existing e2e helpers; fixture executable built in `TestMain`; scrubbed parent environment.
 - **Invariants touched**: I13 (no credentials in tests); I15; I02.
+- **Status**: ✅ Completed — the built binary run with `--adapter codex` and a fixture native blocks every billing mode (`no_qualification_record` after one `--version` probe, `billing_unsupported_for_adapter` before any native process) and doctor over a seeded registry shows the Codex row planned with `failing: fidelity, entitlement, lifecycle` and its `next_test`; PR #402.
+- **Implementation**: `TestMain` dispatches a copy of the test binary installed as `codex` to `codexFixtureMain`, which logs its argv beside itself so the tests assert whether and how the native ran. Red-first: fixture not dispatched -> subscription-only exits 7 FAIL; admitting subscription-declared in `decideCodexWith` -> FAIL; `failingColumns` ignoring unknown -> FAIL; dropping the `next_test` line -> FAIL; each restored -> PASS. Commit 1c942c2.
+- **Spec deviations**: None.
+- **Files modified**: `tests/e2e/codex_qualification_test.go`, `tests/e2e/main_test.go`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
 ### Task 12 — Document the Codex limits and record the decisions
 

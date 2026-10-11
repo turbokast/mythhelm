@@ -316,3 +316,55 @@ func TestDecodeSessionAfterUnknownFrameKeepsID(t *testing.T) {
 		t.Fatalf("first observation = %#v, want SessionStarted{SessionID: late}", obs[0])
 	}
 }
+
+// errReader serves its prefix, then fails every read with err.
+type errReader struct {
+	prefix io.Reader
+	err    error
+}
+
+func (r errReader) Read(p []byte) (int, error) {
+	if n, err := r.prefix.Read(p); n > 0 || err == nil {
+		return n, nil
+	}
+	return 0, r.err
+}
+
+func TestDecodeEarlyStopReportsProtocolMismatch(t *testing.T) { // #389 F1, v2 §4.5
+	t.Parallel()
+	session := `{"_synthetic":true,"type":"session","session_id":"s"}` + "\n"
+	tests := []struct {
+		name    string
+		in      io.Reader
+		wantErr bool
+		want    int
+	}{
+		{name: "malformed result frame", in: strings.NewReader(session + `{"_synthetic":true,"type":"result"}` + "\n"), wantErr: true, want: 1},
+		{name: "stdout read error", in: errReader{strings.NewReader(session), io.ErrUnexpectedEOF}, wantErr: true, want: 1},
+		{name: "a stream that ends without a result is not an early stop", in: strings.NewReader(fixture(t, "truncated")), wantErr: true},
+		{name: "a clean stream reports none", in: strings.NewReader(fixture(t, "success"))},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			obs, exit := collect(nil, ndjson.Limits{}, tc.in)
+			if (exit.Err != nil) != tc.wantErr {
+				t.Fatalf("exit.Err = %v, want error %v", exit.Err, tc.wantErr)
+			}
+			var got int
+			for i, o := range obs {
+				ne, ok := o.(adapter.NativeError)
+				if !ok || ne.Class != adapter.ProtocolMismatch {
+					continue
+				}
+				got++
+				if i != len(obs)-2 {
+					t.Errorf("protocol_mismatch at %d of %d: it must precede the counters", i, len(obs))
+				}
+			}
+			if got != tc.want {
+				t.Fatalf("protocol_mismatch observations = %d, want %d (%#v)", got, tc.want, obs)
+			}
+		})
+	}
+}

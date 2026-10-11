@@ -41,7 +41,9 @@ var knownErrorClasses = map[string]bool{
 // Decode reads the synthetic NDJSON frames from r and sends the observations
 // they carry, then the ProtocolCounters. Usage stays nil (D6) and every error
 // is a native_error until the error table is filled from a cited source (D7).
-// A stream that ends without a result frame sets NativeExit.Err.
+// A stream that ends without a result frame sets NativeExit.Err. A stream that
+// stops early, on a malformed result frame or a read error, also sends a
+// protocol_mismatch NativeError before the counters.
 func Decode(r io.Reader, send func(adapter.Observation)) adapter.NativeExit {
 	return decodeWith(nil, ndjson.Limits{}, r, send)
 }
@@ -87,6 +89,11 @@ func decodeWith(table map[string]string, lim ndjson.Limits, r io.Reader, send fu
 		if d.fatal != nil {
 			break
 		}
+	}
+	if d.fatal != nil || readErr != nil {
+		// The stream stopped before its end: the native may still be running
+		// unobserved, so the worker is told to stop it (#389 F1).
+		send(adapter.NativeError{Class: adapter.ProtocolMismatch})
 	}
 	send(adapter.ProtocolCounters{Counters: rd.Counters(), Malformed: d.malformed, UnknownTypes: d.unknown})
 	switch {

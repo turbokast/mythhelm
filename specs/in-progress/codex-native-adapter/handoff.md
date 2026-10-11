@@ -73,8 +73,11 @@
 
 ## Task 9 — Register Codex in workers, supervisor and runtime route check
 
-<!-- pending -->
-
+- **Produces**: `builtin/codex` in the worker adapter map (`internal/workers/worker.go`); `adapter.ProtocolMismatch = "protocol_mismatch"` (`internal/adapter/adapter.go`); unexported `admittedConfigPaths` (pipeline), `Launch.blobSource` and `Launch.verifyCodexInventory` (`internal/workers/contain.go`). Design difference: the `protocol_mismatch` seam (#389 F1) is not in the design.
+- **For Task 11**: a Codex attempt whose stream stops early (malformed `result` or a read error) ends `stopped/protocol_mismatch` with `requested_by` `worker`, and the run ends `failed/protocol_error` (exit 4), never `cancelled`; a stop already running (a user stop, including `mythhelm stop` and the TUI, or a route-violation stop) keeps its requester and an empty or its own reason, so a user stop still ends `cancelled`. `Decode` sends the class once, before `ProtocolCounters`. A stream that merely ends without a result still ends as before (`result_unobserved` or the native exit).
+- **For Task 11**: the e2e fixture native for the worker is the test binary re-executed (`codexFixtureCommand` in `internal/workers/worker_test.go`, modes `success` and `malformed-result`); no Codex run is admittable through `Decide` (D13), so a worker or pipeline test builds a `workers.Launch` or `admission.Decision` directly.
+- **For dependents**: the drained-line count after an early stop is in the exit error text (`N lines (M bytes) discarded after the stream stopped`), logged by the worker as `native exit not fully observed`; it is not a journal event. The Claude adapter is unchanged: its `protocol_error` observation does not stop the worker and it still stalls on a full pipe (#389).
+- **Trap**: the worker re-inventories Codex config over `launch.Env` HOME and `launch.Dir`; a config source that appears between admission and exec (for example `~/.codex/config.toml`) fails the launch with `native_config_unreadable`, and project sources are skipped (blob-admitted). The re-inventory runs for every Codex launch, including one admitted with no config: a source present at exec that admission did not hold fails the launch, and a Codex launch env must carry `HOME`.
 ## Task 10 — Doctor: failing columns and next test in plain output
 
 - **Produces**: in `internal/cli/doctor.go`, plain qualification rows end with ` failing: <column>[, <column>]` (column order fidelity, entitlement, lifecycle; any verdict other than `proven`, including unknown, is failing) and the next line is `  next_test: <text>` when the record has one. Unexported `failingColumns`. JSONL is unchanged, pinned by `testdata/doctor_qualification.jsonl`. No design difference.
@@ -84,7 +87,9 @@
 
 ## Task 11 — End-to-end: Codex stays blocked and refused
 
-<!-- pending -->
+- **Produces**: `tests/e2e/codex_qualification_test.go` with `TestCodexBillingModesAllRefuseOrBlock`, `TestCodexDoctorRowEndToEnd` and the helpers `codexFixtureMain`, `installFakeCodex` (returns the PATH directory) and `fixtureInvocations`; `tests/e2e/main_test.go` `TestMain` dispatches a binary named `codex` or `codex.exe` to the fixture. No design difference.
+- **For Task 12**: the doctor text the guide describes matches what the e2e pins: the Codex row ends ` failing: fidelity, entitlement, lifecycle` and the next line is `  next_test: Qualify native-managed sign-in, approvals and effort metadata; authority: maintainer live-test grant`.
+- **Trap**: no Codex run is admittable through the binary (D13), so the e2e cannot cover the `protocol_mismatch` stop or the worker config re-inventory (#389 F1/F2); those stay in the Task 9 worker tests. A later task that makes a Codex run admittable must extend the fixture, which answers only `--version` and exits 9 on any other argv.
 
 ## Task 12 — Document the Codex limits and record the decisions
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -14,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/turbokast/mythhelm/adapters/claudecode"
+	"github.com/turbokast/mythhelm/adapters/codex"
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/contain"
 )
@@ -151,9 +153,11 @@ func (l Launch) containedCommand(spec adapter.ProcSpec) (*exec.Cmd, spawnHooks, 
 // (design §2.9, I20). Every digest key needs a path mapping — a missing
 // mapping fails the launch, never skips — and every mapped mutable source
 // must still match its admitted digest. It returns nil when the launch
-// carries no digests. Errors name sources and paths, never file content.
+// carries no digests, except for Codex: its re-inventory is the only
+// post-admission guard, so a config that appeared after an empty admission
+// fails the launch (D12). Errors name sources and paths, never file content.
 func (l Launch) verifyUserConfig() error {
-	if len(l.UserConfigDigests) == 0 {
+	if len(l.UserConfigDigests) == 0 && l.AdapterID != codex.AdapterID {
 		return nil
 	}
 	for _, source := range slices.Sorted(maps.Keys(l.UserConfigDigests)) {
@@ -165,7 +169,7 @@ func (l Launch) verifyUserConfig() error {
 		if !ok || path == "" {
 			return fmt.Errorf("native config %q has no inventoried path to re-verify", source)
 		}
-		if projectConfigSources[source] {
+		if l.blobSource(source) {
 			continue
 		}
 		if source == userMCPSource {
@@ -179,6 +183,39 @@ func (l Launch) verifyUserConfig() error {
 			return fmt.Errorf("re-hashing native config %q: %w", source, err)
 		}
 		if digest != want {
+			return fmt.Errorf("native config %q changed after admission", source)
+		}
+	}
+	if l.AdapterID == codex.AdapterID {
+		return l.verifyCodexInventory()
+	}
+	return nil
+}
+
+// blobSource reports whether the adapter inventories source from the admitted
+// revision's committed blobs, so the pre-exec re-hash skips it.
+func (l Launch) blobSource(source string) bool {
+	if l.AdapterID == codex.AdapterID {
+		_, ok := codex.ProjectSources[source]
+		return ok
+	}
+	return projectConfigSources[source]
+}
+
+// verifyCodexInventory re-inventories the launch's own workdir and child env
+// with the Codex inventory: a mutable source that was not admitted, or whose
+// digest moved, fails the launch. Blob sources are skipped as in the re-hash.
+func (l Launch) verifyCodexInventory() error {
+	home := launchHome(l.Env)
+	if home == "" {
+		return errors.New("re-inventorying native config needs HOME in the launch env")
+	}
+	fresh, err := codex.InventorySettingsForEnv(home, l.Dir, l.Env)
+	if err != nil {
+		return fmt.Errorf("re-inventorying native config: %w", err)
+	}
+	for _, source := range slices.Sorted(maps.Keys(fresh.Digests)) {
+		if !l.blobSource(source) && fresh.Digests[source] != l.UserConfigDigests[source] {
 			return fmt.Errorf("native config %q changed after admission", source)
 		}
 	}

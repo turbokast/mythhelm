@@ -350,3 +350,41 @@ func TestSessionDrainsStdoutAfterEarlyDecodeStop(t *testing.T) {
 		t.Fatal("session hung: stdout was not drained after Decode stopped early, so the native could not exit")
 	}
 }
+
+func TestSessionCountsLinesDrainedAfterEarlyDecodeStop(t *testing.T) { // #389 F1: drained output is counted, not discarded unseen
+	t.Parallel()
+	const drained = 1000
+	pr, pw := io.Pipe()
+	proc := &pipeProc{r: pr, finished: make(chan struct{})}
+	go func() {
+		_, _ = io.WriteString(pw, `{"type":"result","is_error":"yes"}`+"\n")
+		_, _ = io.WriteString(pw, strings.Repeat(`{"type":"error","code":"allowance_exhausted"}`+"\n", drained))
+		_ = pw.Close()
+		close(proc.finished)
+	}()
+	a := testAdapter()
+	lp, err := a.Prepare(context.Background(), prepareInput(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := a.Start(context.Background(), lp, pipeLauncher{proc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	obs, exit := drain(t, s)
+	if !errors.Is(exit.Err, errMalformedResult) {
+		t.Fatalf("exit.Err = %v, want it to wrap the malformed result error", exit.Err)
+	}
+	if want := "1000 lines"; !strings.Contains(exit.Err.Error(), want) {
+		t.Fatalf("exit.Err = %q, want the drained count %q", exit.Err, want)
+	}
+	var mismatches int
+	for _, ob := range obs {
+		if ne, ok := ob.(adapter.NativeError); ok && ne.Class == adapter.ProtocolMismatch {
+			mismatches++
+		}
+	}
+	if mismatches != 1 {
+		t.Fatalf("protocol_mismatch observations = %d, want 1: the worker must learn of the stop", mismatches)
+	}
+}

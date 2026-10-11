@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/adapters/claudecode"
+	"github.com/turbokast/mythhelm/adapters/codex"
 	"github.com/turbokast/mythhelm/adapters/fake"
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/contain"
@@ -64,6 +65,7 @@ var ErrNoProcess = errors.New("no such process")
 var adapters = map[string]func() adapter.Adapter{
 	"builtin/fake":       fake.New,
 	"builtin/claudecode": claudecode.New,
+	codex.AdapterID:      codex.New,
 }
 
 // Launch is the admitted native launch the supervisor hands a worker on its
@@ -805,7 +807,9 @@ func (w *worker) observe(sp *spool, ob adapter.Observation, prog *progress, out 
 		// was in flight. The first requester stands, but the policy
 		// reason always applies: a user stop that beat init must not
 		// demote the route violation to a cancellation footnote.
-		if o.APIKeySource != "none" {
+		// Codex does not report a key source: its route rests on the
+		// admission key, not a runtime check (D12).
+		if w.launch.AdapterID != codex.AdapterID && o.APIKeySource != "none" {
 			if out.stopBy == "" {
 				out.stopBy = "worker"
 			}
@@ -834,6 +838,14 @@ func (w *worker) observe(sp *spool, ob adapter.Observation, prog *progress, out 
 		// the auth row precedes the success row unconditionally).
 		if o.Class != "rate_limit" || out.nativeErr == "" {
 			out.nativeErr = o.Class
+		}
+		// An adapter that can no longer observe the stream leaves the native
+		// running unobserved: the worker stops it through its own
+		// identity-checked interrupt (I18). Only a stop the worker starts
+		// itself carries the reason: a stop already requested, by the user
+		// or for a route violation, keeps its requester and reason.
+		if o.Class == adapter.ProtocolMismatch && out.stopBy == "" {
+			out.stopBy, out.stopReason = "worker", adapter.ProtocolMismatch
 		}
 	case adapter.Result:
 		out.result = &o

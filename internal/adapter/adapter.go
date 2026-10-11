@@ -286,6 +286,12 @@ type NativeError struct {
 	Class string
 }
 
+// ProtocolMismatch is the NativeError class an adapter reports when it can no
+// longer observe the native's stream (v2 §4.5). The worker stops the attempt
+// through its own identity-checked interrupt when it sees it, so a native
+// that keeps running unobserved is never left to finish.
+const ProtocolMismatch = "protocol_mismatch"
+
 // Result is the native result frame. Nil pointers and empty strings mean the
 // native did not report the value: unknown, never zero (I09).
 type Result struct {
