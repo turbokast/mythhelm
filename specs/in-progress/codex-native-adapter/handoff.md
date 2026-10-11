@@ -40,7 +40,11 @@
 
 ## Task 6 — Codex adapter: effective configuration inventory, trust inputs and gaps
 
-<!-- pending -->
+- **Produces**: `codex.Manifest{Digests, Digest, Hooks, MCPServers, RequiresTrust}` (JSON tags `digests`, `digest`, `hooks`, `mcp_servers`, `requires_trust`), `InventoryAdmittedProject`, `InventorySettingsForEnv`, `AdmittedConfigPathsForEnv`, `UnresolvedSources` (`managed-policy`, `os-managed-preferences`), `GapSources` (returns the input unchanged, in order, on every platform), `ProjectSources` (`project_instructions` -> `AGENTS.md`, `project_config` -> `.codex/config.json`), `ErrNonRegularSource`. No design difference.
+- **For Task 8/9**: manifest keys are `user_config`, `project_instructions`, `project_config`. `MCPServers` entries are `<source>:<name>`. `InventoryAdmittedProject` treats `blobs` as authoritative for project sources (a nil map means none committed, never a disk read); `readAdmittedBlobs` should be parameterised by the `ProjectSources` keys. `ErrNonRegularSource` and relative/unreadable-home `ErrCapability` come back wrapped; malformed config and credential keys are `*adapter.BlockedError` (`native_config_unreadable`, `native_settings_credential_override`).
+- **For Task 8**: `RequiresTrust` is true only when hooks or MCP servers exist; an instruction file or plain config alone does not require trust. `Manifest` converts field for field to `admission.NativeConfig` (D17).
+- **Trap**: the paths and JSON schema are placeholders until OQ6 is answered; real Codex config is likely TOML. Only top-level duplicate keys are rejected, and credential keys are checked at the top level only.
+- **Trap (environment)**: in the cloud container `ANTHROPIC_BASE_URL` is set and `bwrap` is missing, so `internal/supervisor` tests fail (credential_route_override, native_exit_1) identically on the base branch.
 
 ## Task 7 — Codex adapter: fixture qualification drafts and route inventory
 
