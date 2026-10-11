@@ -1,0 +1,5 @@
+{"_synthetic":true,"type":"session","session_id":"synth-codex-1"}
+{"_synthetic":true,"type":"turn"}
+{"_synthetic":true,"type":"tool","name":"shell"}
+{"_synthetic":true,"type":"turn"}
+{"_synthetic":true,"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}

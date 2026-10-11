@@ -1,0 +1,5 @@
+{"_synthetic":true,"type":"session","session_id":"synth-codex-2"}
+{"_synthetic":true,"type":"error","code":"synthetic_unmapped"}
+{"_synthetic":true,"type":"error","code":"synthetic_throttle"}
+{"_synthetic":true,"type":"error","code":"synthetic_exhaustion"}
+{"_synthetic":true,"type":"result","subtype":"error","is_error":true,"stop_reason":"error"}
