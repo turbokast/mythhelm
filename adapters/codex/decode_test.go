@@ -279,3 +279,40 @@ func TestFixturesAreMarkedSynthetic(t *testing.T) {
 		}
 	}
 }
+
+func TestDecodeMalformedResultIsTerminal(t *testing.T) { // v2 §9.7: malformed mandatory frames stop the integration
+	t.Parallel()
+	session := `{"_synthetic":true,"type":"session","session_id":"s"}` + "\n"
+	good := `{"_synthetic":true,"type":"result","subtype":"success"}` + "\n"
+	tests := map[string]string{
+		"subtype of the wrong type":  `{"_synthetic":true,"type":"result","subtype":5}` + "\n",
+		"missing subtype":            `{"_synthetic":true,"type":"result"}` + "\n",
+		"is_error of the wrong type": `{"_synthetic":true,"type":"result","subtype":"success","is_error":"yes"}` + "\n",
+	}
+	for name, bad := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			obs, exit := collect(nil, ndjson.Limits{}, strings.NewReader(session+bad+good))
+			if exit.Err == nil {
+				t.Fatal("exit.Err = nil: a later result must not rescue a malformed one")
+			}
+			for _, o := range obs {
+				if _, ok := o.(adapter.Result); ok {
+					t.Fatalf("observed a Result after a malformed result frame: %#v", o)
+				}
+			}
+			counters(t, obs)
+		})
+	}
+}
+
+func TestDecodeSessionAfterUnknownFrameKeepsID(t *testing.T) {
+	t.Parallel()
+	in := `{"_synthetic":true,"type":"synthetic_future_frame"}` + "\n" +
+		`{"_synthetic":true,"type":"session","session_id":"late"}` + "\n" +
+		`{"_synthetic":true,"type":"result","subtype":"success"}` + "\n"
+	obs, _ := collect(nil, ndjson.Limits{}, strings.NewReader(in))
+	if got, ok := obs[0].(adapter.SessionStarted); !ok || got.SessionID != "late" {
+		t.Fatalf("first observation = %#v, want SessionStarted{SessionID: late}", obs[0])
+	}
+}

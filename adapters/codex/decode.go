@@ -24,6 +24,10 @@ const (
 // errIncomplete reports a stream that ended without a result frame.
 var errIncomplete = errors.New("codex: stream ended without a result frame")
 
+// errMalformedResult reports a result frame that cannot be read. The result
+// is a mandatory frame: decoding stops and a later result cannot rescue it.
+var errMalformedResult = errors.New("codex: malformed result frame")
+
 // nativeErrorClass is the class of an error whose shape is not documented
 // (D7); the other classes appear only through the error table (D14).
 const nativeErrorClass = "native_error"
@@ -60,6 +64,7 @@ type decoder struct {
 	started   bool
 	turns     int
 	gotResult bool
+	fatal     error
 	malformed int64
 	unknown   map[string]int64
 	named     int
@@ -79,9 +84,14 @@ func decodeWith(table map[string]string, lim ndjson.Limits, r io.Reader, send fu
 			break
 		}
 		d.decode(raw)
+		if d.fatal != nil {
+			break
+		}
 	}
 	send(adapter.ProtocolCounters{Counters: rd.Counters(), Malformed: d.malformed, UnknownTypes: d.unknown})
 	switch {
+	case d.fatal != nil:
+		return adapter.NativeExit{Err: d.fatal}
 	case readErr != nil:
 		return adapter.NativeExit{Err: readErr}
 	case !d.gotResult:
@@ -94,29 +104,37 @@ func (d *decoder) decode(raw []byte) {
 	var f frame
 	if json.Unmarshal(raw, &f) != nil || f.Type == "" {
 		d.malformed++
+		var t struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(raw, &t) == nil && t.Type == "result" {
+			d.fatal = errMalformedResult
+		}
 		return
-	}
-	if f.Type != "session" {
-		d.start("")
 	}
 	switch f.Type {
 	case "session":
 		d.decodeSession(f)
 	case "turn":
+		d.start("")
 		d.turns++
 		d.send(adapter.Progress{Turn: d.turns})
 	case "tool":
+		d.start("")
 		d.send(adapter.Progress{Turn: d.turns, Tool: boundedName(f.Name, "invalid")})
 	case "error":
+		d.start("")
 		d.send(adapter.NativeError{Class: d.errorClass(f.Code)})
 	case "result":
+		d.start("")
 		d.decodeResult(f)
 	default:
 		d.countUnknown(f.Type)
 	}
 }
 
-// start sends SessionStarted once. An identity the native did not report is
+// start sends SessionStarted once, before the first frame that produces an
+// observation; an unknown frame does not fix the identity. An identity the native did not report is
 // sent empty: unknown, never synthesised (AC-6.1). APIKeySource stays empty
 // (D12).
 func (d *decoder) start(id string) {
@@ -136,8 +154,13 @@ func (d *decoder) decodeSession(f frame) {
 }
 
 func (d *decoder) decodeResult(f frame) {
-	if d.gotResult || f.Subtype == nil || !printable(*f.Subtype) {
+	if d.gotResult {
+		d.malformed++ // the first result is final
+		return
+	}
+	if f.Subtype == nil || !printable(*f.Subtype) {
 		d.malformed++
+		d.fatal = errMalformedResult
 		return
 	}
 	d.gotResult = true
