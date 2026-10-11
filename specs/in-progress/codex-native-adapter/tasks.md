@@ -94,7 +94,7 @@
 - **Spec deviations**: `adapters/fake/fake_test.go` is outside the task's `Files` list: `TestAdaptersDoNotImportOsExec` exempted only `claudecode/probe.go`, so the Codex probe (which runs the bounded `--version`) failed the full `go test`; the exemption now also names `codex/probe.go`, and `TestImportsOsExecDetects` keeps a flagged `codex/launch.go` case. This PR is stacked on #352 (Task 1), so it carries Task 1's commits until #352 merges.
 - **Files modified**: `adapters/codex/doc.go`, `adapters/codex/probe.go`, `adapters/codex/compat.go`, `adapters/codex/probe_test.go`, `adapters/codex/compat_test.go`, `adapters/codex/stub.go`, `adapters/fake/fake_test.go`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
-### Task 4 — Codex adapter: stream decoder, usage and error mapping
+### Task 4 — Codex adapter: stream decoder, usage and error mapping ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -116,6 +116,10 @@
   - `TestFixturesCarryNoCredentialStrings`: a scan of `testdata/` for credential-shaped strings finds none, and a planted string in a temp copy is found (NFR-2).
 - **Test plan**: Streams are synthetic, marked by a `_synthetic` field on every frame; the shared `internal/adapter/ndjson` Reader.
 - **Invariants touched**: I09; I03 (model output grants no authority: the decoder only emits observations); I19.
+- **Status**: ✅ Completed — `codex.Decode` turns the synthetic NDJSON frames into observations through the shared bounded Reader, with usage nil, `APIKeySource` empty and every error `native_error` by default; PR #376.
+- **Implementation**: Frame schema is `session`, `turn`, `tool`, `error`, `result`, each marked `_synthetic`; `decodeWith(table, limits, r, send)` takes the error table (code to class, closed to `native_error`, `rate_limit`, `allowance_exhausted`) and the frame limits as arguments, no package variable. A missing session id sends `SessionStarted{}` before the first other frame. Commit 02eab27.
+- **Spec deviations**: The branch is `claude/codex-native-adapter-task-4-qfr4eu`, the one the session designates, in place of `feat/codex-native-adapter-t4`. This PR is stacked on #373 (Task 3), base `feat/codex-native-adapter-t3`. `error.jsonl` carries three error frames (unmapped, throttle, exhaustion) so one fixture serves the default and a populated table.
+- **Files modified**: `adapters/codex/decode.go`, `adapters/codex/decode_test.go`, `adapters/codex/testdata/streams/success.jsonl`, `adapters/codex/testdata/streams/error.jsonl`, `adapters/codex/testdata/streams/unknown_type.jsonl`, `adapters/codex/testdata/streams/truncated.jsonl`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`.
 
 ### Task 5 — Codex adapter: prepare, launch session, stop ladder, single writer
 
