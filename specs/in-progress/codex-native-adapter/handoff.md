@@ -48,6 +48,7 @@
 - **For Task 8**: `AuthCategory(env)` always returns `"unknown"`, so `decideCodex` blocks on D13 until a status source exists; supply a native-managed category through `decideCodexWith`. A key with `AuthCategory` `native-managed` and one with `unknown` hash differently under `qualify.KeyHash`.
 - **For Task 8**: `ObservedKey` sets `ProviderEndpoint`, `ModelSnapshot`, `EffortSettings` and `EntitlementClass` to `unknown`; a `FixtureDraft` key must come from `ObservedKey` (or equal one) to match a registry lookup.
 - **For Task 8 (`purchasedCreditPreventable`)**: the draft's entitlement evidence has `Result == "purchased_credit:unknown"`, never `preventable`, so it cannot satisfy AC-4.3.
+- `FixtureDraft` returns `Digest` unset: pass it to `Registry.Record`, which assigns the revision and computes the digest.
 - Route names: `title`, `summary-compaction`, `review`, `child`, `native-observer`, each `coverage: unknown`.
 
 ## Task 8 — Admission: ResolveQualificationKey, neutral trust and the Codex decider

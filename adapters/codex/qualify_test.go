@@ -88,9 +88,35 @@ func TestFixtureDraftCannotProve(t *testing.T) { // I14, I15 (v2 §2)
 	if len(rec.Entitlement.Evidence) != 1 || rec.Entitlement.Evidence[0].Result != "purchased_credit:unknown" {
 		t.Errorf("Entitlement.Evidence = %+v, want one entry with Result purchased_credit:unknown", rec.Entitlement.Evidence)
 	}
-	digest, err := qualify.CanonicalDigest(rec)
-	if err != nil || digest != rec.Digest {
-		t.Errorf("Digest = %q, want recomputed %q (err %v)", rec.Digest, digest, err)
+}
+
+func TestFixtureDraftRecordsEveryRevisionThroughRegistry(t *testing.T) { // I14 (v2 §2)
+	ctx := t.Context()
+	reg, err := qualify.Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reg.Close() }()
+
+	for want := 1; want <= 2; want++ {
+		draft, err := FixtureDraft(testKey(), fixtureInput())
+		if err != nil {
+			t.Fatalf("FixtureDraft: %v", err)
+		}
+		if err := reg.Record(ctx, draft); err != nil {
+			t.Fatalf("recording draft %d of the same key: %v", want, err)
+		}
+		got, err := reg.Lookup(ctx, draft.Key)
+		if err != nil {
+			t.Fatalf("looking up the recorded draft: %v", err)
+		}
+		if got.Revision != want {
+			t.Fatalf("recorded revision %d, want %d", got.Revision, want)
+		}
+		recomputed, err := qualify.CanonicalDigest(got)
+		if err != nil || got.Digest != recomputed {
+			t.Fatalf("stored digest %q does not recompute to %q (err %v)", got.Digest, recomputed, err)
+		}
 	}
 }
 

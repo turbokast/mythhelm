@@ -85,7 +85,8 @@ func AuthCategory([]string) string { return unknownValue }
 // FixtureDraft returns the fixture-tested record for a Codex key. Fixtures
 // prove no column: a proven verdict is refused, fidelity and lifecycle keep
 // the requested unknown or not-proven verdict, and entitlement is not-proven
-// with purchased_credit unknown (I14, I15).
+// with purchased_credit unknown (I14, I15). Digest stays unset: the registry
+// assigns the revision, then computes it.
 func FixtureDraft(k qualify.Key, ev FixtureEvidence) (qualify.Record, error) {
 	if k.Harness != "codex" {
 		return qualify.Record{}, fmt.Errorf("codex: qualify: key harness %q: %w", k.Harness, ErrNotCodexKey)
@@ -122,10 +123,6 @@ func FixtureDraft(k qualify.Key, ev FixtureEvidence) (qualify.Record, error) {
 		},
 		NextTest: "Run the authorised live Codex suite on the native-managed sign-in and record " +
 			"live evidence; authority: maintainer live-test grant (MH-12)",
-	}
-	rec.Digest, err = qualify.CanonicalDigest(rec)
-	if err != nil {
-		return qualify.Record{}, fmt.Errorf("codex: qualify: draft digest: %w", err)
 	}
 	return rec, nil
 }
