@@ -25,6 +25,12 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == contain.Command {
 		os.Exit(contain.Main(os.Args[2:]))
 	}
+	// A copy of this binary installed as `codex` is the synthetic native
+	// Codex of codex_qualification_test.go.
+	switch filepath.Base(os.Args[0]) {
+	case "codex", "codex.exe":
+		os.Exit(codexFixtureMain())
+	}
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		fmt.Fprintln(os.Stderr, "e2e: cannot locate the test directory")
