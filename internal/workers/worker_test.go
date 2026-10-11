@@ -2,6 +2,8 @@ package workers
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/turbokast/mythhelm/adapters/codex"
 	"github.com/turbokast/mythhelm/adapters/fake"
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/contain"
@@ -26,6 +29,10 @@ import (
 // spawnHelperEnv switches the test binary into the helper that spawns a
 // worker and then waits to be killed, standing in for the `mythhelm run` CLI.
 const spawnHelperEnv = "MYTHHELM_TEST_SPAWN_HELPER"
+
+// codexFixtureCommand switches the test binary into a stand-in Codex native
+// that writes the synthetic frames of the mode in its first argument.
+const codexFixtureCommand = "__codex-fixture"
 
 // TestMain lets the test binary play every process of an attempt: the
 // worker (__worker), the fake agent (__fake-agent) and the spawning CLI.
@@ -41,6 +48,8 @@ func TestMain(m *testing.M) {
 			os.Exit(Main(os.Args[2:]))
 		case fake.AgentCommand:
 			os.Exit(fake.AgentMain(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+		case codexFixtureCommand:
+			os.Exit(codexFixture(os.Args[2]))
 		}
 	}
 	if args := os.Getenv(spawnHelperEnv); args != "" {
@@ -51,6 +60,24 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	os.Exit(m.Run())
+}
+
+// codexFixture plays a Codex native. "success" writes a complete stream and
+// exits; "malformed-result" writes a result frame no decoder can read and then
+// keeps running until it is stopped.
+func codexFixture(mode string) int {
+	fmt.Println(`{"_synthetic":true,"type":"session","session_id":"synth-codex-1"}`)
+	fmt.Println(`{"_synthetic":true,"type":"turn"}`)
+	switch mode {
+	case "success":
+		fmt.Println(`{"_synthetic":true,"type":"result","subtype":"success"}`)
+		return 0
+	case "malformed-result":
+		fmt.Println(`{"_synthetic":true,"type":"result"}`)
+		time.Sleep(time.Hour)
+		return 0
+	}
+	return 2
 }
 
 // spawnHelper spawns a worker from the launch on stdin, prints its PID and
@@ -116,6 +143,19 @@ func (a attempt) launch(t *testing.T, scenario string) Launch {
 		PromptPath:   prompt,
 		StopLadder:   lp.StopLadder,
 	}
+}
+
+// codexLaunch is the launch of a Codex attempt whose native is this test
+// binary playing the fixture in mode.
+func (a attempt) codexLaunch(t *testing.T, mode string) Launch {
+	t.Helper()
+	l := a.launch(t, "happy")
+	digest, err := hashFile(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.AdapterID, l.Path, l.NativeSHA256, l.Args = codex.AdapterID, os.Args[0], digest, []string{codexFixtureCommand, mode}
+	return l
 }
 
 // spawn starts the worker as its own detached process and reaps it when the
@@ -1164,5 +1204,137 @@ func TestSentStepsPairsSignalsWithRungGraces(t *testing.T) {
 	// A climb that sent nothing still reports an explicit empty sent array.
 	if got := sentSteps(nil, ladder); got == nil {
 		t.Error("sentSteps(nil) = nil, want an empty array")
+	}
+}
+
+func TestCodexSessionNotInterruptedForEmptyAPIKeySource(t *testing.T) { // D12, I15
+	tests := []struct {
+		name         string
+		adapterID    string
+		apiKeySource string
+		wantStopBy   string
+		wantReason   string
+	}{
+		{name: "codex reports no key source and is not interrupted", adapterID: codex.AdapterID},
+		{name: "claude with an API key is stopped on the route", adapterID: "builtin/claudecode", apiKeySource: "apiKey", wantStopBy: "worker", wantReason: "billing_route_mismatch"},
+		{name: "claude with no key is admitted", adapterID: "builtin/claudecode", apiKeySource: "none"},
+		{name: "claude reporting no key source is stopped", adapterID: "builtin/claudecode", wantStopBy: "worker", wantReason: "billing_route_mismatch"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w, sp := stubWorker(t)
+			w.launch.AdapterID = tc.adapterID
+			var prog progress
+			var out outcome
+			if err := w.observe(sp, adapter.SessionStarted{SessionID: "s", APIKeySource: tc.apiKeySource}, &prog, &out); err != nil {
+				t.Fatal(err)
+			}
+			if out.stopBy != tc.wantStopBy || out.stopReason != tc.wantReason {
+				t.Fatalf("stopBy, stopReason = %q, %q; want %q, %q", out.stopBy, out.stopReason, tc.wantStopBy, tc.wantReason)
+			}
+		})
+	}
+}
+
+func TestProtocolMismatchRequestsWorkerStop(t *testing.T) { // #389 F1, I18
+	tests := []struct {
+		name       string
+		class      string
+		before     outcome
+		wantStopBy string
+		wantReason string
+	}{
+		{name: "protocol_mismatch asks the worker to stop", class: adapter.ProtocolMismatch, wantStopBy: "worker", wantReason: adapter.ProtocolMismatch},
+		{name: "an earlier user stop keeps its requester", class: adapter.ProtocolMismatch, before: outcome{stopBy: "user"}, wantStopBy: "user", wantReason: adapter.ProtocolMismatch},
+		{name: "an earlier route violation keeps its reason", class: adapter.ProtocolMismatch, before: outcome{stopBy: "worker", stopReason: "billing_route_mismatch"}, wantStopBy: "worker", wantReason: "billing_route_mismatch"},
+		{name: "another native error asks for no stop", class: "native_error"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w, sp := stubWorker(t)
+			var prog progress
+			out := tc.before
+			if err := w.observe(sp, adapter.NativeError{Class: tc.class}, &prog, &out); err != nil {
+				t.Fatal(err)
+			}
+			if out.stopBy != tc.wantStopBy || out.stopReason != tc.wantReason {
+				t.Fatalf("stopBy, stopReason = %q, %q; want %q, %q", out.stopBy, out.stopReason, tc.wantStopBy, tc.wantReason)
+			}
+		})
+	}
+}
+
+// codexConfigLaunch is a Codex launch whose admitted manifest holds the
+// digest of an empty user config written under home.
+type codexConfigLaunch struct {
+	home, workdir string
+	launch        Launch
+}
+
+func writeConfigFile(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func newCodexConfigLaunch(t *testing.T) codexConfigLaunch {
+	t.Helper()
+	c := codexConfigLaunch{home: t.TempDir(), workdir: t.TempDir()}
+	writeConfigFile(t, filepath.Join(c.home, ".codex", "config.json"), "{}")
+	sum := sha256.Sum256([]byte("{}"))
+	env := []string{"HOME=" + c.home}
+	c.launch = Launch{
+		AdapterID:         codex.AdapterID,
+		Dir:               c.workdir,
+		Env:               env,
+		UserConfigDigests: map[string]string{"user_config": hex.EncodeToString(sum[:])},
+		UserConfigPaths:   codex.AdmittedConfigPathsForEnv(c.home, c.workdir, env),
+	}
+	return c
+}
+
+func TestCodexBlobSourcesNotRehashedAgainstDisk(t *testing.T) { // D11, I20
+	t.Parallel()
+	c := newCodexConfigLaunch(t)
+	// The admitted revision's blobs carry these digests; the workdir holds a
+	// checkout that differs, so a re-hash against disk would fail.
+	for name, body := range map[string]string{"project_instructions": "# checkout differs\n", "project_config": "{}"} {
+		c.launch.UserConfigDigests[name] = strings.Repeat("e", 64)
+		writeConfigFile(t, c.launch.UserConfigPaths[name], body)
+	}
+	if err := c.launch.verifyUserConfig(); err != nil {
+		t.Fatalf("verifyUserConfig = %v, want the blob-admitted project sources skipped", err)
+	}
+
+	// The same mismatch on a user source, which is mutable, must fail: the
+	// skip is for blob sources only.
+	c.launch.UserConfigDigests["user_config"] = strings.Repeat("f", 64)
+	if err := c.launch.verifyUserConfig(); err == nil || !strings.Contains(err.Error(), `"user_config" changed after admission`) {
+		t.Fatalf("verifyUserConfig = %v, want user_config reported changed after admission", err)
+	}
+}
+
+func TestCodexConfigPathsAndInventoryUsed(t *testing.T) { // D11, I20
+	t.Parallel()
+	c := newCodexConfigLaunch(t)
+	if err := c.launch.verifyUserConfig(); err != nil {
+		t.Fatalf("verifyUserConfig on an unchanged config = %v, want nil", err)
+	}
+
+	// A source the admitted manifest did not hold appears before exec. Only
+	// the Codex inventory knows its name, and it blocks.
+	writeConfigFile(t, filepath.Join(c.home, ".codex", "config.toml"), "model = \"x\"\n")
+	if err := c.launch.verifyUserConfig(); err == nil || !strings.Contains(err.Error(), "native_config_unreadable") {
+		t.Fatalf("verifyUserConfig after a config.toml appeared = %v, want native_config_unreadable from the Codex inventory", err)
+	}
+
+	// A digest with no path mapping still fails the launch.
+	delete(c.launch.UserConfigPaths, "user_config")
+	if err := c.launch.verifyUserConfig(); err == nil || !strings.Contains(err.Error(), "no inventoried path") {
+		t.Fatalf("verifyUserConfig without a path = %v, want the no inventoried path failure", err)
 	}
 }

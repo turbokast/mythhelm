@@ -165,3 +165,71 @@ func TestWorkerClimbsPinnedLadder(t *testing.T) {
 		t.Errorf("attempt.stopped = %+v, want confirmed with sent %v", p, one)
 	}
 }
+
+func TestWorkerStartsCodexByDescriptor(t *testing.T) { // AC-1.2, D12
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("the Codex adapter is claimed on Linux and macOS only")
+	}
+	a := newAttempt(t)
+	good := a.codexLaunch(t, "success")
+	body, err := json.Marshal(good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readLaunch(strings.NewReader(string(body))); err != nil {
+		t.Fatalf("readLaunch rejected %s: %v", good.AdapterID, err)
+	}
+	unknown := good
+	unknown.AdapterID = "builtin/codex-unknown"
+	if body, err = json.Marshal(unknown); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readLaunch(strings.NewReader(string(body))); err == nil {
+		t.Fatal("readLaunch accepted an unknown adapter ID")
+	}
+
+	// The Codex decoder ran: its session frame reached the spool, and the
+	// empty APIKeySource it reports did not stop the attempt (D12).
+	a.spawn(t, good)
+	evs := a.waitDone(t)
+	var session struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := json.Unmarshal(find(t, evs, "attempt.native_session").Payload, &session); err != nil || session.SessionID != "synth-codex-1" {
+		t.Errorf("native_session session_id = %q, %v; want the Codex frame's synth-codex-1", session.SessionID, err)
+	}
+	if st, reason := final(t, evs); st != "succeeded_native" {
+		t.Errorf("final state = %s (%s), want succeeded_native", st, reason)
+	}
+}
+
+// A Codex native whose result frame cannot be read keeps running with its
+// output unobserved. The worker must learn of it and stop the attempt through
+// its own identity-checked interrupt (#389 F1, v2 §4.5, I18).
+func TestWorkerStopsCodexNativeAfterMalformedResult(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("process-group stop semantics are claimed on Linux and macOS only")
+	}
+	a := newAttempt(t)
+	a.spawn(t, a.codexLaunch(t, "malformed-result"))
+	evs := a.waitDone(t)
+
+	if st, reason := final(t, evs); st != "stopped" || reason != adapter.ProtocolMismatch {
+		t.Errorf("final state = %s (%s), want stopped (%s)", st, reason, adapter.ProtocolMismatch)
+	}
+	var req struct {
+		RequestedBy string `json:"requested_by"`
+	}
+	if err := json.Unmarshal(find(t, evs, "attempt.stop_requested").Payload, &req); err != nil || req.RequestedBy != "worker" {
+		t.Errorf("stop_requested.requested_by = %q, %v; want worker", req.RequestedBy, err)
+	}
+	if p := stoppedOf(t, evs); !p.Confirmed || !slices.Equal(p.SignalsSent, []adapter.StopSignal{adapter.StopInterrupt}) {
+		t.Errorf("attempt.stopped = %+v, want confirmed after the interrupt alone", p)
+	}
+	var nativeErr struct {
+		Class string `json:"class"`
+	}
+	if err := json.Unmarshal(find(t, evs, "attempt.native_error").Payload, &nativeErr); err != nil || nativeErr.Class != adapter.ProtocolMismatch {
+		t.Errorf("native_error class = %q, %v; want %s", nativeErr.Class, err, adapter.ProtocolMismatch)
+	}
+}

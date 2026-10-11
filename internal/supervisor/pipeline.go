@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/adapters/claudecode"
+	"github.com/turbokast/mythhelm/adapters/codex"
+	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/contain"
@@ -601,9 +603,19 @@ func launchForAttempt(d admission.Decision, token string) workers.Launch {
 	}
 	if len(lp.Manifest.Digests) > 0 {
 		l.UserConfigDigests = maps.Clone(lp.Manifest.Digests)
-		l.UserConfigPaths = claudecode.AdmittedConfigPathsForEnv(specHome(lp.Spec.Env), d.Workdir, lp.Spec.Env)
+		l.UserConfigPaths = admittedConfigPaths(d.Adapter.ID, specHome(lp.Spec.Env), d.Workdir, lp.Spec.Env)
 	}
 	return l
+}
+
+// admittedConfigPaths maps the admitted manifest's sources to their paths with
+// the inventory of the adapter that produced it; every adapter but Codex
+// shares the Claude inventory.
+func admittedConfigPaths(adapterID, home, workdir string, env []string) map[string]string {
+	if adapterID == codex.AdapterID {
+		return codex.AdmittedConfigPathsForEnv(home, workdir, env)
+	}
+	return claudecode.AdmittedConfigPathsForEnv(home, workdir, env)
 }
 
 // specHome is the HOME entry of the admitted child env, or "" when the env
@@ -1074,6 +1086,11 @@ func (p *pipeline) conclude(ctx context.Context) error {
 		// (AC-4.4), and stopping exits to blocked for exactly this reason.
 		if p.out.AttemptReason == "billing_route_mismatch" {
 			return p.runTo(ctx, RunBlocked, "billing_route_mismatch")
+		}
+		// A worker stop on a protocol mismatch is the native's failure, not
+		// a cancellation; a user stop that was also requested stays one.
+		if p.out.AttemptReason == adapter.ProtocolMismatch && !stopping {
+			return p.runTo(ctx, RunFailed, "protocol_error")
 		}
 		if !stopping {
 			if err := p.runTo(ctx, RunStopping, ""); err != nil {
