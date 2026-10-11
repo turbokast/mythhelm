@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -206,10 +207,14 @@ func TestInventoryFailsClosed(t *testing.T) {
 	if _, err := InventorySettingsForEnv("relative-home", workdir, nil); !errors.Is(err, ErrCapability) {
 		t.Fatalf("relative home: err = %v, want ErrCapability", err)
 	}
-	blockedHome := t.TempDir()
-	writeFile(t, filepath.Join(blockedHome, ".codex"), "not a directory")
-	if _, err := InventorySettingsForEnv(blockedHome, t.TempDir(), nil); !errors.Is(err, ErrCapability) {
-		t.Fatalf("unreadable home: err = %v, want ErrCapability", err)
+	// Windows reports a path below a regular file as not found, so only
+	// other platforms surface the unreadable-home error here.
+	if runtime.GOOS != "windows" {
+		blockedHome := t.TempDir()
+		writeFile(t, filepath.Join(blockedHome, ".codex"), "not a directory")
+		if _, err := InventorySettingsForEnv(blockedHome, t.TempDir(), nil); !errors.Is(err, ErrCapability) {
+			t.Fatalf("unreadable home: err = %v, want ErrCapability", err)
+		}
 	}
 	for name, blob := range map[string]string{ //nolint:gosec // Synthetic config fixtures, not credentials.
 		"invalid json":      `{`,
