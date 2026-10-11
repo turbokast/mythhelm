@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,6 +34,8 @@ var versionLine = regexp.MustCompile(`^codex-cli (\d+\.\d+\.\d+)$`)
 
 type codexAdapter struct {
 	probeTimeout time.Duration
+	goos         string // overrides runtime.GOOS in tests; empty means the host
+	started      atomic.Bool
 }
 
 // New returns a Codex adapter.
