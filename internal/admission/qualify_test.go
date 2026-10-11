@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/adapters/claudecode"
+	"github.com/turbokast/mythhelm/adapters/codex"
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/cli"
@@ -28,8 +29,11 @@ import (
 // to the fake native; the fake answers --version and auth status from the
 // fakeclaude.json sidecar in its own directory.
 func TestMain(m *testing.M) {
-	if base := filepath.Base(os.Args[0]); base == "claude" || base == "claude.exe" {
+	switch filepath.Base(os.Args[0]) {
+	case "claude", "claude.exe":
 		os.Exit(fakeClaudeMain())
+	case "codex", "codex.exe":
+		os.Exit(fakeCodexMain())
 	}
 	os.Exit(m.Run())
 }
@@ -66,6 +70,27 @@ func fakeClaudeMain() int {
 	return 9
 }
 
+// fakeCodexMain is the synthetic native Codex: it appends its argv to
+// invocations.log beside the binary, then answers --version. It never contacts
+// a model.
+func fakeCodexMain() int {
+	exe, err := os.Executable()
+	if err != nil {
+		return 9
+	}
+	log, err := os.OpenFile(filepath.Join(filepath.Dir(exe), "invocations.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) // #nosec G304 -- test log beside the copied binary
+	if err != nil {
+		return 9
+	}
+	_, _ = fmt.Fprintln(log, strings.Join(os.Args[1:], " "))
+	_ = log.Close()
+	if strings.Join(os.Args[1:], " ") == "--version" {
+		fmt.Println("codex-cli 0.0.0")
+		return 0
+	}
+	return 9
+}
+
 // installFakeClaude copies the test binary to a fresh dir as `claude` with
 // its sidecar, and prepends the dir to PATH.
 func installFakeClaude(t *testing.T, cfg fakeClaudeConfig) {
@@ -95,6 +120,30 @@ func installFakeClaude(t *testing.T, cfg fakeClaudeConfig) {
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
+}
+
+// installFakeCodex copies the test binary to a fresh dir as `codex`, puts the
+// dir first on PATH and returns the invocation log's path.
+func installFakeCodex(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(self) // #nosec G304 -- test copies its own binary from os.Executable
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := "codex"
+	if runtime.GOOS == "windows" {
+		name = "codex.exe"
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), raw, 0o700); err != nil { // #nosec G306 G703 -- executable test fixture under t.TempDir
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return filepath.Join(dir, "invocations.log")
 }
 
 // fixtureSHA256 is a fixed native digest the consult tests build keys from.
@@ -1116,5 +1165,101 @@ func TestRegistryUnreadableStillFailsClosed(t *testing.T) {
 	// admission error, never the gap gate's block.
 	if _, isBlocked := errors.AsType[*admission.BlockedError](err); isBlocked {
 		t.Fatalf("unreadable registry mapped to a block (%v), want an admission error that outranks the gap gate", err)
+	}
+}
+
+// parityState seeds a registry for one harness key and says whether the
+// consult runs with a nil registry.
+type parityState struct {
+	name  string
+	nilRg bool
+	seed  func(key qualify.Key) []qualify.Record
+}
+
+func TestResolveQualificationKeyParity(t *testing.T) { // I02 (v2 §2), AC-7.4
+	probe, manifest := fixtureProbe(), fixtureManifest()
+	claudeKey := observedKey(probe, manifest, fixtureEvidence(), admission.ProfileTrustedHost)
+	codexKey := codex.ObservedKey(probe, manifest, "native-managed", admission.ProfileTrustedHost)
+	drifted := func(key qualify.Key) qualify.Key {
+		key.ExecutableDigest = "sha256:" + strings.Repeat("9", 64)
+		return key
+	}
+	withProgress := func(p qualify.Progress) func(qualify.Key) []qualify.Record {
+		return func(key qualify.Key) []qualify.Record {
+			rec := liveRecord(key, liveEvidence(true), liveStop(true))
+			rec.Progress = p
+			rec.NextTest = "fixture; authority: test"
+			return []qualify.Record{rec}
+		}
+	}
+	states := []parityState{
+		{name: "nil registry", nilRg: true},
+		{name: "empty registry", seed: func(qualify.Key) []qualify.Record { return nil }},
+		{name: "planned", seed: withProgress(qualify.ProgressPlanned)},
+		{name: "fixture-tested", seed: withProgress(qualify.ProgressFixtureTested)},
+		{name: "unsupported", seed: withProgress(qualify.ProgressUnsupported)},
+		{name: "live no stop", seed: func(key qualify.Key) []qualify.Record {
+			return []qualify.Record{liveRecord(key, liveEvidence(true), qualify.Capability{Value: "unknown", Evidence: "unknown", Scope: "unknown"})}
+		}},
+		{name: "live expired evidence", seed: func(key qualify.Key) []qualify.Record {
+			return []qualify.Record{liveRecord(key, liveEvidence(false), liveStop(true))}
+		}},
+		{name: "live admitting", seed: func(key qualify.Key) []qualify.Record {
+			return []qualify.Record{liveRecord(key, liveEvidence(true), liveStop(true))}
+		}},
+		{name: "drifted", seed: func(key qualify.Key) []qualify.Record {
+			return []qualify.Record{liveRecord(drifted(key), liveEvidence(true), liveStop(true))}
+		}},
+		{name: "ambiguous", seed: func(key qualify.Key) []qualify.Record {
+			var recs []qualify.Record
+			for _, d := range []string{"1", "2"} {
+				k := key
+				k.ExecutableDigest = "sha256:" + strings.Repeat(d, 64)
+				rec := liveRecord(k, liveEvidence(true), liveStop(true))
+				rec.Progress = qualify.ProgressBlocked
+				rec.NextTest = "fixture; authority: test"
+				recs = append(recs, rec)
+			}
+			return recs
+		}},
+	}
+	type outcome struct {
+		verdict admission.EligibilityVerdict
+		reason  string
+		drift   bool
+		hasRec  bool
+	}
+	run := func(t *testing.T, st parityState, key qualify.Key, billing string) outcome {
+		t.Helper()
+		var reg *qualify.Registry
+		if !st.nilRg {
+			reg = openRegistry(t, t.TempDir())
+			for _, rec := range st.seed(key) {
+				storeRecord(t, reg, rec)
+			}
+		}
+		elig, err := admission.ResolveQualificationKey(t.Context(), reg, key, billing)
+		var drift *admission.DriftError
+		if err != nil && !errors.As(err, &drift) {
+			t.Fatal(err)
+		}
+		return outcome{elig.Verdict, elig.Reason, drift != nil, elig.Record != nil}
+	}
+	seen := map[string]bool{}
+	for _, st := range states {
+		for _, billing := range []string{admission.BillingSubscriptionOnly, admission.BillingSubscriptionDeclared, admission.BillingLocalScripted} {
+			t.Run(st.name+"/"+billing, func(t *testing.T) {
+				claude, cdx := run(t, st, claudeKey, billing), run(t, st, codexKey, billing)
+				if claude != cdx {
+					t.Fatalf("claude-code verdict %+v != codex verdict %+v", claude, cdx)
+				}
+				seen[claude.reason] = true
+			})
+		}
+	}
+	for _, reason := range []string{"no_qualification_record", "entitlement_not_proven", "stop_at_exhaustion_unproven", "qualification_unsupported", "qualification_drifted", "ambiguous_qualification_match", ""} {
+		if !seen[reason] {
+			t.Errorf("parity table never produced reason %q; it cannot show the two harnesses agree on it", reason)
+		}
 	}
 }

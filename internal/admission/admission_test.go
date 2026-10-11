@@ -234,15 +234,6 @@ func TestCodexDeclarationFlagRefused(t *testing.T) {
 	}
 }
 
-func TestDecideCodexIsNotAvailableYet(t *testing.T) {
-	t.Parallel()
-	_, err := admission.Decide(t.Context(), stubRequest(t, "codex"))
-	blocked, ok := errors.AsType[*admission.BlockedError](err)
-	if !ok || blocked.Code != "adapter_not_available" || !blocked.Capability {
-		t.Errorf("err = %v, want a capability (exit 7) adapter_not_available refusal", err)
-	}
-}
-
 // consentProfile derives the boundary route as builtin/<name>; a row whose
 // adapter ID differs would be consulted under one route and launched under
 // another (I02).

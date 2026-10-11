@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/adapters/claudecode"
+	"github.com/turbokast/mythhelm/adapters/codex"
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/qualify"
@@ -37,12 +38,7 @@ func ResolveBilling(ctx context.Context, mode string, evidence AuthEvidence, dec
 		return BillingPosture{}, err
 	}
 	if mode == BillingSubscriptionOnly {
-		rec := elig.Record
-		now := time.Now()
-		if elig.Verdict != Eligible || rec == nil || rec.Progress != qualify.ProgressLiveQualified || !columnProven(rec.Entitlement, now) || !stopSupported(rec.Capabilities, now) {
-			return BillingPosture{}, strictBillingBlock()
-		}
-		return BillingPosture{Mode: mode, CredentialProvenance: "native-login", EntitlementClass: "included-plan", EntitlementSource: "registry:live-qualified", PaidContinuation: "prevented", Qualified: true, G05: "passed"}, nil
+		return ResolveBillingStrict(ctx, elig)
 	}
 	if mode != BillingSubscriptionDeclared {
 		return BillingPosture{}, fmt.Errorf("%w: Claude Code requires --billing subscription-declared or subscription-only", ErrInvalid)
@@ -60,6 +56,21 @@ func ResolveBilling(ctx context.Context, mode string, evidence AuthEvidence, dec
 		return BillingPosture{}, fmt.Errorf("%w: invalid entitlement declaration", ErrInvalid)
 	}
 	return BillingPosture{Mode: mode, CredentialProvenance: "native-login", EntitlementClass: "included-plan", EntitlementSource: "user_declared+native_status(subscriptionType=" + evidence.SubscriptionType + ")", PaidContinuation: "unknown", PaidContinuationUserDeclaration: "disabled", Qualified: false, G05: "not-passed"}, nil
+}
+
+// ResolveBillingStrict admits strict subscription-only billing only on an
+// eligible consult of a live-qualified record whose entitlement evidence and
+// stop capability are still unexpired at this call (I15/G05).
+func ResolveBillingStrict(ctx context.Context, elig Eligibility) (BillingPosture, error) {
+	if err := ctx.Err(); err != nil {
+		return BillingPosture{}, err
+	}
+	rec := elig.Record
+	now := time.Now()
+	if elig.Verdict != Eligible || rec == nil || rec.Progress != qualify.ProgressLiveQualified || !columnProven(rec.Entitlement, now) || !stopSupported(rec.Capabilities, now) {
+		return BillingPosture{}, strictBillingBlock()
+	}
+	return BillingPosture{Mode: BillingSubscriptionOnly, CredentialProvenance: "native-login", EntitlementClass: "included-plan", EntitlementSource: "registry:live-qualified", PaidContinuation: "prevented", Qualified: true, G05: "passed"}, nil
 }
 
 func strictBillingBlock() error {
@@ -107,32 +118,53 @@ func ResolveCredentialEnv(parent []string, strip, oauthOptIn bool, passthrough [
 	return child, overrides, nil
 }
 
-// CheckNativeTrust checks a digest-bound native execution grant. True means
-// the caller must persist the explicit grant atomically with its admission.
+// NativeConfig is the harness-neutral native configuration inventory the
+// trust check reads (D17). Each adapter's manifest converts to it field for
+// field.
+type NativeConfig struct {
+	Digests       map[string]string
+	Digest        string
+	Hooks         int
+	MCPServers    []string
+	RequiresTrust bool
+}
+
+// CheckNativeTrust checks a digest-bound native execution grant for Claude
+// Code. True means the caller must persist the explicit grant atomically
+// with its admission.
 func CheckNativeTrust(ctx context.Context, j *journal.Journal, repoID string, manifest claudecode.Manifest, explicitDigest string) (bool, error) {
-	if !manifest.RequiresTrust {
+	return CheckNativeTrustConfig(ctx, j, repoID, claudeNativeConfig(manifest), explicitDigest)
+}
+
+func claudeNativeConfig(m claudecode.Manifest) NativeConfig {
+	return NativeConfig{Digests: m.Digests, Digest: m.Digest, Hooks: m.Hooks, MCPServers: m.MCPServers, RequiresTrust: m.RequiresTrust}
+}
+
+// CheckNativeTrustConfig is CheckNativeTrust over the neutral inventory.
+func CheckNativeTrustConfig(ctx context.Context, j *journal.Journal, repoID string, cfg NativeConfig, explicitDigest string) (bool, error) {
+	if !cfg.RequiresTrust {
 		if explicitDigest != "" {
 			return false, fmt.Errorf("%w: --trust-native-config has no executable configuration to trust", ErrInvalid)
 		}
 		return false, nil
 	}
-	if len(manifest.Digest) != 64 || repoID == "" {
+	if len(cfg.Digest) != 64 || repoID == "" {
 		return false, &BlockedError{Code: "native_config_unreadable", Action: "rebuild the native configuration inventory"}
 	}
 	if explicitDigest != "" {
-		if explicitDigest != "sha256:"+manifest.Digest {
-			return false, fmt.Errorf("%w: --trust-native-config must match sha256:%s", ErrInvalid, manifest.Digest)
+		if explicitDigest != "sha256:"+cfg.Digest {
+			return false, fmt.Errorf("%w: --trust-native-config must match sha256:%s", ErrInvalid, cfg.Digest)
 		}
 		return true, nil
 	}
-	trusted, err := HasTrust(ctx, j, NativeConfigTrustKind, repoID, manifest.Digest)
+	trusted, err := HasTrust(ctx, j, NativeConfigTrustKind, repoID, cfg.Digest)
 	if err != nil {
 		return false, err
 	}
 	if trusted {
 		return false, nil
 	}
-	return false, &BlockedError{Code: "untrusted_native_config", Field: "sha256:" + manifest.Digest, Action: "review hooks/MCP definitions and pass --trust-native-config sha256:" + manifest.Digest}
+	return false, &BlockedError{Code: "untrusted_native_config", Field: "sha256:" + cfg.Digest, Action: "review hooks/MCP definitions and pass --trust-native-config sha256:" + cfg.Digest}
 }
 
 // NativeAdmissionError translates adapter refusals into the shared CLI error
@@ -141,7 +173,7 @@ func NativeAdmissionError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, claudecode.ErrCapability) {
+	if errors.Is(err, claudecode.ErrCapability) || errors.Is(err, codex.ErrCapability) {
 		return &BlockedError{Code: "native_capability_unavailable", Capability: true, Action: err.Error()}
 	}
 	if blocked, ok := errors.AsType[*adapter.BlockedError](err); ok {

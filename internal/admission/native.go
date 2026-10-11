@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/adapters/claudecode"
+	"github.com/turbokast/mythhelm/adapters/codex"
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/workspace"
@@ -36,7 +37,7 @@ func (d *Decision) admitNativeConfig(ctx context.Context, req Request, childEnv 
 		return claudecode.Manifest{}, &BlockedError{Code: "native_config_unreadable", Field: "user home",
 			Action: "set HOME to the user's home directory so native settings can be inventoried"}
 	}
-	blobs, err := readAdmittedBlobs(ctx, d.Snapshot.SourceRepo, d.Snapshot.BaseRev)
+	blobs, err := readAdmittedBlobs(ctx, d.Snapshot.SourceRepo, d.Snapshot.BaseRev, admittedProjectSources)
 	if err != nil {
 		return claudecode.Manifest{}, err
 	}
@@ -49,18 +50,64 @@ func (d *Decision) admitNativeConfig(ctx context.Context, req Request, childEnv 
 			return claudecode.Manifest{}, err
 		}
 	}
-	if err := d.admitNativeTrust(ctx, req, manifest); err != nil {
+	if err := d.admitNativeTrust(ctx, req, "Claude Code", claudeNativeConfig(manifest)); err != nil {
 		return claudecode.Manifest{}, err
 	}
 	return manifest, nil
 }
 
-// readAdmittedBlobs reads the admitted revision's project settings blobs.
-// A path that is not a regular committed file fails closed: the native
-// would read something this inventory cannot establish.
-func readAdmittedBlobs(ctx context.Context, repo, rev string) (map[string][]byte, error) {
+// admitCodexNativeConfig inventories the Codex configuration over exactly the
+// child environment the launch will use, never the parent's: the home and any
+// config-root override come from childEnv, so trust is decided on the root
+// the native will load. Project sources are the admitted revision's blobs.
+func (d *Decision) admitCodexNativeConfig(ctx context.Context, req Request, childEnv []string) (codex.Manifest, error) {
+	home := envHome(childEnv)
+	if home == "" {
+		return codex.Manifest{}, &BlockedError{Code: "native_config_unreadable", Field: "user home",
+			Action: "set HOME to the user's home directory so native settings can be inventoried"}
+	}
+	blobs, err := readAdmittedBlobs(ctx, d.Snapshot.SourceRepo, d.Snapshot.BaseRev, codex.ProjectSources)
+	if err != nil {
+		return codex.Manifest{}, err
+	}
+	manifest, err := codex.InventoryAdmittedProject(home, d.Workdir, blobs, childEnv)
+	if err != nil {
+		return codex.Manifest{}, NativeAdmissionError(err)
+	}
+	if d.RepoIdentity == "" {
+		if d.RepoIdentity, err = RepoIdentity(d.Snapshot.SourceRepo); err != nil {
+			return codex.Manifest{}, err
+		}
+	}
+	if err := d.admitNativeTrust(ctx, req, "Codex", NativeConfig(manifest)); err != nil {
+		return codex.Manifest{}, err
+	}
+	return manifest, nil
+}
+
+// envHome is the home directory the child environment names.
+func envHome(env []string) string {
+	home := ""
+	for _, name := range []string{"HOME", "USERPROFILE"} {
+		for _, kv := range env {
+			if value, ok := strings.CutPrefix(kv, name+"="); ok && value != "" {
+				home = value
+			}
+		}
+		if home != "" {
+			break
+		}
+	}
+	return home
+}
+
+// readAdmittedBlobs reads the admitted revision's project settings blobs for
+// the named sources (source name -> repo-relative path). A path that is not a
+// regular committed file fails closed: the native would read something this
+// inventory cannot establish.
+func readAdmittedBlobs(ctx context.Context, repo, rev string, sources map[string]string) (map[string][]byte, error) {
 	blobs := map[string][]byte{}
-	for name, path := range admittedProjectSources {
+	for name, path := range sources {
 		entry, err := workspace.Git(ctx, repo, true, "ls-tree", rev, "--", path)
 		if err != nil {
 			return nil, &BlockedError{Code: "native_config_unreadable", Field: name,
@@ -86,7 +133,7 @@ func readAdmittedBlobs(ctx context.Context, repo, rev string) (map[string][]byte
 // admitNativeTrust resolves the manifest's trust grant. True from
 // CheckNativeTrust means the supervisor must persist the explicit grant
 // with the admitted event.
-func (d *Decision) admitNativeTrust(ctx context.Context, req Request, manifest claudecode.Manifest) error {
+func (d *Decision) admitNativeTrust(ctx context.Context, req Request, harness string, cfg NativeConfig) error {
 	trustDB, err := openTrustJournal(ctx, req.StateDir)
 	if err != nil {
 		return err
@@ -94,15 +141,15 @@ func (d *Decision) admitNativeTrust(ctx context.Context, req Request, manifest c
 	if trustDB != nil {
 		defer func() { _ = trustDB.Close() }()
 	}
-	record, err := CheckNativeTrust(ctx, trustDB, d.RepoIdentity, manifest, req.TrustNativeConfig)
+	record, err := CheckNativeTrustConfig(ctx, trustDB, d.RepoIdentity, cfg, req.TrustNativeConfig)
 	if err == nil {
 		d.RecordNativeTrust = record
-		d.NativeConfigDigest = manifest.Digest
-		d.NativeHooks = manifest.Hooks
+		d.NativeConfigDigest = cfg.Digest
+		d.NativeHooks = cfg.Hooks
 		// Trust holds here via the explicit flag or a stored row; a
 		// grant backs it exactly when the manifest needed trusting.
-		if manifest.RequiresTrust {
-			d.NativeTrustGrant = "native_config:sha256:" + manifest.Digest
+		if cfg.RequiresTrust {
+			d.NativeTrustGrant = "native_config:sha256:" + cfg.Digest
 		}
 		return nil
 	}
@@ -110,14 +157,14 @@ func (d *Decision) admitNativeTrust(ctx context.Context, req Request, manifest c
 	if !errors.As(err, &blocked) || blocked.Code != "untrusted_native_config" {
 		return err
 	}
-	ok, cerr := confirm(req, describeNativeTrust(manifest))
+	ok, cerr := confirm(req, describeNativeTrust(harness, cfg))
 	if cerr != nil || !ok {
 		return errors.Join(blocked, cerr)
 	}
 	d.RecordNativeTrust = true
-	d.NativeConfigDigest = manifest.Digest
-	d.NativeHooks = manifest.Hooks
-	d.NativeTrustGrant = "native_config:sha256:" + manifest.Digest
+	d.NativeConfigDigest = cfg.Digest
+	d.NativeHooks = cfg.Hooks
+	d.NativeTrustGrant = "native_config:sha256:" + cfg.Digest
 	return nil
 }
 
@@ -137,14 +184,14 @@ func openTrustJournal(ctx context.Context, stateDir string) (*journal.Journal, e
 // describeNativeTrust summarises the manifest for the trust question. The
 // manifest holds digests, counts and server labels only, never native
 // commands, URLs or values, so the question is safe to print.
-func describeNativeTrust(manifest claudecode.Manifest) string {
-	sources := make([]string, 0, len(manifest.Digests))
-	for name, digest := range manifest.Digests {
+func describeNativeTrust(harness string, cfg NativeConfig) string {
+	sources := make([]string, 0, len(cfg.Digests))
+	for name, digest := range cfg.Digests {
 		sources = append(sources, name+":sha256:"+digest)
 	}
 	slices.Sort(sources)
-	return fmt.Sprintf("Trust native Claude Code configuration sha256:%s?\nHooks: %d\nMCP servers: %v\nSources:\n%s",
-		manifest.Digest, manifest.Hooks, manifest.MCPServers, strings.Join(sources, "\n"))
+	return fmt.Sprintf("Trust native %s configuration sha256:%s?\nHooks: %d\nMCP servers: %v\nSources:\n%s",
+		harness, cfg.Digest, cfg.Hooks, cfg.MCPServers, strings.Join(sources, "\n"))
 }
 
 // resolveDeclaration returns the declaration billing must check: a fresh
