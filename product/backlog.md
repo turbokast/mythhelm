@@ -100,11 +100,11 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: Requires MH-21 and MH-22; pair with MH-23. Alternative native surfaces need their own G12 qualification; no Herdr-only inference or second scheduler.
 
 ### MH-4: Codex native adapter and included-only qualification
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 1
 - **Gates**: G02, G04, G05
 - **Score**: 3.3 = (value 5 + urgency 5 + risk 3) / effort 4
-- **Spec**: (none)
+- **Spec**: `codex-native-adapter`
 - **Issue**: [#25](https://github.com/turbokast/mythhelm/issues/25)
 - **Source**: Master Specification v2 §7; W02/W06/W14; historical issue #25
 - **Summary**: Qualify Codex as a native harness independently across fidelity, subscription entitlement, stop/recovery and session continuity. It may become the first credible included-only route or a later second route; qualification evidence determines order, with no SDK or same-model substitution.
