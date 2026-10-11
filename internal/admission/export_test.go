@@ -1,6 +1,11 @@
 package admission
 
-import "context"
+import (
+	"context"
+	"time"
+
+	"github.com/turbokast/mythhelm/internal/qualify"
+)
 
 // DecideWithHarness runs the production pipeline over the default table plus
 // one extra row, so a test can prove dispatch goes through the table.
@@ -20,4 +25,23 @@ func HarnessRoutes() map[string]string {
 		routes[h.name] = h.adapterID
 	}
 	return routes
+}
+
+// DecideCodexWith runs the production pipeline with the Codex row's decider
+// given a fixed observed auth category.
+func DecideCodexWith(ctx context.Context, req Request, authCategory string) (Decision, error) {
+	table := defaultDeciders()
+	for i := range table {
+		if table[i].name == AdapterCodex {
+			table[i].decide = func(ctx context.Context, req Request, d Decision) (Decision, error) {
+				return decideCodexWith(ctx, req, d, authCategory)
+			}
+		}
+	}
+	return decideWith(ctx, table, req)
+}
+
+// PurchasedCreditPreventable exposes the Codex-only entitlement check.
+func PurchasedCreditPreventable(rec qualify.Record, now time.Time) bool {
+	return purchasedCreditPreventable(rec, now)
 }

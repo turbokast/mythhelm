@@ -86,12 +86,19 @@ var knownHarnesses = map[string]bool{
 // local-scripted, missing and non-live records admit with the record attached
 // when one exists; only an unsupported surface refuses under every mode.
 func ResolveQualification(ctx context.Context, reg *qualify.Registry, probe adapter.Probe, manifest adapter.ConfigManifest, evidence claudecode.AuthEvidence, billing string, profile string) (Eligibility, error) {
+	return ResolveQualificationKey(ctx, reg, observedKey(probe, manifest, evidence, profile), billing)
+}
+
+// ResolveQualificationKey is the verdict logic of ResolveQualification over
+// an already-built observed key, so each harness's adapter supplies its own
+// key and the verdicts cannot diverge by harness (D2). An unknown billing mode
+// is an invalid request.
+func ResolveQualificationKey(ctx context.Context, reg *qualify.Registry, observed qualify.Key, billing string) (Eligibility, error) {
 	switch billing {
 	case BillingSubscriptionOnly, BillingSubscriptionDeclared, BillingLocalScripted:
 	default:
 		return Eligibility{}, fmt.Errorf("%w: unknown billing mode %q", ErrInvalid, billing)
 	}
-	observed := observedKey(probe, manifest, evidence, profile)
 	if !knownHarnesses[observed.Harness] {
 		return Eligibility{Verdict: Unsupported, Reason: reasonUnsupported}, nil
 	}

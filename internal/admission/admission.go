@@ -18,13 +18,16 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/turbokast/mythhelm/adapters/claudecode"
+	"github.com/turbokast/mythhelm/adapters/codex"
 	"github.com/turbokast/mythhelm/adapters/fake"
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/contain"
 	"github.com/turbokast/mythhelm/internal/ids"
+	"github.com/turbokast/mythhelm/internal/qualify"
 	"github.com/turbokast/mythhelm/internal/security"
 	"github.com/turbokast/mythhelm/internal/workspace"
 )
@@ -193,9 +196,6 @@ func requiredCapabilities(c adapter.CapabilityRecord) map[string]adapter.Tri {
 	return map[string]adapter.Tri{"structured_events": c.Capabilities.StructuredEvents}
 }
 
-// codexAdapterID is codex.AdapterID until the adapter package exists.
-const codexAdapterID = "builtin/codex"
-
 // flagSet names the optional run flags a harness accepts; validate refuses
 // any other flag given with that harness.
 type flagSet struct {
@@ -219,7 +219,7 @@ func defaultDeciders() []harnessDecider {
 		{name: AdapterClaudeCode, adapterID: claudecode.AdapterID, destination: "first-party native API over the network",
 			decide: decideClaudeCode,
 			flags:  flagSet{stripCredentialEnv: true, trustNativeConfig: true, declareEntitlement: true, allowUntestedNativeVersion: true}},
-		{name: AdapterCodex, adapterID: codexAdapterID, destination: "first-party native API over the network",
+		{name: AdapterCodex, adapterID: codex.AdapterID, destination: "first-party native API over the network",
 			decide: decideCodex,
 			flags:  flagSet{trustNativeConfig: true, allowUntestedNativeVersion: true}},
 		{name: AdapterFake, adapterID: fake.New().Descriptor().ID, destination: "no network (scripted fake agent)",
@@ -320,10 +320,118 @@ func decideFake(ctx context.Context, req Request, d Decision) (Decision, error) 
 	return d, nil
 }
 
-// decideCodex refuses every run until the Codex adapter is wired (Task 8).
-func decideCodex(_ context.Context, _ Request, _ Decision) (Decision, error) {
-	return Decision{}, &BlockedError{Code: "adapter_not_available", Field: "--adapter " + AdapterCodex, Capability: true,
-		Action: "the Codex adapter is not available in this build"}
+func decideCodex(ctx context.Context, req Request, d Decision) (Decision, error) {
+	return decideCodexWith(ctx, req, d, codex.AuthCategory(req.Env))
+}
+
+// decideCodexWith admits a Codex run through the design §4 order. Every
+// refusal that needs no native process comes first, then the inventory and
+// trust, so no native process of any kind starts before the config is trusted
+// (AC-3.1); the probe follows, then the key-level qualification gates. No
+// Codex run is admittable in this build: the auth category stays unknown (D13).
+func decideCodexWith(ctx context.Context, req Request, d Decision, authCategory string) (Decision, error) {
+	if req.Billing != BillingSubscriptionOnly {
+		return Decision{}, &BlockedError{Code: "billing_unsupported_for_adapter", Field: "--billing " + req.Billing,
+			Action: "Codex runs only under --billing subscription-only"}
+	}
+	a := codex.New()
+	d.Adapter = a.Descriptor()
+	if err := admitRepo(ctx, req, &d); err != nil {
+		return Decision{}, err
+	}
+	if len(d.ProjectConfig.Environment.Passthrough) > 0 {
+		return Decision{}, &BlockedError{Code: "native_passthrough_unsupported", Field: "environment.passthrough",
+			Action: "remove the project's environment passthrough; Codex credential variables are not yet screened"}
+	}
+	if len(d.ProjectConfig.Adapters.ClaudeCode.AllowedTools) > 0 {
+		return Decision{}, &BlockedError{Code: "native_tool_rules_unsupported", Field: "adapters.claudecode.allowed_tools",
+			Action: "remove the project's tool rules; Codex has no equivalent"}
+	}
+	// The credential screen is skipped: the Codex credential variables are
+	// unnamed until OQ6, and BuildEnv still drops every denylisted variable.
+	childEnv, err := security.BuildEnv(req.Env, nil, nil)
+	if err != nil {
+		return Decision{}, fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+	d.RunID, d.TaskID, d.AttemptID = ids.New("run"), ids.New("task"), ids.New("att")
+	d.RunDir = filepath.Join(req.StateDir, "runs", d.RunID)
+	d.Workdir = filepath.Join(d.RunDir, "workspace")
+	manifest, err := d.admitCodexNativeConfig(ctx, req, childEnv)
+	if err != nil {
+		return Decision{}, err
+	}
+	if d.Probe, err = a.Probe(ctx, adapter.ProbeInput{Env: childEnv, Workdir: d.Snapshot.SourceRepo, AllowUntestedNativeVersion: req.AllowUntestedNativeVersion}); err != nil {
+		return Decision{}, NativeAdmissionError(fmt.Errorf("probing adapter %s: %w", d.Adapter.ID, err))
+	}
+	if authCategory == "unknown" {
+		return Decision{}, &BlockedError{Code: reasonNoRecord, Field: "auth_category=" + authCategory,
+			Action: "no sign-in status source is available for Codex, so no qualification record can match; see ADR-0002"}
+	}
+	reg, err := OpenQualificationRegistry(ctx, req.StateDir)
+	if err != nil {
+		return Decision{}, err
+	}
+	if reg != nil {
+		defer func() { _ = reg.Close() }()
+		if gaps := codex.GapSources(codex.UnresolvedSources); len(gaps) > 0 {
+			return Decision{}, &BlockedError{Code: reasonEntitlementUnp, Field: "missing-source:" + gaps[0],
+				Action: "the effective managed policy has a source MYTHHELM cannot inventory; see ADR-0002"}
+		}
+	}
+	configManifest := adapter.ConfigManifest{Digests: manifest.Digests}
+	elig, err := ResolveQualificationKey(ctx, reg, codex.ObservedKey(d.Probe, configManifest, authCategory, d.Profile.Name), req.Billing)
+	if err != nil {
+		return Decision{}, err
+	}
+	if err := eligibilityBlock(elig, d.Adapter); err != nil {
+		return Decision{}, err
+	}
+	if elig.Record == nil || !purchasedCreditPreventable(*elig.Record, time.Now()) {
+		return Decision{}, &BlockedError{Code: reasonEntitlementUnp, Field: "purchased_credit",
+			Action: "Codex purchased-credit prevention needs unexpired live evidence for this route"}
+	}
+	posture, err := ResolveBillingStrict(ctx, elig)
+	if err != nil {
+		return Decision{}, err
+	}
+	d.Proposal, err = a.Prepare(ctx, adapter.PrepareInput{
+		Workdir: d.Workdir, AttemptID: d.AttemptID, Env: childEnv, Probe: d.Probe,
+		Prompt: strings.NewReader(string(d.Task.Content)),
+	})
+	if err != nil {
+		return Decision{}, NativeAdmissionError(fmt.Errorf("preparing adapter %s: %w", d.Adapter.ID, err))
+	}
+	d.Proposal.Billing = posture
+	d.Proposal.Manifest = configManifest
+	d.Proposal.Overrides = append(d.Proposal.Overrides, boundaryDeltas(d.Profile)...)
+	return d, nil
+}
+
+// purchasedCreditPreventable is the Codex-only entitlement rule (AC-4.3): the
+// entitlement column needs an unexpired evidence entry whose result is
+// purchased_credit:preventable. No fixture-derived record can carry one.
+func purchasedCreditPreventable(rec qualify.Record, now time.Time) bool {
+	return slices.ContainsFunc(rec.Entitlement.Evidence, func(e qualify.Evidence) bool {
+		return e.Result == "purchased_credit:preventable" && (e.Expiry == nil || e.Expiry.After(now))
+	})
+}
+
+// eligibilityBlock turns a refusing consult verdict into the admission block
+// naming the adapter's harness and surface; an eligible verdict is nil.
+func eligibilityBlock(elig Eligibility, desc adapter.Descriptor) error {
+	switch elig.Verdict {
+	case Eligible:
+		return nil
+	case Blocked:
+		return &BlockedError{Code: elig.Reason,
+			Field:  desc.Harness + " × " + desc.Surface,
+			Action: "run 'mythhelm doctor' to inspect the qualification records"}
+	case Unsupported:
+		return &BlockedError{Code: elig.Reason, Capability: true,
+			Field:  desc.Harness + " × " + desc.Surface,
+			Action: "this surface is marked unsupported; run 'mythhelm doctor' for details"}
+	}
+	return fmt.Errorf("admission: unknown qualification verdict %q", elig.Verdict)
 }
 
 // decideClaudeCode admits a native run through the design §6.2 steps: the
@@ -386,18 +494,8 @@ func decideClaudeCode(ctx context.Context, req Request, d Decision) (Decision, e
 	if err != nil {
 		return Decision{}, err
 	}
-	switch elig.Verdict {
-	case Eligible:
-	case Blocked:
-		return Decision{}, &BlockedError{Code: elig.Reason,
-			Field:  d.Adapter.Harness + " × " + d.Adapter.Surface,
-			Action: "run 'mythhelm doctor' to inspect the qualification records"}
-	case Unsupported:
-		return Decision{}, &BlockedError{Code: elig.Reason, Capability: true,
-			Field:  d.Adapter.Harness + " × " + d.Adapter.Surface,
-			Action: "this surface is marked unsupported; run 'mythhelm doctor' for details"}
-	default:
-		return Decision{}, fmt.Errorf("admission: unknown qualification verdict %q", elig.Verdict)
+	if err := eligibilityBlock(elig, d.Adapter); err != nil {
+		return Decision{}, err
 	}
 	decl, err := resolveDeclaration(ctx, req, evidence)
 	if err != nil {
