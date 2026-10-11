@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "routes": [
+    {"name": "title", "coverage": "unknown"},
+    {"name": "summary-compaction", "coverage": "unknown"},
+    {"name": "review", "coverage": "unknown"},
+    {"name": "child", "coverage": "unknown"},
+    {"name": "native-observer", "coverage": "unknown"}
+  ]
+}
