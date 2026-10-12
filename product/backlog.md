@@ -99,17 +99,17 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Summary**: Deliver the embedded-client and minimal schema-negotiated Herdr bridge with scoped status, attention, safe controls and input takeover. Attach/reconnect uses the one core lifecycle owner; restored panes never start another attempt.
 - **Notes**: Requires MH-21 and MH-22; pair with MH-23. Alternative native surfaces need their own G12 qualification; no Herdr-only inference or second scheduler.
 
-### MH-23: Complete TUI intervention, accessibility and safe declarative themes
+### MH-33: Docs site that shows the product: layout, search, demo-first landing and tested examples
 - **Status**: triaged
 - **Stage**: 1
-- **Gates**: G08, G09
-- **Score**: 3.3 = (value 4 + urgency 5 + risk 4) / effort 4
+- **Gates**: G10
+- **Score**: 3.3 = (value 3 + urgency 5 + risk 2) / effort 3
 - **Spec**: (none)
-- **Issue**: [#129](https://github.com/turbokast/mythhelm/issues/129)
-- **Source**: Master Specification v2 §§14–16; Implementation Plan W05; issues #106/#107; specs/done/tui-slice/retrospective.md
-- **Summary**: Finish detach, stop confirmation, recovery and review journeys on typed core controls, with keyboard-complete accessible output and human screen-reader evidence. Add safe declarative themes/keymaps and visible critical controls without making the S3 executable plugin protocol a prerequisite.
-- **Premise-grounded**: Confirmed: MH-2 is shipped as the historical TUI slice; README and issues #106/#107 record exit/detach gaps and limited human accessibility evidence. The remaining work does not reopen or relabel MH-2.
-- **Notes**: Requires durable core control and the v2 one-agent workflow for complete journey acceptance; pairs with MH-3 for Herdr. Value 4: core usability; risk 4: misleading lifecycle/hidden controls; effort 4: interaction and human evidence.
+- **Issue**: (none)
+- **Source**: Master Specification v2 §15.1 (observatory and paper themes), §18.3 G10 (published limitations); design direction review 2026-10-12
+- **Summary**: Restyle the Jekyll site on GitHub Pages in the brand: a Night landing page that leads with the hero demo and the go run quickstart, Paper docs pages with a sidebar grouped Start / Use / Understand / Reference, an on-this-page list and client-side search, reported / estimated / unknown labels styled consistently, code examples marked and tested in CI, and a layout with no horizontal overflow at 390px. Keep Jekyll; revisit Starlight or mdBook only if search or build speed hurts.
+- **Premise-grounded**: Confirmed 2026-10-12 against the live site at 1440px and 390px: docs/_layouts/default.html replaces the theme layout and references no brand assets, so pages render nearly unstyled (a flat bulleted nav above every page, unbounded line length, demo GIFs at native size); the User guide is 516px wide on a 390px phone; there is no search and no on-page table of contents.
+- **Notes**: Value 3: first impression and onboarding, not the core promise; urgency 5: stage 1; risk 2: published claims drifting from what ships; effort 3: layout, search, landing, example testing. Release engineer and docs. Pairs with MH-23, which uses the same brand tokens.
 
 ### MH-24: Scoped context, task dependencies and stale-evidence invalidation
 - **Status**: triaged
@@ -134,6 +134,18 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Summary**: Implement scoped export and dependency-aware retention, with explicit erasure through a quiescent validated ledger rewrite and recoverable swap. Rebuild derived stores, preserve active dependencies and report surviving backup/native/provider copies honestly.
 - **Premise-grounded**: Confirmed: schema v1 and current CLI dispatch have no v2 scoped export/erasure lifecycle; append-only audit rules require an explicit maintenance path rather than ordinary event deletion.
 - **Notes**: Requires durable migration and scoped context; must ship before optional-learning retention/deletion claims. Value 4: control and portability; risk 5: irreversible loss/leakage; effort 4: recovery and derived-state invalidation.
+
+### MH-23: Complete TUI intervention, accessibility and safe declarative themes
+- **Status**: triaged
+- **Stage**: 1
+- **Gates**: G08, G09
+- **Score**: 2.8 = (value 5 + urgency 5 + risk 4) / effort 5
+- **Spec**: (none)
+- **Issue**: [#129](https://github.com/turbokast/mythhelm/issues/129)
+- **Source**: Master Specification v2 §§14–16; Implementation Plan W05; issues #106/#107; specs/done/tui-slice/retrospective.md
+- **Summary**: Finish detach, stop confirmation, recovery and review journeys on typed core controls, with keyboard-complete accessible output and human screen-reader evidence. Add safe declarative themes/keymaps and visible critical controls without making the S3 executable plugin protocol a prerequisite. Deliver them in the 2026-10-12 design direction's visual system: Observatory (dark) and Paper (light) themes from the brand palette replacing the stock themes; a default view that answers what is happening, what needs you and what happens next (v2 §15.1); overlays instead of full-screen takeovers; an approval card carrying command, reason and pending diff; designed stop (requested, then confirmed), recovery and receipt screens; light-terminal detection; and four glyphs (◆ ○ ◌ ✓) added to the closed set, each with an ASCII fallback.
+- **Premise-grounded**: Confirmed: MH-2 is shipped as the historical TUI slice; README and issues #106/#107 record exit/detach gaps and limited human accessibility evidence. The remaining work does not reopen or relabel MH-2.
+- **Notes**: Requires durable core control and the v2 one-agent workflow for complete journey acceptance; pairs with MH-3 for Herdr. Close the unusable q dialog and Ctrl-C-cancels-instead-of-detach gaps first. Value 5: the terminal is the product's face and G09 is a stage-1 gate; risk 4: misleading lifecycle/hidden controls; effort 5: interaction, visual system and human evidence.
 
 ### MH-5: Routing across authorised profiles
 - **Status**: triaged
