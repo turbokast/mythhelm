@@ -100,6 +100,18 @@ jobs:
             echo "::error::docs/demos/tui.transcript.txt drifts from a regen at $commit; re-record with docs/demos/record.sh"
             exit 1
           fi
+          # The hero take: a linear companion run (run, SIGKILL, pgrep, runs
+          # list, recover, review) of the pinned binary, merged stdout and stderr.
+          # The PIPESTATUS assertion is the script's own exit status, never sed's.
+          (HERO_BIN=/tmp/mythhelm-honesty HERO_TMP=/tmp/demo \
+            docs/demos/hero-transcript.sh 2>&1) \
+            | sed -E -f docs/demos/normalize.sed > /tmp/honesty.hero.transcript.txt
+          test "${PIPESTATUS[0]}" -eq 0
+          if ! diff /tmp/honesty.hero.transcript.txt docs/demos/hero.transcript.txt; then
+            echo "::error::docs/demos/hero.transcript.txt drifts from a regen at $commit; re-record with docs/demos/record.sh"
+            exit 1
+          fi
+          echo "recording 'hero': transcript fresh at $commit"
       - name: Check recording capabilities have passing qualifiers
         run: |
           commit="$(python3 -c 'import json; print(json.load(open("docs/demos/manifest.json", encoding="utf-8"))["recordings"][0]["binary_commit"])')"
