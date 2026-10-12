@@ -781,15 +781,6 @@ func lastResult(t *testing.T, stdout string) map[string]any {
 	return payloadOf(t, ev)
 }
 
-// documentedEvents is design §5's event set, which is all run may print.
-var documentedEvents = []string{
-	"run.created", "run.state_changed", "admission.decided", "workspace.snapshot_created",
-	"attempt.launch_intent_recorded", "attempt.admission_pinned", "attempt.launched", "attempt.native_session", "attempt.progress",
-	"attempt.permission_denied", "attempt.native_result", "attempt.stop_requested", "attempt.stopped",
-	"attempt.state_changed", "attempt.protocol_counters", "candidate.frozen", "verification.started",
-	"check.completed", "verification.completed", "receipt.written", "apply.intent_recorded", "apply.completed", "run.result",
-}
-
 // decodeEnvelopes parses every stdout line strictly as an Event.
 func decodeEnvelopes(stdout string) ([]journal.Event, error) {
 	var out []journal.Event
@@ -800,7 +791,7 @@ func decodeEnvelopes(stdout string) ([]journal.Event, error) {
 		if err := dec.Decode(&ev); err != nil {
 			return nil, fmt.Errorf("line %d %q: %w", i+1, line, err)
 		}
-		if ev.SchemaVersion != journal.EnvelopeVersion || ev.EventID == "" || ev.ProducerID == "" || !slices.Contains(documentedEvents, ev.Type) {
+		if ev.SchemaVersion != journal.EnvelopeVersion || ev.EventID == "" || ev.ProducerID == "" || !supervisor.IsStreamEvent(ev.Type) {
 			return nil, fmt.Errorf("line %d is not a documented envelope event: %q", i+1, line)
 		}
 		out = append(out, ev)

@@ -75,7 +75,11 @@
 
 ## Task 8 — Documented JSONL event contract
 
-<!-- pending -->
+- **Produces**: `supervisor.StreamEventTypes() []string` (sorted copy, 29), `supervisor.IsStreamEvent(typ) bool` in `internal/supervisor/events.go`, and `cli.UndocumentedEventError{Type}` in `internal/cli/render.go`; no difference from the design.
+- **For dependents**: a new event type emitted by any journal writer must be added to `StreamEventTypes` and to the literal list in `TestStreamEventSetPinned`, or `TestEveryEmittedEventTypeIsDocumented` (AST scan of `internal/supervisor`, `internal/workers`, `internal/control`, `internal/migrate`) and every JSONL run fail. Tasks 6 and 7 add no event types, so they need nothing.
+- **For dependents**: the scan collects only a string literal at the event-type position of `newEvent` (4th), a method `append` (2nd) and `applyEvent` (5th), and constants or variables named `Event*`/`ev*` (upper-case next) or `*Event`/`*EventType`. A type built by an expression is not collected; the renderer's refusal is the backstop.
+- **For Task 10**: the JSONL renderer now refuses any non-documented type, so a decoder or stream consumer sees only the 29 documented types (28 journal event types plus the renderer's own `run.result`); `finish` makes the process exit 1 (`undocumented_event`) when nothing else failed.
+- **Deviations**: none.
 
 ## Task 9 — TUI surfaces
 
