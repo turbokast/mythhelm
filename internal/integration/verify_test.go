@@ -461,7 +461,8 @@ func TestEvaluatorForEqualsRanEvaluator(t *testing.T) {
 	})
 	t.Run("contained policy is read-only restricted", func(t *testing.T) {
 		_, cfg := verifyFixture(t)
-		got, err := integration.EvaluatorFor(integration.RunOptions{Policy: &contain.Policy{Profile: "restricted"}}, cfg.Checks)
+		binds := []contain.AuthBind{{Source: "/srv/a/.token", Target: "/scratch/token"}}
+		got, err := integration.EvaluatorFor(integration.RunOptions{Policy: &contain.Policy{Profile: "restricted", AuthBinds: binds}}, cfg.Checks)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -496,6 +497,7 @@ func TestEvaluatorChangesWithCheckDefinition(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, mutate := range map[string]func(*admission.CheckConfig){
+		"name":           func(c *admission.CheckConfig) { c.Name = "renamed" },
 		"argv":           func(c *admission.CheckConfig) { c.Argv = []string{"go", "vet"} },
 		"timeout":        func(c *admission.CheckConfig) { c.Timeout = "6s" },
 		"fail_on_output": func(c *admission.CheckConfig) { c.FailOnOutput = true },
