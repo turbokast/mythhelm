@@ -66,6 +66,7 @@ func checkApplyJSONL(t *testing.T, out, runID string, code int) {
 }
 
 func TestApplyCreatesOnlyTheBranch(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	before := f.fingerprint(t)
 	head := f.git(t, "rev-parse", "HEAD")
@@ -106,6 +107,7 @@ func TestApplyCreatesOnlyTheBranch(t *testing.T) {
 }
 
 func TestApplyRefusesExistingBranch(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	before := f.fingerprint(t)
 	code, out, stderr := f.run(t, "apply", runID, "--to-branch", "main", "--format", "jsonl")
@@ -119,6 +121,7 @@ func TestApplyRefusesExistingBranch(t *testing.T) {
 }
 
 func TestApplyRefusesNotReadyForReview(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	digest := f.config(t, "fail")
 	if code, _, stderr := f.run(t, f.checkedRun(digest)...); code != 5 {
@@ -131,6 +134,7 @@ func TestApplyRefusesNotReadyForReview(t *testing.T) {
 }
 
 func TestApplyRefusesUnacceptedFlags(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	j := f.journal(t)
 	attempt, err := j.LatestAttempt(t.Context(), runID)
@@ -155,6 +159,7 @@ func TestApplyRefusesUnacceptedFlags(t *testing.T) {
 }
 
 func TestApplyRefusesUnacceptedUnverified(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	if code, _, stderr := f.run(t, f.fakeRun()...); code != 5 {
 		t.Fatalf("run exit %d: %s", code, stderr)
@@ -175,6 +180,7 @@ func TestApplyRefusesUnacceptedUnverified(t *testing.T) {
 }
 
 func TestApplyRefusesInvalidRefName(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	code, _, stderr := f.run(t, "apply", runID, "--to-branch=bad..name")
 	if code != 2 || !strings.Contains(stderr, "invalid destination branch") {
@@ -209,6 +215,7 @@ func recordApplyIntent(t *testing.T, f fixture, runID, branch, commit string) {
 }
 
 func TestApplyRetryBlocksConflictingBranch(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	j := f.journal(t)
 	attempt, err := j.LatestAttempt(t.Context(), runID)
@@ -241,6 +248,7 @@ func TestApplyRetryBlocksConflictingBranch(t *testing.T) {
 }
 
 func TestApplyReconcilesAfterCrash(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	j := f.journal(t)
 	attempt, err := j.LatestAttempt(t.Context(), runID)
@@ -270,6 +278,7 @@ func TestApplyReconcilesAfterCrash(t *testing.T) {
 }
 
 func TestApplyRetryBlocksSymbolicBranch(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	j := f.journal(t)
 	attempt, err := j.LatestAttempt(t.Context(), runID)
@@ -298,6 +307,7 @@ func TestApplyRetryBlocksSymbolicBranch(t *testing.T) {
 }
 
 func TestApplyRefusesExistingMatchingBranchWithoutIntent(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	j := f.journal(t)
 	attempt, err := j.LatestAttempt(t.Context(), runID)

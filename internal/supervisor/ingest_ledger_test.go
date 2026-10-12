@@ -81,6 +81,7 @@ func rowFor(t *testing.T, rows []journal.UsageRow, scope, unit string) journal.U
 }
 
 func TestNativeResultProjectsUsageRows(t *testing.T) { // I09 (v2 §7.3)
+	t.Parallel()
 	f := newLedgerFixture(t)
 	f.append(t, f.event("sup_x", "admission.decided", `{"adapter":{"harness":"claude-code"}}`))
 	ev := f.event("wrk_a", "attempt.native_result",
@@ -116,6 +117,7 @@ func TestNativeResultProjectsUsageRows(t *testing.T) { // I09 (v2 §7.3)
 }
 
 func TestNativeResultAttemptsAccumulate(t *testing.T) {
+	t.Parallel()
 	f := newLedgerFixture(t)
 	f.append(t, f.event("wrk_a", "attempt.native_result", nativeResult(`{"m":{"input":1,"output":2,"cache_read":3,"cache_creation":4}}`, `"0.10"`)))
 	f.append(t, f.event("wrk_b", "attempt.native_result", nativeResult(`{"m":{"input":10,"output":20,"cache_read":30,"cache_creation":40}}`, `"0.27"`)))
@@ -144,6 +146,7 @@ func TestNativeResultAttemptsAccumulate(t *testing.T) {
 }
 
 func TestNativeResultReplayIgnored(t *testing.T) {
+	t.Parallel()
 	f := newLedgerFixture(t)
 	ev := f.event("wrk_a", "attempt.native_result", nativeResult(`{"m":{"input":1,"output":2,"cache_read":3,"cache_creation":4}}`, `"0.10"`))
 	f.append(t, ev)
@@ -159,6 +162,7 @@ func TestNativeResultReplayIgnored(t *testing.T) {
 }
 
 func TestNativeResultRepresentedDeltaDropped(t *testing.T) {
+	t.Parallel()
 	f := newLedgerFixture(t)
 	// A row already carries (wrk_a, 1) although the event itself was never journaled.
 	err := f.j.Transact(t.Context(), func(tx *sql.Tx) error {
@@ -176,6 +180,7 @@ func TestNativeResultRepresentedDeltaDropped(t *testing.T) {
 }
 
 func TestNativeResultNullsProjectUnknown(t *testing.T) { // I09 (v2 §7.3)
+	t.Parallel()
 	cases := []struct{ name, usage, cost string }{
 		{"null usage and cost", `null`, `null`},
 		{"partial counts and non-decimal cost", `{"m":{"input":1,"output":null,"cache_read":3,"cache_creation":4}}`, `"1e-3"`},
@@ -203,6 +208,7 @@ func TestNativeResultNullsProjectUnknown(t *testing.T) { // I09 (v2 §7.3)
 }
 
 func TestProjectUsageFailureRollsBack(t *testing.T) {
+	t.Parallel()
 	// A native_result for a run without a runs row cannot store rows: the
 	// foreign key refuses it and the event is not journaled either.
 	f := newLedgerFixture(t)

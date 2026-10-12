@@ -45,6 +45,7 @@ func holdLockFor(t *testing.T, root string) int64 {
 }
 
 func TestSpawnMintsAndJournalsNonce(t *testing.T) {
+	// Sequential: process environment (XDG_RUNTIME_DIR via holdLockFor).
 	ctx := context.Background()
 	stateDir := t.TempDir()
 	wantGen := holdLockFor(t, stateDir)
@@ -137,6 +138,7 @@ func TestSpawnMintsAndJournalsNonce(t *testing.T) {
 }
 
 func TestPinAdmissionWithoutLockPinsUnfenced(t *testing.T) {
+	// Sequential: process environment (XDG_RUNTIME_DIR via t.Setenv).
 	ctx := context.Background()
 	// No supervisor holds a lock here: the runtime dir is empty.
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
@@ -164,6 +166,7 @@ func TestPinAdmissionWithoutLockPinsUnfenced(t *testing.T) {
 }
 
 func TestPinAdmissionForeignLockPinsUnfenced(t *testing.T) {
+	// Sequential: process environment (XDG_RUNTIME_DIR via holdLockFor).
 	ctx := context.Background()
 	// The lock serves another root, so this root pins unfenced.
 	holdLockFor(t, t.TempDir())
@@ -183,6 +186,7 @@ func TestPinAdmissionForeignLockPinsUnfenced(t *testing.T) {
 }
 
 func TestPinAdmissionCorruptLockFailsAdmission(t *testing.T) {
+	// Sequential: process environment (XDG_RUNTIME_DIR via t.Setenv).
 	ctx := context.Background()
 	// The lock file is present but unparseable: a torn read must never
 	// look like an absent holder, so the admission fails instead of

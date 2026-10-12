@@ -33,6 +33,7 @@ import (
 )
 
 func TestOwnerLockHeldByLiveProcess(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	if code, _, stderr := f.run(t, f.fakeRun()...); code != 5 {
 		t.Fatalf("run exit %d: %s", code, stderr)
@@ -50,6 +51,7 @@ func TestOwnerLockHeldByLiveProcess(t *testing.T) {
 }
 
 func TestStopReportsRequestedUntilConfirmed(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	r := startLive(t, f, f.fakeRun("--format", "jsonl", "--scenario", "ignore-sigint")...)
 	r.waitStdout(t, "native session", isType("attempt.native_session"))
@@ -204,6 +206,7 @@ func seedLaunchWith(t *testing.T, f fixture, scenario string, payloadOf payloadF
 }
 
 func TestCrashAfterLaunchIntentBeforeAck(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	d, proc, wait := seedLaunch(t, f, "slow")
 	if a, err := f.journal(t).LatestAttempt(t.Context(), d.RunID); err != nil || a.State != "launch_intent_recorded" {
@@ -242,6 +245,7 @@ func TestCrashAfterLaunchIntentBeforeAck(t *testing.T) {
 // enforces the same deadline the launch path would (I21, AC-4.1), so a
 // deadline that already passed stops the reattached worker and blocks the run.
 func TestRecoverArmsExecutionDeadline(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	d, _, _ := seedLaunch(t, f, "slow")
 	started := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339Nano)
@@ -263,6 +267,7 @@ func TestRecoverArmsExecutionDeadline(t *testing.T) {
 }
 
 func TestRecoverContinuesAfterNativeExit(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	d, _, wait := seedLaunch(t, f, "happy")
 	wait()
@@ -316,6 +321,7 @@ func truncateBeforeExit(t *testing.T, f fixture, d admission.Decision) {
 }
 
 func TestRecoverQuarantinesLostWorker(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	d, _, wait := seedLaunch(t, f, "happy")
 	wait()
@@ -342,6 +348,7 @@ func TestRecoverQuarantinesLostWorker(t *testing.T) {
 }
 
 func TestWorkerPIDReuseTreatedAsLost(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	d, _, wait := seedLaunch(t, f, "happy")
 	wait()
@@ -375,6 +382,7 @@ func TestWorkerPIDReuseTreatedAsLost(t *testing.T) {
 }
 
 func TestRecoverNeverRelaunchesNative(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	d, _, wait := seedLaunch(t, f, "count-launches")
 	wait()
@@ -393,6 +401,7 @@ func TestRecoverNeverRelaunchesNative(t *testing.T) {
 }
 
 func TestHeadlessPermissionDenialNoHang(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	if code, _, stderr := f.run(t, f.fakeRun("--scenario", "denied", "--non-interactive")...); code != 5 {
 		t.Fatalf("denied run %d: %s", code, stderr)
@@ -412,6 +421,7 @@ func TestHeadlessPermissionDenialNoHang(t *testing.T) {
 }
 
 func TestLockedDatabaseStopsAdmission(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	j := f.journal(t)
 	_ = j
@@ -472,6 +482,7 @@ func (p *streamFaultProc) Wait() adapter.NativeExit { return <-p.done }
 func (p *streamFaultProc) GroupGone() bool          { return true }
 
 func TestMalformedDeepOversizedBadUTF8Bounded(t *testing.T) {
+	// Sequential: process-wide heap statistics (runtime.MemStats), which concurrent tests would inflate.
 	for _, tt := range []struct{ scenario, counter string }{{"malformed", "malformed"}, {"deep", "depth_exceeded"}, {"oversized", "oversized"}, {"bad-utf8", "invalid_utf8"}} {
 		t.Run(tt.scenario, func(t *testing.T) {
 			f := newFixture(t)
@@ -541,6 +552,7 @@ func TestMalformedDeepOversizedBadUTF8Bounded(t *testing.T) {
 }
 
 func TestRecoverFreezesOnlyAfterDescendantsGone(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS != "linux" {
 		t.Skip("Linux orphan scanner acceptance")
 	}
@@ -633,6 +645,7 @@ func TestRecoverFreezesOnlyAfterDescendantsGone(t *testing.T) {
 }
 
 func TestRecoverRepairsTerminalReceipt(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	if code, _, stderr := f.run(t, f.fakeRun()...); code != 5 {
 		t.Fatalf("run %d %s", code, stderr)
@@ -651,6 +664,7 @@ func TestRecoverRepairsTerminalReceipt(t *testing.T) {
 }
 
 func TestStopDoesNotConfirmFailedDescendantScan(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	d, _, wait := seedLaunch(t, f, "happy")
 	wait()
@@ -665,6 +679,7 @@ func TestStopDoesNotConfirmFailedDescendantScan(t *testing.T) {
 }
 
 func TestRecoverUsesAdmittedChecksAndIdentity(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	digest := f.config(t, "pass")
 	d, _, wait := seedLaunch(t, f, "happy", "sha256:"+digest)
@@ -701,6 +716,7 @@ func TestRecoverUsesAdmittedChecksAndIdentity(t *testing.T) {
 }
 
 func TestRecoverRefusesOversizedTask(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	d, _, wait := seedLaunch(t, f, "happy")
 	wait()
@@ -716,6 +732,7 @@ func TestRecoverRefusesOversizedTask(t *testing.T) {
 }
 
 func TestRecoverListsOrphansInNativeLaunchWindow(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	d, _, wait := seedLaunch(t, f, "happy")
 	wait()
@@ -861,6 +878,7 @@ func assertNoWorkerActivity(t *testing.T, before, after map[string]int) {
 }
 
 func TestRecoverApplyCreatesAbsentBranch(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	_, commit := applyCandidate(t, f, runID)
 	branch := "review/recovered-absent"
@@ -895,6 +913,7 @@ func TestRecoverApplyCreatesAbsentBranch(t *testing.T) {
 }
 
 func TestRecoverApplyCompletesAfterBranchCreation(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	attemptID, commit := applyCandidate(t, f, runID)
 	branch := "review/recovered-branch"
@@ -933,6 +952,7 @@ func TestRecoverApplyCompletesAfterBranchCreation(t *testing.T) {
 }
 
 func TestRecoverApplyCompletesAfterCompletedTransition(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	attemptID, commit := applyCandidate(t, f, runID)
 	branch := "review/recovered-transition"
@@ -975,6 +995,7 @@ func TestRecoverApplyCompletesAfterCompletedTransition(t *testing.T) {
 }
 
 func TestRecoverApplyAdoptsUnjournaledV2(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	branch := "review/recovered-v2"
 	if code, _, stderr := f.run(t, "apply", runID, "--to-branch", branch, "--format", "jsonl"); code != 0 {
@@ -1013,6 +1034,7 @@ func TestRecoverApplyAdoptsUnjournaledV2(t *testing.T) {
 }
 
 func TestRecoverApplyRejectsForgedOrMissingPreservedV1(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, want string
 		forge      func(t *testing.T, path string)
@@ -1063,6 +1085,7 @@ func TestRecoverApplyRejectsForgedOrMissingPreservedV1(t *testing.T) {
 }
 
 func TestRecoverApplyRejectsMissingIntent(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, state string
 		force       func(t *testing.T, f fixture, runID string)
@@ -1107,6 +1130,7 @@ func TestRecoverApplyRejectsMissingIntent(t *testing.T) {
 }
 
 func TestRecoverApplyRejectsMismatchedIntent(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	recordApplyIntent(t, f, runID, "review/recovered-mismatch", strings.Repeat("0", 40))
 	events := len(f.events(t, runID))
@@ -1127,6 +1151,7 @@ func TestRecoverApplyRejectsMismatchedIntent(t *testing.T) {
 }
 
 func TestRecoverApplyBlocksConflictingBranch(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		plant func(t *testing.T, f fixture, branch string)
@@ -1174,6 +1199,7 @@ func TestRecoverApplyBlocksConflictingBranch(t *testing.T) {
 }
 
 func TestRecoverApplyIsIdempotent(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	branch := "review/recovered-idempotent"
 	if code, _, stderr := f.run(t, "apply", runID, "--to-branch", branch, "--format", "jsonl"); code != 0 {
@@ -1195,6 +1221,7 @@ func TestRecoverApplyIsIdempotent(t *testing.T) {
 }
 
 func TestRecoverApplyLeavesCompletedBranchAlone(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, want string
 		disturb    func(t *testing.T, f fixture, branch string)
@@ -1240,6 +1267,7 @@ func TestRecoverApplyLeavesCompletedBranchAlone(t *testing.T) {
 }
 
 func TestRecoverApplyUnresolvedWhenV1ReceiptLost(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	_, commit := applyCandidate(t, f, runID)
 	branch := "review/recovered-lost-v1"
@@ -1281,6 +1309,7 @@ func journalStopped(t *testing.T, f fixture, runID, attemptID string, confirmed 
 }
 
 func TestStopDecidesFromLastStoppedEvent(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, scan string }{
 		{"unconfirmed tail", "proc-environ"},
 		{"failed scan tail", "failed"},
@@ -1311,6 +1340,7 @@ func TestStopDecidesFromLastStoppedEvent(t *testing.T) {
 }
 
 func TestRecoverQuarantineFreezeFailureKeepsItsReason(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS != "linux" {
 		t.Skip("quarantine resolution needs the Linux orphan scanner")
 	}
@@ -1400,6 +1430,7 @@ func (f fixture) receiptExitCode(t *testing.T, runID string) float64 {
 }
 
 func TestEvaluatorDigestMismatchInvalid(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	digest := f.config(t, "pass")
 	d, _, wait := seedLaunchWith(t, f, "happy", wrongEvaluatorPayload, "sha256:"+digest)
@@ -1437,6 +1468,7 @@ func TestEvaluatorDigestMismatchInvalid(t *testing.T) {
 }
 
 func TestRecoverConcludesWithJournaledPin(t *testing.T) {
+	t.Parallel()
 	t.Run("a pinned run is verified against its pin", func(t *testing.T) {
 		f := newFixture(t)
 		digest := f.config(t, "pass")
@@ -1476,6 +1508,7 @@ func TestRecoverConcludesWithJournaledPin(t *testing.T) {
 }
 
 func TestConcludeReadPinErrorFailsRun(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	marker := filepath.Join(t.TempDir(), "check-ran")
 	digest := f.commitChecks(t, markerCheck("marker", marker))
@@ -1526,6 +1559,7 @@ func startVerifying(t *testing.T, f fixture, d admission.Decision, configDigest 
 }
 
 func TestRecoverAppliesSameOutcomeTable(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, result, reason, wantState, wantReason string
 		wantExit                                    int
@@ -1569,6 +1603,7 @@ func recordTimeoutRun(t *testing.T, f fixture, digest string) string {
 }
 
 func TestRecoverVerifyingWithoutRowAfterChecksReturned(t *testing.T) {
+	// Sequential: process environment (XDG_RUNTIME_DIR via runInProcess).
 	for _, tc := range []struct {
 		name, second, wantState, wantReason, wantResult, wantWhy string
 	}{
@@ -1653,6 +1688,7 @@ func assertCheckStillOwned(t *testing.T, f fixture, runID, dir string) {
 }
 
 func TestRecoverVerifyingMidChecksStaysOwnershipUnresolved(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the blocked check is a /bin/sh script")
 	}
@@ -1687,6 +1723,7 @@ func TestRecoverVerifyingMidChecksStaysOwnershipUnresolved(t *testing.T) {
 }
 
 func TestRunnerErrorBeforeEvaluatorIsUnavailableNotInvalid(t *testing.T) {
+	// Sequential: process environment (HOME via t.Setenv and os.Unsetenv).
 	if runtime.GOOS != "linux" {
 		t.Skip("a contained check without HOME is a Linux precondition")
 	}
@@ -1724,6 +1761,7 @@ func TestRunnerErrorBeforeEvaluatorIsUnavailableNotInvalid(t *testing.T) {
 }
 
 func TestFailedCheckSurvivesRunnerError(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("a script without an executable bit is a Unix start failure")
 	}
