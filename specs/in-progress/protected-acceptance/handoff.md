@@ -100,7 +100,10 @@
 
 ## Task 11 — Credential-free end-to-end flow
 
-<!-- pending -->
+- **Produces**: `tests/e2e/acceptance_test.go` only: `TestE2EP1FlowNoCredentials`, `TestE2EUnavailableChecksKeepCandidate`, `TestE2EStaleVerdictBlocksApply`, `TestE2EDeclaredClaudeRunCarriesSentence` and `TestE2EScriptedRunEntitlementNotApplicable`; no production code and no exported symbol.
+- **For Task 12**: the documented flow was run on the packaged binary as `run --adapter fake --billing local-scripted --execution-profile trusted-host --trust-project-config sha256:<digest> --plain`, then `review <run>` and `apply <run> --to-branch <name>`; an unavailable check exits 5 and `apply` needs `--accept-unverified` (exit 3 without); a rewritten `runs/<id>/task.md` makes `apply` exit 3 with `changed: contract` on stderr and `review` print `Acceptance: STALE (changed: contract); re-evaluation required`.
+- **For dependents**: helpers `credentialFreeEnv`, `acceptanceRepo(t, e, argv...)` (committed check config, returns the trusted digest), `fakeRunArgs(digest)`, `receiptOf`/`at` (walk `receipt.json` by key) and `lineWithPrefix`/`hasLine` are in the file; the run id comes from `ledgerRunIDOf` on the plain stream. The declared test skips on Windows like `TestE2EDeclaredUnaffected`.
+- **Deviations**: none that change a later task's inputs.
 
 ## Task 12 — User documentation and decision record
 

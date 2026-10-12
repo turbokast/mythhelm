@@ -309,7 +309,7 @@
   - `internal/cli/render_test.go`
   - `internal/cli/accessible_test.go`
 - **Acceptance**:
-  - `TestReviewPlainShowsEntitlementAndVerification`: plain `review` of a declared-posture run prints a line equal to the declared sentence and a `Verification:` line; of a `--no-checks` run prints `NOT RUN (waived by --no-checks)`; of an inspect run `NOT RUN (checks_refused_under_inspect)`; of a passed run `passed (bound to <candidate>)`; the `Verification:` line is the only place a waived run's reason appears (red against today's output, which prints `State: ready_for_review`, `Checks: none` and no label or reason).
+  - `TestReviewPlainShowsEntitlementAndVerification`: plain `review` of a declared-posture run prints a line equal to the declared sentence and a `Verification:` line; of a `--no-checks` run prints `NOT RUN (waived by --no-checks)`; of an inspect run `NOT RUN (checks_refused_under_inspect)`; of a passed run `passed (bound to <candidate>)`; a waived or unverified run shows its reason on both the `Verification:` line and the `Acceptance:` line, as `Acceptance: unverified (<reason>)` (design §2.7) (red against today's output, which prints `State: ready_for_review`, `Checks: none` and no label or reason).
   - `TestReviewPlainShowsAcceptanceStatus`: a bound run prints `Acceptance: bound`; after the task file is rewritten it prints `STALE (changed: contract)`; a pre-binding run prints `unbound`.
   - `TestRunStreamPrintsVerdictLabels`: the plain stream prints `verification: INVALID (evaluator_digest_mismatch)` and `verification: NOT RUN (binding_unavailable)` for payloads with those results and reasons (journaled by Task 5), never `invalid` or `unavailable` raw.
   - `TestRunStreamNotRunCarriesReason`: the plain run stream prints `verification: NOT RUN (<reason>)` with the payload's reason; the `inspect` case no longer says `waived`.
@@ -325,7 +325,7 @@
   - The `inspect` case of `TestReviewPlainShowsEntitlementAndVerification` uses a journaled receipt with reason `checks_refused_under_inspect`, because an inspect run cannot enter its boundary from a test binary.
 - **Files modified**: `internal/cli/review.go`, `internal/cli/render.go`, `internal/cli/accessible.go`, `internal/cli/review_test.go`, `internal/cli/render_test.go`, `internal/cli/accessible_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
-### Task 11 — Credential-free end-to-end flow
+### Task 11 — Credential-free end-to-end flow ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -342,6 +342,13 @@
   - `TestE2EStrictStillBlocked` (existing, `tests/e2e/qualification_test.go:155`) keeps passing: it is the AC-4.3 blocked-path pin and is not red before this task.
 - **Test plan**: `newEnv`/`mkRepo`/`run` helpers of the existing e2e package; builds `cmd/mythhelm` once.
 - **Invariants touched**: I13 (v2 §2: the flow needs no agent credentials); I07, I09 (v2 §2: observed end to end on the real binary).
+- **Status**: ✅ Completed — five end-to-end tests on the packaged binary cover the credential-free P1 flow, unavailable checks, a stale verdict and the declared and not-applicable entitlement sentences; PR #426.
+- **Implementation**: `tests/e2e/acceptance_test.go` adds `credentialFreeEnv` (strips and asserts absent the three credential variables), `acceptanceRepo` (mkRepo with its check argv replaced) and line-anchored review assertions; the tests run in parallel, each in its own state directory. Each was killed by a production mutant (PR body). Commit 84ada17.
+- **Spec deviations**:
+  - Spec-text correction decided by the maintainer's coordinator: Task 10's acceptance bullet for `TestReviewPlainShowsEntitlementAndVerification` now says a waived or unverified run shows its reason on both the `Verification:` and the `Acceptance:` lines, as design §2.7 (design.md, "2.7 Surfaces") governs; only that sentence of Task 10's block was edited, and `scratchpad.md` Discoveries records it. Task 10's entry keeps its deviation 2.
+  - The Acceptance lists the flow's run as `fake-route`; the tests run `--adapter fake --billing local-scripted` under the trusted-host profile (a contained run cannot enter its boundary from every CI host), the same route `TestRunLeavesSourceCheckoutUntouched` uses.
+  - The acceptance's "red against main before Task 1" was not demonstrated against the pre-Task-1 tree: it was demonstrated with production mutants of the current code, each killing only its own test (recorded in the PR body). The tasks' own tests carry the pre-Task-1 red proofs.
+- **Files modified**: `tests/e2e/acceptance_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
 ### Task 12 — User documentation and decision record
 
