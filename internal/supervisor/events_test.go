@@ -187,10 +187,6 @@ func TestClaudeRateLimitStreamsDocumented(t *testing.T) {
 	if !slices.Contains(types, "attempt.native_error") {
 		t.Fatalf("exit %d: stream %v has no attempt.native_error line; stderr: %s", code, types, stderr)
 	}
-	withoutNativeError := func(typ string) bool { return typ != "attempt.native_error" && supervisor.IsStreamEvent(typ) }
-	if !slices.ContainsFunc(types, func(typ string) bool { return !withoutNativeError(typ) }) {
-		t.Fatalf("stream %v does not depend on attempt.native_error being documented", types)
-	}
 }
 
 // TestRecoveryOwnershipResolvedDocumented: recover replays a run's whole

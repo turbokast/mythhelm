@@ -257,7 +257,7 @@
 - **Invariants touched**: I12 (v2 §2: recovery evidence is a documented event, not dropped); I09 (v2 §2: nothing undocumented reaches a consumer as if it were contract).
 - **Status**: ✅ Completed — the 29-type event set lives in `supervisor.StreamEventTypes`/`IsStreamEvent`, the JSONL renderer refuses an undocumented type, and `finish` folds the refusal into the exit code and `run.result` (exit 1, `undocumented_event`); PR #415.
 - **Implementation**: `UndocumentedEventError` sits in `render.go`; `finish` folds it only when the outcome has no error, otherwise the outcome's code stands and `r.notice` writes the refusal to stderr. `errorCategory` maps the type to `undocumented_event`; `exitCode` needed no case (its default is `ExitInternal`). The `go/parser` scan matches the `Event`/`ev` prefixes only before an upper-case letter. Commit 5361231.
-- **Spec deviations**: None.
+- **Spec deviations**: `TestClaudeRateLimitStreamsDocumented` keeps no in-test mutant leg: a predicate built from the stream's own types was true by construction (CodeRabbit round 1), and the production set has no injection seam. The mutant (set without `attempt.native_error`) was run by hand and turns the test red (PR #415 body); consistent with design §2.10.
 - **Files modified**: `internal/supervisor/events.go`, `internal/supervisor/events_test.go`, `internal/supervisor/pipeline_test.go`, `internal/cli/render.go`, `internal/cli/render_test.go`, `internal/cli/run.go`, `internal/cli/exit.go`, `internal/cli/exit_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
 ### Task 9 — TUI surfaces
