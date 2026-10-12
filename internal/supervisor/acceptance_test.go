@@ -1,6 +1,7 @@
 package supervisor_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"maps"
@@ -396,5 +397,368 @@ func TestPinFailureBlocksBeforeWorker(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(f.state, "runs", run.RunID, "workspace")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("workspace stat = %v; want none for a run blocked before any worker", err)
+	}
+}
+
+// checkBlock renders one [[checks]] table that runs argv.
+func checkBlock(name string, argv ...string) string {
+	quoted := make([]string, len(argv))
+	for i, a := range argv {
+		quoted[i] = strconv.Quote(a)
+	}
+	return "[[checks]]\nname = " + strconv.Quote(name) + "\nargv = [" + strings.Join(quoted, ", ") + "]\ntimeout = \"5s\"\n"
+}
+
+// testCheck is a check the test binary answers: mode is pass, fail or output.
+func testCheck(name, mode string) string {
+	return checkBlock(name, os.Args[0], "__check", mode)
+}
+
+// commitChecks commits a configuration of the given check tables and returns
+// its trust digest.
+func (f fixture) commitChecks(t *testing.T, blocks ...string) string {
+	t.Helper()
+	contents := "schema_version = 1\n" + strings.Join(blocks, "")
+	if err := os.WriteFile(filepath.Join(f.repo, "mythhelm.toml"), []byte(contents), 0o600); err != nil { // #nosec G703 -- fixture repo is t.TempDir
+		t.Fatal(err)
+	}
+	f.git(t, "add", "mythhelm.toml")
+	f.git(t, "commit", "--quiet", "-m", "add checks")
+	_, digest, err := admission.ParseProjectConfig([]byte(contents))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return digest
+}
+
+// missingCheck is a check whose executable does not exist.
+func missingCheck(t *testing.T, name string) string {
+	t.Helper()
+	return checkBlock(name, filepath.Join(t.TempDir(), "no-such-check"))
+}
+
+func (f fixture) latestVerification(t *testing.T, runID string) journal.VerificationRow {
+	t.Helper()
+	v, err := f.journal(t).LatestVerification(t.Context(), runID)
+	if err != nil {
+		t.Fatalf("LatestVerification(%s): %v", runID, err)
+	}
+	return v
+}
+
+// verificationPayload is the payload of the run's verification.completed event.
+func (f fixture) verificationPayload(t *testing.T, runID string) map[string]any {
+	t.Helper()
+	evs := f.events(t, runID)
+	i := typeIndex(evs, "verification.completed")
+	if i < 0 {
+		t.Fatal("no verification.completed event")
+	}
+	return payloadOf(t, evs[i])
+}
+
+func decodeAttestation(t *testing.T, v journal.VerificationRow) v2contract.Verification {
+	t.Helper()
+	att, err := v2contract.Decode[v2contract.Verification](v.Attestation)
+	if err != nil {
+		t.Fatalf("attestation %q: %v", v.Attestation, err)
+	}
+	return att
+}
+
+func (f fixture) candidateOf(t *testing.T, runID string) journal.CandidateRow {
+	t.Helper()
+	j := f.journal(t)
+	a, err := j.LatestAttempt(t.Context(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := j.Candidate(t.Context(), a.AttemptID)
+	if err != nil {
+		t.Fatalf("candidate of %s: %v", runID, err)
+	}
+	return c
+}
+
+// runInProcess admits the checked run for digest and supervises it in this
+// process, so a test can pass Hooks.
+func (f fixture) runInProcess(t *testing.T, digest string, h supervisor.Hooks) (supervisor.Outcome, error) {
+	t.Helper()
+	holdInstanceLock(t, f.state)
+	d := f.decideEnvelope(t, digest, nil)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	return supervisor.Run(ctx, d, h)
+}
+
+func TestVerdictBoundToCandidateContractChecksEnvironment(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	digest := f.config(t, "pass")
+	if code, _, stderr := f.run(t, f.checkedRun(digest)...); code != 0 {
+		t.Fatalf("run exit %d: %s", code, stderr)
+	}
+	run := f.onlyRun(t)
+	pin, _ := admissionPin(t, f, run.RunID)
+	v := f.latestVerification(t, run.RunID)
+	att := decodeAttestation(t, v)
+	candidate := f.candidateOf(t, run.RunID)
+	if att.Candidate.Format != "sha1" || att.Candidate.Value != candidate.Commit {
+		t.Errorf("attested candidate %+v, want sha1 %s", att.Candidate, candidate.Commit)
+	}
+	if att.AcceptanceContractDigest != pin.Contract || pin.Contract != "sha256:"+run.TaskSHA256 {
+		t.Errorf("attested contract %q, pin %q, task sha256 %q", att.AcceptanceContractDigest, pin.Contract, run.TaskSHA256)
+	}
+	if att.CheckDefinition != "sha256:"+digest || att.CheckDefinition != pin.CheckDefinition {
+		t.Errorf("attested check definition %q, want the config digest sha256:%s", att.CheckDefinition, digest)
+	}
+	if att.CheckVersion != "sha256:"+v.EvaluatorDigest || att.CheckVersion != pin.EvaluatorDigest {
+		t.Errorf("attested check version %q, want the evaluator digest sha256:%s", att.CheckVersion, v.EvaluatorDigest)
+	}
+	if att.VerifierID != "host" {
+		t.Errorf("verifier %q, want host", att.VerifierID)
+	}
+	if !strings.HasPrefix(att.Environment, "sha256:") || len(att.Environment) != len("sha256:")+64 {
+		t.Errorf("environment %q is not a sha256 identity", att.Environment)
+	}
+	if want := map[string]string{"test": "passed"}; !maps.Equal(att.Results, want) {
+		t.Errorf("results %v, want %v", att.Results, want)
+	}
+	if want := []string{"sha256:" + v.Checks[0].EvidenceSHA256}; v.Checks[0].EvidenceSHA256 == "" || !slices.Equal(att.Logs, want) {
+		t.Errorf("logs %v, want %v", att.Logs, want)
+	}
+	if v.AttestationDigest != v2contract.Digest(att) {
+		t.Errorf("stored digest %q, want %q", v.AttestationDigest, v2contract.Digest(att))
+	}
+	if payload := f.verificationPayload(t, run.RunID); payload["attestation_digest"] != v.AttestationDigest || payload["result"] != "passed" {
+		t.Errorf("verification.completed = %v, want result passed and the attestation digest", payload)
+	}
+}
+
+func TestUnavailableChecksPreserveUnverifiedCandidate(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	digest := f.commitChecks(t, missingCheck(t, "missing"))
+	code, stdout, stderr := f.run(t, f.checkedRun(digest, "--format", "jsonl")...)
+	if code != 5 {
+		t.Fatalf("exit %d, stderr %q; want exit 5", code, stderr)
+	}
+	run := f.onlyRun(t)
+	if run.State != "ready_for_review" || run.Reason != "unverified" {
+		t.Fatalf("run projected %s/%s, want ready_for_review/unverified", run.State, run.Reason)
+	}
+	if c := f.candidateOf(t, run.RunID); c.Commit == "" {
+		t.Error("the candidate row is empty")
+	}
+	v := f.latestVerification(t, run.RunID)
+	if v.Result != "unavailable" || v.Reason != "checks_unavailable" || len(v.Checks) != 1 || v.Checks[0].Status != "unavailable" {
+		t.Errorf("verification = %s/%s with checks %+v, want unavailable/checks_unavailable over one unavailable check", v.Result, v.Reason, v.Checks)
+	}
+	if p := f.verificationPayload(t, run.RunID); p["result"] != "unavailable" || p["reason"] != "checks_unavailable" {
+		t.Errorf("verification.completed = %v, want unavailable/checks_unavailable", p)
+	}
+	if res := lastResult(t, stdout); res["error_category"] != "verification_unavailable" || res["state"] != "ready_for_review" {
+		t.Errorf("run.result = %v, want ready_for_review with category verification_unavailable", res)
+	}
+}
+
+func TestFailedBeatsUnavailable(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	digest := f.commitChecks(t, testCheck("fails", "fail"), missingCheck(t, "missing"))
+	if code, _, stderr := f.run(t, f.checkedRun(digest)...); code != 5 {
+		t.Fatalf("exit %d, stderr %q; want exit 5", code, stderr)
+	}
+	run := f.onlyRun(t)
+	if run.State != "failed" || run.Reason != "verification_failed" {
+		t.Fatalf("run projected %s/%s, want failed/verification_failed", run.State, run.Reason)
+	}
+	v := f.latestVerification(t, run.RunID)
+	if v.Result != "failed" || v.Reason != "checks_failed" {
+		t.Errorf("verification = %s/%s, want failed/checks_failed", v.Result, v.Reason)
+	}
+	statuses := make([]string, len(v.Checks))
+	for i, c := range v.Checks {
+		statuses[i] = c.Status
+	}
+	if !slices.Equal(statuses, []string{"failed", "unavailable"}) {
+		t.Errorf("check statuses %v, want the failure and the unavailable check both recorded", statuses)
+	}
+}
+
+func TestBindFailureJournalsUnavailable(t *testing.T) {
+	f := newFixture(t)
+	digest := f.config(t, "pass")
+	hooks := supervisor.Hooks{
+		Timeouts: &acceptance.Timeouts{Bind: 50 * time.Millisecond},
+		BindStep: func(ctx context.Context, _ acceptance.Binding) error { <-ctx.Done(); return ctx.Err() },
+	}
+	out, err := f.runInProcess(t, digest, hooks)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if out.State != supervisor.RunReadyForReview || out.Reason != "unverified" {
+		t.Fatalf("outcome %s/%s, want ready_for_review/unverified", out.State, out.Reason)
+	}
+	v := f.latestVerification(t, out.RunID)
+	if v.Result != "unavailable" || v.Reason != "binding_unavailable" || len(v.Attestation) != 0 || v.AttestationDigest != "" {
+		t.Errorf("verification = %s/%s, attestation %q digest %q; want unavailable/binding_unavailable with none", v.Result, v.Reason, v.Attestation, v.AttestationDigest)
+	}
+	p := f.verificationPayload(t, out.RunID)
+	if p["result"] != "unavailable" || p["reason"] != "binding_unavailable" {
+		t.Errorf("verification.completed = %v, want unavailable/binding_unavailable", p)
+	}
+	if _, ok := p["attestation_digest"]; ok {
+		t.Errorf("verification.completed carries an attestation digest: %v", p)
+	}
+}
+
+func TestFailedCheckSurvivesBindFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		mode       string
+		wantRun    supervisor.RunState
+		wantReason string
+		wantResult string
+		wantWhy    string
+	}{
+		{name: "a failed check stays failed", mode: "fail", wantRun: supervisor.RunFailed, wantReason: "verification_failed", wantResult: "failed", wantWhy: "checks_failed"},
+		{name: "passed checks become unavailable", mode: "pass", wantRun: supervisor.RunReadyForReview, wantReason: "unverified", wantResult: "unavailable", wantWhy: "binding_unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			digest := f.config(t, tc.mode)
+			out, err := f.runInProcess(t, digest, supervisor.Hooks{BindStep: func(context.Context, acceptance.Binding) error { return errors.New("bind refused") }})
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			if out.State != tc.wantRun || out.Reason != tc.wantReason {
+				t.Errorf("outcome %s/%s, want %s/%s", out.State, out.Reason, tc.wantRun, tc.wantReason)
+			}
+			v := f.latestVerification(t, out.RunID)
+			if v.Result != tc.wantResult || v.Reason != tc.wantWhy || len(v.Attestation) != 0 {
+				t.Errorf("verification = %s/%s, attestation %q; want %s/%s with no attestation", v.Result, v.Reason, v.Attestation, tc.wantResult, tc.wantWhy)
+			}
+		})
+	}
+}
+
+func TestRecordStepHonoursTimeout(t *testing.T) {
+	f := newFixture(t)
+	digest := f.config(t, "pass")
+	out, err := f.runInProcess(t, digest, supervisor.Hooks{Timeouts: &acceptance.Timeouts{Record: time.Nanosecond}})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Run error = %v, want context.DeadlineExceeded from the record step", err)
+	}
+	if out.State != supervisor.RunVerifying {
+		t.Errorf("outcome state %s, want the run to stay verifying", out.State)
+	}
+	if run := f.onlyRun(t); run.State != "verifying" {
+		t.Errorf("run projected %s, want verifying", run.State)
+	}
+	if _, err := f.journal(t).LatestVerification(t.Context(), out.RunID); !errors.Is(err, journal.ErrNotFound) {
+		t.Errorf("LatestVerification = %v, want no row", err)
+	}
+}
+
+func TestOverheadRecorded(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	digest := f.config(t, "pass")
+	if code, _, stderr := f.run(t, f.checkedRun(digest)...); code != 0 {
+		t.Fatalf("checked run exit %d: %s", code, stderr)
+	}
+	checked := f.onlyRun(t)
+	if v := f.latestVerification(t, checked.RunID); v.OverheadMS == nil || *v.OverheadMS < 0 {
+		t.Errorf("OverheadMS = %v for a run with bound checks, want a measured duration", v.OverheadMS)
+	}
+	g := newFixture(t)
+	if code, _, stderr := g.run(t, g.fakeRun()...); code != 5 {
+		t.Fatalf("waived run exit %d: %s", code, stderr)
+	}
+	if v := g.latestVerification(t, g.onlyRun(t).RunID); v.OverheadMS != nil {
+		t.Errorf("OverheadMS = %d for a skip path, want unmeasured", *v.OverheadMS)
+	}
+}
+
+func TestSkipPathsRecordReason(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name       string
+		wantReason string
+		args       func(t *testing.T, f *fixture) []string
+	}{
+		{name: "no-checks is waived", wantReason: "waived by --no-checks", args: func(_ *testing.T, f *fixture) []string { return f.fakeRun() }},
+		{name: "inspect refuses the list", wantReason: "checks_refused_under_inspect", args: func(t *testing.T, f *fixture) []string {
+			if runtime.GOOS != "linux" {
+				t.Skip("inspect is qualified on Linux only")
+			}
+			requireBoundary(t)
+			f.home = outsideTmpDir(t)
+			digest := f.config(t, "pass")
+			args := slices.DeleteFunc(f.checkedRun(digest), func(a string) bool { return a == "trusted-host" || a == "--execution-profile" })
+			return append(args, "--execution-profile", "inspect", "--scenario", "readonly")
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t)
+			args := tc.args(t, &f)
+			if code, _, stderr := f.run(t, args...); code != 5 {
+				t.Fatalf("run exit %d: %s", code, stderr)
+			}
+			runID := f.onlyRun(t).RunID
+			v := f.latestVerification(t, runID)
+			if !v.Bound || v.Result != "not_run" || v.Reason != tc.wantReason || len(v.Attestation) != 0 || v.AttestationDigest != "" {
+				t.Errorf("verification = bound %v %s/%q, attestation %q; want a bound not_run row with reason %q and no attestation", v.Bound, v.Result, v.Reason, v.Attestation, tc.wantReason)
+			}
+			if p := f.verificationPayload(t, runID); p["result"] != "NOT RUN" || p["reason"] != tc.wantReason {
+				t.Errorf("verification.completed = %v, want NOT RUN with reason %q", p, tc.wantReason)
+			}
+		})
+	}
+}
+
+func TestSameInputsSameVerdict(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	type judged struct {
+		binding acceptance.Binding
+		verdict acceptance.Result
+	}
+	seen := map[string]bool{}
+	run := func(digest string) judged {
+		t.Helper()
+		if code, _, stderr := f.run(t, f.checkedRun(digest)...); code != 0 {
+			t.Fatalf("run exit %d: %s", code, stderr)
+		}
+		var runID string
+		for _, r := range f.runs(t) {
+			if !seen[r.RunID] {
+				runID, seen[r.RunID] = r.RunID, true
+			}
+		}
+		v := f.latestVerification(t, runID)
+		pin, _ := admissionPin(t, f, runID)
+		statuses := make([]string, len(v.Checks))
+		for i, c := range v.Checks {
+			statuses[i] = c.Status
+		}
+		verdict, _ := acceptance.Decide(pin.EvaluatorDigest, "sha256:"+v.EvaluatorDigest, statuses)
+		return judged{acceptance.BindingOf(decodeAttestation(t, v)), verdict}
+	}
+	passing := f.config(t, "pass")
+	first, second := run(passing), run(passing)
+	if first.binding.Candidate == second.binding.Candidate {
+		t.Errorf("both runs froze candidate %v; the commit message carries the run ID, so they must differ", first.binding.Candidate)
+	}
+	first.binding.Candidate, second.binding.Candidate = v2contract.GitObject{}, v2contract.GitObject{}
+	if first != second {
+		t.Errorf("same repository, task and checks judged differently:\n first %+v\nsecond %+v", first, second)
+	}
+	changed := run(f.config(t, "output"))
+	if changed.binding.CheckDefinition == first.binding.CheckDefinition || changed.binding.Evaluator == first.binding.Evaluator {
+		t.Errorf("a changed check argv left the check definition %q or evaluator %q unchanged", changed.binding.CheckDefinition, changed.binding.Evaluator)
 	}
 }

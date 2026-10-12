@@ -393,30 +393,6 @@ func TestNativeSuccessChecksFailExit5(t *testing.T) {
 	}
 }
 
-func TestMissingExecutableUnavailableExit5(t *testing.T) {
-	f := newFixture(t)
-	contents := "schema_version = 1\n[[checks]]\nname = \"missing\"\nargv = [\"mythhelm-nonexistent-check-executable\"]\ntimeout = \"1s\"\n"
-	if err := os.WriteFile(filepath.Join(f.repo, "mythhelm.toml"), []byte(contents), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	f.git(t, "add", "mythhelm.toml")
-	f.git(t, "commit", "--quiet", "-m", "missing check")
-	_, digest, err := admission.ParseProjectConfig([]byte(contents))
-	if err != nil {
-		t.Fatal(err)
-	}
-	code, _, stderr := f.run(t, f.checkedRun(digest)...)
-	if code != 5 {
-		t.Fatalf("exit %d: %s", code, stderr)
-	}
-	run := f.onlyRun(t)
-	// An unavailable check is verification_unavailable, not a failed one
-	// (dogfood-slice design §4: failed carries either reason; AC-5.2).
-	if run.State != "failed" || run.Reason != "verification_unavailable" {
-		t.Fatalf("run %s/%s", run.State, run.Reason)
-	}
-}
-
 func TestNoChecksExit5Unverified(t *testing.T) {
 	f := newFixture(t)
 	code, stdout, stderr := f.run(t, f.fakeRun()...)
@@ -1924,47 +1900,5 @@ func TestGateRefusalBlocksRunBeforeAnyIntent(t *testing.T) {
 	}
 	if typeIndex(f.events(t, d.RunID), "attempt.launch_intent_recorded") >= 0 {
 		t.Fatal("a launch the envelope refused still journaled an intent")
-	}
-}
-
-// TestUnavailableChecksStayUnverified: a check whose executable is missing
-// leaves the candidate unverified (exit 5, verification_unavailable) with the
-// candidate frozen, and nothing is accepted.
-func TestUnavailableChecksStayUnverified(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	contents := "schema_version = 1\n[[checks]]\nname = \"missing\"\nargv = [" + strconv.Quote(filepath.Join(t.TempDir(), "no-such-check")) + "]\ntimeout = \"5s\"\n"
-	if err := os.WriteFile(filepath.Join(f.repo, "mythhelm.toml"), []byte(contents), 0o600); err != nil { // #nosec G703 -- fixture repo is t.TempDir
-		t.Fatal(err)
-	}
-	f.git(t, "add", "mythhelm.toml")
-	f.git(t, "commit", "--quiet", "-m", "add checks")
-	_, digest, err := admission.ParseProjectConfig([]byte(contents))
-	if err != nil {
-		t.Fatal(err)
-	}
-	code, stdout, stderr := f.run(t, f.checkedRun(digest, "--format", "jsonl")...)
-	if code != 5 {
-		t.Fatalf("exit %d, stderr %q; want exit 5", code, stderr)
-	}
-	run := f.onlyRun(t)
-	if run.State != "failed" || run.Reason != "verification_unavailable" {
-		t.Fatalf("run projected %s/%s, want failed/verification_unavailable", run.State, run.Reason)
-	}
-	evs, err := decodeEnvelopes(stdout)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var frozen bool
-	for _, ev := range evs {
-		frozen = frozen || ev.Type == "candidate.frozen"
-		if ev.Type == "verification.completed" {
-			if p := payloadOf(t, ev); p["result"] == "passed" {
-				t.Errorf("an unavailable check was reported as accepted: %v", p)
-			}
-		}
-	}
-	if !frozen {
-		t.Error("the candidate was not preserved (no candidate.frozen event)")
 	}
 }

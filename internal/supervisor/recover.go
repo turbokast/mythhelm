@@ -13,9 +13,11 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/turbokast/mythhelm/internal/acceptance"
 	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/ids"
+	"github.com/turbokast/mythhelm/internal/integration"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/security"
 	"github.com/turbokast/mythhelm/internal/workers"
@@ -111,16 +113,19 @@ func RecoverWithHooks(ctx context.Context, j *journal.Journal, runID string, h H
 		// An unfinished check may still be running under its own process group.
 		// Never repeat its external effects just because the CLI disappeared.
 		v, verr := j.LatestVerification(ctx, runID)
-		if verr != nil {
+		switch {
+		case errors.Is(verr, journal.ErrNotFound):
+			p.d.TaskID, p.d.AttemptID = a.TaskID, a.AttemptID
+			err = p.recordFromCheckEvents(ctx)
+		case verr != nil:
 			return out, errors.Join(ErrOwnership, fmt.Errorf("verification outcome unavailable: %w", verr))
+		default:
+			target, reason := verifyOutcome(nil, acceptance.Result(v.Result))
+			err = p.runTo(ctx, target, reason)
 		}
-		target, reason := RunReadyForReview, ""
-		if v.Result == "not_run" {
-			reason = "unverified"
-		} else if v.Result != "passed" {
-			target, reason = RunFailed, "verification_failed"
+		if errors.Is(err, ErrOwnership) {
+			return out, err
 		}
-		err = p.runTo(ctx, target, reason)
 		out.Outcome, out.Mode = p.out, "continued"
 		return out, err
 	}
@@ -253,6 +258,84 @@ func RecoverWithHooks(ctx context.Context, j *journal.Journal, runID string, h H
 		}
 	}
 	return out, err
+}
+
+// recordFromCheckEvents settles a verifying run that has no verification row
+// (design §2.3, D21). A complete set of journaled check.completed events,
+// one per admitted check, proves the checks returned; it records a verdict
+// from them and never re-runs a check. Anything else leaves the run
+// verifying and owned: a check may still be running in its own process group
+// (I05, I24).
+func (p *pipeline) recordFromCheckEvents(ctx context.Context) error {
+	unresolved := func(why string) error {
+		return fmt.Errorf("%w: verification outcome unavailable: %s", ErrOwnership, why)
+	}
+	pin, ok, err := ReadPin(ctx, p.j, p.d.RunID)
+	if err != nil {
+		return errors.Join(ErrOwnership, err)
+	}
+	if !ok || len(pin.CheckTimeouts) == 0 {
+		return unresolved("no verification recorded and no admitted checks pinned")
+	}
+	events, err := p.j.Events(ctx, p.d.RunID, 0)
+	if err != nil {
+		return errors.Join(ErrOwnership, err)
+	}
+	last := -1
+	for i, ev := range events {
+		if ev.Type == "verification.started" {
+			last = i
+		}
+	}
+	if last < 0 {
+		return unresolved("no verification was started")
+	}
+	var started struct {
+		NoChecks     bool   `json:"no_checks"`
+		ConfigSHA256 string `json:"config_sha256"`
+	}
+	if err := json.Unmarshal(events[last].Payload, &started); err != nil {
+		return errors.Join(ErrOwnership, err)
+	}
+	if started.NoChecks {
+		return unresolved("the verification ran no checks")
+	}
+	var checks []integration.CheckResult
+	seen := map[string]bool{}
+	statuses := []string{}
+	for _, ev := range events[last+1:] {
+		if ev.Type != "check.completed" {
+			continue
+		}
+		var c integration.CheckResult
+		if err := json.Unmarshal(ev.Payload, &c); err != nil {
+			return errors.Join(ErrOwnership, err)
+		}
+		checks, statuses, seen[c.Name] = append(checks, c), append(statuses, c.Status), true
+	}
+	for name := range pin.CheckTimeouts {
+		if !seen[name] {
+			return unresolved("check " + name + " has no recorded result")
+		}
+	}
+	candidate, err := p.j.Candidate(ctx, p.d.AttemptID)
+	if err != nil {
+		return errors.Join(ErrOwnership, err)
+	}
+	verdict, reason := acceptance.DecideStatuses(statuses)
+	if verdict != acceptance.ResultFailed {
+		verdict, reason = acceptance.ResultUnavailable, "record_unavailable"
+	}
+	at, id := time.Now().UTC(), ids.New("ver")
+	row := journal.VerificationRow{ID: id, RunID: p.d.RunID, CandidateCommit: candidate.Commit, ConfigSHA256: started.ConfigSHA256,
+		Result: string(verdict), Reason: reason, StartedAt: events[last].ObservedAt, FinishedAt: at, Checks: checkRows(checks)}
+	payload := map[string]any{"verification_id": id, "candidate_commit": candidate.Commit, "config_sha256": started.ConfigSHA256,
+		"result": string(verdict), "reason": reason, "checks": checks, "baseline": "not-run"}
+	if err := p.recordVerification(ctx, row, payload); err != nil {
+		return err
+	}
+	state, why := verifyOutcome(nil, verdict)
+	return p.runTo(ctx, state, why)
 }
 
 // recoverDeadline re-derives the execution deadline from the run's journaled
