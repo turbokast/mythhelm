@@ -751,7 +751,7 @@ func TestIdentityFailureStopsNative(t *testing.T) {
 		if id.NativePID != nil {
 			return errDisk
 		}
-		return writeFileAtomic(dir, name, body)
+		return WriteFileAtomic(dir, name, body)
 	}}
 	if err := a.runInProcess(t, a.launch(t, "slow"), w); !errors.Is(err, errDisk) {
 		t.Fatalf("run = %v, want the identity failure", err)
@@ -901,7 +901,7 @@ func TestWorkerPanicStopsNativeAndRecordsInterruption(t *testing.T) {
 					if calls == 1 && boundary == "before_launch" || calls == 3 && boundary == "process_created" {
 						panic(secret)
 					}
-					return writeFileAtomic(dir, name, body)
+					return WriteFileAtomic(dir, name, body)
 				}
 			}
 			escaped := false

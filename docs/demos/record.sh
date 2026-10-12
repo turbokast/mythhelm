@@ -13,7 +13,9 @@
 # a clean tree) the script regenerates from the current checkout and moves the
 # manifest and tape-header pins to it.
 #
-# Needs only free tooling: go, git, python3, and a VHS install (vhs renders
+# Needs only free tooling: go, git, python3, GNU timeout (the hero tape kills
+# its run with it; macOS: brew install coreutils and put its timeout on PATH),
+# and a VHS install (vhs renders
 # through ffmpeg and ttyd). Install VHS from https://github.com/charmbracelet/vhs
 # (for example `go install github.com/charmbracelet/vhs@latest`) and ttyd from
 # https://github.com/tsl0922/ttyd; ffmpeg comes from the OS packages.
@@ -38,7 +40,7 @@ BIN="/tmp/mythhelm-record"
 SED="$DEMOS/normalize.sed"
 MANIFEST="$DEMOS/manifest.json"
 
-for tool in go git vhs python3; do
+for tool in go git vhs python3 timeout; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "record.sh: need $tool on PATH" >&2
 		exit 2
@@ -84,6 +86,7 @@ if test "$REPIN" -eq 0; then
 	recording_dirt="$(git status --porcelain -- \
 		'*.go' 'go.mod' 'go.sum' "$SED" "${tapes[@]}" \
 		'adapters/fake/scenarios/*.json' \
+		"$DEMOS/hero-*.sh" \
 		'internal/journal/migrations/*.sql' \
 		'mods/themes/*.toml')"
 	if test -n "$recording_dirt"; then
@@ -97,7 +100,17 @@ echo "record.sh: build the binary (go build, never go run)"
 go build -o "$BIN" ./cmd/mythhelm
 
 tmpdir="$(mktemp -d)"
-trap 'rm -rf "$tmpdir"' EXIT
+# The hero scratch directory has a short fixed path so the recording's paths
+# read /tmp/demo/...; hero-env.sh replaces a leftover one that carries its
+# marker file, and the exit trap removes it the same way.
+HERO_TMP="/tmp/demo"
+cleanup() {
+	rm -rf "$tmpdir"
+	if test -f "$HERO_TMP/.mythhelm-hero"; then
+		rm -rf "$HERO_TMP"
+	fi
+}
+trap cleanup EXIT
 
 # regen_transcript <name> <out>: run one recording's transcript pipeline.
 # Per-name functions, never manifest commands: the manifest is data the
@@ -127,6 +140,13 @@ regen_transcript() {
 			echo "=== take: accessible (--accessible) ==="
 			cat "$tmpdir/tui.t2"
 		} >"$2"
+		;;
+	hero)
+		# The taped take drives the TUI; this linear companion runs the same
+		# commands (run, SIGKILL, runs list, recover, review) with stdout and
+		# stderr merged, in a scratch directory of its own.
+		(HERO_BIN="$BIN" HERO_TMP="$HERO_TMP" "$DEMOS/hero-transcript.sh" 2>&1) | sed -E -f "$SED" >"$2"
+		test "${PIPESTATUS[0]}" -eq 0
 		;;
 	*)
 		echo "record.sh: recording '$1' has no transcript pipeline; add one here (never in the manifest)" >&2
@@ -160,7 +180,7 @@ done
 
 echo "record.sh: render the GIFs from the checked-in tapes"
 for n in $names; do
-	vhs "$(field "$n" tape)"
+	HERO_BIN="$BIN" HERO_TMP="$HERO_TMP" vhs "$(field "$n" tape)"
 done
 
 echo "record.sh: verify"
@@ -183,10 +203,22 @@ assert_labels() { # assert_labels <name> <transcript>
 		test "$(grep -c 'SCRIPTED DEMO' "$2")" -eq 8
 		test "$(grep -c '^goal: ' "$2")" -eq 1
 		test "$(grep -c '^run state: ' "$2")" -eq 1
-		test "$(grep -c '^attempt' "$2")" -eq 7
+		test "$(grep -c '^attempt' "$2")" -eq 8
 		test "$(grep -c '^candidate: ' "$2")" -eq 1
 		test "$(grep -c '^next action: ' "$2")" -eq 1
 		test "$(grep -c '^actions: ' "$2")" -eq 1
+		;;
+	hero)
+		# The run and the recovery each replay the admission decision, which
+		# carries the SCRIPTED label; recovery reattaches to the original
+		# worker (one notice) and ends the run once.
+		test "$(grep -c '^  SCRIPTED: fake adapter' "$2")" -eq 2
+		test "$(grep -c '^reattached to worker pid ' "$2")" -eq 1
+		test "$(grep -c '^exit status 137$' "$2")" -eq 1
+		test "$(grep -c '^NNN$' "$2")" -eq 1
+		test "$(grep -c '^result: ready_for_review; exit 0' "$2")" -eq 1
+		test "$(grep -c '^State: ready_for_review$' "$2")" -eq 1
+		test "$(grep -c '^attempt: worker pid ' "$2")" -eq 2
 		;;
 	*)
 		echo "record.sh: recording '$1' has no label assertions; add them here" >&2

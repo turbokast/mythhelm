@@ -99,17 +99,6 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Summary**: Deliver the embedded-client and minimal schema-negotiated Herdr bridge with scoped status, attention, safe controls and input takeover. Attach/reconnect uses the one core lifecycle owner; restored panes never start another attempt.
 - **Notes**: Requires MH-21 and MH-22; pair with MH-23. Alternative native surfaces need their own G12 qualification; no Herdr-only inference or second scheduler.
 
-### MH-4: Codex native adapter and included-only qualification
-- **Status**: implementing
-- **Stage**: 1
-- **Gates**: G02, G04, G05
-- **Score**: 3.3 = (value 5 + urgency 5 + risk 3) / effort 4
-- **Spec**: `codex-native-adapter`
-- **Issue**: [#25](https://github.com/turbokast/mythhelm/issues/25)
-- **Source**: Master Specification v2 §7; W02/W06/W14; historical issue #25
-- **Summary**: Qualify Codex as a native harness independently across fidelity, subscription entitlement, stop/recovery and session continuity. It may become the first credible included-only route or a later second route; qualification evidence determines order, with no SDK or same-model substitution.
-- **Notes**: Requires MH-10 records and effective startup/trust controls. Restaged to S1 so first-route selection is evidence-led; being the second named adapter is not a product requirement.
-
 ### MH-23: Complete TUI intervention, accessibility and safe declarative themes
 - **Status**: triaged
 - **Stage**: 1
@@ -272,6 +261,17 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Source**: master spec §15 (visual language, mission view, responsive layouts, navigation, motion, accessibility, render model), §20.3 and §22.2 item 5
 - **Summary**: The polished focused TUI that Stage 1 requires, on top of the run pipeline the dogfood slice delivers: the mission view, responsive layouts down to the linear accessible mode, keyboard flows and event-driven motion. The dogfood slice deliberately defers it (its non-goal N1).
 - **Premise-grounded**: 2026-10-02 — run pipeline exists HOLDS; dogfood N1 defers TUI HOLDS; Stage 1 requires polished TUI HOLDS; §15 coverage HOLDS; §22.2 item 5 HOLDS; G09 HOLDS; Bubble Tea stack HOLDS; no TUI exists yet HOLDS
+
+### MH-4: Codex native adapter and included-only qualification
+- **Status**: shipped
+- **Stage**: 1
+- **Gates**: G02, G04, G05
+- **Score**: 3.3 = (value 5 + urgency 5 + risk 3) / effort 4
+- **Spec**: `codex-native-adapter`
+- **Issue**: [#25](https://github.com/turbokast/mythhelm/issues/25)
+- **Source**: Master Specification v2 §7; W02/W06/W14; historical issue #25
+- **Summary**: Qualify Codex as a native harness independently across fidelity, subscription entitlement, stop/recovery and session continuity. It may become the first credible included-only route or a later second route; qualification evidence determines order, with no SDK or same-model substitution.
+- **Notes**: Requires MH-10 records and effective startup/trust controls. Restaged to S1 so first-route selection is evidence-led; being the second named adapter is not a product requirement.
 
 ### MH-7: Release pipeline: GoReleaser archives, attestations and signatures
 - **Status**: shipped

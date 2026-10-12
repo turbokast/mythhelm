@@ -52,7 +52,7 @@ func TestRenameWithRetryFailsFastOnPermanentErrors(t *testing.T) {
 
 func TestWriteFileAtomicFailsOnMissingDir(t *testing.T) {
 	t.Parallel()
-	if err := writeFileAtomic(filepath.Join(t.TempDir(), "missing"), "worker.json", []byte("{}")); err == nil {
+	if err := WriteFileAtomic(filepath.Join(t.TempDir(), "missing"), "worker.json", []byte("{}")); err == nil {
 		t.Fatal("write to a missing directory must fail")
 	}
 }

@@ -11,7 +11,6 @@ Cards with a spec, being specified or implemented.
 - **MH-12** Strict subscription-only qualification for Claude Code (implementing, stage 1, score 3.8; spec `claude-strict-subscription`; [#33](https://github.com/turbokast/mythhelm/issues/33))
 - **MH-22** Protected acceptance and a complete v2 one-agent workflow (specced, stage 1, score 3.8; spec `protected-acceptance`; [#128](https://github.com/turbokast/mythhelm/issues/128))
 - **MH-13** Contained execution profiles: restricted and inspect (specced, stage 1, score 3.5; spec `contained-execution-profiles`; [#34](https://github.com/turbokast/mythhelm/issues/34))
-- **MH-4** Codex native adapter and included-only qualification (implementing, stage 1, score 3.3; spec `codex-native-adapter`; [#25](https://github.com/turbokast/mythhelm/issues/25))
 
 ## Next
 

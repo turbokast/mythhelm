@@ -1383,6 +1383,81 @@ func TestRecoverQuarantineFreezeFailureKeepsItsReason(t *testing.T) {
 	}
 }
 
+// TestRecoverAfterSupervisorKilledReattachesAndCompletes is the hero demo's
+// recovery beat: the foreground `mythhelm run` is killed outright mid-attempt,
+// the worker and its native keep running, and `mythhelm recover` reattaches
+// to that same worker, lets the paced scenario finish, runs the checks and
+// ends ready_for_review. The native is never launched a second time (I12).
+func TestRecoverAfterSupervisorKilledReattachesAndCompletes(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	digest := f.config(t, "pass")
+	r := startLive(t, f, f.checkedRun(digest, "--format", "jsonl", "--scenario", "paced")...)
+	r.waitStdout(t, "first progress", isType("attempt.progress"))
+	runID := f.onlyRun(t).RunID
+	dir := workers.AttemptDir(f.state, runID, findAttempt(t, f, runID))
+	before, err := workers.ReadIdentity(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, _ := r.wait(t); code == 0 {
+		t.Fatal("the killed run exited 0")
+	}
+	if got := f.onlyRun(t).State; got != "executing" {
+		t.Fatalf("run state after the kill = %s, want executing (the journal cannot know)", got)
+	}
+	a, err := f.journal(t).LatestAttempt(t.Context(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	greeting := filepath.Join(a.WorkspacePath, "greeting.txt")
+	if _, err := os.Stat(greeting); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the agent's work was already done at the kill: %v", err)
+	}
+
+	code, _, stderr := f.run(t, "recover", runID, "--format", "jsonl")
+	if code != 0 || !strings.Contains(stderr, "reattached to worker pid "+strconv.Itoa(before.PID)) {
+		t.Fatalf("recover exit %d, stderr %q; want exit 0 reattaching to worker %d", code, stderr, before.PID)
+	}
+	if got := f.onlyRun(t); got.State != "ready_for_review" || got.Reason != "" {
+		t.Fatalf("run after recovery = %s (%s), want ready_for_review", got.State, got.Reason)
+	}
+	after, err := workers.ReadIdentity(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.NativePID == nil || after.NativePID == nil {
+		t.Fatalf("native PID missing: before %v, after %v", before.NativePID, after.NativePID)
+	}
+	if after.PID != before.PID || *after.NativePID != *before.NativePID {
+		t.Fatalf("worker/native identity changed: %d/%d -> %d/%d", before.PID, *before.NativePID, after.PID, *after.NativePID)
+	}
+	if n := countEvents(f.events(t, runID), "attempt.launched"); n != 1 {
+		t.Fatalf("attempt.launched events = %d, want 1", n)
+	}
+	got, err := os.ReadFile(greeting) // #nosec G304 -- fixture workspace is t.TempDir
+	if err != nil || string(got) != "hello from the scripted agent\n" {
+		t.Fatalf("the work finished after the kill: %q, %v", got, err)
+	}
+	v, err := f.journal(t).LatestVerification(t.Context(), runID)
+	if err != nil || v.Result != "passed" {
+		t.Fatalf("verification = %+v, %v; want passed", v, err)
+	}
+}
+
+func countEvents(evs []journal.Event, typ string) int {
+	n := 0
+	for _, ev := range evs {
+		if ev.Type == typ {
+			n++
+		}
+	}
+	return n
+}
+
 // markerCheck is a check that records that it ran at marker.
 func markerCheck(name, marker string) string {
 	return checkBlock(name, os.Args[0], "__check", "marker", marker)
