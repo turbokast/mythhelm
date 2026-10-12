@@ -471,6 +471,19 @@ func TestAdmissionLinesCarryEntitlement(t *testing.T) {
 	}
 }
 
+func TestAdmissionLinesSanitiseEntitlementSource(t *testing.T) {
+	t.Parallel()
+	payload, err := json.Marshal(admission.Record{Billing: adapter.BillingPosture{
+		Mode: "subscription-only", Qualified: true, G05: "passed", EntitlementSource: "doc\x1b[31mred",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plainLine("admission.decided", string(payload)); strings.ContainsRune(got, 0x1b) {
+		t.Fatalf("admission lines carry an escape: %q", got)
+	}
+}
+
 func jsonlEvent(typ string) journal.Event {
 	return journal.Event{SchemaVersion: journal.EnvelopeVersion, EventID: ids.New("evt"), RunID: "run_1",
 		ProducerID: "sup_1", ProducerSequence: 1, Generation: 1, ObservedAt: time.Unix(1, 0).UTC(),

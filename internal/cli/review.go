@@ -84,9 +84,34 @@ func runReviewDispatch(stdio Stdio, deps tuiDeps, getenv func(string) string, di
 		return fmt.Errorf("receipt for %s does not match its run projection", run.RunID)
 	}
 	if format == "jsonl" {
+		if err := addAcceptanceStatus(ctx, j, r, run.RunID); err != nil {
+			return err
+		}
 		return json.NewEncoder(stdio.Out).Encode(r)
 	}
 	return writeReviewPlain(ctx, stdio.Out, j, r, run.RunID, !noDiff)
+}
+
+// addAcceptanceStatus puts the gate's answer for the run as it is now beside
+// the stored verdict, as acceptance.status, so a consumer of the receipt sees
+// a stale or unbound verdict that the stored label alone would show as passed
+// (I07, I09).
+func addAcceptanceStatus(ctx context.Context, j *journal.Journal, r supervisor.Receipt, runID string) error {
+	status, err := supervisor.CheckAcceptance(ctx, j, runID)
+	if err != nil {
+		return err
+	}
+	changed := status.Changed
+	if changed == nil {
+		changed = []string{}
+	}
+	section := reviewMap(r["acceptance"])
+	if section == nil {
+		section = map[string]any{}
+		r["acceptance"] = section
+	}
+	section["status"] = map[string]any{"state": string(status.State), "reason": status.Reason, "changed": changed}
+	return nil
 }
 
 func reviewString(m map[string]any, key string) string {

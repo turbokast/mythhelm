@@ -100,9 +100,9 @@ not verified `NOT RUN`. What it does not cover is listed here; the
   They decide from the candidate commit alone, while `review` and `apply`
   check the whole binding
   ([#393](https://github.com/turbokast/mythhelm/issues/393)).
-  `review --format jsonl` prints the stored receipt only, so it shows a stale
-  verdict as `passed` too
-  ([#440](https://github.com/turbokast/mythhelm/issues/440)).
+  `review --format jsonl` is not affected: it adds the current answer as
+  `acceptance.status`, though `verification.label` there is still the stored
+  verdict.
 - **A resumed apply loses its override record.** When `apply` crashes after it
   journaled its intent, the resumed call skips the acceptance check and does
   not record `acceptance.apply_override`, so the receipt cannot show that the

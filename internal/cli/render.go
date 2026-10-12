@@ -336,7 +336,7 @@ func admissionLines(p payload, entitlement string) string {
 		fmt.Sprintf("  snapshot: %s (branch %s, selected by %s)", p.text("snapshot", "base_rev"), branch, p.text("snapshot", "selected_by")),
 		fmt.Sprintf("  execution profile: %s, %s", p.text("execution_profile", "name"), p.text("execution_profile", "disclosure")),
 		fmt.Sprintf("  billing: %s (qualified: %s)", p.text("billing", "mode"), p.text("billing", "qualified")),
-		"  "+entitlement,
+		"  "+cell(entitlement),
 	)
 	return strings.Join(lines, "\n")
 }

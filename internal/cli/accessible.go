@@ -111,7 +111,7 @@ func RunAccessible(ctx context.Context, cfg AccessibleConfig) error {
 		}
 	}
 	for _, ev := range page {
-		w.line(accessibleEventLine(ev))
+		w.event(ev)
 		last = ev.RunSequence
 	}
 	if err := w.err; err != nil {
@@ -138,7 +138,7 @@ func RunAccessible(ctx context.Context, cfg AccessibleConfig) error {
 	drain := func() {
 		if events, err := viewmodel.EventsSince(context.WithoutCancel(ctx), cfg.StateDir, cfg.RunID, last); err == nil {
 			for _, ev := range events {
-				w.line(accessibleEventLine(ev))
+				w.event(ev)
 				last = ev.RunSequence
 			}
 		}
@@ -163,7 +163,7 @@ func RunAccessible(ctx context.Context, cfg AccessibleConfig) error {
 				return err
 			}
 			for _, ev := range events {
-				w.line(accessibleEventLine(ev))
+				w.event(ev)
 				last = ev.RunSequence
 			}
 			if err := w.err; err != nil {
@@ -204,6 +204,17 @@ func (w *accessibleWriter) line(s string) {
 		return
 	}
 	_, w.err = io.WriteString(w.out, fitAccessibleLine(s)+"\n")
+}
+
+// event writes one journaled event as its ordered stream line. An admission
+// adds its entitlement sentence on a line of its own, because the summary can
+// only say unknown on a stream that opened before admission decided and the
+// width cap cuts the sentence off the flattened event line (I15).
+func (w *accessibleWriter) event(ev journal.Event) {
+	w.line(accessibleEventLine(ev))
+	if ev.Type == "admission.decided" {
+		w.line(cell(entitlementOf(ev.Payload)))
+	}
 }
 
 // accessibleSummary renders the snapshot's current-state labels, one per
