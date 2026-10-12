@@ -178,7 +178,8 @@ Stream (D10)
   `TestStreamEventSetPinned`, `TestEveryEmittedEventTypeIsDocumented` and, in
   the renderer, `TestJSONLRefusesUndocumentedEvent` and
   `TestFinishFoldsUndocumentedEvent`. A new journal event type must be added to
-  the set and to its pinning test, or every JSONL run fails.
+  the set and to its pinning test, or those tests fail and any JSONL run that
+  emits the type exits 1 with `undocumented_event`.
 
 Residuals the decisions leave
 
