@@ -34,8 +34,9 @@ command: it skips the build, the transcript regen and the verify pass.
 
 | Recording | Tape | Artifact | Transcript | Binary revision | VHS |
 |---|---|---|---|---|---|
-| demo | `docs/demos/demo.tape` | `docs/demos/demo.gif` | `docs/demos/demo.transcript.txt` | `179bba4ceae958f9591e9fedb056f70da59ce40c` | v0.12.1 |
-| tui | `docs/demos/tui.tape` | `docs/demos/tui.gif` | `docs/demos/tui.transcript.txt` | `179bba4ceae958f9591e9fedb056f70da59ce40c` | v0.12.1 |
+| demo | `docs/demos/demo.tape` | `docs/demos/demo.gif` | `docs/demos/demo.transcript.txt` | `996252b5cf8d811fd0ea6143484ee87e748e1bc8` | v0.12.1 |
+| tui | `docs/demos/tui.tape` | `docs/demos/tui.gif` | `docs/demos/tui.transcript.txt` | `996252b5cf8d811fd0ea6143484ee87e748e1bc8` | v0.12.1 |
+| hero | `docs/demos/hero.tape` | `docs/demos/hero.gif` | `docs/demos/hero.transcript.txt` | `996252b5cf8d811fd0ea6143484ee87e748e1bc8` | v0.12.1 |
 
 The demo tape drives `mythhelm demo --check pass` end to end against the fake
 adapter with local-scripted billing: no network, no paid credentials. Its
@@ -68,11 +69,56 @@ each shown capability:
 | revision-attached verification | `TestVerificationMismatchLabelsRevisions` (`internal/tui/model_test.go`) |
 | linear accessible stream | `TestAccessibleOrderedStream` (`internal/cli/accessible_test.go`) |
 
+The hero tape is the story the README leads with: kill the terminal mid-run,
+then recover. `mythhelm run` drives the fake adapter's `paced` scenario (a
+scripted four-turn session of about 17 seconds) in the live TUI. The tape
+runs it under `timeout --foreground -s KILL 8`, so the foreground `mythhelm
+run` process is killed with SIGKILL while the agent is mid-attempt. The
+worker and the agent are separate processes and keep running; `mythhelm runs
+list` still reads `executing` because the journal cannot know the CLI died.
+`mythhelm recover <run>` reattaches to the same worker (the qualifying test
+asserts the worker and native pids are unchanged), the scenario finishes the work after the kill, the check
+runs and `mythhelm review` opens the inspect view with the diff and the
+revision-attached `verified <rev>` line. A worker killed outright is a
+different case: its attempt cannot resolve and the run stays quarantined
+(issue #391), so it is not shown. The ending shows what is verified (the
+checked revision, the check's name) and what stays labelled (`qualified:
+false`, `paid continuation: not-applicable`, a native-reported exit); the
+receipt's `unknowns` list is in `mythhelm review --format jsonl`, not on the
+screen. A waived check (`--no-checks`) would read `NOT RUN`; this tape does
+not take that branch.
+
+The tape's hidden prelude (`Hide` ... `Show`) sources
+`docs/demos/hero-env.sh`, which builds a disposable repository and state
+directory under `$HERO_TMP`, and the tape copies the run ID out of
+`runs list` into a shell variable. The TUI bytes cannot match a re-run, so
+the hero transcript comes from `docs/demos/hero-transcript.sh`, a linear
+companion run of the same commands: `mythhelm run --plain` in the
+background, a SIGKILL once the third turn prints, then `runs list`,
+`recover` and `review`. Its manifest entry declares the exact binary
+revision rendered from and the qualifying test for each shown capability:
+
+| Capability shown | Qualifying test |
+|---|---|
+| offline scripted run | `TestDemoOfflineNoCredentials` (`internal/cli/demo_test.go`) |
+| live mission view | `TestMissionShowsRequiredFacts` (`internal/tui/model_test.go`) |
+| recover reattaches after the supervisor is killed and the run completes | `TestRecoverAfterSupervisorKilledReattachesAndCompletes` (`internal/supervisor/faults_test.go`) |
+| recovery never relaunches the native | `TestRecoverNeverRelaunchesNative` (`internal/supervisor/faults_test.go`) |
+| revision-attached verification | `TestVerificationMismatchLabelsRevisions` (`internal/tui/model_test.go`) |
+| billing posture labels | `TestStatusStripKindLabels` (`internal/tui/model_test.go`) |
+| candidate diff review | `TestParseHunks` (`internal/tui/diff_test.go`) |
+
+CI's transcript-freshness step (`.github/workflows/docs.yml`) regenerates the
+`demo` and `tui` transcripts by name; it does not yet regenerate the hero
+transcript, so `docs/demos/record.sh` is the check for it until that
+workflow learns the third pipeline. Its revision-present and qualifier steps
+read the manifest and do cover the hero entry.
+
 Normalization (`docs/demos/normalize.sed`) covers temp paths, `run_`/`att_`
-ULIDs, both worker/native pid shapes, 40-hex SHAs (with the stable
+ULIDs, ISO UTC timestamps (`<TIME>`), the hero scratch directory, both worker/native pid shapes, 40-hex SHAs (with the stable
 empty-evidence sha256 protected verbatim) and 12-hex evidence prefixes, plus
 the TUI rules: 20-hex truncated snapshot SHAs, live-sampled `goal:`/`run
 state:`/`admission:` values (`<LIVE-SAMPLE>`), the race-window
 `receipt.written` event line (deleted) and the `next-after` cursor
-(`<LIVE-CURSOR>`). Label names stay verbatim; only sampled values normalize.
+(`<LIVE-CURSOR>`; the cursor reads 21, 22 or 23 depending on whether the receipt event lands before the last read). The `reservation held on bucket` notice is kept right after `run: admission` in the linear takes and dropped everywhere else: in the `--accessible` stream the notice and the first snapshot are printed by different goroutines, so its position varies between runs. Label names stay verbatim; only sampled values normalize.
 The transcript keeps the binary's own `SCRIPTED DEMO` labels verbatim.

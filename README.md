@@ -36,6 +36,9 @@ Not supported yet:
 
 Try it with no credentials and no network at runtime: `go run ./cmd/mythhelm demo` (the first build needs the Go module cache populated). `go run ./cmd/mythhelm doctor` reports what your machine still needs for a real run.
 
+![Kill the terminal mid-run, then recover](docs/demos/hero.gif)
+*Honest recording with the scripted agent, no network and no credentials: `mythhelm run` is killed with SIGKILL mid-attempt (its worker and the agent keep running), `mythhelm recover` reattaches to the same worker without relaunching it, the work finishes, the checks pass and `mythhelm review` shows the verified candidate. Rendered from `docs/demos/hero.tape` — regenerate it with `docs/demos/record.sh`. A worker killed outright is a different case and is not shown ([#391](https://github.com/turbokast/mythhelm/issues/391)).*
+
 ![Scripted demo recording](docs/demos/demo.gif)
 *Honest recording of `mythhelm demo --check pass`, rendered from `docs/demos/demo.tape` — regenerate it with `docs/demos/record.sh`.*
 

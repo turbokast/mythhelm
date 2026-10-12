@@ -11,10 +11,10 @@
 
 HERO_BIN="${HERO_BIN:-/tmp/mythhelm-record}"
 HERO_TMP="${HERO_TMP:-$(mktemp -d)}"
-mkdir -p "$HERO_TMP/bin" "$HERO_TMP/repo" "$HERO_TMP/home"
+mkdir -p "$HERO_TMP/bin" "$HERO_TMP/repo" "$HERO_TMP/state"
 ln -sf "$HERO_BIN" "$HERO_TMP/bin/mythhelm"
 export PATH="$HERO_TMP/bin:$PATH"
-export MYTHHELM_HOME="$HERO_TMP/home"
+export MYTHHELM_HOME="$HERO_TMP/state"
 
 cd "$HERO_TMP/repo" || return 1
 git init --quiet --initial-branch=main
