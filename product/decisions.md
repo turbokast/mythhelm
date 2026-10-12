@@ -402,3 +402,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: spec approved by the maintainer's merge of #313 and landed in specs/todo/
 - **Cards**: MH-11
 - **Evidence**: PR #313
+
+### D-94 — 2026-10-11: MH-22 → specced (protected-acceptance)
+- **Type**: lifecycle-sync
+- **Decision**: MH-22 moved to specced with Spec protected-acceptance
+- **Rationale**: spec approved by the maintainer's merge of #392 and landed in specs/todo/ (slice 1: protected acceptance; Tasks 13-14 blocked on MH-12 T5/T7)
+- **Cards**: MH-22
+- **Evidence**: PR #392
