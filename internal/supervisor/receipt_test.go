@@ -7,9 +7,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -579,7 +581,7 @@ func TestReceiptReserveIsEstimateOnly(t *testing.T) {
 			}
 		}
 	})
-	t.Run("checked run leaves the unjournaled pass unknown", func(t *testing.T) {
+	t.Run("checked run with no pin leaves the pass unknown", func(t *testing.T) {
 		t.Parallel()
 		j, runID := ledgerReceiptWorld(t)
 		insertEnvelope(t, j, journal.EnvelopeRow{RunID: runID,
@@ -591,7 +593,7 @@ func TestReceiptReserveIsEstimateOnly(t *testing.T) {
 			t.Fatalf("reserve = %#v, want an object", billing["reserve"])
 		}
 		if reserve["verify_pass_checks"] != "unknown" || reserve["verify_timeout_sum"] != "unknown" {
-			t.Errorf("verify pass = %v/%v, want unknown: check timeouts are not journaled",
+			t.Errorf("verify pass = %v/%v, want unknown: a run with no pin journaled no check timeouts",
 				reserve["verify_pass_checks"], reserve["verify_timeout_sum"])
 		}
 		if reserve["repair_ceiling"] != float64(3) || reserve["note"] != billingpkg.ReserveNote {
@@ -610,6 +612,157 @@ func TestReceiptReserveIsEstimateOnly(t *testing.T) {
 			t.Errorf("reserve = %v, want an unknown ceiling with the estimate note", reserve)
 		}
 	})
+}
+
+// TestReceiptCheckTimeoutEvidence pins I09 (v2 §7.3: evidence stays typed and
+// labelled) for the three fields that carry the admitted check timeouts: a
+// pinned run renders them known and consistent, and every run that cannot
+// renders them unknown with the reason that is true of that run (AC-3.4).
+func TestReceiptCheckTimeoutEvidence(t *testing.T) {
+	t.Parallel()
+	const (
+		verifyChecks = "billing.reserve.verify_pass_checks"
+		verifySum    = "billing.reserve.verify_timeout_sum"
+		boundsPath   = "acceptance.bounds.check_timeouts"
+	)
+	pin := acceptance.NewPin("tsk", strings.Repeat("a", 64))
+	pinned := pin.WithChecks(strings.Repeat("b", 64), "host", strings.Repeat("c", 64), map[string]string{"build": "5s", "test": "1m"})
+	for _, tc := range []struct {
+		name         string
+		admission    string
+		wantChecks   any
+		wantSum      any
+		wantBounds   any
+		wantReasons  map[string]string
+		skipEnvelope bool
+	}{
+		{name: "a pinned run reports the journaled timeouts", admission: mustJSON(t, supervisor.AdmissionPayload{AcceptancePin: pinned}),
+			wantChecks: float64(2), wantSum: "1m5s", wantBounds: map[string]any{"build": "5s", "test": "1m"},
+			wantReasons: map[string]string{verifyChecks: "", verifySum: "", boundsPath: ""}},
+		{name: "a pinned timeout that is not a duration leaves only the sum unknown",
+			admission:  mustJSON(t, supervisor.AdmissionPayload{AcceptancePin: pin.WithChecks(strings.Repeat("b", 64), "host", strings.Repeat("c", 64), map[string]string{"build": "soon"})}),
+			wantChecks: float64(1), wantSum: "unknown", wantBounds: map[string]any{"build": "soon"},
+			wantReasons: map[string]string{verifyChecks: "", verifySum: "a pinned check timeout is not a positive duration", boundsPath: ""}},
+		{name: "a waived run has an empty pass and says no checks were admitted",
+			admission:  mustJSON(t, map[string]any{"no_checks": true, "acceptance_pin": pin}),
+			wantChecks: float64(0), wantSum: "0s", wantBounds: "unknown",
+			wantReasons: map[string]string{verifyChecks: "", verifySum: "", boundsPath: "no checks were admitted for this run (waived, or refused under inspect)"}},
+		{name: "an unreadable pin says the pin is unreadable, not that no checks were admitted",
+			admission:  `{"acceptance_pin":{"policy_version":"one"}}`,
+			wantChecks: "unknown", wantSum: "unknown", wantBounds: "unknown",
+			wantReasons: map[string]string{verifyChecks: "acceptance pin unreadable", verifySum: "acceptance pin unreadable", boundsPath: "acceptance pin unreadable"}},
+		{name: "a run admitted before the pin existed says so",
+			admission:  mustJSON(t, admission.Record{}),
+			wantChecks: "unknown", wantSum: "unknown", wantBounds: "unknown",
+			wantReasons: map[string]string{verifyChecks: "recorded before acceptance binding existed", verifySum: "recorded before acceptance binding existed", boundsPath: "recorded before acceptance binding existed"}},
+		{name: "an unadmitted run says it was not admitted", skipEnvelope: true,
+			wantChecks: "unknown", wantSum: "unknown",
+			wantReasons: map[string]string{verifyChecks: "the run was not admitted", verifySum: "the run was not admitted"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			j, runID := ledgerReceiptWorld(t)
+			if !tc.skipEnvelope {
+				insertEnvelope(t, j, journal.EnvelopeRow{RunID: runID, ExecutionSeconds: 1800, Repairs: 3, Replans: 2, TransportRetries: 5})
+			}
+			if tc.admission != "" {
+				journalAdmission(t, j, runID, tc.admission)
+			}
+			r := worldReceipt(t, j, runID)
+			reserve := object(t, object(t, r, "billing"), "reserve")
+			if !reflect.DeepEqual(reserve["verify_pass_checks"], tc.wantChecks) || reserve["verify_timeout_sum"] != tc.wantSum {
+				t.Errorf("reserve verify pass = %v checks / %v, want %v / %v", reserve["verify_pass_checks"], reserve["verify_timeout_sum"], tc.wantChecks, tc.wantSum)
+			}
+			if !tc.skipEnvelope {
+				if got := object(t, r, "acceptance")["bounds"].(map[string]any)["check_timeouts"]; !reflect.DeepEqual(got, tc.wantBounds) {
+					t.Errorf("bounds.check_timeouts = %v, want %v", got, tc.wantBounds)
+				}
+			}
+			for path, want := range tc.wantReasons {
+				if got := unknownReason(t, r, path); got != want {
+					t.Errorf("reason of %s = %q, want %q", path, got, want)
+				}
+			}
+		})
+	}
+}
+
+// TestReceiptRealRunReserveMatchesItsBounds pins that a real checked run's
+// reserve reports the same timeouts its bounds do (I09): the run stream's
+// "verify pass" line and the receipt describe one pinned check list.
+func TestReceiptRealRunReserveMatchesItsBounds(t *testing.T) {
+	t.Parallel()
+	run := passedRun(t)
+	timeouts, ok := object(t, object(t, run.file, "acceptance"), "bounds")["check_timeouts"].(map[string]any)
+	if !ok || len(timeouts) == 0 {
+		t.Fatalf("bounds.check_timeouts = %v, want the pinned check timeouts", object(t, run.file, "acceptance")["bounds"])
+	}
+	reserve := object(t, object(t, run.file, "billing"), "reserve")
+	var want time.Duration
+	for name, timeout := range timeouts {
+		d, err := time.ParseDuration(fmt.Sprint(timeout))
+		if err != nil {
+			t.Fatalf("check %s timeout %v: %v", name, timeout, err)
+		}
+		want += d
+	}
+	if reserve["verify_pass_checks"] != float64(len(timeouts)) || reserve["verify_timeout_sum"] != want.String() {
+		t.Errorf("reserve verify pass = %v checks / %v, want %d checks / %s from bounds.check_timeouts %v",
+			reserve["verify_pass_checks"], reserve["verify_timeout_sum"], len(timeouts), want, timeouts)
+	}
+}
+
+// bindingEnvironment is the environment fingerprint a run's receipt binds the
+// verdict to.
+func bindingEnvironment(t *testing.T, receipt map[string]any) string {
+	t.Helper()
+	env, _ := object(t, object(t, receipt, "verification"), "binding")["environment"].(string)
+	if !strings.HasPrefix(env, "sha256:") {
+		t.Fatalf("verification.binding.environment = %q, want a sha256 fingerprint", env)
+	}
+	return env
+}
+
+// TestReceiptDoesNotClaimThePinnedEnvironment pins I09 and I07 (AC-4.1): the
+// check environment is recorded, not pinned. A live run hands its checks the
+// native's environment, a recovered run rebuilds it from the recovering
+// process, so the same revisions bind different fingerprints depending on
+// whether the supervisor crashed, and the determinism note must say so. If the
+// two paths are ever built from one admitted passthrough, the divergence
+// assertion fails and the note may claim the environment pinned.
+func TestReceiptDoesNotClaimThePinnedEnvironment(t *testing.T) {
+	t.Parallel()
+	live := passedRun(t).file
+
+	f := newFixture(t)
+	digest := f.config(t, "pass")
+	if code, _, stderr := f.run(t, f.checkedRun(digest)...); code != 0 {
+		t.Fatalf("second live run exit %d: %s", code, stderr)
+	}
+	secondLive := captureRun(t, f, f.onlyRun(t).RunID, digest).file
+
+	rf := newFixture(t)
+	rdigest := rf.config(t, "pass")
+	d, _, wait := seedLaunch(t, rf, "happy", "sha256:"+rdigest)
+	wait()
+	if code, _, stderr := rf.run(t, "recover", d.RunID); code != 0 {
+		t.Fatalf("recover exit %d: %s", code, stderr)
+	}
+	recovered := captureRun(t, rf, d.RunID, rdigest).file
+
+	if a, b := bindingEnvironment(t, live), bindingEnvironment(t, secondLive); a != b {
+		t.Errorf("two live runs bind environments %s and %s, want one: the control for the live-versus-recovered comparison", a, b)
+	}
+	if l, r := bindingEnvironment(t, live), bindingEnvironment(t, recovered); l == r {
+		t.Errorf("a live and a recovered run bind the same environment %s: the environment may now be pinned, so revisit the determinism note", l)
+	}
+	note, _ := object(t, object(t, live, "acceptance"), "determinism")["note"].(string)
+	if strings.Contains(note, "environment) are pinned") || !strings.Contains(note, "environment is recorded") || !strings.Contains(note, "not pinned") {
+		t.Errorf("determinism note = %q, want the environment recorded and not pinned", note)
+	}
+	if !strings.Contains(note, "recovered") {
+		t.Errorf("determinism note = %q, want it to say a recovered run can bind a different environment", note)
+	}
 }
 
 // TestReceiptNextRetryShown pins billing.next_retry: the exhausted bucket
