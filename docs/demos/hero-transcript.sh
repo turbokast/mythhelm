@@ -47,6 +47,9 @@ echo "exit status $status"
 
 echo "=== take: the worker is still alive ==="
 worker="$(pgrep -f "__worker --state $MYTHHELM_HOME")"
+# Exactly one worker: a stale one from an interrupted earlier run would make the
+# reattach assertion below match the wrong pid.
+test "$(echo "$worker" | wc -l)" -eq 1
 echo "$worker"
 
 echo "=== take: runs list ==="
