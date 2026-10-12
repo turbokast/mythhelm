@@ -116,7 +116,7 @@
 - **Depends on**: Task 1 (index record shape), Task 4 (navigation groups)
 - **Change**: Emit a static Liquid-generated search index of every published page and a search control that ranks title and heading matches first, works offline and by keyboard, and disappears without JavaScript instead of sitting inert.
 - **Files**:
-  - `docs/search.json` (new Liquid template emitting `{title, group, headings, body, truncated}` per published page under the 300 KB ceiling, largest-body-first truncation, AC-4.1, NFR-5)
+  - `docs/search.json` (new Liquid template with YAML front matter `layout: null` — Liquid runs, no site layout or `defaults:` layout is applied — emitting `{title, group, headings, body, truncated}` per published page under the 300 KB ceiling, largest-body-first truncation, AC-4.1, NFR-5)
   - `docs/assets/search.js` (new: fetch-on-first-use, ranking, anchor links, no-match message, truncated marking, result-count announcement, offline behaviour, AC-4.2, AC-4.3)
   - `docs/_layouts/default.html` (search control in the nav on both surfaces, hidden when JavaScript is unavailable, documented shortcut, AC-4.3, AC-4.4)
 - **Produces**: built search index at `_site/search.json` (source `docs/search.json`), fetched from the layout-emitted `{{ '/search.json' | relative_url }}` URL (`/mythhelm/search.json`), record shape `{title, group, headings: [{text, anchor}], body, truncated}` where `group` is the navigation group or the literal `none` for unlisted pages (consumed by Task 8's coverage, group-domain and size checks).
@@ -175,7 +175,7 @@
 - **Depends on**: Task 1, Task 3, Task 5, Task 6, Task 7
 - **Change**: Add the Bash/Python built-site checks that keep the site's claims true — token parity, origin and script allow-list, panel phrases, state words, examples marker and normalised-output diff, search coverage and index size — each with a fixture it must reject, gated by the harness job until Task 10 wires the site-build job.
 - **Files**:
-  - `scripts/ci/check_docs_site.py` (new: layout-marker coverage, hero chapter-offset ordering and duration, token parity and stylesheet literals, amber `var()` ban, off-origin references in HTML/CSS and the built-site script allow-list, panel phrase/column/tracker and cell-label agreement, footer targets, state wrapping and source-markup validity with all three states present, marker-without-entry/empty-list/first-entry, entry–block drift both ways and the marker-without-`output_anchor` guard, search coverage, group domain and index size; AC-1.1, AC-1.2, AC-1.3, AC-1.5, AC-2.2, AC-2.3, AC-2.4, AC-2.5, AC-4.1, AC-4.5, AC-5.3, AC-6.1, AC-6.3, AC-6.4, NFR-5)
+  - `scripts/ci/check_docs_site.py` (new: layout-marker coverage, hero chapter-offset ordering and duration, token parity and stylesheet literals, amber `var()` ban, off-origin references in HTML/CSS and the built-site script allow-list, panel phrase/column/tracker and cell-label agreement, footer targets, state wrapping and source-markup validity with all three states present, marker-without-entry/empty-list/first-entry, entry–block drift both ways and the marker-without-`output_anchor` guard, search coverage, group domain and index size, including parsing `_site/search.json` as JSON and rejecting unresolved Liquid (`{{`/`{%`) or layout markup in it (the AC-1.1 marker check applies to built HTML pages, not the JSON index); AC-1.1, AC-1.2, AC-1.3, AC-1.5, AC-2.2, AC-2.3, AC-2.4, AC-2.5, AC-4.1, AC-4.5, AC-5.3, AC-6.1, AC-6.3, AC-6.4, NFR-5)
   - `scripts/ci/tests/test_check_docs_site.sh` (new: run each check against the real built tree shape and its rejecting fixtures, AC teeth per `.claude/rules/teeth-discipline.md`)
   - `scripts/ci/tests/fixtures/docs-site/` (new: fixture stylesheet with an unlisted hex and a differing table row, amber `var()` rule, off-origin script and `@import`, removed panel phrase, mismatched cell label, missing footer target, wrapped non-state text, empty and misspelled state arguments, hand-marked block, drifted entry and block, index missing a page and oversized index — each named in the test)
   - `scripts/ci/lint-agent-harness.sh` (wire the new test into the harness checks without weakening existing ones)
@@ -192,7 +192,7 @@
 
 - **Domain/agent**: agent-config-editor (harness domain)
 - **Budget**: complex (rule carve-out, new Node driver with lockfile and licence gate, headless-browser measurements)
-- **Depends on**: Task 1 (stylesheet and layouts), Task 3 (landing order), Task 4 (sidebar and targets)
+- **Depends on**: Task 1, Task 3, Task 4, Task 5, Task 6
 - **Change**: Carve out exactly one browser-driver directory from the harness-scripts rule and add the pinned headless-Chrome driver that measures overflow, element boxes, tap targets, first-viewport position, landing weight and rendered contrast, so responsive and accessibility claims are measured, not eyeballed.
 - **Files**:
   - `.claude/rules/harness-scripts.md` (explicit carve-out for exactly one named directory under `scripts/ci/` allowing Node there and nowhere else under `scripts/**`, with the evidence for it, AC-7.6)
