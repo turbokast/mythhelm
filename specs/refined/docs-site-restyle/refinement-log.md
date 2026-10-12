@@ -29,12 +29,12 @@ D1, D4 and D5 PASS; D2, D3, D6, D7 and D8 NEEDS_WORK; no FAIL. Eleven auto-fixes
 
 The coordinator relayed the maintainer's acceptance of all twelve defaults. They were folded into the acceptance criteria and `requirements.md` now has a Decisions section in place of Open Questions. An `architect` review (the spec spans docs, release and harness) then returned 2 blockers, 10 should-fix findings and 11 notes.
 
-Resolved in the spec text: S1 (build once, upload the artifact before any third-party step, fixtures to a separate destination), S2 (NFR-6 supply-chain terms), S3 (column, text and tracker binding for the panel), S4 (cells bound to `status.yml` ids; the headline carved out as a maintainer statement), S5 (a marker with no entry fails), S6 (source-markup check for state words), S7 (origin check over CSS, media and recorded requests), S9 (fixture homes), S10 (overflow clip, computed contrast, video duration), and notes N1 to N4 and N6 to N11 (N3: state-word markup also applies in `docs/limitations.md`, never its headings or the Windows lines).
+Resolved in the spec text: S1 (build once, upload the artifact before any third-party step, fixtures to a separate destination), S2, first part (NFR-6 supply-chain terms), S3 (column, text and tracker binding for the panel), S4 (cells bound to `status.yml` ids; the headline carved out as a maintainer statement), S5 (a marker with no entry fails), S6 (source-markup check for state words), S7 (origin check over CSS, media and recorded requests), S9 (fixture homes), S10 (overflow clip, computed contrast, video duration), and notes N1 to N4 and N6 to N11 (N3: state-word markup also applies in `docs/limitations.md`, never its headings or the Windows lines).
 
 Needs a maintainer call, recorded in the spec and not resolved:
 - B1 (OQ-10 reopened): `Docs checks` is not a required check, so the new checks would be advisory. Options: require it in the ruleset (and in `docs/automation.md` and `.claude/data/required-checks.json`), or add a site-build job to `ci.yml`'s `needs:`.
 - B2 (OQ-5 reopened): a Node and Chrome driver under `scripts/ci/` contradicts `.claude/rules/harness-scripts.md`. Options: a carve-out for one browser-driver directory, a release-owned path, or no browser measurement.
-- S2: whether the driver's npm licences fit the dependency-review allow-list.
+- S2, second part (a separate sub-decision from the NFR-6 terms above): whether the driver's npm licences fit the dependency-review allow-list.
 - S4: whether the headline's panel link is "exactly one" rather than "at most one".
 - S8: whether the amber rule is stated for the docs site only, since the shipped TUI light theme uses `#8a5a00` as its warning colour.
 - N5: per-item confirmation of the twelve decisions, which arrived as one relayed acceptance.
