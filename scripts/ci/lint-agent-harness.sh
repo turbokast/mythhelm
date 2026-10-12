@@ -58,9 +58,14 @@ if [[ -z "${ALL[0]:-}" ]]; then
 fi
 if [[ -n "$ONLY" ]]; then
   IFS=',' read -r -a CHECKS <<< "$ONLY"
+  # No pipe into grep -q: its early exit can kill the writer with SIGPIPE, and
+  # pipefail then reports a known check as unknown.
   for c in "${CHECKS[@]}"; do
-    printf '%s\n' "${ALL[@]}" | grep -qxF -- "$c" \
-      || { echo "lint-agent-harness: unknown check: $c (known: ${ALL[*]})" >&2; exit 2; }
+    known=0
+    for a in "${ALL[@]}"; do
+      if [[ "$a" == "$c" ]]; then known=1; break; fi
+    done
+    (( known )) || { echo "lint-agent-harness: unknown check: $c (known: ${ALL[*]})" >&2; exit 2; }
   done
 else
   CHECKS=("${ALL[@]}")
