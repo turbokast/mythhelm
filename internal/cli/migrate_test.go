@@ -67,6 +67,13 @@ func openMigRaw(t *testing.T, dir string) *sql.DB {
 	return db
 }
 
+// migBackupName is the pre-migration backup's file name at the schema
+// version this binary writes, derived so the next schema bump cannot leave a
+// stale pin that passes by asserting nothing.
+func migBackupName() string {
+	return journal.DBName + ".bak-migration-v" + strconv.Itoa(journal.SchemaVersion)
+}
+
 // seedV1 creates a true v1 state database in a fresh temp dir: 0001 only,
 // user_version 1, no v2 tables. Every apply test starts here, so journal
 // migration runs exactly as in production. The dir is symlink-resolved
@@ -270,8 +277,8 @@ func TestPreviewWritesNothing(t *testing.T) {
 			"run_alpha", "run_beta", "task_beta", "subscription-declared",
 			"internal/cli/apply.go", "internal/cli/tui.go",
 			"internal/supervisor/pipeline.go", "internal/supervisor/recover.go",
-			"0002_qualification.sql", "0007_v2contracts.sql",
-			"mythhelm.db.bak-migration-v7",
+			"0002_qualification.sql", "0007_v2contracts.sql", "0008_acceptance.sql",
+			migBackupName(),
 		} {
 			if !strings.Contains(stdout, want) {
 				t.Errorf("%s output names no %q:\n%s", format, want, stdout)
@@ -293,12 +300,12 @@ func TestPreviewWritesNothing(t *testing.T) {
 				t.Fatalf("jsonl output does not parse: %v\n%s", err, stdout)
 			}
 			if decoded.Type != "migrate.preview" || len(decoded.Runs) != 2 ||
-				len(decoded.Owners) != 4 || len(decoded.Steps) != 6 {
+				len(decoded.Owners) != 4 || len(decoded.Steps) != journal.SchemaVersion-1 {
 				t.Errorf("jsonl preview shape wrong: %+v", decoded)
 			}
 			// The state dir compares decoded, never as a raw
 			// substring: jsonl escapes Windows backslashes.
-			if decoded.BackupTo != filepath.Join(dir, "mythhelm.db.bak-migration-v7") {
+			if decoded.BackupTo != filepath.Join(dir, migBackupName()) {
 				t.Errorf("jsonl backup_to = %q; want under %q", decoded.BackupTo, dir)
 			}
 		} else {
@@ -308,7 +315,7 @@ func TestPreviewWritesNothing(t *testing.T) {
 					target = strings.TrimSpace(rest)
 				}
 			}
-			if target != filepath.Join(dir, "mythhelm.db.bak-migration-v7") {
+			if target != filepath.Join(dir, migBackupName()) {
 				t.Errorf("plain backup target = %q; want under %q", target, dir)
 			}
 		}
@@ -898,6 +905,36 @@ func TestPreviewMirrorsPinned(t *testing.T) {
 		}
 		if !slices.Equal(plan.Steps, want) {
 			t.Errorf("Steps = %q; want %q", plan.Steps, want)
+		}
+	})
+	t.Run("schema 7 database lists only migration 0008", func(t *testing.T) {
+		files, err := filepath.Glob(filepath.Join(repoRoot(t), "internal", "journal", "migrations", "*.sql"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(files) != journal.SchemaVersion {
+			t.Fatalf("%d migration files, want one per schema version (%d)", len(files), journal.SchemaVersion)
+		}
+		dir := t.TempDir()
+		db := openMigRaw(t, dir)
+		for _, f := range files[:7] {
+			raw, err := os.ReadFile(f) //nolint:gosec // G304: the repo's own migration files under test
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(string(raw)); err != nil {
+				t.Fatalf("exec %s: %v", filepath.Base(f), err)
+			}
+		}
+		if _, err := db.Exec(`PRAGMA user_version = 7`); err != nil {
+			t.Fatal(err)
+		}
+		plan, err := preview.PreviewPlan(context.Background(), db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := []string{"0008_acceptance.sql"}; !slices.Equal(plan.Steps, want) {
+			t.Errorf("Steps for a schema-7 database = %q; want %q", plan.Steps, want)
 		}
 	})
 	t.Run("owner sites", func(t *testing.T) {

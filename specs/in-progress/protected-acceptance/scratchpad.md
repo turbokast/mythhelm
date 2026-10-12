@@ -33,6 +33,7 @@
 
 ## Discoveries
 
+- Task 2 (Q-10 resolved): ADR 0019 is free (`docs/decisions` holds 0001-0016; 0017 and 0018 are claimed by in-flight specs), so every later reference to `docs/decisions/0019-protected-acceptance.md` stands. Migration 0008 also sets `migration_state.schema_version` to 8: that column is pinned to `SchemaVersion` by `TestMigrationStateStartsNotStarted`, and `internal/migrate/SUPPORT.md` names `journal.TestSchemaVersionIs8` as evidence, so a later schema bump renames that test and the SUPPORT.md row again.
 - Task 1: `Result("NOT RUN").Unverified()` is false by design (the spec says exactly `not_run` and `unavailable`); renderers label the payload value, gates test the stored `result` column.
 
 - Task 3: a boundary-less host (user namespaces denied) skips the contained-run leg, so the independent read-only digest check runs without the boundary (`EvaluatorFor` needs none) and keeps the `ReadOnly` mutant red everywhere.
