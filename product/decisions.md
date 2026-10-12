@@ -437,3 +437,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: D-97 chose Night and Paper surfaces without recording the Paper and amber values or the amber rule; the docs site and the TUI themes (MH-23) read one palette. #8a5a00 is already the TUI light warning colour, so MH-23 must reconcile the rule with that use.
 - **Cards**: MH-33,MH-23
 - **Evidence**: specs/refined/docs-site-restyle/requirements.md; mods/themes/light.toml; PR #450
+
+### D-106 — 2026-10-12: Docs site gating: OQ-5 carve-out and OQ-10 CI OK wiring decided
+- **Type**: strategic-adjustment
+- **Decision**: OQ-5 and OQ-10 of docs-site-restyle are decided: exactly one browser-driver directory under scripts/ci/ is carved out of the harness-scripts Bash/Python rule (licences checked against the dependency-review allow-list first), and a site-build job (id site-build) joins CI OK needs in ci.yml so the new docs checks block merges with no ruleset change. This supersedes D-104 note that OQ-5 and OQ-10 stay open.
+- **Rationale**: The architect review showed Docs checks is not a required check, so checks outside CI OK would be advisory (B1), and a Node browser driver breaks the harness-scripts rule without a carve-out (B2). The maintainer decided both on 2026-10-12 as recorded in the spec Decisions; D-104 was filed before that decision landed and still says they stay open. Tasks 9 and 10 of docs-site-restyle stay blocked until this entry is approved.
+- **Cards**: MH-33
+- **Evidence**: specs/refined/docs-site-restyle/requirements.md Decisions OQ-5, OQ-10; PR #450
