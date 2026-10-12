@@ -105,7 +105,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Gates**: G10
 - **Score**: 3.3 = (value 3 + urgency 5 + risk 2) / effort 3
 - **Spec**: (none)
-- **Issue**: (none)
+- **Issue**: [#445](https://github.com/turbokast/mythhelm/issues/445)
 - **Source**: Master Specification v2 §15.1 (observatory and paper themes), §18.3 G10 (published limitations); design direction review 2026-10-12
 - **Summary**: Restyle the Jekyll site on GitHub Pages in the brand: a Night landing page that leads with the hero demo and the go run quickstart, Paper docs pages with a sidebar grouped Start / Use / Understand / Reference, an on-this-page list and client-side search, reported / estimated / unknown labels styled consistently, code examples marked and tested in CI, and a layout with no horizontal overflow at 390px. Keep Jekyll; revisit Starlight or mdBook only if search or build speed hurts.
 - **Premise-grounded**: Confirmed 2026-10-12 against the live site at 1440px and 390px: docs/_layouts/default.html replaces the theme layout and references no brand assets, so pages render nearly unstyled (a flat bulleted nav above every page, unbounded line length, demo GIFs at native size); the User guide is 516px wide on a 390px phone; there is no search and no on-page table of contents.
