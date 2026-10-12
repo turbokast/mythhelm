@@ -455,7 +455,7 @@ func quotaBucketInputs(d admission.Decision) (qualify.Record, string) {
 // snapshot writes the task and clones the admitted revision (AC-3.3).
 func (p *pipeline) snapshot(ctx context.Context) error {
 	d := p.d
-	if err := os.WriteFile(filepath.Join(d.RunDir, taskFile), d.Task.Content, 0o600); err != nil {
+	if err := workers.WriteFileAtomic(d.RunDir, taskFile, d.Task.Content); err != nil {
 		return fmt.Errorf("writing the task: %w", err)
 	}
 	if err := workspace.Snapshot(ctx, d.Snapshot.SourceRepo, d.Snapshot.BaseRev, d.Workdir); err != nil {
