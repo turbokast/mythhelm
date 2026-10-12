@@ -201,7 +201,7 @@
 - **Test plan**: `apply_test.go` fixtures; tampering through the journal and run directory of a temp state.
 - **Invariants touched**: I07 (v2 §2: an applied candidate has current bound evidence or an explicit user override); I08 (v2 §2: apply still creates only the authorised branch); I20 (v2 §2: a changed contract or check definition invalidates the verdict before reuse); I02 (v2 §2: an unreadable binding blocks).
 
-### Task 7 — Truthful receipt
+### Task 7 — Truthful receipt ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (receipt contract, many fields)
@@ -227,6 +227,10 @@
   - `TestReceiptUnknownNeverZero` keeps passing: cost and usage stay `unknown` with a reason, never `0`.
 - **Test plan**: Existing `receiptRun` helper plus journaled fixtures for the blocked and failed-native cases.
 - **Invariants touched**: I09 (v2 §2: every unknown prints `unknown` with its reason; label and verdict stay distinct); I10 (v2 §2: bounds are not presented as enforced where they are not); I15 (v2 §2: the declared posture is never worded as verified).
+- **Status**: ✅ Completed — the receipt carries `billing.entitlement_statement`, `verification.{result,label,reason,binding}`, `acceptance.{policy_pin,determinism,overhead_ms,bounds}` and `unknown_reasons` with the walk that rejects an unexplained `unknown`, and `BuildReceiptWithin` bounds the render step; PR #417.
+- **Implementation**: `admission.EntitlementStatement` is one switch (a declared source never reads as verified even when marked qualified); `unknown_reasons.go` holds the reason table keyed by normalised path and the walk, and `buildReceipt` overlays the reasons only the run knows (pre-schema-8, unreadable pin, no attestation). An unreadable pin renders `policy_pin` unknown instead of failing the receipt. Commit fab0635.
+- **Spec deviations**: `TestBuildReceiptWithinExpires` uses an already-expired limit (-1 s) instead of 1 ns, as Task 5 found for the coarse Windows clock (consistent with design §2.9). The restricted-profile and native-auth legs of `TestEveryUnknownHasAReason` are journaled admissions rather than real Linux runs, so they run on every host (consistent with the design's fixture list; `TestReceiptCarriesBoundary` still covers the real restricted run). `TestReceiptHasAllSection9Keys` now asserts presence of the 19 keys and the exact set moved to `TestReceiptTopLevelKeys`. Extra tests beyond the acceptance list: `TestRunWithUnreadablePinHasReceiptAndReviews` (validation finding 2), `TestReceiptOverheadCoversBindingStep` (finding 6, NFR-1), `TestReceiptBoundsUnknownWithoutEnvelope`.
+- **Files modified**: `internal/admission/entitlement.go`, `internal/admission/entitlement_test.go`, `internal/supervisor/receipt.go`, `internal/supervisor/receipt_test.go`, `internal/supervisor/unknown_reasons.go`, `internal/supervisor/unknown_reasons_internal_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
 ### Task 8 — Documented JSONL event contract
 

@@ -42,6 +42,8 @@
 
 - Task 5: a contained native cannot launch without HOME (`resolveLayout` in `internal/contain/enter_linux.go`), so the runner's "contained checks need HOME" refusal is reached only on a recovery whose process has no HOME: the check environment is rebuilt from the recovering process (`recoveryDecision`), not journaled. A recovery that rebuilds a different check environment from the admitted run also changes the bound `environment` identity; D4 already keeps it out of the apply comparison. A row-less `verifying` run with a complete `check.completed` set is recorded `record_unavailable` without a ran evaluator, so its row has no evaluator digest and no attestation.
 
+- Task 7: the receipt's `unknown_reasons` table (`internal/supervisor/unknown_reasons.go`) lists only leaves a real receipt can render unknown: `requested_outcome.task_file_sha256`, `admitted_snapshot.source_repo`, `execution_bundle.adapter` and `billing.mode` come from required run columns, so they have no entry (an entry no fixture reaches fails `TestEveryUnknownHasAReason`). The walk found `requested_outcome.title` unexplained on its first run, which is the case the test exists for.
+
 ## Validation findings left open (run 3, round 1: Ready for implementation, 0 blocking)
 
 Ten advisory findings are open for the implementing tasks; the first two are worth settling before Tasks 5 and 7 start.

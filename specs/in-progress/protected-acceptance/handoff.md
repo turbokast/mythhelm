@@ -57,7 +57,15 @@
 
 ## Task 7 — Truthful receipt
 
-<!-- pending -->
+- **Produces**: `admission.EntitlementStatement(adapter.BillingPosture) string`; `supervisor.BuildReceiptWithin(ctx, j, runID, limit)` (`BuildReceipt` calls it with `DefaultTimeouts().Render`); unexported `buildReceipt(ctx, j, runID, reasons)`, `unknownReasons()` and `attachUnknownReasons(r, reasons) []string`; receipt keys `billing.entitlement_statement`, `verification.{result,label,reason,binding}`, top-level `acceptance` and `unknown_reasons`. No difference from the design's `Produces` line.
+- **For Task 6**: `acceptance` is now a top-level object (`policy_pin`, `determinism`, `overhead_ms`, `overhead_covers`, `bounds`) in every receipt, including the version-1 receipt `ApplyRun` rewrites: set `acceptance.apply_override` inside that existing map, never replace it. A receipt built by `BuildReceipt` has `unknown_reasons` as `map[string]string`; one read back from `receipt.json` has `map[string]any`.
+- **For Task 8, 9, 10**: `verification.label` is `Result.Label()` of the stored row result (`passed`, `failed`, `NOT RUN`, `INVALID`, `unknown`) and `verification.reason` is the row's `Reason` (empty for a passed verdict, `unknown` with an `unknown_reasons` entry when none was recorded). `billing.entitlement_statement` is the sentence the plain stream, review and TUI print; use `admission.EntitlementStatement(record.Billing)` for a live event.
+- **For Task 10**: `verification.binding` is `{candidate: {format, value}, contract, check_definition, evaluator, environment, attestation_digest}` or `unknown`; every digest in it is the `sha256:` form, while the existing `verification.evaluator.digest` keeps its bare hex.
+- **For Task 12**: the receipt's `acceptance.bounds` flags `execution_seconds` enforced and `repairs`, `replans` and `transport_retries` not enforced, with `check_timeouts` from the pin and `evidence_bytes_per_check`; the task that closes #328 rewrites `TestReceiptBoundsEnforcedFlags` and the `bounds` function's three `false` flags.
+- **For dependents**: a new `unknown` leaf needs an entry in `unknownReasons()` (`unknown_reasons.go`), keyed by its normalised path (`[]` for array indices); `TestEveryUnknownHasAReason` fails on an unexplained leaf and on an entry no fixture reaches. A native-supplied subtree (`billing.tokens.by_model`, `native_configuration.mcp_servers`) is opaque to the walk.
+- **Traps**: an unreadable pin renders `acceptance.policy_pin` `unknown` (reason `acceptance pin unreadable`) and does not fail the receipt, so `settleRun`, recovery's repair and `review` still work for a `failed`/`acceptance_pin_unreadable` run. A verification row with no binding row (recorded before schema 8) renders `binding`, `overhead_ms` and `policy_pin` unknown with `recorded before acceptance binding existed`.
+- **Test seams**: `unknown_reasons_internal_test.go` exports `AttachUnknownReasons` and `UnknownReasons` to the external tests; `receiptWorldTo`, `journalEvent`, `unknownFixtures` and `passedRun` in `receipt_test.go` build journaled and real runs.
+- **Deviations**: none that change a later task's inputs.
 
 ## Task 8 — Documented JSONL event contract
 
