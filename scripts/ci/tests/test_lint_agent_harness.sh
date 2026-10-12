@@ -430,6 +430,22 @@ lint "$F" --only abs-paths
 expect_pass "a symlink out of the tree is skipped, not read"
 check "the skipped symlink is reported" grep -q "symlink resolves outside the tree" <<< "$OUT"
 
+echo "== --only membership =="
+# A check list far longer than a pipe buffer makes the SIGPIPE race certain: a
+# membership test that pipes the list into grep -q fails on the first name every run.
+cat > "$BIN/harness_lint.py" <<'EOF'
+import sys
+if sys.argv[1] == "--list":
+    print("first")
+    print("\n".join(f"check-{i:05d}" for i in range(20000)))
+EOF
+OUT="$("$BIN/lint-agent-harness.sh" --root "$TEST_TMP/clean" --only first 2>&1)"; RC=$?
+check "--only accepts the first name of a list longer than a pipe buffer" [ "$RC" == 0 ]
+check "--only ran the first name" grep -qE '^first +PASS$' <<< "$OUT"
+OUT="$("$BIN/lint-agent-harness.sh" --root "$TEST_TMP/clean" --only firs 2>&1)"; RC=$?
+check "--only rejects a prefix of a known name" [ "$RC" == 2 ]
+check "the prefix is reported unknown" grep -q "unknown check: firs " <<< "$OUT"
+
 echo "== frontmatter =="
 fresh fm-name
 set_line "$F/.claude/agents/worker.md" "name: worker" "name: wrong"
