@@ -76,7 +76,8 @@ func receiptRun(t *testing.T) (fixture, supervisor.Receipt, string) {
 }
 
 func TestReceiptHasAllSection9Keys(t *testing.T) {
-	_, r, _ := receiptRun(t)
+	t.Parallel()
+	r := waivedRun(t).file
 	want := []string{"schema_version", "run_id", "state", "exit_code", "requested_outcome", "admitted_snapshot",
 		"execution_bundle", "fidelity_differences", "native_configuration", "billing", "routing", "native_result",
 		"candidate", "verification", "external_effects", "execution_host", "host_integration", "unknowns", "remaining_human_action"}
@@ -93,6 +94,7 @@ func TestReceiptHasAllSection9Keys(t *testing.T) {
 // TestReceiptTopLevelKeys pins D8: the receipt grows by exactly the keys
 // acceptance and unknown_reasons, and its schema version does not move.
 func TestReceiptTopLevelKeys(t *testing.T) {
+	t.Parallel()
 	r := waivedRun(t).file
 	want := []string{"schema_version", "run_id", "state", "exit_code", "requested_outcome", "admitted_snapshot",
 		"execution_bundle", "fidelity_differences", "native_configuration", "billing", "routing", "native_result",
@@ -113,7 +115,8 @@ func TestReceiptTopLevelKeys(t *testing.T) {
 }
 
 func TestReceiptUnknownsNeverZero(t *testing.T) {
-	_, r, _ := receiptRun(t)
+	t.Parallel()
+	r := waivedRun(t).file
 	billing := r["billing"].(map[string]any)
 	price := billing["retail_equivalent_estimate_usd"].(map[string]any)
 	if price["value"] != "unknown" || price["source"] != "unknown" {
@@ -126,6 +129,7 @@ func TestReceiptUnknownsNeverZero(t *testing.T) {
 }
 
 func TestReceiptCostLabelledEstimate(t *testing.T) {
+	t.Parallel()
 	f, _, id := receiptRun(t)
 	j, err := journal.Open(t.Context(), f.state)
 	if err != nil {
@@ -156,6 +160,7 @@ func TestReceiptCostLabelledEstimate(t *testing.T) {
 }
 
 func TestNoCredentialValuesPersisted(t *testing.T) {
+	// Sequential: process environment (ANTHROPIC_API_KEY via t.Setenv).
 	f := newFixture(t)
 	secret := strings.Join([]string{"sk", "ant", "test-receipt-never-persist-this-value"}, "-")
 	t.Setenv("ANTHROPIC_API_KEY", secret)
@@ -199,6 +204,7 @@ func TestNoCredentialValuesPersisted(t *testing.T) {
 }
 
 func TestReviewReadsRealCandidateDiff(t *testing.T) {
+	t.Parallel()
 	f, _, id := receiptRun(t)
 	code, out, stderr := f.run(t, "review", id)
 	if code != 0 {
@@ -214,6 +220,7 @@ func TestReviewReadsRealCandidateDiff(t *testing.T) {
 // an unknown dimension renders unknown (never contained or verified), and a
 // trusted-host run with no admitted evidence renders boundary unknown (I09).
 func TestReceiptCarriesBoundary(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS != "linux" {
 		t.Skip("the restricted boundary is qualified on Linux only")
 	}
@@ -304,6 +311,7 @@ func TestReceiptCarriesBoundary(t *testing.T) {
 // equals the verification row's name and digest, never a recomputation, and a
 // run with no verification row renders evaluator unknown.
 func TestReceiptCarriesEvaluator(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	if code, _, stderr := f.run(t, f.fakeRun("--scenario", "native-fails")...); code != 4 {
 		t.Fatalf("run exit %d: %s", code, stderr)
@@ -726,6 +734,7 @@ func TestReceiptNextRetryShown(t *testing.T) {
 // object and the run's ledger notice lines carry no hard-spending or
 // hard-token phrasing. The check anchors to those regions, not the file.
 func TestNoHardLimitAnywhere(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	code, plainOut, stderr := f.run(t, f.fakeRun()...)
 	if code != 5 {
@@ -924,6 +933,7 @@ func verifiedWorld(t *testing.T, result, reason string) (*journal.Journal, strin
 // TestReceiptCarriesEntitlementStatement pins AC-3.1 on the receipt: a
 // declared posture is never worded as verified (I15).
 func TestReceiptCarriesEntitlementStatement(t *testing.T) {
+	t.Parallel()
 	t.Run("a declared-posture receipt carries the declared sentence", func(t *testing.T) {
 		t.Parallel()
 		j, runID := ledgerReceiptWorld(t)
@@ -954,6 +964,7 @@ func TestReceiptCarriesEntitlementStatement(t *testing.T) {
 // TestReceiptVerificationLabelAndBinding pins AC-3.2 and AC-1.1 on the
 // receipt: the label, its reason and what the verdict is bound to (I07, I09).
 func TestReceiptVerificationLabelAndBinding(t *testing.T) {
+	t.Parallel()
 	t.Run("a passed run is bound to its candidate", func(t *testing.T) {
 		run := passedRun(t)
 		v := object(t, run.file, "verification")
@@ -1012,6 +1023,7 @@ func TestReceiptVerificationLabelAndBinding(t *testing.T) {
 // TestReceiptPolicyPinAndDeterminism pins AC-2.3 on the receipt: the run's P1
 // pin with the evaluator that ran, and a pre-schema-8 run's pin as unknown.
 func TestReceiptPolicyPinAndDeterminism(t *testing.T) {
+	t.Parallel()
 	t.Run("a pinned run renders its policy and evaluator", func(t *testing.T) {
 		run := passedRun(t)
 		a := object(t, run.file, "acceptance")
@@ -1072,6 +1084,7 @@ func TestReceiptPolicyPinAndDeterminism(t *testing.T) {
 // failed before any verification, its receipt exists with the pin unknown and
 // review still exits 0 (validation finding 2).
 func TestRunWithUnreadablePinHasReceiptAndReviews(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	digest := f.commitChecks(t, testCheck("test", "pass"))
 	d, _, wait := seedLaunchWith(t, f, "happy", corruptPinPayload, "sha256:"+digest)
@@ -1140,6 +1153,7 @@ func TestReceiptBoundsUnknownWithoutEnvelope(t *testing.T) {
 // TestReceiptOverheadCoversBindingStep pins NFR-1: the binding step's duration
 // is the receipt's acceptance overhead, and it says what it covers.
 func TestReceiptOverheadCoversBindingStep(t *testing.T) {
+	t.Parallel()
 	t.Run("an executed verification carries the measured overhead", func(t *testing.T) {
 		run := passedRun(t)
 		if run.row.OverheadMS == nil {
@@ -1286,6 +1300,7 @@ func unknownFixtures(t *testing.T) map[string]supervisor.Receipt {
 // receipt the producers can render has a registered reason, and every
 // registered reason names a leaf some receipt renders unknown.
 func TestEveryUnknownHasAReason(t *testing.T) {
+	t.Parallel()
 	fixtures := unknownFixtures(t)
 	reasons := supervisor.UnknownReasons()
 	seen := map[string]bool{}
