@@ -644,7 +644,7 @@ func TestReceiptCheckTimeoutEvidence(t *testing.T) {
 			wantChecks: float64(1), wantSum: "unknown", wantBounds: map[string]any{"build": "soon"},
 			wantReasons: map[string]string{verifyChecks: "", verifySum: "a pinned check timeout is not a positive duration", boundsPath: ""}},
 		{name: "a waived run has an empty pass and says no checks were admitted",
-			admission:  mustJSON(t, supervisor.AdmissionPayload{Record: admission.Record{NoChecks: true}, AcceptancePin: pin}),
+			admission:  mustJSON(t, map[string]any{"no_checks": true, "acceptance_pin": pin}),
 			wantChecks: float64(0), wantSum: "0s", wantBounds: "unknown",
 			wantReasons: map[string]string{verifyChecks: "", verifySum: "", boundsPath: "no checks were admitted for this run (waived, or refused under inspect)"}},
 		{name: "an unreadable pin says the pin is unreadable, not that no checks were admitted",
