@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -28,6 +29,8 @@ func TestMain(m *testing.M) {
 		switch os.Args[2] {
 		case "pass":
 			os.Exit(0)
+		case "fail":
+			os.Exit(1)
 		case "output":
 			fmt.Print("not formatted\n")
 			os.Exit(0)
@@ -144,7 +147,7 @@ func TestMissingExecutableUnavailable(t *testing.T) {
 		{Name: "later", Argv: []string{os.Args[0], "__verify_helper", "pass"}, Timeout: "5s"},
 	}
 	v, err := integration.RunChecks(t.Context(), c, cfg, os.Environ())
-	if err != nil || v.Result != "failed" || v.Checks[0].Status != "unavailable" || v.Checks[1].Status != "not_run" {
+	if err != nil || v.Result != "unavailable" || v.Checks[0].Status != "unavailable" || v.Checks[1].Status != "not_run" {
 		t.Fatalf("verification = %+v, err = %v", v, err)
 	}
 }
@@ -156,7 +159,7 @@ func TestKeepGoingAfterUnavailable(t *testing.T) {
 		{Name: "later", Argv: []string{os.Args[0], "__verify_helper", "pass"}, Timeout: "5s"},
 	}
 	v, err := integration.RunChecksWithOptions(t.Context(), c, cfg, os.Environ(), true)
-	if err != nil || v.Result != "failed" || v.Checks[0].Status != "unavailable" || v.Checks[1].Status != "passed" {
+	if err != nil || v.Result != "unavailable" || v.Checks[0].Status != "unavailable" || v.Checks[1].Status != "passed" {
 		t.Fatalf("verification = %+v, err = %v", v, err)
 	}
 }
@@ -424,5 +427,158 @@ func TestUnavailableChecksStayUnverified(t *testing.T) {
 	}
 	if v.CandidateCommit != c.Commit {
 		t.Errorf("verification names %s, want the preserved candidate %s", v.CandidateCommit, c.Commit)
+	}
+}
+
+func checkDigest(t *testing.T, c admission.CheckConfig) string {
+	t.Helper()
+	b, err := json.Marshal(struct {
+		Name         string   `json:"name"`
+		Argv         []string `json:"argv"`
+		FailOnOutput bool     `json:"fail_on_output"`
+		Timeout      string   `json:"timeout"`
+	}{c.Name, c.Argv, c.FailOnOutput, c.Timeout})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+func TestEvaluatorForEqualsRanEvaluator(t *testing.T) {
+	t.Run("host", func(t *testing.T) {
+		c, cfg := verifyFixture(t)
+		opts := integration.RunOptions{}
+		want, err := integration.EvaluatorFor(opts, cfg.Checks)
+		if err != nil {
+			t.Fatal(err)
+		}
+		v, err := integration.RunChecksWithPolicy(t.Context(), c, cfg, os.Environ(), opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want.Digest == "" || v.Evaluator != want {
+			t.Fatalf("ran evaluator = %+v, EvaluatorFor = %+v; want one non-empty digest", v.Evaluator, want)
+		}
+	})
+	t.Run("contained policy is read-only restricted", func(t *testing.T) {
+		_, cfg := verifyFixture(t)
+		binds := []contain.AuthBind{{Source: "/srv/a/.token", Target: "/scratch/token"}}
+		got, err := integration.EvaluatorFor(integration.RunOptions{Policy: &contain.Policy{Profile: "restricted", AuthBinds: binds}}, cfg.Checks)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := contain.EvaluatorDigest(contain.BoundaryName, contain.BoundaryVersion,
+			contain.Policy{Profile: "restricted", ReadOnly: true}, []string{checkDigest(t, cfg.Checks[0])})
+		if got != want {
+			t.Errorf("EvaluatorFor = %+v, want the read-only restricted evaluator %+v", got, want)
+		}
+	})
+	t.Run("contained run", func(t *testing.T) {
+		requireBoundary(t)
+		c, cfg := verifyFixture(t)
+		opts := integration.RunOptions{Policy: &contain.Policy{Profile: "restricted"}}
+		want, err := integration.EvaluatorFor(opts, cfg.Checks)
+		if err != nil {
+			t.Fatal(err)
+		}
+		v, err := integration.RunChecksWithPolicy(t.Context(), c, cfg, []string{"PATH=/usr/bin:/bin", "HOME=" + outsideTmp(t)}, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v.Evaluator != want {
+			t.Errorf("ran evaluator = %+v, EvaluatorFor = %+v", v.Evaluator, want)
+		}
+	})
+}
+
+func TestEvaluatorChangesWithCheckDefinition(t *testing.T) {
+	base := []admission.CheckConfig{{Name: "t", Argv: []string{"go", "test"}, Timeout: "5s"}}
+	want, err := integration.EvaluatorFor(integration.RunOptions{}, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, mutate := range map[string]func(*admission.CheckConfig){
+		"name":           func(c *admission.CheckConfig) { c.Name = "renamed" },
+		"argv":           func(c *admission.CheckConfig) { c.Argv = []string{"go", "vet"} },
+		"timeout":        func(c *admission.CheckConfig) { c.Timeout = "6s" },
+		"fail_on_output": func(c *admission.CheckConfig) { c.FailOnOutput = true },
+	} {
+		changed := []admission.CheckConfig{base[0]}
+		mutate(&changed[0])
+		got, err := integration.EvaluatorFor(integration.RunOptions{}, changed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Digest == want.Digest {
+			t.Errorf("changing the check's %s kept digest %s", name, want.Digest)
+		}
+	}
+
+	// AC-2.1: the candidate's own mythhelm.toml (verifyFixture edits it) moves
+	// neither the evaluator nor the argv that runs.
+	c, cfg := verifyFixture(t)
+	if !flagExists(c, "check_config_changed") {
+		t.Fatal("the fixture's candidate does not edit mythhelm.toml; the leg proves nothing")
+	}
+	admitted, err := integration.EvaluatorFor(integration.RunOptions{}, cfg.Checks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := integration.RunChecks(t.Context(), c, cfg, os.Environ())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Evaluator != admitted {
+		t.Errorf("a candidate edit of mythhelm.toml moved the evaluator: %+v vs %+v", v.Evaluator, admitted)
+	}
+	if len(v.Checks) != 1 || !reflect.DeepEqual(v.Checks[0].Argv, cfg.Checks[0].Argv) {
+		t.Errorf("executed checks = %+v, want exactly the admitted argv %q", v.Checks, cfg.Checks[0].Argv)
+	}
+}
+
+func TestUnavailableCheckIsNotFailed(t *testing.T) {
+	missing := admission.CheckConfig{Name: "missing", Argv: []string{filepath.Join(t.TempDir(), "no-such-check")}, Timeout: "2s"}
+	failing := admission.CheckConfig{Name: "failing", Argv: []string{os.Args[0], "__verify_helper", "fail"}, Timeout: "5s"}
+	slow := admission.CheckConfig{Name: "slow", Argv: []string{os.Args[0], "__verify_helper", "delayed", filepath.Join(t.TempDir(), "survived")}, Timeout: "200ms"}
+	for name, tc := range map[string]struct {
+		checks []admission.CheckConfig
+		want   string
+	}{
+		"missing executable alone": {[]admission.CheckConfig{missing}, "unavailable"},
+		"plus a failing check":     {[]admission.CheckConfig{missing, failing}, "failed"},
+		"plus a timed out check":   {[]admission.CheckConfig{missing, slow}, "failed"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, cfg := verifyFixture(t)
+			cfg.Checks = tc.checks
+			v, err := integration.RunChecksWithPolicy(t.Context(), c, cfg, os.Environ(), integration.RunOptions{KeepGoing: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if v.Result != tc.want {
+				t.Fatalf("result = %q, want %q (checks %+v)", v.Result, tc.want, v.Checks)
+			}
+		})
+	}
+}
+
+func TestPassedNeedsEveryCheckPassed(t *testing.T) {
+	c, cfg := verifyFixture(t)
+	cfg.Checks = []admission.CheckConfig{
+		{Name: "first", Argv: []string{os.Args[0], "__verify_helper", "pass"}, Timeout: "5s"},
+		{Name: "missing", Argv: []string{filepath.Join(t.TempDir(), "no-such-check")}, Timeout: "2s"},
+		{Name: "after", Argv: []string{os.Args[0], "__verify_helper", "pass"}, Timeout: "5s"},
+	}
+	v, err := integration.RunChecks(t.Context(), c, cfg, os.Environ())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := []string{v.Checks[0].Status, v.Checks[1].Status, v.Checks[2].Status}
+	if want := []string{"passed", "unavailable", "not_run"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("statuses = %q, want %q", got, want)
+	}
+	if v.Result != "unavailable" {
+		t.Fatalf("result = %q, want unavailable: a check that never ran is not a pass", v.Result)
 	}
 }

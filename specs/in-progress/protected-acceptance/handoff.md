@@ -25,7 +25,10 @@
 
 ## Task 3 — Evaluator seam and three-state check result
 
-<!-- pending -->
+- **Produces**: `integration.EvaluatorFor(opts RunOptions, checks []admission.CheckConfig) (contain.Evaluator, error)`, `integration.MaxEvidenceBytes = 1 << 20` and `Verification.Result` in `{passed, failed, unavailable}`; no difference from the design (PR #405).
+- **For Task 4**: `EvaluatorFor` forces `ReadOnly = true` and no auth binds itself, so pass the caller's `RunOptions` unmodified (`Policy: &contain.Policy{Profile: "restricted"}` for a contained run). It needs no Workdir, HOME or Linux; the platform and HOME refusals stay in `RunChecksWithPolicy`, so a pin can be computed anywhere.
+- **For Task 5**: `Result` is the raw check summary, not the verdict: `Decide` still adds the evaluator comparison. A zero-check list gives `passed` here (as before); `Decide` and `DecideStatuses` map it to `unavailable`/`no_checks_ran`.
+- **Pipeline**: `pipeline.go:1213` still ends any non-`passed` result `failed`, with `verification_unavailable` when a check was unavailable; Task 5 replaces that with the verdict table.
 
 ## Task 4 — Pin the acceptance policy at admission
 

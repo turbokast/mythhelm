@@ -81,7 +81,7 @@
 - **Spec deviations**: Three changes outside the Files list, each mechanical: `internal/migrate/SUPPORT.md` (the evidence test `TestSchemaVersionIs7` is renamed `TestSchemaVersionIs8`, and `TestSupportMatrixMatchesEvidence` reads that name), `docs/user-guide.md` (backup name `bak-migration-v8`) and migration 0008's `UPDATE migration_state SET schema_version = 8` (data only; `TestMigrationStateStartsNotStarted` pins that column to `SchemaVersion`). `TestMigration0007CreatesV2Tables` now opens `migrations[:7]` so it keeps testing 0007's objects. The preview step-list test for a schema-7 database (validation finding 10) is the new subtest `TestPreviewMirrorsPinned/schema_7_database_lists_only_migration_0008` in `internal/cli/migrate_test.go`.
 - **Files modified**: `internal/journal/migrations/0008_acceptance.sql`, `internal/journal/journal.go`, `internal/journal/projections.go`, `internal/journal/acceptance_test.go`, `internal/journal/journal_test.go`, `internal/journal/qualification_test.go`, `internal/journal/migrate_tables_test.go`, `internal/journal/evaluator_test.go`, `internal/migrate/backup.go`, `internal/migrate/preview/plan.go`, `internal/migrate/apply_test.go`, `internal/migrate/SUPPORT.md`, `internal/cli/migrate_test.go`, `tests/migrate_e2e_test.go`, `docs/decisions/0019-protected-acceptance.md`, `docs/user-guide.md`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
-### Task 3 — Evaluator seam and three-state check result
+### Task 3 — Evaluator seam and three-state check result ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -98,6 +98,11 @@
   - `TestPassedNeedsEveryCheckPassed`: two checks, one `not_run` after an unavailable one, give `unavailable`, never `passed`.
 - **Test plan**: Fixture check scripts in temp worktrees as in the existing `verify_test.go`; contained leg skips off Linux or where `ProbeLinux` fails, with the skip reason asserted non-empty.
 - **Invariants touched**: I07 (v2 §11.2: the candidate cannot change the argv or evaluator it is judged by); I09 (v2 §2: unavailable is not failed and not passed).
+
+- **Status**: ✅ Completed — `EvaluatorFor` is the one evaluator computation, `MaxEvidenceBytes` is exported and `RunChecksWithPolicy` returns the three-state result; PR #405.
+- **Implementation**: `evaluatorOf` became `EvaluatorFor(opts, checks)` and forces `ReadOnly` and no auth binds itself; the result rule is a switch over statuses (failed or timed_out, else any other non-passed, else passed). `pipeline.go` is untouched: it still treats any non-`passed` result as not ready. Commit 5fd8a81.
+- **Spec deviations**: None.
+- **Files modified**: `internal/integration/verify.go`, `internal/integration/verify_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
 ### Task 4 — Pin the acceptance policy at admission
 
