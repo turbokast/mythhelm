@@ -243,6 +243,13 @@ class Consult(unittest.TestCase):
         self.f.stub(STUB_MODE="fail")
         self.assertEqual(self.consult(vendor="muse")["reason"], "vendor-error")
 
+    def test_unchecked_muse_sign_in_fails_at_call_time_as_vendor_error(self):
+        self.f.enable("muse")
+        self.f.stub(STUB_MODE="signed-out")
+        resp = self.consult(vendor="muse")
+        self.assertEqual((resp["outcome"], resp["reason"], resp["spawned"]), ("unavailable", "vendor-error", True))
+        self.assertEqual(json.loads(read(self.f.data("vendor-quota.json")))["counts"]["muse"], 1)
+
     def test_codex_review_sends_the_diff_against_the_base(self):
         self.f.enable("codex")
         wt = self.f.worktree("review")
@@ -375,6 +382,54 @@ class Opt(unittest.TestCase):
         rc, out, _e = f.run("scripts/vendors/vendors.py", "status", "--json")
         self.assertFalse(any(r["enabled"] for r in json.loads(out)))
         self.assertEqual(f.git("status", "--porcelain"), "", "the local opt-in must stay gitignored")
+
+    def status(self, f):
+        """(rows by vendor from `status --json`, plain `status` lines by vendor)."""
+        rc, out, err = f.run("scripts/vendors/vendors.py", "status", "--json")
+        self.assertEqual(rc, 0, err)
+        rows = {r["vendor"]: r for r in json.loads(out)}
+        rc, out, err = f.run("scripts/vendors/vendors.py", "status")
+        self.assertEqual(rc, 0, err)
+        return rows, {ln.split(":", 1)[0]: ln for ln in out.splitlines()}
+
+    def stub_calls(self, f):
+        path = os.path.join(f.bin, "argv.log")
+        return [ln.strip() for ln in read(path).splitlines()] if os.path.exists(path) else []
+
+    def test_status_without_a_status_command_reports_sign_in_unchecked(self):
+        f = Fixture()
+        self.addCleanup(f.cleanup)
+        f.enable("codex", "muse")
+        rows, lines = self.status(f)
+        muse, codex = rows["muse"], rows["codex"]
+        self.assertEqual((muse["available"], muse["reason"], muse.get("signed_in", "absent")), (True, None, None))
+        self.assertTrue(lines["muse"].startswith("muse: available (sign-in not checked: "), lines["muse"])
+        self.assertEqual((codex["available"], codex.get("signed_in", "absent")), (True, True))
+        self.assertTrue(lines["codex"].startswith("codex: available; "), lines["codex"])
+        self.assertNotIn("auth status", self.stub_calls(f))
+        self.assertIn("login status", self.stub_calls(f))
+        f.stub(STUB_VERSION="1.3.9")
+        self.assertEqual(self.status(f)[0]["muse"]["reason"], "version-too-old")
+
+    def test_an_empty_status_command_skips_the_probe(self):
+        f = Fixture()
+        self.addCleanup(f.cleanup)
+        f.enable("codex", vendors={"codex": {"status_command": []}})
+        rows, lines = self.status(f)
+        self.assertEqual((rows["codex"]["available"], rows["codex"].get("signed_in", "absent")), (True, None))
+        self.assertTrue(lines["codex"].startswith("codex: available (sign-in not checked: "), lines["codex"])
+        self.assertEqual(set(self.stub_calls(f)), {"--version"})
+
+    def test_a_status_command_that_fails_still_means_not_signed_in(self):
+        f = Fixture()
+        self.addCleanup(f.cleanup)
+        f.enable("codex", "muse", vendors={"muse": {"status_command": ["auth", "status"]}})
+        f.stub(STUB_SIGNED_IN=1)
+        rows, lines = self.status(f)
+        for v in ("codex", "muse"):
+            self.assertEqual((rows[v]["available"], rows[v]["reason"]), (False, "not-signed-in"), v)
+            self.assertTrue(lines[v].startswith(f"{v}: unavailable (not-signed-in); "), lines[v])
+        self.assertIn("`muse auth status` exited 2", rows["muse"]["detail"])
 
     def test_redact_cli(self):
         f = Fixture()

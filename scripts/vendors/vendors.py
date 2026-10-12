@@ -8,8 +8,9 @@ scripts/jev/jev.py) goes through this module for the same five things:
                 gitignored .claude/data/vendor-policy.local.json (the contributor's
                 opt-in). Nothing is enabled by default.
   availability  opted in, CLI on PATH, version at or above the pin, and signed in
-                according to the vendor's OWN status command (an API key in the
-                environment for an API vendor). Credential files are never read.
+                according to the vendor's OWN status command when the policy names
+                one (an API key in the environment for an API vendor). Without one,
+                sign-in is reported unchecked. Credential files are never read.
   quota         per-day call caps per vendor and per stage, counted locally under a
                 lock. An exhausted cap makes the vendor unavailable for the day.
   redaction     tokens, private keys, secret-looking assignments, e-mail addresses
@@ -259,9 +260,11 @@ def lanes_enabled(pol: dict, vendor: str) -> bool:
 
 
 def check_available(pol: dict, vendor: str) -> dict:
-    """Raises Unavailable, else returns {cli, version} (cli vendors) or {} (API vendors).
-    A CLI vendor is signed in when its own status command exits 0; the envelope never
-    opens the vendor's credential store."""
+    """Raises Unavailable, else returns {cli, version, signed_in} (cli vendors) or {}
+    (API vendors). A CLI vendor is signed in (signed_in true) when its own status
+    command exits 0. A vendor whose policy has no status_command is not probed
+    (signed_in null): a sign-in failure then surfaces at call time as vendor-error.
+    The envelope never opens the vendor's credential store."""
     conf = vendor_conf(pol, vendor)
     if not is_enabled(pol, vendor):
         raise Unavailable("disabled", f"{vendor} is not enabled for this checkout (knowledge/vendors.md)")
@@ -277,10 +280,14 @@ def check_available(pol: dict, vendor: str) -> dict:
     raw = (out + err).decode("utf-8", "replace")
     if timed_out or not version_ge(raw, conf.get("min_version", "0.0.0")):
         raise Unavailable("version-too-old", f"{vendor} reports {raw.strip()[:80]!r}, need >= {conf.get('min_version')}")
-    rc, out, err, timed_out = run_bounded([cli, *conf.get("status_command", [])], timeout=30, env=env)
+    info = {"cli": cli, "version": ".".join(map(str, parse_version(raw))), "signed_in": None}
+    status = conf.get("status_command") or []
+    if not status:
+        return info
+    rc, out, err, timed_out = run_bounded([cli, *status], timeout=30, env=env)
     if timed_out or rc != 0:
-        raise Unavailable("not-signed-in", f"`{conf.get('cli')} {' '.join(conf.get('status_command', []))}` exited {rc}; sign in with the vendor's own CLI")
-    return {"cli": cli, "version": ".".join(map(str, parse_version(raw)))}
+        raise Unavailable("not-signed-in", f"`{conf.get('cli')} {' '.join(status)}` exited {rc}; sign in with the vendor's own CLI")
+    return dict(info, signed_in=True)
 
 
 # ---- quota -----------------------------------------------------------------------------
@@ -594,7 +601,12 @@ def cmd_status(args) -> int:
         print(json.dumps(rows, sort_keys=True))
     else:
         for r in rows:
-            state = "available" if r["available"] else f"unavailable ({r['reason']})"
+            if not r["available"]:
+                state = f"unavailable ({r['reason']})"
+            elif "signed_in" in r and r["signed_in"] is None:
+                state = "available (sign-in not checked: no status_command in the policy)"
+            else:
+                state = "available"
             print(f"{r['vendor']}: {state}; lanes={'on' if r['lanes'] else 'off'}; "
                   f"calls today {r['calls_today']}/{r['daily_cap']}")
     return 0

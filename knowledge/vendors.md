@@ -46,7 +46,7 @@ Lanes need Linux with a root-owned `bwrap` (`apt install bubblewrap`) that can s
 
 From your own terminal, not through an agent (the guard hook blocks agents from opting you in):
 
-1. Install the vendor's CLI and sign in with it natively (`codex login`, `muse login`). For Jev, export `TYPESAFE_API_KEY` in the environment Claude Code starts from. The harness never reads or stores credentials; it asks the CLI's own status command whether you are signed in.
+1. Install the vendor's CLI and sign in with it natively (`codex login`, `muse login`). For Jev, export `TYPESAFE_API_KEY` in the environment Claude Code starts from. The harness never reads or stores credentials; it asks the CLI's own status command whether you are signed in (`codex login status`). Muse is the exception: Muse Code 1.4.6 has no read-only status command that we know of (`muse auth` offers only `set`; `muse auth status` exits 2), so its policy names none. `vendors.py status` then reports Muse `available (sign-in not checked: ...)`, and a Muse call made while signed out fails at call time as `vendor-error` (no completed run record, `scripts/vendors/consult.py` and `lane.py`) after counting against the daily caps.
 2. `python3 scripts/vendors/vendors.py enable codex` (add `--lanes` to also allow its implementer lane).
 3. `python3 scripts/vendors/vendors.py status` shows availability and today's usage against the caps.
 
@@ -54,7 +54,7 @@ To stop: `python3 scripts/vendors/vendors.py disable <vendor|all>` (`--lanes-onl
 
 ## Policy and caps
 
-`.claude/data/vendor-policy.json` (tracked) holds the defaults: minimum CLI versions, the sign-in status command, per-vendor daily call caps, per-stage and per-site daily caps, timeouts, context-size caps, the lane tiers and protected paths. Your gitignored `.claude/data/vendor-policy.local.json` is merged over it; that is where `enabled` and `lanes_enabled` live, and where you lower a cap or pin a `model`. A call over a cap is an `unavailable` result with reason `over-quota`. Caps are counted locally per UTC day and know nothing about your plan's real limits.
+`.claude/data/vendor-policy.json` (tracked) holds the defaults: minimum CLI versions, the sign-in `status_command` (none for Muse; a vendor without one is reported with sign-in not checked), per-vendor daily call caps, per-stage and per-site daily caps, timeouts, context-size caps, the lane tiers and protected paths. Your gitignored `.claude/data/vendor-policy.local.json` is merged over it; that is where `enabled` and `lanes_enabled` live, and where you lower a cap or pin a `model`. A call over a cap is an `unavailable` result with reason `over-quota`. Caps are counted locally per UTC day and know nothing about your plan's real limits.
 
 ## What stays on your machine
 
