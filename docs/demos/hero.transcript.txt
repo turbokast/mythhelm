@@ -19,6 +19,8 @@ progress: 1 assistant turns, tool uses {"Read":1} (native-reported)
 progress: 2 assistant turns, tool uses {"Read":2} (native-reported)
 progress: 3 assistant turns, tool uses {"Edit":1,"Read":2} (native-reported)
 exit status 137
+=== take: the worker is still alive ===
+NNN
 === take: runs list ===
 RUN                             STATE      ADAPTER       UPDATED               REPOSITORY
 run_XXX  executing  builtin/fake  <TIME>  <TMPDIR>/mythhelm-hero/repo

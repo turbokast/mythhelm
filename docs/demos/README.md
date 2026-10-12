@@ -36,9 +36,9 @@ command: it skips the build, the transcript regen and the verify pass.
 
 | Recording | Tape | Artifact | Transcript | Binary revision | VHS |
 |---|---|---|---|---|---|
-| demo | `docs/demos/demo.tape` | `docs/demos/demo.gif` | `docs/demos/demo.transcript.txt` | `ebdda801a2702d27db9e4ad29c9103c8cf4b288d` | v0.12.1 |
-| tui | `docs/demos/tui.tape` | `docs/demos/tui.gif` | `docs/demos/tui.transcript.txt` | `ebdda801a2702d27db9e4ad29c9103c8cf4b288d` | v0.12.1 |
-| hero | `docs/demos/hero.tape` | `docs/demos/hero.gif` | `docs/demos/hero.transcript.txt` | `ebdda801a2702d27db9e4ad29c9103c8cf4b288d` | v0.12.1 |
+| demo | `docs/demos/demo.tape` | `docs/demos/demo.gif` | `docs/demos/demo.transcript.txt` | `828f1f00a3596f8073b709a885d59bb0702e051e` | v0.12.1 |
+| tui | `docs/demos/tui.tape` | `docs/demos/tui.gif` | `docs/demos/tui.transcript.txt` | `828f1f00a3596f8073b709a885d59bb0702e051e` | v0.12.1 |
+| hero | `docs/demos/hero.tape` | `docs/demos/hero.gif` | `docs/demos/hero.transcript.txt` | `828f1f00a3596f8073b709a885d59bb0702e051e` | v0.12.1 |
 
 The demo tape drives `mythhelm demo --check pass` end to end against the fake
 adapter with local-scripted billing: no network, no paid credentials. Its

@@ -5,8 +5,8 @@
       "tape": "docs/demos/demo.tape",
       "artifact": "docs/demos/demo.gif",
       "transcript": "docs/demos/demo.transcript.txt",
-      "binary_version": "v0.0.2-0.20261012002858-ebdda801a270",
-      "binary_commit": "ebdda801a2702d27db9e4ad29c9103c8cf4b288d",
+      "binary_version": "v0.0.2-0.20261012013325-828f1f00a359",
+      "binary_commit": "828f1f00a3596f8073b709a885d59bb0702e051e",
       "vhs_version": "v0.12.1",
       "capabilities": [
         {
@@ -20,8 +20,8 @@
       "tape": "docs/demos/tui.tape",
       "artifact": "docs/demos/tui.gif",
       "transcript": "docs/demos/tui.transcript.txt",
-      "binary_version": "v0.0.2-0.20261012002858-ebdda801a270",
-      "binary_commit": "ebdda801a2702d27db9e4ad29c9103c8cf4b288d",
+      "binary_version": "v0.0.2-0.20261012013325-828f1f00a359",
+      "binary_commit": "828f1f00a3596f8073b709a885d59bb0702e051e",
       "vhs_version": "v0.12.1",
       "capabilities": [
         {
@@ -59,8 +59,8 @@
       "tape": "docs/demos/hero.tape",
       "artifact": "docs/demos/hero.gif",
       "transcript": "docs/demos/hero.transcript.txt",
-      "binary_version": "v0.0.2-0.20261012002858-ebdda801a270",
-      "binary_commit": "ebdda801a2702d27db9e4ad29c9103c8cf4b288d",
+      "binary_version": "v0.0.2-0.20261012013325-828f1f00a359",
+      "binary_commit": "828f1f00a3596f8073b709a885d59bb0702e051e",
       "vhs_version": "v0.12.1",
       "capabilities": [
         {
