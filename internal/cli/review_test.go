@@ -350,3 +350,83 @@ func TestReviewPlainShowsEntitlementAndVerification(t *testing.T) {
 		wantOneLine(t, out, "Candidate:", "Candidate: "+receipt.Candidate.Commit)
 	})
 }
+
+// TestReviewJSONLShowsAcceptanceStatus pins I07 and I09: the receipt a JSONL
+// consumer reads carries the gate's answer for the run as it is now, so a
+// stale verdict cannot read as ready while apply refuses it.
+func TestReviewJSONLShowsAcceptanceStatus(t *testing.T) {
+	type status struct {
+		State   string   `json:"state"`
+		Reason  string   `json:"reason"`
+		Changed []string `json:"changed"`
+	}
+	type receipt struct {
+		Verification struct {
+			Label string `json:"label"`
+		} `json:"verification"`
+		Acceptance struct {
+			Status *status `json:"status"`
+		} `json:"acceptance"`
+	}
+	review := func(t *testing.T, runID string) receipt {
+		t.Helper()
+		code, out, stderr := runMain("review", "--format", "jsonl", runID)
+		if code != 0 {
+			t.Fatalf("review exit %d: %s", code, stderr)
+		}
+		var r receipt
+		if err := json.Unmarshal([]byte(out), &r); err != nil {
+			t.Fatalf("receipt: %v\n%s", err, out)
+		}
+		if r.Acceptance.Status == nil {
+			t.Fatalf("receipt has no acceptance.status:\n%s", out)
+		}
+		return r
+	}
+	wantStatus := func(t *testing.T, r receipt, state string, changed []string) {
+		t.Helper()
+		got := r.Acceptance.Status
+		if got.State != state || !slices.Equal(got.Changed, changed) {
+			t.Errorf("acceptance.status = %+v, want state %q changed %q", *got, state, changed)
+		}
+		if state != "bound" && got.Reason == "" {
+			t.Errorf("acceptance.status has no reason: %+v", *got)
+		}
+	}
+
+	task := ledgerRunFixture(t)
+	runID, code := realRun(t, task, passingCheckArgs(t)...)
+	if code != 0 {
+		t.Fatalf("checked run exit %d, want 0", code)
+	}
+	home := os.Getenv("MYTHHELM_HOME")
+	r := review(t, runID)
+	wantStatus(t, r, "bound", []string{})
+
+	db := rawDB(t, home)
+	defer func() { _ = db.Close() }()
+	var commit string
+	if err := db.QueryRowContext(t.Context(), `SELECT candidate_commit FROM candidates`).Scan(&commit); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `UPDATE candidates SET candidate_commit = ?`, strings.Repeat("c", 40)); err != nil {
+		t.Fatal(err)
+	}
+	r = review(t, runID)
+	wantStatus(t, r, "stale", []string{"candidate"})
+	if r.Verification.Label != "passed" {
+		t.Errorf("the stored verdict label = %q, want the receipt's passed kept beside the stale status", r.Verification.Label)
+	}
+	if _, err := db.ExecContext(t.Context(), `UPDATE candidates SET candidate_commit = ?`, commit); err != nil {
+		t.Fatal(err)
+	}
+
+	taskPath := filepath.Join(home, "runs", runID, "task.md")
+	if err := os.WriteFile(taskPath, []byte("# Demo task\n\nA different contract.\n"), 0o600); err != nil { // #nosec G703 -- the run's own task file under the fixture's state directory
+		t.Fatal(err)
+	}
+	wantStatus(t, review(t, runID), "stale", []string{"contract"})
+
+	addOldVerification(t, home, runID, "passed", time.Now().Add(time.Hour))
+	wantStatus(t, review(t, runID), "unbound", []string{})
+}
