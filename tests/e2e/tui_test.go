@@ -75,6 +75,7 @@ var tuiVolatilePayloadKeys = map[string]bool{
 	"worker_start_time":   true,
 	"duration_ms":         true,
 	"candidate_commit":    true,
+	"attestation_digest":  true,
 }
 
 // normalizeJSONLLine parses one JSONL envelope and returns its canonical

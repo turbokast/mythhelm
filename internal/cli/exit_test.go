@@ -42,6 +42,14 @@ func TestExitCodeRefusedLaunchIsBlocked(t *testing.T) {
 	}
 }
 
+func TestRunExitMapsVerificationInvalid(t *testing.T) {
+	t.Parallel()
+	code, category := runExit(supervisor.Outcome{State: supervisor.RunFailed, Reason: "verification_invalid"})
+	if code != ExitVerify || category != "verification_invalid" {
+		t.Fatalf("runExit(failed/verification_invalid) = %d/%q, want %d/verification_invalid", code, category, ExitVerify)
+	}
+}
+
 func TestRunExitClassifiedFailures(t *testing.T) {
 	t.Parallel()
 	for reason, want := range map[string]ExitCode{

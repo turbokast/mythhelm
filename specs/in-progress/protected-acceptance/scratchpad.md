@@ -40,6 +40,8 @@
 
 - Task 4: a pin is built from the admission `Decision`, so a recovered run rebuilt by `recoveryDecision` must never recompute it; `conclude` reads it with `ReadPin`. A conflicting `policies` row surfaces from the admission transaction's append, not from `NewAdmissionPayload`, so `appendAdmission` tracks the policy error separately from the quota-hold error to block with `acceptance_pin_failed`.
 
+- Task 5: a contained native cannot launch without HOME (`resolveLayout` in `internal/contain/enter_linux.go`), so the runner's "contained checks need HOME" refusal is reached only on a recovery whose process has no HOME: the check environment is rebuilt from the recovering process (`recoveryDecision`), not journaled. A recovery that rebuilds a different check environment from the admitted run also changes the bound `environment` identity; D4 already keeps it out of the apply comparison. A row-less `verifying` run with a complete `check.completed` set is recorded `record_unavailable` without a ran evaluator, so its row has no evaluator digest and no attestation.
+
 ## Validation findings left open (run 3, round 1: Ready for implementation, 0 blocking)
 
 Ten advisory findings are open for the implementing tasks; the first two are worth settling before Tasks 5 and 7 start.

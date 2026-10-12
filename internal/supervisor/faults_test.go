@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/adapters/fake"
+	"github.com/turbokast/mythhelm/internal/acceptance"
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/ids"
@@ -99,6 +100,31 @@ func TestStopReportsRequestedUntilConfirmed(t *testing.T) {
 // This makes the pre-ack crash boundary deterministic without timing a kill.
 func seedLaunch(t *testing.T, f fixture, scenario string, trustConfig ...string) (admission.Decision, *os.Process, func()) {
 	t.Helper()
+	return seedLaunchWith(t, f, scenario, pinnedPayload, trustConfig...)
+}
+
+// payloadFunc builds the admission.decided payload a seeded run journals.
+type payloadFunc func(t *testing.T, d admission.Decision) []byte
+
+// pinnedPayload is the payload admission journals: the record and its pin.
+func pinnedPayload(t *testing.T, d admission.Decision) []byte {
+	t.Helper()
+	pinned, err := supervisor.NewAdmissionPayload(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []byte(mustJSON(t, pinned))
+}
+
+// pinlessPayload is the payload of a run admitted before the pin existed.
+func pinlessPayload(t *testing.T, d admission.Decision) []byte {
+	t.Helper()
+	return []byte(mustJSON(t, d.Record()))
+}
+
+// seedLaunchWith is seedLaunch with the admission payload the test chooses.
+func seedLaunchWith(t *testing.T, f fixture, scenario string, payloadOf payloadFunc, trustConfig ...string) (admission.Decision, *os.Process, func()) {
+	t.Helper()
 	noChecks, digest := true, ""
 	if len(trustConfig) > 0 {
 		noChecks, digest = false, trustConfig[0]
@@ -124,15 +150,7 @@ func seedLaunch(t *testing.T, f fixture, scenario string, trustConfig ...string)
 	if err := supervisor.TransitionRun(t.Context(), j, d.RunID, supervisor.RunAdmission, "", prod); err != nil {
 		t.Fatal(err)
 	}
-	pinned, err := supervisor.NewAdmissionPayload(d)
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload, err := json.Marshal(pinned)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := j.Append(t.Context(), journal.Event{SchemaVersion: 1, EventID: ids.New("evt"), RunID: d.RunID, Type: "admission.decided", ProducerID: ids.New("fixture"), ProducerSequence: 1, Generation: 1, ObservedAt: time.Now().UTC(), Payload: payload}, nil); err != nil {
+	if err := j.Append(t.Context(), journal.Event{SchemaVersion: 1, EventID: ids.New("evt"), RunID: d.RunID, Type: "admission.decided", ProducerID: ids.New("fixture"), ProducerSequence: 1, Generation: 1, ObservedAt: time.Now().UTC(), Payload: payloadOf(t, d)}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := supervisor.TransitionRun(t.Context(), j, d.RunID, supervisor.RunExecuting, "", prod); err != nil {
@@ -1332,5 +1350,410 @@ func TestRecoverQuarantineFreezeFailureKeepsItsReason(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "freeze_failed") || strings.Contains(stderr, "illegal") {
 		t.Fatalf("recover exit %d: %s, want the freeze failure without an illegal transition", code, stderr)
+	}
+}
+
+// markerCheck is a check that records that it ran at marker.
+func markerCheck(name, marker string) string {
+	return checkBlock(name, os.Args[0], "__check", "marker", marker)
+}
+
+// wrongEvaluatorPayload journals a pin whose evaluator is not the one the
+// checks will run under.
+func wrongEvaluatorPayload(t *testing.T, d admission.Decision) []byte {
+	t.Helper()
+	p, err := supervisor.NewAdmissionPayload(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.AcceptancePin.EvaluatorDigest = "sha256:" + strings.Repeat("0", 64)
+	return []byte(mustJSON(t, p))
+}
+
+// corruptPinPayload journals an admission whose acceptance_pin key cannot be
+// decoded.
+func corruptPinPayload(t *testing.T, d admission.Decision) []byte {
+	t.Helper()
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(pinnedPayload(t, d), &m); err != nil {
+		t.Fatal(err)
+	}
+	m["acceptance_pin"] = json.RawMessage(`{"policy_version":"one"}`)
+	return []byte(mustJSON(t, m))
+}
+
+func (f fixture) receiptExitCode(t *testing.T, runID string) float64 {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(f.state, "runs", runID, "receipt.json")) // #nosec G304 -- the test's own state directory
+	if err != nil {
+		t.Fatal(err)
+	}
+	var r map[string]any
+	if err := json.Unmarshal(raw, &r); err != nil {
+		t.Fatal(err)
+	}
+	code, ok := r["exit_code"].(float64)
+	if !ok {
+		t.Fatalf("receipt exit_code = %v", r["exit_code"])
+	}
+	return code
+}
+
+func TestEvaluatorDigestMismatchInvalid(t *testing.T) {
+	f := newFixture(t)
+	digest := f.config(t, "pass")
+	d, _, wait := seedLaunchWith(t, f, "happy", wrongEvaluatorPayload, "sha256:"+digest)
+	wait()
+	code, stdout, stderr := f.run(t, "recover", d.RunID, "--format", "jsonl")
+	if code != 5 {
+		t.Fatalf("recover exit %d: %s", code, stderr)
+	}
+	if got := f.onlyRun(t); got.State != "failed" || got.Reason != "verification_invalid" {
+		t.Fatalf("run %s/%s, want failed/verification_invalid", got.State, got.Reason)
+	}
+	v := f.latestVerification(t, d.RunID)
+	if v.Result != "invalid" || v.Reason != "evaluator_digest_mismatch" {
+		t.Errorf("verification = %s/%s, want invalid/evaluator_digest_mismatch", v.Result, v.Reason)
+	}
+	if att := decodeAttestation(t, v); att.CheckVersion != "sha256:"+v.EvaluatorDigest || att.CheckVersion == "sha256:"+strings.Repeat("0", 64) {
+		t.Errorf("attested check version %q, want the evaluator that ran (sha256:%s), not the pinned one", att.CheckVersion, v.EvaluatorDigest)
+	}
+	var passed int
+	if err := rawDB(t, f.state).QueryRowContext(t.Context(), `SELECT COUNT(*) FROM verifications WHERE run_id = ? AND result = 'passed'`, d.RunID).Scan(&passed); err != nil {
+		t.Fatal(err)
+	}
+	if passed != 0 {
+		t.Errorf("%d passed verification rows for a run judged by another evaluator", passed)
+	}
+	if p := f.verificationPayload(t, d.RunID); p["result"] != "invalid" || p["reason"] != "evaluator_digest_mismatch" {
+		t.Errorf("verification.completed = %v, want invalid/evaluator_digest_mismatch", p)
+	}
+	if res := lastResult(t, stdout); res["exit_code"] != float64(5) || res["error_category"] != "verification_invalid" {
+		t.Errorf("run.result = %v, want exit 5 with category verification_invalid", res)
+	}
+	if got := f.receiptExitCode(t, d.RunID); got != 5 {
+		t.Errorf("receipt exit_code = %v, want 5 like the process", got)
+	}
+}
+
+func TestRecoverConcludesWithJournaledPin(t *testing.T) {
+	t.Run("a pinned run is verified against its pin", func(t *testing.T) {
+		f := newFixture(t)
+		digest := f.config(t, "pass")
+		d, _, wait := seedLaunch(t, f, "happy", "sha256:"+digest)
+		wait()
+		if code, _, stderr := f.run(t, "recover", d.RunID); code != 0 {
+			t.Fatalf("recover exit %d: %s", code, stderr)
+		}
+		if got := f.onlyRun(t); got.State != "ready_for_review" || got.Reason != "" {
+			t.Fatalf("run %s/%s, want ready_for_review", got.State, got.Reason)
+		}
+		v := f.latestVerification(t, d.RunID)
+		if v.Result != "passed" || !v.Bound || len(v.Attestation) == 0 {
+			t.Errorf("verification = %s bound %v attestation %q, want a bound passed verdict", v.Result, v.Bound, v.Attestation)
+		}
+	})
+	t.Run("a run admitted without a pin runs no check", func(t *testing.T) {
+		f := newFixture(t)
+		marker := filepath.Join(t.TempDir(), "check-ran")
+		digest := f.commitChecks(t, markerCheck("marker", marker))
+		d, _, wait := seedLaunchWith(t, f, "happy", pinlessPayload, "sha256:"+digest)
+		wait()
+		if code, _, stderr := f.run(t, "recover", d.RunID); code != 5 {
+			t.Fatalf("recover exit %d: %s", code, stderr)
+		}
+		if got := f.onlyRun(t); got.State != "ready_for_review" || got.Reason != "unverified" {
+			t.Fatalf("run %s/%s, want ready_for_review/unverified", got.State, got.Reason)
+		}
+		v := f.latestVerification(t, d.RunID)
+		if v.Result != "not_run" || v.Reason != "pin_missing" || len(v.Attestation) != 0 {
+			t.Errorf("verification = %s/%s attestation %q, want not_run/pin_missing with none", v.Result, v.Reason, v.Attestation)
+		}
+		if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("a check ran for a run with no pin: stat = %v", err)
+		}
+	})
+}
+
+func TestConcludeReadPinErrorFailsRun(t *testing.T) {
+	f := newFixture(t)
+	marker := filepath.Join(t.TempDir(), "check-ran")
+	digest := f.commitChecks(t, markerCheck("marker", marker))
+	d, _, wait := seedLaunchWith(t, f, "happy", corruptPinPayload, "sha256:"+digest)
+	wait()
+	code, _, stderr := f.run(t, "recover", d.RunID)
+	if code != 1 {
+		t.Fatalf("recover exit %d: %s; want exit 1", code, stderr)
+	}
+	if got := f.onlyRun(t); got.State != "failed" || got.Reason != "acceptance_pin_unreadable" {
+		t.Fatalf("run %s/%s, want failed/acceptance_pin_unreadable", got.State, got.Reason)
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a check ran for a run whose pin could not be read: stat = %v", err)
+	}
+	if _, err := f.journal(t).LatestVerification(t.Context(), d.RunID); !errors.Is(err, journal.ErrNotFound) {
+		t.Errorf("LatestVerification = %v, want no verification for an unreadable pin", err)
+	}
+	if c := f.candidateOf(t, d.RunID); c.Commit == "" {
+		t.Error("the candidate was not kept frozen")
+	}
+}
+
+// insertVerification records row as the run's verification the way the
+// pipeline would, without running anything.
+func insertVerification(t *testing.T, f fixture, row journal.VerificationRow) {
+	t.Helper()
+	ev := journal.Event{SchemaVersion: 1, EventID: ids.New("evt"), RunID: row.RunID, Type: "verification.completed", ProducerID: ids.New("fixture"),
+		ProducerSequence: 1, Generation: 1, ObservedAt: row.FinishedAt, Payload: json.RawMessage(`{"baseline":"not-run"}`)}
+	if err := f.journal(t).Append(t.Context(), ev, func(tx *sql.Tx) error { return journal.InsertVerification(t.Context(), tx, row) }); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// startVerifying moves a seeded run whose worker has finished into verifying,
+// as a supervisor that died after journaling verification.started leaves it.
+func startVerifying(t *testing.T, f fixture, d admission.Decision, configDigest string) {
+	t.Helper()
+	if err := supervisor.TransitionRun(t.Context(), f.journal(t), d.RunID, supervisor.RunVerifying, "", supervisor.NewProducer(ids.New("sup"), 1)); err != nil {
+		t.Fatal(err)
+	}
+	started := journal.Event{SchemaVersion: 1, EventID: ids.New("evt"), RunID: d.RunID, AttemptID: d.AttemptID, Type: "verification.started", ProducerID: ids.New("fixture"),
+		ProducerSequence: 1, Generation: 1, ObservedAt: time.Now().UTC(),
+		Payload: json.RawMessage(`{"candidate_attempt_id":"` + d.AttemptID + `","config_sha256":"` + configDigest + `","no_checks":false}`)}
+	if err := f.journal(t).Append(t.Context(), started, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRecoverAppliesSameOutcomeTable(t *testing.T) {
+	for _, tc := range []struct {
+		name, result, reason, wantState, wantReason string
+		wantExit                                    int
+	}{
+		{name: "unavailable recovers unverified", result: "unavailable", reason: "checks_unavailable", wantState: "ready_for_review", wantReason: "unverified", wantExit: 5},
+		{name: "invalid recovers failed", result: "invalid", reason: "evaluator_digest_mismatch", wantState: "failed", wantReason: "verification_invalid", wantExit: 5},
+		{name: "passed recovers ready", result: "passed", wantState: "ready_for_review", wantExit: 0},
+		{name: "failed recovers failed", result: "failed", reason: "checks_failed", wantState: "failed", wantReason: "verification_failed", wantExit: 5},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			d, _, wait := seedLaunch(t, f, "happy")
+			wait()
+			startVerifying(t, f, d, "")
+			now := time.Now().UTC()
+			insertVerification(t, f, journal.VerificationRow{ID: ids.New("ver"), RunID: d.RunID, CandidateCommit: strings.Repeat("a", 40),
+				Result: tc.result, Reason: tc.reason, StartedAt: now, FinishedAt: now})
+			if code, _, stderr := f.run(t, "recover", d.RunID); code != tc.wantExit {
+				t.Fatalf("recover exit %d: %s; want %d", code, stderr, tc.wantExit)
+			}
+			if got := f.onlyRun(t); got.State != tc.wantState || got.Reason != tc.wantReason {
+				t.Fatalf("run %s/%s, want %s/%s", got.State, got.Reason, tc.wantState, tc.wantReason)
+			}
+			if got := f.receiptExitCode(t, d.RunID); got != float64(tc.wantExit) {
+				t.Errorf("receipt exit_code = %v, want %d", got, tc.wantExit)
+			}
+		})
+	}
+}
+
+// recordTimeoutRun runs a checked run in this process whose verification
+// record step cannot finish, leaving it verifying with every check journaled
+// and no verification row.
+func recordTimeoutRun(t *testing.T, f fixture, digest string) string {
+	t.Helper()
+	out, err := f.runInProcess(t, digest, supervisor.Hooks{Timeouts: &acceptance.Timeouts{Record: expiredLimit}})
+	if !errors.Is(err, context.DeadlineExceeded) || out.State != supervisor.RunVerifying {
+		t.Fatalf("Run = %s (%v), want a run left verifying by the record step", out.State, err)
+	}
+	return out.RunID
+}
+
+func TestRecoverVerifyingWithoutRowAfterChecksReturned(t *testing.T) {
+	for _, tc := range []struct {
+		name, second, wantState, wantReason, wantResult, wantWhy string
+	}{
+		{name: "passed checks record unavailable", second: "pass", wantState: "ready_for_review", wantReason: "unverified", wantResult: "unavailable", wantWhy: "record_unavailable"},
+		{name: "a failed check stays failed", second: "fail", wantState: "failed", wantReason: "verification_failed", wantResult: "failed", wantWhy: "checks_failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			marker := filepath.Join(t.TempDir(), "check-ran")
+			digest := f.commitChecks(t, markerCheck("first", marker), testCheck("second", tc.second))
+			runID := recordTimeoutRun(t, f, digest)
+			if _, err := os.Stat(marker); err != nil {
+				t.Fatalf("the marker check did not run before the record step failed: %v", err)
+			}
+			if err := os.Remove(marker); err != nil {
+				t.Fatal(err)
+			}
+			if code, _, stderr := f.run(t, "recover", runID); code != 5 {
+				t.Fatalf("recover exit %d: %s; want 5", code, stderr)
+			}
+			if got := f.onlyRun(t); got.State != tc.wantState || got.Reason != tc.wantReason {
+				t.Fatalf("run %s/%s, want %s/%s", got.State, got.Reason, tc.wantState, tc.wantReason)
+			}
+			v := f.latestVerification(t, runID)
+			if v.Result != tc.wantResult || v.Reason != tc.wantWhy || len(v.Attestation) != 0 || len(v.Checks) != 2 {
+				t.Errorf("verification = %s/%s attestation %q checks %d, want %s/%s with no attestation over both checks", v.Result, v.Reason, v.Attestation, len(v.Checks), tc.wantResult, tc.wantWhy)
+			}
+			if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("recovery ran an admitted check again: stat = %v", err)
+			}
+		})
+	}
+}
+
+// blockedCheckScript is a shell script that records that it started, waits
+// for the release file and records that it finished; a bounded wait keeps a
+// forgotten check from outliving the test.
+func blockedCheckScript(dir string) string {
+	q := func(name string) string { return "'" + filepath.Join(dir, name) + "'" }
+	return ": > " + q("started") + "; i=0; while [ ! -e " + q("release") + " ] && [ $i -lt 600 ]; do i=$((i+1)); sleep 0.05; done; : > " + q("done")
+}
+
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", path)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// assertCheckStillOwned proves recovery left a verifying run owned with its
+// check untouched: exit 6, still verifying, no verdict recorded, no new run
+// admitted beside the check, and the check still running until released.
+func assertCheckStillOwned(t *testing.T, f fixture, runID, dir string) {
+	t.Helper()
+	code, _, stderr := f.run(t, "recover", runID)
+	if code != 6 {
+		t.Fatalf("recover exit %d: %s; want 6 (ownership unresolved)", code, stderr)
+	}
+	if got := f.onlyRun(t); got.State != "verifying" {
+		t.Errorf("run %s/%s, want it to stay verifying", got.State, got.Reason)
+	}
+	if _, err := f.journal(t).LatestVerification(t.Context(), runID); !errors.Is(err, journal.ErrNotFound) {
+		t.Errorf("LatestVerification = %v, want no verdict while a check may still run", err)
+	}
+	if code, _, stderr := f.run(t, f.fakeRun()...); code != 3 {
+		t.Errorf("a new run beside the still-running check exited %d: %s; want 3 (active run)", code, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "done")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the check finished before it was released: stat = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "release"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitForFile(t, filepath.Join(dir, "done"))
+}
+
+func TestRecoverVerifyingMidChecksStaysOwnershipUnresolved(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the blocked check is a /bin/sh script")
+	}
+	t.Run("a pinned run", func(t *testing.T) {
+		f := newFixture(t)
+		dir := t.TempDir()
+		digest := f.commitChecks(t, checkBlock("blocked", "/bin/sh", "-c", blockedCheckScript(dir)))
+		r := startLive(t, f, f.checkedRun(digest, "--format", "jsonl")...)
+		r.waitStdout(t, "verification started", isType("verification.started"))
+		waitForFile(t, filepath.Join(dir, "started"))
+		if err := r.cmd.Process.Kill(); err != nil {
+			t.Fatal(err)
+		}
+		r.wait(t)
+		assertCheckStillOwned(t, f, f.onlyRun(t).RunID, dir)
+	})
+	t.Run("a run admitted without a pin", func(t *testing.T) {
+		f := newFixture(t)
+		dir := t.TempDir()
+		digest := f.commitChecks(t, checkBlock("blocked", "/bin/sh", "-c", blockedCheckScript(dir)))
+		d, _, wait := seedLaunchWith(t, f, "happy", pinlessPayload, "sha256:"+digest)
+		wait()
+		startVerifying(t, f, d, digest)
+		check := exec.Command("/bin/sh", "-c", blockedCheckScript(dir))
+		if err := check.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.WriteFile(filepath.Join(dir, "release"), nil, 0o600); _ = check.Wait() })
+		waitForFile(t, filepath.Join(dir, "started"))
+		assertCheckStillOwned(t, f, d.RunID, dir)
+	})
+}
+
+func TestRunnerErrorBeforeEvaluatorIsUnavailableNotInvalid(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("a contained check without HOME is a Linux precondition")
+	}
+	f := newFixture(t)
+	digest := f.shellConfig(t)
+	d, _, wait := seedLaunchWith(t, f, "happy", func(t *testing.T, d admission.Decision) []byte {
+		t.Helper()
+		// The check stage is contained, so its runner refuses before it
+		// computes an evaluator when the recovering process has no HOME.
+		d.Profile = admission.Profile{Name: admission.ProfileRestricted, Contained: true}
+		p, err := supervisor.NewAdmissionPayload(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return []byte(mustJSON(t, p))
+	}, "sha256:"+digest)
+	wait()
+	t.Setenv("HOME", "")
+	if err := os.Unsetenv("HOME"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	out, err := supervisor.Recover(ctx, f.journal(t), d.RunID)
+	if err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+	if out.State != supervisor.RunReadyForReview || out.Reason != "unverified" {
+		t.Fatalf("outcome %s/%s, want ready_for_review/unverified", out.State, out.Reason)
+	}
+	v := f.latestVerification(t, d.RunID)
+	if v.Result != "unavailable" || v.Reason != "checks_unavailable" || len(v.Attestation) != 0 {
+		t.Errorf("verification = %s/%s attestation %q, want unavailable/checks_unavailable with none", v.Result, v.Reason, v.Attestation)
+	}
+}
+
+func TestFailedCheckSurvivesRunnerError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a script without an executable bit is a Unix start failure")
+	}
+	for _, tc := range []struct {
+		name, first, wantState, wantReason, wantResult, wantWhy string
+		wantExit                                                int
+	}{
+		{name: "a failure before the fault stays failed", first: "fail", wantState: "failed", wantReason: "verification_failed", wantResult: "failed", wantWhy: "checks_failed", wantExit: 5},
+		{name: "passed checks before the fault are unavailable", first: "pass", wantState: "ready_for_review", wantReason: "unverified", wantResult: "unavailable", wantWhy: "checks_unavailable", wantExit: 5},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			script := filepath.Join(t.TempDir(), "check.sh")
+			if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 0\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			digest := f.commitChecks(t, testCheck("first", tc.first), checkBlock("broken", script))
+			if code, _, stderr := f.run(t, f.checkedRun(digest)...); code != tc.wantExit {
+				t.Fatalf("exit %d: %s; want %d", code, stderr, tc.wantExit)
+			}
+			if got := f.onlyRun(t); got.State != tc.wantState || got.Reason != tc.wantReason {
+				t.Fatalf("run %s/%s, want %s/%s", got.State, got.Reason, tc.wantState, tc.wantReason)
+			}
+			v := f.latestVerification(t, f.onlyRun(t).RunID)
+			if v.Result != tc.wantResult || v.Reason != tc.wantWhy || len(v.Attestation) != 0 {
+				t.Errorf("verification = %s/%s attestation %q, want %s/%s with none", v.Result, v.Reason, v.Attestation, tc.wantResult, tc.wantWhy)
+			}
+			if len(v.Checks) != 1 || v.Checks[0].Name != "first" {
+				t.Errorf("recorded checks %+v, want only the check that ran", v.Checks)
+			}
+		})
 	}
 }

@@ -124,6 +124,8 @@ func runExit(o supervisor.Outcome) (ExitCode, string) {
 			return ExitVerify, "verification_failed"
 		case "verification_unavailable":
 			return ExitVerify, "verification_unavailable"
+		case "verification_invalid":
+			return ExitVerify, "verification_invalid"
 		}
 	}
 	return ExitInternal, categories[ExitInternal]
