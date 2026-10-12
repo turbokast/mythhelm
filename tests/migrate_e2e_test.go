@@ -253,7 +253,8 @@ func TestMigrateE2EPackagedBinary(t *testing.T) {
 		t.Fatalf("preview exit %d, stderr %q", code, stderr)
 	}
 	for _, want := range []string{"run_e2e_done", "run_e2e_live", "task_e2e",
-		"internal/supervisor/pipeline.go", "0007_v2contracts.sql", "mythhelm.db.bak-migration-v7"} {
+		"internal/supervisor/pipeline.go", "0007_v2contracts.sql", "0008_acceptance.sql",
+		fmt.Sprintf("%s.bak-migration-v%d", journal.DBName, journal.SchemaVersion)} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("preview output names no %q:\n%s", want, stdout)
 		}
