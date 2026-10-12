@@ -34,3 +34,5 @@ dispatched=1 returned=1 failed=0
 Verdict: Ready after 1 round (every dimension PASS; no auto-fixable, human-required or missing-context items).
 
 The previous ledger above (`dispatched=3 returned=2 failed=1`, Blocked on the rate-limited round) is superseded by this fresh ledger, as the log's own instruction required. The assessor checked the maintainer's per-item Decisions (OQ-1, 3, 4, 7, 8, 9, 15, 18, 19, 20, 21, 22) as settled and did not re-ask them; OQ-26 to OQ-30 remain author defaults with recommendations that do not block `/spec` (requirements line 239). Spot-checked citations held at source (theme schema, overlay takeover, inert exit dialog, closed glyph set, structural absence claims). The spec moved `unrefined/` -> `refined/` on this result. Remaining notes for /spec are the D4 row above (slice 1 may exceed the task budget; split FR-6 first if it does).
+
+Review fix after Ready (PR #456, CodeRabbit): AC-2.3 now scopes the `COLORFGBG` fallback to Unix, and AC-2.6's exact help words no longer promise a `COLORFGBG` fallback on Windows, where termenv returns the dark default without consulting it. Wording only; no scope or decision changed.
