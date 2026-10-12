@@ -13,6 +13,7 @@ const (
 	reasonNoVerification = "no verification was recorded"
 	reasonBeforeBinding  = "recorded before acceptance binding existed"
 	reasonNoChecks       = "no checks were admitted for this run (waived, or refused under inspect)"
+	reasonPinUnreadable  = "acceptance pin unreadable"
 	reasonNoEnvelope     = "no run envelope was recorded"
 	reasonNoAttempt      = "no attempt started"
 	reasonNoCandidate    = "no candidate was frozen"
@@ -72,8 +73,8 @@ func unknownReasons() map[string]string {
 		"billing.usage_observations[].source":           "the observation carries no value for this field",
 		"billing.usage_observations[].label":            "the observation carries no value for this field",
 		"billing.usage_observations[].quantity":         "the observation carries no value for this field",
-		"billing.reserve.verify_pass_checks":            "check timeouts are not journaled with the admitted check list",
-		"billing.reserve.verify_timeout_sum":            "check timeouts are not journaled with the admitted check list",
+		"billing.reserve.verify_pass_checks":            reasonNoChecks,
+		"billing.reserve.verify_timeout_sum":            reasonNoChecks,
 		"billing.reserve.repair_ceiling":                reasonNoEnvelope,
 		"billing.remaining.quantity":                    "no supported route reports remaining quota",
 		"billing.remaining.bucket":                      "the run holds no billing reservation",
