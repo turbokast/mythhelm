@@ -14,7 +14,7 @@
 
 MYTHHELM orchestrates the coding agents you already use and trust, such as Claude Code, Codex and others, with their native harnesses intact. It gives them a shared mission, safe working boundaries, an honest control plane and a terminal experience worth opening.
 
-> **Status: pre-alpha.** There is no usable release yet. The headless dogfood slice (`run`, `review`, `apply`, `recover`) plus an offline `demo` and a read-only `doctor` are implemented on `main` and covered by a packaged-binary end-to-end suite. The TUI is also implemented, with the evidence and limitations below. The broader adaptive product remains a design contract, not an implemented or benchmarked capability.
+> **Status: pre-alpha.** The only release so far, v0.0.1, is a source tag with no binary archives, so you build from source. The headless dogfood slice (`run`, `review`, `apply`, `recover`) plus an offline `demo` and a read-only `doctor` are implemented on `main` and covered by a packaged-binary end-to-end suite. `stop` and `runs list`, a budget ledger with finite run envelopes, execution profiles, a per-user supervisor and a one-way `migrate` have landed since, with the limits listed below and in the [limitations register](docs/limitations.md). The TUI is also implemented, with the evidence and limitations below. The broader adaptive product remains a design contract, not an implemented or benchmarked capability.
 
 ## Dogfood slice status
 
@@ -22,15 +22,24 @@ Supported now:
 
 - Headless `mythhelm run --adapter fake|claudecode` with admission, supervision, verification, review, apply and recovery.
 - `mythhelm demo`: a fully offline scripted run in a disposable repository; every screen is labelled `SCRIPTED DEMO`.
-- `mythhelm doctor`: read-only prerequisite report; it writes nothing and prints no credential values.
-- `mythhelm supervisor`: per-user supervisor service, lazily started, with authenticated local IPC (Unix socket, Windows named pipe).
-- Linux, macOS and Windows. Native Claude execution is refused on Windows by design (exit 7); the scripted adapter runs everywhere.
+- `mythhelm doctor`: read-only prerequisite report; it writes nothing and prints no credential values. Its `qualification:` section lists each harness record with its progress, the failing columns and the next test that could advance it.
+- `mythhelm stop <run-id>` and `mythhelm recover <run-id>`: a stop request that the run's worker acknowledges, and recovery of an interrupted run without relaunching native work. Both run locally from the CLI.
+- `mythhelm runs list`: the runs in the local state, newest first.
+- A budget ledger for every admitted run: usage rows labelled `reported`, `estimated` or `unknown`, one local quota reservation, and finite run envelopes (execution time, repairs, replans, transport retries) set with `--envelope-*` flags or `mythhelm.toml`. See the [user guide](docs/user-guide.md#budget-ledger).
+- Execution profiles: `restricted` is the default. On Linux, where the boundary can be entered, it runs the native process in a user and mount namespace with a read-only root and a filtering proxy for network access. `--execution-profile trusted-host` opts out and is disclosed on every surface.
+- `mythhelm supervisor status`: shows the per-user supervisor service's state, starting it if needed, over authenticated local IPC (Unix socket on Linux and macOS; the Windows named-pipe transport is tested, but lazy start has no Windows evidence). Runs are not routed through the service yet: `run`, `recover` and `apply` still hold a per-run owner lock.
+- `mythhelm migrate`: preview, or apply with `--yes`, the move of a state directory to the v2 ledger. It is one-way; see "Not supported yet" for what it leaves refused.
+- Linux, macOS and Windows. Native Claude execution is refused on Windows by design (exit 7); the scripted adapter runs everywhere, but off Linux its runs need `--execution-profile trusted-host` (the default `restricted` profile is refused there).
 - Dogfood billing postures `local-scripted` and `subscription-declared` (user-declared, never verified by MYTHHELM).
+- Codex is not yet a supported adapter: `--adapter codex` has fixture-tested adapter code only, its registry row stays `planned`, and every run blocks or is refused (see [Codex limits](docs/limitations.md#codex)).
 
 Not supported yet:
 
-- Plugins and routing — still planned. Releases: the pipeline is implemented and dry-run proven, but no release has been published yet (see [the release process](docs/release-process.md)).
-- `subscription-only`: it always blocks because no native surface qualifies an included-only boundary (G05 not passed).
+- Plugins and routing: still planned. Releases: v0.0.1 is the only release and carries no binaries. The archive pipeline is implemented and dry-run proven on a test tag, but it has not published a release (see [the release process](docs/release-process.md)).
+- Contained execution beyond Linux. On macOS and Windows `restricted` and `inspect` are refused with exit 7, and so are both for the Claude Code route on every OS (its credential boundary is not enforced yet), so real Claude Code runs need `--execution-profile trusted-host`. The Linux boundary does not block direct network egress or signals to same-user host processes.
+- Using the supervisor service for runs. `stop` and `recover` are not served by it (#348).
+- Life after `mythhelm migrate --apply --yes`: `run`, `recover` and `apply` are then refused with exit 6, and no command restores the backup (#320, #369). Do not apply the migration unless you accept that.
+- `subscription-only`: it blocks today, because no live-qualified qualification record exists for any route.
 - The AC-4.7 OAuth-token exception: unwired, refused at both gates (see [ADR 0002](docs/decisions/0002-dogfood-billing-posture.md)).
 - macOS MDM preferences and remote cached managed policy as certified trust sources; the settings inventory covers files only.
 

@@ -1,12 +1,16 @@
 package cli
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/control"
+	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/supervisor"
 )
 
@@ -42,6 +46,14 @@ func TestExitCodeRefusedLaunchIsBlocked(t *testing.T) {
 	}
 }
 
+func TestRunExitMapsVerificationInvalid(t *testing.T) {
+	t.Parallel()
+	code, category := runExit(supervisor.Outcome{State: supervisor.RunFailed, Reason: "verification_invalid"})
+	if code != ExitVerify || category != "verification_invalid" {
+		t.Fatalf("runExit(failed/verification_invalid) = %d/%q, want %d/verification_invalid", code, category, ExitVerify)
+	}
+}
+
 func TestRunExitClassifiedFailures(t *testing.T) {
 	t.Parallel()
 	for reason, want := range map[string]ExitCode{
@@ -60,5 +72,53 @@ func TestRunExitClassifiedFailures(t *testing.T) {
 		if code != ExitBlocked || category != "admission_blocked" {
 			t.Fatalf("runExit(blocked/%s) = %d/%s, want 3/admission_blocked", reason, code, category)
 		}
+	}
+}
+
+// TestFinishFoldsUndocumentedEvent pins that run.result and the process agree
+// when the renderer refused an event (I09, v2 §2).
+func TestFinishFoldsUndocumentedEvent(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		outcomeErr   error
+		wantExit     int
+		wantCategory string
+		wantNotice   bool
+	}{
+		{name: "an otherwise successful run exits 1 undocumented_event", wantExit: 1, wantCategory: "undocumented_event"},
+		{
+			name:       "an outcome error keeps its code and the refusal goes to stderr",
+			outcomeErr: &outcomeError{code: ExitVerify, category: "verification_failed", err: errors.New("checks failed")},
+			wantExit:   5, wantCategory: "verification_failed", wantNotice: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var out, diag bytes.Buffer
+			r := newRenderer("jsonl", Stdio{Out: &out, Err: &diag})
+			r.event(jsonlEvent("attempt.surprise"))
+
+			returned := finish(r, supervisor.Outcome{RunID: "run_1", State: supervisor.RunCompleted}, tt.outcomeErr)
+
+			var ev journal.Event
+			if err := json.Unmarshal(out.Bytes(), &ev); err != nil || ev.Type != "run.result" {
+				t.Fatalf("stdout = %q (%v), want only run.result", out.String(), err)
+			}
+			var res map[string]any
+			if err := json.Unmarshal(ev.Payload, &res); err != nil {
+				t.Fatal(err)
+			}
+			if res["exit_code"] != float64(tt.wantExit) || res["error_category"] != tt.wantCategory {
+				t.Fatalf("run.result = %v, want exit_code %d and category %s", res, tt.wantExit, tt.wantCategory)
+			}
+			if got := exitCode(returned); got != ExitCode(tt.wantExit) {
+				t.Fatalf("returned error %v has exit code %d, run.result said %d", returned, got, tt.wantExit)
+			}
+			if notice := strings.Contains(diag.String(), "attempt.surprise"); notice != tt.wantNotice {
+				t.Fatalf("stderr = %q, want the refusal named: %t", diag.String(), tt.wantNotice)
+			}
+		})
 	}
 }

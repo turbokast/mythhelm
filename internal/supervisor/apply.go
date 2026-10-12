@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/ids"
@@ -57,9 +58,27 @@ func blockApply(ctx context.Context, j *journal.Journal, runID, reason string) e
 	return writeApplyReceipt(ctx, j, p, runID, r)
 }
 
+// refusal is the apply message for a status other than bound; every variant
+// names --accept-unverified, the only way past it.
+func refusal(s AcceptanceStatus) string {
+	switch s.State {
+	case AcceptanceUnverified:
+		return "unverified candidate requires --accept-unverified (NOT RUN: " + s.Reason + ")"
+	case AcceptanceStale:
+		return "verification does not apply to the candidate (changed: " + strings.Join(s.Changed, ", ") +
+			"); re-evaluation is required; --accept-unverified applies it without verification"
+	case AcceptanceUnbound:
+		return "verification was recorded before acceptance binding existed; --accept-unverified applies it without verification"
+	default:
+		return "verification rejected the candidate (" + s.Reason + "); --accept-unverified applies it without verification"
+	}
+}
+
 // ApplyRun journals the irreversible branch creation intent, reconciles a
-// branch left by a crash, and writes the completed version 2 receipt.
-// The caller must hold the run's owner lock throughout this call.
+// branch left by a crash, and writes the completed version 2 receipt. A first
+// apply needs a verdict still bound to the candidate, the task and the check
+// definition, or --accept-unverified, which the receipt records; a resumed
+// apply was already decided. The caller must hold the run's owner lock throughout this call.
 func ApplyRun(ctx context.Context, j *journal.Journal, runID, branch string, acceptFlags, acceptUnverified bool) (Receipt, error) {
 	run, err := j.Run(ctx, runID)
 	if err != nil {
@@ -140,8 +159,18 @@ func ApplyRun(ctx context.Context, j *journal.Journal, runID, branch string, acc
 	if len(flags) > 0 && !acceptFlags && intent == nil {
 		return nil, fmt.Errorf("%w: candidate flags require --accept-flags", ErrApplyBlocked)
 	}
-	if run.Reason == "unverified" && !acceptUnverified && intent == nil {
-		return nil, fmt.Errorf("%w: unverified candidate requires --accept-unverified", ErrApplyBlocked)
+	var override *AcceptanceStatus
+	if intent == nil {
+		status, err := CheckAcceptance(ctx, j, runID)
+		if err != nil {
+			return nil, err
+		}
+		if status.State != AcceptanceBound {
+			if !acceptUnverified {
+				return nil, fmt.Errorf("%w: %s", ErrApplyBlocked, refusal(status))
+			}
+			override = &status
+		}
 	}
 	if _, err := workspace.Git(ctx, run.SourceRepo, true, "cat-file", "-e", run.BaseRev+"^{commit}"); err != nil {
 		blocked := fmt.Errorf("%w: admitted base commit is unavailable in source repository: %w", ErrApplyBlocked, err)
@@ -200,6 +229,18 @@ func ApplyRun(ctx context.Context, j *journal.Journal, runID, branch string, acc
 	r["external_effects"] = []any{map[string]any{"type": effect, "target_repo": run.SourceRepo,
 		"branch": branch, "commit": candidate.Commit}}
 	r["remaining_human_action"] = []string{"review the branch", "sign off (DCO) after review"}
+	if override != nil {
+		acc, _ := r["acceptance"].(map[string]any)
+		if acc == nil {
+			acc = map[string]any{}
+		}
+		changed := override.Changed
+		if changed == nil {
+			changed = []string{}
+		}
+		acc["apply_override"] = map[string]any{"state": string(override.State), "reason": override.Reason, "changed": changed}
+		r["acceptance"] = acc
+	}
 	if err := writeApplyReceipt(ctx, j, p, runID, r); err != nil {
 		return nil, err
 	}

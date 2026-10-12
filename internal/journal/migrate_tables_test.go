@@ -37,7 +37,7 @@ func TestMigration0007CreatesV2Tables(t *testing.T) {
 		}
 	}
 
-	j, err := Open(t.Context(), dir)
+	j, err := open(t.Context(), dir, migrations[:7])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,9 +119,9 @@ func TestMigrationStatePhaseVocabulary(t *testing.T) {
 	}
 }
 
-func TestSchemaVersionIs7(t *testing.T) {
-	if SchemaVersion != 7 {
-		t.Fatalf("SchemaVersion = %d, want 7", SchemaVersion)
+func TestSchemaVersionIs8(t *testing.T) {
+	if SchemaVersion != 8 {
+		t.Fatalf("SchemaVersion = %d, want 8", SchemaVersion)
 	}
 	j, dir := openTemp(t)
 	var version int
@@ -136,7 +136,7 @@ func TestSchemaVersionIs7(t *testing.T) {
 	}
 	ro, err := OpenReadOnly(t.Context(), dir)
 	if err != nil {
-		t.Fatalf("OpenReadOnly on a 0007 database: %v", err)
+		t.Fatalf("OpenReadOnly on a 0008 database: %v", err)
 	}
 	if err := ro.Close(); err != nil {
 		t.Fatal(err)

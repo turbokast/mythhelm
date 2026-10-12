@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/supervisor"
+	"github.com/turbokast/mythhelm/internal/v2contract"
 	"github.com/turbokast/mythhelm/internal/workspace"
 )
 
@@ -64,6 +66,7 @@ func checkApplyJSONL(t *testing.T, out, runID string, code int) {
 }
 
 func TestApplyCreatesOnlyTheBranch(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	before := f.fingerprint(t)
 	head := f.git(t, "rev-parse", "HEAD")
@@ -104,6 +107,7 @@ func TestApplyCreatesOnlyTheBranch(t *testing.T) {
 }
 
 func TestApplyRefusesExistingBranch(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	before := f.fingerprint(t)
 	code, out, stderr := f.run(t, "apply", runID, "--to-branch", "main", "--format", "jsonl")
@@ -117,6 +121,7 @@ func TestApplyRefusesExistingBranch(t *testing.T) {
 }
 
 func TestApplyRefusesNotReadyForReview(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	digest := f.config(t, "fail")
 	if code, _, stderr := f.run(t, f.checkedRun(digest)...); code != 5 {
@@ -129,6 +134,7 @@ func TestApplyRefusesNotReadyForReview(t *testing.T) {
 }
 
 func TestApplyRefusesUnacceptedFlags(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	j := f.journal(t)
 	attempt, err := j.LatestAttempt(t.Context(), runID)
@@ -153,6 +159,7 @@ func TestApplyRefusesUnacceptedFlags(t *testing.T) {
 }
 
 func TestApplyRefusesUnacceptedUnverified(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	if code, _, stderr := f.run(t, f.fakeRun()...); code != 5 {
 		t.Fatalf("run exit %d: %s", code, stderr)
@@ -173,6 +180,7 @@ func TestApplyRefusesUnacceptedUnverified(t *testing.T) {
 }
 
 func TestApplyRefusesInvalidRefName(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	code, _, stderr := f.run(t, "apply", runID, "--to-branch=bad..name")
 	if code != 2 || !strings.Contains(stderr, "invalid destination branch") {
@@ -207,6 +215,7 @@ func recordApplyIntent(t *testing.T, f fixture, runID, branch, commit string) {
 }
 
 func TestApplyRetryBlocksConflictingBranch(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	j := f.journal(t)
 	attempt, err := j.LatestAttempt(t.Context(), runID)
@@ -239,6 +248,7 @@ func TestApplyRetryBlocksConflictingBranch(t *testing.T) {
 }
 
 func TestApplyReconcilesAfterCrash(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	j := f.journal(t)
 	attempt, err := j.LatestAttempt(t.Context(), runID)
@@ -268,6 +278,7 @@ func TestApplyReconcilesAfterCrash(t *testing.T) {
 }
 
 func TestApplyRetryBlocksSymbolicBranch(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	j := f.journal(t)
 	attempt, err := j.LatestAttempt(t.Context(), runID)
@@ -296,6 +307,7 @@ func TestApplyRetryBlocksSymbolicBranch(t *testing.T) {
 }
 
 func TestApplyRefusesExistingMatchingBranchWithoutIntent(t *testing.T) {
+	t.Parallel()
 	f, runID := readyApplyFixture(t)
 	j := f.journal(t)
 	attempt, err := j.LatestAttempt(t.Context(), runID)
@@ -319,5 +331,162 @@ func TestApplyRefusesExistingMatchingBranchWithoutIntent(t *testing.T) {
 		if ev.Type == "apply.intent_recorded" {
 			t.Fatal("initial refusal recorded apply intent")
 		}
+	}
+}
+
+// staleCases tamper with a ready run so its passed verdict no longer applies;
+// each names the one binding dimension that changed.
+var staleCases = []struct {
+	name, dimension string
+	tamper          func(t *testing.T, f fixture, runID string)
+}{
+	{name: "the task file is rewritten", dimension: "contract", tamper: func(t *testing.T, f fixture, runID string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(f.state, "runs", runID, "task.md"), []byte("a different task\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}},
+	{name: "the task file is deleted", dimension: "contract", tamper: func(t *testing.T, f fixture, runID string) {
+		t.Helper()
+		if err := os.Remove(filepath.Join(f.state, "runs", runID, "task.md")); err != nil {
+			t.Fatal(err)
+		}
+	}},
+	{name: "the candidate row moves to another commit", dimension: "candidate", tamper: func(t *testing.T, f fixture, runID string) {
+		t.Helper()
+		attempt, err := f.journal(t).LatestAttempt(t.Context(), runID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := rawDB(t, f.state).ExecContext(t.Context(), `UPDATE candidates SET candidate_commit = ? WHERE attempt_id = ?`,
+			f.git(t, "rev-parse", "HEAD"), attempt.AttemptID); err != nil {
+			t.Fatal(err)
+		}
+	}},
+	{name: "a newer verification attests another check definition", dimension: "check_definition", tamper: func(t *testing.T, f fixture, runID string) {
+		t.Helper()
+		f.addVerification(t, f.latestVerification(t, runID), verificationVariant{result: "passed",
+			attest: func(a *v2contract.Verification) { a.CheckDefinition = otherDigest() }})
+	}},
+}
+
+func TestApplyRefusesStaleVerdict(t *testing.T) {
+	t.Parallel()
+	t.Run("an unmodified run applies", func(t *testing.T) {
+		t.Parallel()
+		f, runID := readyApplyFixture(t)
+		if code, _, stderr := f.run(t, "apply", runID, "--to-branch", "review/demo"); code != 0 {
+			t.Fatalf("unmodified apply exit %d: %s", code, stderr)
+		}
+	})
+	for _, tc := range staleCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f, runID := readyApplyFixture(t)
+			tc.tamper(t, f, runID)
+			before := f.fingerprint(t)
+			code, _, stderr := f.run(t, "apply", runID, "--to-branch", "review/demo")
+			if code != 3 || !strings.Contains(stderr, "(changed: "+tc.dimension+")") || !strings.Contains(stderr, "--accept-unverified") {
+				t.Fatalf("apply exit %d, stderr %q; want exit 3 naming (changed: %s) and --accept-unverified", code, stderr, tc.dimension)
+			}
+			if f.fingerprint(t) != before || typeIndex(f.events(t, runID), "apply.intent_recorded") >= 0 {
+				t.Fatal("a stale verdict caused an apply effect")
+			}
+		})
+	}
+}
+
+func applyOverride(t *testing.T, f fixture, runID string) (map[string]any, bool) {
+	t.Helper()
+	r, _, err := supervisor.ReadReceipt(t.Context(), f.journal(t), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r["schema_version"] != float64(2) {
+		t.Fatalf("receipt schema_version = %v, want 2", r["schema_version"])
+	}
+	acc, _ := r["acceptance"].(map[string]any)
+	override, ok := acc["apply_override"].(map[string]any)
+	return override, ok
+}
+
+func TestApplyOverrideRecordedInReceipt(t *testing.T) {
+	t.Parallel()
+	t.Run("a stale verdict applied over is recorded", func(t *testing.T) {
+		t.Parallel()
+		f, runID := readyApplyFixture(t)
+		staleCases[0].tamper(t, f, runID)
+		if code, _, stderr := f.run(t, "apply", runID, "--to-branch", "review/demo", "--accept-unverified"); code != 0 {
+			t.Fatalf("overridden apply exit %d: %s", code, stderr)
+		}
+		override, ok := applyOverride(t, f, runID)
+		if !ok {
+			t.Fatal("the version 2 receipt has no acceptance.apply_override")
+		}
+		changed, _ := override["changed"].([]any)
+		if override["state"] != "stale" || !slices.Equal(changed, []any{"contract"}) {
+			t.Fatalf("apply_override = %v, want state stale and changed [contract]", override)
+		}
+	})
+	t.Run("a bound apply records no override", func(t *testing.T) {
+		t.Parallel()
+		f, runID := readyApplyFixture(t)
+		if code, _, stderr := f.run(t, "apply", runID, "--to-branch", "review/demo"); code != 0 {
+			t.Fatalf("bound apply exit %d: %s", code, stderr)
+		}
+		if override, ok := applyOverride(t, f, runID); ok {
+			t.Fatalf("a bound apply recorded apply_override %v", override)
+		}
+	})
+}
+
+func TestApplyRefusesUnboundVerified(t *testing.T) {
+	t.Parallel()
+	f, runID := readyApplyFixture(t)
+	f.addVerification(t, f.latestVerification(t, runID), verificationVariant{result: "passed", unbound: true})
+	before := f.fingerprint(t)
+	code, _, stderr := f.run(t, "apply", runID, "--to-branch", "review/demo")
+	if code != 3 || !strings.Contains(stderr, "recorded before acceptance binding existed") || !strings.Contains(stderr, "--accept-unverified") {
+		t.Fatalf("apply exit %d, stderr %q; want exit 3 naming the missing binding and --accept-unverified", code, stderr)
+	}
+	if f.fingerprint(t) != before {
+		t.Fatal("an unbound verdict changed source")
+	}
+	if code, _, stderr := f.run(t, "apply", runID, "--to-branch", "review/demo", "--accept-unverified"); code != 0 {
+		t.Fatalf("overridden apply exit %d: %s", code, stderr)
+	}
+	if override, ok := applyOverride(t, f, runID); !ok || override["state"] != "unbound" {
+		t.Fatalf("apply_override = %v (present %v), want state unbound", override, ok)
+	}
+}
+
+func TestApplyUnverifiedMessageNamesReason(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	digest := f.commitChecks(t, missingCheck(t, "missing"))
+	if code, _, stderr := f.run(t, f.checkedRun(digest)...); code != 5 {
+		t.Fatalf("run exit %d: %s", code, stderr)
+	}
+	code, _, stderr := f.run(t, "apply", f.onlyRun(t).RunID, "--to-branch", "review/demo")
+	if code != 3 || !strings.Contains(stderr, "NOT RUN: checks_unavailable") || !strings.Contains(stderr, "--accept-unverified") {
+		t.Fatalf("apply exit %d, stderr %q; want exit 3 with NOT RUN: checks_unavailable and --accept-unverified", code, stderr)
+	}
+}
+
+func TestResumedApplySkipsGate(t *testing.T) {
+	t.Parallel()
+	f, runID := readyApplyFixture(t)
+	c := f.candidateOf(t, runID)
+	branch := "review/resumed"
+	recordApplyIntent(t, f, runID, branch, c.Commit)
+	staleCases[0].tamper(t, f, runID)
+	if code, _, stderr := f.run(t, "apply", runID, "--to-branch", branch); code != 0 {
+		t.Fatalf("resumed apply exit %d: %s", code, stderr)
+	}
+	if f.onlyRun(t).State != string(supervisor.RunCompleted) {
+		t.Fatalf("resumed run is %s, want completed", f.onlyRun(t).State)
+	}
+	if got := f.git(t, "rev-parse", "refs/heads/"+branch); got != c.Commit {
+		t.Fatalf("branch at %s, want the candidate %s", got, c.Commit)
 	}
 }

@@ -122,3 +122,63 @@ Add to the task-breakdown method: when a task adds a writer to state that anothe
 **Proposed change:**
 
 Add under Required: A fixture that starts a process registers its release when it starts, not at the end of the test. The release matches the process by PID and start identity before it signals or waits on it, wakes anything that parks the process until the test ends, and fails the test when the process outlives the deadline. A probe that looks for a process it just started polls with a deadline until the process is visible instead of scanning once.
+
+## P-codex-native-adapter-1 — Finalize opens the missing lifecycle pull request instead of stopping on `state:`
+
+- **Source spec**: `codex-native-adapter`
+- **Type**: skill
+- **Target**: `.claude/skills/finalize-spec/SKILL.md`
+- **Rationale**: All 12 tasks merged but the spec stayed in `specs/in-progress/`, because the lifecycle step of `/run-spec` (`run-spec-completion` step 2) never ran. `finalize.py verify` then fails with `reason=state` and the skill's Escalation 1 treats a wrong state as unrecoverable, although the fix is a mechanical, reviewed lifecycle pull request.
+- **Evidence**: `finalize.py verify --spec codex-native-adapter` on origin/main 6249f0f printed `reason=state: the spec is in in-progress/, not unfinalized/`; the finalizer opened lifecycle PR #406; `runspec.py status` showed 12 of 12 complete.
+
+**Proposed change:**
+
+In Step 0, add a case: when the spec is in `specs/in-progress/` on origin/main, run `run-spec-completion` step 1 in full (`runspec.py status` complete with an empty `marker_mismatch`, `verify-merged` for every task, and every deferral named in a Spec deviations entry resolved by a merged change) and, only when it passes, step 2 (the lifecycle pull request, merged through `pr-check --lifecycle`) before Finalize Step 1; record it in the report. Keep Escalation 1 for a spec in any other state, with an incomplete task or with an unresolved deferral.
+
+## P-codex-native-adapter-2 — File out-of-scope discoveries as issues before the task's pull request merges
+
+- **Source spec**: `codex-native-adapter`
+- **Type**: skill
+- **Target**: `.claude/skills/task-completion/SKILL.md`
+- **Rationale**: Two defects found while implementing a task lived only in the spec's `scratchpad.md` or `handoff.md`, which are archived at finalize, and were filed as issues only because the whole-spec review read them. A defect in a sibling component that the task copies or touches is outside its Files list, so nothing else files it.
+- **Evidence**: `specs/done/codex-native-adapter/scratchpad.md:33` (the Claude probe output bound unenforced, Task 3; filed at finalize as #409) and `specs/done/codex-native-adapter/handoff.md:71` (the `CODEX_HOME` maintainer question, Task 8; carried into #389 and #408 at finalize).
+
+**Proposed change:**
+
+Under the scratchpad note rule, add: a Discovery that names a defect or an open maintainer decision outside the task's Files list is filed as a GitHub issue (anchor `file:line`, the invariant, a red-first test idea) before the completion entry is written, and the scratchpad line cites the issue number. A discovery with no issue number is a blocker in the task-report block.
+
+## P-codex-native-adapter-3 — Derive Effort from GitHub when the run-events log is incomplete
+
+- **Source spec**: `codex-native-adapter`
+- **Type**: skill
+- **Target**: `.claude/skills/finalize-spec-retrospective/SKILL.md`
+- **Rationale**: The Effort section reads `runspec.py summary`, which covers only tasks that `/run-spec` dispatched. Here it listed 3 of 12 tasks and `dispatched=3`, so attempts, review rounds and first-pass counts were unknown for 9 tasks even though every task has a merged pull request carrying that history.
+- **Evidence**: `runspec.py summary --spec codex-native-adapter` printed `dispatched=3 returned=2 failed=0` and `unaccounted=task 3`; `gh pr view` data for PRs #352 to #403 gave commits and review submissions per task.
+
+**Proposed change:**
+
+In the Sources table and Step 1, add: compare the number of tasks in `runspec.py summary` with `runspec.py status`'s `total`. When the log covers fewer, print the log's table as is, state `log covers <n> of <total> tasks`, and add per-task rows from `gh pr view <n> --json createdAt,mergedAt,commits,reviews` (commits, review submissions, opened and merged times), marking attempts and first-pass `unknown` for the uncovered tasks.
+
+## P-codex-native-adapter-4 — Report a zero-job cancelled main run as cancelled, not infra, and never as a descendant's verdict
+
+- **Source spec**: `codex-native-adapter`
+- **Type**: knowledge
+- **Target**: `knowledge/finalize.md`
+- **Rationale**: `finalize.py verify` reported two `note=history:` rows as `class=infra` for main runs that were `cancelled` with zero jobs. No infrastructure fault is shown: the run never started a job. The likely cause is the main-branch concurrency group keeping one pending run, but timestamps cannot prove it, because a writer can cancel a queued run by hand. The label sends a reader looking for an infrastructure fault and hides that those commits were never tested on their own.
+- **Evidence**: runs 38137813579 (commit 6103564) and 38138885062 (commit 56968dc): `gh api .../jobs` lists no jobs; runs on 7fd0fcc and 54b7b65 were created one second before each was cancelled; later runs on c38f20d and 31cb991 passed, which tests those trees but not the cancelled commits themselves.
+
+**Proposed change:**
+
+Add a row to the failure-mode table: a main push run that is `cancelled` with zero jobs is reported as `class=cancelled`, with the later run in the same group (`ci-refs/heads/main`) named as a candidate cause, never as `infra` and never as `superseded`. The commit's verdict stays `unknown` until a completed run tests that commit's tree, or the intervening changes are shown not to affect the result; a green run on a descendant is history, not that commit's verdict.
+
+## P-codex-native-adapter-5 — Finalize copies the changelog to its docs mirror
+
+- **Source spec**: `codex-native-adapter`
+- **Type**: skill
+- **Target**: `.claude/skills/finalize-spec-publish/SKILL.md`
+- **Rationale**: `/finalize-spec-publish` step 4 changes `CHANGELOG.md` but never mentions `docs/mirror/CHANGELOG.md`, which the Docs workflow compares byte for byte. The first push of the finalize pull request failed `Docs checks` for that reason; earlier finalize pull requests carried the copy, so it was done from memory or after a red run.
+- **Evidence**: PR #412 run 38189736149, step `Check root-guide mirrors are fresh`: `docs/mirror/CHANGELOG.md drifts from CHANGELOG.md; refresh with: cp CHANGELOG.md docs/mirror/CHANGELOG.md`; `git log -- docs/mirror/CHANGELOG.md` lists the finalize pull requests #371, #343 and #335.
+
+**Proposed change:**
+
+In step 4, after the `changelog-add` calls and unless `--no-changelog` was passed, add: `cp CHANGELOG.md docs/mirror/CHANGELOG.md`, and name `docs/mirror/CHANGELOG.md` in the step 5 `git add` list when it changed.

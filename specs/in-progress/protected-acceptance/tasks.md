@@ -44,7 +44,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `internal/acceptance/acceptance.go`, `internal/acceptance/acceptance_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
-### Task 2 — Schema 8: verification bindings and immutable policies
+### Task 2 — Schema 8: verification bindings and immutable policies ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (persistence schema and migration)
@@ -76,8 +76,12 @@
   - `grep -q "Status: proposed" docs/decisions/0019-protected-acceptance.md` and, for each of D1, D2, D5, D7, D8, D10, D14, D18, D19, D20, D21 and D23, `grep -qw "<id>"` on the file succeeds; exits non-zero before (file absent).
 - **Test plan**: Real SQLite in temp directories; the schema-7 fixture is built by opening with the shipped migrations up to 0007 through the test helper used by `migrate_tables_test.go`.
 - **Invariants touched**: I20 (v2 §2: policies and bindings are immutable by trigger); I23 (v2 §2: one canonical ledger, the binding is a row beside the verification, not a second store); I09 (v2 §2: an absent binding is `Bound == false`, never a default verdict).
+- **Status**: ✅ Completed — schema 8 ships `verification_bindings`, abort triggers on it and on `policies`, the extended `VerificationRow`/`InsertVerification`/`LatestVerification`, `EnsurePolicy`/`ErrPolicyConflict`, every version mirror and pin, and ADR 0019 (proposed); PR #400.
+- **Implementation**: `InsertVerification` always writes the binding row (after checking the attestation is the canonical encoding of this verification's and candidate's `v2contract.Verification` with a matching digest, because the table is immutable), so `Bound == false` means only "recorded before schema 8"; BEFORE INSERT triggers close `INSERT OR REPLACE`; 0008 also advances `migration_state.schema_version` to 8. Backup-name pins derive from `journal.SchemaVersion`. ADR number 0019 re-checked free (0001-0016 on disk; 0017 and 0018 claimed by other specs). Commit 2993119.
+- **Spec deviations**: Three changes outside the Files list, each mechanical: `internal/migrate/SUPPORT.md` (the evidence test `TestSchemaVersionIs7` is renamed `TestSchemaVersionIs8`, and `TestSupportMatrixMatchesEvidence` reads that name), `docs/user-guide.md` (backup name `bak-migration-v8`) and migration 0008's `UPDATE migration_state SET schema_version = 8` (data only; `TestMigrationStateStartsNotStarted` pins that column to `SchemaVersion`). `TestMigration0007CreatesV2Tables` now opens `migrations[:7]` so it keeps testing 0007's objects. The preview step-list test for a schema-7 database (validation finding 10) is the new subtest `TestPreviewMirrorsPinned/schema_7_database_lists_only_migration_0008` in `internal/cli/migrate_test.go`.
+- **Files modified**: `internal/journal/migrations/0008_acceptance.sql`, `internal/journal/journal.go`, `internal/journal/projections.go`, `internal/journal/acceptance_test.go`, `internal/journal/journal_test.go`, `internal/journal/qualification_test.go`, `internal/journal/migrate_tables_test.go`, `internal/journal/evaluator_test.go`, `internal/migrate/backup.go`, `internal/migrate/preview/plan.go`, `internal/migrate/apply_test.go`, `internal/migrate/SUPPORT.md`, `internal/cli/migrate_test.go`, `tests/migrate_e2e_test.go`, `docs/decisions/0019-protected-acceptance.md`, `docs/user-guide.md`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
-### Task 3 — Evaluator seam and three-state check result
+### Task 3 — Evaluator seam and three-state check result ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -95,7 +99,12 @@
 - **Test plan**: Fixture check scripts in temp worktrees as in the existing `verify_test.go`; contained leg skips off Linux or where `ProbeLinux` fails, with the skip reason asserted non-empty.
 - **Invariants touched**: I07 (v2 §11.2: the candidate cannot change the argv or evaluator it is judged by); I09 (v2 §2: unavailable is not failed and not passed).
 
-### Task 4 — Pin the acceptance policy at admission
+- **Status**: ✅ Completed — `EvaluatorFor` is the one evaluator computation, `MaxEvidenceBytes` is exported and `RunChecksWithPolicy` returns the three-state result; PR #405.
+- **Implementation**: `evaluatorOf` became `EvaluatorFor(opts, checks)` and forces `ReadOnly` and no auth binds itself; the result rule is a switch over statuses (failed or timed_out, else any other non-passed, else passed). `pipeline.go` is untouched: it still treats any non-`passed` result as not ready. Commit 5fd8a81.
+- **Spec deviations**: None.
+- **Files modified**: `internal/integration/verify.go`, `internal/integration/verify_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
+
+### Task 4 — Pin the acceptance policy at admission ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -116,8 +125,12 @@
   - `TestPinFailureBlocksBeforeWorker`: with a policy row of id `P1`, version 1 and another digest pre-inserted (`ErrPolicyConflict`), the run ends `blocked`/`acceptance_pin_failed`, exit 3, with no attempt row and no worker (red against an `appendAdmission` that ignores the error or leaves the run in `admission`).
 - **Test plan**: Existing `newFixture` and `fakeRun` helpers; journal reads through a read-only handle.
 - **Invariants touched**: I07 (v2 §2: the evaluator is fixed at admission, before the candidate exists); I20 (v2 §2: the pin names an immutable policy and contract revision); I02 (v2 §2: the pin is journaled with the admission, so no launch precedes it); I09 (v2 §2: a check list not run leaves the pin's evaluator empty, shown as unknown).
+- **Status**: ✅ Completed — admission journals the P1 `acceptance_pin` inside `admission.decided`, seeds the P1 policy row in the same transaction and blocks the run `acceptance_pin_failed` on a pin failure; `ReadPin` reads it back; PR #413.
+- **Implementation**: `NewAdmissionPayload` pins the evaluator only when checks will run (not `--no-checks`, not inspect); `checkOptions` now feeds both the pin and `conclude`, so the two evaluators come from one call. `ReadPin` reads the last `admission.decided` and treats an absent or `null` key as no pin, a decode failure as an error. Commit 4813de4.
+- **Spec deviations**: Added `TestPinEvaluatorFollowsProfile` and `TestPinLeavesChecksUnknownWhenNoneRun` beside the named tests (consistent with design §2.2): they cover the contained and inspect branches without a boundary, which the authoring host lacks, so the Linux-boundary legs of `TestPinAndVerificationEvaluatorAgree` and `TestPinOmitsEvaluatorWhenChecksNotRun` skip there and run in CI.
+- **Files modified**: `internal/supervisor/acceptance.go`, `internal/supervisor/acceptance_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/faults_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
-### Task 5 — Bound verdicts, unverified outcomes and recovery
+### Task 5 — Bound verdicts, unverified outcomes and recovery ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (verification state machine and recovery; 11 files, above the usual 8, because one outcome table must change in the pipeline, both recovery routes, the receipt and CLI exit mappings and their tests in a single pull request, or the tree is inconsistent between merges)
@@ -158,8 +171,12 @@
   - `TestSameInputsSameVerdict`: two fake-adapter runs of the same repository, task and checks give equal `Contract`, `CheckDefinition`, `Evaluator` and `Environment` and the same `Decide` verdict (the candidate commit differs, since its message carries the run ID); a third run with one check's argv changed gives a different `CheckDefinition` and `Evaluator`, so a binding that included a run ID or a clock value would fail the first comparison (AC-4.1).
 - **Test plan**: Fake-adapter runs through `cli.Main`; tamper fixtures edit the journal in a temp state directory as `breakWorkspace` does; the contained leg is Linux-only and skips with an asserted reason.
 - **Invariants touched**: I07 (v2 §11.2: acceptance is bound evidence, never the native's completion claim); I09 (v2 §2: unavailable is NOT RUN, never failed or passed); I12 (v2 §6.4: recovery applies the recorded verdict and never reruns checks); I05 and I24 (v2 §2: a run whose checks may still be running stays owned and unresolved); I02 (v2 §2: an unreadable pin fails the run, never a default); I20 (v2 §2: a changed evaluator is invalid, not reused).
+- **Status**: ✅ Completed — `conclude` reads the journaled pin, binds the verdict and records it with its binding row under the step timeouts; unavailable checks end `ready_for_review`/`unverified`, a changed evaluator `failed`/`verification_invalid` (exit 5), an unreadable pin `failed`/`acceptance_pin_unreadable`; both recovery routes apply the same outcome table; PR #414.
+- **Implementation**: `verifyOutcome`, `verifyChecks`, `skipVerification`, the timed bind and record steps and `Hooks.Timeouts`/`BindStep` live in `acceptance.go`; `recover.go` changes only the `verifying` branch and adds `recordFromCheckEvents` (a complete `check.completed` set records `record_unavailable`, otherwise `ErrOwnership`), so `descendantsResolved` and the quarantine path are untouched (#391). `reason` and `attestation_digest` are omitted from `verification.completed` when empty. Commit 86b246c.
+- **Spec deviations**: `TestRecordStepHonoursTimeout` and the recovery fixture that needs a failed record step use a limit of -1 ns (already expired) instead of 1 ns: on a coarse monotonic clock (Windows CI) the deadline 1 ns ahead had not passed when the append began, so the record succeeded (windows-latest and windows-11-arm, run 38194229707). The cancellation branch settles the run under a non-cancelled context (review finding). `TestRunnerErrorBeforeEvaluatorIsUnavailableNotInvalid` reaches the pre-evaluator refusal through a recovery of a pin that names the contained profile with HOME unset in the recovering process (no boundary needed; consistent with design §2.3 and Linux only), because a contained native cannot launch without HOME. The pin-less leg of `TestRecoverVerifyingMidChecksStaysOwnershipUnresolved` moves a seeded run to `verifying` by hand with a stand-in check process, since a pin-less admission never reaches the run path. Added a `failed` case to `TestRecoverAppliesSameOutcomeTable` (consistent with design §2.3). A runner fault journals `check.completed` only for checks that ran; no row is invented for the interrupted check (consistent with D18). The Linux inspect leg of `TestSkipPathsRecordReason` skips on a host without the boundary, with its reason asserted by `requireBoundary`.
+- **Files modified**: `internal/supervisor/pipeline.go`, `internal/supervisor/recover.go`, `internal/supervisor/receipt.go`, `internal/supervisor/acceptance.go`, `internal/supervisor/acceptance_test.go`, `internal/supervisor/pipeline_test.go`, `internal/supervisor/faults_test.go`, `internal/supervisor/verify_outcome_internal_test.go`, `internal/cli/exit.go`, `internal/cli/exit_test.go`, `tests/e2e/tui_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
-### Task 6 — Apply gate on the binding
+### Task 6 — Apply gate on the binding ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -183,8 +200,12 @@
   - `TestResumedApplySkipsGate`: a run with a journaled apply intent whose task file is rewritten after the intent resumes and completes; red against an `ApplyRun` that calls `CheckAcceptance` before checking the intent, which would refuse the half-applied run and strand its branch.
 - **Test plan**: `apply_test.go` fixtures; tampering through the journal and run directory of a temp state.
 - **Invariants touched**: I07 (v2 §2: an applied candidate has current bound evidence or an explicit user override); I08 (v2 §2: apply still creates only the authorised branch); I20 (v2 §2: a changed contract or check definition invalidates the verdict before reuse); I02 (v2 §2: an unreadable binding blocks).
+- **Status**: ✅ Completed — `CheckAcceptance` and `CheckAcceptanceWithin` decide bound, unverified, stale, unbound or rejected from the attestation against the candidate row, the task file and the pin; `ApplyRun` refuses anything but bound without `--accept-unverified`, naming the cause, and records an override in the version 2 receipt; PR #416.
+- **Implementation**: the gate sits where the old `run.Reason == "unverified"` check was, behind `intent == nil`, so a resumed apply is never refused; the override is merged into the receipt's `acceptance` map (created when absent) only when the gate ran and the user passed the flag. The task file is hashed through a bounded reader and a missing file is a `contract` mismatch, any other read error is an error. Commit 1c03bce.
+- **Spec deviations**: `TestCheckAcceptanceWithinExpires` uses an already-expired limit (`-time.Second`) instead of 1 ns, as Task 5 did, because the coarse Windows clock does not expire a 1 ns deadline. The attestation's digest is compared with the stored one and a mismatch is an error (consistent with design §2.5: a decode failure is never bound). A `rejected` status needs the same flag with its own message, since design §2.5 lists no refusal text for it and a failed run is not `ready_for_review` anyway (consistent with design §2.5).
+- **Files modified**: `internal/supervisor/acceptance.go`, `internal/supervisor/acceptance_test.go`, `internal/supervisor/apply.go`, `internal/supervisor/apply_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
-### Task 7 — Truthful receipt
+### Task 7 — Truthful receipt ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (receipt contract, many fields)
@@ -210,8 +231,12 @@
   - `TestReceiptUnknownNeverZero` keeps passing: cost and usage stay `unknown` with a reason, never `0`.
 - **Test plan**: Existing `receiptRun` helper plus journaled fixtures for the blocked and failed-native cases.
 - **Invariants touched**: I09 (v2 §2: every unknown prints `unknown` with its reason; label and verdict stay distinct); I10 (v2 §2: bounds are not presented as enforced where they are not); I15 (v2 §2: the declared posture is never worded as verified).
+- **Status**: ✅ Completed — the receipt carries `billing.entitlement_statement`, `verification.{result,label,reason,binding}`, `acceptance.{policy_pin,determinism,overhead_ms,bounds}` and `unknown_reasons` with the walk that rejects an unexplained `unknown`, and `BuildReceiptWithin` bounds the render step; PR #417.
+- **Implementation**: `admission.EntitlementStatement` is one switch (a declared source never reads as verified even when marked qualified); `unknown_reasons.go` holds the reason table keyed by normalised path and the walk, and `buildReceipt` overlays the reasons only the run knows (pre-schema-8, unreadable pin, no attestation). An unreadable pin renders `policy_pin` unknown instead of failing the receipt. Commit fab0635.
+- **Spec deviations**: `TestBuildReceiptWithinExpires` uses an already-expired limit (-1 s) instead of 1 ns, as Task 5 found for the coarse Windows clock (consistent with design §2.9). The restricted-profile and native-auth legs of `TestEveryUnknownHasAReason` are journaled admissions rather than real Linux runs, so they run on every host (consistent with the design's fixture list; `TestReceiptCarriesBoundary` still covers the real restricted run). `TestReceiptHasAllSection9Keys` now asserts presence of the 19 keys and the exact set moved to `TestReceiptTopLevelKeys`. The unavailable-check and invalid legs of `TestReceiptVerificationLabelAndBinding` render journaled verification rows rather than real runs, and the passed and waived runs are captured once per test binary: the supervisor test binary took 430 s of the 10 min package timeout on windows-latest before this task, and 15 added real runs took it past the limit (run 38198740245; the timeout also surfaced `TestReplanPreservesRepairSlots`, whose replan deadline derives from the binary's start time, so it fails after about 9m45s of wall clock). Extra tests beyond the acceptance list: `TestRunWithUnreadablePinHasReceiptAndReviews` (validation finding 2), `TestReceiptOverheadCoversBindingStep` (finding 6, NFR-1), `TestReceiptBoundsUnknownWithoutEnvelope`.
+- **Files modified**: `internal/admission/entitlement.go`, `internal/admission/entitlement_test.go`, `internal/supervisor/receipt.go`, `internal/supervisor/receipt_test.go`, `internal/supervisor/unknown_reasons.go`, `internal/supervisor/unknown_reasons_internal_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
-### Task 8 — Documented JSONL event contract
+### Task 8 — Documented JSONL event contract ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (event-set scan, renderer refusal and exit mapping across 8 files)
@@ -238,8 +263,12 @@
   - The existing `TestJSONLStdoutOnlyEnvelopes` keeps passing using `supervisor.IsStreamEvent` instead of its local list.
 - **Test plan**: AST scan with `go/parser`; the recovery-stream fixture copies the inline setup of `TestRecoverFreezesOnlyAfterDescendantsGone` (`faults_test.go:521`) into `events_test.go`.
 - **Invariants touched**: I12 (v2 §2: recovery evidence is a documented event, not dropped); I09 (v2 §2: nothing undocumented reaches a consumer as if it were contract).
+- **Status**: ✅ Completed — the 29-type event set lives in `supervisor.StreamEventTypes`/`IsStreamEvent`, the JSONL renderer refuses an undocumented type, and `finish` folds the refusal into the exit code and `run.result` (exit 1, `undocumented_event`); PR #415.
+- **Implementation**: `UndocumentedEventError` sits in `render.go`; `finish` folds it only when the outcome has no error, otherwise the outcome's code stands and `r.notice` writes the refusal to stderr. `errorCategory` maps the type to `undocumented_event`; `exitCode` needed no case (its default is `ExitInternal`). The `go/parser` scan matches the `Event`/`ev` prefixes only before an upper-case letter. Commit 5361231.
+- **Spec deviations**: `TestClaudeRateLimitStreamsDocumented` keeps no in-test mutant leg: a predicate built from the stream's own types was true by construction (CodeRabbit round 1), and the production set has no injection seam. The mutant (set without `attempt.native_error`) was run by hand and turns the test red (PR #415 body); consistent with design §2.10.
+- **Files modified**: `internal/supervisor/events.go`, `internal/supervisor/events_test.go`, `internal/supervisor/pipeline_test.go`, `internal/cli/render.go`, `internal/cli/render_test.go`, `internal/cli/run.go`, `internal/cli/exit.go`, `internal/cli/exit_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
-### Task 9 — TUI surfaces
+### Task 9 — TUI surfaces ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: complex (two decoders, the mission view and the viewmodel)
@@ -261,8 +290,12 @@
   - `TestViewmodelLoadsReasonAndStatement`: `Load` fills the verification reason and the admission entitlement statement from a journaled run.
 - **Test plan**: Existing snapshot model tests; no TTY needed.
 - **Invariants touched**: I09 (v2 §2: the TUI never renders an unverified run as verified); I15 (v2 §2: declared stays worded as unverified).
+- **Status**: ✅ Completed — the mission view renders `NOT RUN (<reason>)` from `VerificationRow.Reason` and the entitlement statement from `viewmodel.Admission.EntitlementStatement`, set by both the snapshot and the live decoder; PR #424.
+- **Implementation**: `reasonOrUnknown` and `entitlementText` sit in `mission.go`; `statusLines` gained a middle row, so `viewColumns` counts `len(statusLines())` for its chrome and `viewSingle` prints the sentence under the critical status. An `invalid` row renders `INVALID (<reason>)`. Commits 333db9e, e4ffb28.
+- **Spec deviations**: `internal/tui/model.go` is outside the task's `Files`: the extra strip row needed its height accounting, and the single-pane rung (80-99 columns), which has no billing strip, prints the sentence so a declared entitlement is never invisible there (consistent with design §2.7, I15). `INVALID (<reason>)` is rendered for an `invalid` row per design §2.7, beyond the listed acceptance.
+- **Files modified**: `internal/tui/mission.go`, `internal/tui/model.go`, `internal/tui/model_test.go`, `internal/tui/motion.go`, `internal/tui/motion_test.go`, `internal/tui/viewmodel/viewmodel.go`, `internal/tui/viewmodel/viewmodel_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`.
 
-### Task 10 — CLI surfaces: review, run stream, accessible
+### Task 10 — CLI surfaces: review, run stream, accessible ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (review, stream and accessible renderers, 6 files)
@@ -276,7 +309,7 @@
   - `internal/cli/render_test.go`
   - `internal/cli/accessible_test.go`
 - **Acceptance**:
-  - `TestReviewPlainShowsEntitlementAndVerification`: plain `review` of a declared-posture run prints a line equal to the declared sentence and a `Verification:` line; of a `--no-checks` run prints `NOT RUN (waived by --no-checks)`; of an inspect run `NOT RUN (checks_refused_under_inspect)`; of a passed run `passed (bound to <candidate>)`; the `Verification:` line is the only place a waived run's reason appears (red against today's output, which prints `State: ready_for_review`, `Checks: none` and no label or reason).
+  - `TestReviewPlainShowsEntitlementAndVerification`: plain `review` of a declared-posture run prints a line equal to the declared sentence and a `Verification:` line; of a `--no-checks` run prints `NOT RUN (waived by --no-checks)`; of an inspect run `NOT RUN (checks_refused_under_inspect)`; of a passed run `passed (bound to <candidate>)`; a waived or unverified run shows its reason on both the `Verification:` line and the `Acceptance:` line, as `Acceptance: unverified (<reason>)` (design §2.7) (red against today's output, which prints `State: ready_for_review`, `Checks: none` and no label or reason).
   - `TestReviewPlainShowsAcceptanceStatus`: a bound run prints `Acceptance: bound`; after the task file is rewritten it prints `STALE (changed: contract)`; a pre-binding run prints `unbound`.
   - `TestRunStreamPrintsVerdictLabels`: the plain stream prints `verification: INVALID (evaluator_digest_mismatch)` and `verification: NOT RUN (binding_unavailable)` for payloads with those results and reasons (journaled by Task 5), never `invalid` or `unavailable` raw.
   - `TestRunStreamNotRunCarriesReason`: the plain run stream prints `verification: NOT RUN (<reason>)` with the payload's reason; the `inspect` case no longer says `waived`.
@@ -284,8 +317,15 @@
   - `TestAccessibleVerificationLineReason`: the accessible line for a `not_run` row prints `verification: NOT RUN (<reason>)` using `Result.Label()` (red against today's `accessible.go:297`, which tests `"NOT RUN"` against the stored `not_run` and prints `not_run`); it carries the row reason, and the entitlement statement appears in the accessible admission line.
 - **Test plan**: `cli.Main` with temp state directories and golden fragments anchored to the line prefixes, not file-wide substrings.
 - **Invariants touched**: I09 (v2 §2: NOT RUN is distinct from verified on every CLI surface); I15 (v2 §2: the declared sentence is on every summary); I07 (v2 §2: review shows whether the verdict still applies).
+- **Status**: ✅ Completed — plain `review` prints the entitlement sentence, a `Verification:` line and an `Acceptance:` line from `CheckAcceptance`, and the run stream, admission block and `--accessible` summary use `Result.Label()`, the row reason and the statement; PR #425.
+- **Implementation**: `verdictText` and `reasonOrUnknown` (`render.go`) word NOT RUN and INVALID with their reason for the stream, review and accessible views; review reads the label, reason and binding from the receipt and the status from `CheckAcceptance` (an unreadable verdict is an error, exit 1). The statement comes from `admission.EntitlementStatement` for a live admission event and from `billing.entitlement_statement` for the receipt. Commit 225421e.
+- **Spec deviations**:
+  - The entitlement sentence is its own `--accessible` summary line after `admission:`, not part of it: the 200-cell cap would cut the end of a declared sentence beside a real adapter id (I15).
+  - The acceptance bullet says the `Verification:` line is the only place a waived run's reason appears; design §2.7 also gives `Acceptance: unverified (<reason>)`. Both are kept, and `TestReviewPlainShowsEntitlementAndVerification` pins the waiver on exactly those two lines.
+  - The `inspect` case of `TestReviewPlainShowsEntitlementAndVerification` uses a journaled receipt with reason `checks_refused_under_inspect`, because an inspect run cannot enter its boundary from a test binary.
+- **Files modified**: `internal/cli/review.go`, `internal/cli/render.go`, `internal/cli/accessible.go`, `internal/cli/review_test.go`, `internal/cli/render_test.go`, `internal/cli/accessible_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
-### Task 11 — Credential-free end-to-end flow
+### Task 11 — Credential-free end-to-end flow ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -302,6 +342,13 @@
   - `TestE2EStrictStillBlocked` (existing, `tests/e2e/qualification_test.go:155`) keeps passing: it is the AC-4.3 blocked-path pin and is not red before this task.
 - **Test plan**: `newEnv`/`mkRepo`/`run` helpers of the existing e2e package; builds `cmd/mythhelm` once.
 - **Invariants touched**: I13 (v2 §2: the flow needs no agent credentials); I07, I09 (v2 §2: observed end to end on the real binary).
+- **Status**: ✅ Completed — five end-to-end tests on the packaged binary cover the credential-free P1 flow, unavailable checks, a stale verdict and the declared and not-applicable entitlement sentences; PR #426.
+- **Implementation**: `tests/e2e/acceptance_test.go` adds `credentialFreeEnv` (strips and asserts absent the three credential variables), `acceptanceRepo` (mkRepo with its check argv replaced) and line-anchored review assertions; the tests run in parallel, each in its own state directory. Each was killed by a production mutant (PR body). Commit 84ada17.
+- **Spec deviations**:
+  - Spec-text correction decided by the maintainer's coordinator: Task 10's acceptance bullet for `TestReviewPlainShowsEntitlementAndVerification` now says a waived or unverified run shows its reason on both the `Verification:` and the `Acceptance:` lines, as design §2.7 (design.md, "2.7 Surfaces") governs; only that sentence of Task 10's block was edited, and `scratchpad.md` Discoveries records it. Task 10's entry keeps its deviation 2.
+  - The Acceptance lists the flow's run as `fake-route`; the tests run `--adapter fake --billing local-scripted` under the trusted-host profile (a contained run cannot enter its boundary from every CI host), the same route `TestRunLeavesSourceCheckoutUntouched` uses.
+  - The acceptance's "red against main before Task 1" was not demonstrated against the pre-Task-1 tree: it was demonstrated with production mutants of the current code, each killing only its own test (recorded in the PR body). The tasks' own tests carry the pre-Task-1 red proofs.
+- **Files modified**: `tests/e2e/acceptance_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
 ### Task 12 — User documentation and decision record
 

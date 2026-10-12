@@ -44,7 +44,10 @@ type Admission struct {
 	AdapterSurface   string // adapter.surface
 	Qualified        bool   // billing.qualified
 	PaidContinuation string // billing.paid_continuation ("off"/"unknown"/...)
-	RunSeq           int64  // run_sequence of the event it came from
+	// EntitlementStatement is admission.EntitlementStatement of the recorded
+	// billing posture: the verbatim sentence the status strip prints.
+	EntitlementStatement string
+	RunSeq               int64 // run_sequence of the event it came from
 }
 
 // Snapshot is one consistent view of a run. Pointer fields stay nil until
@@ -219,7 +222,8 @@ func decodeAdmission(ev journal.Event) (*Admission, error) {
 	}
 	return &Admission{
 		AdapterID: rec.Adapter.ID, AdapterVersion: rec.Adapter.Version, AdapterSurface: rec.Adapter.Surface,
-		Qualified: rec.Billing.Qualified, PaidContinuation: rec.Billing.PaidContinuation, RunSeq: ev.RunSequence,
+		Qualified: rec.Billing.Qualified, PaidContinuation: rec.Billing.PaidContinuation,
+		EntitlementStatement: admission.EntitlementStatement(rec.Billing), RunSeq: ev.RunSequence,
 	}, nil
 }
 

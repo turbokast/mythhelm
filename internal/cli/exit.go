@@ -81,6 +81,9 @@ func errorCategory(err error) string {
 	if outcome, ok := errors.AsType[*outcomeError](err); ok {
 		return outcome.category
 	}
+	if _, ok := errors.AsType[*UndocumentedEventError](err); ok {
+		return "undocumented_event"
+	}
 	return categories[exitCode(err)]
 }
 
@@ -124,6 +127,8 @@ func runExit(o supervisor.Outcome) (ExitCode, string) {
 			return ExitVerify, "verification_failed"
 		case "verification_unavailable":
 			return ExitVerify, "verification_unavailable"
+		case "verification_invalid":
+			return ExitVerify, "verification_invalid"
 		}
 	}
 	return ExitInternal, categories[ExitInternal]

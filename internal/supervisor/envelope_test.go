@@ -775,22 +775,22 @@ func TestLaunchRefusedWhenDeadlineExpiresBeforeCommit(t *testing.T) {
 	}
 }
 
-// reserveWorld is a run whose execution clock started at reserveStart under a
-// 10-minute ceiling, gated by a pipeline that carries the given admitted
-// checks. The start floats with the test clock: the tests commit with the
-// real clock, so a fixed date would expire and fail every run past it.
-var reserveStart = time.Now().UTC().Truncate(time.Second)
-
-func newReserveWorld(t *testing.T, env journal.EnvelopeRow, attempts int64, verified bool, checks ...admission.CheckConfig) (*gateWorld, *pipeline) {
+// newReserveWorld is a run whose execution clock started when the test built
+// it, under a 10-minute ceiling, gated by a pipeline that carries the given
+// admitted checks; it returns that start. The start is the test's own: the
+// tests commit with the real clock, so a start taken earlier (a fixed date, or
+// the test binary's start) would expire and fail every run past it.
+func newReserveWorld(t *testing.T, env journal.EnvelopeRow, attempts int64, verified bool, checks ...admission.CheckConfig) (*gateWorld, *pipeline, time.Time) {
 	t.Helper()
-	env.FirstStartAt = reserveStart.Format(time.RFC3339Nano)
+	start := time.Now().UTC().Truncate(time.Second)
+	env.FirstStartAt = start.Format(time.RFC3339Nano)
 	w := newGateWorld(t, env, attempts)
 	if verified {
 		w.addVerification(t)
 	}
 	p := &pipeline{d: admission.Decision{RunID: w.runID, ProjectConfig: admission.ProjectConfig{Checks: checks}},
 		j: w.j, prod: w.prod, ceilings: gateCeilings}
-	return w, p
+	return w, p, start
 }
 
 func reserveChecks(timeouts ...string) []admission.CheckConfig {
@@ -817,22 +817,22 @@ func TestShortfallBlocksOptionalWork(t *testing.T) {
 	tests := []struct {
 		name        string
 		replansUsed int64
-		now         time.Time
+		elapsed     time.Duration
 		wantReason  string
 	}{
-		{"remainder one second short blocks the replan", 0, reserveStart.Add(10*time.Minute - 2*time.Minute + time.Second), "completion_reserve_shortfall"},
-		{"remainder exactly covering dispatches", 0, reserveStart.Add(10*time.Minute - 2*time.Minute), ""},
-		{"reserve is checked before the replan count", 2, reserveStart.Add(9 * time.Minute), "completion_reserve_shortfall"},
-		{"a covered replan over the count reports the count", 2, reserveStart.Add(time.Minute), "envelope_replans_exhausted"},
+		{"remainder one second short blocks the replan", 0, 10*time.Minute - 2*time.Minute + time.Second, "completion_reserve_shortfall"},
+		{"remainder exactly covering dispatches", 0, 10*time.Minute - 2*time.Minute, ""},
+		{"reserve is checked before the replan count", 2, 9 * time.Minute, "completion_reserve_shortfall"},
+		{"a covered replan over the count reports the count", 2, time.Minute, "envelope_replans_exhausted"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			env := gateEnvelope()
 			env.ReplansUsed = tc.replansUsed
-			w, p := newReserveWorld(t, env, 1, false, reserveChecks("1m", "1m")...) // no verification: a replan
+			w, p, start := newReserveWorld(t, env, 1, false, reserveChecks("1m", "1m")...) // no verification: a replan
 			intents := w.launchIntents(t)
-			_, _, err := p.planAttempt(t.Context(), tc.now)
+			_, _, err := p.planAttempt(t.Context(), start.Add(tc.elapsed))
 			if tc.wantReason == "" {
 				if err != nil {
 					t.Fatalf("planAttempt refused a covered replan: %v", err)
@@ -853,13 +853,12 @@ func TestShortfallBlocksOptionalWork(t *testing.T) {
 
 func TestCheckBoundConversionBlocksOnFailure(t *testing.T) {
 	t.Parallel()
-	now := reserveStart.Add(time.Minute)
 	for _, timeout := range []string{"soon", "", "0s", "-1m"} {
 		t.Run("timeout "+timeout, func(t *testing.T) {
 			t.Parallel()
-			w, p := newReserveWorld(t, gateEnvelope(), 1, false, reserveChecks("1m", timeout)...)
+			w, p, start := newReserveWorld(t, gateEnvelope(), 1, false, reserveChecks("1m", timeout)...)
 			intents := w.launchIntents(t)
-			_, _, err := p.planAttempt(t.Context(), now)
+			_, _, err := p.planAttempt(t.Context(), start.Add(time.Minute))
 			if err == nil {
 				t.Fatal("an unconvertible check timeout did not block the launch")
 			}
@@ -876,20 +875,20 @@ func TestCheckBoundConversionBlocksOnFailure(t *testing.T) {
 		})
 	}
 	// Control: the same list with parseable timeouts is estimated and passes.
-	_, p := newReserveWorld(t, gateEnvelope(), 1, false, reserveChecks("1m", "2m")...)
-	if _, _, err := p.planAttempt(t.Context(), now); err != nil {
+	_, p, start := newReserveWorld(t, gateEnvelope(), 1, false, reserveChecks("1m", "2m")...)
+	if _, _, err := p.planAttempt(t.Context(), start.Add(time.Minute)); err != nil {
 		t.Fatalf("parseable checks refused: %v", err)
 	}
 }
 
 func TestReplanDeadlineLeavesReserve(t *testing.T) {
 	t.Parallel()
-	_, p := newReserveWorld(t, gateEnvelope(), 1, false, reserveChecks("1m", "2m")...)
-	plan, deadline, err := p.planAttempt(t.Context(), reserveStart.Add(time.Minute))
+	_, p, start := newReserveWorld(t, gateEnvelope(), 1, false, reserveChecks("1m", "2m")...)
+	plan, deadline, err := p.planAttempt(t.Context(), start.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
-	full := reserveStart.Add(10 * time.Minute)
+	full := start.Add(10 * time.Minute)
 	if !plan.deadline.Equal(full) {
 		t.Fatalf("plan deadline = %v, want the full execution deadline %v", plan.deadline, full)
 	}
@@ -900,8 +899,8 @@ func TestReplanDeadlineLeavesReserve(t *testing.T) {
 
 func TestCommitRefusesPastReplanDeadline(t *testing.T) {
 	t.Parallel()
-	w, p := newReserveWorld(t, gateEnvelope(), 1, false, reserveChecks("1m", "2m")...)
-	plan, deadline, err := p.planAttempt(t.Context(), reserveStart.Add(time.Minute))
+	w, p, start := newReserveWorld(t, gateEnvelope(), 1, false, reserveChecks("1m", "2m")...)
+	plan, deadline, err := p.planAttempt(t.Context(), start.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -926,8 +925,8 @@ func TestReplanPreservesRepairSlots(t *testing.T) {
 	t.Parallel()
 	env := gateEnvelope()
 	env.RepairsUsed = 1
-	w, p := newReserveWorld(t, env, 1, false, reserveChecks("1m")...)
-	plan, deadline, err := p.planAttempt(t.Context(), reserveStart.Add(time.Minute))
+	w, p, start := newReserveWorld(t, env, 1, false, reserveChecks("1m")...)
+	plan, deadline, err := p.planAttempt(t.Context(), start.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -947,16 +946,16 @@ func TestRepairsNotReserveGated(t *testing.T) {
 	env := gateEnvelope()
 	env.RepairsUsed = 1 // an earlier repair consumed part of the ceiling of 3
 	for _, c := range []struct {
-		name string
-		now  time.Time
+		name    string
+		elapsed time.Duration
 	}{
-		{"time covers the verify pass", reserveStart.Add(time.Minute)},
-		{"time short of the verify pass", reserveStart.Add(9*time.Minute + 30*time.Second)},
+		{"time covers the verify pass", time.Minute},
+		{"time short of the verify pass", 9*time.Minute + 30*time.Second},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			w, p := newReserveWorld(t, env, 2, true, reserveChecks("1m", "1m")...)
-			plan, deadline, err := p.planAttempt(t.Context(), c.now)
+			w, p, start := newReserveWorld(t, env, 2, true, reserveChecks("1m", "1m")...)
+			plan, deadline, err := p.planAttempt(t.Context(), start.Add(c.elapsed))
 			if err != nil {
 				t.Fatalf("repair blocked: %v", err)
 			}
@@ -977,23 +976,22 @@ func TestFirstAttemptUnaffected(t *testing.T) {
 	// fit, and a timeout the estimator could not convert, do not gate it.
 	for _, timeouts := range [][]string{{"1h", "1h"}, {"soon"}} {
 		env := gateEnvelope()
-		w, p := newReserveWorld(t, env, 0, false, reserveChecks(timeouts...)...)
-		plan, deadline, err := p.planAttempt(t.Context(), reserveStart)
+		_, p, start := newReserveWorld(t, env, 0, false, reserveChecks(timeouts...)...)
+		plan, deadline, err := p.planAttempt(t.Context(), start)
 		if err != nil {
 			t.Fatalf("first attempt with checks %v blocked: %v", timeouts, err)
 		}
 		if !deadline.Equal(plan.deadline) {
 			t.Fatalf("first attempt deadline = %v, want the full %v", deadline, plan.deadline)
 		}
-		_ = w
 	}
 }
 
 // Under --no-checks no verification pass runs, so there is nothing to reserve.
 func TestNoChecksReservesNothing(t *testing.T) {
 	t.Parallel()
-	_, p := newReserveWorld(t, gateEnvelope(), 1, false, reserveChecks("1h")...)
-	now := reserveStart.Add(9 * time.Minute)
+	_, p, start := newReserveWorld(t, gateEnvelope(), 1, false, reserveChecks("1h")...)
+	now := start.Add(9 * time.Minute)
 	if _, _, err := p.planAttempt(t.Context(), now); err == nil {
 		t.Fatal("control: a 1h check on 1m left did not block the replan")
 	}

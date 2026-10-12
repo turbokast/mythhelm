@@ -33,7 +33,23 @@
 
 ## Discoveries
 
+- Task 2 (Q-10 resolved): ADR 0019 is free (`docs/decisions` holds 0001-0016; 0017 and 0018 are claimed by in-flight specs), so every later reference to `docs/decisions/0019-protected-acceptance.md` stands. Migration 0008 also sets `migration_state.schema_version` to 8: that column is pinned to `SchemaVersion` by `TestMigrationStateStartsNotStarted`, and `internal/migrate/SUPPORT.md` names `journal.TestSchemaVersionIs8` as evidence, so a later schema bump renames that test and the SUPPORT.md row again.
 - Task 1: `Result("NOT RUN").Unverified()` is false by design (the spec says exactly `not_run` and `unavailable`); renderers label the payload value, gates test the stored `result` column.
+
+- Task 3: a boundary-less host (user namespaces denied) skips the contained-run leg, so the independent read-only digest check runs without the boundary (`EvaluatorFor` needs none) and keeps the `ReadOnly` mutant red everywhere.
+
+- Task 4: a pin is built from the admission `Decision`, so a recovered run rebuilt by `recoveryDecision` must never recompute it; `conclude` reads it with `ReadPin`. A conflicting `policies` row surfaces from the admission transaction's append, not from `NewAdmissionPayload`, so `appendAdmission` tracks the policy error separately from the quota-hold error to block with `acceptance_pin_failed`.
+
+- Task 5: a contained native cannot launch without HOME (`resolveLayout` in `internal/contain/enter_linux.go`), so the runner's "contained checks need HOME" refusal is reached only on a recovery whose process has no HOME: the check environment is rebuilt from the recovering process (`recoveryDecision`), not journaled. A recovery that rebuilds a different check environment from the admitted run also changes the bound `environment` identity; D4 already keeps it out of the apply comparison. A row-less `verifying` run with a complete `check.completed` set is recorded `record_unavailable` without a ran evaluator, so its row has no evaluator digest and no attestation.
+
+- Task 8: the scan found 28 distinct types (`run.result` comes from the renderer, not the journal). `recover --format jsonl` shares `finish`, so the same refusal applies there. The fake `allowance-exhausted` scenario runs under `local-scripted` billing through the CLI and does journal `attempt.native_error`.
+- Task 6: the gate trusts the immutable binding row and the append-only admission event; the changeable inputs it compares against are the candidate row (`candidates.candidate_commit`) and `runs/<id>/task.md`, which the tests tamper with. A resumed apply (journaled intent) skips the gate and so cannot record an override; the intent payload does not carry one (hand-off).
+
+- Task 7: the receipt's `unknown_reasons` table (`internal/supervisor/unknown_reasons.go`) lists only leaves a real receipt can render unknown: `requested_outcome.task_file_sha256`, `admitted_snapshot.source_repo`, `execution_bundle.adapter` and `billing.mode` come from required run columns, so they have no entry (an entry no fixture reaches fails `TestEveryUnknownHasAReason`). The walk found `requested_outcome.title` unexplained on its first run, which is the case the test exists for.
+
+- Task 10: `Result("INVALID").Label()` is `unknown` (the label `INVALID` is not a stored value), so a surface that holds a receipt label must print it, never re-label it; only a stored or journaled result goes through `Label()`. The review `Acceptance:` line repeats the waiver reason the `Verification:` line carries, because design §2.7 prints the gate's reason there.
+
+- Task 11 (spec-text correction): Task 10's acceptance bullet for `TestReviewPlainShowsEntitlementAndVerification` said the `Verification:` line was the only place a waived run's reason appears. Design §2.7 governs and says a waived or unverified run shows its reason on the `Verification:` line and the `Acceptance:` line (`Acceptance: unverified (<reason>)`), which is what Task 10 built and its test pins; the bullet now says both lines. Task 10's completion entry keeps its own record of the disagreement (deviation 2). Task 11's end-to-end tests anchor on both lines (`TestE2EUnavailableChecksKeepCandidate`).
 
 ## Validation findings left open (run 3, round 1: Ready for implementation, 0 blocking)
 

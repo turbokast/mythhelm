@@ -264,13 +264,24 @@ func (m *Model) verificationLines() []line {
 	case "failed":
 		out := []line{{text: "verification: failed (" + short + ")", colour: t.Err}}
 		return append(out, m.checkLines()...)
-	case "not_run", "NOT RUN":
-		return []line{{text: "verification: NOT RUN (waived by --no-checks)"}}
+	case "not_run", "NOT RUN", "unavailable":
+		return []line{{text: "verification: NOT RUN (" + reasonOrUnknown(v.Reason) + ")"}}
+	case "invalid":
+		return []line{{text: "verification: INVALID (" + reasonOrUnknown(v.Reason) + ")", colour: t.Err}}
 	case "":
 		return []line{{text: "verification: unknown (" + short + ")"}}
 	default:
 		return []line{{text: "verification: " + cell(v.Result) + " (" + short + ")"}}
 	}
+}
+
+// reasonOrUnknown is a recorded verification reason, or "reason unknown" for
+// a run recorded before reasons existed: never blank, never invented (I09).
+func reasonOrUnknown(reason string) string {
+	if reason == "" {
+		return "reason unknown"
+	}
+	return cell(reason)
 }
 
 // checkLines renders one row per recorded check with its verbatim status.
@@ -304,8 +315,19 @@ func (m *Model) statusLines() []line {
 		"native exit: " + m.nativeExitText()
 	return []line{
 		{text: billing, colour: m.cfg.Tokens.TextMuted},
+		{text: m.entitlementText(), colour: m.cfg.Tokens.TextMuted},
 		{text: "Next action: " + m.nextActionText(), colour: m.cfg.Tokens.Text},
 	}
+}
+
+// entitlementText is the recorded entitlement sentence verbatim, or
+// "entitlement: unknown" when no admission (or no statement) was recorded: a
+// declared entitlement is never worded as verified (I15).
+func (m *Model) entitlementText() string {
+	if a := m.snap.Admission; a != nil && a.EntitlementStatement != "" {
+		return cell(a.EntitlementStatement)
+	}
+	return "entitlement: unknown"
 }
 
 // nativeExitText renders the agent's completion report as a native exit, never
@@ -391,8 +413,7 @@ func (m *Model) compactLines() []line {
 	if v := m.verificationLines(); len(v) > 0 {
 		lines = append(lines, v[0])
 	}
-	lines = append(lines, m.statusLines()[0])
-	return lines
+	return append(lines, m.statusLines()[:2]...)
 }
 
 // tabsLine renders the single-pane tab bar with the focused tab bracketed.

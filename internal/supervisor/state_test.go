@@ -140,6 +140,7 @@ func reasonFor[S ~string](to S) string {
 }
 
 func TestIllegalRunTransitionRejected(t *testing.T) {
+	t.Parallel()
 	j, path := openTemp(t)
 	db := rawOpen(t, path)
 	p := NewProducer(ids.New("sup"), 1)
@@ -177,6 +178,7 @@ func TestIllegalRunTransitionRejected(t *testing.T) {
 }
 
 func TestRunTransitionReasons(t *testing.T) {
+	t.Parallel()
 	j, path := openTemp(t)
 	db := rawOpen(t, path)
 	p := NewProducer(ids.New("sup"), 1)
@@ -222,6 +224,7 @@ func TestRunTransitionReasons(t *testing.T) {
 }
 
 func TestTransitionUnknownRun(t *testing.T) {
+	t.Parallel()
 	j, _ := openTemp(t)
 	err := TransitionRun(t.Context(), j, "run_missing", RunAdmission, "", NewProducer(ids.New("sup"), 1))
 	if !errors.Is(err, journal.ErrNotFound) {
@@ -230,6 +233,7 @@ func TestTransitionUnknownRun(t *testing.T) {
 }
 
 func TestTransitionJournalsStateChange(t *testing.T) {
+	t.Parallel()
 	j, path := openTemp(t)
 	db := rawOpen(t, path)
 	producerID := ids.New("sup")
@@ -286,6 +290,7 @@ func TestTransitionJournalsStateChange(t *testing.T) {
 }
 
 func TestTransitionAtomicWithJournal(t *testing.T) {
+	t.Parallel()
 	j, path := openTemp(t)
 	db := rawOpen(t, path)
 	p := NewProducer(ids.New("sup"), 1)
@@ -325,6 +330,7 @@ func TestTransitionAtomicWithJournal(t *testing.T) {
 }
 
 func TestConcurrentTransitionsSerialise(t *testing.T) {
+	t.Parallel()
 	j, path := openTemp(t)
 	db := rawOpen(t, path)
 	runID := newRun(t, j, NewProducer(ids.New("sup"), 1))
@@ -372,6 +378,7 @@ var allAttemptStates = []AttemptState{
 }
 
 func TestIllegalAttemptTransitionRejected(t *testing.T) {
+	t.Parallel()
 	j, path := openTemp(t)
 	db := rawOpen(t, path)
 	p := NewProducer(ids.New("sup"), 1)
@@ -410,6 +417,7 @@ func TestIllegalAttemptTransitionRejected(t *testing.T) {
 }
 
 func TestAttemptTransitionJournalsEnvelope(t *testing.T) {
+	t.Parallel()
 	j, path := openTemp(t)
 	db := rawOpen(t, path)
 	p := NewProducer(ids.New("sup"), 1)

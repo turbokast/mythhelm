@@ -38,6 +38,7 @@ Derived at origin/main `bc65309`; each line is re-checkable by the command besid
 | D15 | A non-empty project `Passthrough` is refused for Codex with `native_passthrough_unsupported` until OQ6 names Codex credential variables; the credential screen cannot run without them. | Passing project variables unscreened could carry a metered route (I15). |
 | D16 | Fidelity deltas (AC-3.2): `Prepare` records `ConfigDelta{Kind:"fidelity", Name:<aspect>, Value:"unobservable", Reason}` for instruction/skill discovery, hooks, MCP, children and native context behaviour; no aspect is recorded `preserved` without a matched direct-native comparison. | v2 §7.1; I09. |
 | D17 | Trust is generalised by a neutral `admission.NativeConfig{Digests map[string]string; Digest string; Hooks int; MCPServers []string; RequiresTrust bool}`; `CheckNativeTrust` keeps its signature and calls `CheckNativeTrustConfig(ctx, j, repoID, cfg NativeConfig, explicitDigest)`. | Existing callers and tests stay untouched (AC-1.3). |
+| D18 | A worker-initiated stop when an adapter can no longer observe the stream (added in Task 9, #389 F1; recorded in `docs/decisions/0018-codex-adapter-admission.md`). `adapter.ProtocolMismatch = "protocol_mismatch"` is a `NativeError` class that only `codex.Decode` sends, on a malformed `result` or a read error, once and before `ProtocolCounters`. When the worker sees it and no stop is running (`out.stopBy == ""`), it requests a stop itself (`requested_by` `worker`, reason `protocol_mismatch`) through its identity-checked interrupt. For a confirmed stop with no unresolved descendants the attempt ends `stopped/protocol_mismatch` (`classify` gives a recorded stop only `stopped` or `interrupted`) and, when the run is not already stopping, the run ends `failed/protocol_error` (exit 4), never `cancelled`. If the stop is unconfirmed, the attempt ends `interrupted/stop_unconfirmed` and the run ends `interrupted` after quarantine. A stop already in progress keeps its requester and reason: a user stop ends `cancelled`, a route-violation stop `blocked`. | Without a stop the native keeps running with its output unobserved (I18, v2 §4.5). The class is an adapter-reported fact, not a native error, but it is journaled as `attempt.native_error` like any other class. The Claude adapter is unchanged: its `protocol_error` does not stop the worker. Known gaps are tracked in #389 (A3, A4 and two open questions on stop precedence and converging the two classes). |
 
 ### 3. Seam changes (core, `internal/adapter`)
 
@@ -55,7 +56,7 @@ type Capabilities struct { /* existing fields */
 }
 ```
 
-Nothing else changes in `internal/adapter`. Negotiated optional methods (inspect-liveness, reconnect, resume, steer, approval response) are not added (honesty register).
+Task 9 adds one constant, `const ProtocolMismatch = "protocol_mismatch"`, the `NativeError` class of D18 (a deviation from the original design, which listed no further change). Nothing else changes in `internal/adapter`. Negotiated optional methods (inspect-liveness, reconnect, resume, steer, approval response) are not added (honesty register).
 
 ### 4. Admission (core, `internal/admission`)
 
@@ -99,7 +100,7 @@ func FixtureDraft(k qualify.Key, ev FixtureEvidence) (qualify.Record, error) // 
 ### 6. Workers, supervisor, containment (core)
 
 - `internal/workers/worker.go`: `adapters` map gains `"builtin/codex": codex.New`.
-- `internal/supervisor/pipeline.go` (line using `claudecode.AdmittedConfigPathsForEnv`) selects by `d.Adapter.ID`; `internal/workers/contain.go` (`claudecode.InventorySettingsForEnv`) selects by `l.AdapterID`; `internal/workers/worker.go` skips the `billing_route_mismatch` check for `builtin/codex` (D12); for `builtin/codex` the Codex inventory (D11). No behaviour change for the other two.
+- `internal/supervisor/pipeline.go` (line using `claudecode.AdmittedConfigPathsForEnv`) selects by `d.Adapter.ID`; `internal/workers/contain.go` (`claudecode.InventorySettingsForEnv`) selects by `l.AdapterID`; `internal/workers/worker.go` skips the `billing_route_mismatch` check for `builtin/codex` (D12); for `builtin/codex` the Codex inventory (D11). No behaviour change for the other two. The worker also handles `protocol_mismatch` (D18): `observe` requests a worker stop when no stop is running, and `internal/supervisor/pipeline.go` `conclude` ends the run `failed/protocol_error` for an attempt stopped on that reason unless the run is already stopping.
 - `internal/contain/records.go` `SeedV1`: no `builtin/codex` records. A Codex run with `--execution-profile restricted|inspect` is refused through the existing unknown-key path; Task 2 adds the refusal tests required by `contained-execution-profiles` Task 11 (merged, #310; N7): `TestRestrictedAndInspectRefuseCodex` and the codex cases of `TestUnsupportedRefusalPrecise` in `tests/e2e/contain_refusal_test.go`.
 
 ### 7. Doctor (core)
@@ -134,7 +135,8 @@ FR-1 (seam) and the adapter are separable in code but neither ships alone with v
 | AT-11 startup before trust | Met in order (inventory and trust precede the probe), but the enumerated sources are defaults (OQ6) and everything beyond them is a blocking gap. |
 | v2 §7.3 purchased-credit prevention / AT-13 exhaustion for Codex | Unmet by design (D6, D7): usage is nil and exhaustion is never classified until OQ10 supplies shapes; the purchased-credit check is a Codex-only rule that no fixture-derived record can satisfy. |
 | AC-6.1 effort metadata | Not met: `SessionStarted` has no effort field and `ObservedKey.EffortSettings` is `unknown`; capturing effort needs a seam field in a later spec. |
-| Process ownership / billing-route decisions D10, D12 | Recorded in the Task 12 decision record. |
+| Process ownership / billing-route decisions D10, D12, and the worker-initiated protocol stop D18 | Recorded in `docs/decisions/0018-codex-adapter-admission.md` (Task 12). |
+| Protocol-stop precedence and bookkeeping (#389 A3, A4 and two questions) | Open: the drained-line count after an early stop reaches only the worker log and can miss buffered input; `protocol_mismatch` can overwrite an earlier policy error class (unreachable while the error table is empty, D7); Ctrl-C or a deadline during the stop ladder ends the run `cancelled` or `blocked`; Codex `protocol_mismatch` and Claude `protocol_error` are not converged. |
 | Runtime route check (v2 §7.3 / AC-4.4 of the Claude spec) | Absent for Codex (D12): `APIKeySource` is not reported; the route rests on the admission key. |
 | `StructuredEvents` for Codex | Reported `unknown`: the synthetic schema (D5) proves the decoder, not what the executable emits. |
 | AT-02 fidelity deltas | Recorded `unobservable` (D16); none `preserved` without a direct-native comparison. |

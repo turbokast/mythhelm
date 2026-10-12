@@ -3,11 +3,13 @@ package migrate
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/turbokast/mythhelm/internal/control"
+	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/migrate/preview"
 	"github.com/turbokast/mythhelm/internal/supervisor"
 	"github.com/turbokast/mythhelm/internal/v2contract"
@@ -139,7 +141,7 @@ func TestApplyRefusesMissingRecordedBackup(t *testing.T) {
 	if !errors.As(err, &ce) || ce.Code != v2contract.CodeInvalidContract {
 		t.Fatalf("Apply with a missing recorded backup = %v; want invalid_contract", err)
 	}
-	if _, err := os.Lstat(filepath.Join(dir, "mythhelm.db.bak-migration-v7")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(filepath.Join(dir, fmt.Sprintf("%s.bak-migration-v%d", journal.DBName, journal.SchemaVersion))); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("default-path backup stat = %v; want none taken", err)
 	}
 	phase, _, err := readMigrationState(t.Context(), db)

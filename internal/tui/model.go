@@ -345,12 +345,12 @@ func (m *Model) finaliseRows(rows []line, width int) []string {
 
 // viewSingle renders the 80–99 column rung: labelled tabs, the focused pane,
 // the truncation notice when the detail pane shows a truncated diff, drained
-// notices, and the persistent critical status.
+// notices, and the persistent critical status with the entitlement sentence.
 func (m *Model) viewSingle() string {
 	var rows []line
 	rows = append(rows, m.tabsLine())
 	notices := m.noticeRows(maxNoticeRows)
-	bodyH := m.height - 3 - len(notices)
+	bodyH := m.height - 4 - len(notices)
 	if m.showNotice(layoutSingle) {
 		bodyH -= 2
 	}
@@ -359,7 +359,7 @@ func (m *Model) viewSingle() string {
 		rows = append(rows, m.truncationNotice()...)
 	}
 	rows = append(rows, notices...)
-	rows = append(rows, m.criticalStatusLine(), m.footerLine())
+	rows = append(rows, m.criticalStatusLine(), line{text: m.entitlementText(), colour: m.cfg.Tokens.TextMuted}, m.footerLine())
 	if ln, ok := m.filterLine(); ok {
 		rows = append(rows, ln)
 	}
@@ -426,7 +426,7 @@ func (m *Model) viewColumns(l layout, cols []column) string {
 	widths := columnWidths(m.width, len(cols))
 	sep := " " + vBarGlyph(m.cfg.Caps) + " "
 	notices := m.noticeRows(maxNoticeRows)
-	chrome := 2 + 2 + 1 + len(notices) // header, status strip, footer, notices
+	chrome := 2 + len(m.statusLines()) + 1 + len(notices) // header, status strip, footer, notices
 	if m.showNotice(l) {
 		chrome += 2
 	}

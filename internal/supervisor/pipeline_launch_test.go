@@ -382,6 +382,7 @@ func TestLaunchForAttemptBadContainmentFailsClosed(t *testing.T) {
 // stopped, but the run failed on the protocol: it is not a cancellation the
 // user asked for (#389 F1).
 func TestStoppedProtocolMismatchFailsRun(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		reason     string
