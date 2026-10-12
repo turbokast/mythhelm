@@ -347,7 +347,7 @@
 - **Spec deviations**:
   - Spec-text correction decided by the maintainer's coordinator: Task 10's acceptance bullet for `TestReviewPlainShowsEntitlementAndVerification` now says a waived or unverified run shows its reason on both the `Verification:` and the `Acceptance:` lines, as design §2.7 (design.md, "2.7 Surfaces") governs; only that sentence of Task 10's block was edited, and `scratchpad.md` Discoveries records it. Task 10's entry keeps its deviation 2.
   - The Acceptance lists the flow's run as `fake-route`; the tests run `--adapter fake --billing local-scripted` under the trusted-host profile (a contained run cannot enter its boundary from every CI host), the same route `TestRunLeavesSourceCheckoutUntouched` uses.
-  - Tasks 1-10 were not reverted to show each test red; each test's teeth are the mutants recorded in the PR (the tasks' own tests carry the red-against-pre-Task-1 proofs).
+  - The acceptance's "red against main before Task 1" was not demonstrated against the pre-Task-1 tree: it was demonstrated with production mutants of the current code, each killing only its own test (recorded in the PR body). The tasks' own tests carry the pre-Task-1 red proofs.
 - **Files modified**: `tests/e2e/acceptance_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
 ### Task 12 — User documentation and decision record
