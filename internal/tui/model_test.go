@@ -478,7 +478,7 @@ func TestMissionStatusStripEntitlement(t *testing.T) {
 		AdapterID: "builtin/fake", Qualified: false, PaidContinuation: "unknown",
 		EntitlementStatement: declaredEntitlement,
 	}
-	for _, size := range []struct{ width, height int }{{160, 30}, {120, 30}, {70, 14}} {
+	for _, size := range []struct{ width, height int }{{160, 30}, {120, 30}, {90, 20}, {70, 14}} {
 		name := fmt.Sprintf("%dx%d", size.width, size.height)
 		t.Run("declared "+name, func(t *testing.T) {
 			t.Parallel()
