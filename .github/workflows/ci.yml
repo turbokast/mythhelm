@@ -71,10 +71,10 @@ jobs:
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
       - run: go vet ./...
       - if: matrix.os != 'windows-11-arm'
-        run: go test -race -json ./... # TEMPORARY (#420): per-test timings, reverted before merge
+        run: go test -race ./...
       # The race detector does not support windows/arm64.
       - if: matrix.os == 'windows-11-arm'
-        run: go test -json ./... # TEMPORARY (#420): per-test timings, reverted before merge
+        run: go test ./...
       - run: go mod tidy -diff
 
   lint:
