@@ -134,7 +134,8 @@ with `--trust-project-config`. Edits in the candidate, the task text and agent
 messages cannot change which commands run, their timeouts or the evaluator.
 Admission also journals a policy pin, shown as `acceptance.policy_pin` in the
 receipt: policy `P1` version 1 and its digest, the task and contract, the check
-definitions, the evaluator and the check timeouts. A run admitted with
+definitions and the evaluator; the check timeouts are listed under
+`acceptance.bounds.check_timeouts`. A run admitted with
 `--no-checks`, or under `inspect`, runs no check, so its pin leaves the
 check-derived fields `unknown`. If the evaluator that ran is not the pinned
 one, the verdict is `INVALID`, never `passed`.
@@ -148,6 +149,12 @@ one, the verdict is `INVALID`, never `passed`.
 | `NOT RUN` | no verdict was reached; the candidate is kept, unverified | `ready_for_review (unverified)` | 5 |
 | `INVALID` | the evaluator that ran is not the pinned evaluator | `failed (verification_invalid)` | 5 |
 
+Three endings carry no verdict label. A run whose acceptance pin cannot be
+built or committed ends `blocked (acceptance_pin_failed)` before any worker
+exists, with exit 3. A run whose pin cannot be read when its checks are due
+ends `failed (acceptance_pin_unreadable)`, with exit 1. A verification that is
+cancelled ends `failed (verification_unavailable)`, with exit 5.
+
 `NOT RUN` always carries its reason, and it never renders as a verified run:
 
 - `waived by --no-checks` and `checks_refused_under_inspect`: no check was
@@ -157,7 +164,7 @@ one, the verdict is `INVALID`, never `passed`.
   reviewable instead of being failed for a fault in the evaluator;
 - `no_checks_ran`: the verdict had no check results to judge;
 - `binding_unavailable`: the checks ran but the attestation could not be built
-  within its 10 second limit;
+  (a bind error, or its 10 second limit);
 - `record_unavailable`: `mythhelm recover` found the checks had returned but
   their verdict was never recorded, and recorded one from the journaled check
   results. It never re-runs the checks;
@@ -346,9 +353,10 @@ fixture's admission block:
 
 The accessible stream's summary is a snapshot taken when the stream opens, so
 for a live `run --accessible` it reads `entitlement: unknown` until admission
-has decided; `review --accessible` prints the sentence. The admission line of
-the accessible event stream is capped at 200 cells and can be cut before it,
-so read the summary line.
+has decided, and the admission line of the accessible event stream is capped at
+200 cells and can be cut before the sentence
+([#439](https://github.com/turbokast/mythhelm/issues/439)). Run
+`review <run> --accessible` to read the sentence.
 
 ### The receipt
 
@@ -526,7 +534,7 @@ take a per-run owner lock. Its decisions are in
 | Code | Meaning |
 |---|---|
 | 0 | Succeeded |
-| 1 | Unexpected internal error |
+| 1 | Unexpected internal error, including an unreadable acceptance pin |
 | 2 | Invalid arguments or configuration |
 | 3 | Admission, policy or approval blocked, including a run that ends `blocked` |
 | 4 | Native execution failed |

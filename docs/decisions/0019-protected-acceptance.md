@@ -1,6 +1,6 @@
 # 0019. Protected acceptance: bound verdicts and immutable policies
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-11
 
 ## Context
@@ -144,6 +144,16 @@ Verdicts (D5, D18, D19, D21, D23)
   and `TestOldAdmissionReadsAsNoPin`. A run admitted before the pin existed and
   recovered afterwards ends `NOT RUN` / `pin_missing` instead of running its
   checks.
+- An unreadable pin ends the run `failed` / `acceptance_pin_unreadable` before any
+  check runs, with exit 1 (D24), and a pin that cannot be built or committed
+  ends it `blocked` / `acceptance_pin_failed` before any worker exists, with
+  exit 3. A cancelled verification ends `failed` / `verification_unavailable`.
+- The `verification.completed` event payload is public protocol and gains the
+  results `unavailable` and `invalid` plus the optional `reason`,
+  `evaluator` and `attestation_digest` fields; a consumer that rejects an
+  unknown result value must be updated. Unavailable checks end `ready_for_review`
+  / `unverified`, not `failed`, so ADR 0005's statement that they end `failed`
+  / `verification_failed` no longer holds.
 - Recovery never re-runs the checks (D21):
   `TestRecoverVerifyingWithoutRowAfterChecksReturned` records a verdict from a
   complete set of journaled results, and
@@ -189,5 +199,7 @@ Residuals the decisions leave
   checks' tools are not protected or identified. The user-facing wording is in
   the user guide's Acceptance section and the limitations register's
   "Acceptance limits".
-- The status stays `proposed`: accepting this record is the maintainer's
-  decision.
+- The maintainer accepted this record on 2026-10-12.
+- Not covered by this record's change: the qualified-route end-to-end test and
+  the live evidence run (carried by #429, blocked on MH-12), and the
+  limitations #328, #380, #393, #418, #439 and #440.
