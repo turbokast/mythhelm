@@ -82,11 +82,14 @@ fallback() {
       changed="(cannot resolve the checkout at $cwd)"
     fi
   fi
-  changed="$(printf '%s' "$changed" | head -5)"
   if [[ -z "$changed" ]]; then
     notice "$why; no tasks.md changed, so no completion claim was possible."
     exit 0
   fi
+  # Name the first five, cut in bash: a long list piped into head SIGPIPEs the writer,
+  # and pipefail turns that into exit 141, a non-blocking error that lets the stop through.
+  local first5=$'^[^\n]*(\n[^\n]*){0,4}'
+  [[ "$changed" =~ $first5 ]] && changed="${BASH_REMATCH[0]}"
   if [[ "$payload" =~ \"stop_hook_active\"[[:space:]]*:[[:space:]]*true ]]; then
     notice "$why; a completion may be claimed in ${changed//$'\n'/, } but was not verified."
     exit 0
