@@ -159,17 +159,17 @@ Under the scratchpad note rule, add: a Discovery that names a defect or an open 
 
 In the Sources table and Step 1, add: compare the number of tasks in `runspec.py summary` with `runspec.py status`'s `total`. When the log covers fewer, print the log's table as is, state `log covers <n> of <total> tasks`, and add per-task rows from `gh pr view <n> --json createdAt,mergedAt,commits,reviews` (commits, review submissions, opened and merged times), marking attempts and first-pass `unknown` for the uncovered tasks.
 
-## P-codex-native-adapter-4 — Class a main run replaced in the concurrency group as superseded, not infra
+## P-codex-native-adapter-4 — Report a zero-job cancelled main run as cancelled, not infra, and never as a descendant's verdict
 
 - **Source spec**: `codex-native-adapter`
 - **Type**: knowledge
 - **Target**: `knowledge/finalize.md`
-- **Rationale**: `finalize.py verify` reported two `note=history:` rows as `class=infra` for main runs that were `cancelled` with zero jobs. The mechanism is the main-branch concurrency group keeping one pending run: a newer push replaced the queued run within seconds. The code of those commits was tested by the next green run, so the label sends a reader looking for an infrastructure fault that does not exist.
-- **Evidence**: runs 38137813579 (commit 6103564, updated 2026-10-11T12:10:39Z) and 38138885062 (commit 56968dc, updated 12:21:07Z): `gh api .../jobs` lists no jobs; the replacing runs were created at 12:10:38Z (7fd0fcc) and 12:21:06Z (54b7b65); later runs on c38f20d and 31cb991 passed.
+- **Rationale**: `finalize.py verify` reported two `note=history:` rows as `class=infra` for main runs that were `cancelled` with zero jobs. No infrastructure fault is shown: the run never started a job. The likely cause is the main-branch concurrency group keeping one pending run, but timestamps cannot prove it, because a writer can cancel a queued run by hand. The label sends a reader looking for an infrastructure fault and hides that those commits were never tested on their own.
+- **Evidence**: runs 38137813579 (commit 6103564) and 38138885062 (commit 56968dc): `gh api .../jobs` lists no jobs; runs on 7fd0fcc and 54b7b65 were created one second before each was cancelled; later runs on c38f20d and 31cb991 passed, which tests those trees but not the cancelled commits themselves.
 
 **Proposed change:**
 
-Add a row to the failure-mode table: a main push run that is `cancelled` with zero jobs is `superseded`, not infrastructure, only when a later run in the same group (`ci-refs/heads/main`) was created within a few seconds before the cancelled run's `updatedAt` (here 1 s in both cases), which shows that the push replaced this specific run; a cancelled run without that match stays `unknown`, because a writer can cancel a queued run by hand. The verdict for the commit is the next completed run on a descendant, and `finalize.py ci` should name `class=superseded` only on that evidence.
+Add a row to the failure-mode table: a main push run that is `cancelled` with zero jobs is reported as `class=cancelled`, with the later run in the same group (`ci-refs/heads/main`) named as a candidate cause, never as `infra` and never as `superseded`. The commit's verdict stays `unknown` until a completed run tests that commit's tree, or the intervening changes are shown not to affect the result; a green run on a descendant is history, not that commit's verdict.
 
 ## P-codex-native-adapter-5 — Finalize copies the changelog to its docs mirror
 
