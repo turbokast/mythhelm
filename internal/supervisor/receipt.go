@@ -11,12 +11,16 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
+	"github.com/turbokast/mythhelm/internal/acceptance"
 	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/contain"
+	"github.com/turbokast/mythhelm/internal/integration"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/security"
+	"github.com/turbokast/mythhelm/internal/v2contract"
 )
 
 // Receipt is the version 1, reviewable record described by design §9.
@@ -54,10 +58,24 @@ func boundaryClaim(c contain.Claim) any {
 	return known(c.Name)
 }
 
-// BuildReceipt reads the durable run and attempt projections, plus the
-// admission and native-result observations. Unknown measurements remain
-// explicitly unknown, including when an attempt never started.
+// BuildReceipt is BuildReceiptWithin under the default render limit.
 func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receipt, error) {
+	return BuildReceiptWithin(ctx, j, runID, acceptance.DefaultTimeouts().Render)
+}
+
+// BuildReceiptWithin reads the durable run and attempt projections, plus the
+// admission and native-result observations, within limit (NFR-1). Unknown
+// measurements remain explicitly unknown, including when an attempt never
+// started.
+func BuildReceiptWithin(ctx context.Context, j *journal.Journal, runID string, limit time.Duration) (Receipt, error) {
+	ctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
+	return buildReceipt(ctx, j, runID, unknownReasons())
+}
+
+// buildReceipt assembles the receipt and explains each unknown leaf from
+// reasons, which it extends with the reasons only this run knows.
+func buildReceipt(ctx context.Context, j *journal.Journal, runID string, reasons map[string]string) (Receipt, error) {
 	run, err := j.Run(ctx, runID)
 	if err != nil {
 		return nil, err
@@ -209,7 +227,7 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 		"billing": map[string]any{"mode": known(run.BillingPosture), "qualified": qualified, "g05": known(adm.Billing.G05),
 			"credential_provenance": known(adm.Billing.CredentialProvenance), "entitlement_class": known(adm.Billing.EntitlementClass),
 			"entitlement_source": known(adm.Billing.EntitlementSource), "paid_continuation": known(adm.Billing.PaidContinuation),
-			"paid_continuation_user_declaration": known(adm.Billing.PaidContinuationUserDeclaration), "init_api_key_source": eventValue(nativeSession, "auth_source"),
+			"paid_continuation_user_declaration": known(adm.Billing.PaidContinuationUserDeclaration), "entitlement_statement": admission.EntitlementStatement(adm.Billing), "init_api_key_source": eventValue(nativeSession, "auth_source"),
 			"retail_equivalent_estimate_usd": price, "tokens": tokens, "native_auth": nativeAuth,
 			"usage_observations": observations, "reserve": reserve, "remaining": remaining, "next_retry": nextRetry},
 		"routing": map[string]any{"decision": "pinned by --adapter; no routing in this slice"},
@@ -217,7 +235,8 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 			"duration_ms": eventValue(native, "duration_ms"), "session_id": known(session), "permission_denials": denials},
 		"candidate": map[string]any{"base_rev": unknown, "commit": unknown, "tree_id": unknown, "patch_sha256": unknown,
 			"changed_paths": unknown, "flags": []any{}, "integration": "single candidate on admitted snapshot; candidate is the combined revision"},
-		"verification":     map[string]any{"config_sha256": unknown, "baseline": "not-run", "checks": []any{}, "evaluator": unknown},
+		"verification": map[string]any{"config_sha256": unknown, "baseline": "not-run", "checks": []any{}, "evaluator": unknown,
+			"result": unknown, "label": unknown, "reason": unknown, "binding": unknown},
 		"external_effects": []any{}, "execution_host": map[string]any{"os": runtime.GOOS, "arch": runtime.GOARCH},
 		"host_integration":       "standalone (Herdr out of scope)",
 		"unknowns":               []string{"whether any inference request preceded the init event", "native telemetry egress", "descendants outside the process group"},
@@ -247,6 +266,7 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 				"integration": "single candidate on admitted snapshot; candidate is the combined revision"}
 		}
 	}
+	var verified *journal.VerificationRow
 	v, err := j.LatestVerification(ctx, runID)
 	if err != nil && !errors.Is(err, journal.ErrNotFound) {
 		return nil, err
@@ -265,9 +285,141 @@ func BuildReceipt(ctx context.Context, j *journal.Journal, runID string) (Receip
 		if v.EvaluatorDigest != "" {
 			evaluator = map[string]any{"name": known(v.EvaluatorName), "digest": known(v.EvaluatorDigest)}
 		}
-		r["verification"] = map[string]any{"config_sha256": known(v.ConfigSHA256), "baseline": "not-run", "checks": checks, "evaluator": evaluator}
+		r["verification"] = map[string]any{"config_sha256": known(v.ConfigSHA256), "baseline": "not-run", "checks": checks, "evaluator": evaluator,
+			"result": known(v.Result), "label": acceptance.Result(v.Result).Label(), "reason": verdictReason(v, reasons),
+			"binding": verdictBinding(v, reasons)}
+		verified = &v
+	}
+	section, err := acceptanceSection(ctx, j, runID, admitted, verified, reasons)
+	if err != nil {
+		return nil, err
+	}
+	r["acceptance"] = section
+	for _, path := range attachUnknownReasons(r, reasons) {
+		r["unknown_reasons"].(map[string]string)[path] = noReasonRecorded
 	}
 	return r, nil
+}
+
+// verdictReason is the verification's reason: the recorded one, empty for a
+// passed verdict that needs none, and unknown with its cause otherwise.
+func verdictReason(v journal.VerificationRow, reasons map[string]string) any {
+	if v.Reason != "" {
+		return known(v.Reason)
+	}
+	if v.Result == string(acceptance.ResultPassed) {
+		return ""
+	}
+	if !v.Bound {
+		reasons["verification.reason"] = reasonBeforeBinding
+	}
+	return unknown
+}
+
+// verdictBinding is what the verdict is bound to, read from its attestation;
+// unknown, with the cause, when the row has none.
+func verdictBinding(v journal.VerificationRow, reasons map[string]string) any {
+	switch {
+	case len(v.Attestation) > 0:
+		att, err := v2contract.Decode[v2contract.Verification](v.Attestation)
+		if err != nil {
+			reasons["verification.binding"] = "the attestation could not be read"
+			return unknown
+		}
+		b := acceptance.BindingOf(att)
+		return map[string]any{
+			"candidate":          map[string]any{"format": known(b.Candidate.Format), "value": known(b.Candidate.Value)},
+			"contract":           known(b.Contract),
+			"check_definition":   known(b.CheckDefinition),
+			"evaluator":          known(b.Evaluator),
+			"environment":        known(b.Environment),
+			"attestation_digest": known(v.AttestationDigest),
+		}
+	case !v.Bound:
+		reasons["verification.binding"] = reasonBeforeBinding
+	case v.Reason != "":
+		reasons["verification.binding"] = "no attestation was recorded (" + v.Reason + ")"
+	default:
+		reasons["verification.binding"] = "no attestation was recorded for this verification"
+	}
+	return unknown
+}
+
+// acceptanceSection renders the run's acceptance pin, determinism, overhead
+// and bounds (design §2.6). An unreadable pin renders unknown rather than
+// failing the receipt, so the run still settles and can be reviewed (D24).
+func acceptanceSection(ctx context.Context, j *journal.Journal, runID string, admitted bool, v *journal.VerificationRow, reasons map[string]string) (map[string]any, error) {
+	pin, pinned, pinErr := ReadPin(ctx, j, runID)
+	if pinErr != nil && ctx.Err() != nil {
+		return nil, pinErr
+	}
+	env, envErr := j.RunEnvelope(ctx, runID)
+	if envErr != nil && !errors.Is(envErr, sql.ErrNoRows) {
+		return nil, envErr
+	}
+	overhead := any(unknown)
+	switch {
+	case v == nil:
+		reasons["acceptance.overhead_ms"] = reasonNoVerification
+	case v.OverheadMS != nil:
+		overhead = *v.OverheadMS
+	case !v.Bound:
+		reasons["acceptance.overhead_ms"] = reasonBeforeBinding
+	default:
+		reasons["acceptance.overhead_ms"] = "no binding step ran for this verification"
+	}
+	return map[string]any{
+		"policy_pin":      policyPin(pin, pinned, pinErr, admitted, reasons),
+		"determinism":     map[string]any{"confined_to": acceptance.DeterminismConfinedTo, "note": acceptance.DeterminismNote},
+		"overhead_ms":     overhead,
+		"overhead_covers": "binding step",
+		"bounds":          bounds(env, envErr == nil, pin),
+	}, nil
+}
+
+func policyPin(pin acceptance.Pin, pinned bool, readErr error, admitted bool, reasons map[string]string) any {
+	switch {
+	case readErr != nil:
+		reasons["acceptance.policy_pin"] = "acceptance pin unreadable"
+		return unknown
+	case !pinned && admitted:
+		reasons["acceptance.policy_pin"] = reasonBeforeBinding
+		return unknown
+	case !pinned:
+		return unknown
+	}
+	evaluator, checkDefinition := any(unknown), unknown
+	if pin.EvaluatorDigest != "" {
+		evaluator = map[string]any{"name": known(pin.EvaluatorName), "digest": known(pin.EvaluatorDigest)}
+	}
+	if pin.CheckDefinition != "" {
+		checkDefinition = known(pin.CheckDefinition)
+	}
+	return map[string]any{"policy_id": known(pin.PolicyID), "policy_version": pin.PolicyVersion, "policy_digest": known(pin.PolicyDigest),
+		"task_id": known(pin.TaskID), "task_revision": pin.TaskRevision, "contract": known(pin.Contract),
+		"check_definition": checkDefinition, "evaluator": evaluator}
+}
+
+// bounds renders the run's envelope values and which of them bind a live run
+// (I10, AC-4.4). Only the execution deadline does: issue #328 keeps the repair,
+// replan and transport ceilings unenforced until multi-attempt runs exist, and
+// the task that closes it rewrites these flags.
+func bounds(env journal.EnvelopeRow, enveloped bool, pin acceptance.Pin) any {
+	if !enveloped {
+		return unknown
+	}
+	bound := func(value int64, enforced bool) map[string]any {
+		return map[string]any{"value": value, "enforced": enforced}
+	}
+	timeouts := any(unknown)
+	if len(pin.CheckTimeouts) > 0 {
+		timeouts = pin.CheckTimeouts
+	}
+	return map[string]any{
+		"execution_seconds": bound(env.ExecutionSeconds, true), "repairs": bound(env.Repairs, false),
+		"replans": bound(env.Replans, false), "transport_retries": bound(env.TransportRetries, false),
+		"check_timeouts": timeouts, "evidence_bytes_per_check": integration.MaxEvidenceBytes,
+	}
 }
 
 // retailScope is the usage scope carrying the native retail estimate.
