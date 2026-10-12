@@ -36,7 +36,7 @@ Supported now:
 Not supported yet:
 
 - Plugins and routing: still planned. Releases: v0.0.1 is the only release and carries no binaries. The archive pipeline is implemented and dry-run proven on a test tag, but it has not published a release (see [the release process](docs/release-process.md)).
-- Contained execution beyond Linux. On macOS and Windows `restricted` and `inspect` are refused with exit 7, and so is `restricted` for the Claude Code route on every OS (its credential boundary is not enforced yet), so real Claude Code runs need `--execution-profile trusted-host`. The Linux boundary does not block direct network egress or signals to same-user host processes.
+- Contained execution beyond Linux. On macOS and Windows `restricted` and `inspect` are refused with exit 7, and so are both for the Claude Code route on every OS (its credential boundary is not enforced yet), so real Claude Code runs need `--execution-profile trusted-host`. The Linux boundary does not block direct network egress or signals to same-user host processes.
 - Using the supervisor service for runs. `stop` and `recover` are not served by it (#348).
 - Life after `mythhelm migrate --apply --yes`: `run`, `recover` and `apply` are then refused with exit 6, and no command restores the backup (#320, #369). Do not apply the migration unless you accept that.
 - `subscription-only`: it blocks today, because no live-qualified qualification record exists for any route.
