@@ -350,7 +350,7 @@
   - The acceptance's "red against main before Task 1" was not demonstrated against the pre-Task-1 tree: it was demonstrated with production mutants of the current code, each killing only its own test (recorded in the PR body). The tasks' own tests carry the pre-Task-1 red proofs.
 - **Files modified**: `tests/e2e/acceptance_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
-### Task 12 — User documentation and decision record
+### Task 12 — User documentation and decision record ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -367,6 +367,13 @@
   - `sed -n '/^## Acceptance limits/,/^## /p' docs/limitations.md | grep -q "unknown"` and the same section states the unprotected test-file residual and the unknown tool-version identity; exits non-zero before.
 - **Test plan**: Recorded shell commands with their failing counterfactual; `scripts/ci/check-public-hygiene.sh`.
 - **Invariants touched**: I14 (v2 §2: only evidenced capability is advertised; the residuals are written down); I09 (v2 §2: docs word unknowns as unknown).
+- **Status**: ✅ Completed — the user guide's `## Acceptance` section, the limitations register's `## Acceptance limits` section and ADR 0019's consequences ship, with every pasted output re-run on the packaged binary; PR #427.
+- **Implementation**: each output block carries a comment line naming its command and `TestE2E` test, and a script compared all eleven with a fresh run of the four flows (IDs, commits and digests normalised); the stale-verdict and waived-reason wording follows design §2.7; #418, #393, #328 and #380 are worded as known limits after checking each in code. Commit 1ba11fd.
+- **Spec deviations**:
+  - ADR 0019 keeps `Status: proposed`: Task 2's text said Task 12 moves it to accepted, but Task 12's acceptance does not require it and accepting a decision record is the maintainer's call (ADR 0014 records its maintainer approval); the ADR says so.
+  - `grep -n "bak-migration-v7" docs/user-guide.md` already printed nothing on origin/main (Task 2 made the `-v8` edit); `git grep -n "bak-migration-v7"` finds no other docs hit, only history in `specs/`.
+  - Added a "Supported today" bullet to `docs/limitations.md` and small pointer edits in `docs/user-guide.md` (intro, the `review`/`apply` paragraph, the exit-code 5 row, the Billing paragraph for the declared sentence), all inside the Files list and consistent with design §2.7.
+- **Files modified**: `docs/user-guide.md`, `docs/limitations.md`, `docs/decisions/0019-protected-acceptance.md`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
 ### Task 13 — Qualified-route end-to-end (blocked-on MH-12 Task 5)
 

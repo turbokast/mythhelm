@@ -107,7 +107,11 @@
 
 ## Task 12 — User documentation and decision record
 
-<!-- pending -->
+- **Produces**: `docs/user-guide.md` `## Acceptance` (subsections: what a verdict is bound to, verdicts, review and apply, the entitlement sentence, the receipt, the JSONL event contract, known limits), `docs/limitations.md` `## Acceptance limits`, and the Consequences of `docs/decisions/0019-protected-acceptance.md` (status still `proposed`); no difference from the task's Files line.
+- **For Task 14**: the guide documents the qualified sentence form (`entitlement: verified by MYTHHELM (<entitlement source>); paid continuation: <value>`) as unproven end to end, because no route is live-qualified; when the maintainer's live record lands, the guide's entitlement table row and the limitations bullet "The qualified entitlement sentence is not proven end to end" are the two places to update.
+- **For dependents**: every pasted output block in the guide's Acceptance section has an HTML comment line above it naming the command that produced it; keep that when editing, and re-run the flow (packaged binary, `--adapter fake --billing local-scripted --execution-profile trusted-host`, a temporary state directory) before changing a block.
+- **For dependents**: the known limits the docs name are #328 (`enforced: false` flags), #380 (a `failed` run cannot be applied), #393 (TUI and `--accessible` decide "verified" from the commit alone; `CheckAcceptance` is called only by `review` and `apply`) and #418 (a resumed apply records no override). A change that closes one edits the guide sentence, the limitations bullet and, for #328, `TestReceiptBoundsEnforcedFlags`.
+- **Deviations that change a later task's inputs**: none.
 
 ## Task 13 — Qualified-route end-to-end (blocked-on MH-12 Task 5)
 
