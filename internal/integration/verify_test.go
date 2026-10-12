@@ -29,6 +29,8 @@ func TestMain(m *testing.M) {
 		switch os.Args[2] {
 		case "pass":
 			os.Exit(0)
+		case "fail":
+			os.Exit(1)
 		case "output":
 			fmt.Print("not formatted\n")
 			os.Exit(0)
@@ -537,7 +539,7 @@ func TestEvaluatorChangesWithCheckDefinition(t *testing.T) {
 
 func TestUnavailableCheckIsNotFailed(t *testing.T) {
 	missing := admission.CheckConfig{Name: "missing", Argv: []string{filepath.Join(t.TempDir(), "no-such-check")}, Timeout: "2s"}
-	failing := admission.CheckConfig{Name: "failing", Argv: []string{"/bin/sh", "-c", "exit 1"}, Timeout: "5s"}
+	failing := admission.CheckConfig{Name: "failing", Argv: []string{os.Args[0], "__verify_helper", "fail"}, Timeout: "5s"}
 	slow := admission.CheckConfig{Name: "slow", Argv: []string{os.Args[0], "__verify_helper", "delayed", filepath.Join(t.TempDir(), "survived")}, Timeout: "200ms"}
 	for name, tc := range map[string]struct {
 		checks []admission.CheckConfig
