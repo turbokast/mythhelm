@@ -3,14 +3,15 @@
 # from stub.env beside it. Never calls a network service.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STUB_MODE=ok STUB_VERSION=1.4.0 STUB_SIGNED_IN=0 STUB_WRITE="" STUB_ANSWER="$HERE/answer.json"
+STUB_MODE=ok STUB_VERSION=1.4.0 STUB_WRITE="" STUB_ANSWER="$HERE/answer.json"
 # shellcheck source=/dev/null
 [[ -f "$HERE/stub.env" ]] && . "$HERE/stub.env"
 { printf '%q ' "$@"; echo; } >> "$HERE/argv.log" 2>/dev/null || true
 ARGV="$*"
 
 if [[ "${1:-}" == --version ]]; then echo "muse $STUB_VERSION"; exit 0; fi
-if [[ "${1:-}" == auth && "${2:-}" == status ]]; then exit "$STUB_SIGNED_IN"; fi
+# Like Muse Code 1.4.6, which has no sign-in status command: `auth` knows only `set`.
+if [[ "${1:-}" == auth && "${2:-}" != set ]]; then echo "expected \`auth set\`" >&2; exit 2; fi
 done_record() {
   jq -cn --arg t "$1" '{payload_type:"run.terminal.completed",payload:{terminal:"completed",text:$t}}'
 }
@@ -19,6 +20,7 @@ case "$STUB_MODE" in
   ok) done_record "$(cat "$STUB_ANSWER")" ;;
   notjson) done_record "prose, not JSON" ;;
   fail) echo '{"payload_type":"task.lifecycle.failed","payload":{"event":{"reason":"stub failure"}}}' ;;
+  signed-out) echo "synthetic: no usable credential" >&2; exit 1 ;;
   sleep) sleep 30 ;;
   lane) for f in $STUB_WRITE; do mkdir -p "$(dirname "$f")"; echo "// written by the stub" > "$f"; done; done_record "done" ;;
 esac

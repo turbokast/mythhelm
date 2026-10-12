@@ -192,13 +192,16 @@ func readMetadata(path string) (lockMetadata, bool) {
 // before it writes. A reader landing in either window sees an empty or
 // partial record that is complete moments later, so an unparseable file
 // is re-read for up to metadataSettle before the parse error is returned.
-// A file that stays unparseable still fails closed.
+// A file that stays unparseable still fails closed. Only a read started
+// after the deadline returns its parse error: a read that stalls past the
+// deadline may have caught a rewrite in progress, so it is read again.
 func readMetadataErr(path string) (lockMetadata, error) {
 	deadline := time.Now().Add(metadataSettle)
 	for {
+		started := time.Now()
 		meta, err := parseMetadata(path)
 		var syntax *json.SyntaxError
-		if !errors.As(err, &syntax) || !time.Now().Before(deadline) {
+		if !errors.As(err, &syntax) || !started.Before(deadline) {
 			return meta, err
 		}
 		time.Sleep(metadataPoll)

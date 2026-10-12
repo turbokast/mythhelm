@@ -206,7 +206,11 @@ func buildReceipt(ctx context.Context, j *journal.Journal, runID string, reasons
 	if err != nil {
 		return nil, err
 	}
-	reserve, err := reserveLedger(ctx, j, runID, adm, admitted)
+	pin, err := readPinForReceipt(ctx, j, runID)
+	if err != nil {
+		return nil, err
+	}
+	reserve, err := reserveLedger(ctx, j, runID, adm, admitted, pin, reasons)
 	if err != nil {
 		return nil, err
 	}
@@ -290,7 +294,7 @@ func buildReceipt(ctx context.Context, j *journal.Journal, runID string, reasons
 			"binding": verdictBinding(v, reasons)}
 		verified = &v
 	}
-	section, err := acceptanceSection(ctx, j, runID, admitted, verified, reasons)
+	section, err := acceptanceSection(ctx, j, runID, admitted, verified, pin, reasons)
 	if err != nil {
 		return nil, err
 	}
@@ -348,11 +352,7 @@ func verdictBinding(v journal.VerificationRow, reasons map[string]string) any {
 // acceptanceSection renders the run's acceptance pin, determinism, overhead
 // and bounds (design §2.6). An unreadable pin renders unknown rather than
 // failing the receipt, so the run still settles and can be reviewed (D24).
-func acceptanceSection(ctx context.Context, j *journal.Journal, runID string, admitted bool, v *journal.VerificationRow, reasons map[string]string) (map[string]any, error) {
-	pin, pinned, pinErr := ReadPin(ctx, j, runID)
-	if pinErr != nil && ctx.Err() != nil {
-		return nil, pinErr
-	}
+func acceptanceSection(ctx context.Context, j *journal.Journal, runID string, admitted bool, v *journal.VerificationRow, pin pinRead, reasons map[string]string) (map[string]any, error) {
 	env, envErr := j.RunEnvelope(ctx, runID)
 	if envErr != nil && !errors.Is(envErr, sql.ErrNoRows) {
 		return nil, envErr
@@ -369,23 +369,59 @@ func acceptanceSection(ctx context.Context, j *journal.Journal, runID string, ad
 		reasons["acceptance.overhead_ms"] = "no binding step ran for this verification"
 	}
 	return map[string]any{
-		"policy_pin":      policyPin(pin, pinned, pinErr, admitted, reasons),
+		"policy_pin":      policyPin(pin, admitted, reasons),
 		"determinism":     map[string]any{"confined_to": acceptance.DeterminismConfinedTo, "note": acceptance.DeterminismNote},
 		"overhead_ms":     overhead,
 		"overhead_covers": "binding step",
-		"bounds":          bounds(env, envErr == nil, pin),
+		"bounds":          bounds(env, envErr == nil, pin, admitted, reasons),
 	}, nil
 }
 
-func policyPin(pin acceptance.Pin, pinned bool, readErr error, admitted bool, reasons map[string]string) any {
+// pinRead is what reading the run's acceptance pin found: the pin when found,
+// whether one was found, and the read error when it could not be read.
+type pinRead struct {
+	pin   acceptance.Pin
+	found bool
+	err   error
+}
+
+// readPinForReceipt reads the pin once for the whole receipt. An unreadable
+// pin renders unknown rather than failing the receipt, so the run still
+// settles and can be reviewed (D24); only a cancelled context fails it.
+func readPinForReceipt(ctx context.Context, j *journal.Journal, runID string) (pinRead, error) {
+	pin, found, err := ReadPin(ctx, j, runID)
+	if err != nil && ctx.Err() != nil {
+		return pinRead{}, err
+	}
+	return pinRead{pin: pin, found: found, err: err}, nil
+}
+
+// noTimeoutsReason says why the run has no pinned check timeouts, from what
+// is true of this run: an unreadable pin, a run never admitted, a run admitted
+// before the pin existed, or a pin journaled with no checks (I09).
+func (p pinRead) noTimeoutsReason(admitted bool) string {
 	switch {
-	case readErr != nil:
-		reasons["acceptance.policy_pin"] = "acceptance pin unreadable"
+	case p.err != nil:
+		return reasonPinUnreadable
+	case !admitted:
+		return reasonNotAdmitted
+	case !p.found:
+		return reasonBeforeBinding
+	default:
+		return reasonNoChecks
+	}
+}
+
+func policyPin(read pinRead, admitted bool, reasons map[string]string) any {
+	pin := read.pin
+	switch {
+	case read.err != nil:
+		reasons["acceptance.policy_pin"] = reasonPinUnreadable
 		return unknown
-	case !pinned && admitted:
+	case !read.found && admitted:
 		reasons["acceptance.policy_pin"] = reasonBeforeBinding
 		return unknown
-	case !pinned:
+	case !read.found:
 		return unknown
 	}
 	evaluator, checkDefinition := any(unknown), unknown
@@ -404,7 +440,7 @@ func policyPin(pin acceptance.Pin, pinned bool, readErr error, admitted bool, re
 // (I10, AC-4.4). Only the execution deadline does: issue #328 keeps the repair,
 // replan and transport ceilings unenforced until multi-attempt runs exist, and
 // the task that closes it rewrites these flags.
-func bounds(env journal.EnvelopeRow, enveloped bool, pin acceptance.Pin) any {
+func bounds(env journal.EnvelopeRow, enveloped bool, read pinRead, admitted bool, reasons map[string]string) any {
 	if !enveloped {
 		return unknown
 	}
@@ -412,8 +448,10 @@ func bounds(env journal.EnvelopeRow, enveloped bool, pin acceptance.Pin) any {
 		return map[string]any{"value": value, "enforced": enforced}
 	}
 	timeouts := any(unknown)
-	if len(pin.CheckTimeouts) > 0 {
-		timeouts = pin.CheckTimeouts
+	if len(read.pin.CheckTimeouts) > 0 {
+		timeouts = read.pin.CheckTimeouts
+	} else {
+		reasons["acceptance.bounds.check_timeouts"] = read.noTimeoutsReason(admitted)
 	}
 	return map[string]any{
 		"execution_seconds": bound(env.ExecutionSeconds, true), "repairs": bound(env.Repairs, false),
@@ -466,19 +504,47 @@ func usageLedger(ctx context.Context, j *journal.Journal, runID string) ([]any, 
 	return out, nil
 }
 
+// pinnedTimeoutSum is the sum of the pinned check timeouts, with the check
+// run's own estimate. It reports false when a timeout is not a positive
+// duration or the sum overflows: the run stream prints that sum as unknown too.
+func pinnedTimeoutSum(timeouts map[string]string) (time.Duration, bool) {
+	checks := make([]billing.CheckBound, 0, len(timeouts))
+	for name, timeout := range timeouts {
+		d, err := time.ParseDuration(timeout)
+		if err != nil || d <= 0 {
+			return 0, false
+		}
+		checks = append(checks, billing.CheckBound{Name: name, Timeout: d})
+	}
+	est, err := billing.EstimateReserve(checks, billing.Ceilings{})
+	return est.VerifyTimeoutSum, err == nil
+}
+
 // reserveLedger renders billing.reserve: the completion reserve as an
 // estimate with the Task 9 note, never a hard token claim (AC-5.2). The
-// repair ceiling comes from the envelope row; the verify pass is exact only
-// for a waived suite (no checks admitted, so the pass is empty) and unknown
-// otherwise, because check timeouts are not journaled (I09).
-func reserveLedger(ctx context.Context, j *journal.Journal, runID string, adm admission.Record, admitted bool) (map[string]any, error) {
+// repair ceiling comes from the envelope row. The verify pass is the empty one
+// of a waived suite, or the check timeouts the pin journaled at admission, and
+// unknown with the reason true of the run otherwise (I09).
+func reserveLedger(ctx context.Context, j *journal.Journal, runID string, adm admission.Record, admitted bool, read pinRead, reasons map[string]string) (map[string]any, error) {
 	reserve := map[string]any{
 		"verify_pass_checks": unknown, "verify_timeout_sum": unknown,
 		"repair_ceiling": unknown, "note": billing.ReserveNote,
 	}
-	if admitted && adm.NoChecks {
+	switch {
+	case admitted && adm.NoChecks:
 		reserve["verify_pass_checks"] = 0
 		reserve["verify_timeout_sum"] = "0s"
+	case len(read.pin.CheckTimeouts) > 0:
+		reserve["verify_pass_checks"] = len(read.pin.CheckTimeouts)
+		if sum, ok := pinnedTimeoutSum(read.pin.CheckTimeouts); ok {
+			reserve["verify_timeout_sum"] = sum.String()
+		} else {
+			reasons["billing.reserve.verify_timeout_sum"] = "a pinned check timeout is not a positive duration"
+		}
+	default:
+		reason := read.noTimeoutsReason(admitted)
+		reasons["billing.reserve.verify_pass_checks"] = reason
+		reasons["billing.reserve.verify_timeout_sum"] = reason
 	}
 	env, err := j.RunEnvelope(ctx, runID)
 	if errors.Is(err, sql.ErrNoRows) {

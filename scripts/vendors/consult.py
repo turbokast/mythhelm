@@ -15,8 +15,8 @@ Envelope order, so a refusal always happens before anything is spent:
   3. the target is a clean linked worktree (ignored files too)  target-refused
   4. prompt = shared preamble + stage prompt + redacted context,
      no larger than the stage's max_context_bytes                context-too-large
-  5. CLI present, version pin, signed in (vendor status cmd)     cli-missing |
-                                                                 version-too-old |
+  5. CLI present, version pin, signed in (vendor status cmd,     cli-missing |
+     when the policy names one)                                  version-too-old |
                                                                  not-signed-in
   6. one call counted against the daily caps                     over-quota
   7. the vendor runs read-only in the target, under a timeout    timeout | vendor-error

@@ -19,7 +19,6 @@
       "kind": "cli",
       "cli": "muse",
       "min_version": "1.4.0",
-      "status_command": ["auth", "status"],
       "model": null,
       "daily_call_cap": 10,
       "attribution": "Vendor-Assisted-By: Muse CLI"
