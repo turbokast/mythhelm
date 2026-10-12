@@ -124,7 +124,11 @@ func seedLaunch(t *testing.T, f fixture, scenario string, trustConfig ...string)
 	if err := supervisor.TransitionRun(t.Context(), j, d.RunID, supervisor.RunAdmission, "", prod); err != nil {
 		t.Fatal(err)
 	}
-	payload, err := json.Marshal(d.Record())
+	pinned, err := supervisor.NewAdmissionPayload(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(pinned)
 	if err != nil {
 		t.Fatal(err)
 	}
