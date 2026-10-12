@@ -81,4 +81,3 @@ index 0000000..2d2f29c
 +++ b/greeting.txt
 @@ -0,0 +1 @@
 +hello from the scripted agent
-synthetic drift probe: the hero freshness gate must reject this line
