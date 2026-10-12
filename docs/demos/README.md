@@ -72,32 +72,41 @@ each shown capability:
 | linear accessible stream | `TestAccessibleOrderedStream` (`internal/cli/accessible_test.go`) |
 
 The hero tape is the story the README leads with: kill the terminal mid-run,
-then recover. `mythhelm run` drives the fake adapter's `paced` scenario (a
-scripted four-turn session of about 17 seconds) in the live TUI. The tape
+then recover. It opens on a title card (`MYTHHELM`, the `SCRIPTED DEMO`
+line), then `mythhelm run` drives the fake adapter's `paced` scenario (a
+scripted four-turn session of about 20 seconds) in the live TUI. The tape
 runs it under `timeout --foreground -s KILL 8`, so the foreground `mythhelm
-run` process is killed with SIGKILL while the agent is mid-attempt. The
-worker and the agent are separate processes and keep running; `mythhelm runs
-list` still reads `executing` because the journal cannot know the CLI died.
-`mythhelm recover <run>` reattaches to the same worker (the qualifying test
-asserts the worker and native pids are unchanged), the scenario finishes the work after the kill, the check
-runs and `mythhelm review` opens the inspect view with the diff and the
-revision-attached `verified <rev>` line. A worker killed outright is a
-different case: its attempt cannot resolve and the run stays quarantined
-(issue #391), so it is not shown. The ending shows what is verified (the
-checked revision, the check's name) and what stays labelled (`qualified:
-false`, `paid continuation: not-applicable`, a native-reported exit); the
-receipt's `unknowns` list is in `mythhelm review --format jsonl`, not on the
-screen. A waived check (`--no-checks`) would read `NOT RUN`; this tape does
-not take that branch.
+run` process is killed with SIGKILL while the agent is mid-attempt, and the
+dead TUI's last frame stays frozen on screen. A red marker printed by the
+shell from the real exit status of `timeout` (137) says so; it is an
+annotation, not mythhelm output. The worker and the agent are separate
+processes and keep running: `pgrep -f "__worker --state $MYTHHELM_HOME"`
+prints the worker's pid, and `mythhelm recover <run>` then prints `reattached
+to worker pid` with the same pid (the qualifying test asserts the worker and
+native pids are unchanged). The journal is replayed at once and the agent's
+remaining work arrives live: the scenario finishes the work after the kill,
+the check runs and passes, and `mythhelm review` opens the inspect view with
+the diff and the revision-attached `verified <rev>` line. A worker killed
+outright is a different case: its attempt cannot resolve and the run stays
+quarantined (issue #391), so it is not shown. The ending shows what is
+verified (the checked revision, the check's name) and what stays labelled
+(`qualified: false`, `paid continuation: not-applicable`, a native-reported
+exit); the receipt's `unknowns` list is in `mythhelm review --format jsonl`,
+not on the screen. A waived check (`--no-checks`) would read `NOT RUN`; this
+tape does not take that branch.
 
-The tape's hidden prelude (`Hide` ... `Show`) sources
-`docs/demos/hero-env.sh`, which builds a disposable repository and state
-directory under `$HERO_TMP`, and the tape copies the run ID out of
-`runs list` into a shell variable. The TUI bytes cannot match a re-run, so
-the hero transcript comes from `docs/demos/hero-transcript.sh`, a linear
-companion run of the same commands: `mythhelm run --plain` in the
-background, a SIGKILL once the third turn prints, then `runs list`,
-`recover` and `review`. Its manifest entry declares the exact binary
+The tape's hidden segments (`Hide` ... `Show`) hold setup and terminal
+hygiene only, never product behaviour: sourcing `docs/demos/hero-env.sh`,
+which builds a disposable repository and state directory under `/tmp/demo`
+(a short fixed path; a leftover one is replaced only when it carries the
+script's marker file), the title card, `reset` after the dead TUI leaves the
+terminal raw, copying the run ID out of `runs list` into a shell variable,
+and `clear`. Hidden time still passes, so the agent keeps working. The TUI
+bytes cannot match a re-run, so the hero transcript comes from
+`docs/demos/hero-transcript.sh`, a linear companion run of the same commands:
+`mythhelm run --plain` in the background, a SIGKILL once the third turn
+prints, then `pgrep`, `runs list` (which still reads `executing`, because the
+journal cannot know the CLI died), `recover` and `review`. Its manifest entry declares the exact binary
 revision rendered from and the qualifying test for each shown capability:
 
 | Capability shown | Qualifying test |
@@ -117,7 +126,7 @@ workflow learns the third pipeline. Its revision-present and qualifier steps
 read the manifest and do cover the hero entry.
 
 Normalization (`docs/demos/normalize.sed`) covers temp paths, `run_`/`att_`
-ULIDs, ISO UTC timestamps (`<TIME>`), the hero scratch directory, both worker/native pid shapes, 40-hex SHAs (with the stable
+ULIDs, ISO UTC timestamps (`<TIME>`), the hero scratch directory (`/tmp/demo`) and a bare pid line (`NNN`), both worker/native pid shapes, 40-hex SHAs (with the stable
 empty-evidence sha256 protected verbatim) and 12-hex evidence prefixes, plus
 the TUI rules: 20-hex truncated snapshot SHAs, live-sampled `goal:`/`run
 state:`/`admission:` values (`<LIVE-SAMPLE>`), the race-window

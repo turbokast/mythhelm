@@ -45,6 +45,10 @@ status=0
 test "$status" -eq 137
 echo "exit status $status"
 
+echo "=== take: the worker is still alive ==="
+worker="$(pgrep -f "__worker --state $MYTHHELM_HOME")"
+echo "$worker"
+
 echo "=== take: runs list ==="
 list="$(mythhelm runs list)"
 echo "$list"
@@ -53,7 +57,10 @@ test "$(echo "$list" | awk 'NR==2{print $2}')" = executing
 run="$(echo "$list" | awk 'NR==2{print $1}')"
 
 echo "=== take: recover ==="
-mythhelm recover "$run" 2>&1
+recovered="$(mythhelm recover "$run" 2>&1)"
+echo "$recovered"
+# Recovery reattaches to the worker that survived the kill, not a new one.
+echo "$recovered" | grep -q "^reattached to worker pid $worker\$"
 
 echo "=== take: review ==="
 mythhelm review "$run"

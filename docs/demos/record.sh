@@ -100,7 +100,17 @@ echo "record.sh: build the binary (go build, never go run)"
 go build -o "$BIN" ./cmd/mythhelm
 
 tmpdir="$(mktemp -d)"
-trap 'rm -rf "$tmpdir"' EXIT
+# The hero scratch directory has a short fixed path so the recording's paths
+# read /tmp/demo/...; hero-env.sh replaces a leftover one that carries its
+# marker file, and the exit trap removes it the same way.
+HERO_TMP="/tmp/demo"
+cleanup() {
+	rm -rf "$tmpdir"
+	if test -f "$HERO_TMP/.mythhelm-hero"; then
+		rm -rf "$HERO_TMP"
+	fi
+}
+trap cleanup EXIT
 
 # regen_transcript <name> <out>: run one recording's transcript pipeline.
 # Per-name functions, never manifest commands: the manifest is data the
@@ -135,7 +145,7 @@ regen_transcript() {
 		# The taped take drives the TUI; this linear companion runs the same
 		# commands (run, SIGKILL, runs list, recover, review) with stdout and
 		# stderr merged, in a scratch directory of its own.
-		(HERO_BIN="$BIN" HERO_TMP="$(mktemp -d "$tmpdir/mythhelm-hero.XXXXXX")" "$DEMOS/hero-transcript.sh" 2>&1) | sed -E -f "$SED" >"$2"
+		(HERO_BIN="$BIN" HERO_TMP="$HERO_TMP" "$DEMOS/hero-transcript.sh" 2>&1) | sed -E -f "$SED" >"$2"
 		test "${PIPESTATUS[0]}" -eq 0
 		;;
 	*)
@@ -170,7 +180,7 @@ done
 
 echo "record.sh: render the GIFs from the checked-in tapes"
 for n in $names; do
-	HERO_BIN="$BIN" HERO_TMP="$(mktemp -d "$tmpdir/mythhelm-hero.XXXXXX")" vhs "$(field "$n" tape)"
+	HERO_BIN="$BIN" HERO_TMP="$HERO_TMP" vhs "$(field "$n" tape)"
 done
 
 echo "record.sh: verify"
@@ -205,6 +215,7 @@ assert_labels() { # assert_labels <name> <transcript>
 		test "$(grep -c '^  SCRIPTED: fake adapter' "$2")" -eq 2
 		test "$(grep -c '^reattached to worker pid ' "$2")" -eq 1
 		test "$(grep -c '^exit status 137$' "$2")" -eq 1
+		test "$(grep -c '^NNN$' "$2")" -eq 1
 		test "$(grep -c '^result: ready_for_review; exit 0' "$2")" -eq 1
 		test "$(grep -c '^State: ready_for_review$' "$2")" -eq 1
 		test "$(grep -c '^attempt: worker pid ' "$2")" -eq 2

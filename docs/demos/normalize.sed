@@ -4,7 +4,8 @@ b
 }
 /^reservation held on bucket/d
 s#[^[:space:]]*mythhelm-demo-(repo|state)-[0-9]+#<TMPDIR>/mythhelm-demo-\1-XXX#g
-s#[^[:space:]]*mythhelm-hero\.[A-Za-z0-9]+#<TMPDIR>/mythhelm-hero#g
+s#/tmp/demo(/|$)#<TMPDIR>/mythhelm-hero\1#g
+s#^[0-9]+$#NNN#
 s#[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z#<TIME>#g
 s#run_[0-9A-Z]{26}#run_XXX#g
 s#att_[0-9A-Z]{26}#att_XXX#g

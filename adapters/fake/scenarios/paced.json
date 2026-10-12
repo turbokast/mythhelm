@@ -7,7 +7,7 @@
     {"op": "emit", "frame": {"type": "fake.progress", "turn": 2, "tool": "Read"}},
     {"op": "sleep", "ms": 2500},
     {"op": "emit", "frame": {"type": "fake.progress", "turn": 3, "tool": "Edit"}},
-    {"op": "sleep", "ms": 10000},
+    {"op": "sleep", "ms": 12000},
     {"op": "write", "path": "greeting.txt", "content": "hello from the scripted agent\n"},
     {"op": "emit", "frame": {"type": "fake.progress", "turn": 4, "tool": "Write"}},
     {"op": "sleep", "ms": 1000},
