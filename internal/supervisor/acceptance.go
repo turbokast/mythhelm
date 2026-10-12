@@ -2,10 +2,16 @@ package supervisor
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -312,4 +318,152 @@ func checkRows(checks []integration.CheckResult) []journal.CheckRow {
 			DurationMS: c.DurationMS, EvidencePath: c.EvidencePath, EvidenceSHA256: c.EvidenceSHA256})
 	}
 	return rows
+}
+
+// AcceptanceState is how the latest verification relates to the run as it
+// stands now (design §2.5).
+type AcceptanceState string
+
+// The states, in the order CheckAcceptance decides them.
+const (
+	AcceptanceBound      AcceptanceState = "bound"
+	AcceptanceUnverified AcceptanceState = "unverified"
+	AcceptanceStale      AcceptanceState = "stale"
+	AcceptanceUnbound    AcceptanceState = "unbound"
+	AcceptanceRejected   AcceptanceState = "rejected"
+)
+
+// AcceptanceStatus is the gate's answer. Changed names the binding
+// dimensions of a stale verdict.
+type AcceptanceStatus struct {
+	State   AcceptanceState
+	Reason  string
+	Changed []string
+}
+
+// CheckAcceptance is CheckAcceptanceWithin under the default gate limit.
+func CheckAcceptance(ctx context.Context, j *journal.Journal, runID string) (AcceptanceStatus, error) {
+	return CheckAcceptanceWithin(ctx, j, runID, acceptance.DefaultTimeouts().Gate)
+}
+
+// CheckAcceptanceWithin compares the run's latest verification with what the
+// run is now, under limit: the candidate row, the task file and the pinned
+// check definition and evaluator against the attestation (design §2.5). A
+// read, decode or timeout failure is an error and never bound (I02).
+func CheckAcceptanceWithin(ctx context.Context, j *journal.Journal, runID string, limit time.Duration) (AcceptanceStatus, error) {
+	ctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
+	status, err := checkAcceptance(ctx, j, runID)
+	if err == nil {
+		err = ctx.Err()
+	}
+	if err != nil {
+		return AcceptanceStatus{}, fmt.Errorf("checking acceptance of %s: %w", runID, err)
+	}
+	return status, nil
+}
+
+func checkAcceptance(ctx context.Context, j *journal.Journal, runID string) (AcceptanceStatus, error) {
+	v, err := j.LatestVerification(ctx, runID)
+	if errors.Is(err, journal.ErrNotFound) {
+		return AcceptanceStatus{State: AcceptanceUnverified, Reason: "no verification recorded"}, nil
+	}
+	if err != nil {
+		return AcceptanceStatus{}, err
+	}
+	result := acceptance.Result(v.Result)
+	switch {
+	case result == acceptance.ResultFailed || result == acceptance.ResultInvalid:
+		return AcceptanceStatus{State: AcceptanceRejected, Reason: reasonOr(v.Reason, v.Result)}, nil
+	case result.Unverified():
+		return AcceptanceStatus{State: AcceptanceUnverified, Reason: reasonOr(v.Reason, "no reason recorded")}, nil
+	case !v.Bound:
+		return AcceptanceStatus{State: AcceptanceUnbound, Reason: "verification recorded before acceptance binding existed"}, nil
+	case result != acceptance.ResultPassed:
+		return AcceptanceStatus{}, fmt.Errorf("verification %s has unrecognised result %q", v.ID, v.Result)
+	}
+	attested, err := attestedBinding(v)
+	if err != nil {
+		return AcceptanceStatus{}, err
+	}
+	current, err := currentBinding(ctx, j, runID)
+	if err != nil {
+		return AcceptanceStatus{}, err
+	}
+	if changed := attested.Diff(current); len(changed) > 0 {
+		return AcceptanceStatus{State: AcceptanceStale, Reason: "a bound dimension changed since the verdict", Changed: changed}, nil
+	}
+	return AcceptanceStatus{State: AcceptanceBound}, nil
+}
+
+func reasonOr(reason, fallback string) string {
+	if reason == "" {
+		return fallback
+	}
+	return reason
+}
+
+// attestedBinding decodes what a passed verification was bound to. A passed
+// verdict always carries an attestation whose digest is the stored one;
+// anything else is unreadable evidence, not a verdict to apply (I02).
+func attestedBinding(v journal.VerificationRow) (acceptance.Binding, error) {
+	if len(v.Attestation) == 0 {
+		return acceptance.Binding{}, fmt.Errorf("passed verification %s has no attestation", v.ID)
+	}
+	att, err := v2contract.Decode[v2contract.Verification](v.Attestation)
+	if err != nil {
+		return acceptance.Binding{}, fmt.Errorf("decoding the attestation of verification %s: %w", v.ID, err)
+	}
+	if v2contract.Digest(att) != v.AttestationDigest {
+		return acceptance.Binding{}, fmt.Errorf("attestation of verification %s does not match its stored digest", v.ID)
+	}
+	return acceptance.BindingOf(att), nil
+}
+
+// currentBinding is what a verdict would have to be bound to now: the
+// candidate row, the task file on disk and the check definition and
+// evaluator pinned at admission. The environment stays empty, so it is not
+// compared (D4). A missing task file leaves the contract empty, which differs
+// from any attested one; any other read failure is an error.
+func currentBinding(ctx context.Context, j *journal.Journal, runID string) (acceptance.Binding, error) {
+	attempt, err := j.LatestAttempt(ctx, runID)
+	if err != nil {
+		return acceptance.Binding{}, err
+	}
+	candidate, err := j.Candidate(ctx, attempt.AttemptID)
+	if err != nil {
+		return acceptance.Binding{}, err
+	}
+	object, err := acceptance.GitObjectOf(candidate.Commit)
+	if err != nil {
+		return acceptance.Binding{}, fmt.Errorf("candidate of %s: %w", runID, err)
+	}
+	pin, _, err := ReadPin(ctx, j, runID)
+	if err != nil {
+		return acceptance.Binding{}, err
+	}
+	contract, err := taskDigest(filepath.Join(j.StateDir(), "runs", runID, taskFile))
+	if err != nil {
+		return acceptance.Binding{}, err
+	}
+	return acceptance.Binding{Candidate: object, Contract: contract, CheckDefinition: pin.CheckDefinition, Evaluator: pin.EvaluatorDigest}, nil
+}
+
+// taskDigest is the "sha256:<hex>" identity of the task file, read up to the
+// admission size limit plus one byte so a grown file cannot match. A missing
+// file gives "".
+func taskDigest(path string) (string, error) {
+	f, err := os.Open(path) // #nosec G304 -- run ID from the journal under the private state directory
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	h := sha256.New()
+	_, copyErr := io.Copy(h, io.LimitReader(f, admission.MaxTaskBytes+1))
+	if err := errors.Join(copyErr, f.Close()); err != nil {
+		return "", fmt.Errorf("reading the task file: %w", err)
+	}
+	return acceptance.SHA256Ref(hex.EncodeToString(h.Sum(nil))), nil
 }
