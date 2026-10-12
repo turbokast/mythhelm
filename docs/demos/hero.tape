@@ -26,8 +26,8 @@
 # A bare `vhs docs/demos/hero.tape` renders the GIF but is not the record
 # command: it skips the build, the transcript regen and the verify pass.
 #
-# Binary-Version: v0.0.0-20261006124821-179bba4ceae9
-# Binary-Commit: 179bba4ceae958f9591e9fedb056f70da59ce40c
+# Binary-Version: v0.0.2-0.20261012083830-031676ad5355
+# Binary-Commit: 031676ad5355fcad3ef15059693df5f3a9b3d241
 # VHS-Version: v0.12.1
 
 Output docs/demos/hero.gif

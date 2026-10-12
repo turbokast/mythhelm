@@ -5,14 +5,17 @@ working in <TMPDIR>/mythhelm-demo-repo-XXX (removed afterwards)
 === SCRIPTED DEMO: run ===
 run run_XXX: created
 run: admission
+reservation held on bucket ["fake","scripted-child-process (ndjson)","none (no inference, no network)","unknown"]: local coordination only — not provider availability
 admission decided: adapter builtin/fake 0.1.0 (scripted-child-process (ndjson))
   SCRIPTED: fake adapter, no real agent, no inference, no network
   snapshot: <SHA40> (branch main, selected by HEAD)
-  execution profile: trusted-host, not contained: native tools and checks run with your host authority
+  execution profile: trusted-host, runs with your host authority and is not adversarially contained
   billing: local-scripted (qualified: false)
+  entitlement: not applicable (local-scripted: no inference, no network)
 snapshot: <SHA40> cloned to <TMPDIR>/mythhelm-demo-state-XXX/runs/run_XXX/workspace
 run: executing
 attempt att_XXX: launch intent recorded
+attempt att_XXX: admission pinned (stop ladder stop-ladder/v1)
 attempt: launching
 attempt: worker pid NNN, native pid NNN
 attempt: running
@@ -29,6 +32,10 @@ check demo: passed
 verification: passed
 run: ready_for_review
 receipt.written
+usage: retail-equivalent unknown unknown (unknown, unknown)
+reserve: verify pass (1 checks, 30s) + 3 repairs (estimate, not a reserve of provider quota)
+remaining: unknown
+next retry: none (used 0 of 3)
 result: ready_for_review; exit 0 
 
 === SCRIPTED DEMO: review ===
@@ -36,11 +43,14 @@ Run: run_XXX
 State: ready_for_review
 Task: Demo task
 Candidate: <SHA40>
+entitlement: not applicable (local-scripted: no inference, no network)
+Verification: passed (bound to <SHA40>)
 
 Flags:
   none
 Checks:
   demo: passed (evidence: <TMPDIR>/mythhelm-demo-state-XXX/runs/run_XXX/evidence/<SHA12>/demo.log; sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855)
+Acceptance: bound
 
 Candidate diff:
 diff --git a/demo.txt b/demo.txt
