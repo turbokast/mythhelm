@@ -34,6 +34,15 @@ const MaxSupervisorBeatAge = 300 * time.Millisecond
 // under the staleness bound, so a return releases the wait promptly.
 const awaitPollInterval = 50 * time.Millisecond
 
+const (
+	// maxBeatReadRetries and beatReadRetryDelay bound the wait for the
+	// supervisor's atomic replace of supervisor.beat to finish: the replace
+	// holds the name for microseconds, so 10 retries at 5ms (50ms total)
+	// outlast any one collision and stay well inside MaxSupervisorBeatAge.
+	maxBeatReadRetries = 10
+	beatReadRetryDelay = 5 * time.Millisecond
+)
+
 // EpisodeEnvelope pins what the worker may do without a supervisor. It is
 // built from values the worker already holds: the attempt ID from argv
 // --attempt, the one-use launch identity from Launch.LaunchToken, and the
@@ -77,11 +86,29 @@ func beatFresh(at, now time.Time) bool {
 // ReadSupervisorBeat reports the latest supervisor beat: when it was
 // written and under which boot generation. ok is false when the file is
 // missing or unparsable, which the caller treats as stale; a stale but
-// legible beat still parses, since staleness is the caller's verdict.
+// legible beat still parses, since staleness is the caller's verdict. On
+// Windows a read that races the supervisor's atomic replace fails with a
+// sharing violation; it is retried within a bounded budget so a live
+// supervisor never reads stale for one collision, and a persistent
+// failure still reads stale.
 func ReadSupervisorBeat(dir string) (at time.Time, generation int64, ok bool) {
-	raw, err := os.ReadFile(filepath.Join(dir, supervisorBeatFile)) //nolint:gosec // G304: fixed beat name in the attempt directory
-	if err != nil {
-		return time.Time{}, 0, false
+	return readBeat(filepath.Join(dir, supervisorBeatFile), os.ReadFile, beatReadTransient, maxBeatReadRetries, beatReadRetryDelay)
+}
+
+// readBeat reads and parses the beat at path. A read error that transient
+// accepts is retried up to maxRetries times, delay apart; any other error,
+// or the last transient one, reads stale.
+func readBeat(path string, read func(string) ([]byte, error), transient func(error) bool, maxRetries int, delay time.Duration) (at time.Time, generation int64, ok bool) {
+	var raw []byte
+	var err error
+	for attempt := 0; ; attempt++ {
+		if raw, err = read(path); err == nil {
+			break
+		}
+		if !transient(err) || attempt >= maxRetries {
+			return time.Time{}, 0, false
+		}
+		time.Sleep(delay)
 	}
 	var beat struct {
 		At         string `json:"at"`
