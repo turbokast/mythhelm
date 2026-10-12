@@ -80,7 +80,11 @@ func TestWatchWritesSupervisorBeatAfterIngest(t *testing.T) {
 
 	// Poll for the second beat: repetition proves the tick, not a single write.
 	deadline := time.Now().Add(30 * time.Second)
+	// On Windows a poll that races the beat's atomic replace fails with a
+	// sharing violation instead of ErrNotExist (#411): a read error is "not
+	// yet", and the last one is reported if the deadline passes.
 	var beat control.SupervisorBeat
+	var readErr error
 	for {
 		raw, err := os.ReadFile(filepath.Join(dir, "supervisor.beat")) //nolint:gosec // G304: fixed beat name in a test temp dir
 		if err == nil {
@@ -92,12 +96,11 @@ func TestWatchWritesSupervisorBeatAfterIngest(t *testing.T) {
 				break
 			}
 		} else if !errors.Is(err, os.ErrNotExist) {
-			cancel()
-			t.Fatal(err)
+			readErr = err
 		}
 		if time.Now().After(deadline) {
 			cancel()
-			t.Fatalf("timed out waiting for the second supervisor beat (last %+v)", beat)
+			t.Fatalf("timed out waiting for the second supervisor beat (last %+v, last read error %v)", beat, readErr)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
