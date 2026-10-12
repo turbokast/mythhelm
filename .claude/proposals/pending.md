@@ -181,4 +181,4 @@ Add a row to the failure-mode table: a main push run that is `cancelled` with ze
 
 **Proposed change:**
 
-In step 4, after the `changelog-add` calls, add: `cp CHANGELOG.md docs/mirror/CHANGELOG.md`, and name `docs/mirror/CHANGELOG.md` in the step 5 `git add` list.
+In step 4, after the `changelog-add` calls and unless `--no-changelog` was passed, add: `cp CHANGELOG.md docs/mirror/CHANGELOG.md`, and name `docs/mirror/CHANGELOG.md` in the step 5 `git add` list when it changed.

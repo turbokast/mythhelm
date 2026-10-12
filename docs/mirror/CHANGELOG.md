@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `mythhelm doctor` plain output names each unproven qualification column as `failing: <column>` and prints the next test as `next_test:` on the line below each row (#396)
+- `mythhelm doctor` plain output names each unproven qualification column as `failing: <column>` and prints `next_test: <text>` below rows with a non-empty next test (#396)
 
 ### Fixed
 
