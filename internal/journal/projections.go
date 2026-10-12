@@ -1,6 +1,7 @@
 package journal
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -9,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/turbokast/mythhelm/internal/v2contract"
 )
 
 // The runs and attempts tables are projections: each row holds an object's
@@ -71,6 +74,11 @@ type VerificationRow struct {
 	EvaluatorName, EvaluatorDigest string
 	StartedAt, FinishedAt          time.Time
 	Checks                         []CheckRow
+	Bound                          bool   // a verification_bindings row exists
+	Reason                         string // why the verdict is NOT RUN, INVALID or not passed; "" when none recorded
+	Attestation                    []byte // canonical v2contract.Verification JSON; nil when no verifier ran
+	AttestationDigest              string
+	OverheadMS                     *int64 // nil when unmeasured
 }
 
 // CheckRow is one check's projected result within a verification.
@@ -97,6 +105,15 @@ func InsertVerification(ctx context.Context, tx *sql.Tx, v VerificationRow) erro
 			return fmt.Errorf("journal: inserting verification evaluator: %w", err)
 		}
 	}
+	if err := checkAttestation(v); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO verification_bindings
+		(verification_id, reason, attestation, digest, overhead_ms) VALUES (?, ?, ?, ?, ?)`,
+		v.ID, v.Reason, nullable(string(v.Attestation)), nullable(v.AttestationDigest), v.OverheadMS)
+	if err != nil {
+		return fmt.Errorf("journal: inserting verification binding: %w", err)
+	}
 	for _, c := range v.Checks {
 		argv, err := json.Marshal(c.Argv)
 		if err != nil {
@@ -109,6 +126,38 @@ func InsertVerification(ctx context.Context, tx *sql.Tx, v VerificationRow) erro
 		if err != nil {
 			return fmt.Errorf("journal: inserting check %s: %w", c.Name, err)
 		}
+	}
+	return nil
+}
+
+// checkAttestation rejects a binding the immutable table could not later
+// correct: an attestation that is not a valid v2contract.Verification of this
+// verification and candidate, is not its canonical encoding, or whose digest is
+// not the v2contract.Digest of that record.
+// A digest with no attestation is left to the table's CHECK.
+func checkAttestation(v VerificationRow) error {
+	if len(v.Attestation) == 0 {
+		return nil
+	}
+	att, err := v2contract.Decode[v2contract.Verification](v.Attestation)
+	if err != nil {
+		return fmt.Errorf("journal: verification %s attestation: %w", v.ID, err)
+	}
+	if att.VerificationID != v.ID {
+		return fmt.Errorf("journal: verification %s carries the attestation of %s", v.ID, att.VerificationID)
+	}
+	if att.Candidate.Value != v.CandidateCommit {
+		return fmt.Errorf("journal: verification %s judged candidate %s but its attestation names %s", v.ID, v.CandidateCommit, att.Candidate.Value)
+	}
+	canonical, err := json.Marshal(att)
+	if err != nil {
+		return fmt.Errorf("journal: verification %s attestation: %w", v.ID, err)
+	}
+	if !bytes.Equal(canonical, v.Attestation) {
+		return fmt.Errorf("journal: verification %s attestation is not the canonical encoding of its record", v.ID)
+	}
+	if want := v2contract.Digest(att); v.AttestationDigest != want {
+		return fmt.Errorf("journal: verification %s attestation digest %q is not %q", v.ID, v.AttestationDigest, want)
 	}
 	return nil
 }
@@ -434,11 +483,16 @@ func (j *Journal) LatestAttempt(ctx context.Context, runID string) (AttemptRow, 
 func (j *Journal) LatestVerification(ctx context.Context, runID string) (VerificationRow, error) {
 	var v VerificationRow
 	var start, finish string
+	var attestation sql.NullString
+	var overhead sql.NullInt64
 	err := j.db.QueryRowContext(ctx, `SELECT v.verification_id, v.run_id, v.candidate_commit, v.config_sha256, v.result, v.started_at, v.finished_at,
-		COALESCE(e.evaluator_name, ''), COALESCE(e.evaluator_digest, '')
+		COALESCE(e.evaluator_name, ''), COALESCE(e.evaluator_digest, ''),
+		b.verification_id IS NOT NULL, COALESCE(b.reason, ''), b.attestation, COALESCE(b.digest, ''), b.overhead_ms
 		FROM verifications v LEFT JOIN verification_evaluators e ON e.verification_id = v.verification_id
+		LEFT JOIN verification_bindings b ON b.verification_id = v.verification_id
 		WHERE v.run_id = ? ORDER BY v.finished_at DESC, v.verification_id DESC LIMIT 1`, runID).Scan(
-		&v.ID, &v.RunID, &v.CandidateCommit, &v.ConfigSHA256, &v.Result, &start, &finish, &v.EvaluatorName, &v.EvaluatorDigest)
+		&v.ID, &v.RunID, &v.CandidateCommit, &v.ConfigSHA256, &v.Result, &start, &finish, &v.EvaluatorName, &v.EvaluatorDigest,
+		&v.Bound, &v.Reason, &attestation, &v.AttestationDigest, &overhead)
 	if errors.Is(err, sql.ErrNoRows) {
 		return VerificationRow{}, ErrNotFound
 	}
@@ -450,6 +504,12 @@ func (j *Journal) LatestVerification(ctx context.Context, runID string) (Verific
 	}
 	if v.FinishedAt, err = time.Parse(time.RFC3339Nano, finish); err != nil {
 		return VerificationRow{}, err
+	}
+	if attestation.Valid {
+		v.Attestation = []byte(attestation.String)
+	}
+	if overhead.Valid {
+		v.OverheadMS = &overhead.Int64
 	}
 	rows, err := j.db.QueryContext(ctx, `SELECT name, status, exit_code, evidence_path, evidence_sha256
 		FROM check_results WHERE verification_id = ? ORDER BY rowid`, v.ID)
@@ -507,4 +567,41 @@ func (j *Journal) queryRuns(ctx context.Context, query string, args ...any) ([]R
 		return nil, fmt.Errorf("journal: listing runs: %w", err)
 	}
 	return out, nil
+}
+
+// ErrPolicyConflict reports a policy id and version already stored with a
+// different digest: a policy version is immutable once written (I20).
+var ErrPolicyConflict = errors.New("journal: policy version stored with different content")
+
+// EnsurePolicy inserts p, or returns nil when an identical row (the same
+// v2contract.Digest) exists. A row with the same id and version and another
+// digest returns ErrPolicyConflict and changes nothing. It reads first and
+// then inserts: the immutability triggers abort any insert over an existing
+// key, so INSERT OR IGNORE cannot express "already there". Every journal
+// transaction is BEGIN IMMEDIATE (_txlock), so concurrent callers serialise on
+// the write lock and the second one reads the first one's row.
+func EnsurePolicy(ctx context.Context, tx *sql.Tx, p v2contract.PolicyVersion) error {
+	if err := p.Validate(); err != nil {
+		return fmt.Errorf("journal: policy %s v%d: %w", p.PolicyID, p.Version, err)
+	}
+	record, err := json.Marshal(p)
+	if err != nil {
+		return fmt.Errorf("journal: encoding policy %s v%d: %w", p.PolicyID, p.Version, err)
+	}
+	digest := v2contract.Digest(p)
+	var stored string
+	err = tx.QueryRowContext(ctx, `SELECT digest FROM policies WHERE policy_id = ? AND version = ?`, p.PolicyID, p.Version).Scan(&stored)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		if _, err := tx.ExecContext(ctx, `INSERT INTO policies (policy_id, version, record, digest) VALUES (?, ?, ?, ?)`,
+			p.PolicyID, p.Version, string(record), digest); err != nil {
+			return fmt.Errorf("journal: inserting policy %s v%d: %w", p.PolicyID, p.Version, err)
+		}
+		return nil
+	case err != nil:
+		return fmt.Errorf("journal: reading policy %s v%d: %w", p.PolicyID, p.Version, err)
+	case stored != digest:
+		return fmt.Errorf("%w: %s v%d is stored as %s, not %s", ErrPolicyConflict, p.PolicyID, p.Version, stored, digest)
+	}
+	return nil
 }
