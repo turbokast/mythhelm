@@ -18,6 +18,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/turbokast/mythhelm/internal/adapter"
+	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/tui/viewmodel"
@@ -227,19 +229,24 @@ func TestAccessibleLabels(t *testing.T) {
 			t.Errorf("summary line %d = %q, want %q", i, lines[i], want)
 		}
 	}
-	// The stream carries the five journaled events in order, then the trailer
+	// The stream carries the five journaled events in order, the admission's
+	// entitlement sentence on its own line right after it, then the trailer
 	// echoing the max streamed sequence.
 	stream := lines[len(wantSummary):]
-	if len(stream) != 6 {
-		t.Fatalf("got %d stream lines, want 5 events + trailer:\n%s", len(stream), out)
+	if len(stream) != 7 {
+		t.Fatalf("got %d stream lines, want 5 events + entitlement line + trailer:\n%s", len(stream), out)
 	}
-	for i, line := range stream[:5] {
+	if stream[2] != wantSummary[7] {
+		t.Errorf("line after the admission event = %q, want %q", stream[2], wantSummary[7])
+	}
+	events := append(append([]string{}, stream[:2]...), stream[3:6]...)
+	for i, line := range events {
 		if seq := eventSeq(t, line); seq != int64(i+1) {
-			t.Errorf("stream line %d has sequence %d, want %d", i, seq, i+1)
+			t.Errorf("event line %d has sequence %d, want %d", i, seq, i+1)
 		}
 	}
-	if stream[5] != "next-after: 5" {
-		t.Errorf("trailer = %q, want %q", stream[5], "next-after: 5")
+	if stream[6] != "next-after: 5" {
+		t.Errorf("trailer = %q, want %q", stream[6], "next-after: 5")
 	}
 	// Full action names, not single-key hints: the actions line names the
 	// stop action in full.
@@ -706,5 +713,81 @@ func TestAccessibleShutdownDrainsLateEvents(t *testing.T) {
 	}
 	if !strings.Contains(out, "event 2: run: executing (late)") {
 		t.Fatalf("shutdown drain lost the late event:\n%s", out)
+	}
+}
+
+func declaredClaudeAdmission(t *testing.T, source string) string {
+	t.Helper()
+	payload, err := json.Marshal(admission.Record{
+		Adapter: adapter.Descriptor{ID: "claudecode", Version: "2.1.284", Harness: "claude-code", Surface: "cli-stream-json"},
+		ExecutionProfile: admission.Profile{Name: "trusted-host", Consent: "--execution-profile",
+			Disclosure: "runs on the host with the user's own permissions; no sandbox contains the agent or its network"},
+		Billing: adapter.BillingPosture{Mode: "subscription-declared", EntitlementSource: source},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(payload)
+}
+
+// TestAccessibleLiveStreamShowsDeclaredEntitlementInFull follows a run whose
+// admission is journaled after the stream opened: the opening summary can only
+// say unknown, so the admission event must put the whole sentence on a line of
+// its own, clear of the 200-cell cap that cuts the flattened event line (I15).
+func TestAccessibleLiveStreamShowsDeclaredEntitlementInFull(t *testing.T) {
+	t.Parallel()
+	f := newAccessibleFixture(t)
+	runID := ids.New("run")
+	taskSHA := f.writeTask(runID, []byte("# Ship the widget\n"))
+	f.addRun(runID, "admission", taskSHA)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	sb := &syncBuffer{}
+	done := make(chan error, 1)
+	go func() {
+		done <- RunAccessible(ctx, AccessibleConfig{RunID: runID, StateDir: f.dir, Out: sb, Poll: 10 * time.Millisecond})
+	}()
+	waitAccessibleLines(t, sb, 1)
+	f.append(runID, "admission.decided", declaredClaudeAdmission(t, "user_declared"), nil)
+	deadline := time.Now().Add(30 * time.Second)
+	for !strings.Contains(sb.String(), "event 1:") {
+		if time.Now().After(deadline) {
+			t.Fatalf("admission event never streamed:\n%s", sb.String())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("RunAccessible: %v", err)
+	}
+	var got []string
+	for _, l := range accessibleLines(t, sb.String()) {
+		if strings.Contains(l, "NOT verified") {
+			got = append(got, l)
+		}
+	}
+	if len(got) != 1 || got[0] != declaredSentence {
+		t.Fatalf("lines naming the declaration = %q, want exactly [%q]", got, declaredSentence)
+	}
+}
+
+func TestAccessibleAdmissionStreamSanitisesEntitlementSource(t *testing.T) {
+	t.Parallel()
+	f := newAccessibleFixture(t)
+	runID := ids.New("run")
+	f.addRun(runID, "admission", f.writeTask(runID, []byte("# Ship the widget\n")))
+	payload, err := json.Marshal(admission.Record{Billing: adapter.BillingPosture{
+		Mode: "subscription-only", Qualified: true, G05: "passed", EntitlementSource: "doc\x1b[31mred\u202e",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.append(runID, "admission.decided", string(payload), nil)
+	out := runAccessibleToEnd(t, f.dir, runID, 10*time.Millisecond, 20*time.Millisecond)
+	if strings.ContainsRune(out, 0x1b) || strings.ContainsRune(out, 0x202e) {
+		t.Fatalf("stream carries a control or bidi rune: %q", out)
+	}
+	if !strings.Contains(out, "\nentitlement: verified by MYTHHELM (doc") {
+		t.Fatalf("stream lacks the verified sentence on its own line:\n%s", out)
 	}
 }
