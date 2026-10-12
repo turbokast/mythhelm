@@ -283,6 +283,11 @@ func runCheck(ctx context.Context, dir, evidenceDir string, check admission.Chec
 					pipeErr = <-pipeDone
 				}
 				leaderDone, streamDone = true, true
+				// The caller ending the run is not the check timing out: report
+				// it so the run settles as cancelled and no later check starts.
+				if err := ctx.Err(); err != nil {
+					return r, fmt.Errorf("check %s interrupted: %w", check.Name, err)
+				}
 				r.Status = "timed_out"
 			}
 		}

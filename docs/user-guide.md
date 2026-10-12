@@ -356,10 +356,9 @@ fixture's admission block:
 
 The accessible stream's summary is a snapshot taken when the stream opens, so
 for a live `run --accessible` it reads `entitlement: unknown` until admission
-has decided, and the admission line of the accessible event stream is capped at
-200 cells and can be cut before the sentence
-([#439](https://github.com/turbokast/mythhelm/issues/439)). Run
-`review <run> --accessible` to read the sentence.
+has decided. The admission event is then followed by the sentence in full on a
+line of its own, because the event line is capped at 200 cells and can be cut
+before it.
 
 ### The receipt
 
@@ -370,6 +369,7 @@ object. Acceptance adds these keys:
 |---|---|
 | `verification.result`, `.label`, `.reason` | the stored verdict, its label (`passed`, `failed`, `NOT RUN`, `INVALID` or `unknown`) and its reason |
 | `verification.binding` | `candidate` (`format`, `value`), `contract`, `check_definition`, `evaluator`, `environment` and `attestation_digest`, each digest as `sha256:<hex>`; `unknown` when no attestation exists |
+| `acceptance.status` | the gate's answer when the review ran, not the stored verdict: `state` (`bound`, `stale`, `unbound`, `unverified` or `rejected`), its `reason` and, for `stale`, the `changed` dimensions (`candidate`, `contract`, `check_definition`, `evaluator`); `verification.label` still shows the stored verdict |
 | `acceptance.policy_pin` | the P1 pin, or `unknown` |
 | `acceptance.determinism` | `confined_to` and `note`, below |
 | `acceptance.overhead_ms`, `.overhead_covers` | how long the binding step took, and `binding step` |

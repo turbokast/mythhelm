@@ -416,3 +416,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: codex-native-adapter reached done: all 12 tasks merged, finalized in #412 (839403b), main green 7/7 at 839403b. What shipped is fixture-tested adapter code with Codex still blocked and refused end to end and its registry row planned; live qualification evidence (entitlement, fidelity, stop and recovery) is not part of it.
 - **Cards**: MH-4
 - **Evidence**: finalize PR #412; review follow-ups #408 to #411; ADR 0018 (proposed)
+
+### D-97 — 2026-10-12: Design direction: one brand visual system for the TUI and docs site
+- **Type**: card-add
+- **Decision**: Adopt the 2026-10-12 design direction. MH-23 carries the TUI visual system (brand Observatory and Paper themes, NOW / NEXT default view, overlay dialogs, approval card with diff, stop, recovery and receipt screens, light-terminal detection) and is rescored to value 5, effort 5. New card MH-33 restyles the docs site. Docs: Night landing page and Paper docs pages; stay on Jekyll with client-side search. TUI: accept ◆ ○ ◌ ✓ into the closed glyph set, each with an ASCII fallback.
+- **Rationale**: A design review found both surfaces hide the product's strongest property, honest state: the TUI gives every line equal weight with internals where meaning should be, ships a stock palette instead of the brand, and the docs site renders nearly unstyled and overflows on phones. Public reports about peer agent tools converge on the same needs (readable activity, a quota gauge, a stop that stops, session recovery, readable verification, approvals with the diff, terminal citizenship, quickstart-first docs with search). Jekyll stays because a restyle plus a search index fixes everything visible at the smallest cost. Decided by the maintainer in session.
+- **Cards**: MH-23,MH-33
+- **Evidence**: Master Specification v2 §15.1, §18.3 G09/G10; design review 2026-10-12
