@@ -104,7 +104,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `internal/integration/verify.go`, `internal/integration/verify_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
-### Task 4 — Pin the acceptance policy at admission
+### Task 4 — Pin the acceptance policy at admission ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -125,6 +125,10 @@
   - `TestPinFailureBlocksBeforeWorker`: with a policy row of id `P1`, version 1 and another digest pre-inserted (`ErrPolicyConflict`), the run ends `blocked`/`acceptance_pin_failed`, exit 3, with no attempt row and no worker (red against an `appendAdmission` that ignores the error or leaves the run in `admission`).
 - **Test plan**: Existing `newFixture` and `fakeRun` helpers; journal reads through a read-only handle.
 - **Invariants touched**: I07 (v2 §2: the evaluator is fixed at admission, before the candidate exists); I20 (v2 §2: the pin names an immutable policy and contract revision); I02 (v2 §2: the pin is journaled with the admission, so no launch precedes it); I09 (v2 §2: a check list not run leaves the pin's evaluator empty, shown as unknown).
+- **Status**: ✅ Completed — admission journals the P1 `acceptance_pin` inside `admission.decided`, seeds the P1 policy row in the same transaction and blocks the run `acceptance_pin_failed` on a pin failure; `ReadPin` reads it back; PR #413.
+- **Implementation**: `NewAdmissionPayload` pins the evaluator only when checks will run (not `--no-checks`, not inspect); `checkOptions` now feeds both the pin and `conclude`, so the two evaluators come from one call. `ReadPin` reads the last `admission.decided` and treats an absent or `null` key as no pin, a decode failure as an error. Commit 4813de4.
+- **Spec deviations**: Added `TestPinEvaluatorFollowsProfile` and `TestPinLeavesChecksUnknownWhenNoneRun` beside the named tests (consistent with design §2.2): they cover the contained and inspect branches without a boundary, which the authoring host lacks, so the Linux-boundary legs of `TestPinAndVerificationEvaluatorAgree` and `TestPinOmitsEvaluatorWhenChecksNotRun` skip there and run in CI.
+- **Files modified**: `internal/supervisor/acceptance.go`, `internal/supervisor/acceptance_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/faults_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
 ### Task 5 — Bound verdicts, unverified outcomes and recovery
 

@@ -38,6 +38,8 @@
 
 - Task 3: a boundary-less host (user namespaces denied) skips the contained-run leg, so the independent read-only digest check runs without the boundary (`EvaluatorFor` needs none) and keeps the `ReadOnly` mutant red everywhere.
 
+- Task 4: a pin is built from the admission `Decision`, so a recovered run rebuilt by `recoveryDecision` must never recompute it; `conclude` reads it with `ReadPin`. A conflicting `policies` row surfaces from the admission transaction's append, not from `NewAdmissionPayload`, so `appendAdmission` tracks the policy error separately from the quota-hold error to block with `acceptance_pin_failed`.
+
 ## Validation findings left open (run 3, round 1: Ready for implementation, 0 blocking)
 
 Ten advisory findings are open for the implementing tasks; the first two are worth settling before Tasks 5 and 7 start.
