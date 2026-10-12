@@ -426,7 +426,7 @@ func (m *Model) viewColumns(l layout, cols []column) string {
 	widths := columnWidths(m.width, len(cols))
 	sep := " " + vBarGlyph(m.cfg.Caps) + " "
 	notices := m.noticeRows(maxNoticeRows)
-	chrome := 2 + 2 + 1 + len(notices) // header, status strip, footer, notices
+	chrome := 2 + len(m.statusLines()) + 1 + len(notices) // header, status strip, footer, notices
 	if m.showNotice(l) {
 		chrome += 2
 	}

@@ -202,7 +202,8 @@ func decodeLiveAdmission(ev journal.Event) (*viewmodel.Admission, error) {
 	}
 	return &viewmodel.Admission{
 		AdapterID: rec.Adapter.ID, AdapterVersion: rec.Adapter.Version, AdapterSurface: rec.Adapter.Surface,
-		Qualified: rec.Billing.Qualified, PaidContinuation: rec.Billing.PaidContinuation, RunSeq: ev.RunSequence,
+		Qualified: rec.Billing.Qualified, PaidContinuation: rec.Billing.PaidContinuation,
+		EntitlementStatement: admission.EntitlementStatement(rec.Billing), RunSeq: ev.RunSequence,
 	}, nil
 }
 

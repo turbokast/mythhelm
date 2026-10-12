@@ -388,6 +388,129 @@ func TestStatusStripKindLabels(t *testing.T) {
 	}
 }
 
+const declaredEntitlement = "entitlement: user-declared, NOT verified by MYTHHELM; paid continuation: unknown (user declares disabled)"
+
+// notRunView renders richSnapshot with a verification row of the given result
+// and reason at the wide layout.
+func notRunView(t *testing.T, result, reason string) string {
+	t.Helper()
+	snap := richSnapshot()
+	snap.Verification.Result = result
+	snap.Verification.Reason = reason
+	m := newModel(testConfig(fullCaps, t))
+	m.loadDiff = stubDiff(mustParseDiff(t, smallDiffInput))
+	m.setSnapshot(t.Context(), snap)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 30})
+	return updated.(*Model).View()
+}
+
+// TestMissionNotRunShowsReason renders the recorded reason beside the NOT RUN
+// label, never the hard-coded waiver text (AC-3.2).
+func TestMissionNotRunShowsReason(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name, result, reason, want string
+	}{
+		{"inspect refusal", "not_run", "checks_refused_under_inspect", "verification: NOT RUN (checks_refused_under_inspect)"},
+		{"waiver", "not_run", "waived by --no-checks", "verification: NOT RUN (waived by --no-checks)"},
+		{"payload spelling", "NOT RUN", "pin_missing", "verification: NOT RUN (pin_missing)"},
+		{"unavailable", "unavailable", "checks_unavailable", "verification: NOT RUN (checks_unavailable)"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			view := notRunView(t, tc.result, tc.reason)
+			if !strings.Contains(view, tc.want) {
+				t.Errorf("view missing %q\n%s", tc.want, view)
+			}
+		})
+	}
+	if view := notRunView(t, "not_run", "checks_refused_under_inspect"); strings.Contains(view, "waived by --no-checks") {
+		t.Errorf("inspect refusal renders the waiver text\n%s", view)
+	}
+}
+
+// TestMissionInvalidShowsReason labels an invalid verdict INVALID with its
+// reason, never as a verified or unlabelled outcome (I09).
+func TestMissionInvalidShowsReason(t *testing.T) {
+	t.Parallel()
+	view := notRunView(t, "invalid", "evaluator_digest_mismatch")
+	if !strings.Contains(view, "verification: INVALID (evaluator_digest_mismatch)") {
+		t.Errorf("view missing the INVALID label with its reason\n%s", view)
+	}
+	if view := notRunView(t, "invalid", ""); !strings.Contains(view, "verification: INVALID (reason unknown)") {
+		t.Errorf("view missing %q without a reason\n%s", "verification: INVALID (reason unknown)", view)
+	}
+}
+
+// TestMissionNotRunWithoutReasonSaysUnknown renders an older run's missing
+// reason as unknown, never blank or invented (I09).
+func TestMissionNotRunWithoutReasonSaysUnknown(t *testing.T) {
+	t.Parallel()
+	for _, result := range []string{"not_run", "unavailable"} {
+		view := notRunView(t, result, "")
+		if !strings.Contains(view, "verification: NOT RUN (reason unknown)") {
+			t.Errorf("%s without a reason: view missing %q\n%s", result, "verification: NOT RUN (reason unknown)", view)
+		}
+		if strings.Contains(view, "NOT RUN ()") || strings.Contains(view, "waived") {
+			t.Errorf("%s without a reason renders a blank or invented reason\n%s", result, view)
+		}
+	}
+}
+
+// TestMissionStatusStripEntitlement carries the declared sentence verbatim
+// for a declared admission and entitlement: unknown without one, at every
+// layout that shows the strip (AC-3.1, I15).
+func TestMissionStatusStripEntitlement(t *testing.T) {
+	t.Parallel()
+	render := func(t *testing.T, a *viewmodel.Admission, width, height int) string {
+		t.Helper()
+		snap := richSnapshot()
+		snap.Run.State = "executing"
+		snap.Admission = a
+		m := newModel(testConfig(asciiCaps, t))
+		m.loadDiff = stubDiff(mustParseDiff(t, smallDiffInput))
+		m.setSnapshot(t.Context(), snap)
+		updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: height})
+		return updated.(*Model).View()
+	}
+	declared := &viewmodel.Admission{
+		AdapterID: "builtin/fake", Qualified: false, PaidContinuation: "unknown",
+		EntitlementStatement: declaredEntitlement,
+	}
+	for _, size := range []struct{ width, height int }{{160, 30}, {120, 30}, {70, 14}} {
+		name := fmt.Sprintf("%dx%d", size.width, size.height)
+		t.Run("declared "+name, func(t *testing.T) {
+			t.Parallel()
+			view := render(t, declared, size.width, size.height)
+			// The sentence starts with its verdict, so a narrow rung that
+			// truncates keeps "user-declared, NOT verified by MYTHHELM".
+			want := declaredEntitlement
+			if len(want) > size.width {
+				want = want[:size.width-len(ellGlyph(asciiCaps))]
+			}
+			if !strings.Contains(view, want) {
+				t.Errorf("strip missing %q\n%s", want, view)
+			}
+			assertWidthSafe(t, view, size.width, size.height)
+		})
+		t.Run("absent "+name, func(t *testing.T) {
+			t.Parallel()
+			view := render(t, nil, size.width, size.height)
+			if !strings.Contains(view, "entitlement: unknown") {
+				t.Errorf("strip missing %q without an admission\n%s", "entitlement: unknown", view)
+			}
+		})
+	}
+	t.Run("admission without a statement is unknown", func(t *testing.T) {
+		t.Parallel()
+		view := render(t, &viewmodel.Admission{AdapterID: "builtin/fake"}, 160, 30)
+		if !strings.Contains(view, "entitlement: unknown") {
+			t.Errorf("strip missing %q for a statement-less admission\n%s", "entitlement: unknown", view)
+		}
+	})
+}
+
 // TestNativeResultNeverVerified journals a clean native exit with no
 // verification events, loads through viewmodel.Load, and asserts the view
 // renders the native exit with no verified/pass label (I07). The fixture is

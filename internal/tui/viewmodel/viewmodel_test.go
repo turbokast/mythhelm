@@ -99,11 +99,16 @@ func (b *builder) addCandidate(runID, attemptID, commit string) {
 
 func (b *builder) addVerification(runID, commit string) {
 	b.t.Helper()
+	b.addVerificationWith(runID, commit, "pass", "")
+}
+
+func (b *builder) addVerificationWith(runID, commit, result, reason string) {
+	b.t.Helper()
 	now := time.Now().UTC()
 	row := journal.VerificationRow{
 		ID: ids.New("ver"), RunID: runID, CandidateCommit: commit, ConfigSHA256: "cfg",
-		Result: "pass", StartedAt: now, FinishedAt: now,
-		Checks: []journal.CheckRow{{Name: "build", Argv: []string{"go", "build"}, Status: "pass"}},
+		Result: result, Reason: reason, StartedAt: now, FinishedAt: now,
+		Checks: []journal.CheckRow{{Name: "build", Argv: []string{"go", "build"}, Status: result}},
 	}
 	b.append(runID, "verification.completed", `{}`, func(tx *sql.Tx) error {
 		return journal.InsertVerification(b.t.Context(), tx, row)
@@ -163,6 +168,9 @@ const (
 	nativePayload    = `{"exit_code":0,"signal":null,"result_observed":true}`
 	admissionPayload = `{"adapter":{"id":"builtin/fake","version":"0.1","harness":"fake",` +
 		`"surface":"scripted"},"billing":{"mode":"local-scripted","qualified":true,"paid_continuation":"off"}}`
+	declaredAdmissionPayload = `{"adapter":{"id":"builtin/fake","version":"0.1","harness":"fake",` +
+		`"surface":"scripted"},"billing":{"mode":"subscription-only","qualified":false,` +
+		`"entitlement_source":"user_declared","paid_continuation":"unknown"}}`
 )
 
 func TestLoadSnapshot(t *testing.T) {
@@ -377,6 +385,32 @@ func TestLoadScansAdmission(t *testing.T) {
 			t.Errorf("Admission = %+v, want nil without admission.decided", snap.Admission)
 		}
 	})
+}
+
+func TestViewmodelLoadsReasonAndStatement(t *testing.T) {
+	t.Parallel()
+	b := newBuilder(t)
+	runID := "run_reason"
+	commit := strings.Repeat("a", 40)
+	taskSHA := b.writeTask(runID, []byte("# Ship the widget\n"))
+	b.addRun(runID, "ready_for_review", taskSHA)
+	attemptID := b.addAttempt(runID)
+	b.addCandidate(runID, attemptID, commit)
+	b.addVerificationWith(runID, commit, "not_run", "checks_refused_under_inspect")
+	b.append(runID, "admission.decided", declaredAdmissionPayload, nil)
+	b.close()
+
+	snap, err := viewmodel.Load(t.Context(), b.dir, runID)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if snap.Verification == nil || snap.Verification.Reason != "checks_refused_under_inspect" {
+		t.Errorf("Verification = %+v, want reason checks_refused_under_inspect", snap.Verification)
+	}
+	const want = "entitlement: user-declared, NOT verified by MYTHHELM; paid continuation: unknown (user declares disabled)"
+	if snap.Admission == nil || snap.Admission.EntitlementStatement != want {
+		t.Errorf("Admission = %+v, want entitlement statement %q", snap.Admission, want)
+	}
 }
 
 func TestLoadScanFailures(t *testing.T) {
