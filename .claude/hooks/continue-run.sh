@@ -104,7 +104,11 @@ jq -cn --arg g "$HH_GRANT_ID" --argjson n "$count" --argjson c "$chain" --argjso
   '{grant_id:$g,count:$n,chain:$c,last_epoch:$t}' > "$state" 2>/dev/null || exit 0
 audit_row continue "$count" "$chain"
 
-items="$(printf '%s\n' "$work" | head -n 5 | tr '\n' ';' | sed 's/;$//; s/;/; /g')"
+# Name the first five, cut in bash: a long list piped into head SIGPIPEs the writer,
+# and pipefail turns that into exit 141 after this continue was counted.
+first5=$'^[^\n]*(\n[^\n]*){0,4}'
+[[ "$work" =~ $first5 ]] && work="${BASH_REMATCH[0]}"
+items="${work//$'\n'/; }"
 cat >&2 <<EOF
 CONTINUE ($count/$HH_GRANT_MAXC): the maintainer's autonomy grant is live until $HH_GRANT_UNTIL and the delivery run has actionable work: $items.
 Take the next action now; do not wait to be told.

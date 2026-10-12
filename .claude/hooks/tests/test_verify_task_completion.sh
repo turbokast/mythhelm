@@ -228,4 +228,24 @@ check "python3 missing in a directory outside any repository allows" [ "$RC" == 
 P3="$(jq -c --arg d "$TEST_TMP" '.cwd = $d' <<<"$P")"
 expect_rc 0 "a cwd outside any repository is allowed" "$HOOK" "$P3"
 
+echo "== the checker cannot decide on more changed tasks.md than a pipe holds =="
+# 1000 paths of about 140 bytes: far past a 64 KiB pipe buffer, so a pipe from the
+# list into head would SIGPIPE its writer every time and exit 141 under pipefail.
+repo many
+PAD="$(printf '%0100d' 0)"
+DIRS=()
+for ((i = 1; i <= 1000; i++)); do DIRS+=("$(printf '%s/specs/in-progress/d%04d-%s' "$R" "$i" "$PAD")"); done
+mkdir -p "${DIRS[@]}"
+for d in "${DIRS[@]}"; do : > "$d/tasks.md"; done
+FIVE="$(for i in 1 2 3 4 5; do printf 'specs/in-progress/d%04d-%s/tasks.md, ' "$i" "$PAD"; done)"
+FIVE="${FIVE%, }"
+payload
+printf '%s' "$P" | HOOK_PYTHON_PROBE=no-such-python "$HOOK" >/dev/null 2>"$TEST_TMP/err"; RC=$?
+check "python3 missing with 1000 changed tasks.md blocks" [ "$RC" == 2 ]
+check "the File line lists the first five paths" grep -qxF "File: $FIVE" "$TEST_TMP/err"
+payload Stop true
+OUT="$(printf '%s' "$P" | HOOK_PYTHON_PROBE=no-such-python "$HOOK" 2>/dev/null)"; RC=$?
+check "the stop after it is allowed" [ "$RC" == 0 ]
+check "with a notice naming the first five paths" grep -qF "claimed in $FIVE but was not verified" <<<"$OUT"
+
 finish

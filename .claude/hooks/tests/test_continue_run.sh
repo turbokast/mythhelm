@@ -96,4 +96,17 @@ expect_rc 0 "garbage payload" "$HOOK" "not json"
 printf 'broken' > "$DATA/autonomy-grant.json"
 expect_rc 0 "unreadable grant" "$HOOK" "$(stop s1 false)"
 
+echo "== more actionable items than a pipe holds =="
+# 8000 items print about 160 KB: far past a 64 KiB pipe buffer, so a pipe from the
+# list into head would SIGPIPE its writer every time and exit 141 under pipefail.
+dv run --status complete
+dv init --scope "$(printf 'MH-%d,' {1..8000})"
+grant g7 s1 3600 50
+expect_rc 2 "a long actionable list continues" "$HOOK" "$(stop s1 false)"
+expect_err "actionable work: MH-1 create-spec; MH-2 create-spec; MH-3 create-spec; MH-4 create-spec; MH-5 create-spec." \
+  "the directive names the first five items"
+check "the continue is counted once" test "$(jq -r '"\(.grant_id) \(.count)"' "$DATA/autonomy-continue.json")" = "g7 1"
+expect_rc 2 "the next stop continues" "$HOOK" "$(stop s1 true)"
+expect_err "CONTINUE (2/50)" "as the second continue of the grant"
+
 finish
