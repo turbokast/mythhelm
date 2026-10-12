@@ -87,8 +87,12 @@
 
 ## Task 11 — End-to-end: Codex stays blocked and refused
 
-<!-- pending -->
+- **Produces**: `tests/e2e/codex_qualification_test.go` with `TestCodexBillingModesAllRefuseOrBlock`, `TestCodexDoctorRowEndToEnd` and the helpers `codexFixtureMain`, `installFakeCodex` (returns the PATH directory) and `fixtureInvocations`; `tests/e2e/main_test.go` `TestMain` dispatches a binary named `codex` or `codex.exe` to the fixture. No design difference.
+- **For Task 12**: the doctor text the guide describes matches what the e2e pins: the Codex row ends ` failing: fidelity, entitlement, lifecycle` and the next line is `  next_test: Qualify native-managed sign-in, approvals and effort metadata; authority: maintainer live-test grant`.
+- **Trap**: no Codex run is admittable through the binary (D13), so the e2e cannot cover the `protocol_mismatch` stop or the worker config re-inventory (#389 F1/F2); those stay in the Task 9 worker tests. A later task that makes a Codex run admittable must extend the fixture, which answers only `--version` and exits 9 on any other argv.
 
 ## Task 12 — Document the Codex limits and record the decisions
 
-<!-- pending -->
+- **Produces**: `docs/decisions/0018-codex-adapter-admission.md` (D1, D3, D10, D12, D18), a `### Codex` section at the end of `docs/limitations.md`, one Codex line in README's "Supported now" list, and design D18. No difference from the design's `Produces` line beyond D18.
+- **For dependents (finalize and any later Codex spec)**: the limitations section holds exactly one line each for fidelity, entitlement and lifecycle; a spec that qualifies one column edits that bullet, never adds a fourth match. Admitting Codex changes D3 and D13 and needs a new decision record.
+- **Open from #389, recorded in the ADR and the design honesty register, not decided**: A3 (the drained-line count is only logged and can miss buffered input), A4 (`protocol_mismatch` can overwrite an earlier policy error class; fix before the Codex error table is filled), and the two maintainer questions (stop precedence during the ladder, converging `protocol_mismatch` with Claude `protocol_error`).

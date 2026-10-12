@@ -31,6 +31,7 @@ Supported now:
 - `mythhelm migrate`: preview, or apply with `--yes`, the move of a state directory to the v2 ledger. It is one-way; see "Not supported yet" for what it leaves refused.
 - Linux, macOS and Windows. Native Claude execution is refused on Windows by design (exit 7); the scripted adapter runs everywhere, but off Linux its runs need `--execution-profile trusted-host` (the default `restricted` profile is refused there).
 - Dogfood billing postures `local-scripted` and `subscription-declared` (user-declared, never verified by MYTHHELM).
+- Codex is not yet a supported adapter: `--adapter codex` has fixture-tested adapter code only, its registry row stays `planned`, and every run blocks or is refused (see [Codex limits](docs/limitations.md#codex)).
 
 Not supported yet:
 
