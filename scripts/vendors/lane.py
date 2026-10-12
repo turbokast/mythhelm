@@ -16,7 +16,8 @@ Order (every refusal happens before a worktree exists or anything is spent):
   2. the task parses and lists Files                            task-unreadable
   3. no listed file is protected (lanes.protected_paths)        protected-path
   4. Linux, and a root-owned, non-writable bwrap that starts    sandbox-unavailable
-  5. CLI, version pin, signed in                                cli-missing | ...
+  5. CLI, version pin, signed in (when the policy names a
+     status command)                                            cli-missing | ...
   6. one call counted against the daily caps                    over-quota
   7. base = the --from checkout's HEAD, plus its uncommitted non-ignored changes
      with --include-uncommitted (built in a temporary index; the checkout is not

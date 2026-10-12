@@ -26,7 +26,8 @@ first match wins:
   default           anything else                                   claude
 
 A lane is available when the vendor and its lane are opted in, bwrap is usable,
-the CLI is signed in and today's caps are not exhausted.
+the CLI passes its sign-in check (none for a vendor whose policy names no status
+command) and today's caps are not exhausted.
 """
 
 from __future__ import annotations
