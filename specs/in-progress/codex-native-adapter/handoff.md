@@ -93,4 +93,6 @@
 
 ## Task 12 — Document the Codex limits and record the decisions
 
-<!-- pending -->
+- **Produces**: `docs/decisions/0018-codex-adapter-admission.md` (D1, D3, D10, D12, D18), a `### Codex` section at the end of `docs/limitations.md`, one Codex line in README's "Supported now" list, and design D18. No difference from the design's `Produces` line beyond D18.
+- **For dependents (finalize and any later Codex spec)**: the limitations section holds exactly one line each for fidelity, entitlement and lifecycle; a spec that qualifies one column edits that bullet, never adds a fourth match. Admitting Codex changes D3 and D13 and needs a new decision record.
+- **Open from #389, recorded in the ADR and the design honesty register, not decided**: A3 (the drained-line count is only logged and can miss buffered input), A4 (`protocol_mismatch` can overwrite an earlier policy error class; fix before the Codex error table is filled), and the two maintainer questions (stop precedence during the ladder, converging `protocol_mismatch` with Claude `protocol_error`).

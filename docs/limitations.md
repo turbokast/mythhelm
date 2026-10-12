@@ -52,3 +52,14 @@ TUI behaviour is qualified by the G09 evidence record in the repository
 - In S1, stop and recover run locally from the CLI; the supervisor service does not serve them. Routing them through journal ingest is a follow-up (#348).
 - `mythhelm recover` is refused on a state root whose migration phase is `drained`, `imported` or `adopted`, so a migrated run has no recover command yet (#369).
 - Stop and recover authorise a caller by same-user peer identity. A per-run capability token is a follow-up (#356).
+
+### Codex
+
+Codex is not a supported adapter. The repository holds adapter code for it, tested only against synthetic fixtures, and its qualification row stays `planned` (ADR [0018](decisions/0018-codex-adapter-admission.md)). `mythhelm run --adapter codex` blocks or is refused in every billing mode, so no Codex run starts, and `mythhelm doctor` shows the row with its failing columns.
+
+- **Fidelity is unproven.** No matched comparison against Codex run directly exists, so the adapter records instruction and skill discovery, hooks, MCP servers, children and native context as `unobservable`, never `preserved`.
+- **Entitlement is unproven.** Nothing shows that Codex stops before purchased credits or overage in an included plan, so strict `subscription-only` also needs unexpired evidence of that prevention and no fixture can supply it. The sign-in category is unknown too, so a strict run ends `no_qualification_record`.
+- **Lifecycle is unproven.** The stop ladder is tested against fake processes only, native stop acknowledgement is reported as `unknown`, and the adapter has no resume, reconnect or steering path.
+- **Billing postures.** Only strict `subscription-only` is considered. `subscription-declared` and `local-scripted` are refused with `billing_unsupported_for_adapter` before any native process starts, and no runtime route check runs for Codex, so the route rests on admission alone.
+- **Native surface.** The app-server command line, frame schema, configuration sources, usage and exhaustion shapes are placeholders: token usage stays unknown and error frames the native reports default to `native_error`. A stream the adapter can no longer read (a malformed result frame or a read failure) is reported as `protocol_mismatch`. When no stop is already running, the worker requests a stop; a confirmed stop with no escaped descendants records the attempt as `stopped`, and the run fails with `protocol_error` only when it is not already stopping. An unconfirmed stop or escaped descendants leaves the run `interrupted`; an existing user stop remains `cancelled`, and a route-violation stop remains `blocked`.
+- **Profiles and platforms.** The `restricted` and `inspect` execution profiles are refused for Codex (exit 7), and Codex launch is refused on Windows.

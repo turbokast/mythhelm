@@ -312,7 +312,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `tests/e2e/codex_qualification_test.go`, `tests/e2e/main_test.go`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
 
-### Task 12 — Document the Codex limits and record the decisions
+### Task 12 — Document the Codex limits and record the decisions ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -328,3 +328,9 @@
   - `docs/decisions/0018-codex-adapter-admission.md` has Status, Context, Decision, Consequences sections and cites D1, D3, D10 and D12; `ls docs/decisions` shows no other file with the same number (0016 is taken by `0016-migration-import.md` and the MH-11 spec claims 0017; renumber to the next free number if 0018 is taken); `scripts/ci/check-public-hygiene.sh` exits 0.
 - **Test plan**: Commands run from the tree root; sections anchored by heading.
 - **Invariants touched**: I14, G10 (published limitations); I15 (the billing decision D3 is recorded).
+- **Status**: ✅ Completed — the Codex limits are in `docs/limitations.md` and README's "Supported now" list, and ADR 0018 records D1, D3, D10, D12 and the Task 9 `protocol_mismatch` stop (D18); PR #403.
+- **Implementation**: ADR 0018 was free on origin/main (0019 belongs to open PR #400), so it keeps its number. Red-first for docs: removing the README line -> anchored grep prints 0 matches; removing the `### Codex` section -> heading grep prints 0 and the three-column region grep prints 0; restored -> 1 line and 3 lines. Every behavioural claim names a test run with `--- PASS`. Commit 49da288.
+- **Spec deviations**:
+  - `specs/in-progress/codex-native-adapter/design.md` is outside the task's `Files` list; it is amended for the Task 9 `protocol_mismatch` seam as D18 (decisions row, §3 seam constant, §6 worker and pipeline handling, honesty-register rows), as #389 A5 requires. The seam itself is a Task 9 deviation from the original design.
+  - The ADR records D18 in addition to the D1, D3, D10 and D12 the task names, for the same reason.
+- **Files modified**: `docs/decisions/0018-codex-adapter-admission.md`, `docs/limitations.md`, `README.md`, `specs/in-progress/codex-native-adapter/design.md`, `specs/in-progress/codex-native-adapter/tasks.md`, `specs/in-progress/codex-native-adapter/handoff.md`, `specs/in-progress/codex-native-adapter/scratchpad.md`.
