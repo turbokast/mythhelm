@@ -215,6 +215,7 @@ func TestAccessibleLabels(t *testing.T) {
 		"verification: waiting",
 		"progress: 7 assistant turns, 1 retries (native-reported)",
 		"admission: adapter builtin/fake 0.1 (scripted); qualified: true; paid continuation: off",
+		"entitlement: not applicable (local-scripted: no inference, no network)",
 		"next action: wait for worker to finish",
 		"actions: stop",
 	}
@@ -269,6 +270,7 @@ func TestAccessibleEmptyValuesRenderUnknown(t *testing.T) {
 		"verification: unknown (candidate unknown)",
 		"progress: unknown",
 		"admission: adapter unknown unknown (unknown); qualified: false; paid continuation: unknown",
+		"entitlement: unknown",
 		"native exit: signal unknown; no result frame observed",
 		"next action: unknown",
 		"actions: none available",
@@ -281,6 +283,66 @@ func TestAccessibleEmptyValuesRenderUnknown(t *testing.T) {
 		if lines[i] != w {
 			t.Errorf("summary line %d = %q, want %q", i, lines[i], w)
 		}
+	}
+}
+
+func TestAccessibleVerificationLineReason(t *testing.T) {
+	t.Parallel()
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	tests := []struct {
+		name   string
+		result string
+		reason string
+		want   string
+	}{
+		{"not_run carries its inspect reason", "not_run", "checks_refused_under_inspect", "verification: NOT RUN (checks_refused_under_inspect)"},
+		{"not_run carries the waiver", "not_run", "waived by --no-checks", "verification: NOT RUN (waived by --no-checks)"},
+		{"the journaled NOT RUN spelling is labelled the same", "NOT RUN", "pin_missing", "verification: NOT RUN (pin_missing)"},
+		{"unavailable is NOT RUN with its reason", "unavailable", "checks_unavailable", "verification: NOT RUN (checks_unavailable)"},
+		{"a NOT RUN with no recorded reason says so", "not_run", "", "verification: NOT RUN (reason unknown)"},
+		{"invalid is INVALID with its reason", "invalid", "evaluator_digest_mismatch", "verification: INVALID (evaluator_digest_mismatch)"},
+		{"passed keeps its candidate", "passed", "", "verification: passed (candidate " + commit + ")"},
+		{"failed keeps its candidate", "failed", "checks_failed", "verification: failed (candidate " + commit + ")"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			snap := viewmodel.Snapshot{Verification: &journal.VerificationRow{Result: tc.result, Reason: tc.reason, CandidateCommit: commit}}
+			if got := accessibleVerificationLine(snap); got != tc.want {
+				t.Errorf("line = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAccessibleEntitlementLine(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		admission *viewmodel.Admission
+		want      string
+	}{
+		{"the declared sentence verbatim", &viewmodel.Admission{AdapterID: "claudecode", AdapterVersion: "2.1.284", AdapterSurface: "cli-stream-json", EntitlementStatement: declaredSentence}, declaredSentence},
+		{"an admission without a statement is unknown", &viewmodel.Admission{AdapterID: "builtin/fake"}, "entitlement: unknown"},
+		{"no admission is unknown", nil, "entitlement: unknown"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			lines := accessibleSummary(viewmodel.Snapshot{Admission: tc.admission})
+			var got []string
+			for _, l := range lines {
+				if strings.HasPrefix(l, "entitlement:") {
+					got = append(got, l)
+				}
+			}
+			if len(got) != 1 || got[0] != tc.want {
+				t.Fatalf("entitlement lines = %q, want exactly [%q]", got, tc.want)
+			}
+			if fitted := fitAccessibleLine(got[0]); fitted != got[0] {
+				t.Errorf("the sentence does not fit the line cap: %q", fitted)
+			}
+		})
 	}
 }
 
@@ -347,6 +409,7 @@ func TestAccessibleNoChatter(t *testing.T) {
 		"verification: waiting",
 		"progress: unknown",
 		"admission: unknown",
+		"entitlement: unknown",
 		"next action: wait for worker to finish",
 		"actions: stop",
 		"event 1: run " + runID + ": created",

@@ -19,6 +19,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/turbokast/mythhelm/internal/acceptance"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/tui/viewmodel"
 )
@@ -217,6 +218,7 @@ func accessibleSummary(snap viewmodel.Snapshot) []string {
 		accessibleVerificationLine(snap),
 		accessibleProgressLine(snap),
 		accessibleAdmissionLine(snap),
+		accessibleEntitlementLine(snap),
 	}
 	if snap.NativeExit != nil {
 		lines = append(lines, accessibleNativeExitLine(snap))
@@ -290,14 +292,11 @@ func accessibleVerificationLine(snap viewmodel.Snapshot) string {
 	if snap.Verification == nil {
 		return "verification: waiting"
 	}
-	result := snap.Verification.Result
-	if result == "" {
-		result = "unknown"
+	label := acceptance.Result(snap.Verification.Result).Label()
+	if label == "NOT RUN" || label == "INVALID" {
+		return "verification: " + verdictText(label, snap.Verification.Reason)
 	}
-	if result == "NOT RUN" {
-		return "verification: NOT RUN (waived by --no-checks)"
-	}
-	return fmt.Sprintf("verification: %s (candidate %s)", cell(result), cellOrUnknown(snap.Verification.CandidateCommit))
+	return fmt.Sprintf("verification: %s (candidate %s)", label, cellOrUnknown(snap.Verification.CandidateCommit))
 }
 
 func accessibleProgressLine(snap viewmodel.Snapshot) string {
@@ -319,6 +318,16 @@ func accessibleAdmissionLine(snap viewmodel.Snapshot) string {
 		cellOrUnknown(snap.Admission.AdapterID), cellOrUnknown(snap.Admission.AdapterVersion),
 		cellOrUnknown(snap.Admission.AdapterSurface), snap.Admission.Qualified,
 		cellOrUnknown(snap.Admission.PaidContinuation))
+}
+
+// accessibleEntitlementLine is the entitlement sentence verbatim on a line of
+// its own: beside the adapter details the width cap could cut off the words
+// that say it is not verified (I15). No statement reads unknown.
+func accessibleEntitlementLine(snap viewmodel.Snapshot) string {
+	if snap.Admission == nil || snap.Admission.EntitlementStatement == "" {
+		return "entitlement: unknown"
+	}
+	return cell(snap.Admission.EntitlementStatement)
 }
 
 func accessibleNativeExitLine(snap viewmodel.Snapshot) string {
