@@ -988,6 +988,79 @@ func TestWaitForRunJournaledSurfacesJournalErrors(t *testing.T) {
 	}
 }
 
+// TestFinalRunJournaled pins the live stream's fast-run fallback: absence
+// means the pipeline failed before journaling (nothing to stream), but a
+// journal read error is not absence — it must surface, never collapse into
+// an empty stream that exits with only the run's code.
+func TestFinalRunJournaled(t *testing.T) {
+	t.Parallel()
+	journaled := newAccessibleFixture(t)
+	journaledID := ids.New("run")
+	journaled.addRun(journaledID, "completed", strings.Repeat("0", 64))
+	corrupt := t.TempDir()
+	if err := os.WriteFile(filepath.Join(corrupt, journal.DBName), []byte("not a database"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name      string
+		dir       string
+		runID     string
+		wantFound bool
+		wantErr   bool
+	}{
+		{name: "journaled run is found", dir: journaled.dir, runID: journaledID, wantFound: true},
+		{name: "missing run row is absent", dir: journaled.dir, runID: "run_missing"},
+		{name: "missing database is absent", dir: t.TempDir(), runID: "run_missing"},
+		{name: "corrupt database surfaces its read error", dir: corrupt, runID: "run_broken", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			found, err := finalRunJournaled(tt.dir, tt.runID)
+			if found != tt.wantFound {
+				t.Errorf("found = %v, want %v", found, tt.wantFound)
+			}
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, want error %v", err, tt.wantErr)
+			}
+			if tt.wantErr && (errors.Is(err, journal.ErrNoDatabase) || errors.Is(err, journal.ErrNotFound)) {
+				t.Fatalf("err = %v, want the read error, not absence", err)
+			}
+		})
+	}
+}
+
+// TestRunAccessibleLiveSurfacesFinalCheckError drives the fast-run fallback:
+// supervision ends before the wait sees the run, and the final check fails
+// to read the journal. The read error must come back from the live stream,
+// never an empty stream that exits with only the run's code (#399).
+func TestRunAccessibleLiveSurfacesFinalCheckError(t *testing.T) {
+	t.Parallel()
+	readErr := errors.New("journal read boom")
+	supervise := func(context.Context, supervisor.Hooks) (supervisor.Outcome, error) {
+		return supervisor.Outcome{}, nil
+	}
+	wait := func(ctx context.Context, _, _ string) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	final := func(_, _ string) (bool, error) { return false, readErr }
+	var out, errBuf bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		_, err := runAccessibleLiveWith(Stdio{Out: &out, Err: &errBuf}, t.TempDir(), "run_fast", 0, supervise, wait, final)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, readErr) {
+			t.Fatalf("runAccessibleLiveWith = %v, want the final check's read error", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("runAccessibleLiveWith wedged after supervision ended")
+	}
+}
+
 // TestRunAccessibleLiveEndsOnStrandedRun pins the live stream's shutdown
 // when the pipeline fails after journaling: the run sits in created,
 // which the terminal watch never observes as terminal, so supervision

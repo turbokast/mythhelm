@@ -284,6 +284,15 @@ func runInspectTUI(deps tuiDeps, stateDir, runID string, opts tuiOptions) error 
 // next-after trailer is its last line, and the returned error already
 // carries the outcome's exit code.
 func runAccessibleLive(stdio Stdio, stateDir, runID string, after int64, supervise superviseFunc) (supervisor.Outcome, error) {
+	return runAccessibleLiveWith(stdio, stateDir, runID, after, supervise, waitForRunJournaled, finalRunJournaled)
+}
+
+// runAccessibleLiveWith is runAccessibleLive with the journal checks passed
+// in, so a test can drive the fast-run fallback deterministically.
+func runAccessibleLiveWith(stdio Stdio, stateDir, runID string, after int64, supervise superviseFunc,
+	wait func(ctx context.Context, stateDir, runID string) error,
+	final func(stateDir, runID string) (bool, error),
+) (supervisor.Outcome, error) {
 	interrupts := make(chan os.Signal, 2)
 	signal.Notify(interrupts, os.Interrupt)
 	defer signal.Stop(interrupts)
@@ -312,7 +321,7 @@ func runAccessibleLive(stdio Stdio, stateDir, runID string, after int64, supervi
 		// The pipeline journals run.created after it starts; the stream's
 		// initial Load must wait for that row, or a fast startup fails
 		// with "not found" and the run exits 1 with no stream at all.
-		if err := waitForRunJournaled(ctx, stateDir, runID); err != nil {
+		if err := wait(ctx, stateDir, runID); err != nil {
 			if ctx.Err() == nil {
 				streamDone <- err
 				return
@@ -320,9 +329,11 @@ func runAccessibleLive(stdio Stdio, stateDir, runID string, after int64, supervi
 			// Supervision ended first: one final check, since a fast
 			// run can finish inside the poll gap. Absent means the
 			// pipeline failed before journaling, so there is nothing
-			// to stream and the outcome below carries the exit.
-			if found, ferr := runJournaled(context.Background(), stateDir, runID); ferr != nil || !found {
-				streamDone <- nil
+			// to stream and the outcome below carries the exit; a read
+			// error surfaces rather than an empty stream.
+			found, ferr := final(stateDir, runID)
+			if ferr != nil || !found {
+				streamDone <- ferr
 				return
 			}
 		}
@@ -376,6 +387,36 @@ func waitForRunJournaled(ctx context.Context, stateDir, runID string) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-t.C:
+		}
+	}
+}
+
+// accessibleFinalCheckBound bounds the retry of the live stream's final
+// check, so a read error from a writer still closing the journal (Windows
+// file contention) clears instead of surfacing.
+const accessibleFinalCheckBound = 500 * time.Millisecond
+
+// finalRunJournaled is the live stream's check after supervision ended
+// before the wait saw the run. Absence (ErrNoDatabase, ErrNotFound) reports
+// false with no error; any other journal error is retried within
+// accessibleFinalCheckBound and then returned, never read as absence.
+func finalRunJournaled(stateDir, runID string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), accessibleFinalCheckBound)
+	defer cancel()
+	t := time.NewTicker(accessibleRunWaitPace)
+	defer t.Stop()
+	for {
+		found, err := runJournaled(ctx, stateDir, runID)
+		if errors.Is(err, journal.ErrNoDatabase) || errors.Is(err, journal.ErrNotFound) {
+			return false, nil
+		}
+		if err == nil {
+			return found, nil
+		}
+		select {
+		case <-ctx.Done():
+			return false, err
 		case <-t.C:
 		}
 	}
