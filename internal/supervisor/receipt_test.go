@@ -712,6 +712,59 @@ func TestReceiptRealRunReserveMatchesItsBounds(t *testing.T) {
 	}
 }
 
+// bindingEnvironment is the environment fingerprint a run's receipt binds the
+// verdict to.
+func bindingEnvironment(t *testing.T, receipt map[string]any) string {
+	t.Helper()
+	env, _ := object(t, object(t, receipt, "verification"), "binding")["environment"].(string)
+	if !strings.HasPrefix(env, "sha256:") {
+		t.Fatalf("verification.binding.environment = %q, want a sha256 fingerprint", env)
+	}
+	return env
+}
+
+// TestReceiptDoesNotClaimThePinnedEnvironment pins I09 and I07 (AC-4.1): the
+// check environment is recorded, not pinned. A live run hands its checks the
+// native's environment, a recovered run rebuilds it from the recovering
+// process, so the same revisions bind different fingerprints depending on
+// whether the supervisor crashed, and the determinism note must say so. If the
+// two paths are ever built from one admitted passthrough, the divergence
+// assertion fails and the note may claim the environment pinned.
+func TestReceiptDoesNotClaimThePinnedEnvironment(t *testing.T) {
+	t.Parallel()
+	live := passedRun(t).file
+
+	f := newFixture(t)
+	digest := f.config(t, "pass")
+	if code, _, stderr := f.run(t, f.checkedRun(digest)...); code != 0 {
+		t.Fatalf("second live run exit %d: %s", code, stderr)
+	}
+	secondLive := captureRun(t, f, f.onlyRun(t).RunID, digest).file
+
+	rf := newFixture(t)
+	rdigest := rf.config(t, "pass")
+	d, _, wait := seedLaunch(t, rf, "happy", "sha256:"+rdigest)
+	wait()
+	if code, _, stderr := rf.run(t, "recover", d.RunID); code != 0 {
+		t.Fatalf("recover exit %d: %s", code, stderr)
+	}
+	recovered := captureRun(t, rf, d.RunID, rdigest).file
+
+	if a, b := bindingEnvironment(t, live), bindingEnvironment(t, secondLive); a != b {
+		t.Errorf("two live runs bind environments %s and %s, want one: the control for the live-versus-recovered comparison", a, b)
+	}
+	if l, r := bindingEnvironment(t, live), bindingEnvironment(t, recovered); l == r {
+		t.Errorf("a live and a recovered run bind the same environment %s: the environment may now be pinned, so revisit the determinism note", l)
+	}
+	note, _ := object(t, object(t, live, "acceptance"), "determinism")["note"].(string)
+	if strings.Contains(note, "environment) are pinned") || !strings.Contains(note, "environment is recorded") || !strings.Contains(note, "not pinned") {
+		t.Errorf("determinism note = %q, want the environment recorded and not pinned", note)
+	}
+	if !strings.Contains(note, "recovered") {
+		t.Errorf("determinism note = %q, want it to say a recovered run can bind a different environment", note)
+	}
+}
+
 // TestReceiptNextRetryShown pins billing.next_retry: the exhausted bucket
 // renders its reset time (or unknown), used and max retries, while a
 // never-exhausted run renders null and never an invented time.

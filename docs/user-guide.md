@@ -124,7 +124,10 @@ verdict. It names five things:
 - the **environment**: a partial fingerprint of the operating system, the
   architecture, the verifier and the *names* of the check environment's
   variables. Variable values are never recorded, and the version of the tools
-  the checks run (compiler, test runner) is unknown.
+  the checks run (compiler, test runner) is unknown. The environment is
+  recorded, not pinned: a live run's checks get the native's environment,
+  including variables the adapter sets, and a run finished by `mythhelm recover`
+  gets one rebuilt from the recovering process.
 
 The attestation is stored immutably: no statement can update, delete or
 replace it. The receipt shows its digests under `verification.binding`.
@@ -380,13 +383,17 @@ A field MYTHHELM could not observe prints `unknown` with its reason in
 before acceptance binding existed prints its binding, pin and overhead as
 `unknown` with that reason.
 
-**Determinism.** The same pinned revisions produce the same verdict.
-Non-determinism is confined to the native session and to the checks'
-own behaviour. The receipt says so in `acceptance.determinism`:
+**Determinism.** The same pinned revisions (candidate, contract and check
+definitions) produce the same verdict. Non-determinism is confined to the
+native session, to the checks' own behaviour and to the check environment,
+which is recorded but not pinned: a run that `mythhelm recover` finishes after
+a supervisor crash rebuilds it from the recovering process, so it can bind a
+different `environment` fingerprint from a run that never crashed. The receipt
+says so in `acceptance.determinism`:
 
 <!-- Excerpt of the output of: mythhelm review <run-id> --format jsonl, on the passing fixture run above (TestE2EP1FlowNoCredentials reads the receipt's acceptance keys). -->
 ```text
-"determinism":{"confined_to":"native session","note":"acceptance inputs (candidate, contract, check definitions, environment) are pinned; each admitted check runs once with no retry; a check's own determinism is not asserted"}
+"determinism":{"confined_to":"native session","note":"acceptance inputs (candidate, contract, check definitions) are pinned; the check environment is recorded as a fingerprint and is not pinned, so a run recovered after a supervisor crash can bind a different one; each admitted check runs once with no retry; a check's own determinism is not asserted"}
 ```
 
 A check that fails one run and passes the next is not detected, and no seed or
@@ -700,10 +707,13 @@ verification pass, and a dispatched replan then runs under a derived deadline
 survives the replan. The `reserve:` line and the receipt's `billing.reserve`
 show this estimate (`verify pass (...) + N repairs`), labelled
 `estimate, not a reserve of provider quota`. It is planning arithmetic, not a
-claim on provider capacity; repairs are never gated by it. For checked runs
-the receipt's verify pass reads `unknown`, because check timeouts are not
-journaled — only the CLI line, which reads the live admission decision, is
-exact there.
+claim on provider capacity; repairs are never gated by it. For a checked run
+the receipt's verify pass is the sum of the check timeouts the pin journaled at
+admission, the same values as `acceptance.bounds.check_timeouts`. It reads
+`unknown`, with the reason in `unknown_reasons`, for a run whose pin is
+missing (admitted before the pin existed), unreadable or never journaled, and
+for a pinned timeout that is not a positive duration (the count stays known,
+the sum does not).
 
 **Exhaustion.** When the allowance is exhausted, the run keeps its frozen
 candidate and session artifacts, ends `blocked` with reason

@@ -69,7 +69,7 @@ func DefaultTimeouts() Timeouts {
 // Receipt text shared with the documentation.
 const (
 	DeterminismConfinedTo = "native session"
-	DeterminismNote       = "acceptance inputs (candidate, contract, check definitions, environment) are pinned; each admitted check runs once with no retry; a check's own determinism is not asserted"
+	DeterminismNote       = "acceptance inputs (candidate, contract, check definitions) are pinned; the check environment is recorded as a fingerprint and is not pinned, so a run recovered after a supervisor crash can bind a different one; each admitted check runs once with no retry; a check's own determinism is not asserted"
 )
 
 // P1 is the canonical PolicyVersion for policy P1, "one native session, one

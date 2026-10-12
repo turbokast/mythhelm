@@ -88,7 +88,10 @@ not verified `NOT RUN`. What it does not cover is listed here; the
   task or the checks is a new run, not a recorded revision of the old one.
 - **Checks run once.** There is no retry, no repetition and no seed, so a
   check's own nondeterminism is not detected or recorded, and the receipt says
-  only that it is not asserted. Required coverage and risk-specific review are
+  only that it is not asserted. The check environment is recorded as a
+  fingerprint, not pinned: a run finished by `mythhelm recover` rebuilds it
+  from the recovering process, so the same revisions can bind a different
+  fingerprint than a run that never crashed. Required coverage and risk-specific review are
   not modelled, and `--no-checks` is the only reduced-check mode: it is
   labelled `NOT RUN (waived by --no-checks)`, with no separate draft label.
 - **Only the execution deadline is enforced.** The receipt lists the repair,
