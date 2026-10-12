@@ -6,16 +6,14 @@ working in <TMPDIR>/mythhelm-demo-repo-XXX (removed afterwards)
 === SCRIPTED DEMO: run ===
 run run_XXX: created
 run: admission
-reservation held on bucket ["fake","scripted-child-process (ndjson)","none (no inference, no network)","unknown"]: local coordination only — not provider availability
 admission decided: adapter builtin/fake 0.1.0 (scripted-child-process (ndjson))
   SCRIPTED: fake adapter, no real agent, no inference, no network
   snapshot: <SHA40> (branch main, selected by HEAD)
-  execution profile: trusted-host, runs with your host authority and is not adversarially contained
+  execution profile: trusted-host, not contained: native tools and checks run with your host authority
   billing: local-scripted (qualified: false)
 snapshot: <SHA40> cloned to <TMPDIR>/mythhelm-demo-state-XXX/runs/run_XXX/workspace
 run: executing
 attempt att_XXX: launch intent recorded
-attempt att_XXX: admission pinned (stop ladder stop-ladder/v1)
 attempt: launching
 attempt: worker pid NNN, native pid NNN
 attempt: running
@@ -32,10 +30,6 @@ check demo: passed
 verification: passed
 run: ready_for_review
 receipt.written
-usage: retail-equivalent unknown unknown (unknown, unknown)
-reserve: verify pass (1 checks, 30s) + 3 repairs (estimate, not a reserve of provider quota)
-remaining: unknown
-next retry: none (used 0 of 3)
 result: ready_for_review; exit 0 
 
 === SCRIPTED DEMO: review ===
@@ -81,22 +75,21 @@ event 3: admission decided: adapter builtin/fake 0.1.0 (scripted-child-process (
 event 4: snapshot: <SHA40> cloned to <TMPDIR>/mythhelm-demo-state-XXX/runs/run_XXX/workspace
 event 5: run: executing
 event 6: attempt att_XXX: launch intent recorded
-event 7: attempt att_XXX: admission pinned (stop ladder stop-ladder/v1)
-event 8: attempt: launching
-event 9: attempt: worker pid NNN, native pid NNN
-event 10: attempt: running
-event 11: native session fake-happy, model none (scripted)
-event 12: progress: 1 assistant turns, tool uses {"Write":1} (native-reported)
-event 13: protocol counters: malformed 0, oversized 0, invalid utf-8 0, depth exceeded 0
-event 14: native exit: exit code 0; result success
-event 15: attempt: process group gone; unresolved descendants []
-event 16: attempt: succeeded_native
-event 17: candidate.frozen
-event 18: run: verifying
-event 19: verification: started
-event 20: check demo: passed
-event 21: verification: passed
-event 22: run: ready_for_review
+event 7: attempt: launching
+event 8: attempt: worker pid NNN, native pid NNN
+event 9: attempt: running
+event 10: native session fake-happy, model none (scripted)
+event 11: progress: 1 assistant turns, tool uses {"Write":1} (native-reported)
+event 12: protocol counters: malformed 0, oversized 0, invalid utf-8 0, depth exceeded 0
+event 13: native exit: exit code 0; result success
+event 14: attempt: process group gone; unresolved descendants []
+event 15: attempt: succeeded_native
+event 16: candidate.frozen
+event 17: run: verifying
+event 18: verification: started
+event 19: check demo: passed
+event 20: verification: passed
+event 21: run: ready_for_review
 next-after: <LIVE-CURSOR>
 
 === SCRIPTED DEMO: review ===

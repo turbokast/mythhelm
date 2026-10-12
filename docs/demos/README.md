@@ -36,9 +36,8 @@ command: it skips the build, the transcript regen and the verify pass.
 
 | Recording | Tape | Artifact | Transcript | Binary revision | VHS |
 |---|---|---|---|---|---|
-| demo | `docs/demos/demo.tape` | `docs/demos/demo.gif` | `docs/demos/demo.transcript.txt` | `828f1f00a3596f8073b709a885d59bb0702e051e` | v0.12.1 |
-| tui | `docs/demos/tui.tape` | `docs/demos/tui.gif` | `docs/demos/tui.transcript.txt` | `828f1f00a3596f8073b709a885d59bb0702e051e` | v0.12.1 |
-| hero | `docs/demos/hero.tape` | `docs/demos/hero.gif` | `docs/demos/hero.transcript.txt` | `828f1f00a3596f8073b709a885d59bb0702e051e` | v0.12.1 |
+| demo | `docs/demos/demo.tape` | `docs/demos/demo.gif` | `docs/demos/demo.transcript.txt` | `179bba4ceae958f9591e9fedb056f70da59ce40c` | v0.12.1 |
+| tui | `docs/demos/tui.tape` | `docs/demos/tui.gif` | `docs/demos/tui.transcript.txt` | `179bba4ceae958f9591e9fedb056f70da59ce40c` | v0.12.1 |
 
 The demo tape drives `mythhelm demo --check pass` end to end against the fake
 adapter with local-scripted billing: no network, no paid credentials. Its
@@ -71,8 +70,10 @@ each shown capability:
 | revision-attached verification | `TestVerificationMismatchLabelsRevisions` (`internal/tui/model_test.go`) |
 | linear accessible stream | `TestAccessibleOrderedStream` (`internal/cli/accessible_test.go`) |
 
-The hero tape is the story the README leads with: kill the terminal mid-run,
-then recover. It opens on a title card (`MYTHHELM`, the `SCRIPTED DEMO`
+The hero tape tells the story the README will lead with: kill the terminal
+mid-run, then recover. Its GIF, transcript and manifest entry are not committed
+yet: they are recorded with `docs/demos/record.sh --repin` on a clean main
+tip, because a pin has to be a commit on main. It opens on a title card (`MYTHHELM`, the `SCRIPTED DEMO`
 line), then `mythhelm run` drives the fake adapter's `paced` scenario (a
 scripted four-turn session of about 20 seconds) in the live TUI. The tape
 runs it under `timeout --foreground -s KILL 8`, so the foreground `mythhelm
