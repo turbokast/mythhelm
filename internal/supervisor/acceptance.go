@@ -176,6 +176,14 @@ func (p *pipeline) recordVerification(ctx context.Context, row journal.Verificat
 	return p.flush(ctx)
 }
 
+// checkEvent is the payload of check.completed. RunnerFault marks the result
+// of a check the runner's fault left unavailable or unrun: it completes the
+// set of results but is not a check that ran.
+type checkEvent struct {
+	integration.CheckResult
+	RunnerFault bool `json:"runner_fault,omitempty"`
+}
+
 // verifyChecks runs the admitted checks against the pin journaled at
 // admission, binds the verdict to what it judged and records it (design §2.3).
 func (p *pipeline) verifyChecks(ctx context.Context) error {
@@ -218,15 +226,17 @@ func (p *pipeline) verifyChecks(ctx context.Context) error {
 		// A runner fault leaves the check it interrupted unavailable; a
 		// failure already seen still wins (D6, D18).
 		statuses = append(statuses, "unavailable")
-		// The checks it left without a result are journaled too, though not
-		// recorded with the verification, so a failed record step leaves
-		// recovery a complete set to settle from (design §2.9, D21).
+		// The checks it left without a result are journaled too, marked as
+		// the fault's, so a failed record step leaves recovery a complete set
+		// to settle from without recording checks that never ran (design
+		// §2.9, D21).
 		for i, check := range p.d.ProjectConfig.Checks[len(v.Checks):] {
-			result := integration.CheckResult{Name: check.Name, Status: "not_run"}
+			event := checkEvent{RunnerFault: true}
+			event.Name, event.Status = check.Name, "not_run"
 			if i == 0 {
-				result.Status = "unavailable"
+				event.Status = "unavailable"
 			}
-			if err := p.append(ctx, "check.completed", result); err != nil {
+			if err := p.append(ctx, "check.completed", event); err != nil {
 				return err
 			}
 		}

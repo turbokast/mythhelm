@@ -1767,8 +1767,17 @@ func TestRecoverVerifyingAfterRunnerFault(t *testing.T) {
 			if v.Result != tc.wantResult || v.Reason != tc.wantWhy || len(v.Attestation) != 0 {
 				t.Errorf("verification = %s/%s attestation %q, want %s/%s with none", v.Result, v.Reason, v.Attestation, tc.wantResult, tc.wantWhy)
 			}
-			if len(v.Checks) != 2 || v.Checks[1].Name != "broken" || v.Checks[1].Status != "unavailable" {
-				t.Errorf("recorded checks %+v, want the first check and the faulted one unavailable", v.Checks)
+			if len(v.Checks) != 1 || v.Checks[0].Name != "first" {
+				t.Errorf("recorded checks %+v, want only the check that ran", v.Checks)
+			}
+			var fault map[string]any
+			for _, ev := range f.events(t, runID) {
+				if p := payloadOf(t, ev); ev.Type == "check.completed" && p["name"] == "broken" {
+					fault = p
+				}
+			}
+			if fault["status"] != "unavailable" || fault["runner_fault"] != true {
+				t.Errorf("journaled outcome of the faulted check = %v, want unavailable and marked as the runner's fault", fault)
 			}
 		})
 	}

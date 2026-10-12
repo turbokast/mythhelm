@@ -318,11 +318,14 @@ func (p *pipeline) recordFromCheckEvents(ctx context.Context) error {
 		if ev.Type != "check.completed" {
 			continue
 		}
-		var c integration.CheckResult
+		var c checkEvent
 		if err := json.Unmarshal(ev.Payload, &c); err != nil {
 			return errors.Join(ErrOwnership, err)
 		}
-		checks, statuses, seen[c.Name] = append(checks, c), append(statuses, c.Status), true
+		if !c.RunnerFault {
+			checks = append(checks, c.CheckResult)
+		}
+		statuses, seen[c.Name] = append(statuses, c.Status), true
 	}
 	for name := range pin.CheckTimeouts {
 		if !seen[name] {
