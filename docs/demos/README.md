@@ -123,8 +123,9 @@ revision rendered from and the qualifying test for each shown capability:
 CI's transcript-freshness step (`.github/workflows/docs.yml`) regenerates the
 `demo` and `tui` transcripts by name; it does not yet regenerate the hero
 transcript, so `docs/demos/record.sh` is the check for it until that
-workflow learns the third pipeline. Its revision-present and qualifier steps
-read the manifest and do cover the hero entry.
+workflow learns the third pipeline. The revision-present and qualifier steps
+read the manifest, so they cover the hero recording only once its manifest
+entry is committed (with the artifacts); they do not cover it yet.
 
 Normalization (`docs/demos/normalize.sed`) covers temp paths, `run_`/`att_`
 ULIDs, ISO UTC timestamps (`<TIME>`), the hero scratch directory (`/tmp/demo`) and a bare pid line (`NNN`), both worker/native pid shapes, 40-hex SHAs (with the stable
