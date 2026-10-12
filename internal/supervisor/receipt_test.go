@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -92,7 +93,7 @@ func TestReceiptHasAllSection9Keys(t *testing.T) {
 // TestReceiptTopLevelKeys pins D8: the receipt grows by exactly the keys
 // acceptance and unknown_reasons, and its schema version does not move.
 func TestReceiptTopLevelKeys(t *testing.T) {
-	_, r, _ := receiptRun(t)
+	r := waivedRun(t).file
 	want := []string{"schema_version", "run_id", "state", "exit_code", "requested_outcome", "admitted_snapshot",
 		"execution_bundle", "fidelity_differences", "native_configuration", "billing", "routing", "native_result",
 		"candidate", "verification", "external_effects", "execution_host", "host_integration", "unknowns", "remaining_human_action",
@@ -796,34 +797,77 @@ func TestNoHardLimitAnywhere(t *testing.T) {
 	}
 }
 
-// readReceipt decodes the receipt file the run wrote.
-func (f fixture) readReceipt(t *testing.T, runID string) map[string]any {
+// realRun is what the receipt tests read of a finished fake-adapter run. It is
+// captured once for the test binary, because a real run costs seconds and its
+// fixture is removed when the test that built it ends. Tests only read it.
+type realRun struct {
+	file   map[string]any          // the receipt file the run wrote
+	built  supervisor.Receipt      // the receipt the journal renders now
+	row    journal.VerificationRow // the run's verification, zero when none
+	digest string                  // the check configuration's digest, empty when waived
+}
+
+var (
+	passedOnce, waivedOnce sync.Once
+	passedSnapshot         realRun
+	waivedSnapshot         realRun
+)
+
+func captureRun(t *testing.T, f fixture, runID, digest string) realRun {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join(f.state, "runs", runID, "receipt.json")) // #nosec G304 -- fixture state and projected ID
 	if err != nil {
 		t.Fatal(err)
 	}
-	var r map[string]any
-	if err := json.Unmarshal(b, &r); err != nil {
+	run := realRun{digest: digest}
+	if err := json.Unmarshal(b, &run.file); err != nil {
 		t.Fatal(err)
 	}
-	return r
-}
-
-// buildReceipt renders the run's receipt from its journal, as the supervisor
-// does, without the JSON round trip.
-func (f fixture) buildReceipt(t *testing.T, runID string) supervisor.Receipt {
-	t.Helper()
 	j, err := journal.OpenReadOnly(t.Context(), f.state)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = j.Close() }()
-	r, err := supervisor.BuildReceipt(t.Context(), j, runID)
-	if err != nil {
+	if run.built, err = supervisor.BuildReceipt(t.Context(), j, runID); err != nil {
 		t.Fatal(err)
 	}
-	return r
+	if run.row, err = j.LatestVerification(t.Context(), runID); err != nil && !errors.Is(err, journal.ErrNotFound) {
+		t.Fatal(err)
+	}
+	return run
+}
+
+// passedRun is a fake task whose check passed: exit 0, bound and attested.
+func passedRun(t *testing.T) realRun {
+	t.Helper()
+	passedOnce.Do(func() {
+		f := newFixture(t)
+		digest := f.config(t, "pass")
+		if code, _, stderr := f.run(t, f.checkedRun(digest)...); code != 0 {
+			t.Fatalf("run exit %d: %s", code, stderr)
+		}
+		passedSnapshot = captureRun(t, f, f.onlyRun(t).RunID, digest)
+	})
+	if passedSnapshot.file == nil {
+		t.Fatal("the shared passed run failed in an earlier test")
+	}
+	return passedSnapshot
+}
+
+// waivedRun is a fake task run with --no-checks: unverified, exit 5.
+func waivedRun(t *testing.T) realRun {
+	t.Helper()
+	waivedOnce.Do(func() {
+		f := newFixture(t)
+		if code, _, stderr := f.run(t, f.fakeRun()...); code != 5 {
+			t.Fatalf("run exit %d: %s", code, stderr)
+		}
+		waivedSnapshot = captureRun(t, f, f.onlyRun(t).RunID, "")
+	})
+	if waivedSnapshot.file == nil {
+		t.Fatal("the shared waived run failed in an earlier test")
+	}
+	return waivedSnapshot
 }
 
 // object returns m[key] as an object.
@@ -860,16 +904,21 @@ func unknownReason(t *testing.T, r map[string]any, path string) string {
 	return got
 }
 
-// passedRun runs a fake task whose check passes and returns its fixture, run
-// ID and the check configuration's digest.
-func passedRun(t *testing.T) (fixture, string, string) {
+// verifiedWorld is a world run with a pin-less admission and one recorded
+// verification of the given verdict, bound without an attestation.
+func verifiedWorld(t *testing.T, result, reason string) (*journal.Journal, string) {
 	t.Helper()
-	f := newFixture(t)
-	digest := f.config(t, "pass")
-	if code, _, stderr := f.run(t, f.checkedRun(digest)...); code != 0 {
-		t.Fatalf("run exit %d: %s", code, stderr)
+	j, runID := ledgerReceiptWorld(t)
+	journalAdmission(t, j, runID, mustJSON(t, admission.Record{}))
+	now := time.Now().UTC()
+	if err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+		return journal.InsertVerification(t.Context(), tx, journal.VerificationRow{ID: ids.New("ver"), RunID: runID,
+			CandidateCommit: strings.Repeat("c", 40), ConfigSHA256: strings.Repeat("d", 64), Result: result, Reason: reason,
+			StartedAt: now, FinishedAt: now, Checks: []journal.CheckRow{{Name: "lint", Status: "unavailable", Argv: []string{"lint"}}}})
+	}); err != nil {
+		t.Fatal(err)
 	}
-	return f, f.onlyRun(t).RunID, digest
+	return j, runID
 }
 
 // TestReceiptCarriesEntitlementStatement pins AC-3.1 on the receipt: a
@@ -888,9 +937,8 @@ func TestReceiptCarriesEntitlementStatement(t *testing.T) {
 		}
 	})
 	t.Run("a fake-route receipt carries the not-applicable form", func(t *testing.T) {
-		_, r, _ := receiptRun(t)
 		want := "entitlement: not applicable (local-scripted: no inference, no network)"
-		if got := object(t, r, "billing")["entitlement_statement"]; got != want {
+		if got := object(t, waivedRun(t).file, "billing")["entitlement_statement"]; got != want {
 			t.Errorf("entitlement_statement = %q, want %q", got, want)
 		}
 	})
@@ -907,56 +955,46 @@ func TestReceiptCarriesEntitlementStatement(t *testing.T) {
 // receipt: the label, its reason and what the verdict is bound to (I07, I09).
 func TestReceiptVerificationLabelAndBinding(t *testing.T) {
 	t.Run("a passed run is bound to its candidate", func(t *testing.T) {
-		f, id, digest := passedRun(t)
-		r := f.readReceipt(t, id)
-		v := object(t, r, "verification")
+		run := passedRun(t)
+		v := object(t, run.file, "verification")
 		if v["result"] != "passed" || v["label"] != "passed" || v["reason"] != "" {
 			t.Errorf("verification = %v/%v/%q, want passed/passed with no reason", v["result"], v["label"], v["reason"])
 		}
 		binding := object(t, v, "binding")
 		candidate := object(t, binding, "candidate")
-		commit := object(t, r, "candidate")["commit"]
+		commit := object(t, run.file, "candidate")["commit"]
 		if candidate["value"] != commit || candidate["format"] != "sha1" || commit == "unknown" {
 			t.Errorf("binding.candidate = %v, want sha1 %v (candidate.commit)", candidate, commit)
 		}
-		row := f.latestVerification(t, id)
-		if binding["check_definition"] != "sha256:"+digest || binding["evaluator"] != "sha256:"+row.EvaluatorDigest ||
-			binding["attestation_digest"] != row.AttestationDigest || binding["attestation_digest"] == "" {
+		if binding["check_definition"] != "sha256:"+run.digest || binding["evaluator"] != "sha256:"+run.row.EvaluatorDigest ||
+			binding["attestation_digest"] != run.row.AttestationDigest || binding["attestation_digest"] == "" {
 			t.Errorf("binding = %v, want check definition sha256:%s, evaluator sha256:%s and the row's attestation digest %s",
-				binding, digest, row.EvaluatorDigest, row.AttestationDigest)
+				binding, run.digest, run.row.EvaluatorDigest, run.row.AttestationDigest)
 		}
 	})
 	t.Run("a waived run is NOT RUN with the waiver and no binding", func(t *testing.T) {
-		_, r, _ := receiptRun(t)
-		v := object(t, r, "verification")
+		v := object(t, waivedRun(t).file, "verification")
 		if v["label"] != "NOT RUN" || v["reason"] != "waived by --no-checks" || v["binding"] != "unknown" {
 			t.Errorf("verification = %v/%v/%v, want NOT RUN, waived by --no-checks, unknown binding", v["label"], v["reason"], v["binding"])
 		}
 	})
-	t.Run("an unavailable check is NOT RUN with its reason", func(t *testing.T) {
-		f := newFixture(t)
-		digest := f.commitChecks(t, missingCheck(t, "missing"))
-		if code, _, stderr := f.run(t, f.checkedRun(digest)...); code != 5 {
-			t.Fatalf("run exit %d: %s", code, stderr)
-		}
-		v := object(t, f.readReceipt(t, f.onlyRun(t).RunID), "verification")
-		if v["result"] != "unavailable" || v["label"] != "NOT RUN" || v["reason"] != "checks_unavailable" {
-			t.Errorf("verification = %v/%v/%v, want unavailable/NOT RUN/checks_unavailable", v["result"], v["label"], v["reason"])
-		}
-	})
-	t.Run("an invalid verdict is INVALID, never passed", func(t *testing.T) {
-		f := newFixture(t)
-		digest := f.config(t, "pass")
-		d, _, wait := seedLaunchWith(t, f, "happy", wrongEvaluatorPayload, "sha256:"+digest)
-		wait()
-		if code, _, stderr := f.run(t, "recover", d.RunID); code != 5 {
-			t.Fatalf("recover exit %d: %s", code, stderr)
-		}
-		v := object(t, f.readReceipt(t, d.RunID), "verification")
-		if v["result"] != "invalid" || v["label"] != "INVALID" || v["reason"] != "evaluator_digest_mismatch" {
-			t.Errorf("verification = %v/%v/%v, want invalid/INVALID/evaluator_digest_mismatch", v["result"], v["label"], v["reason"])
-		}
-	})
+	for _, tt := range []struct{ name, result, reason, label string }{
+		{"an unavailable check is NOT RUN with its reason", "unavailable", "checks_unavailable", "NOT RUN"},
+		{"an invalid verdict is INVALID, never passed", "invalid", "evaluator_digest_mismatch", "INVALID"},
+		{"a failed verdict stays failed", "failed", "checks_failed", "failed"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			j, runID := verifiedWorld(t, tt.result, tt.reason)
+			v := object(t, worldReceipt(t, j, runID), "verification")
+			if v["result"] != tt.result || v["label"] != tt.label || v["reason"] != tt.reason {
+				t.Errorf("verification = %v/%v/%v, want %s/%s/%s", v["result"], v["label"], v["reason"], tt.result, tt.label, tt.reason)
+			}
+			if v["binding"] != "unknown" {
+				t.Errorf("binding = %v, want unknown for a verdict with no attestation", v["binding"])
+			}
+		})
+	}
 	t.Run("a run with no verification renders unknown with a reason", func(t *testing.T) {
 		t.Parallel()
 		j, runID := ledgerReceiptWorld(t)
@@ -975,16 +1013,15 @@ func TestReceiptVerificationLabelAndBinding(t *testing.T) {
 // pin with the evaluator that ran, and a pre-schema-8 run's pin as unknown.
 func TestReceiptPolicyPinAndDeterminism(t *testing.T) {
 	t.Run("a pinned run renders its policy and evaluator", func(t *testing.T) {
-		f, id, digest := passedRun(t)
-		a := object(t, f.readReceipt(t, id), "acceptance")
+		run := passedRun(t)
+		a := object(t, run.file, "acceptance")
 		pin := object(t, a, "policy_pin")
-		row := f.latestVerification(t, id)
 		evaluator := object(t, pin, "evaluator")
-		if pin["policy_id"] != "P1" || pin["policy_version"] != float64(1) || pin["check_definition"] != "sha256:"+digest {
-			t.Errorf("policy_pin = %v, want P1 version 1 over check definition sha256:%s", pin, digest)
+		if pin["policy_id"] != "P1" || pin["policy_version"] != float64(1) || pin["check_definition"] != "sha256:"+run.digest {
+			t.Errorf("policy_pin = %v, want P1 version 1 over check definition sha256:%s", pin, run.digest)
 		}
-		if evaluator["name"] != row.EvaluatorName || evaluator["digest"] != "sha256:"+row.EvaluatorDigest {
-			t.Errorf("policy_pin.evaluator = %v, want the verification's %s sha256:%s", evaluator, row.EvaluatorName, row.EvaluatorDigest)
+		if evaluator["name"] != run.row.EvaluatorName || evaluator["digest"] != "sha256:"+run.row.EvaluatorDigest {
+			t.Errorf("policy_pin.evaluator = %v, want the verification's %s sha256:%s", evaluator, run.row.EvaluatorName, run.row.EvaluatorDigest)
 		}
 		det := object(t, a, "determinism")
 		if det["confined_to"] != "native session" || det["note"] != acceptance.DeterminismNote {
@@ -992,8 +1029,7 @@ func TestReceiptPolicyPinAndDeterminism(t *testing.T) {
 		}
 	})
 	t.Run("a waived run pins no evaluator", func(t *testing.T) {
-		_, r, _ := receiptRun(t)
-		pin := object(t, object(t, r, "acceptance"), "policy_pin")
+		pin := object(t, object(t, waivedRun(t).file, "acceptance"), "policy_pin")
 		if pin["policy_id"] != "P1" || pin["evaluator"] != "unknown" || pin["check_definition"] != "unknown" {
 			t.Errorf("policy_pin = %v, want P1 with an unknown evaluator and check definition", pin)
 		}
@@ -1046,7 +1082,7 @@ func TestRunWithUnreadablePinHasReceiptAndReviews(t *testing.T) {
 	if got := f.onlyRun(t); got.State != "failed" || got.Reason != "acceptance_pin_unreadable" {
 		t.Fatalf("run %s/%s, want failed/acceptance_pin_unreadable", got.State, got.Reason)
 	}
-	r := f.readReceipt(t, d.RunID)
+	r := captureRun(t, f, d.RunID, digest).file
 	if got := object(t, r, "acceptance")["policy_pin"]; got != "unknown" {
 		t.Errorf("policy_pin = %v, want unknown", got)
 	}
@@ -1105,19 +1141,17 @@ func TestReceiptBoundsUnknownWithoutEnvelope(t *testing.T) {
 // is the receipt's acceptance overhead, and it says what it covers.
 func TestReceiptOverheadCoversBindingStep(t *testing.T) {
 	t.Run("an executed verification carries the measured overhead", func(t *testing.T) {
-		f, id, _ := passedRun(t)
-		row := f.latestVerification(t, id)
-		if row.OverheadMS == nil {
+		run := passedRun(t)
+		if run.row.OverheadMS == nil {
 			t.Fatal("the verification row has no overhead")
 		}
-		a := object(t, f.readReceipt(t, id), "acceptance")
-		if a["overhead_ms"] != float64(*row.OverheadMS) || a["overhead_covers"] != "binding step" {
-			t.Errorf("acceptance overhead = %v covering %v, want %d covering the binding step", a["overhead_ms"], a["overhead_covers"], *row.OverheadMS)
+		a := object(t, run.file, "acceptance")
+		if a["overhead_ms"] != float64(*run.row.OverheadMS) || a["overhead_covers"] != "binding step" {
+			t.Errorf("acceptance overhead = %v covering %v, want %d covering the binding step", a["overhead_ms"], a["overhead_covers"], *run.row.OverheadMS)
 		}
 	})
 	t.Run("a waived run measured nothing and says so", func(t *testing.T) {
-		_, r, _ := receiptRun(t)
-		if got := object(t, r, "acceptance")["overhead_ms"]; got != "unknown" {
+		if got := object(t, waivedRun(t).file, "acceptance")["overhead_ms"]; got != "unknown" {
 			t.Errorf("overhead_ms = %v, want unknown when no binding step ran", got)
 		}
 	})
@@ -1174,11 +1208,12 @@ func journalEvent(t *testing.T, j *journal.Journal, runID, typ, payload string) 
 }
 
 // unknownFixtures builds the receipts that together reach every producer of an
-// unknown leaf: real runs for the passed, waived and unavailable-check paths
-// and journaled runs for the rest.
+// unknown leaf: the real passed and waived runs and journaled runs for the
+// rest (the unavailable-check, blocked, failed-native, exhausted-bucket,
+// restricted-profile and Claude native-auth runs among them).
 func unknownFixtures(t *testing.T) map[string]supervisor.Receipt {
 	t.Helper()
-	out := map[string]supervisor.Receipt{}
+	out := map[string]supervisor.Receipt{"passed": passedRun(t).built, "waived": waivedRun(t).built}
 	add := func(name string, j *journal.Journal, runID string) {
 		r, err := supervisor.BuildReceipt(t.Context(), j, runID)
 		if err != nil {
@@ -1186,17 +1221,6 @@ func unknownFixtures(t *testing.T) map[string]supervisor.Receipt {
 		}
 		out[name] = r
 	}
-	passed, passedID, _ := passedRun(t)
-	out["passed"] = passed.buildReceipt(t, passedID)
-	waived, _, waivedID := receiptRun(t)
-	out["waived"] = waived.buildReceipt(t, waivedID)
-	unavailable := newFixture(t)
-	digest := unavailable.commitChecks(t, missingCheck(t, "missing"))
-	if code, _, stderr := unavailable.run(t, unavailable.checkedRun(digest)...); code != 5 {
-		t.Fatalf("unavailable-check run exit %d: %s", code, stderr)
-	}
-	out["unavailable check"] = unavailable.buildReceipt(t, unavailable.onlyRun(t).RunID)
-
 	j, runID := ledgerReceiptWorld(t)
 	add("unadmitted", j, runID)
 
@@ -1210,6 +1234,9 @@ func unknownFixtures(t *testing.T) map[string]supervisor.Receipt {
 		t.Fatal(err)
 	}
 	add("failed native", j, runID)
+
+	j, runID = verifiedWorld(t, "unavailable", "checks_unavailable")
+	add("check that never started", j, runID)
 
 	j, runID = ledgerReceiptWorld(t)
 	bucket := `["claude-code","cli","subscription","opaque-ref"]`
@@ -1237,25 +1264,11 @@ func unknownFixtures(t *testing.T) map[string]supervisor.Receipt {
 	add("restricted profile enforcing nothing", j, runID)
 
 	j, runID = ledgerReceiptWorld(t)
-	journalAdmission(t, j, runID, mustJSON(t, admission.Record{}))
-	now := time.Now().UTC()
-	if err := j.Transact(t.Context(), func(tx *sql.Tx) error {
-		return journal.InsertVerification(t.Context(), tx, journal.VerificationRow{ID: ids.New("ver"), RunID: runID,
-			CandidateCommit: strings.Repeat("c", 40), ConfigSHA256: strings.Repeat("d", 64), Result: "unavailable",
-			Reason: "checks_unavailable", StartedAt: now, FinishedAt: now,
-			Checks: []journal.CheckRow{{Name: "lint", Status: "unavailable", Argv: []string{"lint"}}}})
-	}); err != nil {
-		t.Fatal(err)
-	}
-	add("check that never started", j, runID)
-
-	j, runID = ledgerReceiptWorld(t)
 	journalAdmission(t, j, runID, mustJSON(t, admission.Record{NativeAuth: &admission.AuthEvidence{LoggedIn: true}}))
 	add("claude native auth", j, runID)
 
 	j, runID = ledgerReceiptWorld(t)
 	journalAdmission(t, j, runID, mustJSON(t, admission.Record{}))
-	stamp = time.Now().UTC().Format(time.RFC3339Nano)
 	if _, err := rawDB(t, j.StateDir()).ExecContext(t.Context(), `INSERT INTO verifications
 		(verification_id, run_id, candidate_commit, config_sha256, result, started_at, finished_at)
 		VALUES (?, ?, ?, ?, 'failed', ?, ?)`, ids.New("ver"), runID, strings.Repeat("c", 40), strings.Repeat("d", 64), stamp, stamp); err != nil {
