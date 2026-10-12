@@ -67,5 +67,3 @@ echo "$recovered" | grep -q "^reattached to worker pid $worker\$"
 
 echo "=== take: review ==="
 mythhelm review "$run"
-# synthetic probe: identical output, non-zero status; reverted in the next commit
-exit 1
