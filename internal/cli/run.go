@@ -318,8 +318,18 @@ func ledgerViewFor(ctx context.Context, d admission.Decision, runID string) (led
 }
 
 // finish writes run.result for err (nil on success) and returns err, or the
-// first output error.
+// first output error. A refused undocumented event makes an otherwise
+// successful command fail before run.result is written, so its exit code and
+// the process's agree; an outcome error keeps its code and the refusal is
+// noticed on stderr.
 func finish(r renderer, out supervisor.Outcome, err error) error {
+	if undocumented, ok := errors.AsType[*UndocumentedEventError](r.err()); ok {
+		if err == nil {
+			err = undocumented
+		} else {
+			r.notice(undocumented.Error())
+		}
+	}
 	res := runResult{RunID: out.RunID, State: string(out.State), Reason: out.Reason,
 		AttemptReason: out.AttemptReason, Code: exitCode(err), Category: errorCategory(err)}
 	if out.State == "" {

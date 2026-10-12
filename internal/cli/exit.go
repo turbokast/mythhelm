@@ -81,6 +81,9 @@ func errorCategory(err error) string {
 	if outcome, ok := errors.AsType[*outcomeError](err); ok {
 		return outcome.category
 	}
+	if _, ok := errors.AsType[*UndocumentedEventError](err); ok {
+		return "undocumented_event"
+	}
 	return categories[exitCode(err)]
 }
 

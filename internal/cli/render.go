@@ -12,6 +12,7 @@ import (
 	billingpkg "github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
+	"github.com/turbokast/mythhelm/internal/supervisor"
 )
 
 // runResult is the end of a run command: the run.result event (design §5).
@@ -59,7 +60,21 @@ type jsonlRenderer struct {
 	diag io.Writer
 }
 
-func (r *jsonlRenderer) event(ev journal.Event) { r.keep(r.out.Encode(ev)) }
+// UndocumentedEventError is an event whose type the JSONL stream contract does
+// not document (supervisor.StreamEventTypes); the renderer never writes it.
+type UndocumentedEventError struct{ Type string }
+
+func (e *UndocumentedEventError) Error() string {
+	return fmt.Sprintf("event type %q is not in the documented JSONL event set", e.Type)
+}
+
+func (r *jsonlRenderer) event(ev journal.Event) {
+	if !supervisor.IsStreamEvent(ev.Type) {
+		r.keep(&UndocumentedEventError{Type: ev.Type})
+		return
+	}
+	r.keep(r.out.Encode(ev))
+}
 
 func (r *jsonlRenderer) notice(msg string) {
 	_, err := fmt.Fprintf(r.diag, "mythhelm run: %s\n", msg)
