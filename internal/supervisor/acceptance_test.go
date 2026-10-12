@@ -769,3 +769,192 @@ func TestSameInputsSameVerdict(t *testing.T) {
 		t.Errorf("a changed check argv left the check definition %q or evaluator %q unchanged", changed.binding.CheckDefinition, changed.binding.Evaluator)
 	}
 }
+
+// verificationVariant describes a verification appended after the run's own:
+// its result, whether it has a binding row, and how its attestation differs
+// from the original's.
+type verificationVariant struct {
+	result  string
+	unbound bool
+	attest  func(*v2contract.Verification)
+}
+
+// addVerification appends a newer verification to the run, as a copy of base
+// with the variant's changes, the way a later or an older-schema recording
+// would leave it. It returns the row.
+func (f fixture) addVerification(t *testing.T, base journal.VerificationRow, v verificationVariant) journal.VerificationRow {
+	t.Helper()
+	latest := f.latestVerification(t, base.RunID)
+	row := base
+	row.ID = ids.New("ver")
+	row.Result = v.result
+	row.FinishedAt = latest.FinishedAt.Truncate(time.Second).Add(time.Second)
+	if v.unbound {
+		_, err := rawDB(t, f.state).ExecContext(t.Context(), `INSERT INTO verifications
+			(verification_id, run_id, candidate_commit, config_sha256, result, started_at, finished_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`, row.ID, row.RunID, row.CandidateCommit, row.ConfigSHA256, row.Result,
+			row.StartedAt.UTC().Format(time.RFC3339Nano), row.FinishedAt.UTC().Format(time.RFC3339Nano))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return row
+	}
+	att := decodeAttestation(t, base)
+	att.VerificationID = row.ID
+	if v.attest != nil {
+		v.attest(&att)
+	}
+	encoded, err := json.Marshal(att)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row.CandidateCommit = att.Candidate.Value
+	row.Attestation, row.AttestationDigest = encoded, v2contract.Digest(att)
+	insertVerification(t, f, row)
+	return row
+}
+
+func otherDigest() string { return "sha256:" + strings.Repeat("0", 64) }
+
+func TestAcceptanceStatePrecedence(t *testing.T) {
+	t.Parallel()
+	f, runID := readyApplyFixture(t)
+	base := f.latestVerification(t, runID)
+	ctx := t.Context()
+	j := f.journal(t)
+	otherCommit := f.git(t, "rev-parse", "HEAD")
+	// Each case appends a newer verification, so the cases run in order
+	// against one run and the last row decides.
+	for _, tc := range []struct {
+		name        string
+		variant     verificationVariant
+		want        supervisor.AcceptanceState
+		wantChanged []string
+	}{
+		{name: "passed and matching is bound", variant: verificationVariant{result: "passed"}, want: supervisor.AcceptanceBound},
+		{name: "failed is rejected", variant: verificationVariant{result: "failed"}, want: supervisor.AcceptanceRejected},
+		{name: "invalid is rejected", variant: verificationVariant{result: "invalid"}, want: supervisor.AcceptanceRejected},
+		{name: "not_run is unverified", variant: verificationVariant{result: "not_run"}, want: supervisor.AcceptanceUnverified},
+		{name: "unavailable is unverified", variant: verificationVariant{result: "unavailable"}, want: supervisor.AcceptanceUnverified},
+		{name: "an old not_run row without a binding is unverified, not unbound", variant: verificationVariant{result: "not_run", unbound: true},
+			want: supervisor.AcceptanceUnverified},
+		{name: "an old failed row without a binding is rejected, not unbound", variant: verificationVariant{result: "failed", unbound: true},
+			want: supervisor.AcceptanceRejected},
+		{name: "an old passed row without a binding is unbound", variant: verificationVariant{result: "passed", unbound: true},
+			want: supervisor.AcceptanceUnbound},
+		{name: "another contract is stale on contract", want: supervisor.AcceptanceStale, wantChanged: []string{"contract"},
+			variant: verificationVariant{result: "passed", attest: func(a *v2contract.Verification) { a.AcceptanceContractDigest = otherDigest() }}},
+		{name: "another check definition is stale on check_definition", want: supervisor.AcceptanceStale, wantChanged: []string{"check_definition"},
+			variant: verificationVariant{result: "passed", attest: func(a *v2contract.Verification) { a.CheckDefinition = otherDigest() }}},
+		{name: "another evaluator is stale on evaluator", want: supervisor.AcceptanceStale, wantChanged: []string{"evaluator"},
+			variant: verificationVariant{result: "passed", attest: func(a *v2contract.Verification) { a.CheckVersion = otherDigest() }}},
+		{name: "another candidate is stale on candidate", want: supervisor.AcceptanceStale, wantChanged: []string{"candidate"},
+			variant: verificationVariant{result: "passed", attest: func(a *v2contract.Verification) { a.Candidate.Value = otherCommit }}},
+		{name: "several changes are named in design order", want: supervisor.AcceptanceStale, wantChanged: []string{"candidate", "contract", "evaluator"},
+			variant: verificationVariant{result: "passed", attest: func(a *v2contract.Verification) {
+				a.Candidate.Value, a.AcceptanceContractDigest, a.CheckVersion = otherCommit, otherDigest(), otherDigest()
+			}}},
+		{name: "a changed environment alone stays bound (D4)", want: supervisor.AcceptanceBound,
+			variant: verificationVariant{result: "passed", attest: func(a *v2contract.Verification) { a.Environment = otherDigest() }}},
+	} {
+		f.addVerification(t, base, tc.variant)
+		got, err := supervisor.CheckAcceptance(ctx, j, runID)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if got.State != tc.want || !slices.Equal(got.Changed, tc.wantChanged) {
+			t.Errorf("%s: got %s changed %v, want %s changed %v", tc.name, got.State, got.Changed, tc.want, tc.wantChanged)
+		}
+	}
+}
+
+func TestAcceptanceUnknownResultIsError(t *testing.T) {
+	t.Parallel()
+	f, runID := readyApplyFixture(t)
+	f.addVerification(t, f.latestVerification(t, runID), verificationVariant{result: "mystery"})
+	got, err := supervisor.CheckAcceptance(t.Context(), f.journal(t), runID)
+	if err == nil || got.State == supervisor.AcceptanceBound || !strings.Contains(err.Error(), "mystery") {
+		t.Fatalf("unrecognised result gave %+v, %v; want an error naming it and never bound", got, err)
+	}
+}
+
+func TestCheckAcceptanceErrorsNeverBound(t *testing.T) {
+	t.Parallel()
+	f, runID := readyApplyFixture(t)
+	j := f.journal(t)
+	base := f.latestVerification(t, runID)
+	wantNoBound := func(leg string, got supervisor.AcceptanceStatus, err error) {
+		t.Helper()
+		if err == nil || got.State == supervisor.AcceptanceBound {
+			t.Errorf("%s: got %+v, %v; want an error and never bound", leg, got, err)
+		}
+	}
+	taskPath := filepath.Join(f.state, "runs", runID, "task.md")
+	task, err := os.ReadFile(taskPath) // #nosec G304 -- the test's own state directory
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(taskPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(taskPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	got, err := supervisor.CheckAcceptance(t.Context(), j, runID)
+	wantNoBound("task file unreadable but present", got, err)
+	if err := os.Remove(taskPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(taskPath, task, 0o600); err != nil { // #nosec G703 -- the test's own state directory
+		t.Fatal(err)
+	}
+	if got, err := supervisor.CheckAcceptance(t.Context(), j, runID); err != nil || got.State != supervisor.AcceptanceBound {
+		t.Fatalf("restored run gave %+v, %v; want bound", got, err)
+	}
+
+	corrupt := base
+	corrupt.ID, corrupt.FinishedAt = ids.New("ver"), base.FinishedAt.Truncate(time.Second).Add(time.Second)
+	raw := rawDB(t, f.state)
+	if _, err := raw.ExecContext(t.Context(), `INSERT INTO verifications
+		(verification_id, run_id, candidate_commit, config_sha256, result, started_at, finished_at) VALUES (?, ?, ?, ?, 'passed', ?, ?)`,
+		corrupt.ID, runID, base.CandidateCommit, base.ConfigSHA256, base.StartedAt.UTC().Format(time.RFC3339Nano), corrupt.FinishedAt.UTC().Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.ExecContext(t.Context(), `INSERT INTO verification_bindings (verification_id, reason, attestation, digest)
+		VALUES (?, '', '{"verification_id":"x"}', 'sha256:00')`, corrupt.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err = supervisor.CheckAcceptance(t.Context(), j, runID)
+	wantNoBound("corrupt attestation", got, err)
+
+	empty := f.createBareRun(t)
+	got, err = supervisor.CheckAcceptance(t.Context(), j, empty)
+	if err != nil || got.State != supervisor.AcceptanceUnverified || got.Reason != "no verification recorded" {
+		t.Errorf("run with no verification gave %+v, %v; want unverified, reason %q", got, err, "no verification recorded")
+	}
+}
+
+// createBareRun journals a run with no attempt or verification.
+func (f fixture) createBareRun(t *testing.T) string {
+	t.Helper()
+	runID := ids.New("run")
+	row := journal.RunRow{RunID: runID, AdapterID: "fake", SourceRepo: f.repo, SourceBranch: "main", BaseRev: strings.Repeat("a", 40),
+		TaskSHA256: strings.Repeat("b", 64), BillingPosture: "local-scripted", ExecutionProfile: "trusted-host"}
+	if err := supervisor.CreateRun(t.Context(), f.journal(t), row, supervisor.NewProducer(ids.New("sup"), 1)); err != nil {
+		t.Fatal(err)
+	}
+	return runID
+}
+
+func TestCheckAcceptanceWithinExpires(t *testing.T) {
+	t.Parallel()
+	f, runID := readyApplyFixture(t)
+	j := f.journal(t)
+	if got, err := supervisor.CheckAcceptanceWithin(t.Context(), j, runID, time.Minute); err != nil || got.State != supervisor.AcceptanceBound {
+		t.Fatalf("a generous limit gave %+v, %v; want bound", got, err)
+	}
+	got, err := supervisor.CheckAcceptanceWithin(t.Context(), j, runID, -time.Second)
+	if !errors.Is(err, context.DeadlineExceeded) || got.State == supervisor.AcceptanceBound {
+		t.Fatalf("an expired limit gave %+v, %v; want an error wrapping context.DeadlineExceeded and never bound", got, err)
+	}
+}
