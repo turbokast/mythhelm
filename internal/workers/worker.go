@@ -377,10 +377,12 @@ func writeTemp(dir, name string, body []byte) (string, error) {
 	return f.Name(), nil
 }
 
-// writeFileAtomic replaces dir/name with body. On Windows the supervisor's
-// identity poll can hold name open across the rename; that exact
-// sharing/lock failure is retried under a bounded budget.
-func writeFileAtomic(dir, name string, body []byte) error {
+// WriteFileAtomic installs body as the synced 0600 file dir/name through a
+// temp file and a rename, so a concurrent reader sees the old file (or none)
+// or the whole new one. On Windows the supervisor's identity poll can hold
+// name open across the rename; that exact sharing/lock failure is retried
+// under a bounded budget.
+func WriteFileAtomic(dir, name string, body []byte) error {
 	tmp, err := writeTemp(dir, name, body)
 	if err != nil {
 		return err
@@ -1091,7 +1093,7 @@ func (w *worker) writeIdentity() error {
 	}
 	write := w.writeFile
 	if write == nil {
-		write = writeFileAtomic
+		write = WriteFileAtomic
 	}
 	if err := write(w.dir, identityFile, append(body, '\n')); err != nil {
 		return fmt.Errorf("writing %s: %w", identityFile, err)
