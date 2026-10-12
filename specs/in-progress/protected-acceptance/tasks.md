@@ -295,7 +295,7 @@
 - **Spec deviations**: `internal/tui/model.go` is outside the task's `Files`: the extra strip row needed its height accounting, and the single-pane rung (80-99 columns), which has no billing strip, prints the sentence so a declared entitlement is never invisible there (consistent with design §2.7, I15). `INVALID (<reason>)` is rendered for an `invalid` row per design §2.7, beyond the listed acceptance.
 - **Files modified**: `internal/tui/mission.go`, `internal/tui/model.go`, `internal/tui/model_test.go`, `internal/tui/motion.go`, `internal/tui/motion_test.go`, `internal/tui/viewmodel/viewmodel.go`, `internal/tui/viewmodel/viewmodel_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`.
 
-### Task 10 — CLI surfaces: review, run stream, accessible
+### Task 10 — CLI surfaces: review, run stream, accessible ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (review, stream and accessible renderers, 6 files)
@@ -317,6 +317,13 @@
   - `TestAccessibleVerificationLineReason`: the accessible line for a `not_run` row prints `verification: NOT RUN (<reason>)` using `Result.Label()` (red against today's `accessible.go:297`, which tests `"NOT RUN"` against the stored `not_run` and prints `not_run`); it carries the row reason, and the entitlement statement appears in the accessible admission line.
 - **Test plan**: `cli.Main` with temp state directories and golden fragments anchored to the line prefixes, not file-wide substrings.
 - **Invariants touched**: I09 (v2 §2: NOT RUN is distinct from verified on every CLI surface); I15 (v2 §2: the declared sentence is on every summary); I07 (v2 §2: review shows whether the verdict still applies).
+- **Status**: ✅ Completed — plain `review` prints the entitlement sentence, a `Verification:` line and an `Acceptance:` line from `CheckAcceptance`, and the run stream, admission block and `--accessible` summary use `Result.Label()`, the row reason and the statement; PR #425.
+- **Implementation**: `verdictText` and `reasonOrUnknown` (`render.go`) word NOT RUN and INVALID with their reason for the stream, review and accessible views; review reads the label, reason and binding from the receipt and the status from `CheckAcceptance` (an unreadable verdict is an error, exit 1). The statement comes from `admission.EntitlementStatement` for a live admission event and from `billing.entitlement_statement` for the receipt. Commit 225421e.
+- **Spec deviations**:
+  - The entitlement sentence is its own `--accessible` summary line after `admission:`, not part of it: the 200-cell cap would cut the end of a declared sentence beside a real adapter id (I15).
+  - The acceptance bullet says the `Verification:` line is the only place a waived run's reason appears; design §2.7 also gives `Acceptance: unverified (<reason>)`. Both are kept, and `TestReviewPlainShowsEntitlementAndVerification` pins the waiver on exactly those two lines.
+  - The `inspect` case of `TestReviewPlainShowsEntitlementAndVerification` uses a journaled receipt with reason `checks_refused_under_inspect`, because an inspect run cannot enter its boundary from a test binary.
+- **Files modified**: `internal/cli/review.go`, `internal/cli/render.go`, `internal/cli/accessible.go`, `internal/cli/review_test.go`, `internal/cli/render_test.go`, `internal/cli/accessible_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
 ### Task 11 — Credential-free end-to-end flow
 

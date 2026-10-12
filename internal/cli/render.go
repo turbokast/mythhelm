@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/turbokast/mythhelm/internal/acceptance"
 	"github.com/turbokast/mythhelm/internal/admission"
 	billingpkg "github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/ids"
@@ -200,7 +201,7 @@ func plainEvent(ev journal.Event) string {
 	case "run.state_changed":
 		return "run: " + p.state()
 	case "admission.decided":
-		return admissionLines(p)
+		return admissionLines(p, entitlementOf(ev.Payload))
 	case "workspace.snapshot_created":
 		return fmt.Sprintf("snapshot: %s cloned to %s", p.text("base_rev"), p.text("clone_path"))
 	case "attempt.launch_intent_recorded":
@@ -243,12 +244,29 @@ func plainEvent(ev journal.Event) string {
 	case "check.completed":
 		return fmt.Sprintf("check %s: %s", p.text("name"), p.text("status"))
 	case "verification.completed":
-		if p.get("result") == "NOT RUN" {
-			return "verification: NOT RUN (waived by --no-checks)"
-		}
-		return "verification: " + p.text("result")
+		result, _ := p.get("result").(string)
+		reason, _ := p.get("reason").(string)
+		return "verification: " + verdictText(acceptance.Result(result).Label(), reason)
 	}
 	return cell(ev.Type)
+}
+
+// verdictText words a verification label: NOT RUN and INVALID carry the
+// recorded reason, every other label stands alone (I09).
+func verdictText(label, reason string) string {
+	if label == "NOT RUN" || label == "INVALID" {
+		return label + " (" + reasonOrUnknown(reason) + ")"
+	}
+	return label
+}
+
+// reasonOrUnknown is a recorded reason, or "reason unknown" when none was
+// recorded: never blank, never invented.
+func reasonOrUnknown(reason string) string {
+	if reason == "" || reason == "unknown" {
+		return "reason unknown"
+	}
+	return cell(reason)
 }
 
 // ledgerView is everything the end-of-run ledger notice lines render: the
@@ -296,7 +314,17 @@ func (v ledgerView) lines() []string {
 	return out
 }
 
-func admissionLines(p payload) string {
+// entitlementOf is the entitlement sentence for an admission payload; a
+// payload that does not decode as an admission record reads unknown (I15).
+func entitlementOf(raw json.RawMessage) string {
+	var rec admission.Record
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		return "entitlement: unknown"
+	}
+	return admission.EntitlementStatement(rec.Billing)
+}
+
+func admissionLines(p payload, entitlement string) string {
 	lines := []string{
 		fmt.Sprintf("admission decided: adapter %s %s (%s)", p.text("adapter", "id"), p.text("adapter", "version"), p.text("adapter", "surface")),
 	}
@@ -308,6 +336,7 @@ func admissionLines(p payload) string {
 		fmt.Sprintf("  snapshot: %s (branch %s, selected by %s)", p.text("snapshot", "base_rev"), branch, p.text("snapshot", "selected_by")),
 		fmt.Sprintf("  execution profile: %s, %s", p.text("execution_profile", "name"), p.text("execution_profile", "disclosure")),
 		fmt.Sprintf("  billing: %s (qualified: %s)", p.text("billing", "mode"), p.text("billing", "qualified")),
+		"  "+entitlement,
 	)
 	return strings.Join(lines, "\n")
 }

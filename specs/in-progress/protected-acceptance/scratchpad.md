@@ -47,6 +47,8 @@
 
 - Task 7: the receipt's `unknown_reasons` table (`internal/supervisor/unknown_reasons.go`) lists only leaves a real receipt can render unknown: `requested_outcome.task_file_sha256`, `admitted_snapshot.source_repo`, `execution_bundle.adapter` and `billing.mode` come from required run columns, so they have no entry (an entry no fixture reaches fails `TestEveryUnknownHasAReason`). The walk found `requested_outcome.title` unexplained on its first run, which is the case the test exists for.
 
+- Task 10: `Result("INVALID").Label()` is `unknown` (the label `INVALID` is not a stored value), so a surface that holds a receipt label must print it, never re-label it; only a stored or journaled result goes through `Label()`. The review `Acceptance:` line repeats the waiver reason the `Verification:` line carries, because design §2.7 prints the gate's reason there.
+
 ## Validation findings left open (run 3, round 1: Ready for implementation, 0 blocking)
 
 Ten advisory findings are open for the implementing tasks; the first two are worth settling before Tasks 5 and 7 start.

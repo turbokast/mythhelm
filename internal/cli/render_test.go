@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/control"
 	"github.com/turbokast/mythhelm/internal/ids"
@@ -374,6 +375,97 @@ func TestPayloadTextNumbers(t *testing.T) {
 			t.Parallel()
 			if got := tt.p.text("pid"); got != tt.want {
 				t.Fatalf("text = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func plainLine(typ, payload string) string {
+	ev := jsonlEvent(typ)
+	ev.Payload = json.RawMessage(payload)
+	return plainEvent(ev)
+}
+
+func TestRunStreamPrintsVerdictLabels(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		payload string
+		want    string
+	}{
+		{"invalid is labelled INVALID with its reason", `{"result":"invalid","reason":"evaluator_digest_mismatch"}`, "verification: INVALID (evaluator_digest_mismatch)"},
+		{"unavailable is NOT RUN with its reason", `{"result":"unavailable","reason":"binding_unavailable"}`, "verification: NOT RUN (binding_unavailable)"},
+		{"the journaled NOT RUN spelling keeps its reason", `{"result":"NOT RUN","reason":"pin_missing"}`, "verification: NOT RUN (pin_missing)"},
+		{"passed stays passed", `{"result":"passed","attestation_digest":"sha256:abc"}`, "verification: passed"},
+		{"failed stays failed", `{"result":"failed","reason":"checks_failed"}`, "verification: failed"},
+		{"a result the contract does not name is unknown, not echoed", `{"result":"mystery"}`, "verification: unknown"},
+		{"a NOT RUN without a reason says so, never blank", `{"result":"NOT RUN"}`, "verification: NOT RUN (reason unknown)"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := plainLine("verification.completed", tc.payload); got != tc.want {
+				t.Errorf("line = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRunStreamNotRunCarriesReason(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		payload string
+		want    string
+	}{
+		{"a waiver", `{"result":"NOT RUN","reason":"waived by --no-checks"}`, "verification: NOT RUN (waived by --no-checks)"},
+		{"an inspect run no longer says waived", `{"result":"NOT RUN","reason":"checks_refused_under_inspect"}`, "verification: NOT RUN (checks_refused_under_inspect)"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := plainLine("verification.completed", tc.payload); got != tc.want {
+				t.Errorf("line = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRealWaivedRunStreamsReasonAndEntitlement drives the stream from a real
+// run: the reason and the sentence are the ones the supervisor journaled.
+// Not parallel: the run points MYTHHELM_HOME and the working directory at its fixture.
+func TestRealWaivedRunStreamsReasonAndEntitlement(t *testing.T) {
+	task := ledgerRunFixture(t)
+	code, stdout, stderr := runMain("run", "--task-file", task, "--adapter", "fake", "--billing", "local-scripted",
+		"--execution-profile", "trusted-host", "--non-interactive", "--no-checks", "--plain")
+	if code != 5 {
+		t.Fatalf("run exit %d, stderr %q; want the unverified 5", code, stderr)
+	}
+	wantOneLine(t, stdout, "verification: NOT RUN", "verification: NOT RUN (waived by --no-checks)")
+	wantOneLine(t, stdout, "  entitlement:", "  entitlement: not applicable (local-scripted: no inference, no network)")
+}
+
+func TestAdmissionLinesCarryEntitlement(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		posture adapter.BillingPosture
+		want    string
+	}{
+		{"declared", adapter.BillingPosture{Mode: "subscription-declared", EntitlementSource: "user_declared"}, declaredSentence},
+		{"fake route", adapter.BillingPosture{Mode: admission.BillingLocalScripted, Qualified: true}, "entitlement: not applicable (local-scripted: no inference, no network)"},
+		{"a posture that fits no sentence", adapter.BillingPosture{Mode: "subscription-only"}, "entitlement: unknown"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			payload, err := json.Marshal(admission.Record{Billing: tc.posture})
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantOneLine(t, plainLine("admission.decided", string(payload)), "  entitlement:", "  "+tc.want)
+			if tc.want != admission.EntitlementStatement(tc.posture) {
+				t.Fatalf("fixture sentence %q is not the posture's statement %q", tc.want, admission.EntitlementStatement(tc.posture))
 			}
 		})
 	}

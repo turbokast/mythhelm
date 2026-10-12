@@ -90,7 +90,13 @@
 
 ## Task 10 — CLI surfaces: review, run stream, accessible
 
-<!-- pending -->
+- **Produces**: no new exported symbol; plain `review` header is `Run`, `State`, `Task`, `Candidate`, then the entitlement sentence line, then `Verification: <text>`, a blank line, `Flags:`, `Checks:` and finally `Acceptance: <text>` (before the diff, also with `--no-diff`). `verdictText(label, reason)` and `reasonOrUnknown` in `render.go` are shared by the stream, review and accessible views.
+- **For Task 11**: the lines to assert are `entitlement: ...` (review), `  entitlement: ...` (the stream's admission block, two leading spaces), `entitlement: ...` (accessible summary, its own line after `admission:`), `Verification: passed (bound to <40-hex commit>)`, `Verification: NOT RUN (checks_unavailable)` and `Acceptance: STALE (changed: contract); re-evaluation required`. The waiver reason appears on two review lines: `Verification:` and `Acceptance: unverified (waived by --no-checks)`.
+- **For Task 11**: `Acceptance:` comes from `CheckAcceptance`, so `review` returns its error (exit 1) when the verdict evidence is unreadable (a passed row with no attestation, a damaged candidate commit), instead of printing a guess. A run with no verification row prints `Acceptance: unverified (no verification recorded)`.
+- **For Task 12**: review's `Verification:` is read from the receipt (`verification.label`, `reason`, `binding.candidate.value`), the `Acceptance:` line from the live journal, so a receipt written before a task-file edit still says `passed (bound to ...)` while `Acceptance:` says `STALE`. A receipt from before this build reads `unknown (reason unknown)` for the verification and `entitlement: unknown`.
+- **For dependents**: `--accessible` labels a verification row through `acceptance.Result.Label()`: only `NOT RUN` and `INVALID` carry the reason; `passed`, `failed` and `unknown` keep `(candidate <commit>)`. A result string the vocabulary does not name prints `unknown`, never the raw value. The accessible event stream's admission line is flattened with `; ` and capped at 200 cells, so the sentence can be cut there; the summary line is the one that carries it whole.
+- **Deviations that change a later task's inputs**: the entitlement sentence is its own accessible summary line, not part of the `admission:` line (the 200-cell cap would cut a declared sentence). Task 11's accessible assertions, if any, anchor on the `entitlement:` line.
+- **Test seams**: `realRun`, `passingCheckArgs` (a trusted project config whose check is the cli test binary's `__demo-check pass`), `addOldVerification` (a raw binding-less row), `reviewFixtureWith(t, malicious, mutate)` and `wantOneLine` in `internal/cli/review_test.go`.
 
 ## Task 11 — Credential-free end-to-end flow
 

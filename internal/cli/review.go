@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/turbokast/mythhelm/internal/acceptance"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/security"
 	"github.com/turbokast/mythhelm/internal/statedir"
@@ -101,12 +102,56 @@ func reviewMap(v any) map[string]any {
 	return m
 }
 
+// reviewEntitlement is the receipt's entitlement sentence verbatim; a receipt
+// that has none reads unknown, never a stronger claim (I15).
+func reviewEntitlement(r supervisor.Receipt) string {
+	if s, ok := reviewMap(r["billing"])["entitlement_statement"].(string); ok && s != "" {
+		return cell(s)
+	}
+	return "entitlement: unknown"
+}
+
+// reviewVerification words the receipt's verdict by its label: a pass names
+// the candidate it is bound to, and a run with no verdict says why (I09).
+func reviewVerification(r supervisor.Receipt, verification map[string]any) string {
+	label, _ := verification["label"].(string)
+	switch label {
+	case string(acceptance.ResultPassed):
+		bound := reviewMap(reviewMap(verification["binding"])["candidate"])
+		if bound == nil {
+			return "passed (binding unknown)"
+		}
+		return "passed (bound to " + reviewString(bound, "value") + ")"
+	case "", "unknown":
+		reason, _ := reviewMap(r["unknown_reasons"])["verification.label"].(string)
+		return "unknown (" + reasonOrUnknown(reason) + ")"
+	}
+	reason, _ := verification["reason"].(string)
+	return verdictText(label, reason)
+}
+
+// acceptanceText words the gate's answer for the Acceptance line.
+func acceptanceText(s supervisor.AcceptanceStatus) string {
+	switch s.State {
+	case supervisor.AcceptanceBound:
+		return "bound"
+	case supervisor.AcceptanceStale:
+		return "STALE (changed: " + strings.Join(s.Changed, ", ") + "); re-evaluation required"
+	}
+	return string(s.State) + " (" + cell(s.Reason) + ")"
+}
+
 func writeReviewPlain(ctx context.Context, w io.Writer, j *journal.Journal, r supervisor.Receipt, runID string, diff bool) error {
 	requested := reviewMap(r["requested_outcome"])
 	candidate := reviewMap(r["candidate"])
 	verification := reviewMap(r["verification"])
-	if _, err := fmt.Fprintf(w, "Run: %s\nState: %s\nTask: %s\nCandidate: %s\n\n",
-		cell(runID), reviewString(r, "state"), reviewString(requested, "title"), reviewString(candidate, "commit")); err != nil {
+	status, err := supervisor.CheckAcceptance(ctx, j, runID)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "Run: %s\nState: %s\nTask: %s\nCandidate: %s\n%s\nVerification: %s\n\n",
+		cell(runID), reviewString(r, "state"), reviewString(requested, "title"), reviewString(candidate, "commit"),
+		reviewEntitlement(r), reviewVerification(r, verification)); err != nil {
 		return err
 	}
 	if _, err := io.WriteString(w, "Flags:\n"); err != nil {
@@ -142,6 +187,9 @@ func writeReviewPlain(ctx context.Context, w io.Writer, j *journal.Journal, r su
 			reviewString(c, "name"), reviewString(c, "status"), reviewString(c, "evidence"), reviewString(c, "sha256")); err != nil {
 			return err
 		}
+	}
+	if _, err := fmt.Fprintf(w, "Acceptance: %s\n", acceptanceText(status)); err != nil {
+		return err
 	}
 	if !diff || reviewString(candidate, "commit") == "unknown" {
 		return nil
