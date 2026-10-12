@@ -53,7 +53,13 @@
 
 ## Task 6 — Apply gate on the binding
 
-<!-- pending -->
+- **Produces**: in `internal/supervisor/acceptance.go`: `AcceptanceState` (`AcceptanceBound`, `AcceptanceUnverified`, `AcceptanceStale`, `AcceptanceUnbound`, `AcceptanceRejected`), `AcceptanceStatus{State, Reason, Changed}`, `CheckAcceptance(ctx, j, runID)` and `CheckAcceptanceWithin(ctx, j, runID, limit)`; no difference from design §2.5. `ApplyRun` keeps its signature.
+- **For Task 7**: the version 2 receipt gets `acceptance.apply_override = {state, reason, changed}` from `ApplyRun`, which merges it into the receipt's existing `acceptance` map (created when absent, so Task 7's map keeps its keys) and sets `changed` to `[]` when there is none. A bound apply, and a resumed apply, writes no such key. `BuildReceipt` must not drop or pre-fill it.
+- **For Task 10**: `review` reads the same status from `CheckAcceptance`; `Reason` is the row reason (`checks_unavailable`, `waived by --no-checks`, ...) for `unverified` and `rejected`, `no verification recorded` when there is no row, `no reason recorded` for an old row without one, and a fixed sentence for `stale` and `unbound`. `Changed` uses the `Binding.Diff` names.
+- **Behaviour**: a passed row with no attestation, an attestation that does not decode or match its stored digest, a candidate commit that is not a git object id, an unreadable task file and an unrecognised result on a bound row are all errors, not a status; `apply` returns them unwrapped by `ErrApplyBlocked` (exit 1). An unbound row is checked after unverified and rejected, so an old `not_run` row is `unverified`.
+- **Resumed apply**: with a journaled intent `ApplyRun` skips the gate and records no override; an override passed to a first call that crashed after the intent is not in the receipt of the resumed call. The journaled intent does not carry it (follow-up if the receipt must show it).
+- **Test seams**: `fixture.addVerification(t, base, verificationVariant{result, unbound, attest})` appends a newer, bound or raw-inserted unbound verification copied from `base` (`acceptance_test.go`); `fixture.createBareRun` journals a run with no attempt or verification; `staleCases` in `apply_test.go` are three tamperings plus a deleted task file.
+- **Deviations**: none that change a later task's inputs.
 
 ## Task 7 — Truthful receipt
 
