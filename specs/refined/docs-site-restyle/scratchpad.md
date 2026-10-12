@@ -17,7 +17,7 @@
 
 - Requirements grounding (2026-10-12, in `requirements.md`): live site measured at 390px (User guide 516px wide, 13 overflowing elements); front-matter-less Markdown is served as HTML (four sampled URLs returned 200), refuting the first draft's front-matter premise; Star light on Paper is 4.08:1 (WCAG, computed); no Ruby or Jekyll in the authoring worktree, so Q1 and Q2 are CI-proven.
 - Investigation (this `/spec` run): `docs/_config.yml` is `theme: minima`, `plugins: []` with no `defaults:`; `.github/workflows/ci.yml` CI OK needs `[workflows, detect, go, lint, govulncheck, licenses, harness]` with no docs job; `.claude/data/required-checks.json` requires CI OK, DCO, Dependency review and the two Analyze jobs only — hence D6 (join CI OK's needs) instead of requiring Docs checks.
-- The docs workflow builds with `actions/jekyll-build-pages` and uploads via `actions/upload-pages-artifact` after Assert mirrors rendered; the artifact hand-off point for D8 is immediately after that assert step.
+- The docs workflow builds with `actions/jekyll-build-pages` and uploads via `actions/upload-pages-artifact` after Assert mirrors rendered; the upload step currently precedes that assert (`.github/workflows/docs.yml:177-178`); D8 and Task 10 prescribe moving the hand-off to immediately after the assert step.
 
 ## Discoveries
 
