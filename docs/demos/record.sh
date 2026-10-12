@@ -191,7 +191,7 @@ assert_labels() { # assert_labels <name> <transcript>
 		test "$(grep -c 'SCRIPTED DEMO' "$2")" -eq 8
 		test "$(grep -c '^goal: ' "$2")" -eq 1
 		test "$(grep -c '^run state: ' "$2")" -eq 1
-		test "$(grep -c '^attempt' "$2")" -eq 7
+		test "$(grep -c '^attempt' "$2")" -eq 8
 		test "$(grep -c '^candidate: ' "$2")" -eq 1
 		test "$(grep -c '^next action: ' "$2")" -eq 1
 		test "$(grep -c '^actions: ' "$2")" -eq 1
