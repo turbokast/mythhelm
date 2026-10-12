@@ -63,6 +63,7 @@ The three partial rows are the honest outcome of OQ1, OQ6, OQ9 and OQ10 staying 
 - CI on merge 6103564 (PR #375) and 56968dc (PR #377): infra per `finalize.py`, run `cancelled` with zero jobs. Mechanism: the main-branch concurrency group holds one pending run; the pushes of 7fd0fcc at 12:10:38Z and 54b7b65 at 12:21:06Z replaced the pending runs 38137813579 and 38138885062 one second and forty seconds after they queued. The later runs on c38f20d and 31cb991 passed, so the same code was tested.
 - CI on merge 8f2e8f7 (PR #396): real, `Go (windows-11-arm)` `Run go test ./...`, `TestWatchWritesSupervisorBeatAfterIngest` failed 0.17 s in with a sharing violation opening `supervisor.beat`. Mechanism: the beat writer renames a temp file over the target (`internal/control/reconnect.go:61`), a Windows open that races the rename returns a sharing violation, and the test's poll tolerates only `ErrNotExist` (derived from the code, not reproduced). Failing value: a collision on the poll at 0.17 s; passing value: no collision on the passing runs of 0afb230, 6aa6f84 and 6249f0f. The test is from supervised-stop-recover (#311), not this spec; filed as #411.
 - Run-events log, 2026-10-10: PR #352 paused on proxy.golang.org `INTERNAL_ERROR` in the Lint workflows (class infra, recorded by the run).
+- Finalize PR #412 head 7fc63a1: real, `Docs checks` failed `Check root-guide mirrors are fresh` because `docs/mirror/CHANGELOG.md` was not refreshed with the changelog entries; deterministic, fixed by the copy (P-codex-native-adapter-5).
 - Main at 6249f0f: `finalize.py ci` verdict=green, 7 runs.
 
 ## Effort
@@ -92,3 +93,4 @@ dispatched=3 returned=2 failed=0 per `runspec.py summary`, which holds events fo
 - P-codex-native-adapter-2 — File out-of-scope discoveries as issues before the task's pull request merges
 - P-codex-native-adapter-3 — Derive Effort from GitHub when the run-events log is incomplete
 - P-codex-native-adapter-4 — Class a main run replaced in the concurrency group as superseded, not infra
+- P-codex-native-adapter-5 — Finalize copies the changelog to its docs mirror

@@ -133,7 +133,7 @@ Add under Required: A fixture that starts a process registers its release when i
 
 **Proposed change:**
 
-In Step 0, add a case: when the spec is in `specs/in-progress/` on origin/main and `runspec.py status` on origin/main's `tasks.md` reports every task complete with an empty `marker_mismatch`, run `run-spec-completion` step 2 (the lifecycle pull request, merged through `pr-check --lifecycle`) before Step 1, and record it in the report. Keep Escalation 1 for a spec in any other state or with an incomplete task.
+In Step 0, add a case: when the spec is in `specs/in-progress/` on origin/main, run `run-spec-completion` step 1 in full (`runspec.py status` complete with an empty `marker_mismatch`, `verify-merged` for every task, and every deferral named in a Spec deviations entry resolved by a merged change) and, only when it passes, step 2 (the lifecycle pull request, merged through `pr-check --lifecycle`) before Finalize Step 1; record it in the report. Keep Escalation 1 for a spec in any other state, with an incomplete task or with an unresolved deferral.
 
 ## P-codex-native-adapter-2 — File out-of-scope discoveries as issues before the task's pull request merges
 
@@ -165,8 +165,20 @@ In the Sources table and Step 1, add: compare the number of tasks in `runspec.py
 - **Type**: knowledge
 - **Target**: `knowledge/finalize.md`
 - **Rationale**: `finalize.py verify` reported two `note=history:` rows as `class=infra` for main runs that were `cancelled` with zero jobs. The mechanism is the main-branch concurrency group keeping one pending run: a newer push replaced the queued run within seconds. The code of those commits was tested by the next green run, so the label sends a reader looking for an infrastructure fault that does not exist.
-- **Evidence**: runs 38137813579 (commit 6103564) and 38138885062 (commit 56968dc): `gh api .../jobs` lists no jobs; the replacing pushes 7fd0fcc at 2026-10-11T12:10:38Z and 54b7b65 at 12:21:06Z; later runs on c38f20d and 31cb991 passed.
+- **Evidence**: runs 38137813579 (commit 6103564, updated 2026-10-11T12:10:39Z) and 38138885062 (commit 56968dc, updated 12:21:07Z): `gh api .../jobs` lists no jobs; the replacing runs were created at 12:10:38Z (7fd0fcc) and 12:21:06Z (54b7b65); later runs on c38f20d and 31cb991 passed.
 
 **Proposed change:**
 
-Add a row to the failure-mode table: a main push run that is `cancelled` with zero jobs and whose group (`ci-refs/heads/main`) received a later push is superseded, not infrastructure; the verdict for the commit is the next completed run on a descendant, and `finalize.py ci` should name it as `class=superseded` once it can see that descendant run.
+Add a row to the failure-mode table: a main push run that is `cancelled` with zero jobs is `superseded`, not infrastructure, only when a later run in the same group (`ci-refs/heads/main`) was created within a few seconds before the cancelled run's `updatedAt` (here 1 s in both cases), which shows that the push replaced this specific run; a cancelled run without that match stays `unknown`, because a writer can cancel a queued run by hand. The verdict for the commit is the next completed run on a descendant, and `finalize.py ci` should name `class=superseded` only on that evidence.
+
+## P-codex-native-adapter-5 — Finalize copies the changelog to its docs mirror
+
+- **Source spec**: `codex-native-adapter`
+- **Type**: skill
+- **Target**: `.claude/skills/finalize-spec-publish/SKILL.md`
+- **Rationale**: `/finalize-spec-publish` step 4 changes `CHANGELOG.md` but never mentions `docs/mirror/CHANGELOG.md`, which the Docs workflow compares byte for byte. The first push of the finalize pull request failed `Docs checks` for that reason; earlier finalize pull requests carried the copy, so it was done from memory or after a red run.
+- **Evidence**: PR #412 run 38189736149, step `Check root-guide mirrors are fresh`: `docs/mirror/CHANGELOG.md drifts from CHANGELOG.md; refresh with: cp CHANGELOG.md docs/mirror/CHANGELOG.md`; `git log -- docs/mirror/CHANGELOG.md` lists the finalize pull requests #371, #343 and #335.
+
+**Proposed change:**
+
+In step 4, after the `changelog-add` calls, add: `cp CHANGELOG.md docs/mirror/CHANGELOG.md`, and name `docs/mirror/CHANGELOG.md` in the step 5 `git add` list.
