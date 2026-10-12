@@ -18,6 +18,7 @@ import (
 
 	"github.com/turbokast/mythhelm/adapters/claudecode"
 	"github.com/turbokast/mythhelm/adapters/codex"
+	"github.com/turbokast/mythhelm/internal/acceptance"
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/billing"
@@ -327,17 +328,24 @@ func (p *pipeline) appendAdmission(ctx context.Context) error {
 	ceilings := billing.ResolveCeilings(d.EnvelopeFlags, file)
 	p.ceilings = ceilings
 	at := time.Now().UTC()
-	ev, err := newEvent(d.RunID, "", "", "admission.decided", d.Record(), at)
+	payload, err := NewAdmissionPayload(d)
+	if err != nil {
+		return p.blockPin(ctx, err)
+	}
+	ev, err := newEvent(d.RunID, "", "", "admission.decided", payload, at)
 	if err != nil {
 		return err
 	}
 	decl, trust, digest, repo := d.Declaration, d.RecordNativeTrust, d.NativeConfigDigest, d.RepoIdentity
 	rec, identityRef := quotaBucketInputs(d)
-	var holdErr error
-	// The envelope and the reservation commit with the admission, so no
-	// admitted run exists without either, and a failed hold leaves nothing
-	// behind (AC-3.2, I21).
+	var holdErr, policyErr error
+	// The envelope, the reservation and the pinned policy commit with the
+	// admission, so no admitted run exists without any of them, and a failed
+	// hold or policy leaves nothing behind (AC-3.2, I21, I20).
 	project := func(tx *sql.Tx) error {
+		if policyErr = journal.EnsurePolicy(ctx, tx, acceptance.P1()); policyErr != nil {
+			return policyErr
+		}
 		if decl != nil {
 			if err := journal.InsertDeclaration(ctx, tx, *decl); err != nil {
 				return err
@@ -360,6 +368,9 @@ func (p *pipeline) appendAdmission(ctx context.Context) error {
 		return nil
 	}
 	if err := p.prod.append(ctx, p.j, ev, project); err != nil {
+		if policyErr != nil {
+			return p.blockPin(ctx, err)
+		}
 		if holdErr != nil {
 			// The admission rolled back with the failed hold: block the
 			// run before any worker exists (I02). A bucket still waiting
@@ -374,6 +385,13 @@ func (p *pipeline) appendAdmission(ctx context.Context) error {
 	}
 	p.h.Notice(admission.ReservationText(admission.QuotaBucket(rec, identityRef)))
 	return p.flush(ctx)
+}
+
+// blockPin blocks a run whose acceptance pin could not be built or committed
+// before any worker exists (I02).
+func (p *pipeline) blockPin(ctx context.Context, err error) error {
+	const reason = "acceptance_pin_failed"
+	return errors.Join(&GateError{Reason: reason, Err: err}, p.runTo(ctx, RunBlocked, reason))
 }
 
 // exhausted ends a run whose native reported an exhausted allowance, after
@@ -1169,13 +1187,9 @@ func (p *pipeline) conclude(ctx context.Context) error {
 		}
 		// restricted checks run in the boundary with a check policy (design
 		// §2.7); trusted-host keeps host checks.
-		opts := integration.RunOptions{KeepGoing: p.d.KeepGoing}
-		if p.d.Profile.Contained {
-			opts.Policy = &contain.Policy{Profile: admission.ProfileRestricted}
-		}
 		v, err := integration.RunChecksWithPolicy(ctx, integration.Candidate{
 			Commit: candidate.Commit, Workspace: p.d.Workdir,
-		}, p.d.ProjectConfig, p.d.Proposal.Spec.Env, opts)
+		}, p.d.ProjectConfig, p.d.Proposal.Spec.Env, checkOptions(p.d))
 		if err != nil {
 			p.h.Notice(fmt.Sprintf("verification could not complete: %v", err))
 			return p.runTo(ctx, RunFailed, "verification_unavailable")

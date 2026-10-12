@@ -32,7 +32,13 @@
 
 ## Task 4 — Pin the acceptance policy at admission
 
-<!-- pending -->
+- **Produces**: in `internal/supervisor/acceptance.go`: `AdmissionPayload{admission.Record; AcceptancePin acceptance.Pin}` (JSON key `acceptance_pin`), `NewAdmissionPayload(d)`, `ReadPin(ctx, j, runID) (acceptance.Pin, bool, error)` and the unexported `checkOptions(d admission.Decision) integration.RunOptions`; no difference from the design (PR #413).
+- **For Task 5**: `ReadPin` returns `(zero, false, nil)` for an admission without the key (or `null`) and for a run with no `admission.decided`; only a read or decode failure is an error. Map that error to `failed`/`acceptance_pin_unreadable`, never to `pin_missing`. It reads the last `admission.decided` of the run.
+- **For Task 5**: `conclude`'s run path already calls `checkOptions(p.d)`; a recovery decision rebuilt by `recoveryDecision` carries the journaled `Profile`, so `checkOptions` gives the admitted options there too. The pin's `EvaluatorDigest` and `CheckDefinition` are `sha256:` forms (compare with `acceptance.SHA256Ref(v.Evaluator.Digest)`); a pin from `--no-checks` or an inspect run has them empty, and `CheckTimeouts` nil.
+- **For Task 5**: `seedLaunch` (`faults_test.go`) journals `NewAdmissionPayload(d)`; its decision is trusted-host, so a pinned fixture has evaluator name `host`. A pin-less fixture journals `admission.Record` only (`json.Marshal(d.Record())`).
+- **For dependents**: the P1 policy row exists from admission on (`journal.EnsurePolicy` in the admission transaction), so a verification binding never has to seed it. A conflicting row for `P1`/1 blocks the run `acceptance_pin_failed` (exit 3) before any attempt.
+- **Test seam**: the restricted-profile and inspect legs need a Linux boundary and skip where it is denied; `TestPinEvaluatorFollowsProfile` and `TestPinLeavesChecksUnknownWhenNoneRun` cover the same branches through `NewAdmissionPayload` on any host. A contained check in a run test must not use the test binary (the boundary hides its temp directory): use `fixture.shellConfig` (`/bin/sh -c true`).
+- **Deviations**: none that change a later task's inputs.
 
 ## Task 5 — Bound verdicts, unverified outcomes and recovery
 
