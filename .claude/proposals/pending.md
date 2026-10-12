@@ -193,7 +193,7 @@ In step 4, after the `changelog-add` calls and unless `--no-changelog` was passe
 
 **Proposed change:**
 
-Add a section "Windows hazards" to the rule: a test that is meant to run on every OS never (1) needs `/bin/sh` or another POSIX tool for a fixture, (2) relies on a deadline shorter than the clock's granularity (use an already-expired deadline), (3) derives a deadline from a package-level start time instead of the test's own start, (4) opens a file that another goroutine replaces without retrying the sharing violation, or (5) adds enough work to its package to approach the `go test` timeout (note the package's Windows duration in the pull request). A test that cannot meet one of them skips on Windows with the reason, or builds a Go helper binary for the fixture.
+Add a section "Windows hazards" to the rule: a test that is meant to run on every OS never (1) needs `/bin/sh` or another POSIX tool for a fixture, (2) relies on a deadline shorter than the clock's granularity (use an already-expired deadline), (3) derives a deadline from a package-level start time instead of the test's own start, (4) opens a file that another goroutine replaces without retrying the sharing violation, or (5) adds enough work to its package to approach the `go test` timeout (note the package's Windows duration in the pull request). A test that cannot meet one of them is fixed or skips on Windows with the reason. Only hazard (1), a POSIX-only fixture, may instead be replaced by a Go helper binary; a helper binary does not address the clock, file-sharing or timeout hazards.
 
 ## P-protected-acceptance-2 — A table of reasons is tested for truth, not only for presence
 
@@ -217,4 +217,4 @@ Add to the rule: a test over a table that maps a state to explanatory text (a re
 
 **Proposed change:**
 
-In the Sources table and Step 1, add: when `finalize.py verify` shows a task merged and the log has no `merge` row for it, write `unknown (merge not logged)` for that task's Merged and First pass cells and state the count in the Effort line. Take review rounds from the pull request's reviews (`gh pr view <n> --json reviews`) when the log records none, and say which source was used.
+In the Sources table and Step 1, add: when `finalize.py verify` shows a task merged and the log has no `merge` row for it, write `unknown (merge not logged)` for that task's Merged and First pass cells and state the count in the Effort line. When the log records no review rounds, report the pull request's raw review count (`gh pr view <n> --json reviews`) on its own line labelled `reviews (from the pull request)`, never as review rounds, because several reviews can belong to one round.
