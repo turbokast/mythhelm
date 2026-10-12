@@ -643,10 +643,17 @@ func TestFailedCheckSurvivesBindFailure(t *testing.T) {
 	}
 }
 
+// expiredLimit is a step limit that is already over when the step starts. A
+// positive 1 ns limit is not: a coarse monotonic clock (Windows) reads the
+// same instant at the deadline and at the check, so the context has not yet
+// expired and the step succeeds. A negative limit puts the deadline strictly
+// before now on every clock.
+const expiredLimit = -time.Nanosecond
+
 func TestRecordStepHonoursTimeout(t *testing.T) {
 	f := newFixture(t)
 	digest := f.config(t, "pass")
-	out, err := f.runInProcess(t, digest, supervisor.Hooks{Timeouts: &acceptance.Timeouts{Record: time.Nanosecond}})
+	out, err := f.runInProcess(t, digest, supervisor.Hooks{Timeouts: &acceptance.Timeouts{Record: expiredLimit}})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Run error = %v, want context.DeadlineExceeded from the record step", err)
 	}

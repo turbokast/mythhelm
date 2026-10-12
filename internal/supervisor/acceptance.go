@@ -186,8 +186,12 @@ func (p *pipeline) verifyChecks(ctx context.Context) error {
 		p.h.Notice(fmt.Sprintf("verification could not complete: %v", runErr))
 	}
 	if errors.Is(runErr, context.Canceled) {
+		// The cancelled context could not commit the transition, leaving the
+		// run verifying with no one to settle it.
+		settle, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.timeouts().Record)
+		defer cancel()
 		state, reason := verifyOutcome(runErr, acceptance.ResultFailed)
-		return p.runTo(ctx, state, reason)
+		return p.runTo(settle, state, reason)
 	}
 	v.ConfigSHA256 = p.d.ConfigDigest
 	statuses := make([]string, 0, len(v.Checks)+1)

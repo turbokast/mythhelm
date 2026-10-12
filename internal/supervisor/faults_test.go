@@ -1561,7 +1561,7 @@ func TestRecoverAppliesSameOutcomeTable(t *testing.T) {
 // and no verification row.
 func recordTimeoutRun(t *testing.T, f fixture, digest string) string {
 	t.Helper()
-	out, err := f.runInProcess(t, digest, supervisor.Hooks{Timeouts: &acceptance.Timeouts{Record: time.Nanosecond}})
+	out, err := f.runInProcess(t, digest, supervisor.Hooks{Timeouts: &acceptance.Timeouts{Record: expiredLimit}})
 	if !errors.Is(err, context.DeadlineExceeded) || out.State != supervisor.RunVerifying {
 		t.Fatalf("Run = %s (%v), want a run left verifying by the record step", out.State, err)
 	}
