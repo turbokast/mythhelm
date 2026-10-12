@@ -100,15 +100,15 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: Requires MH-21 and MH-22; pair with MH-23. Alternative native surfaces need their own G12 qualification; no Herdr-only inference or second scheduler.
 
 ### MH-33: Docs site that shows the product: layout, search, demo-first landing and tested examples
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 1
 - **Gates**: G10
 - **Score**: 3.3 = (value 3 + urgency 5 + risk 2) / effort 3
-- **Spec**: (none)
+- **Spec**: `docs-site-restyle`
 - **Issue**: [#445](https://github.com/turbokast/mythhelm/issues/445)
 - **Source**: Master Specification v2 §15.1 (observatory and paper themes), §18.3 G10 (published limitations); design direction review 2026-10-12
 - **Summary**: Restyle the Jekyll site on GitHub Pages in the brand: a Night landing page that leads with the hero demo and the go run quickstart, Paper docs pages with a sidebar grouped Start / Use / Understand / Reference, an on-this-page list and client-side search, reported / estimated / unknown labels styled consistently, code examples marked and tested in CI, and a layout with no horizontal overflow at 390px. Keep Jekyll; revisit Starlight or mdBook only if search or build speed hurts.
-- **Premise-grounded**: Confirmed 2026-10-12 against the live site at 1440px and 390px: docs/_layouts/default.html replaces the theme layout and references no brand assets, so pages render nearly unstyled (a flat bulleted nav above every page, unbounded line length, demo GIFs at native size); the User guide is 516px wide on a 390px phone; there is no search and no on-page table of contents.
+- **Premise-grounded**: 2026-10-12 — Layout replaces the theme with no brand assets HOLDS; flat nav HOLDS; User guide 516px at 390px (13 overflowing elements, re-measured live) HOLDS; no search or on-page contents HOLDS; existing docs CI HOLDS; only front-matter pages are rendered REFUTED (front-matter-less Markdown is rendered too, live HTTP 200); hero recording exists as a GIF with no chapters PARTIAL; quickstart tested in CI PARTIAL (CI runs the built binary with demo --check pass, not the quickstart as written); Paper and amber hexes not in the brand README PARTIAL; v2 §15.1 themes are the TUI's PARTIAL; landing headline and attention-queue claim versus shipped adapters PARTIAL; Star light on Paper 4.08:1 PARTIAL; client-side search under Pages and the Claude Design file UNVERIFIABLE
 - **Notes**: Value 3: first impression and onboarding, not the core promise; urgency 5: stage 1; risk 2: published claims drifting from what ships; effort 3: layout, search, landing, example testing. Release engineer and docs. Pairs with MH-23, which uses the same brand tokens.
 
 ### MH-24: Scoped context, task dependencies and stale-evidence invalidation
