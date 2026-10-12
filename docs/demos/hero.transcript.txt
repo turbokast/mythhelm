@@ -1,0 +1,83 @@
+=== take: run (killed with SIGKILL after the third turn) ===
+run run_XXX: created
+run: admission
+reservation held on bucket ["fake","scripted-child-process (ndjson)","none (no inference, no network)","unknown"]: local coordination only — not provider availability
+admission decided: adapter builtin/fake 0.1.0 (scripted-child-process (ndjson))
+  SCRIPTED: fake adapter, no real agent, no inference, no network
+  snapshot: <SHA40> (branch main, selected by HEAD)
+  execution profile: trusted-host, runs with your host authority and is not adversarially contained
+  billing: local-scripted (qualified: false)
+  entitlement: not applicable (local-scripted: no inference, no network)
+snapshot: <SHA40> cloned to <TMPDIR>/mythhelm-hero/state/runs/run_XXX/workspace
+run: executing
+attempt att_XXX: launch intent recorded
+attempt att_XXX: admission pinned (stop ladder stop-ladder/v1)
+attempt: launching
+attempt: worker pid NNN, native pid NNN
+attempt: running
+native session fake-paced, model none (scripted)
+progress: 1 assistant turns, tool uses {"Read":1} (native-reported)
+progress: 2 assistant turns, tool uses {"Read":2} (native-reported)
+progress: 3 assistant turns, tool uses {"Edit":1,"Read":2} (native-reported)
+exit status 137
+=== take: the worker is still alive ===
+NNN
+=== take: runs list ===
+RUN                             STATE      ADAPTER       UPDATED               REPOSITORY
+run_XXX  executing  builtin/fake  <TIME>  <TMPDIR>/mythhelm-hero/repo
+=== take: recover ===
+reattached to worker pid NNN
+run run_XXX: created
+run: admission
+admission decided: adapter builtin/fake 0.1.0 (scripted-child-process (ndjson))
+  SCRIPTED: fake adapter, no real agent, no inference, no network
+  snapshot: <SHA40> (branch main, selected by HEAD)
+  execution profile: trusted-host, runs with your host authority and is not adversarially contained
+  billing: local-scripted (qualified: false)
+  entitlement: not applicable (local-scripted: no inference, no network)
+snapshot: <SHA40> cloned to <TMPDIR>/mythhelm-hero/state/runs/run_XXX/workspace
+run: executing
+attempt att_XXX: launch intent recorded
+attempt att_XXX: admission pinned (stop ladder stop-ladder/v1)
+attempt: launching
+attempt: worker pid NNN, native pid NNN
+attempt: running
+native session fake-paced, model none (scripted)
+progress: 1 assistant turns, tool uses {"Read":1} (native-reported)
+progress: 2 assistant turns, tool uses {"Read":2} (native-reported)
+progress: 3 assistant turns, tool uses {"Edit":1,"Read":2} (native-reported)
+progress: 4 assistant turns, tool uses {"Edit":1,"Read":2,"Write":1} (native-reported)
+protocol counters: malformed 0, oversized 0, invalid utf-8 0, depth exceeded 0
+native exit: exit code 0; result success
+attempt: process group gone; unresolved descendants []
+attempt: succeeded_native
+candidate.frozen
+run: verifying
+verification: started
+check greeting-present: passed
+verification: passed
+run: ready_for_review
+receipt.written
+result: ready_for_review; exit 0 
+=== take: review ===
+Run: run_XXX
+State: ready_for_review
+Task: Add a greeting
+Candidate: <SHA40>
+entitlement: not applicable (local-scripted: no inference, no network)
+Verification: passed (bound to <SHA40>)
+
+Flags:
+  none
+Checks:
+  greeting-present: passed (evidence: <TMPDIR>/mythhelm-hero/state/runs/run_XXX/evidence/<SHA12>/greeting-present.log; sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855)
+Acceptance: bound
+
+Candidate diff:
+diff --git a/greeting.txt b/greeting.txt
+new file mode 100644
+index 0000000..2d2f29c
+--- /dev/null
++++ b/greeting.txt
+@@ -0,0 +1 @@
++hello from the scripted agent

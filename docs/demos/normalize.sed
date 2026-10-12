@@ -19,5 +19,9 @@ s#snapshot: [0-9a-f]{20}\.\.\. \(truncated\)#snapshot: <SHA20>... (truncated)#g
 s#^goal: (unknown|Demo task)$#goal: <LIVE-SAMPLE>#
 s#^run state: (created|admission) \(reason: none\)$#run state: <LIVE-SAMPLE> (reason: none)#
 s#^admission: (unknown|adapter builtin/fake 0\.1\.0 \(scripted-child-process \(ndjson\)\); qualified: false; paid continuation: not-applicable)$#admission: <LIVE-SAMPLE>#
+/^admission: <LIVE-SAMPLE>$/{
+n
+s#^entitlement: (unknown|not applicable \(local-scripted: no inference, no network\))$#entitlement: <LIVE-SAMPLE>#
+}
 /^event [0-9]+: receipt\.written$/d
 s#^next-after: (21|22|23)$#next-after: <LIVE-CURSOR>#

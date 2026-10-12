@@ -16,6 +16,9 @@ native harnesses intact.
 
 ## Scripted demo
 
+![Kill the terminal mid-run: recover and finish, scripted](demos/hero.gif)
+*Scripted recording, fake agent, offline, no credentials, rendered from `docs/demos/hero.tape`. It kills the foreground `mythhelm run` with SIGKILL while the scripted agent works: the worker and the agent are separate processes and survive, and `mythhelm recover` reattaches to the same worker and finishes the run without relaunching the agent. A hard-killed worker is a different case and is not shown (#391). The red kill marker is a shell annotation, not mythhelm output. Regenerate it with `docs/demos/record.sh`.*
+
 ![Scripted demo recording](demos/demo.gif)
 *Honest recording of `mythhelm demo --check pass`, rendered from `docs/demos/demo.tape` — regenerate it with `docs/demos/record.sh`.*
 
