@@ -1618,6 +1618,19 @@ func insertVerification(t *testing.T, f fixture, row journal.VerificationRow) {
 	}
 }
 
+// freezeSeededCandidate records the candidate row a seeded run whose worker
+// finished would have frozen.
+func freezeSeededCandidate(t *testing.T, f fixture, d admission.Decision) {
+	t.Helper()
+	ev := journal.Event{SchemaVersion: 1, EventID: ids.New("evt"), RunID: d.RunID, AttemptID: d.AttemptID, Type: "candidate.frozen", ProducerID: ids.New("fixture"),
+		ProducerSequence: 1, Generation: 1, ObservedAt: time.Now().UTC(), Payload: json.RawMessage(`{}`)}
+	c := journal.CandidateRow{AttemptID: d.AttemptID, BaseRev: d.Snapshot.BaseRev, Commit: strings.Repeat("c", 40), Tree: strings.Repeat("d", 40),
+		PatchSHA256: strings.Repeat("e", 64), ChangedPaths: json.RawMessage(`[]`), Flags: json.RawMessage(`[]`)}
+	if err := f.journal(t).Append(t.Context(), ev, func(tx *sql.Tx) error { return journal.InsertCandidate(t.Context(), tx, c) }); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // startVerifying moves a seeded run whose worker has finished into verifying,
 // as a supervisor that died after journaling verification.started leaves it.
 func startVerifying(t *testing.T, f fixture, d admission.Decision, configDigest string) {
@@ -1710,6 +1723,190 @@ func TestRecoverVerifyingWithoutRowAfterChecksReturned(t *testing.T) {
 				t.Errorf("recovery ran an admitted check again: stat = %v", err)
 			}
 		})
+	}
+}
+
+// runnerFaultRun runs a checked run in this process whose second check cannot
+// start (a Unix start failure) and whose verification record step cannot
+// finish, leaving it verifying with the first check journaled.
+func runnerFaultRun(t *testing.T, f fixture, first string) string {
+	t.Helper()
+	script := filepath.Join(t.TempDir(), "check.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest := f.commitChecks(t, testCheck("first", first), checkBlock("broken", script))
+	return recordTimeoutRun(t, f, digest)
+}
+
+// TestRecoverVerifyingAfterRunnerFault: a check the runner could not start
+// leaves the checks it never ran without a result; the fault is journaled as a
+// result for each, so recovery settles the run instead of stranding it
+// (I06, I12; design §2.9, D21).
+func TestRecoverVerifyingAfterRunnerFault(t *testing.T) {
+	// Sequential: process environment (XDG_RUNTIME_DIR via runInProcess).
+	if runtime.GOOS == "windows" {
+		t.Skip("a script without an executable bit is a Unix start failure")
+	}
+	for _, tc := range []struct {
+		name, first, wantState, wantReason, wantResult, wantWhy string
+	}{
+		{name: "passed checks before the fault record unavailable", first: "pass", wantState: "ready_for_review", wantReason: "unverified", wantResult: "unavailable", wantWhy: "record_unavailable"},
+		{name: "a failure before the fault stays failed", first: "fail", wantState: "failed", wantReason: "verification_failed", wantResult: "failed", wantWhy: "checks_failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			runID := runnerFaultRun(t, f, tc.first)
+			if code, _, stderr := f.run(t, "recover", runID); code != 5 {
+				t.Fatalf("recover exit %d: %s; want 5", code, stderr)
+			}
+			if got := f.onlyRun(t); got.State != tc.wantState || got.Reason != tc.wantReason {
+				t.Fatalf("run %s/%s, want %s/%s", got.State, got.Reason, tc.wantState, tc.wantReason)
+			}
+			v := f.latestVerification(t, runID)
+			if v.Result != tc.wantResult || v.Reason != tc.wantWhy || len(v.Attestation) != 0 {
+				t.Errorf("verification = %s/%s attestation %q, want %s/%s with none", v.Result, v.Reason, v.Attestation, tc.wantResult, tc.wantWhy)
+			}
+			if len(v.Checks) != 1 || v.Checks[0].Name != "first" {
+				t.Errorf("recorded checks %+v, want only the check that ran", v.Checks)
+			}
+			var fault map[string]any
+			for _, ev := range f.events(t, runID) {
+				if p := payloadOf(t, ev); ev.Type == "check.completed" && p["name"] == "broken" {
+					fault = p
+				}
+			}
+			if fault["status"] != "unavailable" || fault["runner_fault"] != true {
+				t.Errorf("journaled outcome of the faulted check = %v, want unavailable and marked as the runner's fault", fault)
+			}
+		})
+	}
+}
+
+// TestRecoverVerifyingAfterSkipPath: a run that ran no check cannot have one
+// still running, so recovery records NOT RUN with the skip's reason and the
+// candidate stays frozen for review (I09, I06; design §2.3, §2.9).
+func TestRecoverVerifyingAfterSkipPath(t *testing.T) {
+	// Sequential: process environment (XDG_RUNTIME_DIR via runInProcess).
+	for _, tc := range []struct {
+		name, wantReason string
+		crash            func(t *testing.T, f fixture) string
+	}{
+		{name: "no-checks is waived", wantReason: "waived by --no-checks", crash: func(t *testing.T, f fixture) string {
+			d, err := admission.Decide(t.Context(), admission.Request{StateDir: f.state, Repo: f.repo, TaskFile: f.task,
+				Adapter: admission.AdapterFake, Billing: admission.BillingLocalScripted, ExecutionProfile: admission.ProfileTrustedHost,
+				Env: os.Environ(), NoChecks: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+			defer cancel()
+			out, err := f.runInProcessWith(ctx, t, d, supervisor.Hooks{Timeouts: &acceptance.Timeouts{Record: expiredLimit}})
+			if !errors.Is(err, context.DeadlineExceeded) || out.State != supervisor.RunVerifying {
+				t.Fatalf("Run = %s (%v), want a run left verifying by the record step", out.State, err)
+			}
+			return out.RunID
+		}},
+		{name: "inspect refuses the list", wantReason: "checks_refused_under_inspect", crash: func(t *testing.T, f fixture) string {
+			digest := f.config(t, "pass")
+			d, _, wait := seedLaunchWith(t, f, "happy", func(t *testing.T, d admission.Decision) []byte {
+				t.Helper()
+				d.Profile = admission.Profile{Name: admission.ProfileInspect}
+				p, err := supervisor.NewAdmissionPayload(d)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return []byte(mustJSON(t, p))
+			}, "sha256:"+digest)
+			wait()
+			freezeSeededCandidate(t, f, d)
+			startVerifying(t, f, d, digest)
+			return d.RunID
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			runID := tc.crash(t, f)
+			if _, err := f.journal(t).LatestVerification(t.Context(), runID); !errors.Is(err, journal.ErrNotFound) {
+				t.Fatalf("LatestVerification = %v, want a run with no verification row", err)
+			}
+			if code, _, stderr := f.run(t, "recover", runID); code != 5 {
+				t.Fatalf("recover exit %d: %s; want 5", code, stderr)
+			}
+			if got := f.onlyRun(t); got.State != "ready_for_review" || got.Reason != "unverified" {
+				t.Fatalf("run %s/%s, want ready_for_review/unverified", got.State, got.Reason)
+			}
+			v := f.latestVerification(t, runID)
+			if v.Result != "not_run" || v.Reason != tc.wantReason || len(v.Attestation) != 0 || len(v.Checks) != 0 {
+				t.Errorf("verification = %s/%q attestation %q checks %d, want not_run/%q with no attestation and no checks", v.Result, v.Reason, v.Attestation, len(v.Checks), tc.wantReason)
+			}
+			if c := f.candidateOf(t, runID); c.Commit == "" {
+				t.Error("the candidate was not kept frozen")
+			}
+		})
+	}
+}
+
+// TestRecoverVerifyingKeepsRunWithoutPinOwned: the skip settlement needs a pin
+// that says no check was admitted; a run admitted before the pin existed may
+// have been running its checks under an older binary (I05, I24).
+func TestRecoverVerifyingKeepsRunWithoutPinOwned(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	d, _, wait := seedLaunchWith(t, f, "happy", pinlessPayload)
+	wait()
+	freezeSeededCandidate(t, f, d)
+	startVerifying(t, f, d, "")
+	if code, _, stderr := f.run(t, "recover", d.RunID); code != 6 {
+		t.Fatalf("recover exit %d: %s; want 6 (ownership unresolved)", code, stderr)
+	}
+	if got := f.onlyRun(t); got.State != "verifying" {
+		t.Errorf("run %s/%s, want it to stay verifying", got.State, got.Reason)
+	}
+	if _, err := f.journal(t).LatestVerification(t.Context(), d.RunID); !errors.Is(err, journal.ErrNotFound) {
+		t.Errorf("LatestVerification = %v, want no verdict for a pin-less run", err)
+	}
+}
+
+// TestCancelDuringRunningCheckSettlesFailed: a cancellation that lands while a
+// check runs is the user stopping the run, so it settles failed with
+// verification_unavailable instead of stranding the run in verifying; recover
+// accepts the settled run and a new run is admitted (I06, I09; design §2.3).
+func TestCancelDuringRunningCheckSettlesFailed(t *testing.T) {
+	// Sequential: process environment (XDG_RUNTIME_DIR via runInProcess).
+	if runtime.GOOS == "windows" {
+		t.Skip("the blocked check is a /bin/sh script")
+	}
+	f := newFixture(t)
+	dir := t.TempDir()
+	digest := f.commitChecks(t, checkBlock("blocked", "/bin/sh", "-c", blockedCheckScript(dir)))
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	go func() {
+		defer cancel()
+		deadline := time.Now().Add(30 * time.Second)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(filepath.Join(dir, "started")); err == nil {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	out, _ := f.runInProcessWith(ctx, t, f.decideEnvelope(t, digest, nil), supervisor.Hooks{})
+	if _, err := os.Stat(filepath.Join(dir, "started")); err != nil {
+		t.Fatalf("the check never started, so no cancellation reached it: %v", err)
+	}
+	if out.State != supervisor.RunFailed || out.Reason != "verification_unavailable" {
+		t.Fatalf("outcome %s/%s, want failed/verification_unavailable", out.State, out.Reason)
+	}
+	if got := f.onlyRun(t); got.State != "failed" || got.Reason != "verification_unavailable" {
+		t.Fatalf("run projected %s/%s, want failed/verification_unavailable", got.State, got.Reason)
+	}
+	if code, _, stderr := f.run(t, "recover", out.RunID); code != 5 {
+		t.Errorf("recover exit %d: %s; want 5 (the settled run is accepted)", code, stderr)
+	}
+	if code, _, stderr := f.run(t, f.fakeRun()...); code != 5 {
+		t.Errorf("a new run exited %d: %s; want 5 (admitted, not blocked by an active run)", code, stderr)
 	}
 }
 

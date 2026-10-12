@@ -261,11 +261,11 @@ func RecoverWithHooks(ctx context.Context, j *journal.Journal, runID string, h H
 }
 
 // recordFromCheckEvents settles a verifying run that has no verification row
-// (design §2.3, D21). A complete set of journaled check.completed events,
-// one per admitted check, proves the checks returned; it records a verdict
-// from them and never re-runs a check. Anything else leaves the run
-// verifying and owned: a check may still be running in its own process group
-// (I05, I24).
+// (design §2.3, D21). A pinned run that admitted no checks records NOT RUN.
+// Otherwise a complete set of journaled check.completed events, one per
+// admitted check, proves the checks returned; it records a verdict from them
+// and never re-runs a check. Anything else leaves the run verifying and
+// owned: a check may still be running in its own process group (I05, I24).
 func (p *pipeline) recordFromCheckEvents(ctx context.Context) error {
 	unresolved := func(why string) error {
 		return fmt.Errorf("%w: verification outcome unavailable: %s", ErrOwnership, why)
@@ -274,8 +274,8 @@ func (p *pipeline) recordFromCheckEvents(ctx context.Context) error {
 	if err != nil {
 		return errors.Join(ErrOwnership, err)
 	}
-	if !ok || len(pin.CheckTimeouts) == 0 {
-		return unresolved("no verification recorded and no admitted checks pinned")
+	if !ok {
+		return unresolved("no verification recorded and no acceptance pin")
 	}
 	events, err := p.j.Events(ctx, p.d.RunID, 0)
 	if err != nil {
@@ -297,8 +297,19 @@ func (p *pipeline) recordFromCheckEvents(ctx context.Context) error {
 	if err := json.Unmarshal(events[last].Payload, &started); err != nil {
 		return errors.Join(ErrOwnership, err)
 	}
-	if started.NoChecks {
-		return unresolved("the verification ran no checks")
+	if started.NoChecks || len(pin.CheckTimeouts) == 0 {
+		// The pin lists no check exactly when admission waived the checks or
+		// refused them under inspect, so no check process can exist and
+		// nothing is left to wait for; an unpinned run never gets here.
+		reason := "checks_refused_under_inspect"
+		if started.NoChecks {
+			reason = "waived by --no-checks"
+		}
+		candidate, err := p.j.Candidate(ctx, p.d.AttemptID)
+		if err != nil {
+			return errors.Join(ErrOwnership, err)
+		}
+		return p.recordSkip(ctx, candidate.Commit, reason)
 	}
 	var checks []integration.CheckResult
 	seen := map[string]bool{}
@@ -307,11 +318,14 @@ func (p *pipeline) recordFromCheckEvents(ctx context.Context) error {
 		if ev.Type != "check.completed" {
 			continue
 		}
-		var c integration.CheckResult
+		var c checkEvent
 		if err := json.Unmarshal(ev.Payload, &c); err != nil {
 			return errors.Join(ErrOwnership, err)
 		}
-		checks, statuses, seen[c.Name] = append(checks, c), append(statuses, c.Status), true
+		if !c.RunnerFault {
+			checks = append(checks, c.CheckResult)
+		}
+		statuses, seen[c.Name] = append(statuses, c.Status), true
 	}
 	for name := range pin.CheckTimeouts {
 		if !seen[name] {

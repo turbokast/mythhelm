@@ -143,10 +143,17 @@ func (p *pipeline) skipVerification(ctx context.Context, reason string) error {
 	if err != nil {
 		return errors.Join(err, p.runTo(ctx, RunFailed, "verification_unavailable"))
 	}
+	return p.recordSkip(ctx, candidate.Commit, reason)
+}
+
+// recordSkip records the NOT RUN verification of commit and settles the run
+// ready_for_review/unverified. Recovery reaches it for a skip whose record
+// step failed.
+func (p *pipeline) recordSkip(ctx context.Context, commit, reason string) error {
 	at, id := time.Now().UTC(), ids.New("ver")
-	row := journal.VerificationRow{ID: id, RunID: p.d.RunID, CandidateCommit: candidate.Commit,
+	row := journal.VerificationRow{ID: id, RunID: p.d.RunID, CandidateCommit: commit,
 		Result: string(acceptance.ResultNotRun), Reason: reason, StartedAt: at, FinishedAt: at}
-	payload := map[string]any{"verification_id": id, "candidate_commit": candidate.Commit, "result": "NOT RUN",
+	payload := map[string]any{"verification_id": id, "candidate_commit": commit, "result": "NOT RUN",
 		"reason": reason, "baseline": "not-run"}
 	if err := p.recordVerification(ctx, row, payload); err != nil {
 		return err
@@ -167,6 +174,14 @@ func (p *pipeline) recordVerification(ctx context.Context, row journal.Verificat
 		return fmt.Errorf("recording verification %s: %w", row.ID, err)
 	}
 	return p.flush(ctx)
+}
+
+// checkEvent is the payload of check.completed. RunnerFault marks the result
+// of a check the runner's fault left unavailable or unrun: it completes the
+// set of results but is not a check that ran.
+type checkEvent struct {
+	integration.CheckResult
+	RunnerFault bool `json:"runner_fault,omitempty"`
 }
 
 // verifyChecks runs the admitted checks against the pin journaled at
@@ -211,6 +226,20 @@ func (p *pipeline) verifyChecks(ctx context.Context) error {
 		// A runner fault leaves the check it interrupted unavailable; a
 		// failure already seen still wins (D6, D18).
 		statuses = append(statuses, "unavailable")
+		// The checks it left without a result are journaled too, marked as
+		// the fault's, so a failed record step leaves recovery a complete set
+		// to settle from without recording checks that never ran (design
+		// §2.9, D21).
+		for i, check := range p.d.ProjectConfig.Checks[len(v.Checks):] {
+			event := checkEvent{RunnerFault: true}
+			event.Name, event.Status = check.Name, "not_run"
+			if i == 0 {
+				event.Status = "unavailable"
+			}
+			if err := p.append(ctx, "check.completed", event); err != nil {
+				return err
+			}
+		}
 	}
 	verdict, reason := acceptance.DecideStatuses(statuses)
 	if v.Evaluator.Digest != "" {

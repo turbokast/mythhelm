@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -164,7 +165,7 @@ func TestKeepGoingAfterUnavailable(t *testing.T) {
 	}
 }
 
-func TestCheckTimeoutKillsGroup(t *testing.T) {
+func TestCancelledCheckKillsGroupAndReturnsCancellation(t *testing.T) {
 	c, cfg := verifyFixture(t)
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "child-survived")
@@ -190,8 +191,8 @@ func TestCheckTimeoutKillsGroup(t *testing.T) {
 		}
 	}()
 	v, err := integration.RunChecks(ctx, c, cfg, os.Environ())
-	if err != nil || v.Checks[0].Status != "timed_out" {
-		t.Fatalf("verification = %+v, err = %v", v, err)
+	if !errors.Is(err, context.Canceled) || len(v.Checks) != 0 {
+		t.Fatalf("verification = %+v, err = %v; want the cancellation and no recorded result", v, err)
 	}
 	if _, err := os.Stat(ready); err != nil {
 		t.Fatalf("grandchild never started before the kill; test inconclusive: %v", err)

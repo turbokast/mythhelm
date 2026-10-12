@@ -484,10 +484,16 @@ func (f fixture) candidateOf(t *testing.T, runID string) journal.CandidateRow {
 // process, so a test can pass Hooks.
 func (f fixture) runInProcess(t *testing.T, digest string, h supervisor.Hooks) (supervisor.Outcome, error) {
 	t.Helper()
-	holdInstanceLock(t, f.state)
-	d := f.decideEnvelope(t, digest, nil)
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
+	return f.runInProcessWith(ctx, t, f.decideEnvelope(t, digest, nil), h)
+}
+
+// runInProcessWith supervises d in this process under ctx, so a test can
+// cancel the supervisor mid-run.
+func (f fixture) runInProcessWith(ctx context.Context, t *testing.T, d admission.Decision, h supervisor.Hooks) (supervisor.Outcome, error) {
+	t.Helper()
+	holdInstanceLock(t, f.state)
 	return supervisor.Run(ctx, d, h)
 }
 
