@@ -423,3 +423,17 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: A design review found both surfaces hide the product's strongest property, honest state: the TUI gives every line equal weight with internals where meaning should be, ships a stock palette instead of the brand, and the docs site renders nearly unstyled and overflows on phones. Public reports about peer agent tools converge on the same needs (readable activity, a quota gauge, a stop that stops, session recovery, readable verification, approvals with the diff, terminal citizenship, quickstart-first docs with search). Jekyll stays because a restyle plus a search index fixes everything visible at the smallest cost. Decided by the maintainer in session.
 - **Cards**: MH-23,MH-33
 - **Evidence**: Master Specification v2 §15.1, §18.3 G09/G10; design review 2026-10-12
+
+### D-103 — 2026-10-12: MH-33 → specced (docs-site-restyle)
+- **Type**: lifecycle-sync
+- **Decision**: MH-33 moved to specced
+- **Rationale**: docs-site-restyle reached specs/refined
+- **Cards**: MH-33
+- **Evidence**: https://github.com/turbokast/mythhelm/pull/450
+
+### D-104 — 2026-10-12: Docs site palette: Paper and amber values and the amber rule
+- **Type**: strategic-adjustment
+- **Decision**: Paper #f6f4ee is the docs surface; amber is #f0c27b on dark and #8a5a00 on light and means needs you and nothing else; the values go into the brand README colour table. The docs-site-restyle spec's other open questions are decided in that spec, except OQ-5 and OQ-10, which stay open.
+- **Rationale**: D-97 chose Night and Paper surfaces without recording the Paper and amber values or the amber rule; the docs site and the TUI themes (MH-23) read one palette. #8a5a00 is already the TUI light warning colour, so MH-23 must reconcile the rule with that use.
+- **Cards**: MH-33,MH-23
+- **Evidence**: specs/refined/docs-site-restyle/requirements.md; mods/themes/light.toml; PR #450
