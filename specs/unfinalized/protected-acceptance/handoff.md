@@ -113,10 +113,6 @@
 - **For dependents**: the known limits the docs name are #328 (`enforced: false` flags), #380 (a `failed` run cannot be applied), #393 (TUI and `--accessible` decide "verified" from the commit alone; `CheckAcceptance` is called only by `review` and `apply`) and #418 (a resumed apply records no override). A change that closes one edits the guide sentence, the limitations bullet and, for #328, `TestReceiptBoundsEnforcedFlags`.
 - **Deviations that change a later task's inputs**: none.
 
-## Task 13 — Qualified-route end-to-end (blocked-on MH-12 Task 5)
+## Tasks 13 and 14 — deferred
 
-<!-- pending -->
-
-## Task 14 — Live qualified-route evidence (maintainer; blocked-on MH-12 Task 7)
-
-<!-- pending -->
+Carved out to #429 by the maintainer's decision of 2026-10-12; nothing was handed off. The follow-up starts from Task 11's helpers and Task 12's guide wording named above.
