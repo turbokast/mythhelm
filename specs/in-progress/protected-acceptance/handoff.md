@@ -42,7 +42,14 @@
 
 ## Task 5 — Bound verdicts, unverified outcomes and recovery
 
-<!-- pending -->
+- **Produces**: `verifyOutcome(err, result) (RunState, string)`, `Hooks.Timeouts *acceptance.Timeouts` and `Hooks.BindStep`, and the `verification.completed` keys `reason` and `attestation_digest` (both omitted when empty; `result` is the verdict `passed|failed|unavailable|invalid`, or `NOT RUN` on a skip path). No difference from the design's `Produces` line.
+- **For Task 6**: every verification a schema-8 build records has a binding row (`Bound`); `Reason` is `checks_failed`, `checks_unavailable`, `no_checks_ran`, `binding_unavailable`, `record_unavailable`, `evaluator_digest_mismatch`, `waived by --no-checks`, `checks_refused_under_inspect` or `pin_missing`. Only a verdict that ran the checks to completion and bound successfully carries an attestation, including `failed`, `unavailable` and `invalid` ones; a bind fault, a runner fault, a skip and a `record_unavailable` recovery row carry none, so `CheckAcceptance` must read the result and reason first and the attestation only for `passed`.
+- **For Task 6 and Task 7**: unavailable checks are `ready_for_review`/`unverified` (the row is `unavailable`, not `not_run`); `invalid` is `failed`/`verification_invalid` and `acceptance_pin_unreadable` is `failed` with no verification row at all, so the receipt and review must render a failed run with no verification as `unknown` with a reason.
+- **For Task 7**: `OverheadMS` is set for every executed verification (the bind step, even when it failed) and nil on a skip path or a recovery row; the row's evaluator is the one that ran (the pin's can differ for `invalid`).
+- **For Task 8**: `verification.completed` payloads now carry `result` values `unavailable` and `invalid`, which the plain stream prints as the raw word until Task 10 uses `Result.Label()`; `render.go` was not touched.
+- **Recovery**: a `verifying` run with a row applies `verifyOutcome`; with no row it records a verdict only from a complete `check.completed` set (one per name in the pin's `check_timeouts`) and otherwise stays `ErrOwnership` (exit 6). The unreadable-pin failure is not reached from this branch (it stays ownership-unresolved).
+- **Test seams**: `seedLaunchWith(t, f, scenario, payloadFunc, trustConfig...)` journals any admission payload (`pinnedPayload`, `pinlessPayload`, `wrongEvaluatorPayload`, `corruptPinPayload`); `fixture.runInProcess(t, digest, hooks)` supervises a checked run in process for `Hooks`; `commitChecks`, `checkBlock`, `testCheck`, `markerCheck` and `missingCheck` build check configurations.
+- **Deviations**: none that change a later task's inputs.
 
 ## Task 6 — Apply gate on the binding
 
