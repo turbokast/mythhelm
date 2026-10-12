@@ -53,6 +53,8 @@
 
 - Task 12: the live accessible stream's summary is a snapshot taken when the stream opens, so for `run --accessible` it reads `entitlement: unknown` until admission has decided (`review --accessible` prints the sentence); the guide says so. `review` verifies the receipt's SHA-256 against the journal, so a receipt cannot be hand-edited to simulate a pre-binding build: the unbound state is covered by `TestReviewPlainShowsAcceptanceStatus` and `TestApplyRefusesUnboundVerified` instead. ADR 0019 stays `proposed`: accepting it is the maintainer's decision.
 
+- Carve-out (2026-10-12): the maintainer decided to finalize slice 1 without Tasks 13 and 14, which are blocked-on MH-12 Tasks 5 and 7. Their text is copied verbatim into #429 and replaced here by `Deferred` notes, so `runspec.py status` reports 12 of 12 complete, no blocked task and no deadlock. AC-4.3's positive path and the live evidence are not covered by this spec; the blocked path stays pinned by `TestE2EStrictStillBlocked`.
+
 ## Validation findings left open (run 3, round 1: Ready for implementation, 0 blocking)
 
 Ten advisory findings are open for the implementing tasks; the first two are worth settling before Tasks 5 and 7 start.

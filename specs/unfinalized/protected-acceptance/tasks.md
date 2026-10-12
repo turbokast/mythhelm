@@ -3,10 +3,10 @@
 ### Dependencies
 
 - Prerequisites shipped on origin/main: `specs/*/qualification-registry/` (MH-10), `specs/*/budget-ledger-s1/` (MH-16 S1), `specs/*/v2-contract-vocabulary/`, `specs/*/supervisor-service/`, `specs/*/supervisor-migration/`, `specs/*/supervised-stop-recover/` (MH-21), and the code of `specs/*/contained-execution-profiles/` (MH-13: all 11 tasks merged, finalize pending; Tasks 3-5 consume `contain.Evaluator` and `contain.EvaluatorDigest` as merged).
-- **Blocked-on prerequisites.** Task 13 is blocked-on `specs/*/claude-strict-subscription/` Task 5 (held on that spec's Q1: the managed-policy source gap). Task 14 is blocked-on that spec's Task 7 (maintainer live qualification). Both are last and nothing depends on them; the other 12 tasks do not wait on MH-12. Each carries a `- **Blocked**:` field, which `scripts/harness/runspec.py` reads (`t["blocked"] = "Blocked" in f`) so `/run-spec` skips the task and its dependants; the lifecycle pull request that follows the prerequisite's merge removes the field.
+- **Carved out.** Tasks 13 and 14 were blocked-on `specs/*/claude-strict-subscription/` Tasks 5 and 7 (MH-12) and are deferred to a follow-up: #429 holds their text verbatim, and the maintainer decided on 2026-10-12 to finalize this spec without them. The 12 tasks below all merged; none waited on MH-12.
 - **Shared files serialize.** `internal/supervisor/pipeline.go` (Tasks 4, 5), `pipeline_test.go` (Tasks 5, 8), `faults_test.go` (Tasks 4, 5), `internal/supervisor/acceptance.go` and `acceptance_test.go` (Tasks 4, 5, 6), `internal/supervisor/receipt.go` (Tasks 5, 7), `internal/cli/render.go` (Tasks 8, 10). They are ordered by `Depends on`; never run two of them in parallel. Specs in flight that share files: `specs/*/codex-native-adapter/` (`internal/supervisor/pipeline.go`, `docs/limitations.md`, `docs/decisions/`), `specs/*/windows-process-ownership/` (`internal/supervisor/pipeline.go`, `recover.go`, `internal/cli/run.go`, `docs/limitations.md`), `specs/*/claude-strict-subscription/` Task 5 (`TestE2EDeclaredUnaffectedStrict` byte-compares declared receipts and labels and `TestE2EDeclaredLabelsDistinct` checks that no surface labels a declared posture qualified/verified/strict, which Tasks 7 and 10 change additively); whichever lands second rebases and updates the goldens.
 - **Order is contract-first.** Task 1 ships the pure vocabulary, Task 2 the schema, Task 3 the evaluator seam; Task 4 pins at admission; Task 5 records the bound verdicts; Tasks 6-7 gate and report; Tasks 8-10 fix the stream and every surface (TUI before CLI, since the accessible view reads the viewmodel); Task 11 proves the whole flow from the packaged binary; Task 12 documents the finished behaviour.
-- **Runnable sets.** {1, 2, 3} first, in parallel (disjoint Files); {4} after all three; {5} after 4; {6, 7, 8} after 5 (disjoint Files; 8 shares `pipeline_test.go` with 5 only); {9} (TUI) after 2 and 7; {10} (CLI) after 6, 7, 8 and 9; {11} after 9, 10; {12} after 11; {13} after 11 and MH-12 Task 5; {14} after 12, 13 and MH-12 Task 7.
+- **Runnable sets.** {1, 2, 3} first, in parallel (disjoint Files); {4} after all three; {5} after 4; {6, 7, 8} after 5 (disjoint Files; 8 shares `pipeline_test.go` with 5 only); {9} (TUI) after 2 and 7; {10} (CLI) after 6, 7, 8 and 9; {11} after 9, 10; {12} after 11.
 - **Gates for every task.** `gofmt -w` on touched Go files first, then from the tree root `gofmt -l .` (must print nothing), `go vet ./...`, `GOOS=windows go vet ./...` and `GOOS=darwin go vet ./...` when OS-specific files change, `go test -race ./...`, `go mod tidy -diff` (must print nothing), and `scripts/ci/check-public-hygiene.sh`. For Task 12 and the spec files, `scripts/ci/lint-agent-harness.sh --only specs`. Run Go gates with an empty `HOME` (CEP handoff: the cli drift tests read `$HOME`). A task is not complete because files exist or an agent reported success; cite the runner output. Red first: each acceptance test is shown failing against the unchanged tree for the stated reason before the change (`.claude/rules/red-first.md`).
 - **Completion convention.** Append ` ✅ COMPLETED` to the heading, keep every original field, and add `Status` (`✅ Completed — …; PR #<n>`), `Implementation` (at most 3 lines, plus the commit SHA), `Spec deviations` (`None`, or each deviation with its reason) and `Files modified`. Every task appends a scratchpad note under Discoveries.
 - **Commits.** Every commit is signed off (`git commit -s`, DCO). The persistence and outcome-contract decisions (D1, D2, D5, D7, D8, D10, D14, D18, D19, D20, D21, D23) carry their decision record in Task 2's pull request; Task 12 completes it.
@@ -375,33 +375,10 @@
   - Added a "Supported today" bullet to `docs/limitations.md` and small pointer edits in `docs/user-guide.md` (intro, the `review`/`apply` paragraph, the exit-code 5 row, the Billing paragraph for the declared sentence), all inside the Files list and consistent with design §2.7.
 - **Files modified**: `docs/user-guide.md`, `docs/limitations.md`, `docs/decisions/0019-protected-acceptance.md`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
-### Task 13 — Qualified-route end-to-end (blocked-on MH-12 Task 5)
+### Deferred — Task 13: qualified-route end-to-end
 
-- **Domain/agent**: go-implementer
-- **Budget**: standard
-- **Depends on**: Task 11
-- **Blocked**: `specs/*/claude-strict-subscription/` Task 5 is not merged (it is held on that spec's Q1); this task starts when it merges. Blocked-on: MH-12 Task 5.
-- **Change**: Prove, from the packaged binary against a test-seeded live record, that a strict `subscription-only` run completes the P1 flow with the verified entitlement form in its receipt, and that an unqualified route blocks with the registry reason.
-- **Files**:
-  - `tests/e2e/acceptance_strict_test.go`
-- **Acceptance**:
-  - `TestE2EStrictP1CarriesVerifiedEntitlement`: the seeded-live strict run reaches `ready_for_review`, its receipt has `billing.qualified == true`, `entitlement_statement` starting `entitlement: verified by MYTHHELM`, and `acceptance.policy_pin.policy_id == "P1"`; the declared-posture run in the same test carries the declared sentence instead (the two differ).
-  - `TestE2EUnqualifiedRouteBlocksWithRegistryReason` (red against a variant of admission that silently falls back to the declared route when the strict consult blocks): absent, fixture-only and drifted records each exit 3 with their registry reason (`no_qualification_record`, `entitlement_not_proven`, `qualification_drifted`) in JSONL, and no run row reaches `executing`; no silent fallback to declared.
-- **Test plan**: Reuses MH-12 Task 5's seeding helpers from `tests/e2e/qualification_strict_test.go`; names are distinct from its tests.
-- **Invariants touched**: I15 (v2 §2: strict admission still needs evidence independent of sign-in); I02 (v2 §2: unknown mandatory entitlement blocks).
+Carved out of this spec on 2026-10-12 by the maintainer's decision, together with Task 14: both wait on MH-12 (`claude-strict-subscription` Tasks 5 and 7), and slice 1 closes without them. The task text is kept verbatim in #429, which lands them as a follow-up spec or tasks once MH-12 unblocks. AC-4.3's positive path (the strict run carrying the verified entitlement form, and the registry reasons on an unqualified route) is therefore not covered in this spec; its blocked path stays pinned by `TestE2EStrictStillBlocked`.
 
-### Task 14 — Live qualified-route evidence (maintainer; blocked-on MH-12 Task 7)
+### Deferred — Task 14: live qualified-route evidence
 
-- **Domain/agent**: maintainer
-- **Budget**: standard
-- **Depends on**: Task 12, Task 13
-- **Blocked**: `specs/*/claude-strict-subscription/` Task 7 (maintainer live qualification) is not completed. Blocked-on: MH-12 Task 7.
-- **Change**: The maintainer runs one qualified-route P1 delivery under the explicit allowance grant and commits a sanitized record of its receipt, so the AC-4.3 claim has authorised live evidence.
-- **Files**:
-  - `docs/dogfood/0002-protected-acceptance-live.md`
-- **Acceptance**:
-  - The record contains the run's receipt fields `billing.entitlement_statement`, `verification.label`, `verification.binding` digests and `acceptance.policy_pin`, pasted from the maintainer's run with the command line used.
-  - `scripts/ci/check-public-hygiene.sh` passes and `grep -riE "token|secret|password|bearer|/home/" docs/dogfood/0002-protected-acceptance-live.md` exits non-zero.
-  - The completion entry names the grant and the route version observed.
-- **Test plan**: Maintainer-executed; nothing in CI depends on it.
-- **Invariants touched**: I04 (v2 §2: explicit allowance grant for the run); I19 (v2 §2: sanitized record only, no secret material).
+Carved out with Task 13 (maintainer's decision of 2026-10-12); the task text is kept verbatim in #429. The maintainer's authorised live P1 run and its sanitized record, `docs/dogfood/0002-protected-acceptance-live.md`, move to the follow-up.

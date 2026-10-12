@@ -394,7 +394,7 @@ Contributor tests need no credentials (NFR-2): fake adapter, `local-scripted`, t
 | MH-16 S1 | shipped | Task 7 reads `run_envelopes`; #328 re-checked at its start |
 | MH-21 | shipped (D-90) | `v2contract` types, schema 7, `ImportRun` consumed as shipped |
 | MH-13 | all 11 tasks merged; spec awaiting finalize; card `specced` | Tasks 3-5 consume `contain.Evaluator`/`EvaluatorDigest` as shipped; contained checks Linux-only; no task waits on its finalize |
-| MH-12 | implementing; Tasks 5 and 7 held on Q1 | Task 13 is blocked-on MH-12 Task 5 (and its Q1); Task 14 is blocked-on MH-12 Task 7; both sit last and nothing depends on them |
+| MH-12 | implementing; Tasks 5 and 7 held on Q1 | Task 13 (blocked-on MH-12 Task 5 and its Q1) and Task 14 (blocked-on MH-12 Task 7) were carved out to #429 on 2026-10-12; nothing depended on them |
 
 ## 3. Requirements to tasks
 
@@ -412,7 +412,7 @@ Contributor tests need no credentials (NFR-2): fake adapter, `local-scripted`, t
 | AC-3.4 unknown with reason | 7 |
 | AC-4.1 determinism | 5, 7 |
 | AC-4.2 credential-free flow | 11 |
-| AC-4.3 qualified admission | blocked path already true, pinned by `TestE2EStrictStillBlocked` (`tests/e2e/qualification_test.go:155`); 13 (positive path and registry reasons); 14 (live) |
+| AC-4.3 qualified admission | blocked path already true, pinned by `TestE2EStrictStillBlocked` (`tests/e2e/qualification_test.go:155`); 13 (positive path and registry reasons) and 14 (live), both carved out to #429 |
 | AC-4.4 bounds as data | 4, 7 |
 | NFR-1 | 1, 5, 6, 7 |
 | AC-2.1 (continued) | 3: the check argv cannot come from the candidate |

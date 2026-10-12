@@ -75,7 +75,7 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 
 ## Definition of Done
 
-- [ ] AC-1.1 to AC-4.4 each have a named test; each criterion that changes behaviour has one that fails before the change and passes after it. AC-4.3's blocked path is already true (the AC was reworded for the qualified-delivery reading, scratchpad Q-6) and stays pinned by `TestE2EStrictStillBlocked` (`tests/e2e/qualification_test.go:155`); its positive path is blocked-on MH-12 Task 5.
+- [ ] AC-1.1 to AC-4.4 each have a named test; each criterion that changes behaviour has one that fails before the change and passes after it. AC-4.3's blocked path is already true (the AC was reworded for the qualified-delivery reading, scratchpad Q-6) and stays pinned by `TestE2EStrictStillBlocked` (`tests/e2e/qualification_test.go:155`); its positive path (Task 13) and live evidence (Task 14) were carved out to #429 on 2026-10-12, blocked-on MH-12.
 - [ ] Issues #72, #74, #75 close as fixed by this slice (verified against their bodies, not assumed).
 - [ ] `scripts/harness/gate.sh go` and `gate.sh harness` pass; CI green on Linux, macOS and Windows.
 - [ ] MH-22 synced toward `implementing` (half-shipped pattern while slice 2 remains), this slice implemented after its prerequisites ship, finalized and PM-synced.
