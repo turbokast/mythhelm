@@ -30,6 +30,9 @@ Anything below marked experimental may change without notice.
   `mythhelm migrate --apply --yes`, with the limits listed below.
 - The TUI is shipped: the focused mission view on a TTY, with responsive
   layouts, palette/command navigation and event-driven motion.
+- Protected acceptance for the one-agent flow: verdicts bound to the candidate,
+  contract, check definitions and evaluator, `NOT RUN` and `STALE` outcomes and
+  a documented JSONL event set, with the limits listed below.
 - Stable linear output without a TTY, under `TERM=dumb`, with `--plain`, and
   machine output (`--format jsonl`).
 
@@ -45,6 +48,72 @@ TUI behaviour is qualified by the G09 evidence record in the repository
 - The `q` exit-options dialog renders its rows but key selection is unwired;
   Esc closes it, Ctrl-C quits.
 - Mid-run Ctrl-C cancels the run (exit 130) instead of detaching.
+
+## Acceptance limits
+
+Protected acceptance binds a verification verdict to the candidate, the task
+contract, the check definitions and the evaluator, and labels a run that was
+not verified `NOT RUN`. What it does not cover is listed here; the
+[user guide]({{ site.baseurl }}/user-guide.html#acceptance) describes what it does.
+
+- **The files a check executes are not protected.** The check commands, their
+  timeouts and the evaluator come from the admitted configuration and a
+  candidate cannot edit them, but the test files and scripts those commands run
+  are candidate content. A candidate that weakens a test can still pass the
+  check that runs it. No protected-paths mechanism exists.
+- **The identity of the checks' own tools is unknown.** The version of the
+  compiler or test runner a check uses is not recorded, and the environment
+  fingerprint covers the operating system, architecture, verifier and variable
+  *names* only: a changed value, for example a `PATH` that points at another
+  toolchain, leaves it unchanged. The environment is recorded and bound but not
+  compared when you apply.
+- **The attestation is not out of reach of your own user.** Immutability is
+  enforced by database triggers. Under `trusted-host`, and for any process that
+  runs as you, the state directory can be rewritten; only the `restricted`
+  profile on Linux runs the checks inside a boundary, and the receipt says when
+  a run is not adversarially contained.
+- **An unverified candidate is `ready_for_review (unverified)`, exit 5.** The
+  master specification asks for a `blocked` run with `verification_unavailable`;
+  the run state machine still in use treats `blocked` as terminal and not
+  appliable, so the candidate would be stranded. A `failed` or `INVALID` run
+  cannot be applied at all ([#380](https://github.com/turbokast/mythhelm/issues/380)).
+- **A stale verdict cannot be re-evaluated.** No command re-runs the checks on
+  a changed candidate, contract or check definition: a stale or unbound run can
+  only be refused, or applied with `--accept-unverified`. A verification
+  recorded before schema 8 is `unbound` and takes the same path. A run admitted
+  before the pin existed and recovered afterwards ends `NOT RUN`
+  (`pin_missing`) rather than running its checks.
+- **No task revision is recorded for a new run.** The contract revision is
+  always 1, identified by the task file's digest; a legitimate change to the
+  task or the checks is a new run, not a recorded revision of the old one.
+- **Checks run once.** There is no retry, no repetition and no seed, so a
+  check's own nondeterminism is not detected or recorded, and the receipt says
+  only that it is not asserted. Required coverage and risk-specific review are
+  not modelled, and `--no-checks` is the only reduced-check mode: it is
+  labelled `NOT RUN (waived by --no-checks)`, with no separate draft label.
+- **Only the execution deadline is enforced.** The receipt lists the repair,
+  replan and transport-retry ceilings as `enforced: false`
+  ([#328](https://github.com/turbokast/mythhelm/issues/328)). The recorded
+  acceptance overhead is the binding step alone; recording and rendering are
+  bounded by 30 second limits but cannot time themselves.
+- **The TUI and `--accessible` views can show a stale verdict as verified.**
+  They decide from the candidate commit alone, while `review` and `apply`
+  check the whole binding
+  ([#393](https://github.com/turbokast/mythhelm/issues/393)).
+- **A resumed apply loses its override record.** When `apply` crashes after it
+  journaled its intent, the resumed call skips the acceptance check and does
+  not record `acceptance.apply_override`, so the receipt cannot show that the
+  candidate was applied under `--accept-unverified`
+  ([#418](https://github.com/turbokast/mythhelm/issues/418)).
+- **The qualified entitlement sentence is not proven end to end.** It prints
+  fields of the admitted posture, not the identity of the qualification record
+  consulted, because admission does not journal that. No route is live-qualified,
+  so every strict `subscription-only` run blocks today and no run prints the
+  verified sentence. Declared runs print that MYTHHELM did not verify the
+  entitlement, and the paid-continuation state is `unknown`.
+- **A receipt field MYTHHELM could not observe is `unknown`, with a reason.**
+  Cost, usage and the retry schedule, and for a run recorded before schema 8
+  the binding, pin and overhead, are never rendered as zero.
 
 ## Not supported yet
 

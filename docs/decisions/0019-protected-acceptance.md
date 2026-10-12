@@ -111,16 +111,82 @@ reviewable.
 
 ## Consequences
 
+Persistence (D1, D2, D14)
+
 - Schema 8 is additive. Every mirror and version pin moves with
   `journal.SchemaVersion`: `internal/migrate/backup.go`,
   `internal/migrate/preview/plan.go` and its `migrationFiles`, and the tests
   that pin versions, which now derive the backup name from
-  `journal.SchemaVersion` so the next bump cannot leave a stale pin.
+  `journal.SchemaVersion` so the next bump cannot leave a stale pin. A
+  migration backup is named `mythhelm.db.bak-migration-v8`.
 - Pinned by `TestMigration0008AdditiveAndV7DataSurvives`,
   `TestVerificationBindingRoundTrip`, `TestBindingsAndPoliciesImmutable`,
   `TestEnsurePolicyIdempotentAndConflict` and `TestBackupPinsMatchJournal`.
 - Policies and bindings can no longer be edited by any statement, including
   a repair script: a correction is a new policy version or a new verification.
-- The apply gate, the receipt and the stream changes (D5, D7, D8, D10, D20,
-  D23) land in later tasks of the spec; Task 12 completes this record's
-  consequences and moves its status to accepted.
+  The triggers do not protect the file from a process that runs as the user
+  (the limitations register, "Acceptance limits").
+- A new run writes no `task_revisions` row (D2), so the contract revision is
+  always 1 and a legitimate change to the task or the checks is a new run, not a
+  recorded revision of the old one.
+
+Verdicts (D5, D18, D19, D21, D23)
+
+- An unavailable check, a runner fault, a waiver and a missing pin leave the
+  candidate `ready_for_review` / `unverified` with exit 5 and a `NOT RUN` label
+  carrying the reason (D5, D18): `TestUnavailableChecksPreserveUnverifiedCandidate`,
+  `TestVerifyOutcomeTable`, `TestSkipPathsRecordReason`,
+  `TestFailedCheckSurvivesRunnerError`,
+  `TestRunnerErrorBeforeEvaluatorIsUnavailableNotInvalid` and, on the packaged
+  binary, `TestE2EUnavailableChecksKeepCandidate`. The cost is that v2 §11.2's
+  `blocked` state is not used until the run lifecycle moves to the v2 table.
+- `conclude` reads the pin from the journal (D19): `TestRecoverConcludesWithJournaledPin`
+  and `TestOldAdmissionReadsAsNoPin`. A run admitted before the pin existed and
+  recovered afterwards ends `NOT RUN` / `pin_missing` instead of running its
+  checks.
+- Recovery never re-runs the checks (D21):
+  `TestRecoverVerifyingWithoutRowAfterChecksReturned` records a verdict from a
+  complete set of journaled results, and
+  `TestRecoverVerifyingMidChecksStaysOwnershipUnresolved` keeps `ErrOwnership`
+  when the set is incomplete.
+- An evaluator that is not the pinned one is `INVALID`, ends `failed` /
+  `verification_invalid` and exits 5 (D23): `TestEvaluatorDigestMismatchInvalid`
+  and `TestRunExitMapsVerificationInvalid`. Such a run, like any `failed` run,
+  cannot be applied.
+
+Apply and receipt (D7, D8, D20)
+
+- The apply gate decides on the binding (D7): `TestAcceptanceStatePrecedence`,
+  `TestApplyRefusesUnboundVerified`, `TestApplyRefusesStaleVerdict` and, on the
+  packaged binary, `TestE2EStaleVerdictBlocksApply`. A verified run recorded
+  before schema 8 needs `--accept-unverified`, and no command re-evaluates a stale
+  verdict.
+- An apply over a status other than bound records `acceptance.apply_override`
+  (D20): `TestApplyOverrideRecordedInReceipt`. A resumed apply skips the gate
+  (`TestResumedApplySkipsGate`) and so records no override; the journaled
+  intent does not carry it (#418).
+- The receipt gains `acceptance` and `unknown_reasons` and keeps
+  `schema_version` (D8): `TestReceiptTopLevelKeys`,
+  `TestReceiptVerificationLabelAndBinding` and `TestEveryUnknownHasAReason`. Its
+  `acceptance.bounds` flags the repair, replan and transport-retry ceilings
+  `enforced: false` while #328 stands (`TestReceiptBoundsEnforcedFlags`); the
+  change that closes #328 rewrites that test.
+
+Stream (D10)
+
+- The JSONL contract is the 29 types of `supervisor.StreamEventTypes`:
+  `TestStreamEventSetPinned`, `TestEveryEmittedEventTypeIsDocumented` and, in
+  the renderer, `TestJSONLRefusesUndocumentedEvent` and
+  `TestFinishFoldsUndocumentedEvent`. A new journal event type must be added to
+  the set and to its pinning test, or every JSONL run fails.
+
+Residuals the decisions leave
+
+- The TUI and `--accessible` views still decide "verified" from the candidate
+  commit alone (#393); the qualified entitlement sentence names no
+  qualification record; the files a check executes and the versions of the
+  checks' tools are not protected or identified. The user-facing wording is in
+  the user guide's Acceptance section and the limitations register's
+  "Acceptance limits".
+- The status stays `proposed`: accepting this record is the maintainer's
+  decision.
