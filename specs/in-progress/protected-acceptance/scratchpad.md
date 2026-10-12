@@ -43,6 +43,7 @@
 - Task 5: a contained native cannot launch without HOME (`resolveLayout` in `internal/contain/enter_linux.go`), so the runner's "contained checks need HOME" refusal is reached only on a recovery whose process has no HOME: the check environment is rebuilt from the recovering process (`recoveryDecision`), not journaled. A recovery that rebuilds a different check environment from the admitted run also changes the bound `environment` identity; D4 already keeps it out of the apply comparison. A row-less `verifying` run with a complete `check.completed` set is recorded `record_unavailable` without a ran evaluator, so its row has no evaluator digest and no attestation.
 
 - Task 8: the scan found 28 distinct types (`run.result` comes from the renderer, not the journal). `recover --format jsonl` shares `finish`, so the same refusal applies there. The fake `allowance-exhausted` scenario runs under `local-scripted` billing through the CLI and does journal `attempt.native_error`.
+- Task 6: the gate trusts the immutable binding row and the append-only admission event; the changeable inputs it compares against are the candidate row (`candidates.candidate_commit`) and `runs/<id>/task.md`, which the tests tamper with. A resumed apply (journaled intent) skips the gate and so cannot record an override; the intent payload does not carry one (hand-off).
 
 ## Validation findings left open (run 3, round 1: Ready for implementation, 0 blocking)
 
