@@ -83,7 +83,10 @@
 
 ## Task 9 — TUI surfaces
 
-<!-- pending -->
+- **Produces**: `viewmodel.Admission.EntitlementStatement string`, set by `decodeAdmission` and `decodeLiveAdmission` from `admission.EntitlementStatement(rec.Billing)`; no difference from the design.
+- **For Task 10**: the TUI's `verification: NOT RUN (<reason>)` takes the row's `Reason` (`reason unknown` when empty, never blank) for `not_run`, `NOT RUN` and `unavailable` rows alike; `invalid` renders `INVALID (<reason>)`. `accessible.go` reads `snap.Admission.EntitlementStatement` and `snap.Verification.Reason`; an admission with an empty statement should read `entitlement: unknown`, as `entitlementText` does.
+- **For dependents**: the status strip is now three rows (billing, entitlement, next action), so layout code counts `len(m.statusLines())`; compact keeps the first two. The TUI still decides "verified" from the candidate commit alone (`mission.go` `verified`); `CheckAcceptance` is not applied there (honesty register), and stale-verdict rendering is issue #393.
+- **Deviations**: none that change a later task's inputs.
 
 ## Task 10 — CLI surfaces: review, run stream, accessible
 

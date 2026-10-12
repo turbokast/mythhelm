@@ -268,7 +268,7 @@
 - **Spec deviations**: `TestClaudeRateLimitStreamsDocumented` keeps no in-test mutant leg: a predicate built from the stream's own types was true by construction (CodeRabbit round 1), and the production set has no injection seam. The mutant (set without `attempt.native_error`) was run by hand and turns the test red (PR #415 body); consistent with design §2.10.
 - **Files modified**: `internal/supervisor/events.go`, `internal/supervisor/events_test.go`, `internal/supervisor/pipeline_test.go`, `internal/cli/render.go`, `internal/cli/render_test.go`, `internal/cli/run.go`, `internal/cli/exit.go`, `internal/cli/exit_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`, `specs/in-progress/protected-acceptance/scratchpad.md`.
 
-### Task 9 — TUI surfaces
+### Task 9 — TUI surfaces ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: complex (two decoders, the mission view and the viewmodel)
@@ -290,6 +290,10 @@
   - `TestViewmodelLoadsReasonAndStatement`: `Load` fills the verification reason and the admission entitlement statement from a journaled run.
 - **Test plan**: Existing snapshot model tests; no TTY needed.
 - **Invariants touched**: I09 (v2 §2: the TUI never renders an unverified run as verified); I15 (v2 §2: declared stays worded as unverified).
+- **Status**: ✅ Completed — the mission view renders `NOT RUN (<reason>)` from `VerificationRow.Reason` and the entitlement statement from `viewmodel.Admission.EntitlementStatement`, set by both the snapshot and the live decoder; PR #424.
+- **Implementation**: `reasonOrUnknown` and `entitlementText` sit in `mission.go`; `statusLines` gained a middle row, so `viewColumns` counts `len(statusLines())` for its chrome and `viewSingle` prints the sentence under the critical status. An `invalid` row renders `INVALID (<reason>)`. Commits 333db9e, e4ffb28.
+- **Spec deviations**: `internal/tui/model.go` is outside the task's `Files`: the extra strip row needed its height accounting, and the single-pane rung (80-99 columns), which has no billing strip, prints the sentence so a declared entitlement is never invisible there (consistent with design §2.7, I15). `INVALID (<reason>)` is rendered for an `invalid` row per design §2.7, beyond the listed acceptance.
+- **Files modified**: `internal/tui/mission.go`, `internal/tui/model.go`, `internal/tui/model_test.go`, `internal/tui/motion.go`, `internal/tui/motion_test.go`, `internal/tui/viewmodel/viewmodel.go`, `internal/tui/viewmodel/viewmodel_test.go`, `specs/in-progress/protected-acceptance/tasks.md`, `specs/in-progress/protected-acceptance/handoff.md`.
 
 ### Task 10 — CLI surfaces: review, run stream, accessible
 

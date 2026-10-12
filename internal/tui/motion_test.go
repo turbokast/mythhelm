@@ -715,6 +715,31 @@ func TestFailureWithoutSpectacle(t *testing.T) {
 	})
 }
 
+// TestLiveAdmissionEventCarriesStatement applies a live admission.decided
+// event and asserts the strip prints its entitlement statement in the same
+// frame, not after the next reload (AC-3.1).
+func TestLiveAdmissionEventCarriesStatement(t *testing.T) {
+	t.Parallel()
+	snap := dispatchSnapshot()
+	snap.Admission = nil
+	m := newModel(testConfig(fullCaps, t))
+	m.setSnapshot(t.Context(), snap)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 220, Height: 30})
+	m = updated.(*Model)
+	if view := stripANSISequences(m.View()); !strings.Contains(view, "entitlement: unknown") {
+		t.Fatalf("strip before the event missing %q\n%s", "entitlement: unknown", view)
+	}
+	payload := `{"adapter":{"id":"builtin/fake","version":"2.0","surface":"cli"},` +
+		`"billing":{"mode":"subscription-only","qualified":false,"entitlement_source":"user_declared","paid_continuation":"unknown"}}`
+	m, _ = motionFeed(t, m, liveEvent("admission.decided", payload, "", 45))
+	if m.snap.Admission == nil || m.snap.Admission.EntitlementStatement != declaredEntitlement {
+		t.Fatalf("Admission = %+v, want statement %q", m.snap.Admission, declaredEntitlement)
+	}
+	if view := stripANSISequences(m.View()); !strings.Contains(view, declaredEntitlement) {
+		t.Errorf("strip after the event missing %q\n%s", declaredEntitlement, view)
+	}
+}
+
 // TestReducedMotionStatic pins AC-4.2: with MotionReduced or MotionOff,
 // triggering every moment applies its state change immediately with static
 // emphasis and schedules zero tick-driven frames.
