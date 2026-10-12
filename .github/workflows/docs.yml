@@ -111,6 +111,7 @@ jobs:
             echo "::error::docs/demos/hero.transcript.txt drifts from a regen at $commit; re-record with docs/demos/record.sh"
             exit 1
           fi
+          echo "recording 'hero': transcript fresh at $commit"
       - name: Check recording capabilities have passing qualifiers
         run: |
           commit="$(python3 -c 'import json; print(json.load(open("docs/demos/manifest.json", encoding="utf-8"))["recordings"][0]["binary_commit"])')"
