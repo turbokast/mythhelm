@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -373,5 +376,38 @@ func TestPayloadTextNumbers(t *testing.T) {
 				t.Fatalf("text = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func jsonlEvent(typ string) journal.Event {
+	return journal.Event{SchemaVersion: journal.EnvelopeVersion, EventID: ids.New("evt"), RunID: "run_1",
+		ProducerID: "sup_1", ProducerSequence: 1, Generation: 1, ObservedAt: time.Unix(1, 0).UTC(),
+		Type: typ, Payload: json.RawMessage(`{}`)}
+}
+
+// TestJSONLRefusesUndocumentedEvent pins I09 (v2 §2): a type outside the
+// documented set never reaches stdout as if it were contract.
+func TestJSONLRefusesUndocumentedEvent(t *testing.T) {
+	t.Parallel()
+	var out, diag bytes.Buffer
+	r := newRenderer("jsonl", Stdio{Out: &out, Err: &diag})
+
+	r.event(jsonlEvent("run.state_changed"))
+	if r.err() != nil {
+		t.Fatalf("documented event: err() = %v", r.err())
+	}
+	var written journal.Event
+	if err := json.Unmarshal(out.Bytes(), &written); err != nil || written.Type != "run.state_changed" {
+		t.Fatalf("documented event stdout = %q (%v), want a run.state_changed line", out.String(), err)
+	}
+
+	out.Reset()
+	r.event(jsonlEvent("attempt.surprise"))
+	if out.Len() != 0 {
+		t.Fatalf("undocumented event wrote to stdout: %q", out.String())
+	}
+	var undocumented *UndocumentedEventError
+	if !errors.As(r.err(), &undocumented) || undocumented.Type != "attempt.surprise" {
+		t.Fatalf("err() = %v, want an *UndocumentedEventError naming attempt.surprise", r.err())
 	}
 }
