@@ -31,10 +31,10 @@ The coordinator relayed the maintainer's acceptance of all twelve defaults. They
 
 Resolved in the spec text: S1 (build once, upload the artifact before any third-party step, fixtures to a separate destination), S2, first part (NFR-6 supply-chain terms), S3 (column, text and tracker binding for the panel), S4 (cells bound to `status.yml` ids; the headline carved out as a maintainer statement), S5 (a marker with no entry fails), S6 (source-markup check for state words), S7 (origin check over CSS, media and recorded requests), S9 (fixture homes), S10 (overflow clip, computed contrast, video duration), and notes N1 to N4 and N6 to N11 (N3: state-word markup also applies in `docs/limitations.md`, never its headings or the Windows lines).
 
-Needs a maintainer call, recorded in the spec and not resolved:
-- B1 (OQ-10 reopened): `Docs checks` is not a required check, so the new checks would be advisory. Options: require it in the ruleset (and in `docs/automation.md` and `.claude/data/required-checks.json`), or add a site-build job to `ci.yml`'s `needs:`.
-- B2 (OQ-5 reopened): a Node and Chrome driver under `scripts/ci/` contradicts `.claude/rules/harness-scripts.md`. Options: a carve-out for one browser-driver directory, a release-owned path, or no browser measurement.
-- S2, second part (a separate sub-decision from the NFR-6 terms above): whether the driver's npm licences fit the dependency-review allow-list.
-- S4: whether the headline's panel link is "exactly one" rather than "at most one".
-- S8: whether the amber rule is stated for the docs site only, since the shipped TUI light theme uses `#8a5a00` as its warning colour.
-- N5: per-item confirmation of the twelve decisions, which arrived as one relayed acceptance.
+Needed a maintainer call; decided the same day (relayed by the coordinator, confirmed per item by the maintainer, 2026-10-12):
+- B1 (OQ-10): a site-build job joins `ci.yml`'s `CI OK` needs list; no ruleset change.
+- B2 (OQ-5): a carve-out for exactly one browser-driver directory (Node, lockfile) from `.claude/rules/harness-scripts.md`, as a requirement on the harness task (AC-7.6); its npm licences are checked against the dependency-review allow-list first, and the task stops and reports if any is off it (NFR-6).
+- S2, second part: covered by the same licence check.
+- S4: exactly one status-panel link under the headline (AC-2.1).
+- S8: the amber rule applies to the docs site and the TUI; MH-23 recolours the TUI warning token (a handoff, not a task here).
+- N5: each of the twelve decisions confirmed individually.
