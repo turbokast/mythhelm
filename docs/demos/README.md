@@ -26,7 +26,9 @@ pins to the current commit — commit the regenerated artifacts and the moved
 pins together.
 
 The script runs from anywhere in the checkout. It needs only free tooling:
-`go`, `git`, `python3`, and VHS (`vhs` renders through `ffmpeg` and `ttyd`).
+`go`, `git`, `python3`, GNU `timeout` (the hero tape kills its run with it; on
+macOS install coreutils and put its `timeout` on PATH), and VHS (`vhs` renders
+through `ffmpeg` and `ttyd`).
 A bare `vhs docs/demos/demo.tape` only renders the GIF and is not the record
 command: it skips the build, the transcript regen and the verify pass.
 

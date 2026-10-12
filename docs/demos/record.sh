@@ -13,7 +13,9 @@
 # a clean tree) the script regenerates from the current checkout and moves the
 # manifest and tape-header pins to it.
 #
-# Needs only free tooling: go, git, python3, and a VHS install (vhs renders
+# Needs only free tooling: go, git, python3, GNU timeout (the hero tape kills
+# its run with it; macOS: brew install coreutils and put its timeout on PATH),
+# and a VHS install (vhs renders
 # through ffmpeg and ttyd). Install VHS from https://github.com/charmbracelet/vhs
 # (for example `go install github.com/charmbracelet/vhs@latest`) and ttyd from
 # https://github.com/tsl0922/ttyd; ffmpeg comes from the OS packages.
@@ -38,7 +40,7 @@ BIN="/tmp/mythhelm-record"
 SED="$DEMOS/normalize.sed"
 MANIFEST="$DEMOS/manifest.json"
 
-for tool in go git vhs python3; do
+for tool in go git vhs python3 timeout; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "record.sh: need $tool on PATH" >&2
 		exit 2
