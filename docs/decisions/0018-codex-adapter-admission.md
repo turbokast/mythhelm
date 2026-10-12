@@ -153,11 +153,12 @@ worker.
 - Adding a harness is one table entry plus its decider in `internal/admission`,
   and the table stays unexported, so extensions cannot register around
   admission. It is not the only change: Codex also needed the worker's adapter
-  map (`internal/workers/worker.go:68`) and adapter-ID branches at
-  `internal/workers/contain.go:160,189,198`, `internal/workers/worker.go:812`,
-  `internal/supervisor/pipeline.go:639` and `internal/admission/billing.go:176`.
+  map, read by ID at `internal/workers/worker.go:68,269,602`, and adapter-ID
+  branches at `internal/workers/contain.go:160,189,198`,
+  `internal/workers/worker.go:812` and `internal/supervisor/pipeline.go:639`.
   An unlisted adapter ID takes the Claude path at the branches that default to
-  Claude.
+  Claude. A further per-adapter site is not an ID branch: the capability-error
+  mapping names each adapter's sentinel (`internal/admission/billing.go:176`).
 - Declaring a Codex billing posture needs a new decision that changes D3.
 - Known gaps in the D18 stop seam, tracked in issue #389 and not decided
   here: the count of lines drained after the early stop reaches only the
