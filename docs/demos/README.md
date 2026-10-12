@@ -122,9 +122,9 @@ revision rendered from and the qualifying test for each shown capability:
 | candidate diff review | `TestParseHunks` (`internal/tui/diff_test.go`) |
 
 CI's transcript-freshness step (`.github/workflows/docs.yml`) regenerates the
-`demo` and `tui` transcripts by name; it does not yet regenerate the hero
-transcript, so `docs/demos/record.sh` is the check for it until that
-workflow learns the third pipeline. The revision-present and qualifier steps
+`demo`, `tui` and `hero` transcripts by name from the pinned binary (the hero
+one through `docs/demos/hero-transcript.sh`) and fails when any of them
+drifts from the checked-in copy. The revision-present and qualifier steps
 read the manifest, so they cover the hero recording.
 
 Normalization (`docs/demos/normalize.sed`) covers temp paths, `run_`/`att_`
