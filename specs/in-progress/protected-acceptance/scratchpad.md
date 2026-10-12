@@ -51,6 +51,8 @@
 
 - Task 11 (spec-text correction): Task 10's acceptance bullet for `TestReviewPlainShowsEntitlementAndVerification` said the `Verification:` line was the only place a waived run's reason appears. Design §2.7 governs and says a waived or unverified run shows its reason on the `Verification:` line and the `Acceptance:` line (`Acceptance: unverified (<reason>)`), which is what Task 10 built and its test pins; the bullet now says both lines. Task 10's completion entry keeps its own record of the disagreement (deviation 2). Task 11's end-to-end tests anchor on both lines (`TestE2EUnavailableChecksKeepCandidate`).
 
+- Task 12: the live accessible stream's summary is a snapshot taken when the stream opens, so for `run --accessible` it reads `entitlement: unknown` until admission has decided (`review --accessible` prints the sentence); the guide says so. `review` verifies the receipt's SHA-256 against the journal, so a receipt cannot be hand-edited to simulate a pre-binding build: the unbound state is covered by `TestReviewPlainShowsAcceptanceStatus` and `TestApplyRefusesUnboundVerified` instead. ADR 0019 stays `proposed`: accepting it is the maintainer's decision.
+
 ## Validation findings left open (run 3, round 1: Ready for implementation, 0 blocking)
 
 Ten advisory findings are open for the implementing tasks; the first two are worth settling before Tasks 5 and 7 start.

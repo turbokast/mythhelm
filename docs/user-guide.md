@@ -6,9 +6,9 @@ title: User guide
 # User guide
 
 MYTHHELM is the open-source command deck for native coding agents. This guide
-covers installation, the scripted quickstart, running a task, stopping and
-recovering runs, execution profiles, billing postures, the budget ledger and
-state migration. MYTHHELM is **pre-alpha**: the only release, v0.0.1, is a
+covers installation, the scripted quickstart, running a task, acceptance
+(what a verification verdict is bound to), stopping and recovering runs,
+execution profiles, billing postures, the budget ledger and state migration. MYTHHELM is **pre-alpha**: the only release, v0.0.1, is a
 source tag with no binary archives, so read
 [Limitations]({{ site.baseurl }}/limitations.html) before relying on anything
 here.
@@ -80,11 +80,14 @@ with exit code 3 and a reason code, rather than guessing, when:
   allowed per state directory; created, admission, executing, verifying,
   applying, stopping, interrupted and recovering runs all count.
 
-`mythhelm review <run-id>` prints the candidate's validation flags, the check
-evidence and the candidate diff (`--no-diff` omits the diff). `mythhelm apply`
+`mythhelm review <run-id>` prints the entitlement sentence, the verification
+verdict, the candidate's validation flags, the check evidence, whether the
+verdict still applies to the candidate (`Acceptance:`) and the candidate diff
+(`--no-diff` omits the diff); see [Acceptance](#acceptance). `mythhelm apply`
 creates a new local branch at the candidate commit and leaves your checkout
 untouched. It needs `--to-branch`, plus `--accept-flags` when the candidate has
-validation flags or `--accept-unverified` when its checks did not pass. It
+validation flags or `--accept-unverified` when its verdict is not bound to the
+candidate (checks did not run, the verdict is stale, or it predates binding). It
 applies only a run that is `ready_for_review`: a run that ended
 `failed (verification_failed)` has no way to hand over its candidate yet
 ([#380](https://github.com/turbokast/mythhelm/issues/380)). The candidate commit
@@ -94,6 +97,332 @@ before you publish it if that matters to you.
 On a TTY, `run`, `review` and `demo` open the TUI. Without one, or with
 `TERM=dumb`, the output is linear, and `run` also takes `--plain`,
 `--format jsonl` and `--accessible`.
+
+## Acceptance
+
+MYTHHELM does not call a candidate verified because a check once passed. A
+verdict is bound to what it judged, and `review` and `apply` ask whether it
+still applies. This section describes the P1 flow as shipped: one native
+session, one writer, project checks the candidate cannot edit. The outputs
+below are from a synthetic fixture: the scripted fake route in a temporary
+directory on the packaged binary, with no credentials in the environment. Run
+IDs, commits, digests and paths differ on every run.
+
+### What a verdict is bound to
+
+When the project checks run, MYTHHELM records an attestation beside the
+verdict. It names five things:
+
+- the **candidate**: the frozen commit that was checked;
+- the **contract**: the SHA-256 of the task file;
+- the **check definitions**: the digest of the admitted `[[checks]]`;
+- the **evaluator**: a digest over the check definitions, the containment
+  boundary and its policy;
+- the **environment**: a partial fingerprint of the operating system, the
+  architecture, the verifier and the *names* of the check environment's
+  variables. Variable values are never recorded, and the version of the tools
+  the checks run (compiler, test runner) is unknown.
+
+The attestation is stored immutably: no statement can update, delete or
+replace it. The receipt shows its digests under `verification.binding`.
+
+The check commands come only from the committed `mythhelm.toml` you trusted
+with `--trust-project-config`. Edits in the candidate, the task text and agent
+messages cannot change which commands run, their timeouts or the evaluator.
+Admission also journals a policy pin, shown as `acceptance.policy_pin` in the
+receipt: policy `P1` version 1 and its digest, the task and contract, the check
+definitions, the evaluator and the check timeouts. A run admitted with
+`--no-checks`, or under `inspect`, runs no check, so its pin leaves the
+check-derived fields `unknown`. If the evaluator that ran is not the pinned
+one, the verdict is `INVALID`, never `passed`.
+
+### Verdicts
+
+| Label | Meaning | Run ends | Exit |
+|---|---|---|---|
+| `passed` | every admitted check passed and the binding was recorded | `ready_for_review` | 0 |
+| `failed` | a check failed or timed out; an unavailable check never hides a failure | `failed (verification_failed)` | 5 |
+| `NOT RUN` | no verdict was reached; the candidate is kept, unverified | `ready_for_review (unverified)` | 5 |
+| `INVALID` | the evaluator that ran is not the pinned evaluator | `failed (verification_invalid)` | 5 |
+
+`NOT RUN` always carries its reason, and it never renders as a verified run:
+
+- `waived by --no-checks` and `checks_refused_under_inspect`: no check was
+  run, by request or because `inspect` does not run them;
+- `checks_unavailable`: a check could not start or gave no result (a missing
+  executable, for example), and no check had failed. The candidate stays
+  reviewable instead of being failed for a fault in the evaluator;
+- `no_checks_ran`: the verdict had no check results to judge;
+- `binding_unavailable`: the checks ran but the attestation could not be built
+  within its 10 second limit;
+- `record_unavailable`: `mythhelm recover` found the checks had returned but
+  their verdict was never recorded, and recorded one from the journaled check
+  results. It never re-runs the checks;
+- `pin_missing`: the run was admitted by a build that recorded no pin and was
+  recovered afterwards, so nothing was fixed at admission to compare with.
+
+The other reasons are `checks_failed` for `failed`, and
+`evaluator_pin_missing` or `evaluator_digest_mismatch` for `INVALID`.
+
+A passing run, from the packaged binary on the fixture. The last lines of the
+`run` stream, then `review` and `apply`:
+
+<!-- Output of: mythhelm run --task-file task.md --adapter fake --billing local-scripted --execution-profile trusted-host --non-interactive --trust-project-config sha256:<digest> --plain (the P1 flow of TestE2EP1FlowNoCredentials), last 11 lines. -->
+```text
+run: verifying
+verification: started
+check e2e: passed
+verification: passed
+run: ready_for_review
+receipt.written
+usage: retail-equivalent unknown unknown (unknown, unknown)
+reserve: verify pass (1 checks, 30s) + 3 repairs (estimate, not a reserve of provider quota)
+remaining: unknown
+next retry: none (used 0 of 3)
+result: ready_for_review; exit 0
+```
+
+<!-- Output of: mythhelm review <run-id> --no-diff, on the run above (TestE2EP1FlowNoCredentials asserts its Verification and Acceptance lines). -->
+```text
+Run: run_01M4QFD9WP6C3NCK74VP98R0GV
+State: ready_for_review
+Task: Example task
+Candidate: 197a6ee38df1a325f3126780858015d405d2681a
+entitlement: not applicable (local-scripted: no inference, no network)
+Verification: passed (bound to 197a6ee38df1a325f3126780858015d405d2681a)
+
+Flags:
+  none
+Checks:
+  e2e: passed (evidence: /tmp/mh-doc-pass/state/runs/run_01M4QFD9WP6C3NCK74VP98R0GV/evidence/197a6ee38df1/e2e.log; sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855)
+Acceptance: bound
+```
+
+<!-- Output of: mythhelm apply <run-id> --to-branch accepted, on the run above (TestE2EP1FlowNoCredentials). -->
+```text
+Applied run run_01M4QFD9WP6C3NCK74VP98R0GV to branch accepted at 197a6ee38df1a325f3126780858015d405d2681a
+```
+
+When a check cannot start, the candidate is kept and honestly unverified. The
+fixture's check names an executable that does not exist, so `run` exits 5:
+
+<!-- Output of: mythhelm run --task-file task.md --adapter fake --billing local-scripted --execution-profile trusted-host --non-interactive --trust-project-config sha256:<digest> --plain, with a check whose executable does not exist (TestE2EUnavailableChecksKeepCandidate), last 11 lines. -->
+```text
+run: verifying
+verification: started
+check e2e: unavailable
+verification: NOT RUN (checks_unavailable)
+run: ready_for_review (unverified)
+receipt.written
+usage: retail-equivalent unknown unknown (unknown, unknown)
+reserve: verify pass (1 checks, 30s) + 3 repairs (estimate, not a reserve of provider quota)
+remaining: unknown
+next retry: none (used 0 of 3)
+result: ready_for_review (unverified); exit 5 verification_unavailable
+```
+
+<!-- Output of: mythhelm review <run-id> --no-diff, on the run above (TestE2EUnavailableChecksKeepCandidate asserts both lines). -->
+```text
+Run: run_01M4QFE8AJZ6ZDN94155898ZR8
+State: ready_for_review
+Task: Example task
+Candidate: 90c36add7f85c246bdbc5033a67fca6e01471e74
+entitlement: not applicable (local-scripted: no inference, no network)
+Verification: NOT RUN (checks_unavailable)
+
+Flags:
+  none
+Checks:
+  e2e: unavailable (evidence: /tmp/mh-doc-unavailable/state/runs/run_01M4QFE8AJZ6ZDN94155898ZR8/evidence/90c36add7f85/e2e.log; sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855)
+Acceptance: unverified (checks_unavailable)
+```
+
+A waived or unverified run shows its reason on both the `Verification:` line
+and the `Acceptance:` line. A run admitted with `--no-checks` prints
+`Verification: NOT RUN (waived by --no-checks)` and
+`Acceptance: unverified (waived by --no-checks)`, and its receipt prints
+`verification.binding` and `acceptance.overhead_ms` as `unknown`, each with its
+reason.
+
+### Review and apply
+
+`review` prints two verdict lines that answer different questions.
+`Verification:` is what the receipt recorded when the run ended: `passed (bound
+to <commit>)`, `NOT RUN (<reason>)`, `INVALID (<reason>)`, `failed` or
+`unknown (<reason>)`. `Acceptance:` is read from the journal when you run
+`review`, and says whether that verdict still applies to the candidate now:
+
+| `Acceptance:` | Meaning |
+|---|---|
+| `bound` | the verdict passed and the candidate, contract, check definitions and evaluator still match |
+| `unverified (<reason>)` | the verdict is `NOT RUN`, or the run has no verification (`no verification recorded`) |
+| `STALE (changed: <dimensions>); re-evaluation required` | the verdict passed, but a bound dimension changed since: `candidate`, `contract`, `check_definition` or `evaluator` |
+| `unbound (<reason>)` | the verification was recorded before acceptance binding existed |
+| `rejected (<reason>)` | the verdict is `failed` or `INVALID` |
+
+The environment is recorded and bound, but it is not compared when you apply:
+moving the state directory or upgrading the binary changes no input to the
+verdict. Unreadable verdict evidence (a passed verdict with no attestation, a
+damaged candidate commit) is an error, exit 1, never a guess.
+
+Because `Verification:` comes from the receipt and `Acceptance:` from the
+journal, they can disagree. After the run's recorded task file changed, the
+fixture shows:
+
+<!-- Output of: mythhelm review <run-id> --no-diff, after rewriting the file runs/<run-id>/task.md in the state directory, as TestE2EStaleVerdictBlocksApply does. -->
+```text
+Run: run_01M4QFEM5E9QE9R3ZW12QD7RHJ
+State: ready_for_review
+Task: Example task
+Candidate: a4c5d5280095f5e5b8d60c3bd4f2186d25921135
+entitlement: not applicable (local-scripted: no inference, no network)
+Verification: passed (bound to a4c5d5280095f5e5b8d60c3bd4f2186d25921135)
+
+Flags:
+  none
+Checks:
+  e2e: passed (evidence: /tmp/mh-doc-stale/state/runs/run_01M4QFEM5E9QE9R3ZW12QD7RHJ/evidence/a4c5d5280095/e2e.log; sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855)
+Acceptance: STALE (changed: contract); re-evaluation required
+```
+
+`apply` takes the same decision. It refuses with exit 3 unless the verdict is
+bound, and every refusal names `--accept-unverified`, the only way past it:
+
+<!-- Output of: mythhelm apply <run-id> --to-branch refused, on the NOT RUN run above (TestE2EUnavailableChecksKeepCandidate asserts exit 3). -->
+```text
+mythhelm apply: apply blocked: unverified candidate requires --accept-unverified (NOT RUN: checks_unavailable)
+```
+
+<!-- Output of: mythhelm apply <run-id> --to-branch refused, on the stale run above (TestE2EStaleVerdictBlocksApply asserts exit 3 and "changed: contract"). -->
+```text
+mythhelm apply: apply blocked: verification does not apply to the candidate (changed: contract); re-evaluation is required; --accept-unverified applies it without verification
+```
+
+An unbound verification is refused the same way
+(`verification was recorded before acceptance binding existed;
+--accept-unverified applies it without verification`). No command re-evaluates
+a stale or unbound run in this release: start a new run, or apply with
+`--accept-unverified`, which applies the candidate without verification. When
+you do, the receipt records it as `acceptance.apply_override` (`state`,
+`reason`, `changed`), while `verification.label` keeps describing the verdict as
+recorded. An apply interrupted after it journaled its intent skips this check
+when it resumes, so a resumed apply records no override
+([#418](https://github.com/turbokast/mythhelm/issues/418)).
+
+### The entitlement sentence
+
+Every run states what MYTHHELM did and did not check about the route's
+entitlement, on the same line wherever it appears. The line comes from the
+admitted billing posture:
+
+| Posture | Sentence |
+|---|---|
+| user-declared (`--billing subscription-declared`) | `entitlement: user-declared, NOT verified by MYTHHELM; paid continuation: unknown (user declares disabled)` |
+| scripted (`--billing local-scripted`) | `entitlement: not applicable (local-scripted: no inference, no network)` |
+| qualified route (strict `subscription-only`) | `entitlement: verified by MYTHHELM (<entitlement source>); paid continuation: <value>` |
+| anything else, including an inconsistent posture | `entitlement: unknown` |
+
+A declared run says in so many words that MYTHHELM did not verify the
+declaration and does not claim paid continuation is prevented. The qualified
+sentence prints fields of the admitted posture; it does not name the
+qualification record consulted, because admission does not journal that. No
+route is live-qualified yet, so every strict run blocks today and no run
+prints the qualified sentence.
+
+The sentence appears in the `run` stream's admission block (indented two
+spaces), as its own line in `review` and in the `--accessible` summary, in the
+TUI status strip and in the receipt as `billing.entitlement_statement`. On the
+fixture's admission block:
+
+<!-- Output of: mythhelm run ... --plain (as above), last three lines of the admission decision block (TestE2EScriptedRunEntitlementNotApplicable asserts the receipt value; TestE2EDeclaredClaudeRunCarriesSentence asserts the declared line in this block). -->
+```text
+  execution profile: trusted-host, runs with your host authority and is not adversarially contained
+  billing: local-scripted (qualified: false)
+  entitlement: not applicable (local-scripted: no inference, no network)
+```
+
+The accessible stream's summary is a snapshot taken when the stream opens, so
+for a live `run --accessible` it reads `entitlement: unknown` until admission
+has decided; `review --accessible` prints the sentence. The admission line of
+the accessible event stream is capped at 200 cells and can be cut before it,
+so read the summary line.
+
+### The receipt
+
+`mythhelm review <run-id> --format jsonl` prints the receipt as one JSON
+object. Acceptance adds these keys:
+
+| Key | Content |
+|---|---|
+| `verification.result`, `.label`, `.reason` | the stored verdict, its label (`passed`, `failed`, `NOT RUN`, `INVALID` or `unknown`) and its reason |
+| `verification.binding` | `candidate` (`format`, `value`), `contract`, `check_definition`, `evaluator`, `environment` and `attestation_digest`, each digest as `sha256:<hex>`; `unknown` when no attestation exists |
+| `acceptance.policy_pin` | the P1 pin, or `unknown` |
+| `acceptance.determinism` | `confined_to` and `note`, below |
+| `acceptance.overhead_ms`, `.overhead_covers` | how long the binding step took, and `binding step` |
+| `acceptance.bounds` | the bounds table below |
+| `acceptance.apply_override` | present only after an apply over a verdict that was not bound |
+| `billing.entitlement_statement` | the sentence above |
+| `unknown_reasons` | one reason for every `unknown` leaf, keyed by its path |
+
+A field MYTHHELM could not observe prints `unknown` with its reason in
+`unknown_reasons`, never `0` or an invented value. A verification recorded
+before acceptance binding existed prints its binding, pin and overhead as
+`unknown` with that reason.
+
+**Determinism.** The same pinned revisions produce the same verdict.
+Non-determinism is confined to the native session and to the checks'
+own behaviour. The receipt says so in `acceptance.determinism`:
+
+<!-- Excerpt of the output of: mythhelm review <run-id> --format jsonl, on the passing fixture run above (TestE2EP1FlowNoCredentials reads the receipt's acceptance keys). -->
+```text
+"determinism":{"confined_to":"native session","note":"acceptance inputs (candidate, contract, check definitions, environment) are pinned; each admitted check runs once with no retry; a check's own determinism is not asserted"}
+```
+
+A check that fails one run and passes the next is not detected, and no seed or
+repetition is recorded.
+
+**Bounds.** The receipt records the bounds the run was admitted under and says
+which of them MYTHHELM enforces:
+
+<!-- Excerpt of the output of: mythhelm review <run-id> --format jsonl, on the passing fixture run above (TestReceiptBoundsEnforcedFlags pins the flags). -->
+```text
+"bounds":{"check_timeouts":{"e2e":"30s"},"evidence_bytes_per_check":1048576,"execution_seconds":{"enforced":true,"value":1800},"repairs":{"enforced":false,"value":3},"replans":{"enforced":false,"value":2},"transport_retries":{"enforced":false,"value":5}}
+```
+
+`execution_seconds`, `repairs`, `replans` and `transport_retries` are the
+envelope the run was admitted under (the built-ins here), each with whether
+MYTHHELM enforces it. `check_timeouts` are the admitted per-check timeouts and
+`evidence_bytes_per_check` is the evidence cap of each check; the check runner
+applies both. The repair, replan and transport-retry ceilings bind no live run
+([#328](https://github.com/turbokast/mythhelm/issues/328)), so the receipt
+flags them `enforced: false`.
+
+**Overhead and step limits.** Binding is limited to 10 seconds, recording the
+verdict, rendering a receipt and the apply or review check each to 30 seconds.
+Only the binding step's duration is recorded as `acceptance.overhead_ms`;
+recording and rendering cannot measure themselves.
+
+### The JSONL event contract
+
+`run` and `recover` with `--format jsonl` print only documented events: the 29
+types that `supervisor.StreamEventTypes` lists and a test pins, 28 journal event
+types and the renderer's own `run.result`. A `verification.completed` payload
+carries `result` (the verdict: `passed`, `failed`, `unavailable` or `invalid`,
+or `NOT RUN` on a skip), and `reason` and `attestation_digest` when it has
+them. An event outside the set is not printed: the command exits 1 with category
+`undocumented_event` when nothing else failed, and otherwise keeps its own exit
+code and names the event type on stderr.
+
+### Known limits
+
+Acceptance has residual limits, listed with the rest in
+[Acceptance limits]({{ site.baseurl }}/limitations.html#acceptance-limits).
+Two apply to what you see here: the TUI and `--accessible` views decide
+"verified" from the candidate commit alone, so they can show a stale verdict as
+verified while `apply` refuses it
+([#393](https://github.com/turbokast/mythhelm/issues/393)), and the apply
+override above can be lost across a crash
+([#418](https://github.com/turbokast/mythhelm/issues/418)).
 
 ## Execution profiles
 
@@ -198,7 +527,7 @@ take a per-run owner lock. Its decisions are in
 | 2 | Invalid arguments or configuration |
 | 3 | Admission, policy or approval blocked, including a run that ends `blocked` |
 | 4 | Native execution failed |
-| 5 | Verification failed or unavailable (`--no-checks` ends here) |
+| 5 | Verification failed, invalid or unavailable (`--no-checks` ends here) |
 | 6 | Interrupted, recovery required or ownership unresolved |
 | 7 | A required adapter, platform or boundary capability is unavailable |
 | 130 | Foreground cancellation completed |
@@ -286,7 +615,8 @@ mythhelm run --adapter claudecode --billing subscription-declared \
 The declaration is user-declared, never verified: MYTHHELM does not check it,
 and the run is labelled `entitlement: user-declared, NOT verified by MYTHHELM;
 paid continuation: unknown (user declares disabled)`. It does not claim that
-paid continuation is prevented. A declared run still needs a first-party
+paid continuation is prevented. The same sentence appears on the run stream,
+`review` and the receipt; see [Acceptance](#the-entitlement-sentence). A declared run still needs a first-party
 subscription login, and the declaration is bound to that account and
 configuration directory, so a changed account needs a fresh declaration.
 
