@@ -22,10 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stop ladder pinned at admission: a run records the ladder version when it is admitted, a stop climbs that ladder rung by rung, and the stop record names the version, the signals sent and the processes left unresolved; the JSONL stream shows an attempt.admission_pinned line (#298)
 - Worker supervisor-loss envelope: when the supervisor's beat goes stale a worker finishes only its current episode, spools the result and waits for the supervisor instead of starting new work, and a worker whose spool fails stops instead of running blind (#311)
 - `--adapter codex` is accepted and always blocks or is refused with a named reason while Codex has no qualification evidence; its adapter code is fixture-tested only and the registry row stays `planned` (#397)
+- Verification verdicts are bound to the exact candidate commit, task contract and check definitions and stored immutably in a schema 8 ledger; `mythhelm apply` refuses a stale, unbound or rejected verdict unless you pass `--accept-unverified`, and the receipt records that override (#400, #416)
+- Checks that cannot run (a missing executable, `--no-checks`, `inspect`) leave the candidate reviewable as `NOT RUN` with its reason and exit 5 instead of failing the run, and an unavailable check never hides a failed one (#414)
+- Each run records its acceptance policy pin P1 at admission with the evaluator that was pinned; a verdict from any other evaluator is reported `INVALID`, never `passed` (#413)
+- The receipt carries an `acceptance` section (policy pin, recorded execution bounds with an `enforced` flag each) and an `unknown_reasons` table, so every unknown field says why (#417)
+- `run` and `recover` JSONL output is a documented contract of 29 event types and refuses an undocumented one (#415)
 
 ### Changed
 
 - `mythhelm doctor` plain output names each unproven qualification column as `failing: <column>` and prints `next_test: <text>` below rows with a non-empty next test (#396)
+- The TUI, `mythhelm review` and `--accessible` views show the entitlement sentence (a declared posture is never worded as verified) and the verification label with its reason (#424, #425)
 
 ### Fixed
 

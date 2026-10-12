@@ -182,3 +182,39 @@ Add a row to the failure-mode table: a main push run that is `cancelled` with ze
 **Proposed change:**
 
 In step 4, after the `changelog-add` calls and unless `--no-changelog` was passed, add: `cp CHANGELOG.md docs/mirror/CHANGELOG.md`, and name `docs/mirror/CHANGELOG.md` in the step 5 `git add` list when it changed.
+
+## P-protected-acceptance-1 — Name the Windows-only test hazards in the test-quality rule
+
+- **Source spec**: `protected-acceptance`
+- **Type**: rule
+- **Target**: `.claude/rules/test-quality.md`
+- **Rationale**: All six failed CI runs on the spec's task pull requests failed only on the Windows runners, after the task's gates had passed on Linux, and the main merges added more of the same class. `GOOS=windows go vet` compiles the test but cannot find a hazard that appears at run time. Each cost a fix commit and a CI cycle, and the same hazards recurred across tasks and specs.
+- **Evidence**: pull request #405 runs 38182985390 and 38188078803 (`TestUnavailableCheckIsNotFailed` returned `unavailable`: a failing-check fixture that needs `/bin/sh`); #414 run 38194229707 (`TestRecordStepHonoursTimeout`: a 1 ns deadline does not expire on the coarse Windows clock, Task 5 deviation); #417 run 38198740245 and #424 run 38204768259 (`TestReplanPreservesRepairSlots`, issue #419: a deadline derived from a package-level start time); #426 run 38213174301 (supervisor package at the 10 minute timeout, issue #420); main merges of #400 and #416 (`TestWatchWritesSupervisorBeatAfterIngest`, issue #411: a poll races an atomic file replace); the carve-out pull request #430 run 38223898738 (issue #433: a reader sees a non-atomic file write).
+
+**Proposed change:**
+
+Add a section "Windows hazards" to the rule: a test that is meant to run on every OS never (1) needs `/bin/sh` or another POSIX tool for a fixture, (2) relies on a deadline shorter than the clock's granularity (use an already-expired deadline), (3) derives a deadline from a package-level start time instead of the test's own start, (4) reads or opens a file that another goroutine writes or replaces without retrying a sharing violation and without tolerating partial contents (the writer publishes atomically, or the reader detects incomplete contents and retries), or (5) adds enough work to its package to approach the `go test` timeout (note the package's Windows duration in the pull request). A test that cannot meet one of them is fixed or skips on Windows with the reason. Only hazard (1), a POSIX-only fixture, may instead be replaced by a Go helper binary; a helper binary does not address the clock, file-sharing or timeout hazards.
+
+## P-protected-acceptance-2 — A table of reasons is tested for truth, not only for presence
+
+- **Source spec**: `protected-acceptance`
+- **Type**: rule
+- **Target**: `.claude/rules/test-quality.md`
+- **Rationale**: `TestEveryUnknownHasAReason` asserts that every `unknown` leaf of the receipt has a reason, so it still passed after Task 4 made one reason ("check timeouts are not journaled") false, and the false text survived the review of Tasks 5 to 12. The coding standard already says an assertion that accepts every branch cannot fail; this names the table case, where the existence of a value is asserted and its meaning is not.
+- **Evidence**: finalize review finding (issue #438): `internal/supervisor/unknown_reasons.go:75-76` says check timeouts are not journaled while `internal/supervisor/acceptance.go:59-63` journals them and the same receipt prints them at `acceptance.bounds.check_timeouts`.
+
+**Proposed change:**
+
+Add to the rule: a test over a table that maps a state to explanatory text (a reason, a label, a refusal message) asserts the text for each state the code can reach, with one case per distinct source of the state. A change that makes a state's source different (a field now journaled, a path now added) updates that state's row and its test in the same pull request, and the task's completion entry names the rows it rechecked.
+
+## P-protected-acceptance-3 — Retrospective effort says `unknown` when the log holds no merge rows
+
+- **Source spec**: `protected-acceptance`
+- **Type**: skill
+- **Target**: `.claude/skills/finalize-spec-retrospective/SKILL.md`
+- **Rationale**: `runspec.py summary` printed `Merged: no` and `First pass: no` for all 12 tasks, although `finalize.py verify` confirmed all 12 merged on origin/main. The run-events log held no `merge` rows because the merges were made outside `/run-spec`. An Effort section that copied the table would state a false outcome for merged work.
+- **Evidence**: `python3 scripts/harness/runspec.py summary --spec protected-acceptance` (12 rows, all `Merged: no`); the log's `protected-acceptance` rows are 12 `dispatch`, 12 `return`, one `run_start` and the lifecycle rows, with no `merge`; `finalize.py verify` printed `tasks=12`, `last_merge=cbec60d`.
+
+**Proposed change:**
+
+In the Sources table and Step 1, add: when `finalize.py verify` shows a task merged and the log has no `merge` row for it, write `unknown (merge not logged)` for that task's Merged and First pass cells and state the count in the Effort line. When the log records no review rounds, report the pull request's raw review count (`gh pr view <n> --json reviews`) on its own line labelled `reviews (from the pull request)`, never as review rounds, because several reviews can belong to one round.
