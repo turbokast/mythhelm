@@ -1,6 +1,6 @@
 ## TUI Observatory View — Requirements
 
-> Unrefined. Run /refine-spec tui-observatory-view before /spec.
+> Refined. Maintainer decisions confirmed per item (see Decisions); fresh refinement returned Ready with no fixes. Run /spec tui-observatory-view next.
 
 > Slice 1 of 4 of MH-23: the brand themes, the four new glyphs, light-terminal detection, the NOW / NEXT default view on the responsive ladder, overlays instead of takeovers, and the working `q` / Ctrl-C lifecycle. It changes how the existing mission view looks and how it exits; it adds no approval flow, no stop or recovery or receipt screen, and no new journaled event. Normative source: mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md, version 2.0; § numbers, I-IDs, G-IDs and AT-IDs refer to it.
 

@@ -27,3 +27,10 @@ Human-required, folded in as open questions with defaults: scope split of FR-6 (
 - The fixes of round 3 were not re-assessed.
 - D4 is NEEDS_WORK: slice 1 touches tui, cli, supervisor, workers, docs and `go.mod` and may exceed 15 tasks; if `/spec` produces more, split FR-6 into its own spec ahead of the visual work (OQ-21).
 - Maintainer questions with defaults: OQ-1, 3, 4, 7, 8, 9, 14, 15, 18, 19, 20, 21, 22.
+
+## Fresh run — 2026-10-12 (takeover, Muse Code) — Ready
+
+dispatched=1 returned=1 failed=0
+Verdict: Ready after 1 round (every dimension PASS; no auto-fixable, human-required or missing-context items).
+
+The previous ledger above (`dispatched=3 returned=2 failed=1`, Blocked on the rate-limited round) is superseded by this fresh ledger, as the log's own instruction required. The assessor checked the maintainer's per-item Decisions (OQ-1, 3, 4, 7, 8, 9, 15, 18, 19, 20, 21, 22) as settled and did not re-ask them; OQ-26 to OQ-30 remain author defaults with recommendations that do not block `/spec` (requirements line 239). Spot-checked citations held at source (theme schema, overlay takeover, inert exit dialog, closed glyph set, structural absence claims). The spec moved `unrefined/` -> `refined/` on this result. Remaining notes for /spec are the D4 row above (slice 1 may exceed the task budget; split FR-6 first if it does).
