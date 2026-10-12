@@ -1385,7 +1385,7 @@ func TestRecoverAfterSupervisorKilledReattachesAndCompletes(t *testing.T) {
 	if n := countEvents(f.events(t, runID), "attempt.launched"); n != 1 {
 		t.Fatalf("attempt.launched events = %d, want 1", n)
 	}
-	got, err := os.ReadFile(greeting)
+	got, err := os.ReadFile(greeting) // #nosec G304 -- fixture workspace is t.TempDir
 	if err != nil || string(got) != "hello from the scripted agent\n" {
 		t.Fatalf("the work finished after the kill: %q, %v", got, err)
 	}
