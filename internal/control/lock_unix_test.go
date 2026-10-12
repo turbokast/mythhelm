@@ -42,7 +42,7 @@ func TestReadMetadataRereadsTornRecordReturnedPastSettle(t *testing.T) { // I02
 	writerErr := make(chan error, 1)
 	go func() {
 		time.Sleep(metadataSettle + 100*time.Millisecond)
-		w, err := os.OpenFile(path, os.O_WRONLY, 0)
+		w, err := os.OpenFile(path, os.O_WRONLY, 0) //nolint:gosec // G304: path is under t.TempDir()
 		if err != nil {
 			writerErr <- err
 			return
