@@ -409,3 +409,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: spec approved by the maintainer's merge of #392 and landed in specs/todo/ (slice 1: protected acceptance; Tasks 13-14 blocked on MH-12 T5/T7)
 - **Cards**: MH-22
 - **Evidence**: PR #392
+
+### D-96 — 2026-10-12: MH-4 → shipped (codex-native-adapter)
+- **Type**: lifecycle-sync
+- **Decision**: MH-4 moved to shipped
+- **Rationale**: codex-native-adapter reached done: all 12 tasks merged, finalized in #412 (839403b), main green 7/7 at 839403b. What shipped is fixture-tested adapter code with Codex still blocked and refused end to end and its registry row planned; live qualification evidence (entitlement, fidelity, stop and recovery) is not part of it.
+- **Cards**: MH-4
+- **Evidence**: finalize PR #412; review follow-ups #408 to #411; ADR 0018 (proposed)
