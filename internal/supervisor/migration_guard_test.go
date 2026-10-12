@@ -63,6 +63,7 @@ func requireLockHeld(t *testing.T, dir string) {
 // TestCheckMigrationClearReturnsHeldLock: a clear guard hands the caller
 // the state-directory lock still held; only the caller's release frees it.
 func TestCheckMigrationClearReturnsHeldLock(t *testing.T) {
+	t.Parallel()
 	for _, phase := range []string{"not_started", "previewed"} {
 		t.Run(phase, func(t *testing.T) {
 			j := openGuardJournal(t)
@@ -85,6 +86,7 @@ func TestCheckMigrationClearReturnsHeldLock(t *testing.T) {
 // previewed, or the lock already held — releases whatever the guard took
 // and names ownership_unresolved.
 func TestCheckMigrationClearRefusalsRelease(t *testing.T) {
+	t.Parallel()
 	t.Run("past previewed", func(t *testing.T) {
 		j := openGuardJournal(t)
 		setGuardPhase(t, j, "drained")

@@ -405,6 +405,7 @@ func countEvents(t *testing.T, j *journal.Journal, runID, typ string) int {
 }
 
 func TestExhaustionPreservesCandidates(t *testing.T) {
+	t.Parallel()
 	f := newExhaustionFixture(t)
 	out, d, err := f.run(t, "allowance-exhausted", Hooks{})
 	if err != nil {
@@ -444,6 +445,7 @@ func TestExhaustionPreservesCandidates(t *testing.T) {
 }
 
 func TestNoSecondNativeLaunch(t *testing.T) {
+	t.Parallel()
 	f := newExhaustionFixture(t)
 	out, d, err := f.run(t, "allowance-exhausted", Hooks{})
 	if err != nil || out.State != RunBlocked {
@@ -471,6 +473,7 @@ func TestNoSecondNativeLaunch(t *testing.T) {
 }
 
 func TestReleaseOnlyAfterStop(t *testing.T) {
+	t.Parallel()
 	f := newExhaustionFixture(t)
 	db := rawOpen(t, filepath.Join(f.state, journal.DBName))
 	status := func(runID string) string {

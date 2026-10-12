@@ -587,6 +587,7 @@ func TestFailedBeatsUnavailable(t *testing.T) {
 }
 
 func TestBindFailureJournalsUnavailable(t *testing.T) {
+	// Sequential: process environment (XDG_RUNTIME_DIR via runInProcess).
 	f := newFixture(t)
 	digest := f.config(t, "pass")
 	hooks := supervisor.Hooks{
@@ -614,6 +615,7 @@ func TestBindFailureJournalsUnavailable(t *testing.T) {
 }
 
 func TestFailedCheckSurvivesBindFailure(t *testing.T) {
+	// Sequential: process environment (XDG_RUNTIME_DIR via runInProcess).
 	for _, tc := range []struct {
 		name       string
 		mode       string
@@ -651,6 +653,7 @@ func TestFailedCheckSurvivesBindFailure(t *testing.T) {
 const expiredLimit = -time.Nanosecond
 
 func TestRecordStepHonoursTimeout(t *testing.T) {
+	// Sequential: process environment (XDG_RUNTIME_DIR via runInProcess).
 	f := newFixture(t)
 	digest := f.config(t, "pass")
 	out, err := f.runInProcess(t, digest, supervisor.Hooks{Timeouts: &acceptance.Timeouts{Record: expiredLimit}})
