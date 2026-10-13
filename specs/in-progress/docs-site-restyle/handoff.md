@@ -67,7 +67,11 @@
 
 ## Task 7 — Tested-in-CI marker on code examples (docs)
 
-<!-- pending -->
+- **Produces**: `examples.yml` lists guide quickstart first (`docs/user-guide.md#quickstart[1]`) and landing second (`docs/index.md#try-the-scripted-demo[1]`), each with command `go run ./cmd/mythhelm demo` and `expect_exit: 0`. No output entries are listed.
+- **Produces**: The layout emits `.tested-example[data-example-anchor]` text “tested in CI” immediately before the matching `pre`, deriving page/heading/block ordinal at build time on both surfaces. Unlisted blocks and provenance comments earn no marker.
+- **For dependents**: The landing retains `#quickstart` on its section, but now contains a Markdown h2 (`#try-the-scripted-demo`) and fenced shell block to satisfy the pinned source-anchor contract. Guide source, output lines and all nine provenance comments are untouched. Task 8 checks exact list-to-marker correspondence and command drift; Task 10 executes both entries and owns any future output diff.
+- **Verification**: The exact quickstart exited 0 after `go mod download`, with `GOPROXY=off`, in a credential-free network-isolated sandbox with read-only host mounts. Full pinned Pages build preserves 40 pages, 14 guide h2 headings, three posters, and a 298,103-byte search index. Manual corpus and independent Chrome checks pass at 390/1280 px.
+- **Deviations that change a later task's inputs**: None.
 
 ## Task 8 — Built-site content checks (harness)
 

@@ -186,7 +186,7 @@
 - **Spec deviations**: Added `docs/search.json` within the docs domain to normalize the canonical state include before indexing: Jekyll can render the index before the guide, otherwise raw Liquid leaks into search text. The index schema and generator are unchanged. Parent browser review found pre-existing inline-code line breaks before angle-bracket placeholders were parsed as raw HTML, hiding later guide content; joined those two lines without changing prose or output words so the actual budget labels and second note render (consistent with FR-5). Task 4 already supplies the guide recording controls at build time, so no duplicate guide recording markup was added.
 - **Files modified**: `docs/_includes/state.html`, `docs/user-guide.md`, `docs/limitations.md`, `docs/assets/site.css`, `docs/contributing.md`, `docs/search.json`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`.
 
-### Task 7 — Tested-in-CI marker on code examples (docs)
+### Task 7 — Tested-in-CI marker on code examples (docs) ✅ COMPLETED
 
 - **Domain/agent**: go-implementer (docs domain)
 - **Budget**: standard
@@ -204,6 +204,11 @@
   - An output block is marked only when its normalised output is diffed by the examples job; otherwise it renders unmarked (AC-6.4).
 - **Test plan**: Build the site and audit marked blocks against the list by hand; run the listed quickstart command non-interactively with `GOPROXY=off` after `go mod download` and record its exit code.
 - **Invariants touched**: I14 (v2 §2: the marker claims only what CI runs); G10 (v2 §18.3: tested examples as public-release evidence).
+
+- **Status**: ✅ Completed — Both quickstart markers derive from the examples list; all unlisted output and refusal blocks remain unmarked; PR #470.
+- **Implementation**: Commit 5ac9419 (Codex, docs implementer equivalent). The layout matches source page, rendered h2 anchor and code-block ordinal; the landing quickstart now uses a real fence with unchanged words. A baseline marker audit failed with zero markers, then the Pages build passed with exactly two; the exact quickstart command exited 0 after `go mod download` with `GOPROXY=off` in a credential-free, network-isolated sandbox. Chrome at 390/1280 px and independent review passed.
+- **Spec deviations**: None. No guide source edit was necessary; its existing fences already satisfy the contract. Task 10 supplies the examples CI execution job; no output entry or output marker is introduced here.
+- **Files modified**: `docs/_data/examples.yml`, `docs/_layouts/default.html`, `docs/index.md`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`, `specs/in-progress/docs-site-restyle/scratchpad.md`.
 
 ### Task 8 — Built-site content checks (harness)
 
