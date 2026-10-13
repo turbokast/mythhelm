@@ -2,7 +2,16 @@
 # Site navigation lives in docs/_data/navigation.yml.
 title: MYTHHELM
 description: The open-source command deck for native coding agents.
-theme: minima
+# Decision (docs-site-restyle design section 3.1, D2): theme: minima is
+# removed. The single layout named "default" (docs/_layouts/default.html)
+# replaces the minima layout, no built page links minima's assets/main.css,
+# and the defaults entry below assigns that layout to every page explicitly
+# so front-matter-less pages do not rely on Pages defaults.
 plugins: []
 url: https://turbokast.github.io
 baseurl: /mythhelm
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: "default"

@@ -15,7 +15,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Brand foundation and site contracts (docs)
+### Task 1 — Brand foundation and site contracts (docs) ✅ COMPLETED
 
 - **Domain/agent**: go-implementer (docs domain, `knowledge/domains.md`)
 - **Budget**: complex (12 files: the brand table, config, layout, stylesheet, four font files and four data/manifest contracts are one inseparable contract set — splitting them would let later tasks build against half-pinned shapes; the completion entry records the file count against the 8-file guideline)
@@ -43,6 +43,10 @@
   - `docs/_data/status.yml` and `docs/_data/examples.yml` parse as YAML, every `status.yml` quote occurs under its named heading in `docs/limitations.md` (checked by the Task 8 script run by hand here), and the first examples entry's command is exactly `go run ./cmd/mythhelm demo` (AC-2.3, AC-6.1).
 - **Test plan**: Build the site in the task's CI run (the existing Build docs site job) and audit the emitted HTML and CSS by hand; the automated fixtures for these assertions ship with Task 8, so this task records the manual commands and outputs in its completion entry as the red-to-green evidence.
 - **Invariants touched**: I09 (v2 §2: token and label values are stated, never implied); I14 (v2 §2: the brand table is the versioned source the checks bind to); G10 (v2 §18.3: the footer and marker contracts the later G10 checks assert).
+- **Status**: ✅ Completed — Brand tokens (Paper/amber), marker layout on Night/Paper surfaces, token stylesheet, self-hosted OFL font subsets and the status/examples/script/search/manifest contracts landed; PR #464.
+- **Implementation**: One commit `9ceac13` carrying exactly the 12 files in `Files` (count recorded against the 8-file guideline per the task Budget: the contract set is inseparable). Manual red-to-green evidence: before, no marker/Paper/amber/`site.css`/fonts/data/`chapters`; after, the 45-check hand-run probe (YAML parse, anchored quotes, tracker-in-quote, anchor resolution, table↔CSS parity both ways, marker/surfaces, recorded font SHA-256) prints ALL PASS, the quickstart under `GOPROXY=off` exits 0, and the failing counterfactuals named for Task 8 are the no-`defaults:` fixture page without the marker and the unlisted-hex stylesheet. Built-site proof is the PR's Build docs site CI job (no Ruby/Jekyll in the worktree).
+- **Spec deviations**: None.
+- **Files modified**: `docs/assets/brand/README.md`, `docs/_config.yml`, `docs/_layouts/default.html`, `docs/assets/site.css`, `docs/assets/fonts/archivo-expanded-extrabold.woff2`, `docs/assets/fonts/jetbrains-mono.woff2`, `docs/assets/fonts/OFL.txt`, `docs/assets/fonts/README.md`, `docs/_data/status.yml`, `docs/_data/examples.yml`, `docs/_data/site-scripts.yml`, `docs/demos/manifest.json`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`, `specs/in-progress/docs-site-restyle/scratchpad.md`.
 
 ### Task 2 — Hero video, chapters and recording posters (docs)
 

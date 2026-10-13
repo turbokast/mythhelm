@@ -91,6 +91,13 @@
           "name": "candidate diff review",
           "qualifier": "TestParseHunks"
         }
+      ],
+      "chapters": [
+        { "name": "title", "at_seconds": 0 },
+        { "name": "run", "at_seconds": 5 },
+        { "name": "kill", "at_seconds": 10 },
+        { "name": "recover", "at_seconds": 15 },
+        { "name": "review", "at_seconds": 20 }
       ]
     }
   ]

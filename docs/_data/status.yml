@@ -1,0 +1,35 @@
+# Status panel data: the works / in progress / not yet panel and the
+# landing-page cells render from this file (docs-site-restyle AC-2.3).
+# Schema — every item is a mapping with exactly these keys:
+#   id:      kebab-case identifier; landing-page cells name an item by id.
+#   section: exact text of a "##" heading in docs/limitations.md. The
+#            quoted region is the text under that heading up to the next
+#            "##" heading.
+#   quote:   a phrase occurring verbatim under the named heading; the
+#            panel displays this text. "works" items quote "Supported
+#            today" (the limits sections only as caveats on a "works"
+#            item); "in-progress" and "not-yet" items quote only
+#            "Not supported yet".
+#   column:  exactly one of "works", "in-progress", "not-yet". The
+#            rendered headings may read Works / In progress / Not yet;
+#            this field, the renderer and the checks use the hyphenated
+#            values verbatim.
+#   tracker: for "in-progress" items, the issue (for example "#348") or
+#            spec named inside the quote; null for every other column.
+# Task 3 completes the panel items; this file seeds the schema with the
+# first items. Later tasks consume this shape verbatim.
+- id: offline-demo
+  section: "Supported today"
+  quote: "`mythhelm demo`: a fully offline scripted run in a disposable repository"
+  column: works
+  tracker: null
+- id: supervisor-routing
+  section: "Not supported yet"
+  quote: "Routing them through journal ingest is a follow-up (#348)."
+  column: in-progress
+  tracker: "#348"
+- id: plugins-routing
+  section: "Not supported yet"
+  quote: "Plugins and routing are still planned."
+  column: not-yet
+  tracker: null

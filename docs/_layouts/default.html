@@ -3,13 +3,18 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- mythhelm-layout:v1 -->
     <title>{% if page.title %}{{ page.title }} | {% endif %}{{ site.title }}</title>
-    <link rel="stylesheet" href="{{ '/assets/main.css' | relative_url }}">
+    <link rel="stylesheet" href="{{ '/assets/site.css' | relative_url }}">
   </head>
-  <body>
-    <header>
-      <a href="{{ '/' | relative_url }}">{{ site.title }}</a>
-      <nav>
+  {% if page.path == "index.md" %}{% assign surface_class = "surface-night" %}{% assign crest_path = "/assets/brand/mark-on-dark.svg" %}{% else %}{% assign surface_class = "surface-paper" %}{% assign crest_path = "/assets/brand/mark-on-light.svg" %}{% endif %}
+  <body class="{{ surface_class }}">
+    <header class="site-header">
+      <a class="brand" href="{{ '/' | relative_url }}">
+        <img class="crest" src="{{ crest_path | relative_url }}" alt="" width="32" height="32">
+        <span class="wordmark">{{ site.title }}</span>
+      </a>
+      <nav class="site-nav" aria-label="Site">
         <ul>
           {% for item in site.data.navigation %}
           <li><a href="{{ site.baseurl }}/{{ item.path | replace: '.md', '.html' }}">{{ item.name }}</a></li>
@@ -17,10 +22,10 @@
         </ul>
       </nav>
     </header>
-    <main>
+    <main class="site-main">
       {{ content }}
     </main>
-    <footer>
+    <footer class="site-footer">
       <p>Rendered from commit {{ site.github.build_revision }}</p>
     </footer>
   </body>
