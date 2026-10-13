@@ -49,7 +49,12 @@
 
 ## Task 5 — Client-side search index and control (docs)
 
-<!-- pending -->
+- **Produces**: `docs/search.json` builds a JSON object keyed by emitted baseurl-qualified page URL. Each value has exactly `{title, group, headings: [{text, anchor}], body, truncated}`; heading anchors are full site-relative URLs with fragments. Directory-index URLs end in `/`, matching Jekyll navigation. Repeated navigation entries use the first group; unlisted pages use `none`.
+- **Produces**: `assets/search.js` opens the shared native dialog from the header button or `/` (outside editable controls), loads the layout-emitted index URL only on first use, and caches it in memory for offline searches. Titles rank above headings, then body matches; each result is a real link. The polite status announces counts and truncated-page qualifications. Index loading failures offer retry without disabling navigation.
+- **For dependents**: Task 8 checks UTF-8 file bytes against 300,000, not character count. Liquid measures bytes by URL encoding and subtracting percent-escape overhead, sorts by body byte length, and omits whole largest bodies until the complete JSON fits. Titles/headings are never cut. Metadata alone exceeding the limit must fail the later size gate. Current build: 40 pages, 297,258 bytes, only master-spec body omitted; source master-spec is 217,947 bytes.
+- **For dependents**: Truncated pages always appear in a separate partial-text list, even when there are no indexed matches; results for them are also labelled. Decode HTML entities in indexed labels/body when comparing rendered text. Task 9 should assert no initial `search.json` request and a single request after repeated queries, no-JS hidden opener, `/` and Tab/Enter, first-Escape close, and actual same-page target position (not only hash).
+- **Verification**: Pinned Pages image builds offline with workflow mirror injection. Corpus audit resolves all 40 page URLs and 377 heading labels/anchors. A separate 42-page fixture truncates 260 KB Unicode body before 250 KB ASCII body before master, retains all metadata, and emits 297,846 bytes. Chrome covers title/heading/body/nonsense queries, offline reuse, keyboard/no-JS behavior, and both surfaces at 390/1280 px with 44px targets.
+- **Deviations that change later inputs**: None. Search-specific styles are in the scoped default layout; the shared stylesheet and script allow-list are unchanged.
 
 ## Task 6 — State labels and declared-not-verified notes (docs)
 

@@ -6,6 +6,34 @@
     <!-- mythhelm-layout:v1 -->
     <title>{% if page.title %}{{ page.title }} | {% endif %}{{ site.title }}</title>
     <link rel="stylesheet" href="{{ '/assets/site.css' | relative_url }}">
+    <style>
+      /* Search belongs to this layout on both surfaces. */
+      .search-button, .search-dialog input {
+        min-height: 44px; min-width: 44px; padding: 0.5rem 0.75rem;
+        font: inherit; color: var(--surface-fg); background: var(--surface-bg);
+        border: 1px solid var(--surface-border); border-radius: 3px;
+      }
+      .search-button { cursor: pointer; flex-shrink: 0; white-space: nowrap; }
+      .search-button:hover { background: var(--surface-code-bg); }
+      .search-button kbd { margin-left: 0.5rem; font-family: var(--font-mono); }
+      .search-dialog {
+        width: min(44rem, calc(100% - 2rem)); max-height: calc(100% - 2rem);
+        padding: 1.5rem; color: var(--surface-fg); background: var(--surface-bg);
+        border: 1px solid var(--surface-accent); overflow-wrap: anywhere;
+      }
+      .search-dialog::backdrop { background: var(--color-night); opacity: 0.8; }
+      .search-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+      .search-dialog h2 { margin: 0; font-size: 1.4rem; }
+      .search-dialog label { display: block; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+      .search-dialog input { width: 100%; caret-color: var(--surface-fg); }
+      .search-dialog input:focus-visible { outline: 3px solid var(--surface-accent); outline-offset: 2px; }
+      .search-dialog ul { margin: 0; padding: 0; list-style: none; }
+      .search-dialog li + li { border-top: 1px solid var(--surface-border); }
+      .search-dialog li a { display: block; min-height: 44px; padding: 0.75rem 0; }
+      .search-detail { display: block; font-size: 0.85rem; color: var(--surface-muted); }
+      #search-incomplete:empty { display: none; }
+      #search-incomplete { margin-top: 1.5rem; border-top: 1px solid var(--surface-border); }
+    </style>
   </head>
   {% if page.path == "index.md" %}{% assign surface_class = "surface-night" %}{% assign crest_path = "/assets/brand/mark-on-dark.svg" %}{% else %}{% assign surface_class = "surface-paper" %}{% assign crest_path = "/assets/brand/mark-on-light.svg" %}{% endif %}
   <body class="{{ surface_class }}">
@@ -15,18 +43,11 @@
         <span class="wordmark">{{ site.title }}</span>
       </a>
       <nav class="site-nav" aria-label="Site">
-        {% if page.path == "index.md" %}
         <ul>
           <li><a href="{{ '/user-guide.html' | relative_url }}">User guide</a></li>
-          <li><span class="search-placeholder">Search (coming soon)</span></li>
+          <li><button id="search-open" class="search-button" type="button" aria-haspopup="dialog" aria-controls="site-search" aria-keyshortcuts="/" hidden>Search <kbd>/</kbd></button></li>
           <li><span class="pre-alpha">pre-alpha</span></li>
         </ul>
-        {% else %}
-        <ul>
-          <li><a href="{{ '/user-guide.html' | relative_url }}">User guide</a></li>
-          <li><span class="pre-alpha">pre-alpha</span></li>
-        </ul>
-        {% endif %}
       </nav>
     </header>
     {% if page.path == "index.md" %}
@@ -100,6 +121,18 @@
       </nav>
       <p>Rendered from commit {{ site.github.build_revision }}</p>
     </footer>
+    <dialog id="site-search" class="search-dialog" aria-labelledby="search-title" data-index="{{ '/search.json' | relative_url }}">
+      <header><h2 id="search-title">Search documentation</h2><button id="search-close" class="search-button" type="button">Close</button></header>
+      <form role="search">
+        <label for="search-query">Page title, heading or text</label>
+        <input id="search-query" type="search" autocomplete="off" aria-describedby="search-help" autofocus>
+      </form>
+      <p id="search-help">Press <kbd>/</kbd> to search, <kbd>Tab</kbd> to visit results and <kbd>Escape</kbd> to close.</p>
+      <p id="search-status" role="status" aria-live="polite" aria-atomic="true"></p>
+      <ul id="search-results" aria-label="Search results"></ul>
+      <div id="search-incomplete"></div>
+    </dialog>
+    <script src="{{ '/assets/search.js' | relative_url }}" defer></script>
     <script src="{{ '/assets/site.js' | relative_url }}" defer></script>
   </body>
 </html>
