@@ -1,0 +1,18 @@
+# Built-site script allow-list (docs-site-restyle AC-1.5). Every script
+# file on the built site must be listed here; a self-hosted script that
+# is not listed — analytics included — fails the Task 8 check.
+# Schema — a YAML list of mappings with exactly these keys:
+#   src:     the site-relative built path (for example assets/search.js).
+#   purpose: exactly one of "search", "sidebar", "player". A file with
+#            two roles gets two entries with the same src, one per
+#            purpose; Task 8 validates each entry's purpose against this
+#            set and each built script against the listed src values.
+# The named files are shipped by later tasks (assets/site.js by Task 4,
+# assets/search.js by Task 5); listing them here pins the contract
+# before they exist. Later tasks consume this shape verbatim.
+- src: assets/search.js
+  purpose: search
+- src: assets/site.js
+  purpose: sidebar
+- src: assets/site.js
+  purpose: player

@@ -1,0 +1,31 @@
+# Tested-examples list: the only source of the "tested in CI" marker
+# (docs-site-restyle AC-6.1, AC-6.2). A fenced code block carries the
+# marker only when an entry here names it; the Task 10 examples job runs
+# every listed command as written.
+# Schema — every entry is a mapping with these keys:
+#   anchor:      "<page>#<heading-slug>[<n>]" naming exactly one fenced
+#                block. <page> is the source path from the repository
+#                root (for example docs/user-guide.md), <heading-slug>
+#                is the GitHub slug of the nearest preceding "##"
+#                heading, and <n> is the 1-based ordinal of the fenced
+#                block under that heading. An anchor resolving to zero
+#                or to more than one block fails the check.
+#   command:     the command as written in the named block; CI runs it
+#                verbatim.
+#   expect_exit: the exit code the command is expected to return (0
+#                unless the block shows a refusal, which is listed with
+#                its non-zero code or stays unmarked).
+#   output_anchor (output entries only): the same anchor format naming
+#                the block that shows the command's output. An output
+#                block is marked only when the examples job diffs the
+#                command's stdout, under the fixed normalisation
+#                docs-output-v1 (CRLF-to-LF, then trailing-whitespace
+#                trim on each line; no other rewriting), line-by-line
+#                against that block. Drift in either direction — block
+#                text changed without the entry, or the entry's command
+#                changed without its block — fails the check.
+# The first entry is the quickstart. Task 7 completes the entries; this
+# file seeds the schema. Later tasks consume this shape verbatim.
+- anchor: "docs/user-guide.md#quickstart[1]"
+  command: "go run ./cmd/mythhelm demo"
+  expect_exit: 0

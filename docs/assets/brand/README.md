@@ -19,10 +19,13 @@ The mark is the **M crest**. The M's two peaks are the fleet of agents, the vall
 | Star (dark) | `#4ddae9` | Mission accent on dark |
 | Star (light) | `#00829d` | Mission accent on light |
 | Mist | `#989fab` | Secondary text on dark |
+| Paper | `#f6f4ee` | Docs surface (Paper pages) |
+| Amber (dark) | `#f0c27b` | Needs you only: amber means needs you and nothing else (dark surfaces) |
+| Amber (light) | `#8a5a00` | Needs you only: amber means needs you and nothing else (light surfaces) |
 
 ## Type
 
-The wordmark is set in **Archivo Expanded ExtraBold** (125% width, 800 weight). Secondary text is set in **JetBrains Mono**. Both fonts are available under the SIL Open Font License. The PNG assets contain rendered text only, so the fonts are not redistributed here.
+The wordmark is set in **Archivo Expanded ExtraBold** (125% width, 800 weight). Secondary text is set in **JetBrains Mono**. Both fonts are available under the SIL Open Font License. WOFF2 subsets of both fonts are redistributed with the docs site under that licence in `docs/assets/fonts/`, beside the OFL notice (`docs/assets/fonts/OFL.txt`) and the source, SHA-256 and subsetting record (`docs/assets/fonts/README.md`). The PNG assets in this directory contain rendered text only.
 
 ## Rules
 
