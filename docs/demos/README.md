@@ -28,8 +28,8 @@ pins together.
 The script runs from anywhere in the checkout. It needs only free tooling:
 `go`, `git`, `python3`, GNU `timeout` (the hero tape kills its run with it; on
 macOS install coreutils and put its `timeout` on PATH), `ffmpeg`/`ffprobe`
-(the posters and the video checks use them), and VHS (`vhs` renders
-through `ffmpeg` and `ttyd`).
+(the posters and the video checks use them), `file` (the GIF and poster
+format checks use it), and VHS (`vhs` renders through `ffmpeg` and `ttyd`).
 A bare `vhs docs/demos/demo.tape` only renders the GIF and is not the record
 command: it skips the build, the transcript regen and the verify pass.
 
