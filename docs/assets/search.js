@@ -8,13 +8,12 @@
   const status = document.getElementById('search-status');
   const results = document.getElementById('search-results');
   const incomplete = document.getElementById('search-incomplete');
-  const decoder = document.createElement('textarea');
+  const decoder = new DOMParser();
   let indexPromise;
   let revision = 0;
-  const text = (value) => {
-    decoder.innerHTML = value;
-    return decoder.value;
-  };
+  // Parse only individual entity tokens, never document text as markup.
+  const text = (value) => value.replace(/&(?:#\d+|#x[0-9a-f]+|[a-z][a-z0-9]+);/gi,
+    (entity) => decoder.parseFromString(entity, 'text/html').body.textContent);
   const normalize = (value) => value.toLocaleLowerCase().normalize('NFKC');
 
   function loadIndex() {

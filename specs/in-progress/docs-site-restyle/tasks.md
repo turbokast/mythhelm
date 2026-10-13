@@ -156,7 +156,7 @@
 
 - **Status**: ✅ Completed — Static Liquid search index and keyboard-accessible search on both surfaces, with lazy loading, offline reuse and explicit partial-text warnings; PR #468.
 - **Implementation**: Commit `7f73e75` keeps the five-field records in a URL-keyed object; UTF-8 byte accounting removes whole bodies largest-first. The pinned Pages build emits 40 pages / 297,258 bytes; 377 heading labels and anchors match the emitted HTML. Red probes found the index/control absent; green corpus, Unicode-size fixture and Chrome keyboard/offline/responsive probes pass (PR acceptance table).
-- **Spec deviations**: Review corrections preserve the target scroll position when restoring focus after same-page navigation and make the first Escape close a nonempty native search input (consistent with AC-4.2/AC-4.3). No contract or file-scope deviation.
+- **Spec deviations**: Review corrections preserve the target scroll position when restoring focus after same-page navigation and make the first Escape close a nonempty native search input (consistent with AC-4.2/AC-4.3). Review round 1 replaces the HTML-assignment entity decoder with token-only parsing, verified to preserve named/numeric entities without interpreting encoded markup (consistent with AC-4.2). No contract or file-scope deviation.
 - **Files modified**: `docs/search.json`, `docs/assets/search.js`, `docs/_layouts/default.html`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`, `specs/in-progress/docs-site-restyle/scratchpad.md`.
 
 ### Task 6 — State labels and declared-not-verified notes (docs)
