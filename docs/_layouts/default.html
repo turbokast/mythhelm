@@ -51,14 +51,15 @@
         </ul>
       </nav>
     </header>
-    {% comment %}Only the examples list earns a marker. Count code blocks within each h2 section before rendering either surface; provenance comments earn nothing.{% endcomment %}
-    {% capture example_content %}{% assign example_sections = content | split: '<h2 ' %}{{ example_sections.first }}{% for section in example_sections offset:1 %}
-      {% assign section_id = section | split: '>' | first | split: 'id="' | last | split: '"' | first %}
-      {% assign blocks = section | split: '<pre' %}<h2 {{ blocks.first }}{% for block in blocks offset:1 %}
-        {% capture example_anchor %}docs/{{ page.path }}#{{ section_id }}[{{ forloop.index }}]{% endcapture %}
-        {% assign listed_example = site.data.examples | where: 'anchor', example_anchor | first %}
-        {% if listed_example %}<span class="tested-example" data-example-anchor="{{ example_anchor | escape }}">tested in CI</span>{% endif %}<pre{{ block }}
-      {% endfor %}{% endfor %}{% endcapture %}
+    {% comment %}Source annotations identify fenced examples without counting raw or indented code. Only listed anchors earn labels, and the examples job enables them only for builds it checks.{% endcomment %}
+    {% capture example_content %}{% assign example_blocks = content | split: '<div class="example-block" data-example-anchor="' %}{{ example_blocks.first }}{% for block in example_blocks offset:1 %}
+      {% assign example_anchor = block | split: '"' | first %}
+      {% assign example_page = example_anchor | split: '#' | first %}
+      {% assign source_page = 'docs/' | append: page.path %}
+      {% assign listed_example = site.data.examples | where: 'anchor', example_anchor | first %}
+      {% assign block_open = block | split: '>' | first | append: '>' %}
+      <div class="example-block" data-example-anchor="{{ block_open }}{% if listed_example and example_page == source_page and site.data.example_checks.enabled == true %}<span class="tested-example" data-example-anchor="{{ example_anchor | escape }}">tested in CI</span>{% endif %}{{ block | remove_first: block_open }}
+    {% endfor %}{% endcapture %}
     {% if page.path == "index.md" %}
     <main class="site-main">{{ example_content }}</main>
     {% else %}

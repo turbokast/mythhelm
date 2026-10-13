@@ -31,9 +31,13 @@ cells:
 
 ## Try the scripted demo
 
+<div class="example-block" data-example-anchor="docs/index.md#try-the-scripted-demo[1]" markdown="1">
+
 ```sh
 go run ./cmd/mythhelm demo
 ```
+
+</div>
 
   <p class="quickstart-note">The first build needs the Go module cache populated. <a href="{{ '/user-guide.html#installation' | relative_url }}">Build from source</a>.</p>
 </section>
