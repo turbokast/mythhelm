@@ -2,9 +2,11 @@
 # record.sh: the documented record command for the MYTHHELM terminal
 # recordings (docs-site-demos, FR-2/FR-4; tui-tape-recording, FR-1/FR-2). It
 # builds the binary, regenerates every manifest recording's transcript,
-# renders every GIF from its checked-in tape, and verifies all of them. A
-# bare `vhs docs/demos/demo.tape` only renders one GIF and is not the record
-# command.
+# renders every GIF from its checked-in tape, renders the hero tape also
+# as WebM/MP4 video, generates one poster per GIF, and verifies all of
+# them (including the hero chapter offsets against the rendered videos).
+# A bare `vhs docs/demos/demo.tape` only renders one GIF and is not the
+# record command.
 #
 # Usage: docs/demos/record.sh [--repin]
 #
@@ -15,10 +17,11 @@
 #
 # Needs only free tooling: go, git, python3, GNU timeout (the hero tape kills
 # its run with it; macOS: brew install coreutils and put its timeout on PATH),
-# and a VHS install (vhs renders
+# ffmpeg/ffprobe (the OS packages; the posters and the video verification
+# need them), and a VHS install (vhs renders
 # through ffmpeg and ttyd). Install VHS from https://github.com/charmbracelet/vhs
 # (for example `go install github.com/charmbracelet/vhs@latest`) and ttyd from
-# https://github.com/tsl0922/ttyd; ffmpeg comes from the OS packages.
+# https://github.com/tsl0922/ttyd.
 
 set -euo pipefail
 
@@ -40,7 +43,7 @@ BIN="/tmp/mythhelm-record"
 SED="$DEMOS/normalize.sed"
 MANIFEST="$DEMOS/manifest.json"
 
-for tool in go git vhs python3 timeout; do
+for tool in go git vhs ffmpeg ffprobe python3 timeout; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "record.sh: need $tool on PATH" >&2
 		exit 2
@@ -51,6 +54,7 @@ echo "record.sh: versions"
 go version
 git --version
 vhs --version
+ffprobe -version | sed -n '1p'
 python3 --version
 
 # Recordings come from the manifest: names drive the per-recording loop, and
@@ -180,7 +184,36 @@ done
 
 echo "record.sh: render the GIFs from the checked-in tapes"
 for n in $names; do
-	HERO_BIN="$BIN" HERO_TMP="$HERO_TMP" vhs "$(field "$n" tape)"
+	if test "$n" = "hero"; then
+		# One hero run renders the GIF plus the WebM/MP4 videos the
+		# landing player serves (AC-2.2): -o adds outputs, it does not
+		# replace the tape's own GIF output.
+		HERO_BIN="$BIN" HERO_TMP="$HERO_TMP" vhs -o "$DEMOS/hero.webm" -o "$DEMOS/hero.mp4" "$(field "$n" tape)"
+	else
+		HERO_BIN="$BIN" HERO_TMP="$HERO_TMP" vhs "$(field "$n" tape)"
+	fi
+done
+
+# poster_seek <name>: the GIF timestamp (seconds) of the still each poster
+# shows. The hero poster is its title card (the first frame); the demo and
+# tui first frames are the blank prompt before typing starts, so their
+# posters use the first held content frame instead.
+poster_seek() { # poster_seek <name>
+	case "$1" in
+	demo) echo 5 ;;
+	tui) echo 6 ;;
+	hero) echo 0 ;;
+	*)
+		echo "record.sh: recording '$1' has no poster timestamp; add one here" >&2
+		exit 2
+		;;
+	esac
+}
+
+echo "record.sh: generate the recording posters from the rendered GIFs"
+for n in $names; do
+	artifact="$(field "$n" artifact)"
+	ffmpeg -y -v error -i "$artifact" -ss "$(poster_seek "$n")" -frames:v 1 "${artifact%.gif}-poster.png"
 done
 
 echo "record.sh: verify"
@@ -250,6 +283,46 @@ for n in $names; do
 	test "$(grep -c '^Output ' "$tape")" -eq 1
 	test "$(file -b "$artifact" | cut -d, -f1)" = "GIF image data"
 done
+# The hero videos are real renders of the hero tape (VP9 in WebM, H.264 in
+# MP4) at the hero GIF's dimensions, and every poster is a PNG still at its
+# GIF's dimensions.
+probe_dims() { # probe_dims <file>: "<width>,<height>" of the first video stream
+	ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$1"
+}
+probe_codec() { # probe_codec <file>: codec name of the first video stream
+	ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "$1"
+}
+hero_dims="$(probe_dims "$(field hero artifact)")"
+test "$(probe_codec "$DEMOS/hero.webm")" = "vp9"
+test "$(probe_dims "$DEMOS/hero.webm")" = "$hero_dims"
+test "$(probe_codec "$DEMOS/hero.mp4")" = "h264"
+test "$(probe_dims "$DEMOS/hero.mp4")" = "$hero_dims"
+for n in $names; do
+	artifact="$(field "$n" artifact)"
+	poster="${artifact%.gif}-poster.png"
+	test "$(file -b "$poster" | cut -d, -f1)" = "PNG image data"
+	test "$(probe_dims "$poster")" = "$(probe_dims "$artifact")"
+done
+# The hero chapter offsets name the tape's beats (title, run, kill,
+# recover, review), strictly increase, and fit inside the rendered videos.
+# Durations are read from the video files with ffprobe, never from a
+# manifest field (AC-2.2).
+webm_duration="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$DEMOS/hero.webm")"
+mp4_duration="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$DEMOS/hero.mp4")"
+python3 - "$MANIFEST" "$webm_duration" "$mp4_duration" <<'EOF'
+import json, sys
+path, webm_s, mp4_s = sys.argv[1], float(sys.argv[2]), float(sys.argv[3])
+with open(path, encoding="utf-8") as fh:
+    manifest = json.load(fh)
+hero = [r for r in manifest["recordings"] if r["name"] == "hero"][0]
+chapters = hero["chapters"]
+assert [c["name"] for c in chapters] == ["title", "run", "kill", "recover", "review"], chapters
+offsets = [c["at_seconds"] for c in chapters]
+assert all(b > a for a, b in zip(offsets, offsets[1:])), offsets
+limit = min(webm_s, mp4_s)
+assert offsets[0] >= 0 and offsets[-1] <= limit, (offsets, limit)
+print("record.sh: hero chapters %s fit the rendered durations (webm %.2fs, mp4 %.2fs)" % (offsets, webm_s, mp4_s))
+EOF
 
 if test "$REPIN" -eq 1; then
 	echo "record.sh: --repin: moving manifest and tape-header pins to $head"
@@ -274,4 +347,4 @@ EOF
 	done
 fi
 
-echo "record.sh: ok (binary, transcripts, GIFs verified)"
+echo "record.sh: ok (binary, transcripts, GIFs, hero videos, posters, chapters verified)"
