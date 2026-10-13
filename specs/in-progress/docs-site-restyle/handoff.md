@@ -39,7 +39,13 @@
 
 ## Task 4 — Paper docs layout: grouped sidebar and on-this-page (docs)
 
-<!-- pending -->
+- **Produces**: `navigation.yml` adds `group` to every entry, ordered Start / Use / Understand / Reference; guide links target quickstart, running-a-task and acceptance. The layout resolves source paths through `site.pages` so the Decisions README links to its generated directory URL. `footer: true` identifies exactly the existing six public footer links.
+- **Produces**: `.docs-sidebar` / `#docs-navigation` render grouped links with `aria-current="page"`; `.on-this-page` is emitted from rendered h2 IDs only when at least two exist. `.docs-prose` is bounded to 76ch, and pre/table elements scroll locally.
+- **Produces**: Below 1024px `.sidebar-toggle` controls navigation with `aria-expanded`; Escape returns focus. Without JavaScript the plain navigation remains visible.
+- **Produces**: The layout transforms existing `demos/*.gif` image markup into `.recording` poster images and explicit start/stop buttons at build time. The hero uses native video; other recordings swap GIF sources only on request. GIF start controls are disabled while reduced motion is enabled, and a preference change restores the poster. No script means posters and transcript links remain.
+- **For dependents**: Task 6 can preserve the canonical guide recording markup; Task 4 already supplies poster controls without rewriting guide prose. Tasks 8/9 should inspect rendered h2 headings and resource requests, not count raw Markdown headings: the existing guide contains later headings inside raw HTML. Preserve the current sidebar/player script allow-list entries.
+- **Verification**: Offline GitHub Pages build emits 40 HTML pages. Corpus checks cover every Paper sidebar target, fragment, heading-list membership, footer count and absence of GIF image sources. Chrome at 1280px/390px confirms local scrolling and Enter/Escape navigation. Independent review fixes cover generated README URLs and inline-code heading labels.
+- **Deviations that change later inputs**: None.
 
 ## Task 5 — Client-side search index and control (docs)
 
