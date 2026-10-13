@@ -1,0 +1,87 @@
+---
+layout: null
+---
+{%- comment -%}
+The object key is the page URL; records keep the five-field search contract.
+Rows are sorted by UTF-8 body bytes, largest first. JSON escapes literal tabs
+and newlines, so those characters safely separate the temporary rows/fields.
+URL encoding represents each non-ASCII byte as %HH: encoded length minus
+ twice the percent count is the original UTF-8 byte length (not Liquid size).
+Whole bodies are omitted until the complete JSON fits 300000 bytes; metadata
+is never truncated. The CI size check must reject metadata alone over budget.
+{%- endcomment -%}
+{%- assign tab = '\t' | replace: '\t', '	' -%}
+{%- capture newline %}
+{% endcapture -%}
+{%- capture rows -%}
+{%- for entry in site.pages -%}
+  {%- assign ending = entry.url | slice: -1, 1 -%}
+  {%- if entry.url contains '.html' or ending == '/' -%}
+    {%- assign html = entry.content | markdownify -%}
+    {%- assign title = entry.title -%}
+    {%- unless title -%}
+      {%- assign title = html | split: '</h1>' | first | split: '>' | last | strip_html | strip -%}
+    {%- endunless -%}
+    {%- assign url = entry.url | relative_url -%}
+    {%- assign group = 'none' -%}
+    {%- for item in site.data.navigation -%}
+      {%- assign item_path = item.path | split: '#' | first -%}
+      {%- if item_path == entry.path -%}{%- assign group = item.group -%}{%- break -%}{%- endif -%}
+    {%- endfor -%}
+    {%- capture headings -%}
+      {%- assign parts = html | split: '<h' -%}
+      {%- assign first_heading = true -%}
+      {%- for part in parts offset:1 -%}
+        {%- assign level = part | slice: 0, 1 -%}
+        {%- assign tag = part | split: '>' | first -%}
+        {%- if '123456' contains level and tag contains 'id="' -%}
+          {%- assign id = tag | split: 'id="' | last | split: '"' | first -%}
+          {%- assign opening = tag | append: '>' -%}
+          {%- assign closing = '</h' | append: level | append: '>' -%}
+          {%- assign label = part | split: closing | first | remove_first: opening | strip_html | strip -%}
+          {%- assign anchor = url | append: '#' | append: id -%}
+          {%- unless first_heading -%},{%- endunless -%}
+          {"text":{{ label | jsonify }},"anchor":{{ anchor | jsonify }}}
+          {%- assign first_heading = false -%}
+        {%- endif -%}
+      {%- endfor -%}
+    {%- endcapture -%}
+    {%- assign body = html | strip_html | normalize_whitespace -%}
+    {%- assign encoded = body | url_encode -%}
+    {%- assign without_percent = encoded | remove: '%' | size -%}
+    {%- assign percent_overhead = encoded.size | minus: without_percent | times: 2 -%}
+    {%- assign body_bytes = encoded.size | minus: percent_overhead -%}
+    {%- assign sort_key = body_bytes | prepend: '000000000000' | slice: -12, 12 -%}
+    {%- capture metadata -%}{{ url | jsonify }}:{"title":{{ title | jsonify }},"group":{{ group | jsonify }},"headings":[{{ headings }}],"body":{%- endcapture -%}
+    {%- capture full -%}{{ metadata }}{{ body | jsonify }},"truncated":false}{%- endcapture -%}
+    {%- capture short -%}{{ metadata }}"","truncated":true}{%- endcapture -%}
+    {{- sort_key -}}{{- tab -}}{{- full -}}{{- tab -}}{{- short -}}{{- newline -}}
+  {%- endif -%}
+{%- endfor -%}
+{%- endcapture -%}
+{%- assign sorted = rows | strip | split: newline | sort | reverse -%}
+{%- capture complete -%}{ {%- for row in sorted -%}{%- assign fields = row | split: tab -%}{{ fields[1] }}{%- unless forloop.last -%},{%- endunless -%}{%- endfor -%} }{%- endcapture -%}
+{%- assign encoded = complete | url_encode -%}
+{%- assign without_percent = encoded | remove: '%' | size -%}
+{%- assign overhead = encoded.size | minus: without_percent | times: 2 -%}
+{%- comment -%}Include the emitted file's final newline in the byte budget.{%- endcomment -%}
+{%- assign total = encoded.size | minus: overhead | plus: 1 -%}
+{
+{%- for row in sorted -%}
+  {%- assign fields = row | split: tab -%}
+  {%- assign record = fields[1] -%}
+  {%- if total > 300000 -%}
+    {%- assign encoded = fields[1] | url_encode -%}
+    {%- assign without_percent = encoded | remove: '%' | size -%}
+    {%- assign overhead = encoded.size | minus: without_percent | times: 2 -%}
+    {%- assign full_bytes = encoded.size | minus: overhead -%}
+    {%- assign encoded = fields[2] | url_encode -%}
+    {%- assign without_percent = encoded | remove: '%' | size -%}
+    {%- assign overhead = encoded.size | minus: without_percent | times: 2 -%}
+    {%- assign short_bytes = encoded.size | minus: overhead -%}
+    {%- assign total = total | minus: full_bytes | plus: short_bytes -%}
+    {%- assign record = fields[2] -%}
+  {%- endif -%}
+  {{- record -}}{%- unless forloop.last -%},{%- endunless -%}
+{%- endfor -%}
+}
