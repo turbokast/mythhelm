@@ -136,15 +136,15 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: Requires durable migration and scoped context; must ship before optional-learning retention/deletion claims. Value 4: control and portability; risk 5: irreversible loss/leakage; effort 4: recovery and derived-state invalidation.
 
 ### MH-23: Complete TUI intervention, accessibility and safe declarative themes
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 1
 - **Gates**: G08, G09
 - **Score**: 2.8 = (value 5 + urgency 5 + risk 4) / effort 5
-- **Spec**: (none)
+- **Spec**: `tui-observatory-view`
 - **Issue**: [#129](https://github.com/turbokast/mythhelm/issues/129)
 - **Source**: Master Specification v2 §§14–16; Implementation Plan W05; issues #106/#107; specs/done/tui-slice/retrospective.md
 - **Summary**: Finish detach, stop confirmation, recovery and review journeys on typed core controls, with keyboard-complete accessible output and human screen-reader evidence. Add safe declarative themes/keymaps and visible critical controls without making the S3 executable plugin protocol a prerequisite. Deliver them in the 2026-10-12 design direction's visual system: Observatory (dark) and Paper (light) themes from the brand palette replacing the stock themes; a default view that answers what is happening, what needs you and what happens next (v2 §15.1); overlays instead of full-screen takeovers; an approval card carrying command, reason and pending diff; designed stop (requested, then confirmed), recovery and receipt screens; light-terminal detection; and four glyphs (◆ ○ ◌ ✓) added to the closed set, each with an ASCII fallback.
-- **Premise-grounded**: Confirmed: MH-2 is shipped as the historical TUI slice; README and issues #106/#107 record exit/detach gaps and limited human accessibility evidence. The remaining work does not reopen or relabel MH-2.
+- **Premise-grounded**: Confirmed: MH-2 is shipped as the historical TUI slice; README and issues #106/#107 record exit/detach gaps and limited human accessibility evidence. The remaining work does not reopen or relabel MH-2. Re-grounded 2026-10-12 for the first slice: q dialog inert HOLDS; TUI always dark, overlays replace the screen and three tokens never rendered HOLDS; border is a style not a colour in the theme schema PARTIAL; Ctrl-C cancels instead of detaching PARTIAL (the TUI detach requests a stop first, while v2 15.2 makes Ctrl-C a controlled cancel); per-action activity target and approval data source REFUTED today (no journaled event, bridge unsupported) and sequenced into later slices; a stop-less detach leaves the execution limit unenforced until recover REFUTED today, so the spec adds a worker-side deadline; Paper star on Paper 4.08:1 HOLDS; brand palette beyond six values UNVERIFIABLE until the palette decision of 2026-10-12
 - **Notes**: Requires durable core control and the v2 one-agent workflow for complete journey acceptance; pairs with MH-3 for Herdr. Close the unusable q dialog and Ctrl-C-cancels-instead-of-detach gaps first. Value 5: the terminal is the product's face and G09 is a stage-1 gate; risk 4: misleading lifecycle/hidden controls; effort 5: interaction, visual system and human evidence.
 
 ### MH-5: Routing across authorised profiles

@@ -438,6 +438,13 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Cards**: MH-33,MH-23
 - **Evidence**: specs/refined/docs-site-restyle/requirements.md; mods/themes/light.toml; PR #450
 
+### D-105 — 2026-10-12: MH-23 → specced (tui-observatory-view)
+- **Type**: lifecycle-sync
+- **Decision**: MH-23 moved to specced for its first slice, tui-observatory-view. The card is delivered in four ordered slices; the later slices are added to its Spec field as each is specced
+- **Rationale**: tui-observatory-view has grounded requirements with the maintainer's per-item decisions of 2026-10-12; slice 1 is the themes, glyphs, default view, responsive rungs and the q, Ctrl-C and detach fixes
+- **Cards**: MH-23
+- **Evidence**: specs/*/tui-observatory-view/requirements.md; D-97
+
 ### D-106 — 2026-10-12: Docs site gating: OQ-5 carve-out and OQ-10 CI OK wiring decided
 - **Type**: strategic-adjustment
 - **Decision**: OQ-5 and OQ-10 of docs-site-restyle are decided: exactly one browser-driver directory under scripts/ci/ is carved out of the harness-scripts Bash/Python rule (licences checked against the dependency-review allow-list first), and a site-build job (id site-build) joins CI OK needs in ci.yml so the new docs checks block merges with no ruleset change. This supersedes D-104 note that OQ-5 and OQ-10 stay open.
