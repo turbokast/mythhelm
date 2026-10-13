@@ -487,8 +487,7 @@ worker confirms, and `stopped — worker confirmed no remaining processes` once
 it has. A stop request is not a confirmed stop: if the worker cannot show that
 the process group and its descendants are gone, the run is not reported
 stopped. In a foreground run without the TUI, the first Ctrl-C requests a stop
-and the second detaches, printing `stop not yet confirmed; run 'mythhelm recover
-<run-id>'` and exiting with code 6.
+and the second detaches, printing `stop not yet confirmed; run 'mythhelm recover <run-id>'` and exiting with code 6.
 
 `mythhelm recover <run-id>` takes over a run whose supervising process went
 away, without launching any native work. It takes the run's owner lock,
@@ -572,8 +571,7 @@ claude-code × unknown: blocked (fidelity unknown, entitlement unknown, lifecycl
 ```
 
 Each row reads `<harness> × <surface>: <progress> (fidelity <v>,
-entitlement <v>, lifecycle <v>) [evidence <n> revs, latest <ev-id>; drift
-<state>]`: the qualification progress (`planned`, `blocked`, `unsupported`
+entitlement <v>, lifecycle <v>) [evidence <n> revs, latest <ev-id>; drift <state>]`: the qualification progress (`planned`, `blocked`, `unsupported`
 and the other honest labels), the three independent column verdicts
 (`proven`, `not-proven` or `unknown`), how many evidence revisions the
 record holds, the latest evidence id, and the drift state (`clean`, or the
