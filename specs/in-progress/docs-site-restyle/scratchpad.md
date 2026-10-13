@@ -21,3 +21,5 @@
 
 ## Discoveries
 
+- Task 1 (PR #464): the worktree has no Ruby/Jekyll, so the Jekyll build is proven by the PR's Build docs site CI job and local evidence is a source-level hand-run probe (45 checks: YAML, anchored `status.yml` quotes, examples-anchor resolution, brand-table↔CSS parity, font SHA-256). Font subsets were instanced/subsetted locally with fontTools 4.63.0 from the Google Fonts OFL copies (Archivo Version 2.001, JetBrains Mono Version 2.211; neither declares a Reserved Font Name); the shipped `--color-<slug>` mapping, `surface-night`/`surface-paper` classes and repo-root example anchors (`docs/user-guide.md#quickstart[1]`) are pinned in `handoff.md` for Tasks 2–10.
+
