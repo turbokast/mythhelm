@@ -14,3 +14,5 @@
   path: mirror/LICENSE.md
 - name: Limitations
   path: limitations.md
+- name: Governance
+  path: mirror/GOVERNANCE.md

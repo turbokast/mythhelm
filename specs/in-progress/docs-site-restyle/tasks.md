@@ -75,13 +75,14 @@
 - **Spec deviations**: None.
 - **Files modified**: `docs/demos/record.sh`, `docs/demos/manifest.json`, `docs/demos/hero.webm`, `docs/demos/hero.mp4`, `docs/demos/hero-poster.png`, `docs/demos/demo-poster.png`, `docs/demos/tui-poster.png`, `docs/demos/README.md`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`, `specs/in-progress/docs-site-restyle/scratchpad.md`.
 
-### Task 3 — Night landing page, status panel and tmux cells (docs)
+### Task 3 — Night landing page, status panel and tmux cells (docs) ✅ COMPLETED
 
 - **Domain/agent**: go-implementer (docs domain)
 - **Budget**: standard
 - **Depends on**: Task 1 (status schema, layouts), Task 2 (hero media and chapters)
 - **Change**: Build the landing page in the required order with the hero player, the four capability cells bound to status items, the generated works / in progress / not yet panel and the G10 footer, so the first screen shows the product without claiming more than ships.
 - **Files**:
+  - `docs/limitations.md` (add only "The attention queue for approvals is not supported yet." under Not supported yet so the attention status item has its required source phrase, AC-2.3, AC-2.4)
   - `docs/index.md` (nav, headline, quickstart, hero `<video>` with chapter buttons, four cells each naming a `status.yml` id, panel, footer order; exactly one panel link under the headline, AC-2.1, AC-2.2, AC-2.4)
   - `docs/_layouts/default.html` (landing presentation, hero player markup, footer with the six G10 links, AC-2.1, AC-2.5)
   - `docs/_data/status.yml` (complete the panel items: works from Supported today and limits caveats, in-progress only with a tracker inside the quoted region, the rest not-yet, AC-2.3, OQ-9)
@@ -95,6 +96,17 @@
   - The landing quickstart block text equals the user guide's quickstart command text (AC-2.6; Task 6 keeps them equal when it marks up the guide).
 - **Test plan**: Build the site and inspect the emitted `index.html` order, panel text and footer hrefs; run the Task 8 phrase check by hand against the built tree and record the output.
 - **Invariants touched**: I09 (v2 §2: panel labels are the recorded state, never marketing copy); I14 (v2 §2: every cell binds to a limitations section or is labelled not-yet); G10 (v2 §18.3, AT-46: footer carries the public-release pages).
+
+- **Status**: ✅ Completed — Night landing page with working manifest-backed hero chapters, limitations-bound capability cells and status panel, and six-link public footer; PR #466.
+- **Implementation**: Commit 4e5a72b (Codex, docs implementer equivalent). The player fetches chapter offsets on request, promotes preload only for that request and seeks without starting playback. Status text and labels render from the existing data schema; verification limits nest under the working item.
+- **Spec deviations**:
+  - `docs/limitations.md` and `specs/in-progress/docs-site-restyle/requirements.md`: maintainer-approved missing attention-queue sentence and narrow N2 exception; the Task 3 Files list now includes the source sentence. This repairs the absent evidence required by AC-2.4 without claiming the capability ships.
+  - `docs/assets/site.css` and `docs/assets/site.js`: bring landing styles and hero chapter wiring forward from Task 4, whose Files list already owns both paths, to satisfy Task 3 responsive and seeking acceptance now. Task 4 extends these files for sidebar and GIF-poster controls.
+  - The search placeholder is a plain noninteractive label. Task 5 supplies the control/index under its acceptance: "A query matching a heading or (non-truncated) body text lists matching pages and sections with title/heading matches first, each linking to its anchor; a query matching nothing says so, and a body-text miss on a truncated page is not presented as "no match" (AC-4.2)." No search input is exposed before that wiring exists.
+  - `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md` and `specs/in-progress/docs-site-restyle/scratchpad.md`: required completion, dependency handoff and discovery records.
+  - Review corrections, consistent with design §3.2: nest the verification caveat under its working item, request metadata on chapter interaction and expand the supervisor quote to retain its antecedent. Independent reviewer confirmed both findings resolved; parent desktop/mobile confirmation passed. External review round 1 adds `role="group"` to the labelled chapter container so its accessible name is exposed (consistent with AC-2.2 and design §3.2).
+- **Acceptance evidence**: Offline Jekyll v1.0.13 build (2.771s); 9 anchored rendered quotes/columns/trackers; four matching cell labels; 40 built pages with six existing footer targets and revision lines; exact quickstart parity; built element order. Chrome first interaction Recover seeks 19s, then title/run/kill/recover/review seek 0/2/13/19/26s, paused throughout; initial media/manifest requests zero. Quickstart top is 413.375px at 1280×800 and 467.5px at 390×844, no overflowing elements, chapter targets at least 44px. Permanent rejecting fixtures belong to Task 8.
+- **Files modified**: `docs/index.md`, `docs/_layouts/default.html`, `docs/_data/status.yml`, `docs/_data/navigation.yml`, `docs/limitations.md`, `docs/assets/site.css`, `docs/assets/site.js`, `specs/in-progress/docs-site-restyle/requirements.md`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`, `specs/in-progress/docs-site-restyle/scratchpad.md`.
 
 ### Task 4 — Paper docs layout: grouped sidebar and on-this-page (docs)
 
