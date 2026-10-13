@@ -108,7 +108,7 @@
 - **Acceptance evidence**: Offline Jekyll v1.0.13 build (2.771s); 9 anchored rendered quotes/columns/trackers; four matching cell labels; 40 built pages with six existing footer targets and revision lines; exact quickstart parity; built element order. Chrome first interaction Recover seeks 19s, then title/run/kill/recover/review seek 0/2/13/19/26s, paused throughout; initial media/manifest requests zero. Quickstart top is 413.375px at 1280×800 and 467.5px at 390×844, no overflowing elements, chapter targets at least 44px. Permanent rejecting fixtures belong to Task 8.
 - **Files modified**: `docs/index.md`, `docs/_layouts/default.html`, `docs/_data/status.yml`, `docs/_data/navigation.yml`, `docs/limitations.md`, `docs/assets/site.css`, `docs/assets/site.js`, `specs/in-progress/docs-site-restyle/requirements.md`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`, `specs/in-progress/docs-site-restyle/scratchpad.md`.
 
-### Task 4 — Paper docs layout: grouped sidebar and on-this-page (docs)
+### Task 4 — Paper docs layout: grouped sidebar and on-this-page (docs) ✅ COMPLETED
 
 - **Domain/agent**: go-implementer (docs domain)
 - **Budget**: standard
@@ -128,6 +128,11 @@
   - A recording served as a poster shows only the poster image and its labelled start control until the control is used; using it swaps in the GIF (hero: the AC-2.2 video), and with `prefers-reduced-motion` or JavaScript disabled no GIF loads or animates — before this change the guide's GIFs autoplay, which is the failing state (AC-7.4, AC-7.5).
 - **Test plan**: Build the site and inspect representative built pages (user guide, a mirror, a page with <2 headings) at both widths with the browser's device emulation or the Task 9 driver run by hand.
 - **Invariants touched**: None directly (presentation only; the honesty invariants bind Tasks 3, 6 and 8) — stated as `None (layout and navigation data; no state, billing or capability claim changes)`.
+
+- **Status**: ✅ Completed — Paper docs navigation, generated heading lists and explicit recording controls; PR #467.
+- **Implementation**: Commit b8f31e1. Navigation groups resolve source paths to generated URLs; Liquid builds heading lists and poster markup before resource loading. The sidebar progressively enhances a plain list; GIF controls respect reduced motion.
+- **Spec deviations**: None.
+- **Files modified**: `docs/_data/navigation.yml`, `docs/_layouts/default.html`, `docs/assets/site.css`, `docs/assets/site.js`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`.
 
 ### Task 5 — Client-side search index and control (docs)
 

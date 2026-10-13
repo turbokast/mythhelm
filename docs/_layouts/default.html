@@ -23,26 +23,83 @@
         </ul>
         {% else %}
         <ul>
-          {% for item in site.data.navigation %}
-          <li><a href="{{ site.baseurl }}/{{ item.path | replace: '.md', '.html' }}">{{ item.name }}</a></li>
-          {% endfor %}
+          <li><a href="{{ '/user-guide.html' | relative_url }}">User guide</a></li>
+          <li><span class="pre-alpha">pre-alpha</span></li>
         </ul>
         {% endif %}
       </nav>
     </header>
-    <main class="site-main">
-      {{ content }}
-    </main>
+    {% if page.path == "index.md" %}
+    <main class="site-main">{{ content }}</main>
+    {% else %}
+    <div class="docs-shell">
+      <aside class="docs-sidebar">
+        <button class="sidebar-toggle" type="button" aria-expanded="false" aria-controls="docs-navigation" hidden>Browse documentation</button>
+        <nav id="docs-navigation" aria-label="Documentation">
+          {% assign groups = site.data.navigation | group_by: "group" %}
+          {% for group in groups %}
+          <div class="nav-group">
+            <h2>{{ group.name }}</h2>
+            <ul>
+              {% for item in group.items %}{% assign item_page = item.path | split: '#' | first %}{% assign target_page = site.pages | where: 'path', item_page | first %}{% assign item_anchor = item.path | split: '#' %}
+              <li><a href="{{ target_page.url | relative_url }}{% if item_anchor.size > 1 %}#{{ item_anchor.last }}{% endif %}"{% if item_page == page.path %} aria-current="page"{% endif %}>{{ item.name }}</a></li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endfor %}
+        </nav>
+      </aside>
+      <main class="site-main docs-main" id="main-content">
+        {% assign headings = content | split: '<h2 ' %}
+        {% if headings.size > 2 %}
+        <nav class="on-this-page" aria-label="On this page">
+          <h2>On this page</h2>
+          <ul>
+            {% for heading in headings offset:1 %}
+            {% assign heading_id = heading | split: '>' | first | split: 'id="' | last | split: '"' | first %}
+            {% assign heading_open = heading | split: '>' | first | append: '>' %}
+            {% assign heading_label = heading | split: '</h2>' | first | remove_first: heading_open | strip_html %}
+            <li><a href="#{{ heading_id | escape }}">{{ heading_label | escape }}</a></li>
+            {% endfor %}
+          </ul>
+        </nav>
+        {% endif %}
+        <article class="docs-prose">
+          {% comment %}Replace recording sources at build time, before browsers can fetch GIFs. Guide prose stays canonical.{% endcomment %}
+          {% assign image_parts = content | split: '<img ' %}
+          {{ image_parts.first }}{% for part in image_parts offset:1 %}
+            {% assign image_tag = part | split: '>' | first %}
+            {% assign image_src = image_tag | split: 'src="' | last | split: '"' | first %}
+            {% assign recording = image_src | split: '/' | last | remove: '.gif' %}
+            {% if image_src contains 'demos/' and image_src contains '.gif' %}
+              {% assign image_alt = image_tag | split: 'alt="' | last | split: '"' | first %}
+              <span class="recording" data-recording="{{ recording }}">
+                <img class="recording-poster" src="{{ image_src | replace: '.gif', '-poster.png' }}" alt="{{ image_alt }}">
+                {% if recording == 'hero' %}
+                <video class="recording-video" controls preload="none" poster="{{ image_src | replace: '.gif', '-poster.png' }}" aria-label="{{ image_alt }}" hidden>
+                  <source data-src="{{ image_src | replace: '.gif', '.webm' }}" type="video/webm">
+                  <source data-src="{{ image_src | replace: '.gif', '.mp4' }}" type="video/mp4">
+                </video>
+                {% endif %}
+                <button type="button" class="recording-toggle" data-src="{{ image_src }}" aria-pressed="false" hidden>Start {{ recording }} recording</button>
+                <noscript><span>Recording poster. Read the transcript below.</span></noscript>
+              </span>
+            {% else %}<img {{ image_tag }}>{% endif %}{{ part | remove_first: image_tag | remove_first: '>' }}
+          {% endfor %}
+        </article>
+      </main>
+    </div>
+    {% endif %}
     <footer class="site-footer">
       <nav class="site-nav" aria-label="Project information">
         <ul>
-          {% for item in site.data.navigation %}{% unless item.path == 'index.md' or item.path == 'user-guide.md' %}
+          {% for item in site.data.navigation %}{% if item.footer %}
           <li><a href="{{ site.baseurl }}/{{ item.path | replace: '.md', '.html' }}">{{ item.name }}</a></li>
-          {% endunless %}{% endfor %}
+          {% endif %}{% endfor %}
         </ul>
       </nav>
       <p>Rendered from commit {{ site.github.build_revision }}</p>
     </footer>
-    {% if page.path == "index.md" %}<script src="{{ '/assets/site.js' | relative_url }}" defer></script>{% endif %}
+    <script src="{{ '/assets/site.js' | relative_url }}" defer></script>
   </body>
 </html>

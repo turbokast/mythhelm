@@ -1,18 +1,46 @@
-# Site navigation: every G10 item reachable in one click.
-# Schema: `path` is relative to docs/ and names the page source.
+# Group order follows first occurrence; paths are relative to docs/.
 - name: Home
   path: index.md
-- name: User guide
-  path: user-guide.md
-- name: Contributing
-  path: contributing.md
-- name: Security policy
-  path: mirror/SECURITY.md
-- name: Changelog
-  path: mirror/CHANGELOG.md
-- name: Licence
-  path: mirror/LICENSE.md
+  group: Start
+- name: Quickstart
+  path: user-guide.md#quickstart
+  group: Start
+- name: Running a task
+  path: user-guide.md#running-a-task
+  group: Use
+- name: Acceptance and evidence
+  path: user-guide.md#acceptance
+  group: Understand
 - name: Limitations
   path: limitations.md
+  group: Understand
+  footer: true
+- name: Contributing
+  path: contributing.md
+  group: Reference
+  footer: true
+- name: Security policy
+  path: mirror/SECURITY.md
+  group: Reference
+  footer: true
+- name: Changelog
+  path: mirror/CHANGELOG.md
+  group: Reference
+  footer: true
+- name: Licence
+  path: mirror/LICENSE.md
+  group: Reference
+  footer: true
 - name: Governance
   path: mirror/GOVERNANCE.md
+  group: Reference
+  footer: true
+- name: Release process
+  path: release-process.md
+  group: Reference
+- name: Automation
+  path: automation.md
+  group: Reference
+- name: Decisions
+  path: decisions/README.md
+  group: Reference
