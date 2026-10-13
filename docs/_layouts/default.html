@@ -7,6 +7,7 @@
     <title>{% if page.title %}{{ page.title }} | {% endif %}{{ site.title }}</title>
     <link rel="stylesheet" href="{{ '/assets/site.css' | relative_url }}">
     <style>
+      .tested-example { display: block; font-family: var(--font-mono); font-size: 0.8rem; }
       /* Search belongs to this layout on both surfaces. */
       .search-button, .search-dialog input {
         min-height: 44px; min-width: 44px; padding: 0.5rem 0.75rem;
@@ -50,8 +51,16 @@
         </ul>
       </nav>
     </header>
+    {% comment %}Only the examples list earns a marker. Count code blocks within each h2 section before rendering either surface; provenance comments earn nothing.{% endcomment %}
+    {% capture example_content %}{% assign example_sections = content | split: '<h2 ' %}{{ example_sections.first }}{% for section in example_sections offset:1 %}
+      {% assign section_id = section | split: '>' | first | split: 'id="' | last | split: '"' | first %}
+      {% assign blocks = section | split: '<pre' %}<h2 {{ blocks.first }}{% for block in blocks offset:1 %}
+        {% capture example_anchor %}docs/{{ page.path }}#{{ section_id }}[{{ forloop.index }}]{% endcapture %}
+        {% assign listed_example = site.data.examples | where: 'anchor', example_anchor | first %}
+        {% if listed_example %}<span class="tested-example" data-example-anchor="{{ example_anchor | escape }}">tested in CI</span>{% endif %}<pre{{ block }}
+      {% endfor %}{% endfor %}{% endcapture %}
     {% if page.path == "index.md" %}
-    <main class="site-main">{{ content }}</main>
+    <main class="site-main">{{ example_content }}</main>
     {% else %}
     <div class="docs-shell">
       <aside class="docs-sidebar">
@@ -87,7 +96,7 @@
         {% endif %}
         <article class="docs-prose">
           {% comment %}Replace recording sources at build time, before browsers can fetch GIFs. Guide prose stays canonical.{% endcomment %}
-          {% assign image_parts = content | split: '<img ' %}
+          {% assign image_parts = example_content | split: '<img ' %}
           {{ image_parts.first }}{% for part in image_parts offset:1 %}
             {% assign image_tag = part | split: '>' | first %}
             {% assign image_src = image_tag | split: 'src="' | last | split: '"' | first %}

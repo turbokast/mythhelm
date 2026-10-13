@@ -27,9 +27,14 @@ cells:
   <p><a href="#status">What works, what’s in progress, what’s not yet</a></p>
 </section>
 
-<section id="quickstart" aria-labelledby="quickstart-title">
-  <h2 id="quickstart-title">Try the scripted demo</h2>
-  <pre><code>go run ./cmd/mythhelm demo</code></pre>
+<section id="quickstart" aria-labelledby="try-the-scripted-demo" markdown="1">
+
+## Try the scripted demo
+
+```sh
+go run ./cmd/mythhelm demo
+```
+
   <p class="quickstart-note">The first build needs the Go module cache populated. <a href="{{ '/user-guide.html#installation' | relative_url }}">Build from source</a>.</p>
 </section>
 
