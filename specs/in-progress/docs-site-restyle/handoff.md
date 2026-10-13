@@ -20,7 +20,12 @@
 
 ## Task 2 — Hero video, chapters and recording posters (docs)
 
-<!-- pending -->
+- **Produces**: `docs/demos/hero.webm` (VP9, 1280x650, 32.24s) and `docs/demos/hero.mp4` (H.264, same dimensions and duration), rendered from `docs/demos/hero.tape` in the same VHS run as `hero.gif` (`vhs -o docs/demos/hero.webm -o docs/demos/hero.mp4 docs/demos/hero.tape`; `-o` adds outputs, the tape GIF is still written). Task 3's `<video>` serves WebM first with the MP4 fallback, `preload="none"`, and `docs/demos/hero-poster.png` as its poster.
+- **Produces**: Final hero `chapters` in `docs/demos/manifest.json` — title 0, run 2, kill 13, recover 19, review 26 (beat starts measured on the rendered video; strictly increasing, last offset 26s within the 32.24s `ffprobe` duration of both files). Task 3's chapter buttons seek `currentTime` to these `at_seconds` values verbatim.
+- **Produces**: One checked-in poster per GIF, each a PNG at its GIF's dimensions: `docs/demos/hero-poster.png` (1280x650, title card, GIF time 0s), `docs/demos/demo-poster.png` (1080x620, 5s), `docs/demos/tui-poster.png` (1650x620, 6s). Tasks 4 and 6 serve these as the GIF stills behind their start controls.
+- **For dependents**: `docs/demos/record.sh` now requires `ffmpeg`/`ffprobe`, renders the videos and posters on every run, and fails when a video codec/dimension, a poster PNG/dimension, or the chapter names/order/increase/duration fit (durations probed from the video files, never a manifest field) breaks. Task 8 automates the same assertions on the built site, including the non-increasing/over-duration fixture manifest.
+- **For dependents**: The demo/tui first GIF frames are the blank prompt, which is why their posters seek to 5s/6s; the hero poster is frame 0 because the tape opens on the title card. A tape edit that moves beats or holds requires re-measuring the frames and updating both the poster seeks in `record.sh` (`poster_seek`) and the manifest offsets, as `docs/demos/README.md` describes.
+- **Deviations that change a later task's inputs**: None. The tape, every transcript and every `binary_commit` pin are untouched, so the existing transcript-freshness checks are unchanged; note a plain `record.sh` run still refuses off-pin checkouts by design, and `--repin` remains the maintainer's re-record path.
 
 ## Task 3 — Night landing page, status panel and tmux cells (docs)
 
