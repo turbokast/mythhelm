@@ -123,6 +123,7 @@ not verified `NOT RUN`. What it does not cover is listed here; the
 
 ## Not supported yet
 
+- The attention queue for approvals is not supported yet.
 - Plugins and routing are still planned. v0.0.1 is the only release and has no
   binaries; the archive pipeline is implemented and dry-run proven on a test
   tag, but has not published a release.

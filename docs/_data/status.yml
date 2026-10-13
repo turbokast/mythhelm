@@ -16,8 +16,8 @@
 #            values verbatim.
 #   tracker: for "in-progress" items, the issue (for example "#348") or
 #            spec named inside the quote; null for every other column.
-# Task 3 completes the panel items; this file seeds the schema with the
-# first items. Later tasks consume this shape verbatim.
+# Limits items are caveats, displayed alongside their corresponding working
+# capability. Later tasks consume this shape verbatim.
 - id: offline-demo
   section: "Supported today"
   quote: "`mythhelm demo`: a fully offline scripted run in a disposable repository"
@@ -25,11 +25,41 @@
   tracker: null
 - id: supervisor-routing
   section: "Not supported yet"
-  quote: "Routing them through journal ingest is a follow-up (#348)."
+  quote: "In S1, stop and recover run locally from the CLI; the supervisor service does not serve them. Routing them through journal ingest is a follow-up (#348)."
   column: in-progress
   tracker: "#348"
 - id: plugins-routing
   section: "Not supported yet"
   quote: "Plugins and routing are still planned."
+  column: not-yet
+  tracker: null
+- id: attention
+  section: "Not supported yet"
+  quote: "The attention queue for approvals is not supported yet."
+  column: not-yet
+  tracker: null
+- id: recovery
+  section: "Supported today"
+  quote: "`mythhelm stop`, `mythhelm recover` and `mythhelm runs list`, run locally\n  from the CLI."
+  column: works
+  tracker: null
+- id: recovery-limit
+  section: "Not supported yet"
+  quote: "`mythhelm recover` quarantines a run whose worker was killed outright (`worker_lost`, exit 6), and a quarantined run blocks every later run with `active_run_exists`; no command resolves it yet (#391)."
+  column: in-progress
+  tracker: "#391"
+- id: verification
+  section: "Supported today"
+  quote: "Protected acceptance for the one-agent flow: verdicts bound to the candidate,\n  contract, check definitions and evaluator, `NOT RUN` and `STALE` outcomes and\n  a documented JSONL event set, with the limits listed below."
+  column: works
+  tracker: null
+- id: verification-limit
+  section: "Acceptance limits"
+  quote: "**The files a check executes are not protected.**"
+  column: works
+  tracker: null
+- id: quota-gauge
+  section: "Not supported yet"
+  quote: "Allowance exhaustion is recognised only from a synthetic fixture shape; no\n  recorded native run produces it, so on a real route the bucket is not\n  recorded and the retry schedule never starts."
   column: not-yet
   tracker: null

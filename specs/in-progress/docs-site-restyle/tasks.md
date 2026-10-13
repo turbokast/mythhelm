@@ -82,6 +82,7 @@
 - **Depends on**: Task 1 (status schema, layouts), Task 2 (hero media and chapters)
 - **Change**: Build the landing page in the required order with the hero player, the four capability cells bound to status items, the generated works / in progress / not yet panel and the G10 footer, so the first screen shows the product without claiming more than ships.
 - **Files**:
+  - `docs/limitations.md` (add only "The attention queue for approvals is not supported yet." under Not supported yet so the attention status item has its required source phrase, AC-2.3, AC-2.4)
   - `docs/index.md` (nav, headline, quickstart, hero `<video>` with chapter buttons, four cells each naming a `status.yml` id, panel, footer order; exactly one panel link under the headline, AC-2.1, AC-2.2, AC-2.4)
   - `docs/_layouts/default.html` (landing presentation, hero player markup, footer with the six G10 links, AC-2.1, AC-2.5)
   - `docs/_data/status.yml` (complete the panel items: works from Supported today and limits caveats, in-progress only with a tracker inside the quoted region, the rest not-yet, AC-2.3, OQ-9)
