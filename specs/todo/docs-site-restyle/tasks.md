@@ -192,7 +192,7 @@
 
 - **Domain/agent**: agent-config-editor (harness domain)
 - **Budget**: complex (rule carve-out, new Node driver with lockfile and licence gate, headless-browser measurements)
-- **Depends on**: Task 1, Task 3, Task 4, Task 5, Task 6
+- **Depends on**: Task 1, Task 2, Task 3, Task 4, Task 5, Task 6
 - **Change**: Carve out exactly one browser-driver directory from the harness-scripts rule and add the pinned headless-Chrome driver that measures overflow, element boxes, tap targets, first-viewport position, landing weight and rendered contrast, so responsive and accessibility claims are measured, not eyeballed.
 - **Files**:
   - `.claude/rules/harness-scripts.md` (explicit carve-out for exactly one named directory under `scripts/ci/` allowing Node there and nowhere else under `scripts/**`, with the evidence for it, AC-7.6)
