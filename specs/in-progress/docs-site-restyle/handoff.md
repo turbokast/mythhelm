@@ -29,7 +29,13 @@
 
 ## Task 3 — Night landing page, status panel and tmux cells (docs)
 
-<!-- pending -->
+- **Produces**: `docs/index.md` contains the ordered landing sections (`#landing-title`, `#quickstart`, `#hero-player`, `.capability-grid`, `#status`) and four `page.cells` entries; each `.capability` names `data-status-id` and `data-status`, and its `.capability-label` renders the data column with hyphens replaced by spaces. Attention and quota gauge are not-yet; recovery and verification are works with explicit caveats.
+- **Produces**: Nine status records with the existing five-key schema. Every `.status-quote` renders its source quote with `markdownify`; compare rendered text after Markdown/whitespace normalization. `verification-limit` is a Works caveat nested inside `verification`, never a standalone Works bullet. The attention limitation sentence and its narrow N2 exception were approved by the maintainer.
+- **Produces**: Hero has native controls, `preload="none"`, a poster, WebM then MP4 sources and no autoplay. `.hero-chapters[data-manifest]` is hidden until `assets/site.js` initializes; chapter buttons name the five manifest chapters but contain no duplicated offsets. On request the script fetches the manifest, validates offsets, loads metadata, and seeks without autoplay. Errors leave native controls and transcript available; no JavaScript leaves the poster/native controls and no chapter controls.
+- **Produces**: Common footer derives the six public links from navigation data and preserves the revision line. Task 4 must preserve one copy per footer target when adding repeated guide deep links/groups; Task 5 replaces the landing's noninteractive search placeholder with real search.
+- **For dependents**: The landing styles and `assets/site.js` player implementation moved forward from Task 4 to satisfy Task 3 acceptance; Task 4 extends those existing files for sidebar/GIF-poster controls, preserving the current script allow-list and no-initial-media-load behavior. A chapter request may promote preload to metadata; an untouched page must not do so.
+- **Verification**: Existing Jekyll build image v1.0.13 builds offline in a temporary docs snapshot with the four mirrors injected exactly as the workflow does. All 40 built HTML pages have existing footer targets. Local chapter testing needs an HTTP server with Range support; Python's plain SimpleHTTPRequestHandler returned a zero-length seekable range and cannot establish seeking behavior.
+- **Deviations that change later inputs**: Tasks 4/5 receive the CSS/player and search placeholder described above. Tasks 8/9 inspect nested caveat items, normalized Markdown quotes, manifest-fetched chapter offsets and initial `preload="none"`; no schema change.
 
 ## Task 4 — Paper docs layout: grouped sidebar and on-this-page (docs)
 
