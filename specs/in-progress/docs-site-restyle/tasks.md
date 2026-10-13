@@ -134,7 +134,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `docs/_data/navigation.yml`, `docs/_layouts/default.html`, `docs/assets/site.css`, `docs/assets/site.js`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`.
 
-### Task 5 — Client-side search index and control (docs)
+### Task 5 — Client-side search index and control (docs) ✅ COMPLETED
 
 - **Domain/agent**: go-implementer (docs domain)
 - **Budget**: complex (new build artifact with a size bound and truncation rule, plus an interactive control with offline and assistive behaviour)
@@ -152,6 +152,12 @@
   - The index is fetched only on first search use, so it does not count toward the landing page's transferred weight (AC-4.1, NFR-3; measured by Task 9).
 - **Test plan**: Build the site in CI, query the built index for a heading-only term, a body term and a nonsense term against a served `_site`, and record the ranked results; exercise the control with keyboard only and with JavaScript disabled.
 - **Invariants touched**: I13 (v2 §2: search is a static browser artifact, never a MYTHHELM service); I09 (v2 §2: a truncated page's miss is labelled, never presented as absence).
+
+
+- **Status**: ✅ Completed — Static Liquid search index and keyboard-accessible search on both surfaces, with lazy loading, offline reuse and explicit partial-text warnings; PR #468.
+- **Implementation**: Commit `7f73e75` keeps the five-field records in a URL-keyed object; UTF-8 byte accounting removes whole bodies largest-first. The pinned Pages build emits 40 pages / 297,258 bytes; 377 heading labels and anchors match the emitted HTML. Red probes found the index/control absent; green corpus, Unicode-size fixture and Chrome keyboard/offline/responsive probes pass (PR acceptance table).
+- **Spec deviations**: Review corrections preserve the target scroll position when restoring focus after same-page navigation and make the first Escape close a nonempty native search input (consistent with AC-4.2/AC-4.3). No contract or file-scope deviation.
+- **Files modified**: `docs/search.json`, `docs/assets/search.js`, `docs/_layouts/default.html`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`, `specs/in-progress/docs-site-restyle/scratchpad.md`.
 
 ### Task 6 — State labels and declared-not-verified notes (docs)
 
