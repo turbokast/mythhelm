@@ -18,8 +18,8 @@
 # Needs only free tooling: go, git, python3, GNU timeout (the hero tape kills
 # its run with it; macOS: brew install coreutils and put its timeout on PATH),
 # ffmpeg/ffprobe (the OS packages; the posters and the video verification
-# need them), file (the GIF and poster format checks need it), and a VHS install (vhs renders
-# through ffmpeg and ttyd). Install VHS from https://github.com/charmbracelet/vhs
+# need them), file (the GIF and poster format checks need it), ttyd, and VHS
+# (vhs renders through ffmpeg and ttyd). Install VHS from https://github.com/charmbracelet/vhs
 # (for example `go install github.com/charmbracelet/vhs@latest`) and ttyd from
 # https://github.com/tsl0922/ttyd.
 
@@ -43,7 +43,7 @@ BIN="/tmp/mythhelm-record"
 SED="$DEMOS/normalize.sed"
 MANIFEST="$DEMOS/manifest.json"
 
-for tool in go git vhs ffmpeg ffprobe python3 timeout file; do
+for tool in go git vhs ttyd ffmpeg ffprobe python3 timeout file; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "record.sh: need $tool on PATH" >&2
 		exit 2

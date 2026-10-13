@@ -29,7 +29,9 @@ The script runs from anywhere in the checkout. It needs only free tooling:
 `go`, `git`, `python3`, GNU `timeout` (the hero tape kills its run with it; on
 macOS install coreutils and put its `timeout` on PATH), `ffmpeg`/`ffprobe`
 (the posters and the video checks use them), `file` (the GIF and poster
-format checks use it), and VHS (`vhs` renders through `ffmpeg` and `ttyd`).
+format checks use it), `ttyd`, and VHS (`vhs` renders through `ffmpeg` and
+`ttyd`). All these tools must be on `PATH`; the script checks them before
+building or writing recordings.
 A bare `vhs docs/demos/demo.tape` only renders the GIF and is not the record
 command: it skips the build, the transcript regen and the verify pass.
 
