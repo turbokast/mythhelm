@@ -17,7 +17,15 @@ is never truncated. The CI size check must reject metadata alone over budget.
 {%- for entry in site.pages -%}
   {%- assign ending = entry.url | slice: -1, 1 -%}
   {%- if entry.url contains '.html' or ending == '/' -%}
-    {%- assign html = entry.content | markdownify -%}
+    {%- comment -%}Pages after this template may still hold source Liquid. Normalize
+    the documented state include before extracting their searchable text.{%- endcomment -%}
+    {%- assign source = entry.content -%}
+    {%- assign states = 'reported,estimated,unknown' | split: ',' -%}
+    {%- for state in states -%}
+      {%- capture label_include -%}{% raw %}{% include state.html state="{% endraw %}{{ state }}{% raw %}" %}{% endraw %}{%- endcapture -%}
+      {%- assign source = source | replace: label_include, state -%}
+    {%- endfor -%}
+    {%- assign html = source | markdownify -%}
     {%- assign title = entry.title -%}
     {%- unless title -%}
       {%- assign title = html | split: '</h1>' | first | split: '>' | last | strip_html | strip -%}

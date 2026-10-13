@@ -117,7 +117,7 @@ not verified `NOT RUN`. What it does not cover is listed here; the
   so every strict `subscription-only` run blocks today and no run prints the
   verified sentence. Declared runs print that MYTHHELM did not verify the
   entitlement, and the paid-continuation state is `unknown`.
-- **A receipt field MYTHHELM could not observe is `unknown`, with a reason.**
+- **A receipt field MYTHHELM could not observe is {% include state.html state="unknown" %}, with a reason.**
   Cost, usage and the retry schedule, and for a run recorded before schema 8
   the binding, pin and overhead, are never rendered as zero.
 
