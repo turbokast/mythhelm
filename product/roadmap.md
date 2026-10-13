@@ -12,6 +12,7 @@ Cards with a spec, being specified or implemented.
 - **MH-22** Protected acceptance and a complete v2 one-agent workflow (specced, stage 1, score 3.8; spec `protected-acceptance`; [#128](https://github.com/turbokast/mythhelm/issues/128))
 - **MH-13** Contained execution profiles: restricted and inspect (specced, stage 1, score 3.5; spec `contained-execution-profiles`; [#34](https://github.com/turbokast/mythhelm/issues/34))
 - **MH-33** Docs site that shows the product: layout, search, demo-first landing and tested examples (specced, stage 1, score 3.3; spec `docs-site-restyle`; [#445](https://github.com/turbokast/mythhelm/issues/445))
+- **MH-23** Complete TUI intervention, accessibility and safe declarative themes (specced, stage 1, score 2.8; spec `tui-observatory-view`; [#129](https://github.com/turbokast/mythhelm/issues/129))
 
 ## Next
 
@@ -21,13 +22,12 @@ The five highest-scored cards without a spec in an earlier stage, the current st
 - **MH-3** Herdr bridge: single-pane experience with scoped status (triaged, stage 1, score 3.3; [#24](https://github.com/turbokast/mythhelm/issues/24))
 - **MH-24** Scoped context, task dependencies and stale-evidence invalidation (triaged, stage 2, score 3.0; [#130](https://github.com/turbokast/mythhelm/issues/130))
 - **MH-25** Scoped export, retention, erasure and tested restoration (triaged, stage 2, score 3.0; [#131](https://github.com/turbokast/mythhelm/issues/131))
-- **MH-23** Complete TUI intervention, accessibility and safe declarative themes (triaged, stage 1, score 2.8; [#129](https://github.com/turbokast/mythhelm/issues/129))
+- **MH-5** Routing across authorised profiles (triaged, stage 2, score 2.5; [#26](https://github.com/turbokast/mythhelm/issues/26))
 
 ## Later
 
 Every other open card, by score.
 
-- **MH-5** Routing across authorised profiles (triaged, stage 2, score 2.5; [#26](https://github.com/turbokast/mythhelm/issues/26))
 - **MH-27** Bounded protected experiments for routes, context and prompts (triaged, stage 4, score 2.5; [#133](https://github.com/turbokast/mythhelm/issues/133))
 - **MH-30** Optional verified production delivery with effect reconciliation (triaged, stage 6, score 2.5; [#136](https://github.com/turbokast/mythhelm/issues/136))
 - **MH-26** Consented outcome evidence and the fixed execution portfolio (triaged, stage 4, score 2.3; [#132](https://github.com/turbokast/mythhelm/issues/132))
