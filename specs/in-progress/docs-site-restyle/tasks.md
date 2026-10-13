@@ -48,7 +48,7 @@
 - **Spec deviations**: None.
 - **Files modified**: `docs/assets/brand/README.md`, `docs/_config.yml`, `docs/_layouts/default.html`, `docs/assets/site.css`, `docs/assets/fonts/archivo-expanded-extrabold.woff2`, `docs/assets/fonts/jetbrains-mono.woff2`, `docs/assets/fonts/OFL.txt`, `docs/assets/fonts/README.md`, `docs/_data/status.yml`, `docs/_data/examples.yml`, `docs/_data/site-scripts.yml`, `docs/demos/manifest.json`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`, `specs/in-progress/docs-site-restyle/scratchpad.md`.
 
-### Task 2 — Hero video, chapters and recording posters (docs)
+### Task 2 — Hero video, chapters and recording posters (docs) ✅ COMPLETED
 
 - **Domain/agent**: go-implementer (docs domain)
 - **Budget**: complex (8 files including two rendered videos and three posters; media rendering plus manifest offsets in one task)
@@ -70,6 +70,10 @@
   - The existing transcript-freshness assertions still pass unchanged: `docs/demos/hero.tape`, `hero.transcript.txt` and the manifest `binary_commit` pin are untouched by the render (AC-2.2, N5).
 - **Test plan**: Run `docs/demos/record.sh` locally where VHS and ffmpeg exist, or record in the completion entry that the render ran in CI/manual maintainer step with its command; verify durations and offsets with `ffprobe` and a small Python check that Task 8 later automates.
 - **Invariants touched**: I14 (v2 §2: the recording is the real pinned run, labelled scripted); G10 (v2 §18.3: no existing docs assertion weakened, N5).
+- **Status**: ✅ Completed — Hero tape rendered as checked-in WebM/MP4 with one poster per GIF and the manifest chapters filled from the rendered durations; PR #465.
+- **Implementation**: `record.sh` renders both videos in the hero VHS run (`-o` adds outputs), grabs each poster with `ffmpeg` (hero 0s title card; demo 5s/tui 6s first held content frames) and verifies codecs, dimensions, posters and ffprobe-fitted chapters each run. Commit f83856661dd1787ba7a86fd04c1404505a6cf115. Media rendered with the pinned binary (built at `031676ad` in a temporary worktree) through the same commands; the full updated `record.sh --repin` then passed in a throwaway worktree (`hero chapters [0, 2, 13, 19, 26] fit the rendered durations (webm 32.24s, mp4 32.24s)`, `ok (… verified)`, exit 0; its pin moves discarded with it).
+- **Spec deviations**: None.
+- **Files modified**: `docs/demos/record.sh`, `docs/demos/manifest.json`, `docs/demos/hero.webm`, `docs/demos/hero.mp4`, `docs/demos/hero-poster.png`, `docs/demos/demo-poster.png`, `docs/demos/tui-poster.png`, `docs/demos/README.md`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`, `specs/in-progress/docs-site-restyle/scratchpad.md`.
 
 ### Task 3 — Night landing page, status panel and tmux cells (docs)
 
