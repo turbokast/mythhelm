@@ -39,7 +39,7 @@ cells:
     <source src="{{ '/demos/hero.mp4' | relative_url }}" type="video/mp4">
     <a href="{{ '/demos/hero.mp4' | relative_url }}">Download the scripted recovery recording</a>.
   </video>
-  <div class="hero-chapters" hidden data-manifest="{{ '/demos/manifest.json' | relative_url }}" aria-label="Recording chapters">
+  <div class="hero-chapters" role="group" hidden data-manifest="{{ '/demos/manifest.json' | relative_url }}" aria-label="Recording chapters">
     {% assign chapters = 'title,run,kill,recover,review' | split: ',' %}{% for chapter in chapters %}
     <button type="button" data-chapter="{{ chapter }}" aria-controls="hero-player">{{ chapter | capitalize }}</button>
     {% endfor %}
