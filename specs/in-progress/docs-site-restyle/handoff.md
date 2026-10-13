@@ -58,7 +58,12 @@
 
 ## Task 6 — State labels and declared-not-verified notes (docs)
 
-<!-- pending -->
+- **Produces**: `state.html` accepts the single `state` argument; reported/estimated/unknown render as `.state.state-<value>` spans containing only the word. Empty, omitted or unrecognised values fall back to unknown. Solid/dashed/dotted underlines respectively distinguish the states on either palette; unknown never becomes blank or zero.
+- **Produces**: Fourteen guide state spans and one limitations span, plus two `.declared-note` wrappers with visible `.declared-note-label` text. Original prose/output/field paths remain unchanged; qualification, verdict, paid-continuation and native-stop enums retain code spans. Contributing documents canonical double-quoted include syntax and Markdown-enabled neutral notes.
+- **For dependents**: Task 8 should validate source include arguments separately from fallback rendering; runtime fallback deliberately accepts invalid input but author markup must not. Author examples encode braces as HTML entities and remain literal code examples, not live includes.
+- **For dependents**: Task 4 still transforms the original guide GIF markup at build time. Preserve its three poster controls; no duplicate transformation was added here.
+- **Deviation affecting later inputs**: `docs/search.json` normalizes canonical state includes before markdownifying source pages because Jekyll visits search before some pages have rendered Liquid. Tasks 8/9 should check indexed state words and preserve the canonical author syntax. Schema unchanged.
+- **Verification**: Pinned offline Pages fixture build renders reported/estimated/unknown/unknown/unknown for valid/empty/misspelled arguments; two notes and three poster controls exist, with no GIF image sources. Independent review confirms unchanged prose after removing markup and normalizing whitespace. Parent browser review exposed two inline-code line breaks before angle-bracket placeholders that swallowed later Markdown; joining them restores all 14 guide h2 headings and visible budget labels without changing words.
 
 ## Task 7 — Tested-in-CI marker on code examples (docs)
 

@@ -57,3 +57,32 @@ it and pass with it, and update documentation when behaviour changes.
 Titles follow Conventional Commits (`type(optional-scope): summary`); a CI
 check enforces this. Every required CI check must pass, and every review
 thread must be resolved before merge.
+
+## Data states in documentation
+
+Use the `state.html` Liquid include when prose names a recorded data state.
+Its single argument, `state`, accepts `reported`, `estimated` or `unknown`:
+
+<pre><code>&#123;% include state.html state="reported" %&#125;
+&#123;% include state.html state="estimated" %&#125;
+&#123;% include state.html state="unknown" %&#125;</code></pre>
+
+The include renders an empty or unrecognised value as `unknown`; authors
+should always supply one of the three accepted values. Each label retains its
+word and a distinct underline: solid for reported, dashed for estimated and
+dotted for unknown, on both Night and Paper. Leave ordinary English, output
+examples, field paths and other enums unchanged.
+
+Wrap existing declared-billing or entitlement explanations in a neutral note.
+The `markdown="1"` attribute keeps Markdown inside the note working:
+
+```html
+<div class="declared-note" markdown="1">
+<span class="declared-note-label">declared, not verified</span>
+
+Existing explanation of what the user declares and MYTHHELM does not verify.
+</div>
+```
+
+Use the note only for unverified declarations. Its border and visible label
+carry the distinction without amber or a colour-only signal.

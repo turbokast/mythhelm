@@ -140,7 +140,7 @@ receipt: policy `P1` version 1 and its digest, the task and contract, the check
 definitions and the evaluator; the check timeouts are listed under
 `acceptance.bounds.check_timeouts`. A run admitted with
 `--no-checks`, or under `inspect`, runs no check, so its pin leaves the
-check-derived fields `unknown`. If the evaluator that ran is not the pinned
+check-derived fields {% include state.html state="unknown" %}. If the evaluator that ran is not the pinned
 one, the verdict is `INVALID`, never `passed`.
 
 ### Verdicts
@@ -254,7 +254,7 @@ A waived or unverified run shows its reason on both the `Verification:` line
 and the `Acceptance:` line. A run admitted with `--no-checks` prints
 `Verification: NOT RUN (waived by --no-checks)` and
 `Acceptance: unverified (waived by --no-checks)`, and its receipt prints
-`verification.binding` and `acceptance.overhead_ms` as `unknown`, each with its
+`verification.binding` and `acceptance.overhead_ms` as {% include state.html state="unknown" %}, each with its
 reason.
 
 ### Review and apply
@@ -335,12 +335,16 @@ admitted billing posture:
 | qualified route (strict `subscription-only`) | `entitlement: verified by MYTHHELM (<entitlement source>); paid continuation: <value>` |
 | anything else, including an inconsistent posture | `entitlement: unknown` |
 
+<div class="declared-note" markdown="1">
+<span class="declared-note-label">declared, not verified</span>
+
 A declared run says in so many words that MYTHHELM did not verify the
 declaration and does not claim paid continuation is prevented. The qualified
 sentence prints fields of the admitted posture; it does not name the
 qualification record consulted, because admission does not journal that. No
 route is live-qualified yet, so every strict run blocks today and no run
 prints the qualified sentence.
+</div>
 
 The sentence appears in the `run` stream's admission block (indented two
 spaces), as its own line in `review` and in the `--accessible` summary, in the
@@ -368,20 +372,20 @@ object. Acceptance adds these keys:
 | Key | Content |
 |---|---|
 | `verification.result`, `.label`, `.reason` | the stored verdict, its label (`passed`, `failed`, `NOT RUN`, `INVALID` or `unknown`) and its reason |
-| `verification.binding` | `candidate` (`format`, `value`), `contract`, `check_definition`, `evaluator`, `environment` and `attestation_digest`, each digest as `sha256:<hex>`; `unknown` when no attestation exists |
+| `verification.binding` | `candidate` (`format`, `value`), `contract`, `check_definition`, `evaluator`, `environment` and `attestation_digest`, each digest as `sha256:<hex>`; {% include state.html state="unknown" %} when no attestation exists |
 | `acceptance.status` | the gate's answer when the review ran, not the stored verdict: `state` (`bound`, `stale`, `unbound`, `unverified` or `rejected`), its `reason` and, for `stale`, the `changed` dimensions (`candidate`, `contract`, `check_definition`, `evaluator`); `verification.label` still shows the stored verdict |
-| `acceptance.policy_pin` | the P1 pin, or `unknown` |
+| `acceptance.policy_pin` | the P1 pin, or {% include state.html state="unknown" %} |
 | `acceptance.determinism` | `confined_to` and `note`, below |
 | `acceptance.overhead_ms`, `.overhead_covers` | how long the binding step took, and `binding step` |
 | `acceptance.bounds` | the bounds table below |
 | `acceptance.apply_override` | present only after an apply over a verdict that was not bound |
 | `billing.entitlement_statement` | the sentence above |
-| `unknown_reasons` | one reason for every `unknown` leaf, keyed by its path |
+| `unknown_reasons` | one reason for every {% include state.html state="unknown" %} leaf, keyed by its path |
 
-A field MYTHHELM could not observe prints `unknown` with its reason in
+A field MYTHHELM could not observe prints {% include state.html state="unknown" %} with its reason in
 `unknown_reasons`, never `0` or an invented value. A verification recorded
 before acceptance binding existed prints its binding, pin and overhead as
-`unknown` with that reason.
+{% include state.html state="unknown" %} with that reason.
 
 **Determinism.** The same pinned revisions (candidate, contract and check
 definitions) produce the same verdict. Non-determinism is confined to the
@@ -483,8 +487,7 @@ worker confirms, and `stopped — worker confirmed no remaining processes` once
 it has. A stop request is not a confirmed stop: if the worker cannot show that
 the process group and its descendants are gone, the run is not reported
 stopped. In a foreground run without the TUI, the first Ctrl-C requests a stop
-and the second detaches, printing `stop not yet confirmed; run 'mythhelm recover
-<run-id>'` and exiting with code 6.
+and the second detaches, printing `stop not yet confirmed; run 'mythhelm recover <run-id>'` and exiting with code 6.
 
 `mythhelm recover <run-id>` takes over a run whose supervising process went
 away, without launching any native work. It takes the run's owner lock,
@@ -568,8 +571,7 @@ claude-code × unknown: blocked (fidelity unknown, entitlement unknown, lifecycl
 ```
 
 Each row reads `<harness> × <surface>: <progress> (fidelity <v>,
-entitlement <v>, lifecycle <v>) [evidence <n> revs, latest <ev-id>; drift
-<state>]`: the qualification progress (`planned`, `blocked`, `unsupported`
+entitlement <v>, lifecycle <v>) [evidence <n> revs, latest <ev-id>; drift <state>]`: the qualification progress (`planned`, `blocked`, `unsupported`
 and the other honest labels), the three independent column verdicts
 (`proven`, `not-proven` or `unknown`), how many evidence revisions the
 record holds, the latest evidence id, and the drift state (`clean`, or the
@@ -630,6 +632,9 @@ mythhelm run --adapter claudecode --billing subscription-declared \
 `restricted` profile is refused for the Claude Code route (see
 [Execution profiles](#execution-profiles)).
 
+<div class="declared-note" markdown="1">
+<span class="declared-note-label">declared, not verified</span>
+
 The declaration is user-declared, never verified: MYTHHELM does not check it,
 and the run is labelled `entitlement: user-declared, NOT verified by MYTHHELM;
 paid continuation: unknown (user declares disabled)`. It does not claim that
@@ -637,6 +642,7 @@ paid continuation is prevented. The same sentence appears on the run stream,
 `review` and the receipt; see [Acceptance](#the-entitlement-sentence). A declared run still needs a first-party
 subscription login, and the declaration is bound to that account and
 configuration directory, so a changed account needs a fresh declaration.
+</div>
 
 `--billing local-scripted` is the offline posture; Claude Code refuses it. The
 decisions behind both postures are in
@@ -650,19 +656,19 @@ recorded when available, one quota reservation, one envelope row and, when an
 allowance runs out, one exhausted bucket. A run refused at admission — for
 example when its reservation hold fails — leaves no ledger rows. The ledger records what was observed and what was decided. It never
 claims a provider balance, a remaining quota or a price that was actually
-charged; anything MYTHHELM did not observe is reported as `unknown`, never as
+charged; anything MYTHHELM did not observe is reported as {% include state.html state="unknown" %}, never as
 zero.
 
 **Usage rows.** Each native result projects into typed usage rows keyed by
 scope, unit and source (for example per-model token counts and a
-retail-equivalent cost). Every row carries a label: `reported` for exact
-observed totals, `estimated` for totals built from identity-less deltas or
-converted money, and `unknown` for scopes with no usable reading. The receipt's
+retail-equivalent cost). Every row carries a label: {% include state.html state="reported" %} for exact
+observed totals, {% include state.html state="estimated" %} for totals built from identity-less deltas or
+converted money, and {% include state.html state="unknown" %} for scopes with no usable reading. The receipt's
 `billing.usage_observations` lists each row with its scope, unit, source,
 label and quantity, and retail rows add the note `estimate, not a charge`.
 After a run, MYTHHELM prints one `usage:` line per row, for example
 `usage: retail-equivalent unknown unknown (unknown, unknown)` when the adapter
-surfaced no usage. A fake-adapter run records only that retail `unknown`
+surfaced no usage. A fake-adapter run records only that retail {% include state.html state="unknown" %}
 marker.
 
 **Remaining and next retry.** The receipt's `billing.remaining` is always
@@ -710,7 +716,7 @@ show this estimate (`verify pass (...) + N repairs`), labelled
 claim on provider capacity; repairs are never gated by it. For a checked run
 the receipt's verify pass is the sum of the check timeouts the pin journaled at
 admission, the same values as `acceptance.bounds.check_timeouts`. It reads
-`unknown`, with the reason in `unknown_reasons`, for a run whose pin is
+{% include state.html state="unknown" %}, with the reason in `unknown_reasons`, for a run whose pin is
 missing (admitted before the pin existed), unreadable or never journaled, and
 for a pinned timeout that is not a positive duration (the count stays known,
 the sum does not).
@@ -732,7 +738,7 @@ produced; on a real route an exhausted allowance surfaces as a provider-limit
 or billing error and the bucket is not recorded.
 
 **Reservations.** Admission holds exactly one quota reservation coupled to the
-run's bucket, with quantity `unknown`. The reservation is
+run's bucket, with quantity {% include state.html state="unknown" %}. The reservation is
 `local coordination only — not provider availability`: it coordinates
 MYTHHELM's own runs and says nothing about what the provider will serve.
 

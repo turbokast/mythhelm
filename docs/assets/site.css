@@ -461,3 +461,24 @@ button:focus-visible { outline: 3px solid var(--surface-accent); outline-offset:
 @media (max-width: 600px) {
   .on-this-page ul { columns: 1; }
 }
+
+/* Data states keep their names and distinct underline patterns in either palette. */
+.state {
+  font-family: var(--font-mono);
+  color: var(--surface-fg);
+  text-decoration-line: underline;
+  text-underline-offset: 0.2em;
+}
+.state-reported { text-decoration-style: solid; }
+.state-estimated { text-decoration-style: dashed; }
+.state-unknown { text-decoration-style: dotted; }
+.declared-note {
+  margin-block: 1.5rem;
+  padding: 1rem;
+  border: 1px solid var(--surface-fg);
+}
+.declared-note-label {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+.declared-note > :last-child { margin-bottom: 0; }

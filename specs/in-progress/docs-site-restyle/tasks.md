@@ -159,7 +159,7 @@
 - **Spec deviations**: Review corrections preserve the target scroll position when restoring focus after same-page navigation and make the first Escape close a nonempty native search input (consistent with AC-4.2/AC-4.3). Review round 1 replaces the HTML-assignment entity decoder with token-only parsing, verified to preserve named/numeric entities without interpreting encoded markup (consistent with AC-4.2). No contract or file-scope deviation.
 - **Files modified**: `docs/search.json`, `docs/assets/search.js`, `docs/_layouts/default.html`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`, `specs/in-progress/docs-site-restyle/scratchpad.md`.
 
-### Task 6 — State labels and declared-not-verified notes (docs)
+### Task 6 — State labels and declared-not-verified notes (docs) ✅ COMPLETED
 
 - **Domain/agent**: go-implementer (docs domain)
 - **Budget**: standard
@@ -179,6 +179,12 @@
   - The user guide's three GIFs (`docs/user-guide.md:39-46`) use the Task 4 poster markup (poster image plus labelled start control, GIF only on request); `docs/contributing.md` names the include, its argument and the fallback so an author can use the convention without reading the layout (AC-5.1, AC-7.4).
 - **Test plan**: Build the site and inspect the rendered label spans in the budget and billing sections; render a fixture page with an empty and a misspelled state and record that both show `unknown`.
 - **Invariants touched**: I09 (v2 §2: reported, estimated and unknown stay distinct and missing never renders as zero); I14 (v2 §2: unverified statements are labelled declared, not verified).
+
+- **Status**: ✅ Completed — Shared state labels, neutral declared notes and author guidance; PR #469.
+- **Implementation**: Commit 791c472. One include defaults to unknown; solid/dashed/dotted underlines preserve distinctions on both surfaces. Existing Task 4 recording transformation is retained. Independent code review found no findings; the pinned Pages fixture build verifies valid/fallback labels, notes, posters and search coverage.
+- **Candidate decisions** (original source line numbers, each reviewed): guide 143 (check-derived fields), 257 (binding/overhead), 371 (absent attestation), 373 (absent pin), 379 (missing leaf), 381 (unobserved field), 384 (legacy binding/pin/overhead), 653 (unobserved billing), 658 (reported definition), 659 (estimated definition), 660 (unknown definition), 665 (missing retail reading), 713 (missing verify estimate), 735 (reservation quantity) converted. Guide 370 stays a verification verdict enum; 574 stays a qualification-progress enum. Limitations 120 converted (unobserved receipt field); 119 stays a paid-continuation enum and 157 stays a native-stop-acknowledgement enum. Ordinary English, output, field paths, headings and Windows statements remain unchanged; reversing the markup reproduces the original prose after normalizing whitespace (two inline-code line breaks became spaces to restore Markdown parsing).
+- **Spec deviations**: Added `docs/search.json` within the docs domain to normalize the canonical state include before indexing: Jekyll can render the index before the guide, otherwise raw Liquid leaks into search text. The index schema and generator are unchanged. Parent browser review found pre-existing inline-code line breaks before angle-bracket placeholders were parsed as raw HTML, hiding later guide content; joined those two lines without changing prose or output words so the actual budget labels and second note render (consistent with FR-5). Task 4 already supplies the guide recording controls at build time, so no duplicate guide recording markup was added.
+- **Files modified**: `docs/_includes/state.html`, `docs/user-guide.md`, `docs/limitations.md`, `docs/assets/site.css`, `docs/contributing.md`, `docs/search.json`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`.
 
 ### Task 7 — Tested-in-CI marker on code examples (docs)
 

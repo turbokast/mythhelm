@@ -1,0 +1,5 @@
+{%- assign data_state = include.state -%}
+{%- unless data_state == 'reported' or data_state == 'estimated' or data_state == 'unknown' -%}
+  {%- assign data_state = 'unknown' -%}
+{%- endunless -%}
+<span class="state state-{{ data_state }}">{{ data_state }}</span>
