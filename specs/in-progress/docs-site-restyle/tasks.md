@@ -233,7 +233,7 @@
 - **Test plan**: Table-driven shell test over fixture trees in temporary directories (never the real `.claude/data/`), plus a run against a real CI-built `_site` recorded in the completion entry.
 - **Invariants touched**: I09 (v2 §2: state-word checks fail on empty or unknown states, never pass vacuously); I14 (v2 §2: panel, cell and marker claims bind to their sources); G10 (v2 §18.3: the checks are the published-limitations enforcement).
 
-### Task 9 — Browser-driver carve-out and responsive checks (harness)
+### Task 9 — Browser-driver carve-out and responsive checks (harness) ✅ COMPLETED
 
 - **Domain/agent**: agent-config-editor (harness domain)
 - **Budget**: complex (rule carve-out, new Node driver with lockfile and licence gate, headless-browser measurements)
@@ -253,6 +253,11 @@
   - On the built site it asserts: no recording GIF is fetched or animating before its start control is used and the poster stands in under `prefers-reduced-motion` (AC-7.4, AC-7.5), no published page's scroll width exceeds the viewport at 390px or 1280px including `user-guide.html`, no element box passes the viewport outside a scroll container, tap targets ≥44px at 390px, the quickstart in the first viewport, landing weight ≤500 KB excluding the hero recording with `preload="none"`, and contrast 4.5:1 / 3:1 from rendered pairs with Star light restricted to large text and UI parts (AC-7.1, AC-7.2, AC-7.3, NFR-3).
 - **Test plan**: Shell test over static fixture pages (no Jekyll needed) in temporary directories, plus a run against a real CI-built `_site`; record the Chrome binary source and version in the completion entry.
 - **Invariants touched**: I09 (v2 §2: contrast and overflow are computed from rendered pages, never a hand-kept list); I13 (v2 §2: the driver is a CI check, never a site runtime dependency).
+
+- **Status**: ✅ Completed — pinned Chrome measurements and rejecting fixtures cover the browser contract; PR #471.
+- **Implementation**: Commits ad9d14d and 33e8911 add the single Node directory with pinned playwright-core 1.64.0 (Apache-2.0, no transitive packages), checked against the unchanged dependency-review allow-list before implementation. Installed `/usr/bin/google-chrome` reports Google Chrome 154.0.8037.97; the pinned Pages build's 40 pages pass at both widths and motion preferences, with 101,076 initial landing bytes measured conservatively without compression.
+- **Spec deviations**: Added `scripts/ci/browser/.gitignore` to keep installed dependencies out of source control. Consistent review fixes add form-value/placeholder and opacity contrast checks, standard shell command forms, actual command-block visibility and opened shared-control measurements. Review round 1 adds missing-landing, HTTP/WebSocket, loaded-search, caption/hero-description and invalid-input fixtures; all are consistent with the browser contract. Review round 2 fails closed on unverified group opacity and anchors fixture finding categories. Task 10 owns workflow wiring: its acceptance requires "`CI OK`'s `needs:` includes the site-build job"; no browser CI job is claimed before that task lands.
+- **Files modified**: `.claude/rules/harness-scripts.md`, `scripts/ci/browser/.gitignore`, `scripts/ci/browser/package.json`, `scripts/ci/browser/package-lock.json`, `scripts/ci/browser/check_layout.mjs`, `scripts/ci/browser/test_check_layout.sh`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`.
 
 ### Task 10 — Site-build job gating CI OK and docs workflow wiring (release)
 
