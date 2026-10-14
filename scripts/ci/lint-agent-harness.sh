@@ -12,10 +12,11 @@
 # The checks, in order: frontmatter, routing-pins, haiku-effort, rule-budget,
 # portable-skills,
 # paths-globs, hook-inventory, skill-contexts, dollar-zero, abs-paths, references,
-# specs, finalize, proposals, required-checks, evals, product.
+# specs, finalize, proposals, required-checks, evals, product, docs-site.
+# docs-site runs synthetic built-site rejection fixtures (no Jekyll required).
 # What each one enforces is documented at the top of harness_lint.py.
 #
-# Read-only: no network, no writes. Exit 0 when every check passes, 1 when any
+# No network; docs-site writes isolated temporary fixtures and removes them. Exit 0 when every check passes, 1 when any
 # check fails, 2 on a usage error or a missing prerequisite (bash 4+, git,
 # python3 3.10+).
 
@@ -52,6 +53,7 @@ python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' \
 list_out="$(python3 "$LINT" --list)" \
   || { echo "lint-agent-harness: harness_lint.py --list failed" >&2; exit 2; }
 mapfile -t ALL <<< "$list_out"
+ALL+=(docs-site)
 if [[ -z "${ALL[0]:-}" ]]; then
   echo "lint-agent-harness: harness_lint.py --list returned no checks" >&2
   exit 2
@@ -76,7 +78,11 @@ overall=0
 for c in "${CHECKS[@]}"; do
   echo "=== $c ==="
   rc=0
-  python3 "$LINT" "$c" --root "$ROOT" || rc=$?
+  if [[ "$c" == docs-site ]]; then
+    bash "$SCRIPT_DIR/tests/test_check_docs_site.sh" || rc=$?
+  else
+    python3 "$LINT" "$c" --root "$ROOT" || rc=$?
+  fi
   case "$rc" in
     0) RESULT[$c]=PASS ;;
     1) RESULT[$c]=FAIL; overall=1 ;;
