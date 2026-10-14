@@ -24,8 +24,11 @@
 #                against that block. Drift in either direction — block
 #                text changed without the entry, or the entry's command
 #                changed without its block — fails the check.
-# The first entry is the quickstart. Task 7 completes the entries; this
-# file seeds the schema. Later tasks consume this shape verbatim.
+# The first entry is the guide quickstart; the landing repeats it.
+# Output and refusal blocks are deliberately unlisted and unmarked.
 - anchor: "docs/user-guide.md#quickstart[1]"
+  command: "go run ./cmd/mythhelm demo"
+  expect_exit: 0
+- anchor: "docs/index.md#try-the-scripted-demo[1]"
   command: "go run ./cmd/mythhelm demo"
   expect_exit: 0

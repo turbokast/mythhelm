@@ -32,9 +32,13 @@ The fastest way to see MYTHHELM work is the fully offline scripted demo. It
 runs in a disposable repository, needs no credentials and no network at
 runtime, and labels every screen `SCRIPTED DEMO`:
 
+<div class="example-block" data-example-anchor="docs/user-guide.md#quickstart[1]" markdown="1">
+
 ```sh
 go run ./cmd/mythhelm demo
 ```
+
+</div>
 
 ![Kill the terminal mid-run: recover and finish, scripted](demos/hero.gif)
 *Scripted recording, fake agent, offline, no credentials, rendered from `docs/demos/hero.tape`. It kills the foreground `mythhelm run` with SIGKILL while the scripted agent works: the worker and the agent are separate processes and survive, and `mythhelm recover` reattaches to the same worker and finishes the run without relaunching the agent. A hard-killed worker is a different case and is not shown (#391). The red kill marker is a shell annotation, not mythhelm output. Regenerate it with `docs/demos/record.sh`.*
