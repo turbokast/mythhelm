@@ -186,7 +186,7 @@
 - **Spec deviations**: Added `docs/search.json` within the docs domain to normalize the canonical state include before indexing: Jekyll can render the index before the guide, otherwise raw Liquid leaks into search text. The index schema and generator are unchanged. Parent browser review found pre-existing inline-code line breaks before angle-bracket placeholders were parsed as raw HTML, hiding later guide content; joined those two lines without changing prose or output words so the actual budget labels and second note render (consistent with FR-5). Task 4 already supplies the guide recording controls at build time, so no duplicate guide recording markup was added.
 - **Files modified**: `docs/_includes/state.html`, `docs/user-guide.md`, `docs/limitations.md`, `docs/assets/site.css`, `docs/contributing.md`, `docs/search.json`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`.
 
-### Task 7 — Tested-in-CI marker on code examples (docs)
+### Task 7 — Tested-in-CI marker on code examples (docs) ✅ COMPLETED
 
 - **Domain/agent**: go-implementer (docs domain)
 - **Budget**: standard
@@ -204,6 +204,14 @@
   - An output block is marked only when its normalised output is diffed by the examples job; otherwise it renders unmarked (AC-6.4).
 - **Test plan**: Build the site and audit marked blocks against the list by hand; run the listed quickstart command non-interactively with `GOPROXY=off` after `go mod download` and record its exit code.
 - **Invariants touched**: I14 (v2 §2: the marker claims only what CI runs); G10 (v2 §18.3: tested examples as public-release evidence).
+
+- **Status**: ✅ Completed — Both quickstart markers derive from the examples list in opted-in builds; public labels remain disabled until Task 10 runs and gates the examples; PR #470.
+- **Implementation**: Commits 5ac9419 and a89634f (Codex, docs implementer equivalent; review corrections stage activation and bind source annotations). The layout matches an explicit fenced-example source annotation against the examples list and source page; the landing quickstart now uses a real fence with unchanged words. A baseline marker audit failed with zero markers, then the opted-in Pages fixture passed with exactly two; the exact quickstart command exited 0 after `go mod download` with `GOPROXY=off` in a credential-free, network-isolated sandbox. Chrome at 390/1280 px and independent review passed.
+- **Spec deviations**:
+  - Review round 1 defers public marker activation to Task 10 to avoid claiming CI execution before its job exists. Task 7 ships the generator and an opted-in fixture; production is unmarked unless temporary build data `docs/_data/example_checks.yml` sets `enabled: true`. Task 10 must set it only in builds whose example checks gate publication, under its acceptance “The examples job runs every `docs/_data/examples.yml` command as written and fails when the actual exit code differs from the entry's expected code”. No enabled data file is committed here.
+  - Review round 1 adds explicit `example-block` source annotations around the two listed fences, preventing raw HTML and indented Markdown blocks from shifting ordinals (consistent with design §3.6). A raw-before/between-fences fixture reproduced the wrong markers before correction; the final fixture also covers indented blocks, unlisted annotations and wrong-page annotations. Task 8 validates annotated anchors against source fence identities.
+  - Guide changes are markup only; all 19 rendered code blocks retain exact bytes. No output entry or output marker is introduced here.
+- **Files modified**: `docs/_data/examples.yml`, `docs/_layouts/default.html`, `docs/index.md`, `docs/user-guide.md`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`, `specs/in-progress/docs-site-restyle/scratchpad.md`.
 
 ### Task 8 — Built-site content checks (harness)
 

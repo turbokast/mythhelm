@@ -7,6 +7,7 @@
     <title>{% if page.title %}{{ page.title }} | {% endif %}{{ site.title }}</title>
     <link rel="stylesheet" href="{{ '/assets/site.css' | relative_url }}">
     <style>
+      .tested-example { display: block; font-family: var(--font-mono); font-size: 0.8rem; }
       /* Search belongs to this layout on both surfaces. */
       .search-button, .search-dialog input {
         min-height: 44px; min-width: 44px; padding: 0.5rem 0.75rem;
@@ -50,8 +51,17 @@
         </ul>
       </nav>
     </header>
+    {% comment %}Source annotations identify fenced examples without counting raw or indented code. Only listed anchors earn labels, and the examples job enables them only for builds it checks.{% endcomment %}
+    {% capture example_content %}{% assign example_blocks = content | split: '<div class="example-block" data-example-anchor="' %}{{ example_blocks.first }}{% for block in example_blocks offset:1 %}
+      {% assign example_anchor = block | split: '"' | first %}
+      {% assign example_page = example_anchor | split: '#' | first %}
+      {% assign source_page = 'docs/' | append: page.path %}
+      {% assign listed_example = site.data.examples | where: 'anchor', example_anchor | first %}
+      {% assign block_open = block | split: '>' | first | append: '>' %}
+      <div class="example-block" data-example-anchor="{{ block_open }}{% if listed_example and example_page == source_page and site.data.example_checks.enabled == true %}<span class="tested-example" data-example-anchor="{{ example_anchor | escape }}">tested in CI</span>{% endif %}{{ block | remove_first: block_open }}
+    {% endfor %}{% endcapture %}
     {% if page.path == "index.md" %}
-    <main class="site-main">{{ content }}</main>
+    <main class="site-main">{{ example_content }}</main>
     {% else %}
     <div class="docs-shell">
       <aside class="docs-sidebar">
@@ -87,7 +97,7 @@
         {% endif %}
         <article class="docs-prose">
           {% comment %}Replace recording sources at build time, before browsers can fetch GIFs. Guide prose stays canonical.{% endcomment %}
-          {% assign image_parts = content | split: '<img ' %}
+          {% assign image_parts = example_content | split: '<img ' %}
           {{ image_parts.first }}{% for part in image_parts offset:1 %}
             {% assign image_tag = part | split: '>' | first %}
             {% assign image_src = image_tag | split: 'src="' | last | split: '"' | first %}
