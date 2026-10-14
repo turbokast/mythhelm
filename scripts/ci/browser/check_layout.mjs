@@ -102,7 +102,10 @@ try {
             if (fg.length === 4 && fg[3] !== 1) add('undeclared', `${name(el)} translucent foreground`);
             let opacity = 1;
             for (let p=el;p;p=p.parentElement) opacity *= Number(getComputedStyle(p).opacity);
-            if (opacity !== 1) fg = fg.slice(0,3).map((v,i) => opacity*v+(1-opacity)*bg[i]);
+            if (opacity !== 1) {
+              add('undeclared', `${name(el)} group opacity prevents contrast verification`);
+              return;
+            }
             const key = `${hex(fg)}/${hex(bg)}/${threshold}`;
             if (pairs.has(key)) return; pairs.add(key);
             if (!palette.includes(hex(fg)) || !palette.includes(hex(bg))) add('undeclared', `${name(el)} ${kind} ${key}`);

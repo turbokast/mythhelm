@@ -45,6 +45,7 @@ root=pathlib.Path(sys.argv[1])
 base='''<!doctype html><html><head><style>:root{--color-paper:#f6f4ee;--color-ink:#101621;--color-star-light:#00829d}body{margin:0;background:#f6f4ee;color:#101621}button{width:44px;height:44px;background:#f6f4ee;color:#101621;border:1px solid #101621}EXTRA</style></head><body><p>Readable text</p>BODY</body></html>'''
 cases={'good':('','<button>Go</button>'),'wide':('pre{width:2000px}','<pre>wide</pre>'),'clip':('html,body{overflow-x:clip}pre{width:2000px}','<pre>wide</pre>'),'contrast':('p{color:#00829d}',''),'undeclared':('p{color:#123456}',''),'target':('button{width:20px;height:20px}','<button>Go</button>'),'origin':('','<script src="https://example.invalid/a.js"></script>'),'gif':('','<img src="demo.gif" alt="scripted demo">'),'motion':('@keyframes spin{to{transform:rotate(10deg)}}p{animation:spin 2s infinite}','')}
 cases.update({
+ 'group-opacity':('p{opacity:.5;background:#101621;color:#f6f4ee}', ''),
  'opacity':('p{opacity:.1}', ''),
  'value':('input{width:100px;height:44px;color:#00829d;background:#f6f4ee;border:1px solid #101621}', '<input value=bad>'),
  'placeholder':('input{width:100px;height:44px;color:#101621;background:#f6f4ee;border:1px solid #101621}input::placeholder{color:#00829d;opacity:1}', '<input placeholder=bad>'),
@@ -75,13 +76,13 @@ PY
 check="$root/scripts/ci/browser/check_layout.mjs"
 node "$check" "$work/good"
 printf '%s\n' '--- PASS: conforming fixture'
-for case in wide clip contrast undeclared target origin gif motion quickstart quickstart-heading weight preload poster opacity value placeholder hidden-command no-title-marker websocket resource controls hero caption; do
+for case in wide clip contrast undeclared target origin gif motion quickstart quickstart-heading weight preload poster opacity group-opacity value placeholder hidden-command no-title-marker websocket resource controls hero caption; do
   if node "$check" "$work/$case" > "$work/$case.log" 2>&1; then
     echo "FAIL: $case accepted"; exit 1
   fi
   expected="$case"
-  case "$case" in opacity|value|placeholder) expected=contrast ;; quickstart-heading|hidden-command|no-title-marker) expected=quickstart ;; websocket) expected=origin ;; esac
-  grep -q "${expected}:" "$work/$case.log" || { cat "$work/$case.log"; exit 1; }
+  case "$case" in opacity|group-opacity) expected=undeclared ;; value|placeholder) expected=contrast ;; quickstart-heading|hidden-command|no-title-marker) expected=quickstart ;; websocket) expected=origin ;; esac
+  grep -Eq '^[^:]+:1: '"${expected}"': ' "$work/$case.log" || { cat "$work/$case.log"; exit 1; }
   printf '%s\n' "--- PASS: $case rejected"
 done
 if CHROME_BIN="$work/absent-chrome" node "$check" "$work/good" > "$work/missing.log" 2>&1; then
