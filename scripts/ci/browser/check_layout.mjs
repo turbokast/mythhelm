@@ -14,9 +14,14 @@ const repo = resolve(here, '../../..');
 const findings = [];
 const report = (page, check, detail) => { const finding = `${page}:1: ${check}: ${detail}`; findings.push(finding); console.error(finding); };
 let browser, server;
+const inputError = message => Object.assign(new Error(message), { inputError: true });
 try {
-  if (process.argv.length !== 3) throw new Error('usage: node scripts/ci/browser/check_layout.mjs _site');
-  const site = await realpath(resolve(process.argv[2]));
+  if (process.argv.length !== 3) throw inputError('usage: node scripts/ci/browser/check_layout.mjs _site');
+  let site;
+  try {
+    site = await realpath(resolve(process.argv[2]));
+    if (!(await stat(site)).isDirectory()) throw new Error('site must be a directory');
+  } catch (error) { throw inputError(error.message); }
   const pages = [];
   async function walk(dir) {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -27,7 +32,9 @@ try {
     }
   }
   await walk(site);
-  if (!pages.length) throw new Error('site contains no HTML pages');
+  if (!pages.length) throw inputError('site contains no HTML pages');
+  if (!pages.includes('index.html')) { report('index.html', 'landing', 'required landing page is absent'); process.exitCode=1; }
+  if (findings.length) throw new Error('required landing page is absent');
   const brand = await readFile(join(repo, 'docs/assets/brand/README.md'), 'utf8');
   const palette = [...brand.matchAll(/\|[^|]+\| `(#\w{6})` \|/g)].map(m => m[1].toLowerCase());
   if (palette.length !== 9) throw new Error('cannot parse the nine declared brand colors');
@@ -64,10 +71,17 @@ try {
           if (new URL(url).origin !== origin) { report(file, 'origin', url); await route.abort(); }
           else await route.continue();
         });
-        page.on('response', response => responses.push(response));
+        await context.routeWebSocket('**/*', socket => {
+          report(file, 'origin', `WebSocket connection is unsupported: ${socket.url()}`);
+          socket.close();
+        });
+        page.on('response', response => {
+          responses.push(response);
+          if (response.status() >= 400) report(file, 'resource', `${response.status()} ${response.url()}`);
+        });
         await page.goto(`${origin}${base}/${file}`, { waitUntil: 'networkidle' });
         await page.evaluate(() => document.fonts.ready);
-        const measure = ({ palette, width, reducedMotion, initial = true }) => {
+        const measure = ({ palette, width, reducedMotion, landing, initial = true }) => {
           const errors = [];
           const add = (kind, message) => errors.push([kind, message]);
           const name = el => `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${el.className && typeof el.className === 'string' ? '.' + el.className.trim().replaceAll(' ', '.') : ''}`;
@@ -104,7 +118,7 @@ try {
               if (['auto','scroll'].includes(getComputedStyle(p).overflowX)) { scrollContainer=true; break; }
             }
             if (!scrollContainer && (rect.left < -.5 || rect.right > width+.5)) add('clip', `${name(el)} box ${rect.left.toFixed(1)}..${rect.right.toFixed(1)} outside ${width}`);
-            if (width===390 && el.matches('nav a, .on-this-page a, button, input:not([type=hidden]), select, textarea, [role=button]') && (rect.width<43.99 || rect.height<43.99)) add('target', `${name(el)} ${rect.width.toFixed(1)}x${rect.height.toFixed(1)}`);
+            if (width===390 && el.matches('nav a, .on-this-page a, .search-dialog a, button, input:not([type=hidden]), select, textarea, [role=button]') && (rect.width<43.99 || rect.height<43.99)) add('target', `${name(el)} ${rect.width.toFixed(1)}x${rect.height.toFixed(1)}`);
             if ([...el.childNodes].some(n => n.nodeType===Node.TEXT_NODE && n.textContent.trim()) || el.matches('input:not([type=hidden]), textarea, select')) {
               const size=parseFloat(style.fontSize), large=size>=24 || (size>=18.66 && parseInt(style.fontWeight)>=700);
               contrast(el,rgb(style.color),background(el),large?3:4.5,'text');
@@ -128,14 +142,27 @@ try {
             const img=recording.querySelector('img');
             if (!img || !img.getAttribute('src')?.includes('poster') || !img.alt.toLowerCase().includes('scripted')) add('poster','recording lacks scripted static poster');
           }
-          if (reducedMotion==='reduce' && document.getAnimations().some(a=>a.playState==='running')) add('motion','unprompted animation with reduced motion');
-          if (initial && document.querySelector('#landing-title')) {
-            const quick=document.querySelector('#quickstart pre, pre#quickstart');
-            if (!quick || quick.getBoundingClientRect().top<0 || quick.getBoundingClientRect().bottom>innerHeight) add('quickstart','command block not inside first viewport');
+          for (const recording of document.querySelectorAll('.recording, .hero-recording')) {
+            const media=recording.querySelector('img,video');
+            const caption=recording.querySelector('figcaption') || recording.parentElement.querySelector('em');
+            if (!media || !visible(media)) { add('poster','recording media is absent or hidden'); continue; }
+            const column=recording.parentElement, bounds=column.getBoundingClientRect(), box=media.getBoundingClientRect();
+            const columnStyle=getComputedStyle(column), recordingBounds=recording.getBoundingClientRect();
+            if (box.left < bounds.left+parseFloat(columnStyle.paddingLeft)-.5 || box.right > bounds.right-parseFloat(columnStyle.paddingRight)+.5 || box.left < recordingBounds.left-.5 || box.right > recordingBounds.right+.5) add('caption','recording exceeds its content column');
+            if (!caption || !visible(caption) || caption.getBoundingClientRect().top < box.bottom-.5) add('caption','caption is absent or not below its recording');
+            if (recording.matches('.hero-recording')) {
+              const description=media.getAttribute('aria-describedby')?.split(/\s+/).map(id=>document.getElementById(id)?.textContent || '').join(' ') || media.getAttribute('aria-label') || '';
+              if (!media.getAttribute('poster') || !/scripted/i.test(description) || description.trim().length < 25) add('hero','hero lacks poster or scripted description');
+            }
           }
-          return {errors, pairs:pairs.size, landing:!!document.querySelector('#landing-title')};
+          if (reducedMotion==='reduce' && document.getAnimations().some(a=>a.playState==='running')) add('motion','unprompted animation with reduced motion');
+          if (initial && landing) {
+            const quick=document.querySelector('#quickstart pre, pre#quickstart');
+            if (!quick || !visible(quick) || quick.getBoundingClientRect().width<=0 || quick.getBoundingClientRect().height<=0 || quick.getBoundingClientRect().top<0 || quick.getBoundingClientRect().top>=innerHeight) add('quickstart','command block not inside first viewport');
+          }
+          return {errors, pairs:pairs.size, landing};
         };
-        const measured = await page.evaluate(measure, { palette, width, reducedMotion });
+        const measured = await page.evaluate(measure, { palette, width, reducedMotion, landing: file === 'index.html' });
         for (const [kind, detail] of measured.errors) report(file,kind,`${width}px/${reducedMotion}: ${detail}`);
         for (const url of requests) if (/\.gif(?:[?#]|$)/i.test(url)) report(file,'gif',`initial request ${url}`);
         if (measured.landing) {
@@ -151,14 +178,29 @@ try {
         console.log(`measured page=${file} width=${width} motion=${reducedMotion} contrast_pairs=${measured.pairs}`);
         // Exercise shared controls after initial-load accounting on both surfaces.
         if (file === 'index.html' || file === 'user-guide.html') {
-          for (const selector of ['.sidebar-toggle', '#search-open']) {
+          const selectors = width === 390 && file === 'user-guide.html' ? ['.sidebar-toggle', '#search-open'] : ['#search-open'];
+          for (const selector of selectors) {
             const control = page.locator(selector);
-            if (!await control.count() || !await control.isVisible()) continue;
-            await control.click();
-            await page.waitForLoadState('networkidle');
-            const active = await page.evaluate(measure, { palette, width, reducedMotion, initial: false });
-            for (const [kind, detail] of active.errors) report(file,kind,`${width}px/${reducedMotion}/${selector}: ${detail}`);
-            if (selector === '#search-open') await page.keyboard.press('Escape');
+            if (await control.count() !== 1 || !await control.isVisible()) {
+              report(file, 'controls', `required control absent or hidden: ${selector}`); continue;
+            }
+            try {
+              if (selector === '#search-open') {
+                await Promise.all([
+                  page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/search.json'), { timeout: 5000 }),
+                  control.click({ timeout: 5000 }),
+                ]);
+                await page.waitForFunction(() => document.querySelector('#site-search')?.open, undefined, { timeout: 5000 });
+                await page.locator('#search-query').fill('MYTHHELM');
+                await page.waitForFunction(() => /result/.test(document.querySelector('#search-status')?.textContent || '') && document.querySelector('#search-results a'), undefined, { timeout: 5000 });
+              } else {
+                await control.click();
+                if (await control.getAttribute('aria-expanded') !== 'true' || !await page.locator('#docs-navigation').isVisible()) throw new Error('sidebar did not open');
+              }
+              const active = await page.evaluate(measure, { palette, width, reducedMotion, landing: file === 'index.html', initial: false });
+              for (const [kind, detail] of active.errors) report(file,kind,`${width}px/${reducedMotion}/${selector}: ${detail}`);
+              if (selector === '#search-open') await page.keyboard.press('Escape');
+            } catch (error) { report(file,'controls', `${selector}: ${error.message}`); }
           }
         }
         await context.close();
@@ -169,7 +211,7 @@ try {
   process.exitCode = findings.length ? 1 : 0;
 } catch (error) {
   console.error(`browser-check: ${error.message}`);
-  process.exitCode = /usage:|contains no HTML|ENOENT|cannot parse/.test(error.message) ? 2 : 1;
+  process.exitCode = error.inputError ? 2 : 1;
 } finally {
   if (browser) await browser.close();
   if (server) await new Promise(resolve => server.close(resolve));

@@ -75,7 +75,13 @@
 
 ## Task 9 — Browser-driver carve-out and responsive checks (harness)
 
-<!-- pending -->
+- **Produces**: `node scripts/ci/browser/check_layout.mjs _site`; exit 0 means all published HTML pages passed, exit 1 means findings or unavailable Chrome, exit 2 means invalid input. It serves the build on an ephemeral loopback port and closes its isolated browser/server afterward.
+- **For Task 10**: Run `npm ci --prefix scripts/ci/browser`, then `bash scripts/ci/browser/test_check_layout.sh` and the driver above in the site-build job only. `CHROME_BIN` selects an explicitly installed binary; default is `/usr/bin/google-chrome`. Missing Chrome fails, never skips. Record the printed source/version. No browser download or runtime-site dependency exists.
+- **Supply chain**: Lockfile pins playwright-core 1.64.0, the only external resolved package, Apache-2.0; the root package also declares Apache-2.0. Both pass the existing dependency-review allow-list, checked before driver implementation. Task 10 still owns pinned setup-node, npm Dependabot cooldown, automation rows and workflow wiring.
+- **Measurements**: Every page at 390x844 and 1280x800, normal/reduced motion; document/element overflow, visible navigation/control targets, actual rendered text and control-boundary contrast against declared brand colors, GIF/poster state and request origins. Landing counts initial response-body bytes conservatively without compression, requires the visible command block’s top edge in the first viewport and untouched video preload none. Representative landing/guide open sidebar/search after initial-load accounting.
+- **Evidence**: Pinned Pages v1.0.13 entrypoint emits 40 pages; preinstalled Google Chrome 154.0.8037.97 reports zero findings. Landing initial bodies total 100,669 bytes. Twenty-three rejecting browser cases plus structural manifest/command cases and missing-Chrome rejection pass. Independent review fixes also enforce landing presence, HTTP/WebSocket failures, loaded search results, recording descriptions/captions and explicit input-error exits.
+- **For local gates**: Installed node_modules contains third-party docs that the portable harness lint scans. Keep installation in the isolated browser CI job; remove/move only the local installation before running source harness gates. Directory-local `.gitignore` excludes it from source control.
+- **Deviation affecting later inputs**: None to invocation/schema; workflow execution remains Task 10's responsibility. These browser checks establish I09 rendered evidence and remain CI tooling under I13, not a runtime service.
 
 ## Task 10 — Site-build job gating CI OK and docs workflow wiring (release)
 
