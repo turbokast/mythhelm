@@ -8,7 +8,11 @@
 
 ## Task 1 — decision record: Windows process ownership
 
-<!-- pending -->
+- **Produces**: `docs/decisions/0017-windows-process-ownership.md`, recording the maintainer-approved OQ-1/OQ-8/OQ-11 defaults and D2/D3/D8/D11. It supersedes ADR 0004's named Windows design statements; Task 10 updates the old ADR's status.
+- **For dependents**: worker-owned kill-on-close job; Windows-only native creation time in worker.json and event payload; no database migration; worker death does not itself resolve ownership. Preserve unresolved crash-boundary outcomes and the separate Windows stop-ladder version.
+- **For Task 3**: real Windows runner measurements and OQ-3/OQ-13 architect review remain required. A kill-on-close parent job on either runner requires maintainer escalation before production changes.
+- **Qualification**: no Windows support row is promoted by this ADR. Task 11 remains a maintainer decision supported by real Windows CI evidence.
+- **Deviations**: none to the approved design or dependent acceptance criteria.
 
 ## Task 2 — fake adapter child-tree fixture for Windows
 

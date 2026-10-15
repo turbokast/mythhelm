@@ -37,3 +37,9 @@ Round 3 (the last allowed) returned `Needs revision`: 3 blocking findings (Group
 - `STILL_ACTIVE` is absent from `x/sys` v0.48.0 (add to D7); `requirements.md` impacted components mention `internal/control/support_test.go`, which no task edits.
 
 ## Discoveries
+
+### Task 1 — approved ownership decisions
+
+The maintainer approved the design defaults for OQ-1 (worker-owned kill-on-close), OQ-8 (Windows-only native creation time) and OQ-11 (worker death plus kill-on-close does not resolve ownership). ADR 0017 records these decisions with D2, D3, D8 and D11. No acceptance criteria change. OQ-3/OQ-13 architect review, Task 3's real Windows runner spike and its conditional maintainer escalation remain required; Task 11 still controls support-row promotion. ADR 0004's status line remains Task 10's change. Recorded by Codex as a transcription of the maintainer decision, without implementing Windows behavior.
+
+Local Task 1 validation initially failed unchanged Go tests: three control lock tests encountered an already-running supervisor, and `TestResolvedVersionedBinaryLaunched` reported `native_version_probe_failed`. The probe test passed when rerun alone; its initial cause remains unknown. The three control tests all passed with a private absolute `XDG_RUNTIME_DIR`, matching `internal/control/lock.go`'s lock-directory selection. The full-suite retry uses fresh temporary runtime and state directories, sets `XDG_RUNTIME_DIR` and `XDG_STATE_HOME`, and removes `MYTHHELM_HOME` only from the test process environment. It does not alter `HOME`, user configuration or the live supervisor. The isolated full race suite passed (go-test gate, 244.7s); the original failed suite exited before the retry recorded its marker. This is local test evidence, not Windows qualification.

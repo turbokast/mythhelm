@@ -12,7 +12,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — decision record: Windows process ownership
+### Task 1 — decision record: Windows process ownership ✅ COMPLETED
 
 - **Domain/agent**: maintainer
 - **Budget**: standard
@@ -25,6 +25,10 @@
   - A `Supersedes` line names ADR 0004 and its process-model, stop-ladder and capability statements (cited by heading; `grep -n "Windows" docs/decisions/0004-slice-process-model.md` finds them). Fails before: no file.
   - If a decision differs from its default, the ADR lists the tasks and ACs that change.
 - **Invariants touched**: I06 (v2 §6.4: a stop stays unconfirmed until reconciliation), I18 (one process owner per attempt), I24 (a lease or heartbeat timeout is not proof a writer stopped).
+- **Status**: ✅ Completed — recorded the maintainer-approved Windows ownership defaults in ADR 0017; PR #478.
+- **Implementation**: OQ-1/OQ-8/OQ-11 and D2/D3/D8/D11 retain the approved defaults; ADR 0004's Windows statements are superseded without claiming shipped implementation or qualification. Commits 311f0cd and c6e61a5.
+- **Spec deviations**: No design or acceptance changes. Updated this task's completion entry, handoff and scratchpad as required by the task-completion procedure; these lifecycle records are outside the task's ADR-only Files list.
+- **Files modified**: `docs/decisions/0017-windows-process-ownership.md`, `specs/in-progress/windows-process-ownership/tasks.md`, `specs/in-progress/windows-process-ownership/handoff.md`, `specs/in-progress/windows-process-ownership/scratchpad.md`.
 
 ### Task 2 — fake adapter child-tree fixture for Windows
 
