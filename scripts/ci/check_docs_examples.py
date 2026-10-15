@@ -12,8 +12,10 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import resource
 import subprocess
 import sys
+import tempfile
 import uuid
 
 from check_docs_site import Document, InputError, example_blocks, load_rows, normalise_output
@@ -96,19 +98,40 @@ def site_digest(site):
 
 
 def workflow_findings(root):
+    # Static regression lint, not a complete workflow expression evaluator.
     findings = []
     for name in ('ci', 'docs'):
         text = (root / '.github/workflows' / f'{name}.yml').read_text(encoding='utf-8')
         for forbidden in ('secrets' + '.', 'pull_request' + '_target'):
             if forbidden in text:
                 findings.append(f'{name}.yml: forbidden credential/trigger reference')
+        for expression in re.findall(r'\$\{\{(.*?)\}\}', text, re.DOTALL):
+            if (re.search(r'\bsecrets\b', expression)
+                    or re.search(r'''\bgithub\s*(?:\.\s*token\b|\[\s*['"]token['"]\s*\])''', expression)):
+                findings.append(f'{name}.yml: explicit credential expression')
     return findings
+
+
+def bounded_run(args):
+    # Limit each output file in the child before exec. Unlike PIPE capture this
+    # bounds both host memory and disk even if the command writes continuously.
+    limit = 1024 * 1024
+    def constrain():
+        resource.setrlimit(resource.RLIMIT_FSIZE, (limit, limit))
+    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+        result = subprocess.run(args, stdin=subprocess.DEVNULL, stdout=stdout,
+                                stderr=stderr, timeout=180, preexec_fn=constrain)
+        if stdout.tell() >= limit or stderr.tell() >= limit:
+            raise InputError('sandbox output limit exceeded; no example result')
+        stdout.seek(0)
+        stderr.seek(0)
+        return subprocess.CompletedProcess(args, result.returncode, stdout.read(limit), stderr.read(limit))
 
 
 def docker_execute(command, root, cache, image):
     name = 'docs-example-' + uuid.uuid4().hex
     args = ['docker', 'create', '--name', name, '--pull=never', '--network', 'none',
-            '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
+            '--log-driver', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
             '--pids-limit', '256', '--memory', '2g', '--cpus', '2',
             '--user', '65534:65534', '--tmpfs', '/tmp:rw,exec,mode=1777',
             '--mount', f'type=bind,src={root},dst=/src,readonly',
@@ -128,8 +151,7 @@ def docker_execute(command, root, cache, image):
         if not re.fullmatch(r'[a-f0-9]{64}', candidate):
             raise InputError('sandbox returned an invalid container ID')
         container = candidate
-        result = subprocess.run(['docker', 'start', '--attach', container],
-                                stdin=subprocess.DEVNULL, capture_output=True, timeout=180)
+        result = bounded_run(['docker', 'start', '--attach', container])
         inspection = subprocess.run(['docker', 'inspect', '--format', '{{json .State}}', container],
                                    stdin=subprocess.DEVNULL, capture_output=True, timeout=20)
         if inspection.returncode:
@@ -183,8 +205,9 @@ def main():
     parser.add_argument('--site', type=Path, default=Path('_site'))
     parser.add_argument('--module-cache', type=Path)
     parser.add_argument('--image')
-    parser.add_argument('--digest', action='store_true')
-    parser.add_argument('--workflows', action='store_true')
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument('--digest', action='store_true')
+    modes.add_argument('--workflows', action='store_true')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     try:

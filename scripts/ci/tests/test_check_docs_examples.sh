@@ -6,6 +6,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 python3 - "$root" <<'PY'
 import html
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -70,26 +71,79 @@ class Examples(unittest.TestCase):
             (workflows / f'{name}.yml').write_text('on: [pull_request, merge_group]')
         self.assertEqual([], examples.workflow_findings(self.root))
         for name in ('ci', 'docs'):
-            for banned in ('secrets' + '.TOKEN', 'pull_request' + '_target'):
+            for banned in ('secrets' + '.TOKEN', 'pull_request' + '_target',
+                           "${{ secrets['TOKEN'] }}", '${{ github.token }}',
+                           "${{ github['token'] }}", '${{ toJSON(secrets) }}'):
                 path = workflows / f'{name}.yml'
                 path.write_text(banned)
                 self.assertTrue(examples.workflow_findings(self.root))
                 path.write_text('on: [pull_request, merge_group]')
 
+    def assert_ci_contract(self, ci):
+        # Extract this workflow's block-style jobs, refusing missing/duplicate
+        # keys. Comments cannot provide executable dependencies or conditions.
+        body = ci.split('\njobs:\n', 1)[1]
+        jobs = {}
+        current = None
+        for line in body.splitlines():
+            line = line.split(' #', 1)[0]
+            if line.lstrip().startswith('#') or not line.strip():
+                continue
+            match = re.fullmatch(r'  ([a-z][a-z0-9-]*):', line)
+            if match:
+                current = match[1]
+                self.assertNotIn(current, jobs)
+                jobs[current] = []
+            elif current:
+                jobs[current].append(line)
+        site = jobs['site-build']
+        gate = jobs['ci-ok']
+        self.assertIn('    name: Site build', site)
+        self.assertIn('    uses: ./.github/workflows/docs.yml', site)
+        self.assertIn('    name: CI OK', gate)
+        self.assertIn('    if: always()', gate)
+        needs = [line for line in gate if line.startswith('    needs: ')]
+        self.assertEqual(1, len(needs))
+        self.assertRegex(needs[0], r'^    needs: \[.*\bsite-build\b.*\]$')
+        conditions = [line for line in gate if line.startswith('      - if: ')]
+        self.assertEqual(["      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || needs.site-build.result != 'success'"], conditions)
+        self.assertIn('        run: exit 1', gate)
+
     def test_workflow_build_and_gate_contract(self):
         ci = (repository / '.github/workflows/ci.yml').read_text()
         docs = (repository / '.github/workflows/docs.yml').read_text()
-        self.assertIn('  site-build:', ci)
-        self.assertIn('name: Site build', ci)
-        self.assertIn('uses: ./.github/workflows/docs.yml', ci)
-        self.assertIn('harness, site-build]', ci)
-        self.assertIn("needs.site-build.result != 'success'", ci)
+        self.assert_ci_contract(ci)
         self.assertIn('  workflow_call:', docs)
         self.assertLess(docs.index('name: Assert mirrors rendered'), docs.index('uses: actions/upload-pages-artifact@'))
         self.assertLess(docs.index('uses: actions/upload-pages-artifact@'), docs.index('uses: actions/setup-node@'))
         self.assertIn('needs: [build, examples]', docs)
         self.assertIn('--network', (repository / 'scripts/ci/check_docs_examples.py').read_text())
         self.assertEqual([], examples.workflow_findings(repository))
+
+    def test_gate_contract_rejects_comments_and_other_jobs(self):
+        ci = (repository / '.github/workflows/ci.yml').read_text()
+        for line in ("    needs: [workflows, detect, go, lint, govulncheck, licenses, harness, site-build]",
+                     "      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || needs.site-build.result != 'success'"):
+            for replacement in ('    # ' + line.strip(), ''):
+                mutant = ci.replace(line, replacement) + '\n  unrelated:\n' + line + '\n'
+                with self.subTest(line=line, replacement=replacement), self.assertRaises(AssertionError):
+                    self.assert_ci_contract(mutant)
+
+    def test_exclusive_modes(self):
+        self.fixture()
+        result = subprocess.run([sys.executable, str(repository / 'scripts/ci/check_docs_examples.py'),
+                                 '--digest', '--workflows', '--site', str(self.site)],
+                                capture_output=True)
+        self.assertEqual(2, result.returncode)
+
+    def test_bounded_output(self):
+        for stream in ('stdout', 'stderr'):
+            with self.subTest(stream=stream), self.assertRaises(examples.InputError):
+                examples.bounded_run([sys.executable, '-c',
+                    f'import sys; sys.{stream}.write("x" * (2 * 1024 * 1024))'])
+        result = examples.bounded_run([sys.executable, '-c', 'print("hello")'])
+        self.assertEqual(b'hello\n', result.stdout)
+        self.assertEqual(0, result.returncode)
 
     def test_real_content_fixture_is_rejected(self):
         import importlib.util
@@ -129,6 +183,7 @@ class Examples(unittest.TestCase):
             self.assertEqual(['docker', 'create'], create[:2])
             self.assertEqual('none', create[create.index('--network') + 1])
             self.assertIn('--read-only', create)
+            self.assertEqual('none', create[create.index('--log-driver') + 1])
             self.assertEqual(['-c', 'exit ' + str(start_exit)], create[-2:])
             self.assertEqual(['docker', 'rm', '-f', container], run.call_args_list[-1].args[0])
             return result
