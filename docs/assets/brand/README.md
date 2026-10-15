@@ -23,6 +23,24 @@ The mark is the **M crest**. The M's two peaks are the fleet of agents, the vall
 | Amber (dark) | `#f0c27b` | Needs you only: amber means needs you and nothing else (dark surfaces) |
 | Amber (light) | `#8a5a00` | Needs you only: amber means needs you and nothing else (light surfaces) |
 
+## TUI palette
+
+Proposed by [ADR 0020](../../decisions/0020-observatory-lifecycle-and-themes.md) for the Observatory view; these rows are the TUI-only additions to the shared Colours table, not a claim that the embedded themes already implement them. Task 11 of the Observatory spec checks equality against the embedded themes. IDs remain `dark` (Observatory) and `light` (Paper).
+
+| Theme ID | Token | Hex |
+|---|---|---|
+| `dark` | `surface_raised` | `#0f1a2b` |
+| `dark` | `border` | `#4b5668` |
+| `dark` | `ok` | `#7fd8a9` |
+| `dark` | `err` | `#f4918a` |
+| `light` | `surface_raised` | `#ebe8df` |
+| `light` | `border` | `#a3a7ae` |
+| `light` | `ok` | `#23794a` |
+| `light` | `err` | `#b4232a` |
+| `light` | `text_muted` | `#59616f` |
+
+Observatory `attention` is the existing shared Amber (dark) `#f0c27b`; Paper `attention` is Amber (light) `#8a5a00`. Shared surface/text/focus values also remain in Colours. Amber means needs you in both interfaces. The shared table is unchanged.
+
 ## Type
 
 The wordmark is set in **Archivo Expanded ExtraBold** (125% width, 800 weight). Secondary text is set in **JetBrains Mono**. Both fonts are available under the SIL Open Font License. WOFF2 subsets of both fonts are redistributed with the docs site under that licence in `docs/assets/fonts/`, beside the OFL notice (`docs/assets/fonts/OFL.txt`) and the source, SHA-256 and subsetting record (`docs/assets/fonts/README.md`). The PNG assets in this directory contain rendered text only.
