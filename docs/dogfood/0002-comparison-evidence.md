@@ -6,7 +6,7 @@ checks. No comparative performance or quality claim is established.
 MYTHHELM runs native coding agents. Its effect must be measured by comparing a
 native CLI directly with MYTHHELM driving that same CLI, model and configuration.
 Comparing different native models answers a different question. The governing
-contract is [master specification v2, section 13](../../mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md#evaluation).
+contract is [master specification v2, section 13](https://github.com/turbokast/mythhelm/blob/30062ecd128d3149564d6708b443681a7cfb077e/mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md#13-evaluation-and-promotion-evidence).
 
 ## Recovered evidence
 
@@ -34,7 +34,9 @@ successful attempt nor evidence of provider quota exhaustion.
 The historical normalizer also treated some absent usage as zero. Unknown usage
 and charges must remain unknown. Retail-equivalent estimates are not observed
 charges. Raw evidence remains local; this report publishes only an aggregate
-summary. The six-pair source ledger's SHA-256 is
+summary, which cannot be independently recomputed from the public material.
+The hash identifies the private source; it is not a substitute for a published
+per-pair dataset. The six-pair source ledger's SHA-256 is
 `6c9c6a18230a8e35a202dda0937963c19234d0e4018ab752bef637845407083e`.
 
 ## Prospective pilot
@@ -44,8 +46,13 @@ per attempt, with zero paid credits, metered API calls or fallback routes.
 These are ceilings, not a required sample size. Admission must establish that
 each chosen route fits the allowance; a subscription declaration alone does not
 prove paid continuation is prevented. Stop new assignments when any ceiling is
-reached. Reconcile running processes before retrying. No automatic repairs,
-replans or quota retries are included in this pilot.
+reached. At either time deadline, request stop for every affected active native
+process, escalate through its owned stop ladder, and reap it. Record deadline
+exceedance and cleanup duration separately: 90 minutes bounds scheduled work,
+not a guarantee that process cleanup finishes instantly. If termination cannot
+be confirmed, record unresolved ownership and stop the pilot; do not retry or
+reuse its workspace. Reconcile running processes before retrying. No automatic
+repairs, replans or quota retries are included in this pilot.
 
 The target matrix includes Claude Code, Codex, Muse, Antigravity (`agy`) and
 OpenCode. At the inspected revision, native adapters exist only for Claude Code
@@ -86,12 +93,18 @@ Failures and timeouts remain in assigned-arm acceptance denominators. Timeouts
 are censored for latency; do not drop them or average only successful timings
 as an overall speed claim. Missing measurements remain missing with counts.
 
-Analyze the MYTHHELM effect within each native CLI first. Treat independent task
-families as sampling clusters; repetitions within a task and tasks from one
-repository may be correlated. A confirmatory study should estimate paired
-acceptance differences and task-cluster uncertainty intervals, and use paired
-latency differences with a preregistered treatment of censoring. Choose sample
-size from the minimum useful effect and pilot variability, allowing for clustering,
+Analyze the MYTHHELM effect within each native CLI first. Treat independent
+repositories as the independent sampling units when generalizing across
+repositories. Preserve matched arms and all task-family/repetition nesting
+within each repository when estimating uncertainty, using a preregistered
+repository-cluster or hierarchical method. Task families that cross repositories
+require a method accounting for both dependencies. A confirmatory study should
+estimate paired acceptance differences and uncertainty intervals under that
+dependence structure, and use paired latency differences with a preregistered
+treatment of censoring. With only one repository or too few independent clusters
+for the chosen method, report descriptive results limited to the observed
+repositories; do not claim a population interval or a promotion decision. Choose
+sample size from the minimum useful effect and pilot variability, allowing for clustering,
 before opening the holdout. Twelve attempts alone cannot substantiate a five-CLI
 ranking. A sparse pilot is reported as inconclusive, not equivalence.
 
