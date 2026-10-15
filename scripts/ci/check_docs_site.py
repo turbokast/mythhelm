@@ -306,16 +306,17 @@ class Checker:
                     self.fail(path, 'tokens', f'colour literal or derived colour in {key}')
                 # Named colours are invalid in properties accepting colours. Remove
                 # lengths, border styles and allowed non-colour keywords first.
-                if key in {'color', 'background', 'background-color', 'border', 'border-color', 'outline', 'outline-color', 'fill', 'stroke', 'box-shadow', 'text-shadow', 'text-decoration-color', 'caret-color'} or 'gradient(' in stripped or key in {'background-image', 'border-image'} or key.endswith('-color') or key in {'border-top', 'border-right', 'border-bottom', 'border-left'} or (key.startswith('--') and not key.startswith('--font-')):
+                if key in {'color', 'background', 'background-color', 'border', 'border-color', 'outline', 'outline-color', 'fill', 'stroke', 'box-shadow', 'text-shadow', 'text-decoration', 'text-emphasis', 'column-rule', 'text-decoration-color', 'caret-color'} or 'gradient(' in stripped or key in {'background-image', 'border-image'} or key.endswith('-color') or key in {'border-top', 'border-right', 'border-bottom', 'border-left', 'border-block', 'border-inline', 'border-block-start', 'border-block-end', 'border-inline-start', 'border-inline-end'} or (key.startswith('--') and not key.startswith('--font-')):
                     clean = re.sub(r'[-+]?\d*\.?\d+(?:[a-z%]+)?', '', stripped)
                     clean = re.sub(r'(?:repeating-)?(?:linear|radial|conic)-gradient\(', '', clean)
-                    names = re.findall(r'[a-zA-Z]+', clean)
-                    allowed = {'transparent', 'currentcolor', 'none', 'inherit', 'initial', 'unset', 'solid', 'dashed', 'dotted', 'double', 'inset', 'outset', 'auto', 'to', 'left', 'right', 'top', 'bottom', 'circle', 'ellipse', 'at', 'center'}
+                    names = re.findall(r'[a-zA-Z]+(?:-[a-zA-Z]+)*', clean)
+                    allowed = {'transparent', 'currentcolor', 'none', 'inherit', 'initial', 'unset', 'solid', 'dashed', 'dotted', 'double', 'inset', 'outset', 'auto', 'to', 'left', 'right', 'top', 'bottom', 'circle', 'ellipse', 'at', 'center', 'underline', 'overline', 'line-through', 'wavy', 'blink', 'spelling-error', 'grammar-error', 'from-font', 'filled', 'open', 'dot', 'double-circle', 'triangle', 'sesame', 'hidden', 'groove', 'ridge'}
                     if any(n.lower() not in allowed for n in names):
                         self.fail(path, 'tokens', f'non-token colour in {key}')
             # The backdrop contains no text. Other opacity can tint text.
             for selector, body in re.findall(r'([^{}]+)\{([^{}]*)\}', text):
-                if '::backdrop' not in selector and re.search(r'\bopacity\s*:\s*(?!1(?:\.0+)?\s*[;}])', body + '}'):
+                exclusively_backdrop = all(re.search(r'::backdrop\s*$', part) for part in selector.split(','))
+                if not exclusively_backdrop and re.search(r'\bopacity\s*:\s*(?!1(?:\.0+)?\s*[;}])', body + '}'):
                     self.fail(path, 'tokens', 'text opacity derives a colour')
         if declared != tokens:
             self.fail(self.site / 'assets/site.css', 'tokens', 'declared tokens do not equal brand table')

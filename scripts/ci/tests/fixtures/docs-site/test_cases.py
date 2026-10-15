@@ -302,6 +302,34 @@ class SiteChecks(unittest.TestCase):
         self.replace('site/assets/site.css', 'var(--color-night)', 'var(--color-night, red)')
         self.run_check('tokens')
 
+    def test_colour_bearing_shorthands_reject_named_colours(self):
+        for declaration in ('text-decoration: underline red', 'text-emphasis: filled red',
+                            'column-rule: 1px solid red', 'border-inline: 1px solid red',
+                            'border-block-end: 1px solid red'):
+            with self.subTest(declaration=declaration):
+                self.put('site/assets/site.css', ':root { --color-night: #090f1a; --color-amber-dark: #f0c27b; } body {' + declaration + ';}')
+                self.run_check('tokens')
+
+    def test_colour_bearing_shorthands_accept_tokens(self):
+        self.replace('site/assets/site.css', 'color: var(--color-night)',
+                     'text-decoration: underline wavy var(--color-night); text-emphasis: filled var(--color-night); column-rule: 1px solid var(--color-night); border-inline: 1px solid var(--color-night)')
+        self.run_check(code=0)
+
+    def test_mixed_backdrop_opacity_rejected(self):
+        self.replace('site/assets/site.css', 'body {color: var(--color-night);}',
+                     'body, dialog::backdrop { opacity: 0.5; }')
+        self.run_check('tokens')
+
+    def test_exclusive_backdrop_opacity_allowed(self):
+        self.replace('site/assets/site.css', 'body {color: var(--color-night);}',
+                     'dialog::backdrop, #viewer::backdrop { opacity: 0.5; }')
+        self.run_check(code=0)
+
+    def test_backdrop_inside_negation_does_not_exempt_opacity(self):
+        self.replace('site/assets/site.css', 'body {color: var(--color-night);}',
+                     'body:not(::backdrop) { opacity: 0.5; }')
+        self.run_check('tokens')
+
     def test_border_shorthand_named_colour(self):
         self.replace('site/assets/site.css', 'color: var(--color-night)', 'border-top: 1px solid red')
         self.run_check('tokens')
