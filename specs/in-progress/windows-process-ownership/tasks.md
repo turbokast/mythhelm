@@ -30,7 +30,7 @@
 - **Spec deviations**: No design or acceptance changes. Updated this task's completion entry, handoff and scratchpad as required by the task-completion procedure; these lifecycle records are outside the task's ADR-only Files list.
 - **Files modified**: `docs/decisions/0017-windows-process-ownership.md`, `specs/in-progress/windows-process-ownership/tasks.md`, `specs/in-progress/windows-process-ownership/handoff.md`, `specs/in-progress/windows-process-ownership/scratchpad.md`.
 
-### Task 2 — fake adapter child-tree fixture for Windows
+### Task 2 — fake adapter child-tree fixture for Windows ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (cross-platform process creation)
@@ -51,6 +51,14 @@
   - `GOOS=windows go vet ./adapters/fake/` passes.
 - **Test plan**: Windows-tagged test using the fake agent re-executed as in the existing escapee test; the off-Windows test is untagged.
 - **Invariants touched**: I13 (fixtures need no credentials), I14 (a fixture is not a qualification).
+- **Status**: ✅ Completed — the Windows child/grandchild and breakaway fixture reports live process identities, with strict loading and explicit off-Windows rejection; PR #480.
+- **Implementation**: Codex implemented the routed go-implementer task in `61141fa`, then fixed hosted review findings in `dffab2f`: rooted report access/reset and retained-handle rollback on setup failure. Independent source review found no remaining correctness findings; successful descendants outlive the native, preserving worker ownership tests.
+  Red-first: scenario loading/off-Windows rejection and report reset/confinement failed before their fixes and passed after. Windows tests cover live identities, bounded pipe closure, partial-report failure rollback and report-independent teardown; runtime evidence follows.
+- **Spec deviations**: Added `adapters/fake/tree_windows_test.go` beyond the Files list for the requested Windows-tagged acceptance test and native API probes; task-completion bookkeeping updates this file and `handoff.md`. Review round 1 added rooted report opens, reset-before-spawn, identity-bound failure rollback and independent-handle cleanup regressions (consistent with the fixture contract). No worker ownership behavior changes.
+- **Files modified**: `adapters/fake/agent.go`, `adapters/fake/tree_windows.go`, `adapters/fake/tree_other.go`, `adapters/fake/escapee_other.go`, `adapters/fake/scenarios/tree.json`, `adapters/fake/fake_test.go`, `adapters/fake/tree_windows_test.go`, `specs/in-progress/windows-process-ownership/tasks.md`, `specs/in-progress/windows-process-ownership/handoff.md`.
+- **CI evidence**: Source head `dffab2f68561e82932a8b773349c8ccca6bad2d1`, run [38730062877](https://github.com/turbokast/mythhelm/actions/runs/38730062877): [windows-latest](https://github.com/turbokast/mythhelm/actions/runs/38730062877/job/116405401494) ran `go test -race ./...`, reporting `ok github.com/turbokast/mythhelm/adapters/fake 4.539s`; [windows-11-arm](https://github.com/turbokast/mythhelm/actions/runs/38730062877/job/116405401467) ran `go test ./...`, reporting `ok github.com/turbokast/mythhelm/adapters/fake 1.096s`. These non-verbose package runs include the Windows descendant and setup-failure tests, which have no runtime skip. Only symlink-confinement cases may skip when Windows lacks symlink privilege; their per-case outcome is not exposed by this output. Local Go gates, Windows/Darwin vet and hygiene passed. Fixture evidence is not platform qualification (I14).
+
+
 
 ### Task 3 — Job Object launch ownership
 

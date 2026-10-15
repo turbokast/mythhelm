@@ -35,7 +35,7 @@
   - Own `tasks.md`, `handoff.md` and `scratchpad.md` record completion, downstream inputs and the discovered base race as required by the completion convention.
 - **Files modified**: `internal/cli/observatory_baseline_test.go`, `internal/cli/testdata/observatory-linear.json`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
 
-### Task 2 — Record the lifecycle and presentation contracts
+### Task 2 — Record the lifecycle and presentation contracts ✅ COMPLETED
 
 - **Domain/agent**: go-implementer (docs)
 - **Budget**: standard
@@ -51,6 +51,11 @@
   - Inspect the TUI palette table: every missing TUI-only value in AC-1.10 is included and no existing shared Colours row is changed; Task 11 will execute the equality check against embedded themes.
 - **Test plan**: Documentation review plus hygiene; no product decisions or approval ledger edits.
 - **Invariants touched**: I06/I12/I18/I21 (v2 §§6.4,15.2: ownership and finite envelope); I11/I13 (v2 §16: declarative theme only).
+
+- **Status**: ✅ Completed — Proposed lifecycle/theme ADR and separate TUI palette documented; PR #484.
+- **Implementation**: Commit `54f859d` records the worker-pinned deadline, journal-derived conclusion, typed stop-less detach, signal/action ownership, client/canonical outcome distinction and declarative themes. Independent architect review returned Ready with no critical or important findings; ADR remains proposed for Task 3.
+- **Spec deviations**: None. Own task completion, handoff and scratchpad evidence follow the completion convention.
+- **Files modified**: `docs/decisions/0020-observatory-lifecycle-and-themes.md`, `docs/decisions/README.md`, `docs/assets/brand/README.md`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
 
 ### Task 3 — Approve the concrete ADR
 
