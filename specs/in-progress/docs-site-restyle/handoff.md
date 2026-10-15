@@ -77,7 +77,11 @@
 
 ## Task 8 — Built-site content checks (harness)
 
-<!-- pending -->
+- **Produces**: `python3 scripts/ci/check_docs_site.py --site _site --docs docs`; exit 0 means conforming, 1 content findings, 2 unavailable/unparseable input. Requires real `ffprobe` for both hero video formats.
+- **For Task 10**: `example_blocks(docs)` supplies fence identities/text and wrapper errors; `normalise_output(text)` implements docs-output-v1. This checker never executes examples. Task 10 owns command execution and output diffs in its credential-free sandbox.
+- **For Task 10**: Default builds must have no tested markers. Opted-in builds need temporary `_data/example_checks.yml` with `enabled: true`, coupled to successful example checks before publication.
+- **Verification**: 62 fixtures exercise conforming default/opted-in builds and rejected content/input contracts; CI artifact run 38717945157 matched to source 3456bd6 passes on all 41 HTML pages. That artifact includes a later docs report and is integration evidence, not an exact task-head build.
+- **Review fixes**: Relative mirror links and site paths normalize before membership checks; list-indented fences remove opening indentation; malformed manifest records/chapters return input error 2.
 
 ## Task 9 — Browser-driver carve-out and responsive checks (harness)
 
