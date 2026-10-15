@@ -1,10 +1,7 @@
 name: Docs
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-  merge_group:
+  workflow_call:
 
 permissions:
   contents: read
@@ -13,6 +10,8 @@ jobs:
   checks:
     name: Docs checks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -150,8 +149,12 @@ jobs:
 
   build:
     name: Build docs site
+    outputs:
+      tree-digest: ${{ steps.tree.outputs.digest }}
     needs: checks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -170,11 +173,13 @@ jobs:
           inject SECURITY.md "Security policy"
           inject CHANGELOG.md Changelog
           inject GOVERNANCE.md Governance
+      - name: Enable checked examples in this gated build
+        run: |
+          printf 'enabled: true\n' > docs/_data/example_checks.yml
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/jekyll-build-pages@44a6e6beabd48582f863aeeb6cb2151cc1716697 # v1.0.13
         with:
           source: ./docs
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
       - name: Assert mirrors rendered
         run: |
           for page in LICENSE SECURITY CHANGELOG GOVERNANCE; do
@@ -183,11 +188,74 @@ jobs:
               exit 1
             fi
           done
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+      - name: Record immutable site digest and reject fixture markers
+        id: tree
+        run: |
+          digest="$(python3 scripts/ci/check_docs_examples.py --digest)"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Check built content
+        run: python3 scripts/ci/check_docs_site.py --site _site --docs docs
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '24.15.0'
+          package-manager-cache: false
+      - name: Install locked browser driver
+        run: npm ci --prefix scripts/ci/browser --ignore-scripts
+      # Static fixtures live in mktemp directories, never the published _site.
+      - name: Browser rejection fixtures
+        run: bash scripts/ci/browser/test_check_layout.sh
+      - name: Check rendered layout
+        run: node scripts/ci/browser/check_layout.mjs _site
+      - name: Assert checks did not modify the uploaded tree
+        env:
+          EXPECTED_DIGEST: ${{ steps.tree.outputs.digest }}
+        run: test "$(python3 scripts/ci/check_docs_examples.py --digest)" = "$EXPECTED_DIGEST"
+
+  examples:
+    name: Docs examples
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      DOCS_GO_IMAGE: golang:1.27.1@sha256:162be5298a40ed317005c8339c6de4d10d3eef336d66dc8e9259b03ab9d3a6d2
+      EXPECTED_DIGEST: ${{ needs.build.outputs.tree-digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: github-pages
+          path: ${{ runner.temp }}/pages-artifact
+      - name: Verify the uploaded tree
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/pages-artifact
+        run: |
+          mkdir _site
+          tar -xf "$ARTIFACT_DIR/artifact.tar" -C _site
+          test "$(python3 scripts/ci/check_docs_examples.py --digest)" = "$EXPECTED_DIGEST"
+      - name: Prefetch Go modules and the pinned sandbox image
+        run: |
+          go mod download
+          docker pull "$DOCS_GO_IMAGE"
+      - name: Run every listed example offline without credentials
+        run: |
+          python3 scripts/ci/check_docs_examples.py --workflows
+          python3 scripts/ci/check_docs_examples.py --site _site --docs docs \
+            --module-cache "$(go env GOMODCACHE)" --image "$DOCS_GO_IMAGE"
+          test "$(python3 scripts/ci/check_docs_examples.py --digest)" = "$EXPECTED_DIGEST"
 
   deploy:
     name: Deploy docs site
-    if: github.event_name == 'push'
-    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build, examples]
     # Serialize only the push-gated deploys: site checks on PRs never enter
     # this group, so they cannot starve or replace a pending deploy. (No
     # queue key: actionlint rejects it; pending replacement within main

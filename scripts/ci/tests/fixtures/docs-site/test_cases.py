@@ -94,6 +94,8 @@ class SiteChecks(unittest.TestCase):
         root, relative = name.split('/', 1)
         path = (self.site if root == 'site' else self.docs) / relative
         path.parent.mkdir(parents=True, exist_ok=True)
+        if root == 'site' and path.suffix == '.html':
+            text = '<!-- mythhelm-fixture -->' + text
         path.write_text(text)
         return path
 
