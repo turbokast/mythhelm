@@ -799,3 +799,53 @@ func TestSpawnTreeUnsupportedOffWindows(t *testing.T) {
 		t.Fatalf("run = %d, %q; want run-time spawn_tree Windows error", code, stderr.String())
 	}
 }
+
+func TestTreeReportReset(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tree.jsonl")
+	if err := os.WriteFile(path, []byte("stale identities\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root, err := prepareTreeReport(dir, "tree.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	data, err := root.ReadFile("tree.jsonl")
+	if err != nil || len(data) != 0 {
+		t.Fatalf("new report = %q, %v; want empty", data, err)
+	}
+}
+
+func TestTreeReportConfined(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		t.Run(strconv.FormatBool(nested), func(t *testing.T) {
+			dir, outside := t.TempDir(), t.TempDir()
+			target := filepath.Join(outside, "report.jsonl")
+			if err := os.WriteFile(target, []byte("preserve\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			link, destination, report := filepath.Join(dir, "report.jsonl"), target, "report.jsonl"
+			if nested {
+				link, destination, report = filepath.Join(dir, "nested"), outside, "nested/report.jsonl"
+			}
+			if err := os.Symlink(destination, link); err != nil {
+				if runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(1314)) { // ERROR_PRIVILEGE_NOT_HELD
+					t.Skip("Windows host does not grant symlink creation privilege")
+				}
+				t.Fatal(err)
+			}
+			root, err := prepareTreeReport(dir, report)
+			if root != nil {
+				_ = root.Close()
+			}
+			if err == nil {
+				t.Fatal("accepted report link outside workdir")
+			}
+			got, err := os.ReadFile(target) // #nosec G304 -- Synthetic outside-workdir sentinel under t.TempDir.
+			if err != nil || string(got) != "preserve\n" {
+				t.Fatalf("outside report = %q, %v", got, err)
+			}
+		})
+	}
+}

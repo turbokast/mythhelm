@@ -7,10 +7,10 @@ import (
 	"fmt"
 )
 
-func spawnTree(string) error {
+func spawnTree(string, string) error {
 	return fmt.Errorf("spawn_tree needs Windows: %w", errors.ErrUnsupported)
 }
 
-func spawnTreeGrandchild(string) error {
+func spawnTreeGrandchild(string, string) error {
 	return fmt.Errorf("spawn_tree needs Windows: %w", errors.ErrUnsupported)
 }
