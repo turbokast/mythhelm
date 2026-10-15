@@ -400,7 +400,7 @@ echo "== clean fixture =="
 fresh clean
 lint "$F"
 expect_pass "the clean fixture passes every check"
-check "summary names all seventeen checks" [ "$(grep -cE ' (PASS|FAIL)$' <<< "$OUT")" == 17 ]
+check "summary names all eighteen checks" [ "$(grep -cE ' (PASS|FAIL)$' <<< "$OUT")" == 18 ]
 
 echo "== usage =="
 lint "$F" --only no-such-check

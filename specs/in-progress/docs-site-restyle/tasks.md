@@ -213,7 +213,7 @@
   - Guide changes are markup only; all 19 rendered code blocks retain exact bytes. No output entry or output marker is introduced here.
 - **Files modified**: `docs/_data/examples.yml`, `docs/_layouts/default.html`, `docs/index.md`, `docs/user-guide.md`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`, `specs/in-progress/docs-site-restyle/scratchpad.md`.
 
-### Task 8 — Built-site content checks (harness)
+### Task 8 — Built-site content checks (harness) ✅ COMPLETED
 
 - **Domain/agent**: agent-config-editor (harness domain, `knowledge/domains.md`)
 - **Budget**: complex (eight check families, each with a rejecting fixture, across Python and Bash)
@@ -232,6 +232,15 @@
   - Fixtures live under `scripts/ci/tests/fixtures/` or a separate check build, never under `docs/`, and are never deployed or indexed (NFR-4).
 - **Test plan**: Table-driven shell test over fixture trees in temporary directories (never the real `.claude/data/`), plus a run against a real CI-built `_site` recorded in the completion entry.
 - **Invariants touched**: I09 (v2 §2: state-word checks fail on empty or unknown states, never pass vacuously); I14 (v2 §2: panel, cell and marker claims bind to their sources); G10 (v2 §18.3: the checks are the published-limitations enforcement).
+
+- **Status**: ✅ Completed — built-site content checker and rejection fixtures implemented; PR #472.
+- **Implementation**: Standard-library parser checks built HTML/CSS/JSON against source contracts without executing examples; actual video duration comes from ffprobe. Commits 4d77372, 130f992 and ee82717. All 67 fixture tests pass.
+- **Spec deviations**:
+  - Updated `scripts/ci/tests/test_lint_agent_harness.sh` to keep the harness check enumeration consistent with the added docs-site suite.
+  - Review fixes normalize relative paths and indented fences, validate malformed manifest shapes, and share the origin predicate (consistent with content and input-error contracts).
+  - Round-two review adds named-color shorthand coverage and restricts opacity exemptions to exclusively backdrop selectors (consistent with AC-1.2).
+- **Files modified**: `scripts/ci/check_docs_site.py`, `scripts/ci/lint-agent-harness.sh`, `scripts/ci/tests/fixtures/docs-site/README.md`, `scripts/ci/tests/fixtures/docs-site/test_cases.py`, `scripts/ci/tests/test_check_docs_site.sh`, `scripts/ci/tests/test_lint_agent_harness.sh`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`.
+- **CI evidence**: Checker revision ee82717 passes all 40 pages from the actual [Pages build run 38720309481](https://github.com/turbokast/mythhelm/actions/runs/38720309481), built at task-8 revision 9138501. The docs tree is identical between that source revision and the round-two checker revision; checker and documentation provenance are recorded separately. Fixture suite reports `checks=67 failed=0`.
 
 ### Task 9 — Browser-driver carve-out and responsive checks (harness) ✅ COMPLETED
 
