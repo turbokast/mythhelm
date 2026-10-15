@@ -158,7 +158,9 @@ jobs:
       contents: read
       pages: write
       id-token: write
-    uses: ./.github/workflows/docs.yml
+    # actionlint v1.7.12 rejects $/ syntax; this reusable call is already tied
+    # to the caller commit. Migrate syntax when the pinned parser supports it.
+    uses: ./.github/workflows/docs.yml # zizmor: ignore[self-repository] pinned actionlint compatibility
 
   ci-ok:
     name: CI OK
