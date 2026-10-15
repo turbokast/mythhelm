@@ -26,7 +26,7 @@
   - If a decision differs from its default, the ADR lists the tasks and ACs that change.
 - **Invariants touched**: I06 (v2 §6.4: a stop stays unconfirmed until reconciliation), I18 (one process owner per attempt), I24 (a lease or heartbeat timeout is not proof a writer stopped).
 
-### Task 2 — fake adapter child-tree fixture for Windows
+### Task 2 — fake adapter child-tree fixture for Windows ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (cross-platform process creation)
@@ -47,6 +47,13 @@
   - `GOOS=windows go vet ./adapters/fake/` passes.
 - **Test plan**: Windows-tagged test using the fake agent re-executed as in the existing escapee test; the off-Windows test is untagged.
 - **Invariants touched**: I13 (fixtures need no credentials), I14 (a fixture is not a qualification).
+- **Status**: ✅ Completed — the Windows child/grandchild and breakaway fixture reports live process identities, with strict loading and explicit off-Windows rejection; PR #480.
+- **Implementation**: Codex implemented the routed go-implementer task in commit `61141fa`; child creation uses a new process group, grandchild creation inherits it, and every descendant uses null standard streams. Independent source review found no remaining correctness findings after strengthening the bounded pipe-wait assertion.
+  Red-first: `TestScenariosParse` and `TestSpawnTreeUnsupportedOffWindows` failed on the missing `report_path` field before implementation, then passed; kept unknown-op, unknown-field and non-local-path cases exercise rejection. Windows runtime acceptance is evidenced below, not by cross-compilation.
+- **Spec deviations**: Added `adapters/fake/tree_windows_test.go` beyond the Files list for the requested Windows-tagged acceptance test and native API probes; task-completion bookkeeping updates this file and `handoff.md`. No worker ownership behavior changes.
+- **Files modified**: `adapters/fake/agent.go`, `adapters/fake/tree_windows.go`, `adapters/fake/tree_other.go`, `adapters/fake/escapee_other.go`, `adapters/fake/scenarios/tree.json`, `adapters/fake/fake_test.go`, `adapters/fake/tree_windows_test.go`, `specs/in-progress/windows-process-ownership/tasks.md`, `specs/in-progress/windows-process-ownership/handoff.md`.
+- **CI evidence**: Implementation head `61141fad5af5dd6735685918b5f97f31ec689390`, run [38723979896](https://github.com/turbokast/mythhelm/actions/runs/38723979896): [windows-latest](https://github.com/turbokast/mythhelm/actions/runs/38723979896/job/116385551890) ran `go test -race ./...`, reporting `ok github.com/turbokast/mythhelm/adapters/fake 1.765s`; [windows-11-arm](https://github.com/turbokast/mythhelm/actions/runs/38723979896/job/116385552044) ran `go test ./...`, reporting `ok github.com/turbokast/mythhelm/adapters/fake 0.901s`. These non-verbose runs include `TestSpawnTreeReportsDescendants` (Windows-tagged, no runtime skip). Local Go gates, Windows/Darwin vet and hygiene passed.
+
 
 ### Task 3 — Job Object launch ownership
 
