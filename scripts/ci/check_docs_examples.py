@@ -72,8 +72,13 @@ def check(docs, site, execute):
             # Markdown fences end in a newline; example_blocks stores content
             # without that structural final newline. Restore it before v1.
             expected = blocks[row['output_anchor']].text + '\n'
-            if normalise_output(result.stdout.decode('utf-8')) != normalise_output(expected):
-                findings.append(f"{row['output_anchor']}: output differs under docs-output-v1")
+            try:
+                actual = result.stdout.decode('utf-8')
+            except UnicodeDecodeError:
+                findings.append(f"{row['output_anchor']}: output is not UTF-8")
+            else:
+                if normalise_output(actual) != normalise_output(expected):
+                    findings.append(f"{row['output_anchor']}: output differs under docs-output-v1")
         print(f"example={row['anchor']} exit={result.returncode} expected={row['expect_exit']}")
     return findings
 

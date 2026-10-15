@@ -249,6 +249,32 @@ class Examples(unittest.TestCase):
             with self.assertRaises(examples.InputError):
                 examples.docker_execute('true', self.root, self.root, 'image')
 
+    def test_invalid_utf8_is_finding_and_next_command_executes(self):
+        self.fixture(output='expected')
+        rows_path = self.docs / '_data/examples.yml'
+        rows = json.loads(rows_path.read_text())
+        anchor = 'docs/guide.md#example[3]'
+        command = 'printf next > executed'
+        rows.append(dict(anchor=anchor, command=command, expect_exit=0))
+        rows_path.write_text(json.dumps(rows))
+        with (self.docs / 'guide.md').open('a') as source:
+            source.write(f'<div class="example-block" data-example-anchor="{anchor}">\n\n```\n{command}\n```\n\n</div>\n')
+        with (self.site / 'guide.html').open('a') as published:
+            published.write(f'<div class="example-block" data-example-anchor="{anchor}"><pre>{command}\n</pre></div>')
+        calls = []
+        def execute(command):
+            calls.append(command)
+            if len(calls) == 1:
+                return subprocess.CompletedProcess([], 0, b'\xff', b'')
+            return subprocess.run(['bash', '-c', command], cwd=self.root, capture_output=True, check=True)
+        argv = ['check_docs_examples.py', '--docs', str(self.docs), '--site', str(self.site),
+                '--module-cache', str(self.root), '--image', 'golang:1.27.1@sha256:' + 'a' * 64]
+        with patch.object(sys, 'argv', argv), patch.object(examples, 'docker_execute',
+                side_effect=lambda command, *_: execute(command)):
+            self.assertEqual(1, examples.main())
+        self.assertEqual(2, len(calls))
+        self.assertEqual('next', (self.root / 'executed').read_text())
+
     def test_expected_exit(self):
         self.fixture(command='exit 7')
         self.assertTrue(any('exit' in f for f in self.check()))
