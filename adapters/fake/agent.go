@@ -64,6 +64,9 @@ type step struct {
 	// ignore_signals: "INT" and/or "TERM".
 	Signals []string `json:"signals,omitempty"`
 
+	// spawn_tree: descendant identities, relative to the workdir.
+	ReportPath string `json:"report_path,omitempty"`
+
 	// exit: the exit code.
 	Code int `json:"code,omitempty"`
 }
@@ -117,6 +120,10 @@ func (st step) validate() error {
 		if !filepath.IsLocal(filepath.FromSlash(st.Path)) {
 			return fmt.Errorf("path %q is not local to the workdir", st.Path)
 		}
+	case "spawn_tree":
+		if !filepath.IsLocal(filepath.FromSlash(st.ReportPath)) {
+			return fmt.Errorf("report_path %q is not local to the workdir", st.ReportPath)
+		}
 	case "sleep", "spawn_escapee":
 		if st.MS <= 0 {
 			return errors.New("ms must be positive")
@@ -146,9 +153,18 @@ func AgentMain(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fl.SetOutput(stderr)
 	name := fl.String("scenario", "", "embedded scenario to play")
 	workdir := fl.String("workdir", "", "directory the scenario writes into")
+	treeChildReport := fl.String("tree-child-report", "", "report file for the Windows tree child")
 	linger := fl.Duration("linger", 0, "sleep this long, then exit (the escapee's body)")
 	if err := fl.Parse(args); err != nil {
 		return 2
+	}
+	if *treeChildReport != "" {
+		if err := spawnTreeGrandchild(*workdir, *treeChildReport); err != nil { //nolint:staticcheck // Off Windows always errors; Windows can succeed.
+			_, _ = fmt.Fprintf(stderr, "%s: %v\n", AgentCommand, err)
+			return 1
+		}
+		time.Sleep(10 * time.Minute)
+		return 0
 	}
 	if *linger > 0 {
 		time.Sleep(*linger)
@@ -213,6 +229,10 @@ func AgentMain(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			for _, s := range st.Signals {
 				signal.Ignore(map[string]os.Signal{"INT": os.Interrupt, "TERM": syscall.SIGTERM}[s])
 			}
+		case "spawn_tree":
+			if err := spawnTree(*workdir, filepath.FromSlash(st.ReportPath)); err != nil { //nolint:staticcheck // Off Windows always errors; Windows can succeed.
+				return fail(err)
+			}
 		case "spawn_escapee":
 			if err := spawnEscapee(time.Duration(st.MS) * time.Millisecond); err != nil {
 				return fail(err)
@@ -250,4 +270,28 @@ func (st step) frame() []byte {
 		n := ndjson.DefaultMaxDepth + 1
 		return []byte(`{"type":"` + frameProgress + `","nest":` + strings.Repeat("[", n) + strings.Repeat("]", n) + `}`)
 	}
+}
+
+func prepareTreeReport(workdir, reportPath string) (*os.Root, error) {
+	if !filepath.IsLocal(reportPath) {
+		return nil, fmt.Errorf("spawn_tree report_path %q is not local to the workdir", reportPath)
+	}
+	root, err := os.OpenRoot(workdir)
+	if err != nil {
+		return nil, err
+	}
+	if err := root.MkdirAll(filepath.Dir(reportPath), 0o750); err != nil {
+		_ = root.Close()
+		return nil, err
+	}
+	f, err := root.OpenFile(reportPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		_ = root.Close()
+		return nil, err
+	}
+	if err := f.Close(); err != nil {
+		_ = root.Close()
+		return nil, err
+	}
+	return root, nil
 }
