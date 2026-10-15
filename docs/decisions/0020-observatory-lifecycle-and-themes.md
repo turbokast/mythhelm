@@ -1,14 +1,24 @@
 # 0020. Observatory lifecycle and themes
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-15
-- Approval: pending Task 3 review of this concrete record.
+- Approval: delegated maintainer decision recorded below, 2026-10-15.
+
+## Task 3 authorization record
+
+The delivery coordinator accepted the exact reviewed proposal below on 2026-10-15, exercising the maintainer’s explicit standing delegation for in-scope backlog delivery.
+
+The maintainer granted “full autonomy and approval” for the ongoing backlog delivery, following the approved Observatory plan and Q1 client/canonical outcome distinction. This records a decision made under that delegation, not a claim that the maintainer personally inspected the subsequently authored concrete ADR.
+
+The delegated acceptance concerns only the ADR content authored at [54f859d](https://github.com/turbokast/mythhelm/blob/54f859db5de5d51b9062c2b04b23d5e19ff6b1dc/docs/decisions/0020-observatory-lifecycle-and-themes.md), independently reviewed in [PR #484](https://github.com/turbokast/mythhelm/pull/484), and merged unchanged at [946ba3f](https://github.com/turbokast/mythhelm/blob/946ba3f2b967abcf5d04942b2f277f345010c282/docs/decisions/0020-observatory-lifecycle-and-themes.md). The original complete ADR file has SHA-256 `b3f22e5ae1cf34ff48be5313a9dad09dd3c966a875fcf4e660c943734d42ca05`. This digest identifies the proposal before adding this authorization record; it is not a digital signature or a digest of the amended file.
+
+The coordinator reviewed the complete ADR and this authorization wording and accepted the identified content under the standing instruction. Independent architect review found no critical or important issues and established design consistency; the maintainer’s instruction, rather than the review or repository prose, supplies the delegated authority. This record is not a signed product approval or formal autonomy grant and changes neither approval system. It establishes no runtime qualification and does not bypass required implementation tests, PR review or CI.
 
 ## Context
 
 The [Observatory requirements](../../specs/in-progress/tui-observatory-view/requirements.md) and [design](../../specs/in-progress/tui-observatory-view/design.md) implement a bounded part of [Master Specification v2](../../mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md) §§6.4, 15 and 16. UI exit must not stop an attempt implicitly or remove its finite envelope. The current per-run pipeline owns ingestion; the detached worker owns native execution. A client-only deadline disappears when that client exits, and a volatile deadline classification cannot survive recovery.
 
-This proposal amends [ADR 0004](0004-slice-process-model.md)'s worker handoff and terminal classification, [ADR 0005](0005-run-owner-lock-and-ingestion.md)'s detach and conclusion rules, and [ADR 0007](0007-stop-and-recovery.md)'s recovery inputs. Their identity checks, first-request precedence, exclusive owner lock, spool ingestion and no-relaunch recovery remain binding. ADR 0007 remains proposed; referencing it does not accept it. This record proposes behavior; it supplies neither implementation evidence nor platform qualification.
+This proposal amends [ADR 0004](0004-slice-process-model.md)'s worker handoff and terminal classification, [ADR 0005](0005-run-owner-lock-and-ingestion.md)'s detach and conclusion rules, and [ADR 0007](0007-stop-and-recovery.md)'s recovery inputs. Their identity checks, first-request precedence, exclusive owner lock, spool ingestion and no-relaunch recovery remain binding. ADR 0007 remains proposed; referencing it does not accept it. This record decides behavior; it supplies neither implementation evidence nor platform qualification.
 
 ## Decision
 
@@ -70,4 +80,4 @@ These are future acceptance obligations, not passing test claims:
 | Palette equality, theme validation and semantic colour | Task 11 equality against embedded themes; Tasks 12–16 state/glyph/render and parsed-SGR tests |
 | Theme flag, cached answer and delayed reply | Tasks 17–18 counting seam, OSC input and packaged help/flag tests |
 
-Task 3 must record approval of this concrete ADR before runtime implementation. G09, human screen-reader support, real light/dark terminal qualification, Windows detachment, service-owned lifecycle and non-deadline reconnect bounds are not established by accepting this proposal. Renderer microbenchmarks are not evidence of an advantage over native coding CLIs.
+Task 3 records delegated acceptance of the identified concrete ADR before runtime implementation. G09, human screen-reader support, real light/dark terminal qualification, Windows detachment, service-owned lifecycle and non-deadline reconnect bounds are not established by accepting this proposal. Renderer microbenchmarks are not evidence of an advantage over native coding CLIs.
