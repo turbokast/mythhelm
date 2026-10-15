@@ -116,7 +116,9 @@ class Examples(unittest.TestCase):
     def docker_result(self, start_exit, state, create_exit=0, cleanup_exit=0):
         container = 'a' * 64
         responses = [subprocess.CompletedProcess([], create_exit, (container + '\n').encode(), b'')]
-        if not create_exit:
+        if create_exit:
+            responses.append(subprocess.CompletedProcess([], 0, b'', b''))
+        else:
             responses += [subprocess.CompletedProcess([], start_exit, b'output', b''),
                           subprocess.CompletedProcess([], 0, json.dumps(state).encode(), b''),
                           subprocess.CompletedProcess([], cleanup_exit, b'', b'')]
@@ -166,6 +168,31 @@ class Examples(unittest.TestCase):
                 examples.docker_execute('true', self.root, self.root, 'image')
             self.assertEqual(2, run.call_count)
             self.assertEqual(['docker', 'rm', '-f'], run.call_args_list[-1].args[0][:3])
+
+    def test_ambiguous_create_is_reconciled_and_cleaned(self):
+        container = 'b' * 64
+        for present in (True, False):
+            responses = [subprocess.TimeoutExpired('docker create', 30),
+                         subprocess.CompletedProcess([], 0, (container if present else '').encode(), b'')]
+            if present:
+                responses.append(subprocess.CompletedProcess([], 0, b'', b''))
+            with self.subTest(present=present), patch.object(examples.subprocess, 'run', side_effect=responses) as run:
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    examples.docker_execute('true', self.root, self.root, 'image')
+                self.assertGreaterEqual(run.call_count, 2)
+                create = run.call_args_list[0].args[0]
+                name = create[create.index('--name') + 1]
+                query = run.call_args_list[1].args[0]
+                self.assertIn('name=^/' + name + '$', query)
+                if present:
+                    self.assertEqual(['docker', 'rm', '-f', container], run.call_args_list[-1].args[0])
+
+    def test_ambiguous_create_cleanup_unavailable_blocks(self):
+        with patch.object(examples.subprocess, 'run', side_effect=[
+                subprocess.TimeoutExpired('docker create', 30),
+                subprocess.CompletedProcess([], 1, b'', b'unavailable')]):
+            with self.assertRaises(examples.InputError):
+                examples.docker_execute('true', self.root, self.root, 'image')
 
     def test_expected_exit(self):
         self.fixture(command='exit 7')

@@ -157,6 +157,19 @@ def docker_execute(command, root, cache, image):
         # evidence, never from an indistinguishable Docker client failure.
         return result
     finally:
+        if not created:
+            # A client timeout/nonzero status does not prove the daemon never
+            # created our uniquely named container. Reconcile only that name.
+            listing = subprocess.run(['docker', 'ps', '--all', '--no-trunc',
+                                      '--filter', f'name=^/{name}$', '--format', '{{.ID}}'],
+                                     capture_output=True, timeout=20, check=False)
+            if listing.returncode:
+                raise InputError('sandbox creation cleanup unresolved: state unavailable')
+            discovered = listing.stdout.decode('ascii').strip()
+            if discovered:
+                if not re.fullmatch(r'[a-f0-9]{64}', discovered):
+                    raise InputError('sandbox creation cleanup unresolved: invalid identity')
+                container, created = discovered, True
         if created:
             cleanup = subprocess.run(['docker', 'rm', '-f', container],
                                      capture_output=True, timeout=20, check=False)
