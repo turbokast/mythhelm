@@ -234,12 +234,13 @@
 - **Invariants touched**: I09 (v2 §2: state-word checks fail on empty or unknown states, never pass vacuously); I14 (v2 §2: panel, cell and marker claims bind to their sources); G10 (v2 §18.3: the checks are the published-limitations enforcement).
 
 - **Status**: ✅ Completed — built-site content checker and rejection fixtures implemented; PR #472.
-- **Implementation**: Standard-library parser checks built HTML/CSS/JSON against source contracts without executing examples; actual video duration comes from ffprobe. Commits 4d77372 and 130f992. All 62 fixture tests pass.
+- **Implementation**: Standard-library parser checks built HTML/CSS/JSON against source contracts without executing examples; actual video duration comes from ffprobe. Commits 4d77372, 130f992 and ee82717. All 67 fixture tests pass.
 - **Spec deviations**:
   - Updated `scripts/ci/tests/test_lint_agent_harness.sh` to keep the harness check enumeration consistent with the added docs-site suite.
   - Review fixes normalize relative paths and indented fences, validate malformed manifest shapes, and share the origin predicate (consistent with content and input-error contracts).
+  - Round-two review adds named-color shorthand coverage and restricts opacity exemptions to exclusively backdrop selectors (consistent with AC-1.2).
 - **Files modified**: `scripts/ci/check_docs_site.py`, `scripts/ci/lint-agent-harness.sh`, `scripts/ci/tests/fixtures/docs-site/README.md`, `scripts/ci/tests/fixtures/docs-site/test_cases.py`, `scripts/ci/tests/test_check_docs_site.sh`, `scripts/ci/tests/test_lint_agent_harness.sh`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`.
-- **CI evidence**: Checker passes all 41 pages from the actual [Pages build run 38717945157](https://github.com/turbokast/mythhelm/actions/runs/38717945157), matched to its docs source at 3456bd6. This integration artifact includes the comparison-evidence page; it is not an exact task-8-head build. Fixture suite reports `checks=62 failed=0`.
+- **CI evidence**: Checker passes all 41 pages from the actual [Pages build run 38717945157](https://github.com/turbokast/mythhelm/actions/runs/38717945157), matched to its docs source at 3456bd6. This integration artifact includes the comparison-evidence page; it is not an exact task-8-head build. Fixture suite reports `checks=67 failed=0`.
 
 ### Task 9 — Browser-driver carve-out and responsive checks (harness) ✅ COMPLETED
 
