@@ -82,6 +82,13 @@ Accounting across three fresh-context reviewers: dispatched=3 returned=3 failed=
 - Source anchors re-read: internal/cli/review.go validation, internal/ids/ids.go generated grammar, internal/tui/model.go Run cleanup, internal/tui/actions.go actionCtx/cancelAction, internal/cli/tui.go wireActions, internal/workers/worker.go Spawn/readLaunch, ADR0004 private stdin handoff and v2 §17.2 upgrade demand.
 - These are hosted-review corrections after the completed three-round specification validation. Independent review of the changed design/tasks is arranged by the delivery coordinator; no implementation started.
 
+## Hosted-review fix validation, round 2
+
+- Independent review confirmed the headless-apply and explicit mixed-version fail-closed fixes; it found PowerShell smart-quote escaping incomplete. Design §3 and Task9 now enumerate and duplicate all recognized single quotes (U+0027/U+2018/U+2019/U+201A/U+201B), with an actual Windows PowerShell execution fixture checking exact state/argv and absence of injected effects.
+- Unix commands are explicitly labelled POSIX sh/bash/zsh; fish/cmd/other-shell copy-paste is not claimed. Manual guidance identifies the state/run and a supported shell.
+- ActionCompletion now carries StopState from supervisor.Stop. Tasks7/8 distinguish stopped from stop_requested even with nil error; terminal-loss client6 does not falsely certify the stop or rewrite canonical run state.
+- Primary sources read 2026-10-15: Microsoft about_Quoting_Rules and PowerShell CharTraits.IsSingleQuote (linked in design); local internal/supervisor/stop.go returns stopped only from confirmed worker evidence and otherwise stop_requested after writing the request.
+
 ## Discoveries
 
 None yet; implementation has not started.
