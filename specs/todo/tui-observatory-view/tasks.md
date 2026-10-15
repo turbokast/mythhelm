@@ -76,7 +76,8 @@
   - `internal/workers/deadline_test.go` (new)
 - **Produces**: `workers.Launch.ExecutionDeadline time.Time` (`execution_deadline` JSON); `workers.DeadlineRequester` and `workers.DeadlineReason` string constants from design §2. Existing RequestStop/Spawn signatures unchanged.
 - **Acceptance**:
-  - `TestLaunchDeadlineRequired` rejects zero/malformed handoffs; `TestExpiredDeadlineDoesNotLaunch` proves an expired launch starts no native (AC-6.11, I21). Enumerated actual spawn fixtures carry finite deadlines; helper-only containment/config Launch literals need no deadline because they do not call readLaunch.
+  - `TestLaunchDeadlineRequired` rejects missing/zero/malformed handoffs; `TestExpiredDeadlineDoesNotLaunch` proves an expired launch starts no native (AC-6.11, I21). Enumerated actual spawn fixtures carry finite deadlines; helper-only containment/config Launch literals need no deadline because they do not call readLaunch.
+  - `TestMixedWorkerHandoffVersions` submits a synthetic old payload lacking execution_deadline to the new readLaunch and a current payload to a fixture of the existing strict legacy decoder; both refuse before any native launch. Assert no fallback deadline or automatic retry, and preserve existing running-worker recovery tests with unchanged identity/spool data. Record the unsupported admission-to-spawn binary replacement window (design §2).
   - `TestWorkerDeadlineWithoutSupervisor` uses a two-second envelope in generation 0 and nonzero launches, observes requested/stopped/final reason in spool and worker process exit without any client. Removing the timer or leaving fenced AwaitReconnect active makes it fail.
   - `TestDeadlineRecoveryConclusion` ingests/recover after deadline and observes blocked/envelope_deadline_exceeded, not cancelled; `TestDeadlineRequestPrecedence` covers user-file-first, deadline-file-first, already-running user ladder and simultaneous timer/poll handling without a second ladder.
   - `TestDeadlineStopFailureStaysUnresolved` injects request-file failure and unconfirmed/escaped process reports, proving no false blocked/confirmed conclusion or unlimited native. Existing RequestExtension tests still pass.
@@ -141,12 +142,13 @@
   - `internal/tui/help.go`
   - `internal/tui/actions_test.go`
   - `internal/tui/nav_test.go`
-- **Produces**: ClientMode, ClientSignal, ExitKind, ExitIntent and new Config fields, with exact signatures/values from design §3. Run signature unchanged; joined signal pump and WithoutSignalHandler are enabled.
+- **Produces**: ClientMode, ClientSignal, ExitKind, ExitIntent, ActionCompletion, Config.OnHeadlessAction and other new Config fields, with exact signatures/values from design §3. Run signature unchanged; joined signal pump and WithoutSignalHandler are enabled.
 - **Acceptance**:
   - `TestExitModeTable` drives every AC-6.12 row, every listed key and disabled reason; q initially back, Enter cannot accidentally detach/stop, navigation selects and acts, and capability unknown/unsupported disables deliberate detach independent of runtime.GOOS.
   - `TestLiveCtrlCIntents` asserts one typed stop, view stays, second press detaches; verifying/applying emit zero stop calls, show phase then exit headless; admission waits; worker-not-running waits. Counters persist across state transitions (AC-6.5/6.9/6.14).
   - `TestInFlightActionDoubleQuit` proves first q/Ctrl-C leaves action alive and second Ctrl-C cancels its context with unresolved exit intent (AC-6.8); replace old one-press expectation, not the underlying cancellation assertion.
   - Existing `TestSingleKeypressNeverConfirms`, `TestApplyShowsExactEffects` remain unchanged; `TestStopLabelsRequested` preserves all effects except specified reason/hint changes. `TestLayeringNoCliImport` rejects any TUI import of CLI.
+  - `TestTerminalLossJoinsApply` starts a slow confirmed apply in live and inspect modes, signals terminal loss, verifies view pumps close but action context is not cancelled, releases the operation and observes one OnHeadlessAction result and a joined action before Run returns. The old unconditional final cancelAction fails this test. `TestExplicitActionQuitCancelsAndJoins` retains AC-6.8 cancellation on deliberate double-quit and proves no surviving action goroutine.
   - `TestLifecyclePumpsJoin` floods repeat controls while owner finishes and asserts no blocked event loop, duplicate callbacks or surviving pump.
 - **Test plan**: Callback counters plus cancel-aware action fakes; table/state fixtures include no snapshot and nil controls. UI-only tests need no packaged process, covered in Task 10.
 - **Invariants touched**: I03/I06/I18/I23 (v2 §§6.4,15.2: explicit confirmation, one signal/input owner, truthful stop).
@@ -166,11 +168,12 @@
   - `internal/cli/tui_signals_other.go` (new fallback)
   - `internal/cli/tui_lifecycle_test.go` (new)
   - `internal/cli/exit.go`
-- **Produces**: CLI implementation of Config.RequestStop/Detach/OnExit/Signals, with one owned mailbox and outcome mapping, no signature change to tuiDeps.runTUI.
+- **Produces**: CLI implementation of Config.RequestStop/Detach/OnExit/Signals/OnHeadlessAction, with one owned mailbox and outcome mapping, no signature change to tuiDeps.runTUI.
 - **Acceptance**:
   - `TestTUIStartupFailureJoinsWithoutStop` injects immediate program error, counts zero interrupts/detaches, waits for owner outcome and checks exact continues/review notice (AC-6.6).
   - `TestLiveTUIIntentOutcomes` replaces TestQuitLiveDetaches, asserts one exact detach/recover line and code6 without review guidance, separate pending-stop text, and no fabricated stop on plain view return.
   - `TestTerminalLossStateTable` drives every AC-6.13 state including prelaunch/acceptance, verifies deferred detach, headless phase finish, no orphan created/admission state, and Q1's approved exit policy.
+  - `TestTerminalLossApplyOutcome` uses a real guarded ApplyRun with a controlled in-flight seam in both live and inspect wiring; terminal loss must not cancel its context or run a second apply. Assert final journal/ref/receipt outcome, released owner lock, joined call and client6 on success (original run pipeline result cannot substitute). A failed apply preserves its nonzero failure; explicit action double-quit still cancels/joins and returns unresolved6.
   - `TestInspectUnresolvedExit` covers pending stop and cancelled recover/apply ->6 with recover line; ordinary inspect quit ->0. `TestSignalSingleOwner` injects one SIGINT and counts one typed stop delivery.
   - `TestCoordinatorJoins` races view error, terminal loss and owner completion, asserting one disposition, finite mailbox consumption and no leaked waiter. Task 1 fixtures remain byte-identical.
 - **Test plan**: Unit coordinator seams for phase transitions; platform files build under Linux/macOS/Windows; real signal/worker proof follows Task 10.
@@ -189,10 +192,10 @@
   - `internal/cli/demo_lifecycle_test.go` (new)
   - `internal/cli/tui.go`
   - `internal/cli/tui_lifecycle_test.go`
-- **Produces**: `recoveryCommand(stateDir, runID, goos string) (string, error)` in demo_lifecycle.go, used by live TUI guidance for an explicit state root; invalid nonabsolute state or invalid run ID returns an error. Design §3 defines platform quoting and retention lifetime. No recover signature, cleanup flag or automatic deletion authority is added.
+- **Produces**: `recoveryCommand(stateDir, runID, goos string) (string, error)` in demo_lifecycle.go, used by live TUI guidance for an explicit state root; invalid nonabsolute/control-bearing state or run ID outside `^run_[A-Za-z0-9_]{1,128}$` returns an error. Both the state assignment and complete run-ID argument are shell-quoted independently. Design §3 defines platform quoting and retention lifetime. No recover signature, cleanup flag or automatic deletion authority is added.
 - **Acceptance**:
   - `TestDemoDetachRetainsWorkspace` injects DetachedRunning and Detached outcomes, asserts code6, no demoReview invocation and neither temporary repository nor state removed; active/unresolved outcomes or startup/coordinator failure after launch also retain both. A normal completed live demo cleans up only after owner join and review. The current unconditional RemoveAll defers and reviewOK=!Detached fail these assertions (AC-6.12 demo row).
-  - `TestDemoRecoveryCommand` supplies an unrelated caller MYTHHELM_HOME and retained paths containing spaces, apostrophes and shell metacharacters, checks exact quoting/state binding and that the printed recovery command cannot execute path content. Both runID and state root are explicit; an invalid input errors rather than emitting an unsafe command.
+  - `TestDemoRecoveryCommand` supplies an unrelated caller MYTHHELM_HOME and retained paths containing spaces, apostrophes and shell metacharacters, checks exact quoting/state binding and that the printed recovery command cannot execute path content. Reject run IDs carrying semicolons, dollar substitution, backticks, quotes, whitespace/newlines or only the run_ prefix; check independently quoted accepted run IDs in POSIX and PowerShell output. Both runID and state root are explicit; an invalid input errors rather than emitting an unsafe command.
   - `TestDemoRetentionNotice` checks explicit retained-repository/state paths, absence of premature removed/done claims, one usable recovery command and instructions to retain evidence until recovery proves terminal with no live writer. Recovery never silently deletes evidence. Non-TUI demo output and Task1 captures remain unchanged.
 - **Test plan**: Inject run results and cleanup/review seams with invocation counters. Test every cleanup decision with actual temporary directory sentinels. Packaged proof and exact command execution are owned by Task10; operator cleanup is tested only after proven termination, on the test's owned fixture directories.
 - **Invariants touched**: I05/I06/I08/I09/I12/I18/I21 (v2 §§6.4,15.2: retain live workspace and evidence, correct recovery destination, explicit cleanup authority).
@@ -411,7 +414,7 @@
   - `docs/tui-slice-g09-evidence.md`
   - `docs/demos/README.md`
 - **Acceptance**:
-  - Inspect TUI/known-limits sections against task evidence: remove only closed q/two-interrupt issues, include exact detach/phase/qualification outcomes, the retained demo state-root recovery command and explicit post-recovery operator cleanup procedure, --theme syntax/platform help, contrast-background caveat and existing5s startup query (FR-6 DoD, AC-1.6/2.6).
+  - Inspect TUI/known-limits sections against task evidence: remove only closed q/two-interrupt issues, include exact detach/phase/qualification outcomes, the retained demo state-root recovery command and explicit post-recovery operator cleanup procedure, mixed-version handoff rejection and the instruction to finish/drain old supervisors before binary replacement, --theme syntax/platform help, contrast-background caveat and existing5s startup query (FR-6 DoD, AC-1.6/2.6).
   - Evidence §5 links actual PR/test evidence and explicitly retains unqualified detection, human screen-reader matrix, unsupported Windows detach, non-deadline reconnect wait, verification cancellation and stale-beat unknown limits. No claim that G09 passed from agent goldens.
   - Any newly pasted command output comes from a named executed fake/binary test; old plain/accessibility/JSONL examples remain unchanged. Docs say recording awaits Task20 until artifacts actually exist.
 - **Test plan**: Render/read changed document sections, hygiene gate, verify source links and named evidence; no inferred benchmark advantage.

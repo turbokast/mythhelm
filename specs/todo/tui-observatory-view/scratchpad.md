@@ -74,6 +74,14 @@ Findings: None. No blocking or advisory findings identified. Concrete ADR approv
 
 Accounting across three fresh-context reviewers: dispatched=3 returned=3 failed=0. Final mechanical spec lint exit 0. No native-account trial or implementation was performed. Lifecycle move uses the shared script only after this Ready verdict.
 
+## Hosted review round 1
+
+- Recovery-command finding confirmed: existing review argument validation is broader than a shell-safe token. Design §3 and Task9 now require bounded full run grammar, rejection of controls/metacharacters, and independent target-shell quoting of both arguments. Kept malicious-ID/path fixtures test the executable effect.
+- Terminal-loss apply finding confirmed: current tui.Run calls cancelAction unconditionally after Tea returns; actionCtx derives from view lifetime. Design §3 and Tasks7/8 now specify independently owned/joined action lifetime, headless completion callback and canonical action-result mapping in both live and inspect modes; explicit double-quit retains cancellation/join.
+- Mixed-version finding is a real compatibility limit; accepting absent mandatory execution_deadline is rejected as a fix because AC-6.11 explicitly requires fail-closed rejection and I21 forbids inventing an unlimited envelope. Design §2, Task4 and Task19 now test/document both strict-decoder directions, retained running-worker evidence and the unsupported admission-to-spawn binary-replacement window. No automatic upgrade compatibility or new authority is claimed; the future ADR still requires maintainer approval.
+- Source anchors re-read: internal/cli/review.go validation, internal/ids/ids.go generated grammar, internal/tui/model.go Run cleanup, internal/tui/actions.go actionCtx/cancelAction, internal/cli/tui.go wireActions, internal/workers/worker.go Spawn/readLaunch, ADR0004 private stdin handoff and v2 §17.2 upgrade demand.
+- These are hosted-review corrections after the completed three-round specification validation. Independent review of the changed design/tasks is arranged by the delivery coordinator; no implementation started.
+
 ## Discoveries
 
 None yet; implementation has not started.
