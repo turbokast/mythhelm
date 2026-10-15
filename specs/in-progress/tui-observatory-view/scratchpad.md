@@ -96,4 +96,6 @@ Accounting across three fresh-context reviewers: dispatched=3 returned=3 failed=
 
 ## Discoveries
 
-None yet; implementation has not started.
+### Task 2 — Proposed contract record
+
+Native Codex docs implementation, PR #484, commit `54f859d`: ADR 0020 remains proposed for exact-revision Task 3 approval. Independent architect review returned Ready with no critical or important findings. AC-1.10's Observatory attention already exists as shared Amber (dark), so the separate table adds nine missing rows and references the shared amber values without changing Colours. Documentation checks verified local links, exact shared-table preservation, spec lint and hygiene; runtime tests listed in the ADR are explicitly future obligations.
