@@ -7,7 +7,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 # Structural enumeration is deliberately Python standard library.
 cat > "$work/enumerate.py" <<'PY'
-import pathlib, re, sys
+import ast, pathlib, re, sys
 root = pathlib.Path(sys.argv[1])
 errors = []
 for path in sorted(root.rglob('*')):
@@ -17,7 +17,23 @@ for path in sorted(root.rglob('*')):
     print(rel)
     if path.name in {'package.json', 'package-lock.json'} or path.suffix in {'.js', '.mjs', '.cjs'}:
         errors.append(rel)
-    elif re.search(r'(?:^|[;|&(`])\s*(?:(?:if|elif|while|until|then|do|exec|env|command|!)\s+|(?:sudo|timeout|nice|nohup)\s+(?:[^;|&\n]*?\s+)?|[A-Za-z_][A-Za-z0-9_]*=[^\s;]+\s+)*(?:[^\s;]*/)?node(?:\s|$)', path.read_text(errors='replace'), re.M):
+    elif path.suffix == '.py':
+        # Static literal process calls only; identifiers are not shell code.
+        # Dynamic commands still require review under the harness rule.
+        for call in ast.walk(ast.parse(path.read_text())):
+            if not isinstance(call, ast.Call) or not call.args:
+                continue
+            function = call.func
+            if not isinstance(function, ast.Attribute) or function.attr not in {
+                    'run', 'Popen', 'call', 'check_call', 'check_output', 'system', 'popen'}:
+                continue
+            argument = call.args[0]
+            if isinstance(argument, (ast.List, ast.Tuple)) and argument.elts:
+                argument = argument.elts[0]
+            if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+                if re.match(r'(?:[^\s]*/)?node(?:\s|$)', argument.value):
+                    errors.append(rel)
+    elif path.suffix == '.sh' and re.search(r'(?:^|[;|&(`])\s*(?:(?:if|elif|while|until|then|do|exec|env|command|!)\s+|(?:sudo|timeout|nice|nohup)\s+(?:[^;|&\n]*?\s+)?|[A-Za-z_][A-Za-z0-9_]*=[^\s;]+\s+)*(?:[^\s;]*/)?node(?:\s|$)', path.read_text(errors='replace'), re.M):
         errors.append(rel)
 if errors:
     sys.exit('outside browser carve-out: ' + ', '.join(errors))
@@ -39,10 +55,22 @@ for invocation in 'if node file; then true; fi' 'CI=true node file' 'result=$(no
   fi
 done
 printf '%s\n' '--- PASS: outside command words rejected' 
+rm "$work/outside/ci/check.sh"
+printf 'node = object()\nif node:\n    node = None\n' > "$work/outside/ci/check.py"
+python3 "$work/enumerate.py" "$work/outside"
+printf '%s\n' '--- PASS: Python identifiers are not commands'
+for invocation in 'subprocess.run(["node", "file"])' 'subprocess.Popen(["/usr/bin/node", "file"])' 'os.system("node file")'; do
+  printf '%s\n' "$invocation" > "$work/outside/ci/check.py"
+  if python3 "$work/enumerate.py" "$work/outside" > "$work/structural.log" 2>&1; then
+    echo "FAIL: outside Python invocation accepted: $invocation"; exit 1
+  fi
+done
+printf '%s\n' '--- PASS: Python literal process commands rejected'
+
 python3 - "$work" <<'PY'
 import pathlib,sys
 root=pathlib.Path(sys.argv[1])
-base='''<!doctype html><html><head><style>:root{--color-paper:#f6f4ee;--color-ink:#101621;--color-star-light:#00829d}body{margin:0;background:#f6f4ee;color:#101621}button{width:44px;height:44px;background:#f6f4ee;color:#101621;border:1px solid #101621}EXTRA</style></head><body><p>Readable text</p>BODY</body></html>'''
+base='''<!doctype html><!-- mythhelm-fixture --><html><head><style>:root{--color-paper:#f6f4ee;--color-ink:#101621;--color-star-light:#00829d}body{margin:0;background:#f6f4ee;color:#101621}button{width:44px;height:44px;background:#f6f4ee;color:#101621;border:1px solid #101621}EXTRA</style></head><body><p>Readable text</p>BODY</body></html>'''
 cases={'good':('','<button>Go</button>'),'wide':('pre{width:2000px}','<pre>wide</pre>'),'clip':('html,body{overflow-x:clip}pre{width:2000px}','<pre>wide</pre>'),'contrast':('p{color:#00829d}',''),'undeclared':('p{color:#123456}',''),'target':('button{width:20px;height:20px}','<button>Go</button>'),'origin':('','<script src="https://example.invalid/a.js"></script>'),'gif':('','<img src="demo.gif" alt="scripted demo">'),'motion':('@keyframes spin{to{transform:rotate(10deg)}}p{animation:spin 2s infinite}','')}
 cases.update({
  'group-opacity':('p{opacity:.5;background:#101621;color:#f6f4ee}', ''),
