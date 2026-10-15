@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "provenance": "Synthetic journal, events, receipt and credential-free fake demo; captured by executing unchanged production code at the pinned base. No native account data. Two consecutive base captures compared equal using temporary TestCaptureObservatoryBaseTemporary, then the capture-only helper was removed. Permanent test has no regeneration switch.",
+  "base_commit": "e4ab1fc46fb08886af5e8195c4a2812b1b0b6e6f",
+  "events": [
+    {
+      "schema_version": 1,
+      "event_id": "evt_fixed_1",
+      "run_id": "run_baseline",
+      "producer_id": "sup_baseline",
+      "producer_sequence": 1,
+      "run_sequence": 1,
+      "generation": 1,
+      "observed_at": "2026-01-02T03:04:05Z",
+      "type": "run.created",
+      "payload": {
+        "state": "created"
+      }
+    },
+    {
+      "schema_version": 1,
+      "event_id": "evt_fixed_2",
+      "run_id": "run_baseline",
+      "producer_id": "sup_baseline",
+      "producer_sequence": 2,
+      "run_sequence": 2,
+      "generation": 1,
+      "observed_at": "2026-01-02T03:04:05Z",
+      "type": "run.state_changed",
+      "payload": {
+        "state": "failed",
+        "reason": "synthetic_failure"
+      }
+    },
+    {
+      "schema_version": 1,
+      "event_id": "evt_fixed_3",
+      "run_id": "run_baseline",
+      "producer_id": "sup_baseline",
+      "producer_sequence": 3,
+      "run_sequence": 3,
+      "generation": 1,
+      "observed_at": "2026-01-02T03:04:05Z",
+      "type": "attempt.progress",
+      "payload": {
+        "assistant_turns": 2,
+        "tool_uses": {
+          "Read": 1
+        }
+      }
+    },
+    {
+      "schema_version": 1,
+      "event_id": "evt_fixed_4",
+      "run_id": "run_baseline",
+      "producer_id": "sup_baseline",
+      "producer_sequence": 4,
+      "run_sequence": 4,
+      "generation": 1,
+      "observed_at": "2026-01-02T03:04:05Z",
+      "type": "attempt.native_result",
+      "payload": {
+        "exit_code": 4,
+        "result_observed": true,
+        "subtype": "error"
+      }
+    },
+    {
+      "schema_version": 1,
+      "event_id": "evt_fixed_5",
+      "run_id": "run_baseline",
+      "producer_id": "sup_baseline",
+      "producer_sequence": 5,
+      "run_sequence": 5,
+      "generation": 1,
+      "observed_at": "2026-01-02T03:04:05Z",
+      "type": "verification.completed",
+      "payload": {
+        "result": "NOT RUN",
+        "reason": "synthetic_no_candidate"
+      }
+    }
+  ],
+  "receipt": {
+    "billing": {
+      "entitlement_statement": "entitlement: unknown"
+    },
+    "candidate": {
+      "commit": "unknown",
+      "flags": []
+    },
+    "exit_code": 4,
+    "requested_outcome": {
+      "title": "Synthetic baseline"
+    },
+    "run_id": "run_baseline",
+    "schema_version": 1,
+    "state": "failed",
+    "verification": {
+      "checks": [],
+      "label": "NOT RUN",
+      "reason": "synthetic_no_candidate"
+    }
+  },
+  "usage": [
+    {
+      "ObservationID": "",
+      "RunID": "",
+      "Scope": "synthetic-model",
+      "Unit": "tokens",
+      "Source": "native-reported",
+      "Label": "reported",
+      "Quantity": "0",
+      "ProducerID": "",
+      "ProducerSequence": 0,
+      "ObservedAt": ""
+    },
+    {
+      "ObservationID": "",
+      "RunID": "",
+      "Scope": "synthetic-model",
+      "Unit": "tokens",
+      "Source": "observer",
+      "Label": "observed",
+      "Quantity": "7",
+      "ProducerID": "",
+      "ProducerSequence": 0,
+      "ObservedAt": ""
+    },
+    {
+      "ObservationID": "",
+      "RunID": "",
+      "Scope": "retail-equivalent",
+      "Unit": "USD",
+      "Source": "fixture",
+      "Label": "estimated",
+      "Quantity": "0.37",
+      "ProducerID": "",
+      "ProducerSequence": 0,
+      "ObservedAt": ""
+    },
+    {
+      "ObservationID": "",
+      "RunID": "",
+      "Scope": "synthetic-quota",
+      "Unit": "tokens",
+      "Source": "fixture",
+      "Label": "user-declared",
+      "Quantity": "11",
+      "ProducerID": "",
+      "ProducerSequence": 0,
+      "ObservedAt": ""
+    },
+    {
+      "ObservationID": "",
+      "RunID": "",
+      "Scope": "retail-equivalent",
+      "Unit": "unknown",
+      "Source": "unknown",
+      "Label": "unknown",
+      "Quantity": "unknown",
+      "ProducerID": "",
+      "ProducerSequence": 0,
+      "ObservedAt": ""
+    }
+  ],
+  "captures": {
+    "demo-accessible": {
+      "invocation": "cli.Main(demo --accessible --after 1); fake scripted child, candidate Git object inspected before cleanup",
+      "base_commit": "e4ab1fc46fb08886af5e8195c4a2812b1b0b6e6f",
+      "stdout": "\n=== SCRIPTED DEMO: example repository ===\nworking in <repo> (removed afterwards)\n\n=== SCRIPTED DEMO: run ===\nevent 2: run: admission\nevent 3: admission decided: adapter builtin/fake 0.1.0 (scripted-child-process (ndjson)); SCRIPTED: fake adapter, no real agent, no inference, no network; snapshot: <base-prefix>... (truncated)\nentitlement: not applicable (local-scripted: no inference, no network)\nevent 4: snapshot: <base-commit> cloned to <state>/runs/<run-1>/workspace\nevent 5: run: executing\nevent 6: attempt <att-1>: launch intent recorded\nevent 7: attempt <att-1>: admission pinned (stop ladder stop-ladder/v1)\nevent 8: attempt: launching\nevent 9: attempt: worker pid <worker-pid>, native pid <native-pid>\nevent 10: attempt: running\nevent 11: native session fake-happy, model none (scripted)\nevent 12: progress: 1 assistant turns, tool uses {\"Write\":1} (native-reported)\nevent 13: protocol counters: malformed 0, oversized 0, invalid utf-8 0, depth exceeded 0\nevent 14: native exit: exit code 0; result success\nevent 15: attempt: process group gone; unresolved descendants []\nevent 16: attempt: succeeded_native\nevent 17: candidate.frozen\nevent 18: run: verifying\nevent 19: verification: started\nevent 20: check demo: passed\nevent 21: verification: passed\nevent 22: run: ready_for_review\nevent 23: receipt.written\nnext-after: 23\n\n=== SCRIPTED DEMO: review ===\nRun: <run-1>\nState: ready_for_review\nTask: Demo task\nCandidate: <candidate-commit>\nentitlement: not applicable (local-scripted: no inference, no network)\nVerification: passed (bound to <candidate-commit>)\n\nFlags:\n  none\nChecks:\n  demo: passed (evidence: <state>/runs/<run-1>/evidence/<candidate-prefix>/demo.log; sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855)\nAcceptance: bound\n\nCandidate diff:\ndiff --git a/demo.txt b/demo.txt\nnew file mode 100644\nindex 0000000..9766475\n--- /dev/null\n+++ b/demo.txt\n@@ -0,0 +1 @@\n+ok\n\n=== SCRIPTED DEMO: done ===\nstate in <state> was removed afterwards\n",
+      "stderr": "reservation held on bucket [\"fake\",\"scripted-child-process (ndjson)\",\"none (no inference, no network)\",\"unknown\"]: local coordination only \u2014 not provider availability\n",
+      "exit": 0
+    },
+    "renderer-accessible": {
+      "invocation": "accessible renderer over bundle events and typed usage rows",
+      "base_commit": "e4ab1fc46fb08886af5e8195c4a2812b1b0b6e6f",
+      "stdout": "event 1: run run_baseline: created\nevent 2: run: failed (synthetic_failure)\nevent 3: progress: 2 assistant turns, tool uses {\"Read\":1} (native-reported)\nevent 4: native exit: exit code 4; result error\nevent 5: verification: NOT RUN (synthetic_no_candidate)\nusage: synthetic-model 0 tokens (reported, native-reported)\nusage: synthetic-model 7 tokens (observed, observer)\nusage: retail-equivalent 0.37 USD (estimated, fixture)\nusage: synthetic-quota 11 tokens (user-declared, fixture)\nusage: retail-equivalent unknown unknown (unknown, unknown)\nreserve: verify pass (1 checks, 1s) + 3 repairs (estimate, not a reserve of provider quota)\nremaining: unknown\nnext retry: none (used 0 of 3)\n",
+      "stderr": "",
+      "exit": 0
+    },
+    "renderer-plain": {
+      "invocation": "plain renderer over bundle events and typed usage rows",
+      "base_commit": "e4ab1fc46fb08886af5e8195c4a2812b1b0b6e6f",
+      "stdout": "run run_baseline: created\nrun: failed (synthetic_failure)\nprogress: 2 assistant turns, tool uses {\"Read\":1} (native-reported)\nnative exit: exit code 4; result error\nverification: NOT RUN (synthetic_no_candidate)\nusage: synthetic-model 0 tokens (reported, native-reported)\nusage: synthetic-model 7 tokens (observed, observer)\nusage: retail-equivalent 0.37 USD (estimated, fixture)\nusage: synthetic-quota 11 tokens (user-declared, fixture)\nusage: retail-equivalent unknown unknown (unknown, unknown)\nreserve: verify pass (1 checks, 1s) + 3 repairs (estimate, not a reserve of provider quota)\nremaining: unknown\nnext retry: none (used 0 of 3)\nresult: failed (synthetic_failure); exit 4 native_failure\n",
+      "stderr": "",
+      "exit": 0
+    },
+    "review-accessible": {
+      "invocation": "cli.Main(review run_baseline --accessible) over bundle journal and receipt",
+      "base_commit": "e4ab1fc46fb08886af5e8195c4a2812b1b0b6e6f",
+      "stdout": "goal: Synthetic baseline\nrun state: failed (reason: synthetic_failure)\nattempt: none recorded\ncandidate: none recorded\nverification: waiting\nprogress: 2 assistant turns (native-reported)\nadmission: unknown\nentitlement: unknown\nnative exit: exit code 4; result observed\nnext action: inspect the run; no automatic next step\nactions: none available\nevent 1: run run_baseline: created\nevent 2: run: failed (synthetic_failure)\nevent 3: progress: 2 assistant turns, tool uses {\"Read\":1} (native-reported)\nevent 4: native exit: exit code 4; result error\nevent 5: verification: NOT RUN (synthetic_no_candidate)\nevent 6: receipt.written\nnext-after: 6\n",
+      "stderr": "",
+      "exit": 0
+    },
+    "review-jsonl": {
+      "invocation": "cli.Main(review run_baseline --format jsonl) over bundle journal and receipt",
+      "base_commit": "e4ab1fc46fb08886af5e8195c4a2812b1b0b6e6f",
+      "stdout": "{\"acceptance\":{\"status\":{\"changed\":[],\"reason\":\"no verification recorded\",\"state\":\"unverified\"}},\"billing\":{\"entitlement_statement\":\"entitlement: unknown\"},\"candidate\":{\"commit\":\"unknown\",\"flags\":[]},\"exit_code\":4,\"requested_outcome\":{\"title\":\"Synthetic baseline\"},\"run_id\":\"run_baseline\",\"schema_version\":1,\"state\":\"failed\",\"verification\":{\"checks\":[],\"label\":\"NOT RUN\",\"reason\":\"synthetic_no_candidate\"}}\n",
+      "stderr": "",
+      "exit": 0
+    },
+    "run-jsonl": {
+      "invocation": "cli.Main(run --non-interactive --format jsonl); intentional admission refusal",
+      "base_commit": "e4ab1fc46fb08886af5e8195c4a2812b1b0b6e6f",
+      "stdout": "{\"schema_version\":1,\"event_id\":\"<evt-1>\",\"run_id\":\"\",\"producer_id\":\"<cli-1>\",\"producer_sequence\":1,\"run_sequence\":0,\"generation\":1,\"observed_at\":\"<timestamp>\",\"type\":\"run.result\",\"payload\":{\"state\":null,\"reason\":\"invalid_arguments\",\"attempt_reason\":null,\"exit_code\":2,\"error_category\":\"invalid_arguments\"}}\n",
+      "stderr": "mythhelm run: invalid run request: --adapter is required (claudecode, codex or fake); there is no default and no fallback; --billing is required (subscription-declared, subscription-only or local-scripted); there is no default; --task-file is required\n",
+      "exit": 2
+    },
+    "run-plain": {
+      "invocation": "cli.Main(run --non-interactive --plain); intentional admission refusal",
+      "base_commit": "e4ab1fc46fb08886af5e8195c4a2812b1b0b6e6f",
+      "stdout": "result: not admitted (invalid_arguments); exit 2 invalid_arguments\n",
+      "stderr": "mythhelm run: invalid run request: --adapter is required (claudecode, codex or fake); there is no default and no fallback; --billing is required (subscription-declared, subscription-only or local-scripted); there is no default; --task-file is required\n",
+      "exit": 2
+    }
+  },
+  "normalisation": [
+    "Fixed journal/render inputs have no normalization; all state, reason, usage quantity and provenance bytes are retained.",
+    "Run refusal replaces only event_id evt_ULID, producer_id cli_ULID and observed_at timestamp tokens in the original JSON bytes; all field names, order, presence, types and result values remain exact.",
+    "Demo uses --after 1 to omit the timing-dependent initial summary and resume at event 2; fixed journal review/render captures cover initial summary and created event. Events 2 through 23 and next-after: 23 must all remain.",
+    "Demo replaces exact generated repository/state paths, including a width-truncated workspace path only after checking it is a prefix of that exact workspace. Path separators change only inside generated evidence paths.",
+    "Demo generated run and attempt ULIDs use injective per-role first-occurrence names; distinct worker/native PIDs use role names. Changing a repeated identity to a different identity remains visible.",
+    "Demo full base/candidate Git references and their known display/path prefixes are replaced consistently, only after real Git base-to-candidate changed paths equal demo.txt and candidate demo.txt equals ok plus newline. The full diff, fixed evidence digest, result, verification and provenance stay exact. Git strips inherited GIT_* dates, so environment cannot fix commit timestamps.",
+    "A bounded slow-consumer writer waits at event 4 until receipt.written exists in the synthetic journal. This controls source timing without changing runtime code; it does not fix or qualify the unsynchronized terminal-watch race that can omit event 23."
+  ]
+}
