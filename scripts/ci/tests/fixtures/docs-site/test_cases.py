@@ -107,6 +107,27 @@ class SiteChecks(unittest.TestCase):
     def test_conforming(self):
         self.run_check(code=0)
 
+    def test_relative_mirror_footer_and_script(self):
+        self.replace('site/mirror/LICENSE.html', '/mythhelm/', '../')
+        self.replace('site/mirror/LICENSE.html', '<head>', '<head><script src="../assets/site.js"></script>')
+        self.run_check(code=0)
+
+    def test_site_path_with_parent_segment(self):
+        self.site = self.site / 'mirror' / '..'
+        self.run_check(code=0)
+
+    def test_numbered_list_fence_indentation(self):
+        self.replace('docs/user-guide.md', '```sh\ngo run ./cmd/mythhelm demo\n```', '1. Run:\n\n   ```sh\n   go run ./cmd/mythhelm demo\n   ```')
+        self.run_check(code=0)
+
+    def test_invalid_manifest_shapes_are_input_errors(self):
+        for manifest in [[], {'recordings': {}}, {'recordings': ['hero']},
+                         {'recordings': [{'name': 'hero', 'chapters': {}}]},
+                         {'recordings': [{'name': 'hero', 'chapters': ['title']}]}]:
+            with self.subTest(manifest=manifest):
+                self.put('site/demos/manifest.json', json.dumps(manifest))
+                self.run_check('input', code=2)
+
     def test_unlisted_hex(self):
         self.replace('site/assets/site.css', 'color: var(--color-night)', 'color: #123456')
         self.run_check('tokens')

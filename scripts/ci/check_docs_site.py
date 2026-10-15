@@ -12,6 +12,7 @@ import html
 from html.parser import HTMLParser
 import json
 import math
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -169,7 +170,7 @@ def example_blocks(docs):
     for path in sorted(docs.rglob('*.md')):
         text = read(path)
         heading, ordinal, duplicates = '', 0, {}
-        fence, content, annotation, start = None, [], None, 0
+        fence, content, annotation, start, indent = None, [], None, 0, 0
         stack, wrapper_counts = [], {}
         raw_end = None
         for number, line in enumerate(text.splitlines(), 1):
@@ -183,7 +184,7 @@ def example_blocks(docs):
                         errors.append((path, start, 'annotation does not match contained source fence identity'))
                     fence = None
                 else:
-                    content.append(line)
+                    content.append(re.sub(r'^ {0,%d}' % indent, '', line))
                 continue
             # Ignore raw regions only outside fences; commands and expected
             # output may themselves contain literal HTML or comments.
@@ -220,9 +221,9 @@ def example_blocks(docs):
                     stack.append((value, number))
                     if value is not None:
                         wrapper_counts[number] = 0
-            match = re.match(r'^ {0,3}(`{3,}|~{3,})([^`]*)$', line)
+            match = re.match(r'^( {0,3})(`{3,}|~{3,})([^`]*)$', line)
             if match:
-                fence, content, start = match[1], [], number
+                indent, fence, content, start = len(match[1]), match[2], [], number
                 ordinal += 1
                 owner = next(((value, row) for value, row in reversed(stack) if value is not None), None)
                 annotation = owner[0] if owner else None
@@ -238,9 +239,9 @@ def example_blocks(docs):
 
 class Checker:
     def __init__(self, site, docs):
-        self.site, self.docs = site, docs
+        self.site, self.docs = Path(os.path.normpath(site)), docs
         self.findings = []
-        paths = sorted(site.rglob('*.html'))
+        paths = sorted(self.site.rglob('*.html'))
         if not paths:
             raise InputError('site contains no HTML pages')
         self.pages = {p: Document(read(p)).root for p in paths}
@@ -370,6 +371,7 @@ class Checker:
             result = self.site / name.lstrip('/')
         else:
             result = (page.parent if page else self.site) / name
+        result = Path(os.path.normpath(result))
         if not result.resolve().is_relative_to(self.site.resolve()):
             raise InputError('resource escapes site directory')
         if result.is_dir() or name.endswith('/'):
@@ -381,9 +383,7 @@ class Checker:
         return not ((parsed.scheme and parsed.scheme not in {'http', 'https'}) or (parsed.netloc and (parsed.netloc != origin.netloc or (parsed.scheme and parsed.scheme != origin.scheme))))
 
     def resource(self, path, ref, line=1):
-        parsed = urlsplit(ref)
-        origin = urlsplit(self.origin)
-        if (parsed.scheme and parsed.scheme not in {'http', 'https'}) or (parsed.netloc and (parsed.netloc != origin.netloc or (parsed.scheme and parsed.scheme != origin.scheme))):
+        if not self.same_origin(ref):
             self.fail(path, 'origins', f'off-origin resource: {ref}', line)
 
     def css_resources(self, path, text):
@@ -482,10 +482,14 @@ class Checker:
     def chapters(self):
         path = self.site / 'demos/manifest.json'
         manifest = json.loads(read(path))
+        if not isinstance(manifest, dict) or not isinstance(manifest.get('recordings'), list) or not all(isinstance(row, dict) for row in manifest['recordings']):
+            raise InputError('invalid demo manifest schema')
         heroes = [row for row in manifest['recordings'] if row.get('name') == 'hero']
         if len(heroes) != 1:
             raise InputError('manifest must contain exactly one hero')
         chapters = heroes[0].get('chapters', [])
+        if not isinstance(chapters, list) or not all(isinstance(chapter, dict) for chapter in chapters):
+            raise InputError('invalid chapter schema')
         if [c.get('name') for c in chapters] != ['title', 'run', 'kill', 'recover', 'review']:
             self.fail(path, 'chapters', 'missing or reordered chapter names')
             return
