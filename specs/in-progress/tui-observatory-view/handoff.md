@@ -12,7 +12,12 @@
 
 ## Task 2 — Record the lifecycle and presentation contracts
 
-<!-- pending -->
+- **Produces**: Proposed `docs/decisions/0020-observatory-lifecycle-and-themes.md` and separate TUI-only palette table in `docs/assets/brand/README.md`; PR #484, implementation `54f859d`.
+- **For Task 3**: Record explicit approval of the concrete ADR revision before runtime implementation. Fresh independent architect review found no critical or important issues, but is not maintainer approval or runtime evidence.
+- **For Tasks 4–10**: Preserve first-request precedence, worker-pinned deadlines, durable final reason, stop-less Detach, joined action lifetime, single signal owner and distinct client/canonical outcomes. Mixed handoff versions fail closed; qualification and reconnect limitations remain explicit.
+- **For Task 11**: Nine missing TUI-only rows are supplied. Observatory attention already exists as shared Amber (dark); shared Colours rows remain byte-identical. The equality test must compare embedded themes after their implementation, not claim current themes already match.
+- **Verification**: Spec lint and hygiene pass; changed-document local links resolve; shared Colours section comparison and diff whitespace check pass. All ADR runtime test names are future obligations, not passing claims.
+- **Deviations**: None.
 
 ## Task 3 — Approve the concrete ADR
 
