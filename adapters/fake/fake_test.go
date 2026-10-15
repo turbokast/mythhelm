@@ -531,7 +531,7 @@ func sessionID(t *testing.T, pid int) int {
 }
 
 func TestScenariosEmbedded(t *testing.T) {
-	want := []string{"allowance-exhausted", "bad-utf8", "check-fails", "count-launches", "deep", "denied", "escapee", "exit-before-result", "happy", "ignore-sigint", "ignore-term", "malformed", "native-fails", "oversized", "paced", "readonly", "slow", "usage-counters"}
+	want := []string{"allowance-exhausted", "bad-utf8", "check-fails", "count-launches", "deep", "denied", "escapee", "exit-before-result", "happy", "ignore-sigint", "ignore-term", "malformed", "native-fails", "oversized", "paced", "readonly", "slow", "tree", "usage-counters"}
 	if got := Scenarios(); !slices.Equal(got, want) {
 		t.Errorf("Scenarios() = %q, want %q", got, want)
 	}
@@ -752,5 +752,50 @@ func TestAgentMainArgumentErrorsExit2(t *testing.T) {
 		if code := AgentMain(args, strings.NewReader(""), io.Discard, &stderr); code != 2 || stderr.Len() == 0 {
 			t.Errorf("AgentMain(%q) = %d with stderr %q, want 2 and a message", args, code, stderr.String())
 		}
+	}
+}
+
+func TestScenariosParse(t *testing.T) {
+	sc, err := loadScenario("tree")
+	if err != nil {
+		t.Fatalf("load tree: %v", err)
+	}
+	if len(sc.Steps) != 2 || sc.Steps[0].Op != "spawn_tree" {
+		t.Fatalf("tree steps = %+v", sc.Steps)
+	}
+	src, err := scenarioFS.ReadFile("scenarios/tree.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range [][]byte{
+		bytes.Replace(src, []byte("spawn_tree"), []byte("unknown_tree"), 1),
+		bytes.Replace(src, []byte("report_path"), []byte("unknown_path"), 1),
+	} {
+		if _, err := parseScenario(bad); err == nil {
+			t.Errorf("accepted invalid tree scenario: %s", bad)
+		}
+	}
+	for _, path := range []string{"", "../escape", "/absolute"} {
+		src, err := json.Marshal(map[string]any{"steps": []any{map[string]any{"op": "spawn_tree", "report_path": path}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := parseScenario(src); err == nil {
+			t.Errorf("accepted report_path %q", path)
+		}
+	}
+}
+
+func TestSpawnTreeUnsupportedOffWindows(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has the native tree fixture")
+	}
+	if _, err := loadScenario("tree"); err != nil {
+		t.Fatalf("known spawn_tree step rejected by loader: %v", err)
+	}
+	var stderr bytes.Buffer
+	code := AgentMain([]string{"--scenario", "tree", "--workdir", t.TempDir()}, strings.NewReader(""), io.Discard, &stderr)
+	if code != 1 || !strings.Contains(stderr.String(), "spawn_tree") || !strings.Contains(stderr.String(), "Windows") {
+		t.Fatalf("run = %d, %q; want run-time spawn_tree Windows error", code, stderr.String())
 	}
 }
