@@ -240,7 +240,7 @@
   - Review fixes normalize relative paths and indented fences, validate malformed manifest shapes, and share the origin predicate (consistent with content and input-error contracts).
   - Round-two review adds named-color shorthand coverage and restricts opacity exemptions to exclusively backdrop selectors (consistent with AC-1.2).
 - **Files modified**: `scripts/ci/check_docs_site.py`, `scripts/ci/lint-agent-harness.sh`, `scripts/ci/tests/fixtures/docs-site/README.md`, `scripts/ci/tests/fixtures/docs-site/test_cases.py`, `scripts/ci/tests/test_check_docs_site.sh`, `scripts/ci/tests/test_lint_agent_harness.sh`, `specs/in-progress/docs-site-restyle/tasks.md`, `specs/in-progress/docs-site-restyle/handoff.md`.
-- **CI evidence**: Checker passes all 41 pages from the actual [Pages build run 38717945157](https://github.com/turbokast/mythhelm/actions/runs/38717945157), matched to its docs source at 3456bd6. This integration artifact includes the comparison-evidence page; it is not an exact task-8-head build. Fixture suite reports `checks=67 failed=0`.
+- **CI evidence**: Checker revision ee82717 passes all 40 pages from the actual [Pages build run 38720309481](https://github.com/turbokast/mythhelm/actions/runs/38720309481), built at task-8 revision 9138501. The docs tree is identical between that source revision and the round-two checker revision; checker and documentation provenance are recorded separately. Fixture suite reports `checks=67 failed=0`.
 
 ### Task 9 — Browser-driver carve-out and responsive checks (harness) ✅ COMPLETED
 
