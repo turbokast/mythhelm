@@ -6,19 +6,27 @@
 
 Grounded against `origin/main` at `30062ec` on 2026-10-15. Finders below are repository-root commands; line numbers are hints.
 
-| Fact | Opened source and finder |
-|---|---|
-| Demo unconditionally deletes its temporary repo/state and checks only Detached before review. | `internal/cli/demo.go:78,83,124`, `rg -n "RemoveAll|reviewOK =|MkdirTemp" internal/cli/demo.go`; recover resolves MYTHHELM_HOME in `internal/cli/recover.go:39` via `internal/statedir/statedir.go:19`. |
-| Live TUI quit injects two interrupts, then prints review guidance. | `internal/cli/tui.go:226`, `rg -n 'func runLiveTUI|interrupts <-|reattach with' internal/cli/tui.go` |
-| First interrupt stops; the second returns with `Outcome.Detached`. Deadline classification depends on volatile `deadlineHit`. | `internal/supervisor/pipeline.go:1037`, `rg -n 'deadlineHit|case <-p.h.Interrupt|func .*endStop' internal/supervisor/pipeline.go` |
-| Worker launch is bounded stdin JSON, strictly decoded; worker owns the ladder and terminal spool reason. | `internal/workers/worker.go:74,251,656,765,913`, `rg -n '^type Launch|^func readLaunch|func .*supervise|func .*requestStop|func .*classify' internal/workers/worker.go` |
-| A fenced worker waits after spooling under supervisor loss. | `internal/workers/worker.go:560`, `internal/workers/envelope.go:144`; `rg -n 'awaitIfUnsupervised|func AwaitReconnect' internal/workers/{worker,envelope}.go` |
-| Owner observation cannot reuse Acquire: it creates and exclusively locks a file. | `internal/ownerlock/ownerlock.go:25`; `rg -n 'func Acquire|OpenFile' internal/ownerlock/ownerlock.go` |
-| Config has no live intents, Ctrl-C quits immediately, q rows ignore selection. | `internal/tui/model.go:32`, `nav.go:23`, `dialogs.go:96`; `rg -n 'type Config|ctrl.c|case dialogExitOptions' internal/tui/{model,nav,dialogs}.go` |
-| Snapshot has no usage, model or detachment capability. Load scopes native observations to the latest attempt. | `internal/tui/viewmodel/viewmodel.go:38,55,110`; `rg -n 'type Admission|type Snapshot|currentAttempt|decodeAdmission' internal/tui/viewmodel/viewmodel.go` |
-| View returns overlays before drawing the mission; width ladder is already 140/100/80, height threshold 10. | `internal/tui/model.go:277`, `layout.go:9`; `rg -n 'func .*View|wideWidth|minHeight' internal/tui/{model,layout}.go` |
-| Theme validates ten keys, border style and four text contrast pairs. Warning has real consumers. | `internal/tui/theme/theme.go:29,94`, `rg -n 'Tokens.Warning|t.Warning|Warning:' internal/tui` finds theme tests, mission, diff and actions tests as well as the schema. |
-| Usage is already independently labelled; exact candidate checks already gate verified text. | `internal/journal/ledger.go:16`, `internal/tui/mission.go:16`; `rg -n 'type UsageRow|func verified' internal/journal/ledger.go internal/tui/mission.go` |
+- Demo unconditionally deletes its temporary repo/state and checks only Detached before review. Opened source and finder: `internal/cli/demo.go:78,83,124`, `rg -n "RemoveAll|reviewOK =|MkdirTemp" internal/cli/demo.go`; recover resolves MYTHHELM_HOME in `internal/cli/recover.go:39` via `internal/statedir/statedir.go:19`.
+
+- Live TUI quit injects two interrupts, then prints review guidance. Opened source and finder: `internal/cli/tui.go:226`, `rg -n 'func runLiveTUI|interrupts <-|reattach with' internal/cli/tui.go`
+
+- First interrupt stops; the second returns with `Outcome.Detached`. Deadline classification depends on volatile `deadlineHit`. Opened source and finder: `internal/supervisor/pipeline.go:1037`, `rg -n 'deadlineHit|case <-p.h.Interrupt|func .*endStop' internal/supervisor/pipeline.go`
+
+- Worker launch is bounded stdin JSON, strictly decoded; worker owns the ladder and terminal spool reason. Opened source and finder: `internal/workers/worker.go:74,251,656,765,913`, `rg -n '^type Launch|^func readLaunch|func .*supervise|func .*requestStop|func .*classify' internal/workers/worker.go`
+
+- A fenced worker waits after spooling under supervisor loss. Opened source and finder: `internal/workers/worker.go:560`, `internal/workers/envelope.go:144`; `rg -n 'awaitIfUnsupervised|func AwaitReconnect' internal/workers/{worker,envelope}.go`
+
+- Owner observation cannot reuse Acquire: it creates and exclusively locks a file. Opened source and finder: `internal/ownerlock/ownerlock.go:25`; `rg -n 'func Acquire|OpenFile' internal/ownerlock/ownerlock.go`
+
+- Config has no live intents, Ctrl-C quits immediately, q rows ignore selection. Opened source and finder: `internal/tui/model.go:32`, `nav.go:23`, `dialogs.go:96`; `rg -n 'type Config|ctrl.c|case dialogExitOptions' internal/tui/{model,nav,dialogs}.go`
+
+- Snapshot has no usage, model or detachment capability. Load scopes native observations to the latest attempt. Opened source and finder: `internal/tui/viewmodel/viewmodel.go:38,55,110`; `rg -n 'type Admission|type Snapshot|currentAttempt|decodeAdmission' internal/tui/viewmodel/viewmodel.go`
+
+- View returns overlays before drawing the mission; width ladder is already 140/100/80, height threshold 10. Opened source and finder: `internal/tui/model.go:277`, `layout.go:9`; `rg -n 'func .*View|wideWidth|minHeight' internal/tui/{model,layout}.go`
+
+- Theme validates ten keys, border style and four text contrast pairs. Warning has real consumers. Opened source and finder: `internal/tui/theme/theme.go:29,94`, `rg -n 'Tokens.Warning|t.Warning|Warning:' internal/tui` finds theme tests, mission, diff and actions tests as well as the schema.
+
+- Usage is already independently labelled; exact candidate checks already gate verified text. Opened source and finder: `internal/journal/ledger.go:16`, `internal/tui/mission.go:16`; `rg -n 'type UsageRow|func verified' internal/journal/ledger.go internal/tui/mission.go`
 
 The issue premises still hold at this base: the exit options are inert; the caller couples UI exit to a stop; overlays erase the mission; theme startup always loads dark; usage observations are absent from Snapshot. Each has a failing test specified below. The current docs colour table already contains Paper and both ambers (`docs/assets/brand/README.md`, Colours); add a separate TUI table, not duplicate shared rows.
 

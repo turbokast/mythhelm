@@ -89,6 +89,11 @@ Accounting across three fresh-context reviewers: dispatched=3 returned=3 failed=
 - ActionCompletion now carries StopState from supervisor.Stop. Tasks7/8 distinguish stopped from stop_requested even with nil error; terminal-loss client6 does not falsely certify the stop or rewrite canonical run state.
 - Primary sources read 2026-10-15: Microsoft about_Quoting_Rules and PowerShell CharTraits.IsSingleQuote (linked in design); local internal/supervisor/stop.go returns stopped only from confirmed worker evidence and otherwise stop_requested after writing the request.
 
+## Hosted-review fix validation, round 3
+
+- Moved current-state facts and their exact finder commands out of the Markdown table so regex alternation pipes cannot split cells.
+- Aligned AC-6.13 with the existing inspect-mode action ownership in design and Tasks7/8: terminal loss joins in-flight Stop/recover/apply headlessly, reports the final action result, preserves canonical outcomes and retains client6/nonzero failure mappings. StopState continues to distinguish confirmed stopped from pending stop_requested; no authority or scope changed.
+
 ## Discoveries
 
 None yet; implementation has not started.
