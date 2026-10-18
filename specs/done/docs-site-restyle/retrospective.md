@@ -196,6 +196,10 @@ Classification totals in the fetched history: four evidenced real failed workflo
 - #495 initial source `e89ad45` passed [CI 39147338537](https://github.com/turbokast/mythhelm/actions/runs/39147338537). Integrated source `6a9b9fa` passed [CI 39148394453](https://github.com/turbokast/mythhelm/actions/runs/39148394453), including the combined actual renderer and capability checks. It merged as `2b0013b`; main [CI 39149532378](https://github.com/turbokast/mythhelm/actions/runs/39149532378) passed. All six main-push workflows succeeded.
 - #495 [PR-title run 39148394455](https://github.com/turbokast/mythhelm/actions/runs/39148394455) at `6a9b9fa` was cancelled; cause unknown. Its later required title check passed, but that does not establish the cancellation mechanism.
 
+### Finalization validation
+
+- **Real mirror drift — #496 source `861f639`:** [Docs checks job 117746392481](https://github.com/turbokast/mythhelm/actions/runs/39151663116/job/117746392481) failed because the finalization changelog additions were not copied to `docs/mirror/CHANGELOG.md`. The local harness gate does not include this workflow-only freshness check. The correction refreshes the mirror byte-for-byte and explicitly compares all four mirror pairs before publication. Final-head CI remains required by the PR merge check.
+
 ## Effort
 
 dispatched=11 returned=9 failed=2; recorded attempts 11 over 11 task rows; mechanical first-pass 8/11; recorded review rounds 6. These are incomplete local-log metrics, not reconstructed labor totals.

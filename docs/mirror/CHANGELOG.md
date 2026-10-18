@@ -27,11 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Each run records its acceptance policy pin P1 at admission with the evaluator that was pinned; a verdict from any other evaluator is reported `INVALID`, never `passed` (#413)
 - The receipt carries an `acceptance` section (policy pin, recorded execution bounds with an `enforced` flag each) and an `unknown_reasons` table, so every unknown field says why (#417)
 - `run` and `recover` JSONL output is a documented contract of 29 event types and refuses an undocumented one (#415)
+- Documentation search covers page titles, headings and body text, and works offline after the index has loaded (#468)
+- Listed documentation commands carry tested-in-CI labels backed by credential-free offline execution that gates site publication (#481)
 
 ### Changed
 
 - `mythhelm doctor` plain output names each unproven qualification column as `failing: <column>` and prints `next_test: <text>` below rows with a non-empty next test (#396)
 - The TUI, `mythhelm review` and `--accessible` views show the entitlement sentence (a declared posture is never worded as verified) and the verification label with its reason (#424, #425)
+- Documentation now has a Night landing page and Paper reading layout with grouped navigation, section links and user-controlled recordings (#465, #466, #467)
 
 ### Fixed
 
