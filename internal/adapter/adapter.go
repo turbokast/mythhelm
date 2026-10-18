@@ -160,7 +160,7 @@ type OwnedProc interface {
 	// calls it once, after Stdout returns EOF or an error.
 	Wait() NativeExit
 	// GroupGone reports whether no process of the group remains (Unix:
-	// kill(-pgid, 0) fails with ESRCH; Windows: the process was waited).
+	// kill(-pgid, 0) fails with ESRCH; Windows: the native was waited and its job is empty).
 	GroupGone() bool
 }
 

@@ -70,11 +70,11 @@ jobs:
         if: runner.os == 'Linux'
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
       - run: go vet ./...
-      - name: Verify Windows launch ownership
+      - name: Verify Windows launch and stop ownership
         if: runner.os == 'Windows'
         run: >-
           go test -count=1 -v ./internal/workers
-          -run '^Test(WindowsRunnerParentJobSpike|NativeCreatedSuspended|JobHandleNotInheritable|JobHasKillOnCloseAndNoBreakawayLimits|ParentJobLaunchPreparationFailsClosed|NativeIsInJobBeforeResume|JobCreateFailureEndsLaunchFailed|KillOnCloseParentJobRefused|ParentJobQueryErrorFailsLaunch|AssignFailureTerminatesSuspendedNative|UnconfirmedTerminationIsStopUnconfirmed|NativeStartTimeFailureTerminatesSuspendedNative|ParentJobSemantics|JobHasNoBreakawayLimits|RepeatedLaunchDoesNotStopExistingNative|ConfirmationHandleFailureStillTerminatesNative|IdentityFailureStopsNative|IdentityWriteFailureTerminatesSuspendedNative)$'
+          -run '^Test(WindowsRunnerParentJobSpike|NativeCreatedSuspended|JobHandleNotInheritable|JobHasKillOnCloseAndNoBreakawayLimits|ParentJobLaunchPreparationFailsClosed|NativeIsInJobBeforeResume|JobCreateFailureEndsLaunchFailed|KillOnCloseParentJobRefused|ParentJobQueryErrorFailsLaunch|AssignFailureTerminatesSuspendedNative|UnconfirmedTerminationIsStopUnconfirmed|NativeStartTimeFailureTerminatesSuspendedNative|ParentJobSemantics|JobHasNoBreakawayLimits|RepeatedLaunchDoesNotStopExistingNative|ConfirmationHandleFailureStillTerminatesNative|IdentityFailureStopsNative|IdentityWriteFailureTerminatesSuspendedNative|StopKillsChildAndGrandchild|CreateNewProcessGroupDescendantDies|StopReportsSurvivorsWithIdentity|EnumerationFailureIsFailedScan|WindowsLadderHasOnlyKill|SignalRejectsNonKillOnWindows|StopTimeoutEndsStopUnconfirmed|LateJobScanInvalidatesConfirmation|PanicBeforeJobAssignmentTerminatesSuspendedNative|PanicAfterAssignmentStopsTree|PanicCleanupTimeoutRemainsUnconfirmed)$'
       - if: matrix.os != 'windows-11-arm'
         run: go test -race ./...
       # The race detector does not support windows/arm64.

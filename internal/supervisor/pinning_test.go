@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -78,8 +79,8 @@ func TestSpawnMintsAndJournalsNonce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PinnedAdmission: %v", err)
 	}
-	if version != "stop-ladder/v1" {
-		t.Errorf("pinned ladder version = %q, want stop-ladder/v1", version)
+	if version != stopLadderVersion(runtime.GOOS) {
+		t.Errorf("pinned ladder version = %q, want %q", version, stopLadderVersion(runtime.GOOS))
 	}
 	if digest != workers.NonceDigest(nonce) {
 		t.Error("the journaled digest is not the NonceDigest of the delivered raw nonce")
@@ -159,7 +160,7 @@ func TestPinAdmissionWithoutLockPinsUnfenced(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PinnedAdmission: %v", err)
 	}
-	if version != "stop-ladder/v1" || digest != workers.NonceDigest(nonce) {
+	if version != stopLadderVersion(runtime.GOOS) || digest != workers.NonceDigest(nonce) {
 		t.Errorf("unfenced pin = (%q, digest ok %v), want the version and the nonce digest",
 			version, digest == workers.NonceDigest(nonce))
 	}

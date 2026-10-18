@@ -62,3 +62,19 @@ func (p *ownedProc) Signal(sig adapter.StopSignal) error {
 func (p *ownedProc) GroupGone() bool {
 	return errors.Is(unix.Kill(-*p.pgid, 0), unix.ESRCH)
 }
+
+// descendants retains the marker scan and its identity evidence on Unix.
+func descendants(_ *ownedProc, attemptID string) ([]int, []ProcessIdentity, error) {
+	if descendantScan == "unavailable" {
+		return []int{}, []ProcessIdentity{}, nil
+	}
+	pids, err := markedPIDs(attemptMarker(attemptID))
+	if err != nil {
+		return []int{}, []ProcessIdentity{}, err
+	}
+	if pids == nil {
+		pids = []int{}
+	}
+	identities, err := processIdentities(pids)
+	return pids, identities, err
+}

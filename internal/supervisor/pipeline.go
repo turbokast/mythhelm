@@ -12,6 +12,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -540,7 +541,7 @@ func (p *pipeline) attempt(ctx context.Context) error {
 			p.runTo(ctx, RunFailed, "admission_pin_failed"))
 	}
 	launch := launchForAttempt(d, token)
-	launch.LadderVersion = stopLadderVersion
+	launch.LadderVersion = stopLadderVersion(runtime.GOOS)
 	launch.Nonce = nonce
 	launch.Generation = generation
 	proc, err := workers.Spawn(p.exe, d.StateDir, d.RunID, d.AttemptID, launch)
@@ -834,10 +835,13 @@ func launchToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// stopLadderVersion is the stop ladder version the spawn site pins. The
-// per-surface proposal ladder travels as stop-ladder/v1 (OQ-SR2) until a
-// new version ships.
-const stopLadderVersion = "stop-ladder/v1"
+// stopLadderVersion pins the reach of the platform's stop ladder.
+func stopLadderVersion(goos string) string {
+	if goos == "windows" {
+		return "stop-ladder/v2-windows"
+	}
+	return "stop-ladder/v1"
+}
 
 // workerNonce mints the raw per-worker nonce (256 crypto bits, hex), the
 // launchToken precedent: the supervisor journals NonceDigest of it in
@@ -896,7 +900,7 @@ func pinAdmission(ctx context.Context, j *journal.Journal, prod *Producer, state
 	default:
 		return "", 0, fmt.Errorf("reading the boot generation: %w", err)
 	}
-	if err := RecordAdmissionPinned(ctx, j, runID, taskID, attemptID, stopLadderVersion, workers.NonceDigest(nonce), prod); err != nil {
+	if err := RecordAdmissionPinned(ctx, j, runID, taskID, attemptID, stopLadderVersion(runtime.GOOS), workers.NonceDigest(nonce), prod); err != nil {
 		return "", 0, err
 	}
 	return nonce, generation, nil

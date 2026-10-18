@@ -10,6 +10,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/turbokast/mythhelm/internal/adapter"
 	"golang.org/x/sys/windows"
 )
 
@@ -233,7 +234,7 @@ func resumeNative(pid int) error {
 
 // failedLaunch stops both the job and the possibly not-yet-assigned native.
 // Never wait on a native whose termination failed: preserve unconfirmed state.
-func (l *launcher) failedLaunch() {
+func (l *launcher) failedLaunch() (report adapter.InterruptReport) {
 	p := l.proc
 	if p == nil {
 		return
@@ -260,13 +261,17 @@ func (l *launcher) failedLaunch() {
 		terminate = (*jobObject).terminate
 	}
 	if l.job != nil {
-		_ = terminate(l.job)
+		if terminate(l.job) == nil {
+			report.Sent = []adapter.StopSignal{adapter.StopKill}
+		}
 	}
 	kill := ops.terminateNative
 	if kill == nil {
 		kill = (*os.Process).Kill
 	}
-	_ = kill(p.cmd.Process)
+	if kill(p.cmd.Process) == nil && len(report.Sent) == 0 {
+		report.Sent = []adapter.StopSignal{adapter.StopKill}
+	}
 	if err != nil {
 		return
 	}
@@ -288,6 +293,8 @@ func (l *launcher) failedLaunch() {
 			l.unconfirmed = true
 		}
 	}
+	report.Confirmed = !l.unconfirmed
+	return
 }
 
 // members is bounded: a job larger than this snapshot budget stays unresolved.
