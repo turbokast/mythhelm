@@ -175,11 +175,15 @@ func captureObservatory(t *testing.T, b observatoryBundle) map[string]observator
 	}
 	// Observe the candidate while demo still owns its temporary directories.
 	// This writer validates real Git objects before deferred cleanup executes.
-	probe := &observatoryDemoWriter{t: t}
+	demoTemp := t.TempDir()
+	for _, key := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(key, demoTemp)
+	}
+	probe := &observatoryDemoWriter{t: t, tempRoot: demoTemp}
 	var diag bytes.Buffer
 	code := Main([]string{"demo", "--accessible", "--after", "1"}, Stdio{In: strings.NewReader(""), Out: probe, Err: &diag})
 	if !probe.checked {
-		t.Fatal("demo never exposed a completed synthetic candidate")
+		t.Fatalf("demo never exposed a completed synthetic candidate (exit %d)\nstderr: %s\nstdout: %s", code, diag.String(), probe.String())
 	}
 	out, err := normalizeObservatoryDemo(probe.String())
 	if err != nil {
@@ -216,8 +220,9 @@ func normalizeObservatoryRefusal(s string) (string, error) {
 
 type observatoryDemoWriter struct {
 	bytes.Buffer
-	t       *testing.T
-	checked bool
+	t        *testing.T
+	checked  bool
+	tempRoot string
 }
 
 func (w *observatoryDemoWriter) WriteString(s string) (int, error) { return w.Write([]byte(s)) }
@@ -228,11 +233,26 @@ func (w *observatoryDemoWriter) Write(p []byte) (int, error) {
 		// A deterministic slow consumer: let the independent supervisor finish
 		// journaling before this stream can drain. Without synchronisation the base
 		// terminal watch can stop at ready_for_review before receipt.written exists.
-		state := regexp.MustCompile(`cloned to (.+)[/\\]runs[/\\]`).FindStringSubmatch(string(p))
-		if len(state) != 2 {
-			return n, errors.New("demo workspace line lacks state path")
+		// The complete state path may be truncated out of event 4. Look only
+		// inside this capture's private temporary root; output normalisation
+		// still verifies the displayed prefix against the actual workspace.
+		entries, readErr := os.ReadDir(w.tempRoot)
+		if readErr != nil {
+			return n, readErr
 		}
-		if err := waitObservatoryReceipt(w.t.Context(), state[1]); err != nil {
+		var state string
+		for _, entry := range entries {
+			if entry.IsDir() && strings.HasPrefix(entry.Name(), "mythhelm-demo-state-") {
+				if state != "" {
+					return n, errors.New("multiple demo state directories in capture root")
+				}
+				state = filepath.Join(w.tempRoot, entry.Name())
+			}
+		}
+		if state == "" {
+			return n, errors.New("demo state directory missing from capture root")
+		}
+		if err := waitObservatoryReceipt(w.t.Context(), state); err != nil {
 			return n, err
 		}
 	}
@@ -437,5 +457,39 @@ func waitObservatoryReceipt(ctx context.Context, state string) error {
 			return ctx.Err()
 		case <-timer.C:
 		}
+	}
+}
+
+func TestObservatoryReceiptWaitWithTruncatedStatePath(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), strings.Repeat("x", 100))
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	state := filepath.Join(root, "mythhelm-demo-state-first")
+	if err := os.Mkdir(state, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	j := openJournal(t, state)
+	defer func() { _ = j.Close() }()
+	if err := j.Append(t.Context(), journal.Event{SchemaVersion: 1, EventID: "evt_receipt", RunID: "run_long", ProducerID: "sup", ProducerSequence: 1, Generation: 1, ObservedAt: time.Now(), Type: "receipt.written", Payload: json.RawMessage(`{"schema_version":1}`)}, func(tx *sql.Tx) error {
+		return journal.InsertRun(t.Context(), tx, journal.RunRow{RunID: "run_long", State: "ready_for_review", AdapterID: "builtin/fake", SourceRepo: "synthetic", TaskSHA256: strings.Repeat("0", 64), BillingPosture: "local-scripted", ExecutionProfile: "trusted-host", CreatedAt: time.Now(), UpdatedAt: time.Now()})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	line := fitAccessibleLine("event 4: snapshot: "+strings.Repeat("a", 40)+" cloned to "+filepath.Join(state, "runs", "run_long", "workspace")) + "\n"
+	if !strings.Contains(line, "... (truncated)") || strings.Contains(line, string(filepath.Separator)+"runs"+string(filepath.Separator)) {
+		t.Fatalf("fixture did not truncate before runs: %s", line)
+	}
+	w := &observatoryDemoWriter{t: t, tempRoot: root}
+	n, err := w.Write([]byte(line))
+	if err != nil || n != len(line) || w.String() != line {
+		t.Fatalf("receipt-backed truncated event: n=%d err=%v output=%q", n, err, w.String())
+	}
+	if err := os.Mkdir(filepath.Join(root, "mythhelm-demo-state-second"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write([]byte(line)); err == nil {
+		t.Fatal("ambiguous state roots must not choose an arbitrary journal")
 	}
 }

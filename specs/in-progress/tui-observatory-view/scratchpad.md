@@ -107,3 +107,8 @@ Accounting across three fresh-context reviewers: dispatched=3 returned=3 failed=
 ### Task 2 — Proposed contract record
 
 Native Codex docs implementation, PR #484, commit `54f859d`: ADR 0020 remains proposed for exact-revision Task 3 approval. Independent architect review returned Ready with no critical or important findings. AC-1.10's Observatory attention already exists as shared Amber (dark), so the separate table adds nine missing rows and references the shared amber values without changing Colours. Documentation checks verified local links, exact shared-table preservation, spec lint and hygiene; runtime tests listed in the ADR are explicitly future obligations.
+
+### Task 1 — Review correction round 1
+
+- A long temporary root truncates event 4 before its `/runs/` segment. `TestObservatoryReceiptWaitWithTruncatedStatePath` first failed with `demo workspace line lacks state path`; after resolving the unique state directory inside a capture-owned temporary root, it passes and rejects ambiguous state roots. The captured line remains unchanged.
+- Failed demo probes now report exit status, stderr and stdout. `go test -race -run TestObservatory ./internal/cli -v` passes all seven immutable captures, semantic counterfactuals and the kept truncation regression (5.815s). No baseline fixture or production behavior changed.
