@@ -3,6 +3,7 @@
 // Exit 0: conforming; 1: findings or unavailable browser; 2: invalid input.
 // Starts a loopback-only static server and isolated browser, both closed on exit.
 import { chromium } from 'playwright-core';
+import { sharedPalette } from './shared_palette.mjs';
 import { createServer } from 'node:http';
 import { readFile, readdir, stat, realpath } from 'node:fs/promises';
 import { resolve, relative, extname, dirname, join } from 'node:path';
@@ -36,8 +37,7 @@ try {
   if (!pages.includes('index.html')) { report('index.html', 'landing', 'required landing page is absent'); process.exitCode=1; }
   if (findings.length) throw new Error('required landing page is absent');
   const brand = await readFile(join(repo, 'docs/assets/brand/README.md'), 'utf8');
-  const palette = [...brand.matchAll(/\|[^|]+\| `(#\w{6})` \|/g)].map(m => m[1].toLowerCase());
-  if (palette.length !== 9) throw new Error('cannot parse the nine declared brand colors');
+  const palette = sharedPalette(brand);
   const config = await readFile(join(repo, 'docs/_config.yml'), 'utf8');
   const base = config.match(/^baseurl:\s*["']?([^\s"']*)/m)?.[1] || '';
   const chrome = process.env.CHROME_BIN || '/usr/bin/google-chrome';
