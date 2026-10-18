@@ -127,6 +127,11 @@ func pinlessPayload(t *testing.T, d admission.Decision) []byte {
 // seedLaunchWith is seedLaunch with the admission payload the test chooses.
 func seedLaunchWith(t *testing.T, f fixture, scenario string, payloadOf payloadFunc, trustConfig ...string) (admission.Decision, *os.Process, func()) {
 	t.Helper()
+	return seedLaunchTimed(t, f, scenario, payloadOf, 10*time.Minute, trustConfig...)
+}
+
+func seedLaunchTimed(t *testing.T, f fixture, scenario string, payloadOf payloadFunc, execution time.Duration, trustConfig ...string) (admission.Decision, *os.Process, func()) {
+	t.Helper()
 	noChecks, digest := true, ""
 	if len(trustConfig) > 0 {
 		noChecks, digest = false, trustConfig[0]
@@ -163,7 +168,7 @@ func seedLaunchWith(t *testing.T, f fixture, scenario string, payloadOf payloadF
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	if _, err := rawDB(t, f.state).ExecContext(t.Context(), `INSERT INTO run_envelopes
 		(run_id, execution_seconds, repairs, replans, transport_retries, first_start_at, pause_spans, updated_at)
-		VALUES (?, 600, 1, 0, 3, ?, '[]', ?)`, d.RunID, now, now); err != nil {
+		VALUES (?, ?, 1, 0, 3, ?, '[]', ?)`, d.RunID, int64(execution/time.Second), now, now); err != nil {
 		t.Fatal(err)
 	}
 	token := strings.Repeat("1", 64)
@@ -171,7 +176,7 @@ func seedLaunchWith(t *testing.T, f fixture, scenario string, payloadOf payloadF
 	if err := supervisor.RecordLaunchIntent(t.Context(), j, journal.AttemptRow{AttemptID: d.AttemptID, RunID: d.RunID, TaskID: d.TaskID, AttemptNumber: 1, LaunchTokenSHA256: hex.EncodeToString(sum[:]), WorkspacePath: d.Workdir}, prod); err != nil {
 		t.Fatal(err)
 	}
-	proc, err := workers.Spawn(os.Args[0], f.state, d.RunID, d.AttemptID, workers.Launch{LaunchToken: token, TaskID: d.TaskID, AdapterID: d.Adapter.ID, Path: d.Proposal.Spec.Path, NativeSHA256: d.Probe.SHA256, Args: d.Proposal.Spec.Args, Dir: d.Proposal.Spec.Dir, Env: d.Proposal.Spec.Env, PromptPath: filepath.Join(d.RunDir, "task.md"), StopLadder: d.Proposal.StopLadder})
+	proc, err := workers.Spawn(os.Args[0], f.state, d.RunID, d.AttemptID, workers.Launch{ExecutionDeadline: time.Now().Add(execution), LaunchToken: token, TaskID: d.TaskID, AdapterID: d.Adapter.ID, Path: d.Proposal.Spec.Path, NativeSHA256: d.Probe.SHA256, Args: d.Proposal.Spec.Args, Dir: d.Proposal.Spec.Dir, Env: d.Proposal.Spec.Env, PromptPath: filepath.Join(d.RunDir, "task.md"), StopLadder: d.Proposal.StopLadder})
 	if err != nil {
 		t.Fatal(err)
 	}

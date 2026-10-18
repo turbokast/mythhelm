@@ -317,7 +317,7 @@ func TestSpoolFailureStopsBlindWorker(t *testing.T) {
 		return nil
 	}
 	w := &worker{dir: dir, runID: "run_blind", attemptID: "att_blind",
-		launch: Launch{LaunchToken: "tok_blind", Generation: 1},
+		launch: Launch{ExecutionDeadline: time.Now().Add(time.Minute), LaunchToken: "tok_blind", Generation: 1},
 		log:    slog.New(slog.NewTextHandler(io.Discard, nil)), stderr: &ring{max: stderrRingBytes}}
 	sess := &scriptedSession{obs: []adapter.Observation{adapter.SessionStarted{SessionID: "s", APIKeySource: "none"}}, exit: adapter.NativeExit{Code: 0}}
 	out, err := w.supervise(context.Background(), sp, sess)

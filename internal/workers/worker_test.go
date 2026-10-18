@@ -132,16 +132,17 @@ func (a attempt) launch(t *testing.T, scenario string) Launch {
 		t.Fatal(err)
 	}
 	return Launch{
-		LaunchToken:  "tok_" + a.attemptID,
-		TaskID:       "task_1",
-		AdapterID:    fake.New().Descriptor().ID,
-		Path:         lp.Spec.Path,
-		NativeSHA256: probe.SHA256,
-		Args:         lp.Spec.Args,
-		Dir:          lp.Spec.Dir,
-		Env:          lp.Spec.Env,
-		PromptPath:   prompt,
-		StopLadder:   lp.StopLadder,
+		ExecutionDeadline: time.Now().Add(10 * time.Minute),
+		LaunchToken:       "tok_" + a.attemptID,
+		TaskID:            "task_1",
+		AdapterID:         fake.New().Descriptor().ID,
+		Path:              lp.Spec.Path,
+		NativeSHA256:      probe.SHA256,
+		Args:              lp.Spec.Args,
+		Dir:               lp.Spec.Dir,
+		Env:               lp.Spec.Env,
+		PromptPath:        prompt,
+		StopLadder:        lp.StopLadder,
 	}
 }
 
@@ -1081,8 +1082,8 @@ func TestStopRequestFirstStands(t *testing.T) {
 		t.Fatalf("second RequestStop: %v", err)
 	}
 	// ...but the first request's ID is what stands recorded.
-	by, ok := readStopRequest(dir)
-	if !ok || by != "stop_first" {
+	by, ok, err := readStopRequest(dir)
+	if err != nil || !ok || by != "stop_first" {
 		t.Fatalf("recorded requester = %q, %v; want stop_first", by, ok)
 	}
 }
