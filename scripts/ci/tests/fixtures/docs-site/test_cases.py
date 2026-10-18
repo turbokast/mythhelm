@@ -22,6 +22,31 @@ class SiteChecks(unittest.TestCase):
         self.site = self.root / '_site'
         self.baseline()
 
+    def test_rendered_state_fallback_fixture(self):
+        cases = {'reported': 'reported', 'estimated': 'estimated',
+                 'unknown': 'unknown', 'missing': 'unknown', 'empty': 'unknown',
+                 'typo': 'unknown', 'observed': 'unknown'}
+        def rendered():
+            return '<!-- mythhelm-fixture -->' + ''.join(
+                f'<div id="{case}"><span class="state state-{value}">{value}</span></div>'
+                for case, value in cases.items())
+        path = self.root / 'state.html'
+        path.write_text(rendered())
+        self.assertEqual([], docs_check.state_fixture_findings(path))
+        for value in ('', '0', 'reported'):
+            cases['empty'] = value
+            path.write_text(rendered())
+            self.assertTrue(docs_check.state_fixture_findings(path), value)
+        cases['empty'] = 'unknown'
+        good = rendered()
+        for broken in (good.replace('id="missing"', 'id="other"'),
+                       good + '<div id="empty">unknown</div>',
+                       good.replace('class="state state-unknown"', 'class="state"'),
+                       good.replace('<!-- mythhelm-fixture -->', ''),
+                       good.replace('>unknown</span>', '>unknown extra</span>')):
+            path.write_text(broken)
+            self.assertTrue(docs_check.state_fixture_findings(path))
+
     def baseline(self):
         self.put('docs/_config.yml', 'url: https://example.com\nbaseurl: /mythhelm\n')
         self.put('docs/assets/brand/README.md', '| Night | `#090f1a` | Background |\n| Amber (dark) | `#f0c27b` | Needs you |\n')

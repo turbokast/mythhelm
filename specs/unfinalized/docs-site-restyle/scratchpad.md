@@ -40,3 +40,22 @@
 - Task 11 final evidence (PR #491): the separate parser correction merged as PR #490. Integrated source `09cab0c` produces 44 pages in fork CI [39109997017](https://github.com/turbokast/mythhelm/actions/runs/39109997017), artifact `12129976629`: Jekyll engine 2.627s, action step 4s, unpacked 114 regular files / 10,261,814 bytes. Content and browser checks pass in CI and against the downloaded artifact; search is 287,804 bytes and landing initial bodies are 101,185 bytes. Both exact quickstarts exit 0 in examples job `117625470182`. Delegated coordinator inspection verifies the real fork run, and supplemental all-page JS-off/on, keyboard navigation/search, TOC/footer, fixed-palette and offline-search inspection passes. No landing/guide edit was needed. The baseline reconstruction above remains explicitly distinct from original CI evidence; earlier 43-page runs are superseded by this integrated tree.
 
 - Finalization capability-evidence fix: whole-spec review found that AC-2.4's cell caveats and evidence links were rendered but not checked, and AC-2.6's first-build Go module cache note was absent beside the user-guide quickstart. The content checker now binds each cell to the existing landing front-matter mapping, checks the declared limit's exact status-data quote, and resolves the declared limitations section to a real built anchor. The current template accepts limitations heading slugs; user-guide or manifest-test evidence alternatives would require a coordinated renderer/schema change and are not silently accepted here. The fixture baseline now carries genuine synthetic caveats and links. Removing or changing those assertions failed the original checker’s rejecting tests; the implementation rejects them. All four cells in the final Task 11 artifact pass the new landing check, and removing each evidence link independently fails. The user-guide note repeats the existing landing wording; no command or execution contract changes.
+
+## Finalization fix — retained real state rendering
+
+The whole-spec review found that the retained content suite synthesized state
+HTML, so it could not detect a regression in the actual Liquid fallback. An
+isolated Pages fixture now renders the checked-in `state.html` include with all
+three valid states and missing, empty, misspelled and unsupported inputs. The
+existing pinned Pages action renders a separate source/destination after artifact
+upload; cleanup always runs and the existing final digest comparison protects
+the uploaded tree. Production pages and includes are unchanged.
+
+Red-first evidence: the new checker fixture failed before its implementation.
+Offline rendering with the pinned Pages image then changed only a copied real
+include's fallback assignment to blank and to zero: both renders failed all four
+fallback cases with exit 1. The unchanged include passed all seven cases. These
+mutations never touched the published tree. The synthetic checker rejection
+cases remain supplementary; the real rendering runs in the required site build.
+This fixes the retained AC-5.2/AC-5.3 fallback evidence gap only; optional output
+marker rendering is a separate review finding.

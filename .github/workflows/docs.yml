@@ -160,7 +160,7 @@ jobs:
         with:
           persist-credentials: false
       # The mirrors carry no front matter in the tree (the checks job forbids
-      # drift); Jekyll skips .md files without it, so inject it transiently.
+      # drift); inject explicit mirror layout/title metadata only for the build.
       # This runs after checks, so it cannot mask mirror drift.
       - name: Inject mirror front matter
         run: |
@@ -194,6 +194,24 @@ jobs:
         run: |
           digest="$(python3 scripts/ci/check_docs_examples.py --digest)"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Prepare isolated state render fixture
+        run: |
+          mkdir .docs-state-fixture
+          mkdir .docs-state-fixture/_includes
+          cp scripts/ci/tests/fixtures/docs-state-render/index.html .docs-state-fixture/index.html
+          cp docs/_includes/state.html .docs-state-fixture/_includes/state.html
+      # Separate source and destination keep invalid fixture inputs out of Pages.
+      - name: Render real state include fixture
+        uses: actions/jekyll-build-pages@44a6e6beabd48582f863aeeb6cb2151cc1716697 # v1.0.13
+        with:
+          source: ./.docs-state-fixture
+          destination: ./.docs-state-output
+      - name: Check rendered state fallback
+        run: python3 scripts/ci/check_docs_site.py --rendered-state-fixture .docs-state-output/index.html
+      - name: Remove isolated state fixture
+        if: always()
+        # The Docker action writes its output as root. Paths are fixed fixtures.
+        run: sudo rm -rf -- .docs-state-fixture .docs-state-output
       - name: Install checksum-pinned ffprobe
         run: |
           tool_dir="$RUNNER_TEMP/docs-ffmpeg"

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validate built documentation and checked-in sources without running examples.
 
-Usage: --site DIR --docs DIR. Read-only, no network. Requires ffprobe for actual
+Usage: --site DIR --docs DIR, or --rendered-state-fixture FILE. Read-only, no network. Requires ffprobe for actual
 video duration. Exit 0 conforming, 1 findings, 2 unavailable/unparseable input.
 YAML input deliberately supports flat lists of scalar mappings (or JSON), the
 checked-in data contract; unsupported syntax fails closed rather than guessing.
@@ -697,11 +697,43 @@ class Checker:
         return self.findings
 
 
+def state_fixture_findings(path):
+    """Check actual Pages output from the isolated, real-include fixture."""
+    content = read(path)
+    root = Document(content).root
+    expected = {'reported': 'reported', 'estimated': 'estimated',
+                'unknown': 'unknown', 'missing': 'unknown', 'empty': 'unknown',
+                'typo': 'unknown', 'observed': 'unknown'}
+    findings = []
+    if 'mythhelm-fixture' not in content:
+        findings.append(f'{path}:1: state-fixture: missing fixture marker')
+    for case, value in expected.items():
+        matches = [node for node in root.all('div') if node.attrs.get('id') == case]
+        spans = matches[0].all('span') if len(matches) == 1 else []
+        if (len(spans) != 1 or set(spans[0].classes) != {'state', f'state-{value}'}
+                or spans[0].text != value or matches[0].text.strip() != value):
+            findings.append(f'{path}:1: state-fixture: {case}: expected exactly {value}')
+    return findings
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--site', required=True, type=Path)
-    parser.add_argument('--docs', required=True, type=Path)
+    parser.add_argument('--site', type=Path)
+    parser.add_argument('--docs', type=Path)
+    parser.add_argument('--rendered-state-fixture', type=Path)
     args = parser.parse_args()
+    if args.rendered_state_fixture:
+        if args.site or args.docs:
+            parser.error('--rendered-state-fixture cannot be combined with --site or --docs')
+        try:
+            findings = state_fixture_findings(args.rendered_state_fixture)
+        except (OSError, ValueError, TypeError) as error:
+            print(f'{args.rendered_state_fixture}:1: input: {error}')
+            return 2
+        print('\n'.join(findings) if findings else 'docs-state-render: PASS cases=7')
+        return 1 if findings else 0
+    if not args.site or not args.docs:
+        parser.error('--site and --docs are required for site checks')
     try:
         checker = Checker(args.site, args.docs)
         findings = checker.run()
