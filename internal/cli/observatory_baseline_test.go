@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -73,10 +74,72 @@ func TestObservatoryLinearBaseline(t *testing.T) {
 			if !ok || expected.Stdout == "" {
 				t.Fatal("missing nonempty baseline")
 			}
+			expected = expectedObservatoryCapture(t, name, runtime.GOOS, expected)
 			if actual != expected {
 				t.Errorf("capture changed\ngot: %+v\nwant: %+v", actual, expected)
 			}
 		})
+	}
+}
+
+// The captured bundle remains immutable. Windows ownership Task 4 evolves
+// only the new demo admission's pinned ladder version (ADR 0017 D3).
+func expectedObservatoryCapture(t *testing.T, name, goos string, expected observatoryCapture) observatoryCapture {
+	t.Helper()
+	if name != "demo-accessible" || goos != "windows" {
+		return expected
+	}
+	const oldLine = "event 7: attempt <att-1>: admission pinned (stop ladder stop-ladder/v1)\n"
+	const newLine = "event 7: attempt <att-1>: admission pinned (stop ladder stop-ladder/v2-windows)\n"
+	if strings.Count(expected.Stdout, oldLine) != 1 {
+		t.Fatal("captured demo must contain exactly one original admission ladder line")
+	}
+	expected.Stdout = strings.Replace(expected.Stdout, oldLine, newLine, 1)
+	return expected
+}
+
+func TestObservatoryWindowsLadderExpectation(t *testing.T) {
+	t.Parallel()
+	b := readObservatoryBundle(t)
+	original := b.Captures["demo-accessible"]
+	expected := expectedObservatoryCapture(t, "demo-accessible", "windows", original)
+	const windowsLine = "event 7: attempt <att-1>: admission pinned (stop ladder stop-ladder/v2-windows)"
+	if !strings.Contains(expected.Stdout, windowsLine+"\n") {
+		t.Fatal("Windows baseline does not require the job-wide v2 ladder")
+	}
+	if expected == original {
+		t.Fatal("incorrect Windows v1 capture would be accepted")
+	}
+	originalLines, expectedLines := strings.Split(original.Stdout, "\n"), strings.Split(expected.Stdout, "\n")
+	if len(originalLines) != len(expectedLines) {
+		t.Fatal("overlay changed capture line count")
+	}
+	changed := 0
+	for i, line := range originalLines {
+		if line == expectedLines[i] {
+			continue
+		}
+		changed++
+		if line != "event 7: attempt <att-1>: admission pinned (stop ladder stop-ladder/v1)" || expectedLines[i] != windowsLine {
+			t.Fatalf("unexpected changed line %d: %q -> %q", i, line, expectedLines[i])
+		}
+	}
+	if changed != 1 {
+		t.Fatalf("changed %d lines, want one exact admission field", changed)
+	}
+	expected.Stdout = original.Stdout
+	if expected != original {
+		t.Fatal("overlay changed another capture field")
+	}
+	for name, capture := range b.Captures {
+		for _, goos := range []string{"linux", "darwin", "windows"} {
+			if name == "demo-accessible" && goos == "windows" {
+				continue
+			}
+			if got := expectedObservatoryCapture(t, name, goos, capture); got != capture {
+				t.Fatalf("overlay changed %s on %s", name, goos)
+			}
+		}
 	}
 }
 
@@ -403,7 +466,12 @@ func checkObservatoryDemoCounterfactuals(t *testing.T, raw, normalised string) {
 	t.Helper()
 	attempt := regexp.MustCompile(`att_[0-9A-HJKMNP-TV-Z]{26}`).FindString(raw)
 	candidate := regexp.MustCompile(`(?m)^Candidate: ([0-9a-f]{40})$`).FindStringSubmatch(raw)[1]
+	ladder := regexp.MustCompile(`stop-ladder/[a-z0-9-]+`).FindString(raw)
+	if ladder == "" {
+		t.Fatal("demo lacks a pinned ladder version")
+	}
 	for _, tc := range []struct{ name, from, to string }{
+		{"stop ladder version", ladder, "stop-ladder/wrong"},
 		{"provenance label", "(native-reported)", "(estimated)"},
 		{"usage counter", "progress: 1 assistant turns", "progress: 0 assistant turns"},
 		{"state word", "run: ready_for_review", "run: failed"},
