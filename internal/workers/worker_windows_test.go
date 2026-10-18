@@ -474,3 +474,54 @@ func TestPanicCleanupTimeoutRemainsUnconfirmed(t *testing.T) {
 		t.Fatalf("panic result=%s/%s stopped=%+v", state, reason, p)
 	}
 }
+
+// Natural native exit does not imply the first job snapshot is empty. The
+// cleanup receipt records the ladder actually taken, never a fixed signal list.
+func TestNaturalExitJobSnapshotDeterminesSentSignals(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"empty", "member", "error"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			a := newAttempt(t)
+			w := &worker{}
+			queries, kills := 0, 0
+			w.jobOps.members = func(*jobObject) ([]ProcessIdentity, error) {
+				if !w.proc.waited.Load() {
+					t.Error("cleanup query preceded native Wait")
+				}
+				queries++
+				if queries == 1 {
+					switch mode {
+					case "member":
+						return []ProcessIdentity{{PID: 1234, StartTime: time.Unix(1, 0)}}, nil
+					case "error":
+						return nil, windows.ERROR_ACCESS_DENIED
+					}
+				}
+				return nil, nil
+			}
+			w.jobOps.terminate = func(j *jobObject) error { kills++; return j.terminate() }
+			launch := a.launch(t, "happy")
+			launch.StopLadder = []adapter.StopStep{{Signal: adapter.StopKill, Grace: 5 * time.Second}}
+			launch.LadderVersion = "stop-ladder/v2-windows"
+			if err := a.runInProcess(t, launch, w); err != nil {
+				t.Fatal(err)
+			}
+			evs := a.events(t)
+			stopped := stoppedOf(t, evs)
+			wantKills := 1
+			if mode == "empty" {
+				wantKills = 0
+			}
+			if kills != wantKills || len(stopped.Sent) != wantKills || !stopped.Confirmed || stopped.DescendantScan != "job-object" {
+				t.Fatalf("queries=%d kills=%d stopped=%+v", queries, kills, stopped)
+			}
+			if wantKills == 1 && !slices.Equal(stopped.Sent, launch.StopLadder) {
+				t.Fatalf("sent=%v", stopped.Sent)
+			}
+			if state, reason := final(t, evs); state != "succeeded_native" {
+				t.Fatalf("final=%s/%s", state, reason)
+			}
+		})
+	}
+}
