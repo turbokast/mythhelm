@@ -58,20 +58,25 @@ class SiteChecks(unittest.TestCase):
             url = '/mythhelm/' + ('' if name == 'index' else name + '.html')
             index[url] = {'title': name, 'group': 'Start', 'headings': [{'text': title, 'anchor': url + '#' + slug}], 'body': title, 'truncated': False}
         index['/mythhelm/']['headings'].append({'text': 'Headline', 'anchor': '/mythhelm/#landing-title'})
+        index['/mythhelm/limitations.html']['headings'].insert(0, {'text': 'Demo limits', 'anchor': '/mythhelm/limitations.html#demo-limits'})
         self.put('site/search.json', json.dumps(index))
         self.put('docs/_data/examples.yml', json.dumps([
             {'anchor': 'docs/user-guide.md#quickstart[1]', 'command': 'go run ./cmd/mythhelm demo', 'expect_exit': 0},
             {'anchor': 'docs/index.md#try-the-scripted-demo[1]', 'command': 'go run ./cmd/mythhelm demo', 'expect_exit': 0}]))
-        self.put('docs/limitations.md', '## Supported today\nWorks offline.\n## Not supported yet\nRouting is planned (#42).\n')
+        self.put('docs/limitations.md', '## Supported today\nWorks offline.\n## Not supported yet\nRouting is planned (#42).\n## Demo limits\nSynthetic only.\n')
         status = [dict(id='working', section='Supported today', quote='Works offline.', column='works', tracker=None),
                   dict(id='routing', section='Not supported yet', quote='Routing is planned (#42).', column='in-progress', tracker='#42')]
+        status.append(dict(id='working-limit', section='Demo limits', quote='Synthetic only.', column='works', tracker=None))
         self.put('docs/_data/status.yml', json.dumps(status))
+        cells = 'cells:\n' + ''.join(f'  - title: Demo {i}\n    need: Demo\n    status: working\n    limit: working-limit\n    evidence: demo-limits\n' for i in range(4))
+        self.replace('docs/index.md', '## Try', '---\nlayout: default\n' + cells + '---\n## Try')
+        self.replace('site/limitations.html', '<main>', '<main><h2 id="demo-limits">Demo limits</h2>')
         panel = '<h1 id="landing-title">Headline</h1><p class="status-link"><a href="#status">What ships</a></p><section id="status">'
-        for item in status:
-            panel += '<section data-status-column="' + item['column'] + '"><li data-status-id="' + item['id'] + '" data-source-section="' + item['section'] + '"><div class="status-quote">' + item['quote'] + '</div></li></section>'
+        for item in status[:2]:
+            panel += '<section data-status-column="' + item['column'] + '"><li data-status-id="' + item['id'] + '" data-source-section="' + item['section'] + '"><div class="status-quote">' + item['quote'] + '</div>' + ('<div data-status-id="working-limit" data-source-section="Demo limits"><div class="status-quote">Synthetic only.</div></div>' if item['id'] == 'working' else '') + '</li></section>'
         panel += '</section>'
         for _ in range(4):
-            panel += '<article class="capability" data-status-id="working" data-status="works"><span class="capability-label">works</span><div class="capability-evidence">Works offline.</div></article>'
+            panel += '<article class="capability" data-status-id="working" data-status="works"><span class="capability-label">works</span><div class="capability-evidence">Works offline.</div><div class="capability-limit" data-status-id="working-limit">Synthetic only.</div><a href="/mythhelm/limitations.html#demo-limits">Evidence and limits</a></article>'
         self.replace('site/index.html', '<main>', '<main>' + panel)
         self.put('site/demos/manifest.json', json.dumps({'recordings': [{'name': 'hero', 'chapters': [{'name': n, 'at_seconds': t} for n, t in zip(['title', 'run', 'kill', 'recover', 'review'], [0, 2, 13, 19, 26])]}]}))
         self.put('site/demos/hero.webm', 'synthetic boundary input')
@@ -169,6 +174,59 @@ class SiteChecks(unittest.TestCase):
 
     def test_cell_label_mismatch(self):
         self.replace('site/index.html', 'class="capability-label">works', 'class="capability-label">not yet')
+        self.run_check('panel')
+
+    def test_working_cell_without_declared_limit(self):
+        self.replace('docs/index.md', '    limit: working-limit\n', '')
+        self.run_check('panel')
+
+    def test_unknown_declared_cell_limit(self):
+        self.replace('docs/index.md', 'limit: working-limit', 'limit: absent')
+        self.run_check('panel')
+
+    def test_duplicate_cell_mapping_is_input_error(self):
+        self.replace('docs/index.md', 'title: Demo 1', 'title: Demo 0')
+        self.run_check(code=2)
+
+    def test_missing_cell_mapping_is_input_error(self):
+        self.replace('docs/index.md', 'cells:', 'other:')
+        self.run_check(code=2)
+
+    def test_duplicate_cell_field_is_input_error(self):
+        self.replace('docs/index.md', '    status: working', '    status: working\n    status: routing')
+        self.run_check(code=2)
+
+    def test_relative_cell_evidence_link(self):
+        self.replace('site/index.html', '/mythhelm/limitations.html#demo-limits', 'limitations.html#demo-limits')
+        self.run_check(code=0)
+
+    def test_missing_working_cell_limit(self):
+        self.replace('site/index.html', '<div class="capability-limit" data-status-id="working-limit">Synthetic only.</div>', '')
+        self.run_check('panel')
+
+    def test_wrong_working_cell_limit_quote(self):
+        self.replace('site/index.html', 'data-status-id="working-limit">Synthetic only.', 'data-status-id="working-limit">No limits.')
+        self.run_check('panel')
+
+    def test_wrong_working_cell_limit_id(self):
+        self.replace('site/index.html', 'class="capability-limit" data-status-id="working-limit"', 'class="capability-limit" data-status-id="routing"')
+        self.run_check('panel')
+
+    def test_missing_cell_evidence_link(self):
+        self.replace('site/index.html', '<a href="/mythhelm/limitations.html#demo-limits">Evidence and limits</a>', '')
+        self.run_check('panel')
+
+    def test_invalid_cell_evidence_target(self):
+        self.replace('site/index.html', 'href="/mythhelm/limitations.html#demo-limits"', 'href="/mythhelm/missing.html#demo-limits"')
+        self.run_check('panel')
+
+    def test_missing_cell_evidence_anchor(self):
+        self.replace('site/limitations.html', 'id="demo-limits"', 'id="removed"')
+        self.replace('site/search.json', '#demo-limits', '#removed')
+        self.run_check('panel')
+
+    def test_off_origin_cell_evidence(self):
+        self.replace('site/index.html', 'href="/mythhelm/limitations.html#demo-limits"', 'href="https://example.org/mythhelm/limitations.html#demo-limits"')
         self.run_check('panel')
 
     def test_missing_footer_target(self):

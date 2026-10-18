@@ -46,7 +46,11 @@ def scalar(value):
 
 def load_rows(path):
     """Read the flat list-of-mappings docs data schema, preserving commands."""
-    text = read(path)
+    return parse_rows(read(path), path)
+
+
+def parse_rows(text, path):
+    """Parse the shared restricted flat mapping format from a bounded source."""
     if text.lstrip().startswith('['):
         rows = json.loads(text)
     else:
@@ -454,15 +458,51 @@ class Checker:
         for node in panel.all():
             if 'data-status-id' in node.attrs and node.attrs['data-status-id'] not in by_id:
                 self.fail(path, 'panel', 'rendered item absent from status data', node.line)
+        # The landing front matter already declares the capability/caveat binding.
+        # Reuse the flat data parser after removing the list's two-space indent.
+        front = re.match(r'\A---\n(.*?)\n---(?:\n|$)', read(self.docs / 'index.md'), re.S)
+        blocks = re.findall(r'^cells:\s*\n((?:[ \t].*(?:\n|$)|\n)*)', front[1] if front else '', re.M)
+        if len(blocks) != 1:
+            raise InputError('expected one landing cells list')
+        declared = parse_rows('\n'.join(line[2:] if line.startswith('  ') else line for line in blocks[0].splitlines()), self.docs / 'index.md')
+        if len(declared) != 4 or any(not {'title', 'need', 'status', 'evidence'} <= set(item) or set(item) - {'title', 'need', 'status', 'evidence', 'limit'} or any(not isinstance(value, str) or not value.strip() for value in item.values()) for item in declared):
+            raise InputError('invalid landing cell schema')
+        if len({item['title'] for item in declared}) != len(declared):
+            raise InputError('duplicate landing cell mapping')
         cells = root.all(cls='capability')
         if len(cells) != 4:
             self.fail(path, 'panel', 'expected four capability cells')
-        for cell in cells:
+        for cell, declaration in zip(cells, declared):
             row = by_id.get(cell.attrs.get('data-status-id'))
             labels = cell.all(cls='capability-label')
             evidence = cell.all(cls='capability-evidence')
+            if declaration['status'] != cell.attrs.get('data-status-id'):
+                self.fail(path, 'panel', 'cell capability differs from landing source', cell.line)
             if not row or cell.attrs.get('data-status') != row['column'] or len(labels) != 1 or words(labels[0].text) != row['column'].replace('-', ' ') or len(evidence) != 1 or words(evidence[0].text) != prose(row['quote']):
                 self.fail(path, 'panel', 'cell label/evidence differs from status source', cell.line)
+            caveats = cell.all(cls='capability-limit')
+            expected = by_id.get(declaration.get('limit'))
+            if row and row['column'] == 'works' and expected is None:
+                self.fail(path, 'panel', 'working cell must declare a status-data limit', cell.line)
+            if expected is not None:
+                if len(caveats) != 1 or caveats[0].attrs.get('data-status-id') != expected['id'] or words(caveats[0].text) != prose(expected['quote']):
+                    self.fail(path, 'panel', 'cell limit differs from status source', cell.line)
+            elif caveats or 'limit' in declaration:
+                self.fail(path, 'panel', 'cell limit absent from status source', cell.line)
+            # Current cell evidence is a limitations heading slug, as rendered by
+            # index.md. Verify both the declared destination and its built anchor.
+            anchor = declaration['evidence']
+            target = self.site / 'limitations.html'
+            target_root = self.pages.get(target)
+            source_sections = {slugify(section) for section in sections}
+            valid_links = []
+            for link in cell.all('a'):
+                href = link.attrs.get('href', '')
+                parsed = urlsplit(href)
+                if self.same_origin(href) and not parsed.query and self.local_path(href, path) == target and unquote(parsed.fragment) == anchor:
+                    valid_links.append(link)
+            if len(valid_links) != 1 or anchor not in source_sections or target_root is None or not any(node.attrs.get('id') == anchor for node in target_root.all()):
+                self.fail(path, 'panel', 'cell evidence must link its declared built limitations section', cell.line)
 
     def footer(self):
         required = {'limitations.html', 'contributing.html', 'mirror/LICENSE.html', 'mirror/SECURITY.html', 'mirror/CHANGELOG.html', 'mirror/GOVERNANCE.html'}
