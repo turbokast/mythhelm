@@ -35,7 +35,15 @@
 
 ## Task 4 — Make the worker own its execution deadline
 
-<!-- pending -->
+- **Produces**: Required `workers.Launch.ExecutionDeadline time.Time` / `execution_deadline`, `workers.DeadlineRequester = "execution-deadline"` and `workers.DeadlineReason = "envelope_deadline_exceeded"`; implementation `bb152be`, PR #497. Existing Spawn/RequestStop signatures and worker identity/spool schemas are unchanged.
+- **For Tasks 5–10**: `pipeline.attempt` pins its computed deadline with nonce/generation. The worker enforces it independently of generation and supervisor beats; no detach, heartbeat or recovery path may replace or remove that pin.
+- **Stop precedence**: Timer and file polling share `acceptStop`; an accepted ladder or earlier atomic request-file winner stands. Deadline reason is derived from that winner. Preserve billing/protocol policy precedence and never relabel an earlier user stop when a timer fires.
+- **Failure handling**: Unreadable/malformed request evidence or request creation failure aborts owned execution and leaves an interrupted result. Unconfirmed/escaped ownership remains unresolved. Deadline stops have a bounded post-ladder native-exit wait on Unix; Windows retains its general bounded wait and job confirmation ordering.
+- **Recovery and exit**: Shared `conclude` maps a stopped attempt carrying DeadlineReason to blocked with that reason; no volatile deadlineHit remains. Only a successfully spooled deadline episode bypasses fenced reconnect waiting. Other fenced terminal episodes retain their existing reconnect behavior.
+- **Compatibility / Task 19**: Missing/zero/malformed handoffs and expired native starts fail closed. Strict legacy workers reject the added field. Finish/drain supervisors before replacing binaries; the admission-to-spawn mixed-binary replacement window is unsupported. Existing running workers retain their immutable pin and unchanged recovery evidence. Extensions update owner policy/watchdogs, never a live worker's deadline.
+- **Launch boundary**: Keep the expiry recheck after durable intent/job/containment preparation and the refusal cleanup of containment resources, both stdout pipe endpoints and a prepared Windows job. Helper-only zero-pin launcher fixtures bypass the handoff; actual Spawn fixtures all supply finite deadlines.
+- **Evidence**: All named acceptance tests pass under race, including two-second real workers at generations 0/7 and autonomous deadline recovery. The immutable Task1 capture bundle and Windows expected overlay are unchanged; the full race gate (226.7s) and cross-platform vet pass. Native CI remains the platform runtime evidence; this task does not promote qualification.
+- **Verification environment**: Use a private `XDG_RUNTIME_DIR` for local full-suite validation when a host supervisor is already running; preserve that service. Gate history and red-first counterfactuals are recorded in scratchpad.
 
 ## Task 5 — Add a stop-less owner detach control
 

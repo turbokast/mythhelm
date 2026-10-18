@@ -76,7 +76,7 @@
 - **Spec deviations**: Updated `docs/decisions/README.md` heading/status with coordinator approval so the index no longer calls the accepted ADR proposed. Own completion and handoff follow the completion convention.
 - **Files modified**: `docs/decisions/0020-observatory-lifecycle-and-themes.md`, `docs/decisions/README.md`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`.
 
-### Task 4 — Make the worker own its execution deadline
+### Task 4 — Make the worker own its execution deadline ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (process ownership, timing and durable conclusion; ten files are an atomic launch-contract migration including all actual spawn fixtures)
@@ -102,6 +102,13 @@
   - `TestDeadlineStopFailureStaysUnresolved` injects request-file failure and unconfirmed/escaped process reports, proving no false blocked/confirmed conclusion or unlimited native. Existing RequestExtension tests still pass.
 - **Test plan**: Controlled fake session for branches; real worker process for client absence; bounded polling and cleanup, never sleep-only success. Rerun Task 1 fixture comparison.
 - **Invariants touched**: I02/I06/I12/I18/I21 (v2 §§6.4,7: fail-closed launch, one ladder, durable reason, finite native episode).
+
+- **Status**: ✅ Completed — workers enforce immutable execution deadlines without a supervisor, and normal/recover conclusions use the durable winning reason; PR #497.
+- **Implementation**: Commit `bb152be` adds the required handoff pin, error-aware first-request arbitration, deadline-only reconnect exception and journal-derived conclusion. Native start rechecks expiry after preparation and releases prepared resources on refusal. Final full race gate passed (226.7s); named acceptance passed under race (workers 6.267s, supervisor 4.519s), full Windows/Darwin vet passed, and independent code/architecture reviews returned Ready.
+- **Spec deviations**:
+  - Review correction round 1 (consistent with design §2): recheck the pin immediately before `cmd.Start`, after durable intent/job/containment preparation. The kept regression first recorded an actual native PID after expiry; restored code refuses it and cleans prepared resources.
+  - Own `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md` and `specs/in-progress/tui-observatory-view/scratchpad.md` record completion, compatibility limits and downstream inputs as required by the completion convention.
+- **Files modified**: `internal/workers/worker.go`, `internal/workers/worker_test.go`, `internal/workers/envelope_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/recover.go`, `internal/supervisor/deadline_test.go`, `internal/supervisor/faults_test.go`, `internal/supervisor/pinning_test.go`, `internal/admission/launch_fixture_test.go`, `internal/workers/deadline_test.go`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
 
 ### Task 5 — Add a stop-less owner detach control
 
