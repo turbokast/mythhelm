@@ -38,3 +38,23 @@
 - Task 11 integration discovery: merged Task 10 revision `cd73fed1c6f97e412d56a232c48746dfb18feaf0` produced a real 43-page artifact in [CI run 38742444552](https://github.com/turbokast/mythhelm/actions/runs/38742444552), but browser fixtures rejected the added TUI palette table because the browser parser counted hex rows across the whole brand README. Examples and deployment were skipped; this run is not conformance or publication evidence. The parser needs a harness-domain correction before final verification can pass.
 
 - Task 11 final evidence (PR #491): the separate parser correction merged as PR #490. Integrated source `09cab0c` produces 44 pages in fork CI [39109997017](https://github.com/turbokast/mythhelm/actions/runs/39109997017), artifact `12129976629`: Jekyll engine 2.627s, action step 4s, unpacked 114 regular files / 10,261,814 bytes. Content and browser checks pass in CI and against the downloaded artifact; search is 287,804 bytes and landing initial bodies are 101,185 bytes. Both exact quickstarts exit 0 in examples job `117625470182`. Delegated coordinator inspection verifies the real fork run, and supplemental all-page JS-off/on, keyboard navigation/search, TOC/footer, fixed-palette and offline-search inspection passes. No landing/guide edit was needed. The baseline reconstruction above remains explicitly distinct from original CI evidence; earlier 43-page runs are superseded by this integrated tree.
+
+
+## Finalization fix — retained real state rendering
+
+The whole-spec review found that the retained content suite synthesized state
+HTML, so it could not detect a regression in the actual Liquid fallback. An
+isolated Pages fixture now renders the checked-in `state.html` include with all
+three valid states and missing, empty, misspelled and unsupported inputs. The
+existing pinned Pages action renders a separate source/destination after artifact
+upload; cleanup always runs and the existing final digest comparison protects
+the uploaded tree. Production pages and includes are unchanged.
+
+Red-first evidence: the new checker fixture failed before its implementation.
+Offline rendering with the pinned Pages image then changed only a copied real
+include's fallback assignment to blank and to zero: both renders failed all four
+fallback cases with exit 1. The unchanged include passed all seven cases. These
+mutations never touched the published tree. The synthetic checker rejection
+cases remain supplementary; the real rendering runs in the required site build.
+This fixes the retained AC-5.2/AC-5.3 fallback evidence gap only; optional output
+marker rendering is a separate review finding.
