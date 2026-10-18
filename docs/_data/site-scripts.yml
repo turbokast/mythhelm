@@ -7,9 +7,8 @@
 #            two roles gets two entries with the same src, one per
 #            purpose; Task 8 validates each entry's purpose against this
 #            set and each built script against the listed src values.
-# The named files are shipped by later tasks (assets/site.js by Task 4,
-# assets/search.js by Task 5); listing them here pins the contract
-# before they exist. Later tasks consume this shape verbatim.
+# assets/search.js provides search; assets/site.js provides the sidebar
+# and recording controls. The content checker enforces this allow-list.
 - src: assets/search.js
   purpose: search
 - src: assets/site.js

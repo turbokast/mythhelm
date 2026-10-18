@@ -86,3 +86,34 @@ Existing explanation of what the user declares and MYTHHELM does not verify.
 
 Use the note only for unverified declarations. Its border and visible label
 carry the distinction without amber or a colour-only signal.
+
+## Tested examples in documentation
+
+A tested example needs both an entry in `docs/_data/examples.yml` and an
+annotation around exactly one fenced block. For example, the guide quickstart
+uses this source markup:
+
+<pre><code>&lt;div class="example-block" data-example-anchor="docs/user-guide.md#quickstart[1]" markdown="1"&gt;
+
+```sh
+go run ./cmd/mythhelm demo
+```
+
+&lt;/div&gt;</code></pre>
+
+The anchor combines the repository-relative page path, the preceding `##`
+heading's slug and the fenced block's 1-based ordinal under that heading.
+Use the same anchor in the annotation and the list entry. Each entry supplies
+`anchor`, the verbatim `command`, and integer `expect_exit` (0–255). Keep the
+guide quickstart first in the list; the schema comments describe the fields.
+
+Only command examples are currently supported end to end. The schema
+defines an optional `output_anchor`, but the layout does not yet generate its
+marker, so keep output blocks unlisted and unmarked. Unlisted blocks and
+provenance comments do not earn a marker.
+
+The layout generates “tested in CI” labels only in builds whose example checks
+gate publication. Do not write labels by hand or commit an enabled
+`docs/_data/example_checks.yml`; the workflow supplies that temporary flag.
+See the [automation record]({{ '/automation.html' | relative_url }}) for the content, browser and
+sandboxed example checks that gate publication.
