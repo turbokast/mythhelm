@@ -12,8 +12,8 @@ import (
 	"github.com/turbokast/mythhelm/internal/adapter"
 )
 
-// descendantScan is unavailable on Windows: without a Job Object (deferred,
-// N7) the worker cannot find descendants, so it claims nothing about them.
+// descendantScan remains unavailable until Windows ownership Task 4 wires
+// job-wide stop confirmation and descendant enumeration into the worker.
 const descendantScan = "unavailable"
 
 // detachedAttr gives the worker its own process group and no console, so a
@@ -22,13 +22,13 @@ func detachedAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS}
 }
 
-// nativeAttr starts the native process in its own process group without a
-// console window. Windows ownership stays a single process (N7).
+// nativeAttr creates the native suspended, in a new process group without a
+// console window. The launch hook assigns the owned job before resuming it.
 func nativeAttr() *syscall.SysProcAttr {
-	return &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.CREATE_NO_WINDOW}
+	return &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.CREATE_NO_WINDOW | windows.CREATE_SUSPENDED}
 }
 
-// nativeGroup is nil: the worker owns no process tree on Windows.
+// nativeGroup is nil: Windows ownership uses a Job Object, not a Unix PGID.
 func nativeGroup(int) *int { return nil }
 
 // Signal supports only StopKill (Process.Kill); the Windows stop ladder has

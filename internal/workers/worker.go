@@ -119,6 +119,7 @@ type Identity struct {
 	LaunchToken        string     `json:"launch_token"`
 	NativeLaunchIntent *time.Time `json:"native_launch_intent"`
 	NativePID          *int       `json:"native_pid"`
+	NativeStartTime    *time.Time `json:"native_start_time,omitempty"`
 	NativePGID         *int       `json:"native_pgid"` // null where the platform has no owned process group
 	// Nonce pins the worker to its admission. worker.json carries the raw
 	// value echoed from Launch.Nonce (0600 file, the LaunchToken precedent);
@@ -419,6 +420,7 @@ func attemptMarker(attemptID string) string {
 }
 
 type worker struct {
+	jobOps    jobOps //nolint:unused // Per-worker Windows launch operations; the Unix stand-in is intentionally inert.
 	dir       string
 	runID     string
 	attemptID string
@@ -451,9 +453,10 @@ type outcome struct {
 	exit         adapter.NativeExit
 	report       adapter.InterruptReport
 	pending      <-chan adapter.InterruptReport // an in-flight stop ladder's report
-	launchFailed bool                           // no native process was created
-	aborted      bool                           // the worker stopped the native because it could not record the attempt
-	panicked     bool                           // raw panic values are never persisted
+	launchError  string
+	launchFailed bool // no native process was created
+	aborted      bool // the worker stopped the native because it could not record the attempt
+	panicked     bool // raw panic values are never persisted
 }
 
 func (w *worker) run(ctx context.Context) (retErr error) {
@@ -464,6 +467,11 @@ func (w *worker) run(ctx context.Context) (retErr error) {
 	defer func() { _ = sp.close() }()
 	var sess adapter.Session
 	l := &launcher{w: w}
+	defer func() {
+		if l.job != nil {
+			_ = l.job.close()
+		}
+	}()
 	defer func() {
 		if recover() == nil {
 			return
@@ -521,8 +529,9 @@ func (w *worker) run(ctx context.Context) (retErr error) {
 	sess, err = w.start(ctx, l)
 	if err != nil {
 		w.log.Error("native launch failed", "err", err)
-		// No native process was created, so there is nothing to stop.
-		return w.conclude(ctx, sp, nil, outcome{launchFailed: true, report: adapter.InterruptReport{Confirmed: true}})
+		// Windows launch cleanup confirms the suspended native and job, or
+		// leaves the outcome unconfirmed. Unix launch behaviour is unchanged.
+		return w.conclude(ctx, sp, nil, outcome{launchFailed: true, launchError: launchError(err), report: adapter.InterruptReport{Confirmed: !l.unconfirmed}})
 	}
 	if l.identityErr != nil {
 		return w.abort(ctx, sp, sess, outcome{}, l.identityErr)
@@ -910,13 +919,17 @@ func (w *worker) conclude(ctx context.Context, sp *spool, sess adapter.Session, 
 	if sent == nil {
 		sent = []adapter.StopSignal{}
 	}
-	if err := sp.emit(evStopped, map[string]any{
+	stopped := map[string]any{
 		"confirmed": out.report.Confirmed, "unresolved_pids": unresolved,
 		"sent":           sentSteps(out.report.Sent, w.launch.StopLadder),
 		"ladder_version": w.launch.LadderVersion,
 		"signals_sent":   sent, "descendant_scan": scan,
 		"unresolved_identities": identities,
-	}); err != nil {
+	}
+	if out.launchError != "" {
+		stopped["launch_error"] = security.Redact(out.launchError)
+	}
+	if err := sp.emit(evStopped, stopped); err != nil {
 		return err
 	}
 	state, reason := classify(out, len(unresolved) > 0 || scan == scanFailed)
@@ -1126,24 +1139,34 @@ func (w *worker) saveStderr() {
 // launcher is the worker's adapter.Launcher: the only way a native process
 // is created, at most once per worker.
 type launcher struct {
-	w    *worker
-	proc *ownedProc
+	job         *jobObject
+	unconfirmed bool
+	w           *worker
+	proc        *ownedProc
 	// identityErr is set when the native started but its PID could not be
 	// recorded. The process is still returned, so the session reaps it and
 	// the worker stops it through the ladder.
 	identityErr error
 }
 
-func (l *launcher) Launch(_ context.Context, spec adapter.ProcSpec) (adapter.OwnedProc, error) {
+func (l *launcher) Launch(_ context.Context, spec adapter.ProcSpec) (proc adapter.OwnedProc, retErr error) {
 	if l.proc != nil {
 		return nil, errors.New("the native process was already launched; a worker launches once (I12)")
 	}
+	defer func() {
+		if retErr != nil {
+			l.failedLaunch()
+		}
+	}()
 	if !filepath.IsAbs(spec.Path) {
 		return nil, fmt.Errorf("native path %q is not absolute", spec.Path)
 	}
 	intent := time.Now().UTC()
 	l.w.id.NativeLaunchIntent = &intent
 	if err := l.w.writeIdentity(); err != nil {
+		return nil, err
+	}
+	if err := l.prepareJob(); err != nil {
 		return nil, err
 	}
 	cmd, h, err := l.w.launch.command(spec)
@@ -1164,17 +1187,16 @@ func (l *launcher) Launch(_ context.Context, spec adapter.ProcSpec) (adapter.Own
 	h.started()
 	p := &ownedProc{cmd: cmd, stdout: stdout, pgid: nativeGroup(cmd.Process.Pid), release: h.stop}
 	l.proc = p
-	pid := cmd.Process.Pid
-	l.w.id.NativePID, l.w.id.NativePGID = &pid, p.pgid
-	// A native the supervisor cannot identify must not run; the worker
-	// aborts it once the session owns it.
-	l.identityErr = l.w.writeIdentity()
+	if err := l.finishJob(p); err != nil {
+		return nil, err
+	}
 	return p, nil
 }
 
 // ownedProc is a native process the worker owns. Signal and GroupGone are
 // per platform.
 type ownedProc struct {
+	job    *jobObject //nolint:unused // Windows launch retains the assigned job for lifecycle operations.
 	cmd    *exec.Cmd
 	stdout io.Reader
 	pgid   *int
