@@ -57,7 +57,7 @@
 - **Spec deviations**: None. Own task completion, handoff and scratchpad evidence follow the completion convention.
 - **Files modified**: `docs/decisions/0020-observatory-lifecycle-and-themes.md`, `docs/decisions/README.md`, `docs/assets/brand/README.md`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
 
-### Task 3 — Approve the concrete ADR
+### Task 3 — Approve the concrete ADR ✅ COMPLETED
 
 - **Domain/agent**: maintainer
 - **Budget**: standard
@@ -69,6 +69,11 @@
   - The ADR has an explicit maintainer approval reference and accepted status; a worker assertion, preexisting OQ defaults or an unsigned product-state mutation is not approval. Any product change uses the existing signed approval scripts separately.
 - **Test plan**: Inspect exact approved content and reference; no agent self-approval.
 - **Invariants touched**: I03 (v2 §19: repository prose cannot grant authority).
+
+- **Status**: ✅ Completed — Recorded the coordinator's exact-revision acceptance under explicit delegated maintainer authority; PR #487.
+- **Implementation**: Commit `f458f15` binds the accepted ADR 0020 proposal to source `54f859d`, merged `946ba3f` and original SHA-256 `b3f22e5ae1cf34ff48be5313a9dad09dd3c966a875fcf4e660c943734d42ca05`. The coordinator reviewed the full contract and authority wording; independent architect review had no critical or important findings. No personal later-content review, signed product approval or runtime qualification is claimed.
+- **Spec deviations**: Updated `docs/decisions/README.md` heading/status with coordinator approval so the index no longer calls the accepted ADR proposed. Own completion and handoff follow the completion convention.
+- **Files modified**: `docs/decisions/0020-observatory-lifecycle-and-themes.md`, `docs/decisions/README.md`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`.
 
 ### Task 4 — Make the worker own its execution deadline
 

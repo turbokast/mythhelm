@@ -26,7 +26,11 @@
 
 ## Task 3 — Approve the concrete ADR
 
-<!-- pending -->
+- **Produces**: Accepted ADR 0020 with delegated maintainer authorization record; PR #487, decision commit `f458f15`.
+- **Authority and revision**: The coordinator exercised the maintainer's explicit standing delegation after reviewing the full ADR, accepting source `54f859d` / merged `946ba3f`, original SHA-256 `b3f22e5ae1cf34ff48be5313a9dad09dd3c966a875fcf4e660c943734d42ca05`. This does not represent personal review of later content, a digital signature, signed product approval or formal autonomy grant.
+- **For Task 4 and later**: The runtime/theme decision is unchanged. Preserve its deadline, first-request, durable conclusion, typed intent/action lifetime, signal ownership and compatibility contracts. All runtime tests and qualification evidence remain future obligations; ADR 0007 remains proposed.
+- **Deviation**: The decisions index heading/status was updated with coordinator approval to match the accepted record.
+- **Verification**: Exact source/merged proposal bytes and digest checked; spec lint, hygiene, diff checks and entry-check pass. Independent architect review of the original contract found no critical or important issues.
 
 ## Task 4 — Make the worker own its execution deadline
 
