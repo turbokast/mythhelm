@@ -11,7 +11,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Capture the unchanged linear output contract
+### Task 1 — Capture the unchanged linear output contract ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -26,6 +26,15 @@
   - Inspect the fixture provenance: captures come from executing the unmodified base binary/renderers, not manually writing desired output; existing accessible_test.go/render_test.go/review_test.go assertions are unchanged.
 - **Test plan**: Capture and compare twice at base first; then keep the baseline test in all later Go gates. Real paths/accounts are forbidden.
 - **Invariants touched**: I09 (v2 §2: labels preserved); I13 (v2 §15.3: credential-free linear modes).
+
+- **Status**: ✅ Completed — captured seven unchanged linear output contracts with synthetic provenance and semantic counterfactuals; PR #485.
+- **Implementation**: Commit `a183347`; exact outputs come from two matching executions of unchanged base `e4ab1fc46fb08886af5e8195c4a2812b1b0b6e6f`. The complete Go race gate passed (288.6s); all six markers are fresh. Fresh independent review found no actionable findings; focused race repeat passed twice (11.307s).
+- **Spec deviations**:
+  - Review correction round 1: isolate demo temporary directories and select the unique state directory independently of truncated event text; include captured diagnostics on probe failure. Consistent with deterministic capture design; immutable output bundle unchanged. Kept truncated-state regression failed before the correction and passes afterward.
+  - Coordinator-approved generated event/producer/attempt identity and role-bound PID normalisation preserves distinctness/references; generated Git references are replaced only after checking actual candidate changed paths and file content. No semantic values or arbitrary digests are removed.
+  - Actual run plain/JSONL captures pin admission refusal (exit 2); richer fixed journal/render cases and successful demo cover lifecycle evidence. Demo uses `--after 1` and bounded slow-consumer timing to preserve events 2–23 exactly; fixed fixtures cover initial summary/created output. This does not fix the observed natural-timing receipt-tail race, documented in scratchpad for later CLI lifecycle work.
+  - Own `tasks.md`, `handoff.md` and `scratchpad.md` record completion, downstream inputs and the discovered base race as required by the completion convention.
+- **Files modified**: `internal/cli/observatory_baseline_test.go`, `internal/cli/testdata/observatory-linear.json`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
 
 ### Task 2 — Record the lifecycle and presentation contracts ✅ COMPLETED
 

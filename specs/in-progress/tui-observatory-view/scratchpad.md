@@ -96,6 +96,19 @@ Accounting across three fresh-context reviewers: dispatched=3 returned=3 failed=
 
 ## Discoveries
 
+### Task 1 — Deterministic linear capture findings
+
+- Captured seven nonempty outputs from unchanged production code at `e4ab1fc46fb08886af5e8195c4a2812b1b0b6e6f`; two consecutive base captures matched before storing their exact normalized bytes. Inputs are synthetic journal events, receipt and typed usage rows, plus the credential-free fake demo. No native account evidence is claimed.
+- The base generates more volatility than AC-7.1 enumerated: JSONL result event/producer ULIDs, demo attempt ULIDs, process IDs and Git commit IDs. Git's environment filtering discards inherited `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE`. The delivery coordinator approved narrowly located identity normalization preserving repeated-reference relationships, exact semantic bytes, and independent Git candidate content verification; no arbitrary digest replacement.
+- The coordinator approved actual run admission-refusal captures (exact exit 2 and reason) alongside richer fixed journal/render fixtures and successful demo lifecycle. `demo --accessible --after 1` avoids the nondeterministic startup summary; fixed review/render cases retain summary and created-event coverage. Every event from 2 through 23 and final cursor 23 is required.
+- Unmodified `runAccessibleLiveWith` / `watchRunTerminal` can end the natural-timing stream at `ready_for_review` (event 22), before the supervisor appends `receipt.written` (event 23). Repeated race tests reproduced trailer 22 despite a valid final receipt/review. Task 1's bounded slow-consumer writer waits at event 4 for journaled `receipt.written`, controlling source timing without modifying production. **This is not a fix or qualification of the natural-timing race.** Task 8's CLI lifecycle work should add a natural-timing terminal/receipt regression and reconcile stream completion with pipeline completion.
+- Acceptance evidence: missing captures made `TestObservatoryLinearBaseline` fail; two base capture runs matched; after controlled timing, `go test -race ./internal/cli -run '^TestObservatory' -count=3 -v` passed (13.379s). Kept counterfactuals reject changed state, provenance, usage counter, exit, record type/field, candidate content/binding, attempt identity relationship and event sequence.
+
 ### Task 2 — Proposed contract record
 
 Native Codex docs implementation, PR #484, commit `54f859d`: ADR 0020 remains proposed for exact-revision Task 3 approval. Independent architect review returned Ready with no critical or important findings. AC-1.10's Observatory attention already exists as shared Amber (dark), so the separate table adds nine missing rows and references the shared amber values without changing Colours. Documentation checks verified local links, exact shared-table preservation, spec lint and hygiene; runtime tests listed in the ADR are explicitly future obligations.
+
+### Task 1 — Review correction round 1
+
+- A long temporary root truncates event 4 before its `/runs/` segment. `TestObservatoryReceiptWaitWithTruncatedStatePath` first failed with `demo workspace line lacks state path`; after resolving the unique state directory inside a capture-owned temporary root, it passes and rejects ambiguous state roots. The captured line remains unchanged.
+- Failed demo probes now report exit status, stderr and stdout. `go test -race -run TestObservatory ./internal/cli -v` passes all seven immutable captures, semantic counterfactuals and the kept truncation regression (5.815s). No baseline fixture or production behavior changed.

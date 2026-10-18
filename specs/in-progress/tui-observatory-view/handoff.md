@@ -8,7 +8,13 @@
 
 ## Task 1 — Capture the unchanged linear output contract
 
-<!-- pending -->
+- **Produces**: `TestObservatoryLinearBaseline` and immutable `internal/cli/testdata/observatory-linear.json`, containing seven exact captures, producing invocations, base commit and synthetic events/receipt/usage inputs; PR #485, implementation `a183347`.
+- **For dependents**: preserve every capture and the existing accessible/render/review/TUI assertions. All normal Go gates run the baseline; there is no regeneration switch. Normalisation is narrow and retains state/provenance/usage/exit/record fields, candidate content/binding and generated-reference relationships.
+- **Capture scope**: actual review accessible/JSONL, both renderers, actual run plain/JSONL refusal (exit 2), and actual successful fake demo with `--accessible --after 1`. Fixed journal cases cover initial summary and created event; demo requires events 2–23 and final cursor 23.
+- **Review correction**: Demo capture owns its temporary root and requires a unique state directory, so event 4 truncation cannot prevent receipt synchronization; the displayed path prefix and exact baseline remain checked. Probe failures include exit/stdout/stderr.
+- **Controlled timing**: the test-only output consumer waits at demo event 4 for journaled `receipt.written`, with a finite timeout. It inspects actual Git base-to-candidate changed paths and exact `demo.txt` content before demo cleanup. This is deterministic fixture timing, not a production race fix.
+- **Task 8 discovery**: natural-timing `watchRunTerminal` can cancel at ready_for_review/event 22 before receipt.written/event 23, leaving cursor 22 despite a valid final receipt. Add a natural-timing terminal/receipt regression during CLI lifecycle work and reconcile stream completion with pipeline completion; never normalise a missing event away.
+- **Validation**: two consecutive original base captures matched; kept semantic counterfactuals pass; complete Go race gate passed (288.6s), lint/style corrected, all six markers fresh, independent review Ready with two focused race passes (11.307s). No native account or Windows runtime qualification is claimed.
 
 ## Task 2 — Record the lifecycle and presentation contracts
 
