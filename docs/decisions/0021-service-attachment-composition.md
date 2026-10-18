@@ -27,7 +27,7 @@ Optional hosts consume only sanitized projections and navigation requests. Their
 
 ## Consequences
 
-The implementation is larger than a registry fix: public production callers, owner extraction, migration restart, admission persistence, coherent reads and durable stop must agree. The three child specs under `specs/*/herdr-embedded-client/plan.md` carry bounded domain-pure tasks and public binary tests. New additive schema preserves immutable legacy results and unknowns. Existing MH-23 worker deadline/client intent contracts are prerequisites for overlapping runtime changes; Windows support awaits its own process and transport evidence.
+The implementation is larger than a registry fix: public production callers, owner extraction, migration restart, admission persistence, coherent reads and durable stop must agree. The three child specs listed in `specs/unrefined/herdr-embedded-client/plan.md` carry bounded domain-pure tasks and public binary tests. New additive schema preserves immutable legacy results and unknowns. Existing MH-23 worker deadline/client intent contracts are prerequisites for overlapping runtime changes; Windows support awaits its own process and transport evidence.
 
 Acceptance tests must demonstrate ordinary run→attach with one worker, root conflict/held-owner refusal, live same-launch migration, restart without replacement, scope/generation read races, stale stop atomic rejection, lost acknowledgment/query, outbox crash/coalescing, honest evidence projection and host-stall responsiveness with violating fixtures. Live host results remain separate from fixtures. This does not complete MH-3/G11 or qualify a new billing/native route.
 

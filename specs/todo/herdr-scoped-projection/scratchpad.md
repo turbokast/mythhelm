@@ -1,4 +1,4 @@
-# Herdr scoped projection — Scratchpad
+## Herdr scoped projection — Scratchpad
 
 > Draft research and open questions; implementers append discoveries.
 

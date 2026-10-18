@@ -1,4 +1,4 @@
-# Herdr scoped projection — Requirements
+## Herdr scoped projection — Requirements
 
 > Normative source: `mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md`, version 2.0. All section, I, AT and G identifiers refer to v2. Source requirements: `specs/*/herdr-bridge/requirements.md`, unchanged archived refinement. Epic: `specs/*/herdr-embedded-client/plan.md`. Source AC identifiers below are retained, including intentional numbering gaps; new FR-6 criteria belong only to the core child. Shared criteria remain binding across streams, with primary implementation and integration ownership in the epic coverage table.
 

@@ -1,4 +1,4 @@
-# Herdr scoped projection — Tasks
+## Herdr scoped projection — Tasks
 
 ### Dependencies
 
@@ -64,6 +64,7 @@
   - TestHerdrMetadataAllowlist checks every emitted key/value against the fixed set, no more than16keys and64KiB; nested sentinel/token/path/native input never reaches transport.
   - TestHerdrProjectionOrdering covers2→1, identical2, conflicting2 and old generation after resync; host acknowledgments cannot change candidate/verified/applied.
   - TestHerdrPublicationSequence separates core revision from monotonically increasing per-source publication seq, including same-content renewal, stale/fresh transitions, new-session seq1 and late old-session response rejection.
+  - TestHerdrMetadataLimits accepts 80-scalar token values and 80-character valid sources, rejects 81-scalar values and 81-character sources without truncation, and checks the generated session ID never makes the complete `mythhelm-` source exceed 80 ASCII characters. An overlong source or token must produce no metadata request.
   - TestHerdrMetadataAck requires the exact qualified method response and matched id; unexpected shape disables metadata rather than silently succeeding.
 - **Test plan**: Synthetic fixtures and deterministic barriers for the named cases; pair negative assertions with a deliberately violating fixture. Public process behavior uses the packaged binary in the integration task, not helper-only evidence.
 - **Invariants touched**: I03/I07/I09/I17/I19 (v2 §§8/14: sanitized canonical evidence only).
