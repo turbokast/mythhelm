@@ -60,7 +60,7 @@
 
 
 
-### Task 3 — Job Object launch ownership
+### Task 3 — Job Object launch ownership ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (process ownership and cross-platform behaviour)
@@ -86,6 +86,12 @@
   - `GOOS=linux go vet ./internal/workers/` and `GOOS=darwin go vet ./internal/workers/` pass: the stand-in compiles.
 - **Test plan**: Windows-tagged tests using the Task 2 fixture; failure injection through worker struct fields (`go-conventions.md`), never package variables: the `jobOps` struct of function fields (design §2.2), with the six boundary hooks `afterIntent`, `afterJob`, `afterSpawn`, `afterStart`, `beforeResume` and `afterResume` that Task 6 sets to crash the worker. Shown red on main: there is no job. The launch order is intent, parent-job check, job, spawn, identity record, assign, resume (D10).
 - **Invariants touched**: I18 (the native is in the job before it can start a child), I06 (a failed assignment cannot leave an unowned process), I12 (a worker launches once, `worker.go:1125`), I02 and I09 (an unknown parent-job state blocks).
+
+- **Status**: ✅ Completed — Windows natives enter an owned Job Object before resume, with identity-first persistence and fail-closed cleanup; PR #483.
+- **Implementation**: Commits `ad7f727` and `bd936d2`; native evidence at `5d05701`. Per-worker Windows operations preserve Unix launch behaviour, record Win32 launch errors and leave unavailable cleanup proof unconfirmed. Independent ownership/code review findings are addressed.
+- **Spec deviations**: Approved `.github/workflows/ci.yml` and `docs/automation.md` changes expose uncached named native acceptance alongside the prerequisite probe without replacing full suites. `Identity.NativeStartTime` moved into Task 3 because identity must be durable before assignment; Task 5 retains the launched-event contract. Approved `worker_test.go` change migrates only Windows identity-persistence failure from post-launch abort to pre-assignment launch cleanup; all original Unix assertions remain. Review added wait-handle-failure cleanup and actual suspend-count/retained-handle tests, consistent with design §2.2. Scratchpad, handoff and this entry are lifecycle records outside the original Files list.
+- **Files modified**: `.github/workflows/ci.yml`, `docs/automation.md`, `internal/workers/job_other.go`, `internal/workers/job_windows.go`, `internal/workers/job_windows_test.go`, `internal/workers/proc_windows.go`, `internal/workers/worker.go`, `internal/workers/worker_test.go`, `specs/in-progress/windows-process-ownership/tasks.md`, `specs/in-progress/windows-process-ownership/handoff.md`, `specs/in-progress/windows-process-ownership/scratchpad.md`.
+- **CI evidence**: [run 39108953755](https://github.com/turbokast/mythhelm/actions/runs/39108953755), source `5d05701`: all 18 named native tests pass on [Windows AMD64](https://github.com/turbokast/mythhelm/actions/runs/39108953755/job/117621040510) and [Windows ARM64](https://github.com/turbokast/mythhelm/actions/runs/39108953755/job/117621040503); both full suites pass (AMD64 with race detection, ARM64 without). No capability row is promoted. Local gates pass, including the full race suite (270.4s); Windows/Darwin cross-vet and pinned actionlint pass. Red-first development evidence is recorded in the scratchpad, explicitly distinguished from native runtime qualification.
 
 ### Task 4 — job-wide stop, confirmation and descendant scan
 
