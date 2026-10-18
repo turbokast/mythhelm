@@ -3,6 +3,7 @@
 # Requires npm ci and installed Google Chrome; writes only a temporary directory.
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
+node "$root/scripts/ci/browser/test_shared_palette.mjs"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 # Structural enumeration is deliberately Python standard library.
@@ -73,6 +74,7 @@ root=pathlib.Path(sys.argv[1])
 base='''<!doctype html><!-- mythhelm-fixture --><html><head><style>:root{--color-paper:#f6f4ee;--color-ink:#101621;--color-star-light:#00829d}body{margin:0;background:#f6f4ee;color:#101621}button{width:44px;height:44px;background:#f6f4ee;color:#101621;border:1px solid #101621}EXTRA</style></head><body><p>Readable text</p>BODY</body></html>'''
 cases={'good':('','<button>Go</button>'),'wide':('pre{width:2000px}','<pre>wide</pre>'),'clip':('html,body{overflow-x:clip}pre{width:2000px}','<pre>wide</pre>'),'contrast':('p{color:#00829d}',''),'undeclared':('p{color:#123456}',''),'target':('button{width:20px;height:20px}','<button>Go</button>'),'origin':('','<script src="https://example.invalid/a.js"></script>'),'gif':('','<img src="demo.gif" alt="scripted demo">'),'motion':('@keyframes spin{to{transform:rotate(10deg)}}p{animation:spin 2s infinite}','')}
 cases.update({
+ 'tui-color':('p{color:#7fd8a9}', ''),
  'group-opacity':('p{opacity:.5;background:#101621;color:#f6f4ee}', ''),
  'opacity':('p{opacity:.1}', ''),
  'value':('input{width:100px;height:44px;color:#00829d;background:#f6f4ee;border:1px solid #101621}', '<input value=bad>'),
@@ -104,12 +106,12 @@ PY
 check="$root/scripts/ci/browser/check_layout.mjs"
 node "$check" "$work/good"
 printf '%s\n' '--- PASS: conforming fixture'
-for case in wide clip contrast undeclared target origin gif motion quickstart quickstart-heading weight preload poster opacity group-opacity value placeholder hidden-command no-title-marker websocket resource controls hero caption; do
+for case in wide clip contrast undeclared tui-color target origin gif motion quickstart quickstart-heading weight preload poster opacity group-opacity value placeholder hidden-command no-title-marker websocket resource controls hero caption; do
   if node "$check" "$work/$case" > "$work/$case.log" 2>&1; then
     echo "FAIL: $case accepted"; exit 1
   fi
   expected="$case"
-  case "$case" in opacity|group-opacity) expected=undeclared ;; value|placeholder) expected=contrast ;; quickstart-heading|hidden-command|no-title-marker) expected=quickstart ;; websocket) expected=origin ;; esac
+  case "$case" in opacity|group-opacity|tui-color) expected=undeclared ;; value|placeholder) expected=contrast ;; quickstart-heading|hidden-command|no-title-marker) expected=quickstart ;; websocket) expected=origin ;; esac
   grep -Eq '^[^:]+:1: '"${expected}"': ' "$work/$case.log" || { cat "$work/$case.log"; exit 1; }
   printf '%s\n' "--- PASS: $case rejected"
 done
