@@ -65,6 +65,53 @@ Claude's declared billing posture requires the user's account-bound declaration
 that extra usage is disabled. Account changes require a fresh declaration and
 start a new experimental block; never split a pair across them.
 
+### Readiness inspection — 2026-10-15
+
+A credential-free inspection of repository revision
+`f2b486d9b2e426d0f288fce64ab1da0a7ef3e000` and installed tools found Claude Code
+2.1.300, Codex 0.162.1, Muse Code 1.4.7 (1.4.7-R6101.1), and Antigravity 1.2.14.
+OpenCode's executable was present, but its version probe failed while attempting
+to open a log on a read-only filesystem; its version remains unobserved.
+These are installation observations, not qualified routes. No inference,
+authentication changes or live qualification was performed.
+
+Codex has a transport blocker as well as the billing blocker above:
+[`launch.go`](https://github.com/turbokast/mythhelm/blob/f2b486d9b2e426d0f288fce64ab1da0a7ef3e000/adapters/codex/launch.go) labels its `app-server` invocation a
+placeholder and delivers the prompt directly on stdin.
+[`compat.go`](https://github.com/turbokast/mythhelm/blob/f2b486d9b2e426d0f288fce64ab1da0a7ef3e000/adapters/codex/compat.go) uses synthetic version `0.0.0` and
+reports native capabilities as unknown. A real structured transport and a tested
+native-version baseline must precede a matched wrapped arm.
+
+Model and effort parity also need evidence. The
+[`run` CLI](https://github.com/turbokast/mythhelm/blob/f2b486d9b2e426d0f288fce64ab1da0a7ef3e000/internal/cli/run.go) exposes no model or effort selection;
+the [Claude launch](https://github.com/turbokast/mythhelm/blob/f2b486d9b2e426d0f288fce64ab1da0a7ef3e000/adapters/claudecode/launch.go) supplies neither flag,
+and [qualification key construction](https://github.com/turbokast/mythhelm/blob/f2b486d9b2e426d0f288fce64ab1da0a7ef3e000/internal/admission/qualify.go) records
+`ModelSnapshot: "unknown"` and `EffortSettings: "none"`. A pilot must establish
+and record the effective native configuration and observed model/effort, or add
+reviewed support for carrying those selections through admission and launch.
+Defaults and matching model labels alone do not demonstrate parity.
+
+Local Muse launcher inspection found automatic updates, with a supported
+`MUSE_NO_AUTO_UPDATE=1` control; native help also advertised an LLM approval judge
+enabled by default. A future Muse manifest must evidence executable pinning,
+effective update controls and the judge's auxiliary funding route. Neither
+control establishes entitlement. Muse, Antigravity and OpenCode still have no
+wrapped adapter here.
+
+The next readiness work is to freeze and validate the manifest below without
+launching inference, preserving blocked and unavailable arms. The shortest live
+candidate is one Claude matched pair after resolving the managed-policy evidence
+gap and completing the spec's maintainer live qualification task in
+[`claude-strict-subscription`](https://github.com/turbokast/mythhelm/blob/f2b486d9b2e426d0f288fce64ab1da0a7ef3e000/specs/in-progress/claude-strict-subscription/tasks.md)
+(pending Tasks 5 and 7 depend on Q1), once its prerequisites and required
+authorization are met. That also requires account-bound evidence
+of included funding and prevention of paid continuation, plus model/configuration
+parity. The installed Claude version remains labelled untested by its
+[compatibility policy](https://github.com/turbokast/mythhelm/blob/f2b486d9b2e426d0f288fce64ab1da0a7ef3e000/adapters/claudecode/compat.go). No route is made
+ready merely by drafting the manifest or providing a declaration.
+
+### Assignment manifest
+
 Before the first assignment, freeze a manifest containing:
 
 - task IDs, exact repository revisions, prompt and check hashes, task-family
