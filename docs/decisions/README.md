@@ -2,6 +2,10 @@
 
 Significant decisions (see [GOVERNANCE.md](../../GOVERNANCE.md)) are recorded here as short numbered Markdown files: `NNNN-short-title.md`.
 
+## Observatory contract
+
+- [0020. Observatory lifecycle and themes](0020-observatory-lifecycle-and-themes.md): worker deadline, stop-less detach, typed client controls and declarative theme contract; accepted under the delegated maintainer decision recorded in Task 3.
+
 ## Template
 
 ```markdown

@@ -27,7 +27,7 @@
 - **Test plan**: Capture and compare twice at base first; then keep the baseline test in all later Go gates. Real paths/accounts are forbidden.
 - **Invariants touched**: I09 (v2 §2: labels preserved); I13 (v2 §15.3: credential-free linear modes).
 
-### Task 2 — Record the lifecycle and presentation contracts
+### Task 2 — Record the lifecycle and presentation contracts ✅ COMPLETED
 
 - **Domain/agent**: go-implementer (docs)
 - **Budget**: standard
@@ -44,7 +44,12 @@
 - **Test plan**: Documentation review plus hygiene; no product decisions or approval ledger edits.
 - **Invariants touched**: I06/I12/I18/I21 (v2 §§6.4,15.2: ownership and finite envelope); I11/I13 (v2 §16: declarative theme only).
 
-### Task 3 — Approve the concrete ADR
+- **Status**: ✅ Completed — Proposed lifecycle/theme ADR and separate TUI palette documented; PR #484.
+- **Implementation**: Commit `54f859d` records the worker-pinned deadline, journal-derived conclusion, typed stop-less detach, signal/action ownership, client/canonical outcome distinction and declarative themes. Independent architect review returned Ready with no critical or important findings; ADR remains proposed for Task 3.
+- **Spec deviations**: None. Own task completion, handoff and scratchpad evidence follow the completion convention.
+- **Files modified**: `docs/decisions/0020-observatory-lifecycle-and-themes.md`, `docs/decisions/README.md`, `docs/assets/brand/README.md`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
+
+### Task 3 — Approve the concrete ADR ✅ COMPLETED
 
 - **Domain/agent**: maintainer
 - **Budget**: standard
@@ -56,6 +61,11 @@
   - The ADR has an explicit maintainer approval reference and accepted status; a worker assertion, preexisting OQ defaults or an unsigned product-state mutation is not approval. Any product change uses the existing signed approval scripts separately.
 - **Test plan**: Inspect exact approved content and reference; no agent self-approval.
 - **Invariants touched**: I03 (v2 §19: repository prose cannot grant authority).
+
+- **Status**: ✅ Completed — Recorded the coordinator's exact-revision acceptance under explicit delegated maintainer authority; PR #487.
+- **Implementation**: Commit `f458f15` binds the accepted ADR 0020 proposal to source `54f859d`, merged `946ba3f` and original SHA-256 `b3f22e5ae1cf34ff48be5313a9dad09dd3c966a875fcf4e660c943734d42ca05`. The coordinator reviewed the full contract and authority wording; independent architect review had no critical or important findings. No personal later-content review, signed product approval or runtime qualification is claimed.
+- **Spec deviations**: Updated `docs/decisions/README.md` heading/status with coordinator approval so the index no longer calls the accepted ADR proposed. Own completion and handoff follow the completion convention.
+- **Files modified**: `docs/decisions/0020-observatory-lifecycle-and-themes.md`, `docs/decisions/README.md`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`.
 
 ### Task 4 — Make the worker own its execution deadline
 

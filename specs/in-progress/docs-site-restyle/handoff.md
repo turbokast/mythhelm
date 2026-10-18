@@ -95,7 +95,15 @@
 
 ## Task 10 — Site-build job gating CI OK and docs workflow wiring (release)
 
-<!-- pending -->
+- **Produces**: CI job `site-build` calls the reusable Docs workflow on PR, merge queue and main push; `CI OK` needs it and rejects every non-success result. Existing mirror/revision/transcript/qualifier assertions remain; required-checks.json is unchanged.
+- **Artifact contract**: Build once, assert mirrors, upload immediately, then check content/browser and unchanged file-tree digest. Examples download that same run's Pages artifact and verify the digest before/after execution. Only a successful main-push build plus examples can deploy it. Real fixture emitters mark their temporary HTML; markers and symlinks fail artifact validation.
+- **Examples API**: `python3 scripts/ci/check_docs_examples.py --site _site --docs docs --module-cache DIR --image DIGEST_PIN` validates every manifest/source/published identity before executing exact commands. Exit 0 means agreement, 1 findings, 2 unavailable/invalid input. `--digest` and `--workflows` are exclusive auxiliary modes. Task 10 alone executes stdout diffs using Task 8's docs-output-v1 normalizer. Invalid UTF-8 output is a finding and later examples still execute.
+- **Sandbox**: Prefetch modules/image before running; each command has no network, credentials, interactive input or writable host mount, with GOPROXY off. Docker state proves execution even for legitimate exits 125–127; unresolved creation/cleanup fails. Output is capped at 1 MiB per stream and daemon logging is disabled.
+- **Marker activation**: Only the gated build writes temporary `docs/_data/example_checks.yml` with `enabled: true`. Never commit it. Task 11 must retain this opt-in when checking marker fidelity against the uploaded artifact.
+- **Tooling**: Full-SHA actions, locked npm with seven-day Dependabot cooldown, pinned Go image, checksum-verified ffprobe and preinstalled Chrome with version output. The exact reusable target retains `./` with one scoped zizmor annotation because required actionlint v1.7.12 rejects `$/`; migrate only with validated parser support.
+- **Evidence for Task 11**: Source `bc656125bf7cf68f07ca7eda55e76137e5895dda`, CI run 38732928808, artifact 11971243135 (8,513,179 bytes): content and browser pass all 42 pages, Chrome 155.0.8059.39, landing 101,185 bytes, both quickstarts exit 0. Examples job 116417904312 finished 12:21:12 UTC; CI OK job 116420780438 began 12:26:37 UTC and passed. Final UTF-8 correction and metadata/main-integration CI still gate merge; these run IDs prove the preceding source.
+- **Integration lessons**: Install ffprobe explicitly. The browser preflight inspects Python literal process calls via AST and shell commands separately, so harmless `node` variables are not treated as executables; static scans still require review of dynamic commands. Local node_modules must stay outside source harness scans after browser verification.
+- **Verification limits**: Twenty-four helper cases and all browser fixtures pass. First-pass failures and their corrections are recorded in tasks.md; no assertions were bypassed. A real fork-PR examples run remains the specified maintainer inspection.
 
 ## Task 11 — Build evidence, automation record and final conformance (docs)
 

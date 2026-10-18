@@ -22,3 +22,14 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: build
+  - package-ecosystem: npm
+    directory: /scripts/ci/browser
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      browser-driver:
+        patterns: ["*"]
+    commit-message:
+      prefix: build
