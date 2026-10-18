@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/turbokast/mythhelm/internal/journal"
 )
 
 // This file covers the packaged binary's TUI-slice launch rule, flag
@@ -293,10 +296,11 @@ func TestE2EPlainForcesLinear(t *testing.T) {
 }
 
 // TestE2EJsonlStable runs one scenario with --format jsonl with and without
-// the TUI flags: the two streams must be line-identical after normalising
+// the TUI flags: deterministic events must be line-identical after normalising
 // per-run values (N4: machine output unchanged), with matching exits. Each
-// leg runs in its own env over the same repo, so path normalisation is
-// load-bearing too (the base revision stays shared and strict).
+// leg runs in its own env over the same repo. Stop observations can differ
+// between processes: each complete stopped envelope must match its own durable
+// journal exactly, including signals, confirmation and identities.
 func TestE2EJsonlStable(t *testing.T) {
 	e := newEnv(t)
 	repo, digest := mkRepo(t, e, t.TempDir(), "pass")
@@ -316,6 +320,13 @@ func TestE2EJsonlStable(t *testing.T) {
 	}
 	identical := len(plainLines) > 0
 	for i := range plainLines {
+		if assertDurableStoppedEnvelope(t, plainLines[i], e) {
+			if !assertDurableStoppedEnvelope(t, tuiLines[i], other) {
+				t.Fatal("stopped event order differs with TUI flags")
+			}
+			identical = identical && plainLines[i] == tuiLines[i]
+			continue
+		}
 		normalPlain := normalizeJSONLLine(t, plainLines[i], e, repo)
 		normalTUI := normalizeJSONLLine(t, tuiLines[i], other, repo)
 		if normalPlain != normalTUI {
@@ -475,4 +486,80 @@ func TestE2EReviewUnknownExits1(t *testing.T) {
 				code, stdout, stderr)
 		}
 	})
+}
+
+// compareStoppedEnvelope compares complete JSON values without normalising
+// process evidence or dropping unknown fields.
+func compareStoppedEnvelope(actual, durable []byte) error {
+	var got, want any
+	actualDecoder := json.NewDecoder(bytes.NewReader(actual))
+	actualDecoder.UseNumber()
+	if err := actualDecoder.Decode(&got); err != nil {
+		return err
+	}
+	durableDecoder := json.NewDecoder(bytes.NewReader(durable))
+	durableDecoder.UseNumber()
+	if err := durableDecoder.Decode(&want); err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(got, want) {
+		return fmt.Errorf("stopped envelope differs from durable journal: got %s, want %s", actual, durable)
+	}
+	return nil
+}
+
+func assertDurableStoppedEnvelope(t *testing.T, line string, e env) bool {
+	t.Helper()
+	var event journal.Event
+	if err := json.Unmarshal([]byte(line), &event); err != nil {
+		t.Fatal(err)
+	}
+	if event.Type != "attempt.stopped" {
+		return false
+	}
+	j := ledgerOpenState(t, e)
+	events, err := j.Events(t.Context(), event.RunID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, durable := range events {
+		if durable.EventID != event.EventID {
+			continue
+		}
+		encoded, err := json.Marshal(durable)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := compareStoppedEnvelope([]byte(line), encoded); err != nil {
+			t.Fatal(err)
+		}
+		return true
+	}
+	t.Fatal("printed stopped event absent from durable journal")
+	return false
+}
+
+func TestStoppedEnvelopeKeepsStopEvidence(t *testing.T) {
+	empty := []byte(`{"type":"attempt.stopped","event_id":"evt-one","payload":{"confirmed":true,"sent":[],"signals_sent":[],"ladder_version":"stop-ladder/v2-windows","descendant_scan":"job-object"}}`)
+	killed := []byte(`{"type":"attempt.stopped","event_id":"evt-one","payload":{"confirmed":true,"sent":[{"signal":"kill","grace":5000000000}],"signals_sent":["kill"],"ladder_version":"stop-ladder/v2-windows","descendant_scan":"job-object"}}`)
+	for _, durable := range [][]byte{empty, killed} {
+		if err := compareStoppedEnvelope(durable, durable); err != nil {
+			t.Fatal(err)
+		}
+		for name, altered := range map[string][]byte{
+			"confirmed":      bytes.Replace(durable, []byte(`"confirmed":true`), []byte(`"confirmed":false`), 1),
+			"event identity": bytes.Replace(durable, []byte(`evt-one`), []byte(`evt-other`), 1),
+			"extra field":    bytes.Replace(durable, []byte(`"sent":`), []byte(`"unexpected":true,"sent":`), 1),
+		} {
+			if err := compareStoppedEnvelope(altered, durable); err == nil {
+				t.Errorf("accepted altered %s", name)
+			}
+		}
+	}
+	if err := compareStoppedEnvelope(empty, killed); err == nil {
+		t.Error("accepted missing kill evidence")
+	}
+	if err := compareStoppedEnvelope(killed, empty); err == nil {
+		t.Error("accepted invented kill evidence")
+	}
 }

@@ -451,7 +451,7 @@ func TestProcessStartTimeStable(t *testing.T) {
 
 func TestFakeStopExit130ClassifiedStopped(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("Windows has no SIGINT for the fake; its ladder is Process.Kill (TestWindowsFakeStopConfirmed)")
+		t.Skip("Windows has no SIGINT for the fake; its ladder is job-wide Kill (TestWindowsFakeStopConfirmed)")
 	}
 	a := newAttempt(t)
 	a.spawn(t, a.launch(t, "slow"))
@@ -498,7 +498,7 @@ func TestStoppedExitEmitsNativeResultWithNulls(t *testing.T) {
 
 func TestStopLadderEscalatesToKill(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the Windows ladder is Process.Kill alone (TestWindowsFakeStopConfirmed)")
+		t.Skip("the Windows ladder is job-wide Kill alone (TestWindowsFakeStopConfirmed)")
 	}
 	a := newAttempt(t)
 	l := a.launch(t, "ignore-term")
@@ -544,8 +544,8 @@ func TestWindowsFakeStopConfirmed(t *testing.T) {
 	if _, err := proc.Wait(); err != nil {
 		t.Fatal(err)
 	}
-	if p := stoppedOf(t, evs); !p.Confirmed || !slices.Equal(p.SignalsSent, []adapter.StopSignal{adapter.StopKill}) || p.DescendantScan != "unavailable" {
-		t.Errorf("attempt.stopped = %+v, want confirmed by Kill then Wait, and the descendant scan reported unavailable", p)
+	if p := stoppedOf(t, evs); !p.Confirmed || !slices.Equal(p.SignalsSent, []adapter.StopSignal{adapter.StopKill}) || p.DescendantScan != "job-object" {
+		t.Errorf("attempt.stopped = %+v, want confirmed by job termination, native Wait and an empty job", p)
 	}
 	if st, _ := final(t, evs); st != "stopped" {
 		t.Errorf("final state = %s, want stopped", st)
@@ -1403,4 +1403,14 @@ func TestCodexConfigAppearingAfterEmptyAdmissionFailsLaunch(t *testing.T) { // I
 	if err := claude.verifyUserConfig(); err != nil {
 		t.Fatalf("Claude verifyUserConfig with an empty manifest = %v, want nil", err)
 	}
+}
+
+// TestUnixDescendantScanUnchanged retains the existing end-to-end marker
+// and orphan contracts as acceptance for moving the scan behind the OS seam.
+func TestUnixDescendantScanUnchanged(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("marker scan is qualified on Linux and macOS")
+	}
+	t.Run("unresolved descendant", TestUnresolvedDescendantReported)
+	t.Run("orphan contract", TestOrphanPIDsContract)
 }

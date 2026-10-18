@@ -41,7 +41,15 @@
 
 ## Task 4 — job-wide stop, confirmation and descendant scan
 
-<!-- pending -->
+- **Produces**: Windows `Signal(StopKill)` terminates the owned job; `GroupGone` requires native Wait and an error-free empty job query. Per-OS `descendants(p, attemptID)` returns PID/creation-time identities; Windows uses `job-object`, Unix retains marker scanning. `stopLadderVersion(goos)` selects `stop-ladder/v2-windows` only on Windows.
+- **Receipt ordering**: retain the job through the final scan and stopped-receipt persistence; close only afterward. Later survivor/error evidence invalidates earlier confirmation. Keep identities from the same job snapshot; never reacquire by PID to reconstruct them. No-process/no-job launch failure still scans empty so confirmed cleanup preserves `launch_failed`.
+- **Bounded stop**: Windows concludes after the one pinned ladder plus existing `waitDelay` when the native remains live. No second ladder; unresolved ownership becomes `stop_unconfirmed`. Unix supervision remains unchanged.
+- **For Tasks 5–7**: job operations remain per-worker injected fields, retained on ownedProc. Preserve Task 3 hook ordering and retained native cleanup before assignment: pre-session panic uses bounded failedLaunch evidence, terminating job and retained native, with timeout unconfirmed. Task 5 still owns launched-event creation time; recovery and detach are not qualified here.
+- **Observation semantics**: after natural native exit, an initial empty job query sends no signal; a nonempty or failed first snapshot may cause kill before a later empty query confirms. Signals record actual attempts. Do not normalize these differences away; compare displayed receipts to their own durable event.
+- **Integration contracts**: new Windows demo admissions expect v2-windows through one exact expected-line overlay; captured bundle and output normalization remain unchanged. JSONL tests preserve complete stopped-envelope evidence against the journal and strict cross-run comparisons for other envelopes.
+- **For Tasks 8–11**: Task 4 is stop evidence only, not a support-matrix promotion. Keep Windows kill-only labeling, separate ladder version, failed scan semantics and maintainer qualification responsibility.
+- **Evidence**: implementation `27ccedf`, baseline correction `7b1dfa8`, durable-envelope correction `1085e72`, integrated head `1f21d09`; CI `39148306697`, both named acceptance sets pass, ARM64 full job `117736819760` passed; AMD64 full race job `117736819762` passed (workers30.352s, E2E91.325s); ARM64 workers30.342s/E2E120.152s; whole CI green. Documentation-only main merged as `c3f3f5d` afterward. Local full race85.3s and six fresh markers; independent final E2E race2.861s. Earlier integration failure causes/corrections are in scratchpad; the exact transient job-query condition behind the earlier ARM64 signal difference was not logged.
+- **Approved deviations**: CI selector/automation evidence, per-OS job helper cleanup reporting, precise CLI expected overlay and durable E2E receipt oracle; original worker/supervisor production scope otherwise retained. Independent code/architecture and final test-oracle reviews Ready. Task report must retain `first_pass:false` because initial lint failed on obsolete suppressions.
 
 ## Task 5 — native start time in the launch record
 

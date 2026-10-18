@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -420,7 +421,8 @@ func attemptMarker(attemptID string) string {
 }
 
 type worker struct {
-	jobOps    jobOps //nolint:unused // Per-worker Windows launch operations; the Unix stand-in is intentionally inert.
+	proc      *ownedProc
+	jobOps    jobOps // Per-worker Windows launch and stop operations.
 	dir       string
 	runID     string
 	attemptID string
@@ -491,6 +493,13 @@ func (w *worker) run(ctx context.Context) (retErr error) {
 		}
 		out := outcome{panicked: true, report: adapter.InterruptReport{Confirmed: true}}
 		if l.proc != nil {
+			if runtime.GOOS == "windows" {
+				// A pre-session panic can precede job assignment. Reuse bounded
+				// launch cleanup, which owns both the native handle and the job.
+				out.report = l.failedLaunch()
+				retErr = errors.Join(cause, w.conclude(ctx, sp, nil, out))
+				return
+			}
 			// Start panicked after creating the process but before returning
 			// a session. This process is owned; stop it and reap it once.
 			out.report.Confirmed = false
@@ -672,6 +681,13 @@ func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session)
 	beat := time.NewTicker(heartbeatInterval)
 	defer beat.Stop()
 	w.heartbeat()
+	var stopDeadline *time.Timer
+	var stopExpired <-chan time.Time
+	defer func() {
+		if stopDeadline != nil {
+			stopDeadline.Stop()
+		}
+	}()
 
 	for !out.exited || out.pending != nil {
 		select {
@@ -706,6 +722,13 @@ func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session)
 		case rep := <-out.pending:
 			out.report, out.pending = rep, nil
 			w.pendingStop = nil
+			if runtime.GOOS == "windows" && !out.exited {
+				stopDeadline = time.NewTimer(waitDelay)
+				stopExpired = stopDeadline.C
+			}
+		case <-stopExpired:
+			out.report.Confirmed = false
+			return out, prog.flush(sp, true)
 		case <-beat.C:
 			w.heartbeat()
 		case <-poll.C:
@@ -909,11 +932,10 @@ func (w *worker) conclude(ctx context.Context, sp *spool, sess adapter.Session, 
 	if err := sp.emit(evNativeResult, nativeResult(out)); err != nil {
 		return err
 	}
-	unresolved, scan := w.unresolvedDescendants()
-	identities, identityErr := processIdentities(unresolved)
-	if identityErr != nil {
-		w.log.Error("descendant identities unavailable", "err", identityErr)
-		scan = scanFailed
+	unresolved, identities, scan := w.unresolvedDescendants()
+	// I06 (v2 §6.4): later scan uncertainty invalidates earlier confirmation.
+	if descendantScan == "job-object" && (len(unresolved) > 0 || scan == scanFailed) {
+		out.report.Confirmed = false
 	}
 	sent := out.report.Sent
 	if sent == nil {
@@ -931,6 +953,11 @@ func (w *worker) conclude(ctx context.Context, sp *spool, sess adapter.Session, 
 	}
 	if err := sp.emit(evStopped, stopped); err != nil {
 		return err
+	}
+	if w.proc != nil && w.proc.job != nil {
+		if err := w.proc.job.close(); err != nil {
+			w.log.Error("closing owned job", "err", err)
+		}
 	}
 	state, reason := classify(out, len(unresolved) > 0 || scan == scanFailed)
 	w.log.Info("attempt concluded", "state", state, "reason", reason)
@@ -957,24 +984,20 @@ func sentSteps(sent []adapter.StopSignal, ladder []adapter.StopStep) []adapter.S
 
 const scanFailed = "failed"
 
-// unresolvedDescendants lists processes outside the (gone) group that still
-// carry the attempt's marker, and names how they were found.
-func (w *worker) unresolvedDescendants() ([]int, string) {
-	if descendantScan == "unavailable" {
-		return []int{}, descendantScan
-	}
-	pids, err := markedPIDs(attemptMarker(w.attemptID))
+// unresolvedDescendants returns platform ownership evidence before closing the job.
+func (w *worker) unresolvedDescendants() ([]int, []ProcessIdentity, string) {
+	pids, identities, err := descendants(w.proc, w.attemptID)
 	if err != nil {
 		w.log.Error("descendant scan failed; ownership is unresolved", "err", err)
-		return []int{}, scanFailed
-	}
-	if pids == nil {
-		pids = []int{}
+		if pids == nil {
+			pids = []int{}
+		}
+		return pids, identities, scanFailed
 	}
 	if len(pids) > 0 {
-		w.log.Warn("descendants escaped the process group", "pids", pids)
+		w.log.Warn("unresolved descendants", "pids", pids)
 	}
-	return pids, descendantScan
+	return pids, identities, descendantScan
 }
 
 // classify maps the native outcome to the attempt's terminal state (design
@@ -1187,6 +1210,8 @@ func (l *launcher) Launch(_ context.Context, spec adapter.ProcSpec) (proc adapte
 	h.started()
 	p := &ownedProc{cmd: cmd, stdout: stdout, pgid: nativeGroup(cmd.Process.Pid), release: h.stop}
 	l.proc = p
+	l.w.proc = p
+	p.jobOps = l.w.jobOps
 	if err := l.finishJob(p); err != nil {
 		return nil, err
 	}
@@ -1196,7 +1221,8 @@ func (l *launcher) Launch(_ context.Context, spec adapter.ProcSpec) (proc adapte
 // ownedProc is a native process the worker owns. Signal and GroupGone are
 // per platform.
 type ownedProc struct {
-	job    *jobObject //nolint:unused // Windows launch retains the assigned job for lifecycle operations.
+	jobOps jobOps     // Windows stop operations retain the worker seam.
+	job    *jobObject // Windows launch retains the assigned job for lifecycle operations.
 	cmd    *exec.Cmd
 	stdout io.Reader
 	pgid   *int
