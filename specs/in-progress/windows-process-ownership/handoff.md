@@ -27,7 +27,16 @@
 
 ## Task 3 — Job Object launch ownership
 
-<!-- pending -->
+- **Produces**: worker-owned `jobObject` with non-inheritable kill-on-close handle, `assign`, `terminate`, bounded `members` and `close`; Windows suspended launch persists identity before assignment and resumes only after assignment. `job_other.go` preserves Unix launch and persistence behaviour.
+- **Identity seam**: `Identity.NativeStartTime` is now present and populated on Windows before assignment. Task 5 still owns `attempt.launched.native_start_time`, equality evidence and Unix omission checks.
+- **Failure seam**: `jobOps` is per worker; nil fields use real Windows APIs. Six boundary hooks remain in design order: `afterIntent`, `afterJob`, `afterSpawn`, `afterStart`, `beforeResume`, `afterResume`. Task 6 can use them to exercise its crash-boundary acceptance.
+- **Cleanup evidence**: failed launch terminates both the job and the retained native, waits on a pinned native handle and queries members before confirming. Failure to obtain that wait handle still attempts both terminations but remains unconfirmed; the regression exercises that distinction. `launch_error` carries redacted Win32 text/code on `attempt.stopped` only on Windows.
+- **For Task 4**: normal `Signal`, `GroupGone` and descendant reporting retain the old semantics. Task 4's `TestStopKillsChildAndGrandchild` acceptance requires descendants gone, `attempt.stopped.confirmed` true and `descendant_scan` exactly `job-object`; that wiring is not claimed by Task 3. The job closes after conclusion, so it must remain open during Task 4's survivor scan.
+- **Parent-job policy**: real checks refuse kill-on-close parents or query errors before creating a job/native. Both hosted Windows runners passed the prerequisite with parent membership true and zero limit flags; no stub replaces their parent-job state.
+- **Evidence and scope**: normal PR CI exposes the named launch acceptance in `Verify Windows launch ownership` on AMD64 and ARM64, followed by each full platform suite. Task 11 still owns support promotion; launch evidence alone does not qualify stop, recovery, detach or a native harness.
+- **Identity failure contract**: `TestIdentityFailureStopsNative` keeps its original Unix persistence-abort assertions; Windows now requires the earlier, confirmed launch-failure path with no ladder and no launched event. The Windows-only companion measures real suspension and retained-handle exit.
+- **Deviations**: the approved CI/automation-docs extension exposes successful test output. The shared identity-failure test required a bounded `worker_test.go` deviation to migrate the Windows contract. Task 3 introduced the creation-time field needed for safe ordering; Task 5 retains the remaining event contract. Fresh review added the wait-handle injection and cleanup regression without changing the approved ownership policy.
+
 
 ## Task 4 — job-wide stop, confirmation and descendant scan
 

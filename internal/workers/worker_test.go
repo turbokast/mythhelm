@@ -753,12 +753,37 @@ func TestIdentityFailureStopsNative(t *testing.T) {
 		}
 		return WriteFileAtomic(dir, name, body)
 	}}
-	if err := a.runInProcess(t, a.launch(t, "slow"), w); !errors.Is(err, errDisk) {
-		t.Fatalf("run = %v, want the identity failure", err)
-	}
+	err := a.runInProcess(t, a.launch(t, "slow"), w)
 	evs := a.events(t)
 	if slices.Contains(types(evs), "attempt.launched") {
 		t.Errorf("attempt.launched spooled for a native whose PID was never recorded: %s", types(evs))
+	}
+	if runtime.GOOS == "windows" {
+		// Identity persistence is now a launch prerequisite on Windows:
+		// cleanup happens while the native is suspended, before a session
+		// or stop ladder exists. Unix retains its post-launch abort contract.
+		if err != nil {
+			t.Fatalf("run = %v, want a recorded launch failure", err)
+		}
+		if st, reason := final(t, evs); st != "failed_native" || reason != "launch_failed" {
+			t.Fatalf("final state = %s (%s), want failed_native (launch_failed)", st, reason)
+		}
+		if p := stoppedOf(t, evs); !p.Confirmed || len(p.SignalsSent) != 0 {
+			t.Fatalf("attempt.stopped = %+v, want confirmed launch cleanup without a ladder", p)
+		}
+		var stopped struct {
+			LaunchError string `json:"launch_error"`
+		}
+		if err := json.Unmarshal(find(t, evs, "attempt.stopped").Payload, &stopped); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(stopped.LaunchError, errDisk.Error()) {
+			t.Fatalf("launch_error = %q, want identity persistence cause", stopped.LaunchError)
+		}
+		return
+	}
+	if !errors.Is(err, errDisk) {
+		t.Fatalf("run = %v, want the identity failure", err)
 	}
 	checkAborted(t, evs)
 }

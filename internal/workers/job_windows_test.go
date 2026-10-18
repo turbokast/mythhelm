@@ -503,3 +503,99 @@ func TestConfirmationHandleFailureStillTerminatesNative(t *testing.T) {
 		t.Fatalf("native still alive after confirmation handle failure: wait=%d err=%v", status, err)
 	}
 }
+
+func TestIdentityWriteFailureTerminatesSuspendedNative(t *testing.T) {
+	t.Parallel()
+	a := newAttempt(t)
+	var native windows.Handle
+	spawnedSuspended, reachedResume := false, false
+	w := &worker{writeFile: func(dir, name string, body []byte) error {
+		var id Identity
+		if err := json.Unmarshal(body, &id); err != nil {
+			return err
+		}
+		if id.NativePID != nil {
+			return errors.New("identity persistence failed")
+		}
+		return WriteFileAtomic(dir, name, body)
+	}}
+	w.jobOps.afterSpawn = func(pid int) error {
+		var err error
+		native, err = windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_TERMINATE, false, uint32(pid)) //nolint:gosec // G115: Windows PID.
+		if err != nil {
+			return err
+		}
+		assertNativeThreadSuspended(t, pid)
+		spawnedSuspended = true
+		return nil
+	}
+	w.jobOps.beforeResume = func(*jobObject) error { reachedResume = true; return nil }
+	t.Cleanup(func() {
+		if native != 0 {
+			_ = windows.TerminateProcess(native, 1)
+			_, _ = windows.WaitForSingleObject(native, 5000)
+			_ = windows.CloseHandle(native)
+		}
+	})
+	if err := a.runInProcess(t, a.launch(t, "happy"), w); err != nil {
+		t.Fatal(err)
+	}
+	if !spawnedSuspended || reachedResume {
+		t.Fatalf("spawned suspended=%t, reached resume=%t", spawnedSuspended, reachedResume)
+	}
+	if status, err := windows.WaitForSingleObject(native, 5000); err != nil || status != windows.WAIT_OBJECT_0 {
+		t.Fatalf("native survived identity failure: wait=%d err=%v", status, err)
+	}
+	events := a.events(t)
+	for _, event := range events {
+		if event.Type == "attempt.launched" {
+			t.Fatal("unpersisted native was announced as launched")
+		}
+	}
+	if state, reason := final(t, events); state != "failed_native" || reason != "launch_failed" {
+		t.Fatalf("state=%s/%s, want failed_native/launch_failed", state, reason)
+	}
+	if !stoppedOf(t, events).Confirmed {
+		t.Fatal("suspended-native cleanup was not confirmed")
+	}
+}
+
+// Temporarily increment and restore the suspend count without permitting the
+// native's first instruction to run. This measures suspension, not just flags.
+func assertNativeThreadSuspended(t *testing.T, pid int) {
+	t.Helper()
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPTHREAD, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = windows.CloseHandle(snapshot) }()
+	var entry windows.ThreadEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	count := 0
+	for err = windows.Thread32First(snapshot, &entry); err == nil; err = windows.Thread32Next(snapshot, &entry) {
+		if entry.OwnerProcessID != uint32(pid) {
+			continue
+		} //nolint:gosec // G115: Windows PID.
+		count++
+		h, openErr := windows.OpenThread(windows.THREAD_SUSPEND_RESUME, false, entry.ThreadID)
+		if openErr != nil {
+			t.Fatal(openErr)
+		}
+		previous, _, suspendErr := windows.NewLazySystemDLL("kernel32.dll").NewProc("SuspendThread").Call(uintptr(h))
+		if uint32(previous) == ^uint32(0) { //nolint:gosec // G115: Win32 DWORD return value.
+			_ = windows.CloseHandle(h)
+			t.Fatal(suspendErr)
+		}
+		restored, resumeErr := windows.ResumeThread(h)
+		_ = windows.CloseHandle(h)
+		if previous != 1 || restored != 2 || resumeErr != nil {
+			t.Fatalf("native thread suspend count=%d, restore=%d err=%v, want 1 then 2", previous, restored, resumeErr)
+		}
+	}
+	if !errors.Is(err, windows.ERROR_NO_MORE_FILES) {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("native threads=%d, want one suspended thread", count)
+	}
+}
