@@ -218,3 +218,27 @@ Add to the rule: a test over a table that maps a state to explanatory text (a re
 **Proposed change:**
 
 In the Sources table and Step 1, add: when `finalize.py verify` shows a task merged and the log has no `merge` row for it, write `unknown (merge not logged)` for that task's Merged and First pass cells and state the count in the Effort line. When the log records no review rounds, report the pull request's raw review count (`gh pr view <n> --json reviews`) on its own line labelled `reviews (from the pull request)`, never as review rounds, because several reviews can belong to one round.
+
+## P-docs-site-restyle-1 — Complete the optional checked-output marker path
+
+- **Source spec**: `docs-site-restyle`
+- **Type**: product
+- **Target**: `product/backlog.md`
+- **Rationale**: The examples schema and validator accept an output anchor, but the layout looks up only command anchors. An author cannot publish a valid checked-output entry. Current command-only examples are unaffected, and output blocks remain unmarked as AC-6.4 permits.
+- **Evidence**: Whole-spec retrospective Review Summary; `docs/_layouts/default.html` command-only marker lookup; `scripts/ci/check_docs_site.py` expected output marker; `scripts/ci/tests/fixtures/docs-site/test_cases.py` synthetic output marker fixture.
+
+**Proposed change:**
+
+Create a follow-up card to support `output_anchor` through the actual layout and gated example executor. Acceptance: a separate real Pages-rendered fixture produces command and output markers only in enabled builds; the same source remains unmarked without activation; the executor compares stdout using only `docs-output-v1` and rejects drift; the current command-only path remains unchanged. Keep contributor guidance explicit that this path is unsupported until that work lands. Product changes still use the signed approval flow.
+
+## P-docs-site-restyle-2 — Exercise real renderers at generated-contract seams
+
+- **Source spec**: `docs-site-restyle`
+- **Type**: rule
+- **Target**: `.claude/rules/harness-scripts.md`
+- **Rationale**: Synthetic HTML proved checker predicates but bypassed the producing Liquid templates. The retained suite missed both a required fallback-render regression and an optional output-marker producer/consumer mismatch. A one-off render was recorded without becoming a retained check.
+- **Evidence**: Whole-spec retrospective Review Summary findings for AC-5.2/5.3 and optional output anchors; Task 6's one-off render evidence versus the original retained synthetic fixtures.
+
+**Proposed change:**
+
+For a harness check that consumes generated output under a cross-task contract, retain at least one fixture produced by the actual repository renderer under the supported build tool, alongside synthetic predicate fixtures. Exercise each required fallback or optional producer/consumer branch that the schema advertises. Record a counterfactual mutation of the actual producer that the retained check rejects. Keep fixture sources and generated output outside the published artifact, and verify that fixture execution leaves the artifact digest unchanged.
