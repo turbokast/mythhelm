@@ -197,7 +197,7 @@
   - Where hosted runners cannot drive console events, the test is marked `blocked` with the runner reason in its skip message and the matrix leaves `worker_detachment` `unknown` (honesty register); it is never skipped silently.
 - **Invariants touched**: I06 (UI exit does not transfer ownership), I18.
 
-### Task 8 — Windows process-support matrix (leaf package)
+### Task 8 — Windows process-support matrix (leaf package) ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -215,6 +215,12 @@
   - `TestRowRequiresWindowsJobAndRunID`: a row whose CI-job cell lacks `windows-latest` or `windows-11-arm`, or a run id, is rejected (NFR-2).
   - `TestNoLeafCycle`: `go list -deps ./internal/processsupport` contains `internal/adapter` and neither `adapters/fake`, `adapters/claudecode` nor `internal/workers`.
 - **Invariants touched**: I14 (a capability has versioned evidence), I09 (untested is `unknown`).
+- **Status**: ✅ Completed — added the empty Windows process-support matrix, strict evidence parser and exact capability lookup; PR #500.
+- **Implementation**: Codex implemented the go-implementer task in commit `418c4a3`. A bounded, all-or-nothing parser backs both lookup APIs; the zero matrix and unmatched pairs return two explicit unknown values. The matrix remains empty; no platform is promoted.
+  Red-first: the inert implementation failed the named acceptance assertions; ignored architecture, retained partial support, discarded test references, bypassed CI binding, collapsed fields and a fake-adapter dependency each failed their corresponding regression; restored focused race suite passed all seven tests (1.263s).
+  Gates: full race passed (386.0s); after lint's constant-error correction, all six markers were refreshed, including race (148.1s), lint (0 issues, 12.3s) and hygiene (clean). Initial sandbox socket denials and containment fixtures beneath /tmp required an isolated repository-local worktree and local socket access; source assertions were unchanged.
+- **Spec deviations**: Review clarification (consistent with design §2.6): AST evidence discovery includes Windows worker, supervisor, fake and E2E package roots, so forthcoming recovery/detach evidence is discoverable. No scope or API deviation.
+- **Files modified**: `internal/processsupport/SUPPORT.md`, `internal/processsupport/support.go`, `internal/processsupport/support_test.go`, `internal/control/SUPPORT.md`, `specs/in-progress/windows-process-ownership/tasks.md`, `specs/in-progress/windows-process-ownership/handoff.md`, `specs/in-progress/windows-process-ownership/scratchpad.md`.
 
 ### Task 9 — adapter capability derivation
 
