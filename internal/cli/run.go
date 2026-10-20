@@ -356,6 +356,8 @@ func reasonOf(err error) string {
 
 func describe(o supervisor.Outcome) string {
 	switch {
+	case o.DetachedRunning:
+		return fmt.Sprintf(supervisor.RunningDetachedNotice, o.RunID, o.RunID)
 	case o.Detached:
 		return fmt.Sprintf("run %s detached while stopping; the stop is not yet confirmed", o.RunID)
 	case o.ActiveRun != "":

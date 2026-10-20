@@ -55,8 +55,9 @@ const (
 // StopRequestedNotice and DetachedNotice are what the user sees on the first
 // and second interrupt (AC-5.5).
 const (
-	StopRequestedNotice = "stop requested — waiting for worker confirmation"
-	DetachedNotice      = "stop not yet confirmed; run 'mythhelm recover %s'"
+	StopRequestedNotice   = "stop requested — waiting for worker confirmation"
+	RunningDetachedNotice = "detached from run %s; run is not complete; worker keeps running; reattach with: mythhelm recover %s"
+	DetachedNotice        = "stop not yet confirmed; run 'mythhelm recover %s'"
 )
 
 // activeStates are the run states in which a run may still write to its
@@ -72,6 +73,8 @@ type Hooks struct {
 	// Interrupt delivers the user's interrupts. The first requests a stop;
 	// the second detaches before the stop is confirmed (AC-5.5).
 	Interrupt <-chan os.Signal
+	// Detach leaves accepted running execution owned by its worker.
+	Detach <-chan struct{}
 	// Event receives every journaled event of the run, in run_sequence
 	// order, as soon as it is journaled.
 	Event func(journal.Event)
@@ -102,6 +105,8 @@ type Outcome struct {
 	// confirmed: the worker still owns the attempt and the run stays
 	// stopping until it is recovered.
 	Detached bool
+	// DetachedRunning marks a deliberate detach without requesting stop.
+	DetachedRunning bool
 }
 
 // Run records the admitted decision and carries its attempt through snapshot,
@@ -563,7 +568,7 @@ func (p *pipeline) attempt(ctx context.Context) error {
 	}
 	// A detached run stays stopping; a lost worker's run, or one whose
 	// spool could not be ingested, is already interrupted.
-	if err := p.watch(ctx, ref, exited); err != nil || p.out.Detached || p.out.State == RunInterrupted {
+	if err := p.watch(ctx, ref, exited); err != nil || p.out.Detached || p.out.DetachedRunning || p.out.State == RunInterrupted {
 		return err
 	}
 	if err := p.freezeAfterStop(ctx); err != nil {
@@ -728,7 +733,7 @@ func (p *pipeline) replanReserve(ctx context.Context, now time.Time) (time.Durat
 // terminal state. An unresolved descendant remains owned and cannot yield a
 // candidate. Failed and cancelled native attempts produce partial candidates.
 func (p *pipeline) freezeAfterStop(ctx context.Context) error {
-	if p.out.Detached || p.out.State == RunInterrupted || p.out.AttemptState == AttemptInterrupted ||
+	if p.out.Detached || p.out.DetachedRunning || p.out.State == RunInterrupted || p.out.AttemptState == AttemptInterrupted ||
 		p.out.AttemptState == AttemptQuarantined {
 		return nil
 	}
@@ -1029,9 +1034,46 @@ func (p *pipeline) watch(ctx context.Context, ref AttemptRef, exited <-chan stru
 			p.h.Notice("the worker exited before the attempt ended")
 			return p.lose(ctx)
 		}
+		// A queued detach waits until the accepted worker is running.
+		// Terminal spool evidence above wins over an outstanding request.
+		var detach <-chan struct{}
+		if p.out.AttemptState == AttemptRunning || p.out.AttemptState == AttemptStopRequested || p.out.State == RunStopping {
+			detach = p.h.Detach
+		}
+		// Reattachment may already carry a pending stop. A ready detach then
+		// needs no additional interrupt and must leave queued signals untouched.
+		if p.out.State == RunStopping || p.out.AttemptState == AttemptStopRequested {
+			select {
+			case <-detach:
+				p.out.Detached = true
+				p.h.Notice(fmt.Sprintf(DetachedNotice, p.d.RunID))
+				return nil
+			default:
+			}
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-detach:
+			// A ready first interrupt must not be discarded by select choosing
+			// detach first. An existing stop needs no further interrupt consumed.
+			if p.out.State != RunStopping && p.out.AttemptState != AttemptStopRequested {
+				select {
+				case <-p.h.Interrupt:
+					if err := p.requestUserStop(ctx, ref); err != nil {
+						return err
+					}
+				default:
+				}
+			}
+			if p.out.State == RunStopping || p.out.AttemptState == AttemptStopRequested {
+				p.out.Detached = true
+				p.h.Notice(fmt.Sprintf(DetachedNotice, p.d.RunID))
+			} else {
+				p.out.DetachedRunning = true
+				p.h.Notice(fmt.Sprintf(RunningDetachedNotice, p.d.RunID, p.d.RunID))
+			}
+			return nil
 		case <-exited:
 			workerGone, exited = true, nil
 		case <-expiry:
@@ -1055,18 +1097,26 @@ func (p *pipeline) watch(ctx context.Context, ref AttemptRef, exited <-chan stru
 				p.h.Notice(fmt.Sprintf(DetachedNotice, p.d.RunID))
 				return nil
 			}
-			if err := workers.RequestStop(ref.Dir(), stopRequester); err != nil {
-				return fmt.Errorf("requesting a stop: %w", err)
+			if err := p.requestUserStop(ctx, ref); err != nil {
+				return err
 			}
-			if p.out.State != RunStopping {
-				if err := p.runTo(ctx, RunStopping, ""); err != nil {
-					return err
-				}
-			}
-			p.h.Notice(StopRequestedNotice)
 		case <-tick.C:
 		}
 	}
+}
+
+// requestUserStop persists the first foreground stop and its visible state.
+func (p *pipeline) requestUserStop(ctx context.Context, ref AttemptRef) error {
+	if err := workers.RequestStop(ref.Dir(), stopRequester); err != nil {
+		return fmt.Errorf("requesting a stop: %w", err)
+	}
+	if p.out.State != RunStopping {
+		if err := p.runTo(ctx, RunStopping, ""); err != nil {
+			return err
+		}
+	}
+	p.h.Notice(StopRequestedNotice)
+	return nil
 }
 
 // attemptEnded reports the attempt states a worker ends in (ADR 0004).
