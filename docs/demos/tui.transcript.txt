@@ -78,8 +78,8 @@ verification: waiting
 progress: unknown
 admission: <LIVE-SAMPLE>
 entitlement: <LIVE-SAMPLE>
-next action: wait for admission to decide
-actions: none available
+next action: <LIVE-SAMPLE>
+actions: <LIVE-SAMPLE>
 event 1: run run_XXX: created
 event 2: run: admission
 event 3: admission decided: adapter builtin/fake 0.1.0 (scripted-child-process (ndjson)); SCRIPTED: fake adapter, no real agent, no inference, no network; snapshot: <SHA20>... (truncated)
