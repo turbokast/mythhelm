@@ -170,7 +170,7 @@
 - **Files modified**: `internal/tui/viewmodel/viewmodel.go`, `internal/tui/viewmodel/viewmodel_test.go`, `internal/tui/viewmodel/supervision.go`, `internal/tui/viewmodel/supervision_test.go`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
 
 
-### Task 7 — Implement safe exit rows and typed TUI controls
+### Task 7 — Implement safe exit rows and typed TUI controls ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: complex (one lifecycle state machine; ten files include existing tests that must change with control behavior)
@@ -198,6 +198,15 @@
   - `TestLifecyclePumpsJoin` floods repeat controls while owner finishes and asserts no blocked event loop, duplicate callbacks or surviving pump.
 - **Test plan**: Callback counters plus cancel-aware action fakes; table/state fixtures include no snapshot and nil controls. UI-only tests need no packaged process, covered in Task 10.
 - **Invariants touched**: I03/I06/I18/I23 (v2 §§6.4,15.2: explicit confirmation, one signal/input owner, truthful stop).
+
+- **Status**: ✅ Completed — implemented typed client controls, selectable mode-aware exit options and joined action/view lifetimes; PR #513.
+- **Implementation**: Commit `4adae02` completes the exact design §3 contracts; independent code/architecture review Ready. Shared gates drive rows, direct keys, palette/help and session interrupts; stored action results survive terminal loss and parent cancellation is joined explicitly. Test-only external-review revision `2d5ad68` replaces the cancellation latency probe with a self-contained synctest proof and adds emergency qualification cases; independent review Ready. Final refreshed full race gate passed in 173.1s (initial runtime gate 428.5s); history is preserved in scratchpad and first pass remains false.
+- **Spec deviations**:
+  - External review round 1, consistent with design §3: test-only deterministic cancellation/failure cleanup and explicit emergency-detach policy regressions; runtime remains unchanged. AC-6.10/OQ-29/accepted ADR 0020 require the existing unqualified emergency exception, while deliberate detach remains disabled.
+  - Review corrections, consistent with design §3: retain parent cancellation during a headless join, preserve failed/pending/unknown stop uncertainty independently of display convergence, require exact run/attempt attribution for event confirmation, and latch terminal loss before the first snapshot. Prelaunch stop intent coalescing also survives display polls. No source-scope or product-contract deviation.
+  - CLI integration remains Task 8: `TestLiveTUIIntentOutcomes` "asserts one exact detach/recover line and code6 without review guidance, separate pending-stop text, and no fabricated stop on plain view return"; `TestSignalSingleOwner` "injects one SIGINT and counts one typed stop delivery". This task supplies the tested typed TUI seam and consumes typed signals; it adds no CLI wiring.
+  - Own `tasks.md`, `handoff.md` and `scratchpad.md` record required completion, downstream contracts and validation history.
+- **Files modified**: `internal/tui/lifecycle.go`, `internal/tui/lifecycle_test.go`, `internal/tui/model.go`, `internal/tui/nav.go`, `internal/tui/dialogs.go`, `internal/tui/actions.go`, `internal/tui/palette.go`, `internal/tui/help.go`, `internal/tui/actions_test.go`, `internal/tui/nav_test.go`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
 
 ### Task 8 — Wire live and inspect lifecycle in the CLI
 

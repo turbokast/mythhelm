@@ -22,8 +22,8 @@ type Actions struct {
 }
 
 // actionGate reports whether a palette action is available for the current
-// snapshot, with the reason when it is not. Stop runs in
-// executing/verifying, recover only in interrupted, apply only in
+// snapshot, with the reason when it is not. Live stop also admits prelaunch;
+// inspect stop requires executing, recover requires interrupted, and apply requires
 // ready_for_review; the view-only actions are always available.
 func (m *Model) actionGate(a Action) (bool, string) {
 	switch a {
@@ -33,6 +33,8 @@ func (m *Model) actionGate(a Action) (bool, string) {
 		return m.recoverGate()
 	case actionApply:
 		return m.applyGate()
+	case actionDetach:
+		return m.detachGate()
 	case actionExport:
 		if !m.ready {
 			return false, "no snapshot loaded"
@@ -43,23 +45,39 @@ func (m *Model) actionGate(a Action) (bool, string) {
 	}
 }
 
-// stopGate enables stop in executing/verifying only.
+// stopGate excludes verification/apply and distinguishes live prelaunch stop
+// from inspect, which requires a worker attempt.
 func (m *Model) stopGate() (bool, string) {
 	if !m.ready {
 		return false, "no snapshot loaded"
 	}
-	switch m.snap.Run.State {
-	case "executing", "verifying":
-		return true, ""
-	default:
-		return false, "run is " + cellOrUnknown(m.snap.Run.State) + ", needs executing or verifying"
+	if m.phaseBusy() {
+		return false, m.phase() + " in progress"
 	}
+	if m.phase() == "stopping" || m.stopRequested || (m.cfg.Mode == ModeLive && m.stopSent) {
+		return false, "stop already requested"
+	}
+	prelaunch := m.cfg.Mode == ModeLive && (m.phase() == "created" || m.phase() == "admission")
+	if m.phase() != "executing" && !prelaunch {
+		return false, "run is " + cellOrUnknown(m.phase()) + ", needs executing"
+	}
+	if m.cfg.Mode == ModeLive {
+		if m.cfg.RequestStop == nil {
+			return false, "stop unavailable: no owner control wired"
+		}
+	} else if m.cfg.Actions.Stop == nil {
+		return false, "stop unavailable: no supervisor seam wired"
+	}
+	return true, ""
 }
 
 // recoverGate enables recover in interrupted only.
 func (m *Model) recoverGate() (bool, string) {
 	if !m.ready {
 		return false, "no snapshot loaded"
+	}
+	if m.cfg.Actions.Recover == nil {
+		return false, "recover unavailable: no supervisor seam wired"
 	}
 	if m.snap.Run.State == "interrupted" {
 		return true, ""
@@ -72,6 +90,9 @@ func (m *Model) applyGate() (bool, string) {
 	if !m.ready {
 		return false, "no snapshot loaded"
 	}
+	if m.cfg.Actions.Apply == nil {
+		return false, "apply unavailable: no supervisor seam wired"
+	}
 	if m.snap.Run.State == "ready_for_review" {
 		return true, ""
 	}
@@ -81,8 +102,8 @@ func (m *Model) applyGate() (bool, string) {
 // actionResultMsg carries a finished supervisor call back to the update
 // loop. Actions run off-loop so the TUI keeps repainting while a call —
 // recover reattaching to its worker, apply running git — is in flight; the
-// call's context derives from the run context and dies with it (quit
-// cancels an in-flight call). No invented timeout: the CLI runs these same
+// call's lifetime is owned by Run independently of the view. Explicit
+// double-quit cancels it; terminal loss joins its original result. No invented timeout: the CLI runs these same
 // entry points without one, and the TUI must not fail operations the CLI
 // would complete.
 type actionResultMsg struct {
@@ -91,11 +112,11 @@ type actionResultMsg struct {
 	recoverOut  supervisor.RecoveryOutcome
 	stopState   string
 	err         error
+	receipt     supervisor.Receipt
 }
 
-// actionCtx derives one action's context from the run context, cancelling
-// any previous in-flight call first (dialog prompts are modal, so at most
-// one action runs at a time).
+// actionCtx preserves parent values while giving Run explicit ownership of
+// action cancellation. Modal dialogues admit at most one operation at a time.
 func (m *Model) actionCtx() context.Context {
 	if m.actCancel != nil {
 		m.actCancel()
@@ -104,7 +125,7 @@ func (m *Model) actionCtx() context.Context {
 	if base == nil {
 		base = context.Background()
 	}
-	ctx, cancel := context.WithCancel(base)
+	ctx, cancel := context.WithCancel(context.WithoutCancel(base))
 	m.actCancel = cancel
 	return ctx
 }
@@ -124,6 +145,15 @@ func (m *Model) cancelAction() {
 // journaled — requested is never labelled stopped (I06). A failure surfaces
 // in place with state unchanged.
 func (m *Model) confirmStop() tea.Cmd {
+	if m.cfg.Mode == ModeLive {
+		if ok, reason := m.stopGate(); !ok {
+			m.dialogErr = reason
+			return nil
+		}
+		m.requestLiveStop()
+		m.closeDialog()
+		return nil
+	}
 	if m.cfg.Actions.Stop == nil {
 		m.dialogErr = "stop unavailable: no supervisor seam wired"
 		return nil
@@ -132,13 +162,14 @@ func (m *Model) confirmStop() tea.Cmd {
 		m.dialogErr = "stop disabled: " + reason
 		return nil
 	}
-	stop, runID, ctx := m.cfg.Actions.Stop, m.snap.Run.RunID, m.actionCtx()
+	stop, runID := m.cfg.Actions.Stop, m.snap.Run.RunID
 	m.stopConfirmed = false
+	m.actualStopConfirmed = false
 	m.working = "Requesting stop..."
-	return func() tea.Msg {
+	return m.startAction(func(ctx context.Context) actionResultMsg {
 		state, err := stop(ctx, runID)
 		return actionResultMsg{action: actionStop, stopState: state, err: err}
-	}
+	})
 }
 
 // confirmRecover runs the confirmed recover through the injected seam with
@@ -155,15 +186,15 @@ func (m *Model) confirmRecover() tea.Cmd {
 		m.dialogErr = "recover disabled: " + reason
 		return nil
 	}
-	doRecover, runID, ctx := m.cfg.Actions.Recover, m.snap.Run.RunID, m.actionCtx()
+	doRecover, runID := m.cfg.Actions.Recover, m.snap.Run.RunID
 	events, notices, hooks := LiveFeed()
 	m.recoverEvents = events
 	m.recoverNotices = notices
 	m.working = "Recovering run..."
-	return func() tea.Msg {
+	return m.startAction(func(ctx context.Context) actionResultMsg {
 		out, err := doRecover(ctx, runID, hooks)
 		return actionResultMsg{action: actionRecover, recoverOut: out, err: err}
-	}
+	})
 }
 
 // confirmApply runs the confirmed apply with the dialog's exact branch and
@@ -182,26 +213,30 @@ func (m *Model) confirmApply() tea.Cmd {
 		m.dialogErr = "target branch is required"
 		return nil
 	}
-	apply, runID, branch, flags, unverified, ctx :=
-		m.cfg.Actions.Apply, m.snap.Run.RunID, m.applyBranch, m.acceptFlags, m.acceptUnverified, m.actionCtx()
+	apply, runID, branch, flags, unverified :=
+		m.cfg.Actions.Apply, m.snap.Run.RunID, m.applyBranch, m.acceptFlags, m.acceptUnverified
 	m.working = "Applying candidate..."
-	return func() tea.Msg {
-		_, err := apply(ctx, runID, branch, flags, unverified)
-		return actionResultMsg{action: actionApply, applyBranch: branch, err: err}
-	}
+	return m.startAction(func(ctx context.Context) actionResultMsg {
+		receipt, err := apply(ctx, runID, branch, flags, unverified)
+		return actionResultMsg{action: actionApply, applyBranch: branch, receipt: receipt, err: err}
+	})
 }
 
 // applyActionResult lands a finished supervisor call: errors surface in the
 // open dialog, successes close it or report through the result prompt.
 func (m *Model) applyActionResult(msg actionResultMsg) {
 	m.working = ""
+	m.action = nil
+	m.actionQuitArmed = false
 	m.actCancel = nil
 	switch msg.action {
 	case actionStop:
 		if msg.err != nil {
+			m.stopUnresolved = !m.actualStopConfirmed
 			m.dialogErr = "stop failed: " + msg.err.Error()
 			return
 		}
+		m.stopUnresolved = msg.stopState != "stopped" && !m.actualStopConfirmed
 		// An already-confirmed stop ("stopped") leaves nothing pending:
 		// the label would lie about a request still outstanding (I06).
 		// A confirmation that arrived while the call ran also suppresses
@@ -295,4 +330,15 @@ func sanitizeSegment(s string) string {
 		return "run"
 	}
 	return b.String()
+}
+
+func (msg actionResultMsg) completion() ActionCompletion {
+	kind := "stop"
+	if msg.action == actionRecover {
+		kind = "recover"
+	}
+	if msg.action == actionApply {
+		kind = "apply"
+	}
+	return ActionCompletion{Kind: kind, StopState: msg.stopState, Receipt: msg.receipt, Recovery: msg.recoverOut, Err: msg.err}
 }

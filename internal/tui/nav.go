@@ -16,13 +16,16 @@ const (
 var paneOrder = []string{paneTasks, paneAgents, paneDetail}
 
 // handleKey routes key messages to the focus, filter, palette, help, dialog
-// and details flows (design §9). Only Ctrl-C quits; Esc backs out one level
+// and details flows (design §9). Lifecycle inputs share the mode policy; Esc backs out one level
 // — dialog, palette, help, filter, previous pane — and never quits.
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	if key == "ctrl+c" {
-		m.cancelAction()
-		return m, tea.Quit
+		return m, m.interrupt()
+	}
+	if m.working != "" && key == "q" {
+		m.armActionQuit()
+		return m, nil
 	}
 	if m.dialog != "" {
 		return m.dialogKey(key, msg)
@@ -58,6 +61,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.helpOpen = true
 	case "enter":
 		m.openDetails()
+	case "a", "s", "d", "r", "e":
+		return m, m.directAction(key)
 	case "q":
 		m.openDialog(dialogExitOptions)
 	}
