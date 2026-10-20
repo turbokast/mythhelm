@@ -28,7 +28,7 @@ import (
 
 func suspendedRecoveryNative(t *testing.T, dir string) (*exec.Cmd, workers.ProcessIdentity, windows.Handle) {
 	t.Helper()
-	cmd := exec.CommandContext(t.Context(), os.Args[0], fake.AgentCommand, "--scenario", "tree", "--workdir", dir)
+	cmd := exec.CommandContext(t.Context(), os.Args[0], fake.AgentCommand, "--scenario", "tree", "--workdir", dir) //nolint:gosec // G702: own test executable with fixed fixture selector and test-owned arguments.
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_SUSPENDED | windows.CREATE_NEW_PROCESS_GROUP | windows.CREATE_NO_WINDOW}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)

@@ -21,7 +21,7 @@ import (
 
 func TestProcessStartTimeRejectsExitedWindows(t *testing.T) {
 	t.Parallel()
-	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$")
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$") //nolint:gosec // G702: own test executable with fixed fixture selector and test-owned arguments.
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func crashBoundary(t *testing.T, boundary string) (attempt, Identity, *ProcessId
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.CommandContext(t.Context(), os.Args[0], "__crash-worker", a.state, a.runID, a.attemptID, boundary)
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "__crash-worker", a.state, a.runID, a.attemptID, boundary) //nolint:gosec // G702: own test executable with fixed fixture selector and test-owned arguments.
 	cmd.Stdin = bytes.NewReader(raw)
 	output, err := cmd.CombinedOutput()
 	var exit *exec.ExitError

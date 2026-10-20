@@ -287,7 +287,7 @@ func recordedNativePIDs(id workers.Identity, probe func(int) (time.Time, error))
 
 // recoveryUnresolvedPIDs preserves the Unix marker scan. A Windows job dies
 // with its worker and cannot be reopened; only the recorded native can be
-// named. A successful probe is advisory and never authorizes signalling or
+// named. A successful probe is advisory and never authorises signalling or
 // releasing ownership, including when that native exits after the probe.
 func recoveryUnresolvedPIDs(attemptID string, id workers.Identity, identityErr error) ([]int, error) {
 	if runtime.GOOS != "windows" {

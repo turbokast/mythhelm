@@ -19,7 +19,7 @@ import (
 )
 
 // The matching predicate is exercised on contributor hosts with explicit
-// observations. Only hosted Windows tests establish Windows OS behavior.
+// observations. Only hosted Windows tests establish Windows OS behaviour.
 func TestRecordedNativeRecoveryEvidence(t *testing.T) {
 	t.Parallel()
 	at := time.Unix(100, 0).UTC()
@@ -73,7 +73,7 @@ func TestRecordedNativeRecoveryEvidence(t *testing.T) {
 
 // TestRecoveryMarkedOrphanHelper supplies a real marker-bearing process for
 // the Unix compatibility test, without invoking a shell or another native.
-func TestRecoveryMarkedOrphanHelper(t *testing.T) {
+func TestRecoveryMarkedOrphanHelper(_ *testing.T) {
 	if os.Getenv("MYTHHELM_TEST_RECOVERY_ORPHAN") != "1" {
 		return
 	}
@@ -85,7 +85,7 @@ func TestRecoveryMarkedOrphanHelper(t *testing.T) {
 func TestRecoveryOrphanLookupUnchanged(t *testing.T) {
 	t.Parallel()
 	attemptID := "att_recovery_compatibility"
-	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestRecoveryMarkedOrphanHelper$")
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestRecoveryMarkedOrphanHelper$") //nolint:gosec // G702: own test executable and fixed helper selector.
 	cmd.Env = append(os.Environ(), "MYTHHELM_TEST_RECOVERY_ORPHAN=1", workers.AttemptMarker(attemptID))
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -104,7 +104,7 @@ func TestRecoveryOrphanLookupUnchanged(t *testing.T) {
 		t.Fatalf("marker process readiness: %q %v", line, err)
 	}
 	// A live recorded native must not replace the Unix marker scan. An unrelated
-	// identity error must retain the old marker reporting behavior as well.
+	// identity error must retain the old marker reporting behaviour as well.
 	self, err := workers.ProcessStartTime(os.Getpid())
 	if err != nil {
 		t.Fatal(err)
