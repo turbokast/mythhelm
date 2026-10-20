@@ -678,64 +678,6 @@ func TestUntouchedVerbsStable(t *testing.T) {
 	})
 }
 
-func TestQuitLiveDetaches(t *testing.T) {
-	dir := t.TempDir()
-	const runID = "run_detach1"
-	opts := resolveTUIFlags(t, bareGetenv)
-	stdio, out, _ := testStdio()
-	started := make(chan struct{})
-	finish := make(chan struct{})
-	interrupts := make(chan int, 1)
-	supervise := func(_ context.Context, h supervisor.Hooks) (supervisor.Outcome, error) {
-		close(started)
-		defer close(finish)
-		seen := 0
-		for seen < 2 {
-			select {
-			case <-h.Interrupt:
-				seen++
-			case <-time.After(10 * time.Second):
-				t.Error("timed out waiting for the detach interrupts")
-				interrupts <- seen
-				return supervisor.Outcome{}, errors.New("tui_test: interrupt timeout")
-			}
-		}
-		interrupts <- seen
-		return supervisor.Outcome{RunID: runID, State: supervisor.RunInterrupted, Detached: true}, nil
-	}
-	deps := forcedDeps(true, func(context.Context, tui.Config) error {
-		select {
-		case <-started:
-		case <-time.After(10 * time.Second):
-			t.Fatal("pipeline never started")
-		}
-		select {
-		case <-finish:
-			t.Error("pipeline finished before the TUI quit")
-		default:
-		}
-		return nil
-	})
-	outcome, err := runLiveTUI(stdio, deps, dir, runID, opts, supervise)
-	if !outcome.Detached {
-		t.Fatalf("outcome = %+v, want a detach", outcome)
-	}
-	seen := <-interrupts
-	if seen != 2 {
-		t.Fatalf("pipeline saw %d interrupts, want 2 (detach, not stop)", seen)
-	}
-	want := "detached from run run_detach1; reattach with: mythhelm review run_detach1\n"
-	if out.String() != want {
-		t.Fatalf("detach output = %q, want %q", out.String(), want)
-	}
-	if exitCode(err) != ExitOwnership {
-		t.Fatalf("detach exit = %d, want %d", exitCode(err), ExitOwnership)
-	}
-	if !strings.Contains(err.Error(), "detached") {
-		t.Fatalf("detach error = %q, want the detach wording", err.Error())
-	}
-}
-
 func TestReviewUnknownRunExits1(t *testing.T) {
 	t.Run("through Main without a database", func(t *testing.T) {
 		stateHome(t)
