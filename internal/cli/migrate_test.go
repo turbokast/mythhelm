@@ -907,7 +907,7 @@ func TestPreviewMirrorsPinned(t *testing.T) {
 			t.Errorf("Steps = %q; want %q", plan.Steps, want)
 		}
 	})
-	t.Run("schema 7 database lists only migration 0008", func(t *testing.T) {
+	t.Run("schema 7 database lists every remaining migration", func(t *testing.T) {
 		files, err := filepath.Glob(filepath.Join(repoRoot(t), "internal", "journal", "migrations", "*.sql"))
 		if err != nil {
 			t.Fatal(err)
@@ -933,7 +933,11 @@ func TestPreviewMirrorsPinned(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if want := []string{"0008_acceptance.sql"}; !slices.Equal(plan.Steps, want) {
+		var want []string
+		for _, file := range files[7:] {
+			want = append(want, filepath.Base(file))
+		}
+		if !slices.Equal(plan.Steps, want) {
 			t.Errorf("Steps for a schema-7 database = %q; want %q", plan.Steps, want)
 		}
 	})

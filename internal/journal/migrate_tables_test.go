@@ -119,9 +119,9 @@ func TestMigrationStatePhaseVocabulary(t *testing.T) {
 	}
 }
 
-func TestSchemaVersionIs8(t *testing.T) {
-	if SchemaVersion != 8 {
-		t.Fatalf("SchemaVersion = %d, want 8", SchemaVersion)
+func TestSchemaVersionIs9(t *testing.T) {
+	if SchemaVersion != 9 {
+		t.Fatalf("SchemaVersion = %d, want 9", SchemaVersion)
 	}
 	j, dir := openTemp(t)
 	var version int
