@@ -931,9 +931,9 @@ func TestReviewResumePastEndReturnsPromptly(t *testing.T) {
 		n := runtime.Stack(stack, true)
 		dump := string(stack[:n])
 		actorID := "unavailable (not present in bounded dump)"
-		for _, goroutine := range strings.Split(dump, "\n\n") {
+		for goroutine := range strings.SplitSeq(dump, "\n\n") {
 			if strings.Contains(goroutine, "github.com/turbokast/mythhelm/internal/cli.TestReviewResumePastEndReturnsPromptly.func1(") {
-				header := strings.SplitN(goroutine, "\n", 2)[0]
+				header, _, _ := strings.Cut(goroutine, "\n")
 				fields := strings.Fields(header)
 				if len(fields) >= 2 && fields[0] == "goroutine" {
 					actorID = fields[1]
