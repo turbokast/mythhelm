@@ -8,7 +8,11 @@
 
 ## Task 1 — Review the service composition decision
 
-<!-- pending -->
+- **Produces**: Accepted ADR 0021 and its decision-index entry, recorded in PR #501. The source proposal is revision `e50faa8`, original-file SHA-256 `b30067e53dadaddbc416f8501ed67ea127ff8b02f7f6591be0b86fd49ca53393`; its Decision section is unchanged.
+- **Review**: Independent architecture/code review returned Ready on that exact proposal, and coordinator review of author output `5386aff` returned Ready with no blocking findings. The coordinator separately accepted under the operator's explicit day-long shipping delegation; no personal operator content review, product signature or formal grant is claimed.
+- **For dependents**: Preserve ordinary production dispatch, ADR 0014 singleton and ADR 0016 root-wide migration, immutable launch generation, schema2 adoption, authority-before-replay and immutable acknowledgment/separate reconciled result. Enrollment-only and concurrent legacy/service variants remain rejected.
+- **Evidence boundary**: ADR acceptance supplies a reviewed design, not runtime/native/billing/host/platform qualification. Keep all task-specific tests and cross-spec lifecycle dependencies; no public attach-ready claim follows from this docs task.
+- **Deviations**: Required task records follow WORKFLOW's pre-merge completion-entry convention; the task PR must merge before dependent implementation consumes its acceptance.
 
 ## Task 2 — Define typed service and attachment protocols
 
