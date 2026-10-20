@@ -34,14 +34,18 @@ files carry no build tag) or `linux, darwin` (they are tagged
 | `method:read` | `read` intent: authority filtered before rows are counted; token callers bounded to their repository | fixture-tested | all | `TestReadIntentFiltersForeignRepos`, `TestFilterHidesForeignRepos`, `TestReadIntentTokenBindsRepoEntitlement` |
 | `pinned-ladder` | Versioned stop ladder pinned at admission; mismatch refuses without signalling (handler-level; stop is not served in S1) | fixture-tested | all | `TestStopLadderValidation`, `TestStopVersionMismatchWritesNoRequest` |
 | `envelope-reconnect` | Supervisor-loss envelope beats (written by the supervisor's watch loop); the reconcile-then-mint-token handshake `control.Reconnect` as a function only, with no production caller; old generations never fresh | fixture-tested | all | `TestReconnectReconcilesFirst`, `TestOldGenerationNeverFresh`, `TestWriteSupervisorBeat`, `TestHermeticNoCredentialsOrNetwork` |
-| `windows-job-object` | Windows Job Object confirmation semantics (NFR-5) | blocked | windows | blocked: no Job Object exists (deferred, N7; `internal/workers/proc_windows.go`), so the Windows worker reports `descendant_scan` as `unavailable` and claims nothing about descendants |
+| `windows-job-object` | Windows Job Object confirmation semantics (NFR-5) | blocked | windows | blocked: this control-method matrix does not qualify worker lifecycle support; architecture and execution-surface evidence belongs to [`internal/processsupport/SUPPORT.md`](../processsupport/SUPPORT.md) |
 
 ## Not claimed
 
 - Windows: the instance lock is built and its tests are untagged, so the CI
   Windows runners build them. The named-pipe transport is fixture-tested
   (row `transport-windows-pipe`); the untagged method tests also run on the
-  Windows leg. There is still no Windows lazy start or detach evidence.
+  Windows leg. Windows lazy start is not qualified here. The separate
+  [process-support matrix](../processsupport/SUPPORT.md) records the exact
+  tested architecture and execution-surface subset for tree ownership and
+  detachment; it currently has no qualified rows. No native harness on Windows
+  is qualified by this control-method matrix.
 - No row is `live-qualified`.
 - `stop` and `recover` are not served in S1 (Q-27, option A): the service
   answers them `capability_unsupported` and writes nothing
