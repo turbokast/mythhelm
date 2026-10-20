@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -16,8 +17,10 @@ import (
 
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
+	"github.com/turbokast/mythhelm/internal/ownerlock"
 	"github.com/turbokast/mythhelm/internal/supervisor"
 	"github.com/turbokast/mythhelm/internal/tui/viewmodel"
+	"github.com/turbokast/mythhelm/internal/workers"
 )
 
 // builder journals a run's events and projections in a fresh temp state dir.
@@ -769,4 +772,284 @@ func TestViewmodelNeverWrites(t *testing.T) { // I18
 func quote(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
+}
+
+// Synthetic evidence retains the journal's exact provenance and quantities.
+func TestObservatorySnapshotEvidence(t *testing.T) { // I09 (v2 §7.3): preserve source evidence.
+	t.Parallel()
+	b := newBuilder(t)
+	const runID = "run_observatory"
+	b.addRun(runID, "executing", "digest")
+	attempt := b.addAttempt(runID)
+	b.appendAttempt(runID, attempt, "attempt.native_session", `{"model":"synthetic-model"}`)
+	b.append(runID, "admission.decided", `{"capabilities":{"platform":{"worker_detachment":"supported"}}}`, nil)
+	var want []journal.UsageRow
+	for i, label := range []string{"reported", "observed", "estimated", "user-declared", "unknown"} {
+		quantity := []string{"0", "2", "3.25", "4", "unknown"}[i]
+		row := journal.UsageRow{ObservationID: "usage_" + strconv.Itoa(i), RunID: runID, Scope: "repeated", Unit: "tokens", Source: "synthetic", Label: label, Quantity: quantity, ObservedAt: "2026-01-01T00:00:00Z"}
+		if err := b.j.Transact(t.Context(), func(tx *sql.Tx) error { return journal.InsertUsageObservation(t.Context(), tx, row) }); err != nil {
+			t.Fatal(err)
+		}
+		want = append(want, row)
+	}
+	b.close()
+	snap, err := viewmodel.Load(t.Context(), b.dir, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Model != "synthetic-model" {
+		t.Errorf("model %q", snap.Model)
+	}
+	if !reflect.DeepEqual(snap.Usage, want) {
+		t.Errorf("usage = %+v, want %+v", snap.Usage, want)
+	}
+	if snap.Admission == nil || snap.Admission.WorkerDetachment != "supported" {
+		t.Errorf("admission %+v", snap.Admission)
+	}
+	b.reopen()
+	// Retry without its own session must not inherit any old or unattributed model.
+	retry := ids.New("att")
+	b.append(runID, "attempt.launch_intent_recorded", `{}`, func(tx *sql.Tx) error {
+		return journal.InsertAttempt(t.Context(), tx, journal.AttemptRow{AttemptID: retry, RunID: runID, TaskID: "task_retry", AttemptNumber: 2, State: "running", LaunchTokenSHA256: "token", WorkspacePath: b.dir})
+	})
+	b.appendAttempt(runID, attempt, "attempt.native_session", `{"model":"stale"}`)
+	b.append(runID, "attempt.native_session", `{"model":"unattributed"}`, nil)
+	b.append(runID, "admission.decided", `{}`, nil)
+	b.close()
+	snap, err = viewmodel.Load(t.Context(), b.dir, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Model != "unknown" || snap.Admission.WorkerDetachment != "unknown" {
+		t.Errorf("retry leaked evidence: model %q admission %+v", snap.Model, snap.Admission)
+	}
+	t.Run("no rows", func(t *testing.T) {
+		t.Parallel()
+		b := newBuilder(t)
+		b.addRun("run_empty", "executing", "digest")
+		b.close()
+		got, err := viewmodel.Load(t.Context(), b.dir, "run_empty")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Model != "unknown" || len(got.Usage) != 0 || len(got.AgentEvents) != 0 || got.Supervision != "unknown" {
+			t.Fatalf("empty snapshot %+v", got)
+		}
+	})
+	t.Run("malformed model", func(t *testing.T) {
+		t.Parallel()
+		b := newBuilder(t)
+		b.addRun("run_bad", "executing", "digest")
+		at := b.addAttempt("run_bad")
+		b.appendAttempt("run_bad", at, "attempt.native_session", `{"model":42}`)
+		b.close()
+		_, err := viewmodel.Load(t.Context(), b.dir, "run_bad")
+		if err == nil || !strings.Contains(err.Error(), "attempt.native_session") {
+			t.Fatalf("malformed model error %v", err)
+		}
+	})
+	t.Run("usage read failure", func(t *testing.T) {
+		t.Parallel()
+		b := newBuilder(t)
+		b.addRun("run_badusage", "executing", "digest")
+		if err := b.j.Transact(t.Context(), func(tx *sql.Tx) error {
+			_, err := tx.ExecContext(t.Context(), `ALTER TABLE usage_observations RENAME COLUMN quantity TO unavailable`)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		b.close()
+		_, err := viewmodel.Load(t.Context(), b.dir, "run_badusage")
+		if err == nil || !strings.Contains(err.Error(), "usage observations") {
+			t.Fatalf("usage read error %v", err)
+		}
+	})
+}
+
+func (b *builder) appendAttempt(runID, attemptID, typ, payload string) {
+	b.t.Helper()
+	b.seq++
+	ev := journal.Event{SchemaVersion: journal.EnvelopeVersion, EventID: ids.New("evt"), RunID: runID, AttemptID: attemptID, ProducerID: "producer_test", ProducerSequence: b.seq, Generation: 1, ObservedAt: time.Now().UTC(), Type: typ, Payload: json.RawMessage(payload)}
+	if err := b.j.Append(b.t.Context(), ev, nil); err != nil {
+		b.t.Fatal(err)
+	}
+	b.events++
+}
+
+func TestAgentEventTailBound(t *testing.T) {
+	t.Parallel()
+	b := newBuilder(t)
+	const runID = "run_tail"
+	b.addRun(runID, "executing", "digest")
+	old := b.addAttempt(runID)
+	current := ids.New("att")
+	b.append(runID, "attempt.launch_intent_recorded", `{}`, func(tx *sql.Tx) error {
+		return journal.InsertAttempt(t.Context(), tx, journal.AttemptRow{AttemptID: current, RunID: runID, TaskID: "task_retry", AttemptNumber: 2, State: "running", LaunchTokenSHA256: "token", WorkspacePath: b.dir})
+	})
+	var want []journal.Event
+	for i := range 205 {
+		b.appendAttempt(runID, old, "attempt.progress", `{"assistant_turns":999}`)
+		b.appendAttempt(runID, current, "attempt.progress", `{"assistant_turns":`+strconv.Itoa(i)+`}`)
+	}
+	events, err := b.j.Events(t.Context(), runID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range events {
+		if ev.AttemptID == current {
+			want = append(want, ev)
+		}
+	}
+	b.close()
+	got, err := viewmodel.Load(t.Context(), b.dir, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentEventsOmitted != 5 || !reflect.DeepEqual(got.AgentEvents, want[5:]) {
+		t.Fatalf("tail %d events, %d omitted; want exact last 200, 5 omitted", len(got.AgentEvents), got.AgentEventsOmitted)
+	}
+	if cap(got.AgentEvents) > 200 {
+		t.Fatalf("tail retains backing capacity %d", cap(got.AgentEvents))
+	}
+}
+
+func TestViewPollingDoesNotOwnRun(t *testing.T) { // I05/I12/I23 (v2 §2): observation cannot compete with recovery.
+	t.Parallel()
+	b := newBuilder(t)
+	const runID = "run_poll"
+	b.addRun(runID, "executing", "digest")
+	attempt := b.addAttempt(runID)
+	runDir := filepath.Join(b.dir, "runs", runID)
+	if err := os.MkdirAll(workers.AttemptDir(b.dir, runID, attempt), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	b.close()
+	poll := func(want string) {
+		t.Helper()
+		snap, err := viewmodel.Load(t.Context(), b.dir, runID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if snap.Supervision != want {
+			t.Fatalf("supervision %q, want %q", snap.Supervision, want)
+		}
+	}
+	poll("unknown")
+	if _, err := os.Stat(filepath.Join(runDir, ownerlock.File)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("poll created lock: %v", err)
+	}
+	release, err := ownerlock.Acquire(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	b.reopen()
+	defer b.close()
+	// Recovery must still see the real owner, not acquire a viewer-created lock.
+	if _, err := supervisor.Recover(t.Context(), b.j, runID); !errors.Is(err, ownerlock.ErrHeld) {
+		t.Fatalf("held recovery error %v", err)
+	}
+	before := stateContents(t, b.dir)
+	done := make(chan error, 1)
+	joined := false
+	defer func() {
+		if !joined {
+			<-done
+		}
+	}()
+	go func() { _, err := supervisor.Recover(t.Context(), b.j, runID); done <- err }()
+	for range 10 {
+		poll("unknown")
+	}
+	recoveryErr := <-done
+	joined = true
+	if err := recoveryErr; !errors.Is(err, ownerlock.ErrHeld) {
+		t.Fatalf("concurrent recovery error %v", err)
+	}
+	if after := stateContents(t, b.dir); !reflect.DeepEqual(before, after) {
+		t.Fatal("view polling changed canonical file bytes")
+	}
+	release()
+	poll("unknown")
+	releaseAgain, err := ownerlock.Acquire(runDir)
+	if err != nil {
+		t.Fatalf("poll interfered with next owner: %v", err)
+	}
+	releaseAgain()
+	// A settled run can be recovered after all read-only polls; recovery owns
+	// the receipt write, then subsequent polls must preserve that repaired evidence.
+	if err := b.j.Transact(t.Context(), func(tx *sql.Tx) error {
+		return journal.SetRunState(t.Context(), tx, runID, "cancelled", "synthetic_stop", time.Now().UTC())
+	}); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := supervisor.Recover(t.Context(), b.j, runID)
+	if err != nil || recovered.RunID != runID || recovered.State != supervisor.RunCancelled || recovered.Mode != "continued" {
+		t.Fatalf("recovery after polling: %+v, %v", recovered, err)
+	}
+	repaired := stateContents(t, b.dir)
+	poll("unknown")
+	if after := stateContents(t, b.dir); !reflect.DeepEqual(repaired, after) {
+		t.Fatal("poll changed recovered evidence")
+	}
+	beat := filepath.Join(workers.AttemptDir(b.dir, runID, attempt), "supervisor.beat")
+	at := time.Now().UTC()
+	if err := os.WriteFile(beat, []byte(`{"at":`+quote(at.Format(time.RFC3339Nano))+`,"generation":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := viewmodel.Load(t.Context(), b.dir, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "supervised"
+	if snap.At.Sub(at) > time.Second {
+		want = "unknown"
+	}
+	if snap.Supervision != want {
+		t.Fatalf("readable beat classification %q, want %q at age %s", snap.Supervision, want, snap.At.Sub(at))
+	}
+	for _, tc := range []struct{ name, raw, want string }{
+		{"future", `{"at":` + quote(time.Now().Add(time.Hour).Format(time.RFC3339Nano)) + `,"generation":1}`, "unknown"},
+		{"stale", `{"at":"2020-01-01T00:00:00Z","generation":1}`, "unknown"},
+		{"malformed", `{"at":42}`, "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(beat, []byte(tc.raw), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			poll(tc.want)
+		})
+	}
+}
+
+func stateContents(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	err = filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		raw, err := root.ReadFile(rel)
+		if err != nil {
+			return err
+		}
+		out[rel] = string(raw)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }

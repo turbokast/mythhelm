@@ -17,6 +17,7 @@ import (
 	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/supervisor"
+	"github.com/turbokast/mythhelm/internal/workers"
 )
 
 // Progress is the latest attempt.progress counters (native-reported).
@@ -39,6 +40,7 @@ type NativeExit struct {
 
 // Admission is the latest admission.decided observation.
 type Admission struct {
+	WorkerDetachment string
 	AdapterID        string // admission.decided adapter.id
 	AdapterVersion   string // adapter.version
 	AdapterSurface   string // adapter.surface
@@ -53,17 +55,22 @@ type Admission struct {
 // Snapshot is one consistent view of a run. Pointer fields stay nil until
 // their part projects; Goal is "unknown" until a verified title resolves.
 type Snapshot struct {
-	Run            journal.RunRow
-	Attempt        *journal.AttemptRow
-	Candidate      *journal.CandidateRow
-	Verification   *journal.VerificationRow
-	Receipt        supervisor.Receipt
-	Goal           string
-	LatestProgress *Progress
-	NativeExit     *NativeExit
-	Admission      *Admission
-	LastRunSeq     int64
-	At             time.Time
+	Model              string
+	Usage              []journal.UsageRow
+	AgentEvents        []journal.Event
+	AgentEventsOmitted int
+	Supervision        string
+	Run                journal.RunRow
+	Attempt            *journal.AttemptRow
+	Candidate          *journal.CandidateRow
+	Verification       *journal.VerificationRow
+	Receipt            supervisor.Receipt
+	Goal               string
+	LatestProgress     *Progress
+	NativeExit         *NativeExit
+	Admission          *Admission
+	LastRunSeq         int64
+	At                 time.Time
 }
 
 // Load builds runID's snapshot from the state dir's projections, event scan
@@ -71,7 +78,7 @@ type Snapshot struct {
 // database reports journal.ErrNoDatabase. The database is opened read-only:
 // this package never writes the journal (I18).
 func Load(ctx context.Context, dir, runID string) (Snapshot, error) {
-	snap := Snapshot{Goal: "unknown", At: time.Now().UTC()}
+	snap := Snapshot{Goal: "unknown", Model: "unknown", Supervision: "unknown", At: time.Now().UTC()}
 	j, err := journal.OpenReadOnly(ctx, dir)
 	if err != nil {
 		return Snapshot{}, err
@@ -82,8 +89,15 @@ func Load(ctx context.Context, dir, runID string) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	snap.Run = run
+	snap.Usage, err = j.UsageObservations(ctx, runID)
+	if err != nil {
+		return Snapshot{}, err
+	}
 	if attempt, err := j.LatestAttempt(ctx, runID); err == nil {
 		snap.Attempt = &attempt
+		at, _, known := workers.ReadSupervisorBeat(workers.AttemptDir(dir, runID, attempt.AttemptID))
+		// No qualified read-only owner probe exists; absence is never ownership evidence.
+		snap.Supervision = classifySupervision(at, snap.At, known, "unknown")
 		if candidate, err := j.Candidate(ctx, attempt.AttemptID); err == nil {
 			snap.Candidate = &candidate
 		} else if !errors.Is(err, journal.ErrNotFound) {
@@ -117,7 +131,35 @@ func Load(ctx context.Context, dir, runID string) (Snapshot, error) {
 		if ev.RunSequence > snap.LastRunSeq {
 			snap.LastRunSeq = ev.RunSequence
 		}
+
+		if currentAttempt != "" && ev.AttemptID == currentAttempt {
+			if len(snap.AgentEvents) == 200 {
+				copy(snap.AgentEvents, snap.AgentEvents[1:])
+				snap.AgentEvents[199] = ev
+				snap.AgentEventsOmitted++
+			} else {
+				if snap.AgentEvents == nil {
+					snap.AgentEvents = make([]journal.Event, 0, 200)
+				}
+				snap.AgentEvents = append(snap.AgentEvents, ev)
+			}
+		}
 		switch ev.Type {
+		case "attempt.native_session":
+			if currentAttempt == "" || ev.AttemptID != currentAttempt {
+				continue
+			}
+			var session struct {
+				Model string `json:"model"`
+			}
+			if err := json.Unmarshal(ev.Payload, &session); err != nil {
+				return Snapshot{}, fmt.Errorf("viewmodel: event %s at run_sequence %d is malformed: %w", ev.Type, ev.RunSequence, err)
+			}
+			snap.Model = session.Model
+			if snap.Model == "" {
+				snap.Model = "unknown"
+			}
+
 		case "attempt.progress":
 			// Progress is advisory: a malformed payload is skipped with
 			// the latest good value kept.
@@ -220,8 +262,13 @@ func decodeAdmission(ev journal.Event) (*Admission, error) {
 	if err := json.Unmarshal(ev.Payload, &rec); err != nil {
 		return nil, fmt.Errorf("viewmodel: event %s at run_sequence %d is malformed: %w", ev.Type, ev.RunSequence, err)
 	}
+	detachment := string(rec.Capabilities.Platform.WorkerDetachment)
+	if detachment == "" {
+		detachment = "unknown"
+	}
 	return &Admission{
-		AdapterID: rec.Adapter.ID, AdapterVersion: rec.Adapter.Version, AdapterSurface: rec.Adapter.Surface,
+		WorkerDetachment: detachment,
+		AdapterID:        rec.Adapter.ID, AdapterVersion: rec.Adapter.Version, AdapterSurface: rec.Adapter.Surface,
 		Qualified: rec.Billing.Qualified, PaidContinuation: rec.Billing.PaidContinuation,
 		EntitlementStatement: admission.EntitlementStatement(rec.Billing), RunSeq: ev.RunSequence,
 	}, nil
