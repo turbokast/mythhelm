@@ -57,7 +57,8 @@ func (m *Model) stopGate() (bool, string) {
 	if m.phase() == "stopping" || m.stopRequested || (m.cfg.Mode == ModeLive && m.stopSent) {
 		return false, "stop already requested"
 	}
-	if m.phase() != "executing" && !(m.cfg.Mode == ModeLive && (m.phase() == "created" || m.phase() == "admission")) {
+	prelaunch := m.cfg.Mode == ModeLive && (m.phase() == "created" || m.phase() == "admission")
+	if m.phase() != "executing" && !prelaunch {
 		return false, "run is " + cellOrUnknown(m.phase()) + ", needs executing"
 	}
 	if m.cfg.Mode == ModeLive {
@@ -115,7 +116,7 @@ type actionResultMsg struct {
 }
 
 // actionCtx preserves parent values while giving Run explicit ownership of
-// action cancellation. Modal dialogs admit at most one operation at a time.
+// action cancellation. Modal dialogues admit at most one operation at a time.
 func (m *Model) actionCtx() context.Context {
 	if m.actCancel != nil {
 		m.actCancel()

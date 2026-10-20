@@ -13,6 +13,7 @@ import (
 // ClientMode identifies whether this view owns a running pipeline.
 type ClientMode uint8
 
+// Client modes distinguish a read-only view from the pipeline owner.
 const (
 	ModeInspect ClientMode = iota
 	ModeLive
@@ -21,6 +22,7 @@ const (
 // ClientSignal is an input from the client's sole OS signal owner.
 type ClientSignal uint8
 
+// Client signals are forwarded by the sole OS signal owner.
 const (
 	SignalInterrupt ClientSignal = iota
 	SignalTerminalLost
@@ -29,6 +31,7 @@ const (
 // ExitKind distinguishes closing a view from relinquishing live ownership.
 type ExitKind uint8
 
+// Exit kinds describe client disposition independently of canonical state.
 const (
 	ExitView ExitKind = iota
 	ExitDetach
@@ -237,7 +240,7 @@ func (m *Model) terminalLost() tea.Cmd {
 	if m.working != "" {
 		return m.exit(ExitFinishHeadless)
 	}
-	if m.cfg.Mode == ModeLive && m.liveActive() {
+	if m.cfg.Mode == ModeLive && (!m.ready || m.liveActive()) {
 		// The owner latches this typed request until worker acceptance.
 		if m.cfg.Detach != nil && !m.detachSent {
 			m.detachSent = true
@@ -259,11 +262,10 @@ func runProgram(ctx context.Context, m *Model, options ...tea.ProgramOption) err
 	p := tea.NewProgram(m, options...)
 	quit := make(chan struct{})
 	var pumps sync.WaitGroup
-	pump := func(f func()) { pumps.Add(1); go func() { defer pumps.Done(); f() }() }
 	if m.cfg.Events != nil {
 		m.startLivePump(func(ev journal.Event) { p.Send(eventMsg{Event: ev}) })
 	}
-	pump(func() {
+	pumps.Go(func() {
 		ticker := time.NewTicker(livePollInterval)
 		defer ticker.Stop()
 		p.Send(pollTickMsg{})
@@ -276,7 +278,7 @@ func runProgram(ctx context.Context, m *Model, options ...tea.ProgramOption) err
 			}
 		}
 	})
-	pump(func() {
+	pumps.Go(func() {
 		signals := m.cfg.Signals
 		for {
 			select {

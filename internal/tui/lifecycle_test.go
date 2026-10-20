@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -203,11 +204,12 @@ func TestExitModeTable(t *testing.T) {
 	}
 }
 func joinLines(lines []line) string {
-	var s string
+	var s strings.Builder
 	for _, ln := range lines {
-		s += ln.text + "\n"
+		s.WriteString(ln.text)
+		s.WriteByte('\n')
 	}
-	return s
+	return s.String()
 }
 
 // I06/I18 (v2 §§2,15.2): only explicit controls affect an owned run;
@@ -300,11 +302,7 @@ func lifecycleModel(t *testing.T, mode ClientMode, phase, attempt string) *Model
 	return m
 }
 func noticeText(m *Model) string {
-	var out string
-	for _, ln := range m.noticeRows(100) {
-		out += ln.text + "\n"
-	}
-	return out
+	return joinLines(m.noticeRows(100))
 }
 
 func TestInFlightActionDoubleQuit(t *testing.T) {
@@ -455,7 +453,7 @@ func awaitResult(t *testing.T, ch <-chan error) error {
 func TestExplicitActionQuitCancelsAndJoins(t *testing.T) {
 	t.Parallel()
 	for _, parentCancel := range []bool{false, true} {
-		t.Run(fmt.Sprint(parentCancel), func(t *testing.T) {
+		t.Run(strconv.FormatBool(parentCancel), func(t *testing.T) {
 			t.Parallel()
 			m := lifecycleModel(t, ModeInspect, "interrupted", "running")
 			started, cancelled, cleanup := make(chan struct{}), make(chan struct{}), make(chan struct{})
@@ -515,7 +513,7 @@ func TestExplicitActionQuitCancelsAndJoins(t *testing.T) {
 
 func TestHeadlessStopCompletionState(t *testing.T) {
 	t.Parallel()
-	for _, state := range []string{"stopped", "stop_requested", "", "unrecognized"} {
+	for _, state := range []string{"stopped", "stop_requested", "", "unrecognised"} {
 		t.Run(state, func(t *testing.T) {
 			t.Parallel()
 			m := lifecycleModel(t, ModeInspect, "executing", "running")
@@ -812,7 +810,7 @@ func TestInspectStopErrorExitIntent(t *testing.T) {
 
 func TestInspectUnconfirmedStopSurvivesPoll(t *testing.T) {
 	t.Parallel()
-	for _, state := range []string{"stop_requested", "", "unrecognized"} {
+	for _, state := range []string{"stop_requested", "", "unrecognised"} {
 		t.Run(state, func(t *testing.T) {
 			t.Parallel()
 			m := lifecycleModel(t, ModeInspect, "executing", "running")
@@ -850,5 +848,35 @@ func TestLiveStopRemainsRequestedBeforeAdmission(t *testing.T) {
 	m, _ = pressKey(t, m, specialMsg(tea.KeyCtrlC))
 	if !strings.Contains(noticeText(m), "stop already requested") {
 		t.Fatalf("missing prior request notice: %s", noticeText(m))
+	}
+}
+
+func TestTerminalLossBeforeSnapshot(t *testing.T) {
+	t.Parallel()
+	for _, wired := range []bool{true, false} {
+		t.Run(strconv.FormatBool(wired), func(t *testing.T) {
+			t.Parallel()
+			m := newModel(testConfig(fullCaps, t))
+			m.cfg.Mode = ModeLive
+			stops, detaches, exits := 0, 0, []ExitIntent{}
+			m.cfg.RequestStop = func() { stops++ }
+			if wired {
+				m.cfg.Detach = func() { detaches++ }
+			}
+			m.cfg.OnExit = func(x ExitIntent) { exits = append(exits, x) }
+			_, cmd := m.Update(SignalTerminalLost)
+			if cmd == nil || len(exits) != 1 || exits[0].Kind != ExitDetach || exits[0].Phase != "unknown" {
+				t.Fatalf("no-snapshot exit=%+v quit=%v", exits, cmd != nil)
+			}
+			m.Update(SignalTerminalLost)
+			m.Update(SignalInterrupt)
+			want := 0
+			if wired {
+				want = 1
+			}
+			if stops != 0 || detaches != want || len(exits) != 1 {
+				t.Fatalf("stop=%d detach=%d exits=%+v", stops, detaches, exits)
+			}
+		})
 	}
 }
