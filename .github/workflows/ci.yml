@@ -27,7 +27,19 @@ jobs:
           cache: false
       - run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
       - name: Generate third-party licence notices
-        run: go run github.com/google/go-licenses/v2@v2.0.1 save ./cmd/mythhelm --save_path=third_party_licenses
+        run: |
+          tool_dir="$(mktemp -d "$RUNNER_TEMP/licence-tools.XXXXXX")"
+          trap 'rm -rf -- "$tool_dir"' EXIT
+          for attempt in 1 2 3; do
+            if GOBIN="$tool_dir" go install github.com/google/go-licenses/v2@v2.0.1; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep "$attempt"
+          done
+          "$tool_dir/go-licenses" save ./cmd/mythhelm --save_path=third_party_licenses
       - name: Assert GoReleaser config version header
         # goreleaser check only warns on a missing header, so assert it here.
         run: |
