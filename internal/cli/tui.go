@@ -31,8 +31,10 @@ import (
 // entry without a PTY. It is threaded explicitly, never mutable package
 // state.
 type tuiDeps struct {
-	isTerminal func(w io.Writer) bool
-	runTUI     func(ctx context.Context, cfg tui.Config) error
+	isTerminal       func(w io.Writer) bool
+	runTUI           func(ctx context.Context, cfg tui.Config) error
+	lifecycle        func() *tuiLifecycle
+	canonicalOutcome func(context.Context, string, string) (supervisor.Outcome, error)
 }
 
 // prodTUIDeps is the production seam value.
@@ -219,61 +221,123 @@ func outcomeMapped(res liveOutcome) error {
 	return nil
 }
 
-// runLiveTUI supervises an admitted run under the TUI: the pipeline streams
-// through a LiveFeed (design §13) while the Tea program renders it. When the
-// TUI quits after the run ended, the run's outcome is returned for the
-// caller to finish; when it quits while the run is still active, the run is
-// detached exactly like the second Ctrl-C today — two interrupts, then the
-// reattach line naming `review <run>` (I06) — and the detached outcome is
-// returned. The pipeline is always joined before returning.
+// runLiveTUI joins the owner independently of the view's lifetime.
 func runLiveTUI(stdio Stdio, deps tuiDeps, stateDir, runID string, opts tuiOptions, supervise superviseFunc) (supervisor.Outcome, error) {
 	events, notices, hooks := tui.LiveFeed()
-	interrupts := make(chan os.Signal, 2)
-	signal.Notify(interrupts, os.Interrupt)
-	defer signal.Stop(interrupts)
-	hooks.Interrupt = interrupts
+	owner := deps.lifecycleOwner()
+	defer owner.close()
+	hooks.Interrupt, hooks.Detach = owner.interrupt, owner.detach
 	done := make(chan liveOutcome, 1)
 	go func() {
 		out, err := supervise(context.Background(), hooks)
 		done <- liveOutcome{out: out, err: err}
 	}()
-	cfg := tui.Config{
-		RunID: runID, StateDir: stateDir,
-		Caps: opts.caps, Tokens: opts.tokens,
-		Events: events, Notices: notices,
-		Actions: wireActions(stateDir),
+	cfg := owner.config(stateDir, runID, opts, tui.ModeLive)
+	cfg.Events, cfg.Notices = events, notices
+	viewErr := deps.runTUI(context.Background(), cfg)
+	owner.endView()
+	state := owner.snapshot()
+	if viewErr != nil && !state.hasIntent {
+		_, noticeErr := fmt.Fprintf(stdio.Err, "run %s continues in this process; inspect with: mythhelm review %s\n", cell(runID), cell(runID))
+		viewErr = errors.Join(viewErr, noticeErr)
 	}
-	tuiErr := deps.runTUI(context.Background(), cfg)
-	select {
-	case res := <-done:
-		return res.out, errors.Join(tuiErr, outcomeMapped(res))
-	default:
-	}
-	// The run is still active: detach before the stop is confirmed. The
-	// sends run in a goroutine so a pipeline phase that is not listening
-	// cannot wedge the join; a pipeline that finishes on its own simply
-	// reports its outcome instead of a detach.
-	go func() {
-		interrupts <- os.Interrupt
-		interrupts <- os.Interrupt
-	}()
 	res := <-done
-	var werr error
-	if res.out.Detached {
-		_, werr = fmt.Fprintf(stdio.Out, "detached from run %s; reattach with: mythhelm review %s\n", cell(runID), cell(runID))
+	state = owner.snapshot()
+	mapped := outcomeMapped(res)
+	projectionUnavailable := false
+	if !res.out.Detached && !res.out.DetachedRunning {
+		if state.hasAction {
+			mapped = headlessActionError(state.action)
+			validRecovery := state.action.Kind == "recover" && state.action.Err == nil && state.action.Recovery.RunID == runID && state.action.Recovery.State != ""
+			if validRecovery {
+				res.out = state.action.Recovery.Outcome
+			} else {
+				if state.action.Kind == "recover" && state.action.Err == nil {
+					mapped = ownershipExit("recovery outcome unresolved")
+				}
+				var readErr error
+				res.out, readErr = deps.finalOutcome(context.Background(), stateDir, runID)
+				if readErr != nil {
+					projectionUnavailable = true
+					if mapped == nil {
+						mapped = readErr
+					} else {
+						mapped = &outcomeError{code: exitCode(mapped), category: errorCategory(mapped), err: errors.Join(mapped, readErr)}
+					}
+				}
+			}
+		} else if state.hasIntent && (state.intent.Kind == tui.ExitView || state.intent.Kind == tui.ExitUnresolvedAction) {
+			actual, readErr := deps.finalOutcome(context.Background(), stateDir, runID)
+			res.out = actual
+			if readErr != nil {
+				projectionUnavailable = true
+				mapped = errors.Join(readErr, res.err)
+			} else {
+				mapped = outcomeMapped(liveOutcome{out: actual, err: res.err})
+			}
+		}
 	}
-	return res.out, errors.Join(tuiErr, outcomeMapped(res), werr)
+	mapped = lifecycleExit(mapped, state)
+	if (exitCode(mapped) == ExitOwnership || projectionUnavailable) && !res.out.Detached && !res.out.DetachedRunning {
+		mapped = &outcomeError{code: exitCode(mapped), category: errorCategory(mapped), err: fmt.Errorf("%w; %s", mapped, tuiRecoveryHint(stateDir, runID))}
+	}
+	detachIntent := state.detach && state.lost || state.hasIntent && state.intent.Kind == tui.ExitDetach
+	unqualified := (detachIntent || res.out.Detached || res.out.DetachedRunning) && !tuiDetachQualified(context.Background(), stateDir, runID)
+	if detachIntent && !res.out.Detached && !res.out.DetachedRunning && unqualified {
+		_, writeErr := fmt.Fprintln(stdio.Out, "not qualified on this platform")
+		mapped = errors.Join(mapped, writeErr)
+	}
+	if res.out.Detached || res.out.DetachedRunning {
+		text := fmt.Sprintf(supervisor.RunningDetachedNotice, cell(runID), cell(runID))
+		if res.out.Detached {
+			text = fmt.Sprintf(supervisor.DetachedNotice, cell(runID))
+		}
+		text += "; " + tuiRecoveryHint(stateDir, runID)
+		if unqualified {
+			text += "; not qualified on this platform"
+		}
+		_, writeErr := fmt.Fprintln(stdio.Out, text)
+		mapped = errors.Join(ownershipExit("client detached"), writeErr)
+	}
+	return res.out, errors.Join(expectedViewError(viewErr, state), mapped)
 }
 
-// runInspectTUI renders an existing run's snapshot with polling (design §13
-// inspect mode): no live channel, so quitting is instant.
+// runInspectTUI owns signals and joins confirmed actions without a pipeline.
 func runInspectTUI(deps tuiDeps, stateDir, runID string, opts tuiOptions) error {
-	cfg := tui.Config{
-		RunID: runID, StateDir: stateDir,
-		Caps: opts.caps, Tokens: opts.tokens,
-		Actions: wireActions(stateDir),
+	owner := deps.lifecycleOwner()
+	defer owner.close()
+	err := deps.runTUI(context.Background(), owner.config(stateDir, runID, opts, tui.ModeInspect))
+	owner.endView()
+	state := owner.snapshot()
+	var mapped error
+	if state.hasAction {
+		mapped = headlessActionError(state.action)
 	}
-	return deps.runTUI(context.Background(), cfg)
+	mapped = lifecycleExit(mapped, state)
+	if exitCode(mapped) == ExitOwnership {
+		message := mapped.Error()
+		if state.hasAction {
+			switch state.action.Kind {
+			case "stop":
+				switch {
+				case state.action.Err == nil && state.action.StopState == "stopped":
+					message = "stop confirmed"
+				case state.action.Err == nil && state.action.StopState == "stop_requested":
+					message = "stop requested; stop not yet confirmed"
+				}
+			case "apply":
+				if state.action.Err == nil && headlessActionError(state.action) == nil {
+					message = "apply completed; terminal lost; canonical outcome preserved"
+				}
+			case "recover":
+				if state.action.Err == nil && state.action.Recovery.RunID == runID && state.action.Recovery.State != "" {
+					message = "recovery result: " + describe(state.action.Recovery.Outcome)
+				}
+			}
+		}
+		mapped = ownershipExit(message + "; " + tuiRecoveryHint(stateDir, runID))
+	}
+	return errors.Join(expectedViewError(err, state), mapped)
 }
 
 // runAccessibleLive supervises an admitted run while the accessible stream
@@ -308,14 +372,16 @@ func runAccessibleLiveWith(stdio Stdio, stateDir, runID string, after int64, sup
 	}()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	// The stream runs on its own signal context, ended by the terminal
-	// watch, by pipeline end once started, or by Ctrl-C: pipeline end
+	// The stream runs on its own signal context, ended by pipeline end
+	// once started or by Ctrl-C: pipeline end
 	// must not cancel a stream whose initial Load has not run yet, or a
 	// fast run's history collapses to a bare trailer.
 	streamCtx, streamStop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer streamStop()
 	started := make(chan struct{})
-	go watchRunTerminal(streamCtx, streamStop, started, stateDir, runID)
+	// Only owner completion ends a live stream: ready_for_review can be
+	// journaled before its final receipt.written event. Review keeps its
+	// separate terminal watcher because it owns no pipeline to join.
 	streamDone := make(chan error, 1)
 	go func() {
 		// The pipeline journals run.created after it starts; the stream's

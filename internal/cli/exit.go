@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/security"
 	"github.com/turbokast/mythhelm/internal/supervisor"
+	"github.com/turbokast/mythhelm/internal/tui"
 	"github.com/turbokast/mythhelm/internal/workspace"
 )
 
@@ -132,4 +134,56 @@ func runExit(o supervisor.Outcome) (ExitCode, string) {
 		}
 	}
 	return ExitInternal, categories[ExitInternal]
+}
+
+func ownershipExit(message string) error {
+	return &outcomeError{code: ExitOwnership, category: categories[ExitOwnership], err: errors.New(message)}
+}
+func lifecycleExit(err error, s lifecycleState) error {
+	if s.hasIntent && s.intent.Kind == tui.ExitUnresolvedAction && exitCode(err) != ExitOwnership {
+		if err != nil {
+			return &outcomeError{code: ExitOwnership, category: categories[ExitOwnership], err: fmt.Errorf("action unresolved: %w", err)}
+		}
+		return ownershipExit("action unresolved")
+	}
+	if s.lost && err == nil {
+		return ownershipExit("terminal lost; canonical outcome preserved")
+	}
+	return err
+}
+func headlessActionError(a tui.ActionCompletion) error {
+	if a.Err != nil {
+		if a.Kind == "stop" {
+			return ownershipExit("stop outcome unresolved: " + cell(a.Err.Error()))
+		}
+		if a.Kind == "apply" && errors.Is(a.Err, workspace.ErrInvalidBranch) {
+			return usageError{a.Err}
+		}
+		if errors.Is(a.Err, context.Canceled) {
+			return ownershipExit("action cancelled; reconciliation required")
+		}
+		if errors.Is(a.Err, supervisor.ErrApplyBlocked) || errors.Is(a.Err, workspace.ErrBranchExists) {
+			return &outcomeError{code: ExitBlocked, category: categories[ExitBlocked], err: a.Err}
+		}
+		return a.Err
+	}
+	switch a.Kind {
+	case "stop":
+		if a.StopState == "stopped" {
+			return nil
+		}
+		return ownershipExit("stop not yet confirmed")
+	case "recover":
+		if a.Recovery.RunID == "" || a.Recovery.State == "" {
+			return ownershipExit("recovery outcome unresolved")
+		}
+		return outcomeMapped(liveOutcome{out: a.Recovery.Outcome})
+	case "apply":
+		if a.Receipt == nil || a.Receipt["state"] != string(supervisor.RunCompleted) {
+			return ownershipExit("apply outcome unresolved")
+		}
+		return nil
+	default:
+		return ownershipExit("action outcome unknown")
+	}
 }
