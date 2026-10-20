@@ -109,7 +109,7 @@ func TestRecoveryOrphanLookupUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := recoveryUnresolvedPIDs(attemptID, workers.Identity{NativePID: new(os.Getpid()), NativeStartTime: &self}, os.ErrPermission)
+	got, err := recoveryUnresolvedPIDs(runtime.GOOS, attemptID, workers.Identity{NativePID: new(os.Getpid()), NativeStartTime: &self}, os.ErrPermission)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,54 @@ func TestRecoveryOrphanLookupUnchanged(t *testing.T) {
 		t.Fatalf("unsupported marker enumeration invented PIDs: %v", got)
 	}
 	want := "ownership unresolved; inspect " + workers.AttemptMarker(attemptID) + "; marked PIDs " + fmt.Sprint(got) + "; no process was signalled"
-	if notice := recoveryOwnershipNotice(attemptID, got); notice != want {
+	if notice := recoveryOwnershipNotice(runtime.GOOS, attemptID, got, os.ErrPermission); notice != want {
 		t.Fatalf("Unix notice=%q want %q", notice, want)
+	}
+}
+
+func TestWindowsRecoveryLookupAndNotice(t *testing.T) {
+	t.Parallel()
+	const attemptID = "att_windows_notice"
+	start, err := workers.ProcessStartTime(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := workers.Identity{NativePID: new(os.Getpid()), NativeStartTime: &start}
+	for _, tc := range []struct {
+		name        string
+		identity    workers.Identity
+		identityErr error
+		want        []int
+		unobserved  bool
+	}{
+		{name: "matching live", identity: id, want: []int{os.Getpid()}},
+		{name: "no recorded native"},
+		{name: "reused PID", identity: workers.Identity{NativePID: id.NativePID, NativeStartTime: new(start.Add(time.Second))}},
+		{name: "unreadable identity", identity: id, identityErr: os.ErrPermission, unobserved: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			pids, err := recoveryUnresolvedPIDs("windows", attemptID, tc.identity, tc.identityErr)
+			if !reflect.DeepEqual(pids, tc.want) || !errors.Is(err, tc.identityErr) {
+				t.Fatalf("pids=%v err=%v", pids, err)
+			}
+			notice := recoveryOwnershipNotice("windows", attemptID, pids, err)
+			if !strings.Contains(notice, workers.AttemptMarker(attemptID)) || !strings.Contains(notice, "descendant ownership unobserved; no process was signalled") {
+				t.Fatalf("notice=%q", notice)
+			}
+			if tc.unobserved {
+				if !strings.Contains(notice, "native identity unobserved (probe failed)") || strings.Contains(notice, "matching live native PIDs") {
+					t.Fatalf("unknown probe described as observed empty: %q", notice)
+				}
+			} else if !strings.Contains(notice, "matching live native PIDs "+fmt.Sprint(tc.want)) {
+				t.Fatalf("observed native notice=%q", notice)
+			}
+		})
+	}
+	for _, probeErr := range []error{os.ErrPermission, errors.New("creation time unreadable")} {
+		notice := recoveryOwnershipNotice("windows", attemptID, nil, probeErr)
+		if !strings.Contains(notice, "native identity unobserved (probe failed)") || strings.Contains(notice, "matching live native PIDs") {
+			t.Fatalf("failed observation notice=%q", notice)
+		}
 	}
 }

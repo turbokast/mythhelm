@@ -195,9 +195,9 @@ func RecoverWithHooks(ctx context.Context, j *journal.Journal, runID string, h H
 		}
 		out.Outcome, out.Mode = p.out, "interrupted_and_quarantined"
 		var pidErr error
-		out.UnresolvedPIDs, pidErr = recoveryUnresolvedPIDs(a.AttemptID, id, iderr)
+		out.UnresolvedPIDs, pidErr = recoveryUnresolvedPIDs(runtime.GOOS, a.AttemptID, id, iderr)
 		err = errors.Join(err, pidErr)
-		h.Notice(recoveryOwnershipNotice(a.AttemptID, out.UnresolvedPIDs))
+		h.Notice(recoveryOwnershipNotice(runtime.GOOS, a.AttemptID, out.UnresolvedPIDs, pidErr))
 		return out, errors.Join(err, ErrOwnership, iderr)
 	}
 	if p.out.State == RunRecovering {
@@ -256,9 +256,9 @@ func RecoverWithHooks(ctx context.Context, j *journal.Journal, runID string, h H
 	if p.out.State == RunInterrupted {
 		out.Mode = "interrupted_and_quarantined"
 		var pidErr error
-		out.UnresolvedPIDs, pidErr = recoveryUnresolvedPIDs(a.AttemptID, id, iderr)
+		out.UnresolvedPIDs, pidErr = recoveryUnresolvedPIDs(runtime.GOOS, a.AttemptID, id, iderr)
 		err = errors.Join(err, pidErr)
-		h.Notice(recoveryOwnershipNotice(a.AttemptID, out.UnresolvedPIDs))
+		h.Notice(recoveryOwnershipNotice(runtime.GOOS, a.AttemptID, out.UnresolvedPIDs, pidErr))
 		err = errors.Join(err, ErrOwnership)
 		if oerr := orphanHeldReservations(ctx, j, runID); oerr != nil {
 			err = errors.Join(err, oerr)
@@ -289,8 +289,8 @@ func recordedNativePIDs(id workers.Identity, probe func(int) (time.Time, error))
 // with its worker and cannot be reopened; only the recorded native can be
 // named. A successful probe is advisory and never authorises signalling or
 // releasing ownership, including when that native exits after the probe.
-func recoveryUnresolvedPIDs(attemptID string, id workers.Identity, identityErr error) ([]int, error) {
-	if runtime.GOOS != "windows" {
+func recoveryUnresolvedPIDs(goos, attemptID string, id workers.Identity, identityErr error) ([]int, error) {
+	if goos != "windows" {
 		// The existing recovery notice did not propagate marker-scan errors.
 		// Keep Unix/macOS outcomes unchanged by this Windows-only change.
 		pids, _ := workers.OrphanPIDs(attemptID)
@@ -302,8 +302,11 @@ func recoveryUnresolvedPIDs(attemptID string, id workers.Identity, identityErr e
 	return recordedNativePIDs(id, workers.ProcessStartTime)
 }
 
-func recoveryOwnershipNotice(attemptID string, pids []int) string {
-	if runtime.GOOS == "windows" {
+func recoveryOwnershipNotice(goos, attemptID string, pids []int, probeErr error) string {
+	if goos == "windows" {
+		if probeErr != nil {
+			return fmt.Sprintf("ownership unresolved; inspect %s; native identity unobserved (probe failed); descendant ownership unobserved; no process was signalled", workers.AttemptMarker(attemptID))
+		}
 		return fmt.Sprintf("ownership unresolved; inspect %s; matching live native PIDs %v; descendant ownership unobserved; no process was signalled", workers.AttemptMarker(attemptID), pids)
 	}
 	return fmt.Sprintf("ownership unresolved; inspect %s; marked PIDs %v; no process was signalled", workers.AttemptMarker(attemptID), pids)

@@ -311,16 +311,11 @@ func TestRecoverAfterWorkerCrashWindows(t *testing.T) {
 		t.Fatalf("Windows orphan enumeration changed: %v", err)
 	}
 	for role, observed := range descendants {
-		h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE|windows.PROCESS_TERMINATE, false, uint32(observed.PID)) //nolint:gosec // G115: fixture PID.
+		h, err := pinRecoveryIdentity(t, observed)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("%s identity changed before pinning: %v", role, err)
 		}
 		handles = append(handles, h)
-		t.Cleanup(func() {
-			_ = windows.TerminateProcess(h, 1)
-			_, _ = windows.WaitForSingleObject(h, 5000)
-			_ = windows.CloseHandle(h)
-		})
 		start, err := workers.ProcessStartTime(observed.PID)
 		if err != nil || !start.Equal(observed.StartTime) {
 			t.Fatalf("%s was not live before worker crash: %s %v", role, start, err)
@@ -346,4 +341,47 @@ func TestRecoverAfterWorkerCrashWindows(t *testing.T) {
 	recoverUnresolvedWindows(t, f, d, nil)
 	// Recovery's inability to observe descendants is distinct from the test's
 	// retained-handle evidence that this actual tree died with its worker.
+}
+
+func TestRecoveryCleanupRejectsReusedIdentityWindows(t *testing.T) {
+	_, id, h := suspendedRecoveryNative(t, t.TempDir())
+	t.Run("mismatched creation time", func(t *testing.T) {
+		wrong := id
+		wrong.StartTime = wrong.StartTime.Add(time.Second)
+		if _, err := pinRecoveryIdentity(t, wrong); err == nil {
+			t.Error("mismatched process retained for termination cleanup")
+		}
+	})
+	if status, err := windows.WaitForSingleObject(h, 0); err != nil || status != uint32(windows.WAIT_TIMEOUT) {
+		t.Fatalf("mismatched identity cleanup signalled original process: status=%d err=%v", status, err)
+	}
+	if start, err := workers.ProcessStartTime(id.PID); err != nil || !start.Equal(id.StartTime) {
+		t.Fatalf("original process no longer live: %s %v", start, err)
+	}
+}
+
+// pinRecoveryIdentity registers termination cleanup only for the identity on h.
+// Creation time remains readable after exit, which is sufficient to exclude a
+// reused PID here; the caller checks liveness separately before the crash.
+func pinRecoveryIdentity(t *testing.T, id workers.ProcessIdentity) (windows.Handle, error) {
+	t.Helper()
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE|windows.PROCESS_TERMINATE, false, uint32(id.PID)) //nolint:gosec // G115: fixture PID.
+	if err != nil {
+		return 0, err
+	}
+	var created, exited, kernel, user windows.Filetime
+	if err := windows.GetProcessTimes(h, &created, &exited, &kernel, &user); err != nil {
+		_ = windows.CloseHandle(h)
+		return 0, err
+	}
+	if !time.Unix(0, created.Nanoseconds()).Equal(id.StartTime) {
+		_ = windows.CloseHandle(h)
+		return 0, errors.New("process creation time differs from fixture identity")
+	}
+	t.Cleanup(func() {
+		_ = windows.TerminateProcess(h, 1)
+		_, _ = windows.WaitForSingleObject(h, 5000)
+		_ = windows.CloseHandle(h)
+	})
+	return h, nil
 }
