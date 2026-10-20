@@ -163,10 +163,12 @@
 - **Invariants touched**: I05/I07/I09/I12/I14/I23 (v2 §§6.4,7.3,15.1: read-only evidence, missing is unknown).
 
 - **Status**: ✅ Completed — added current-attempt model and event-tail evidence, raw usage, admitted detachment capability and conservative read-only supervision; PR #509.
-- **Implementation**: Commit `072a412` implements design §4 in the four listed viewmodel files; independent code/architecture review returned Ready. Signed integrations `377f322` / `8f2b877` preserve reviewed source and establish the merged PR #508 prerequisite on main. Integrated full race gate passed in 391.8s; named race acceptance passed in 9.528s with a separate coordinator repeat in 9.554s; all six markers are refreshed before publication. First pass is false; earlier failures and the separate prerequisite fix remain recorded in scratchpad.
+- **Implementation**: Commit `072a412` implements design §4; `58d52d5` corrects only the portable ownership fixture described below, with focused independent code/architecture review Ready. Signed integration `0d1d059` brings exact reviewed PR #511 diagnostic test source; the historical CLI watchdog cause remains unknown. The single new combined-tree race gate passed in 280.7s (CLI 110.062s, supervisor 271.619s); corrected ownership acceptance passed in 4.708s with a coordinator repeat in 4.704s. First pass remains false; actual gate failures and diagnostic comparisons are preserved in scratchpad.
 - **Spec deviations**:
+  - Native Windows fixture correction (consistent with design §4): commit `58d52d5` accounts for mandatory byte-range locks by checking seeded lock bytes after release, held lock identity/size/mode/modtime, and every other canonical file's exact bytes while held. Initial no-lock polling, real held-owner recovery refusals and subsequent acquisition/recovery remain asserted. Independent focused code/architecture review returned Ready; no runtime, bound or ownership assertion changed.
   - Own `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md` and `specs/in-progress/tui-observatory-view/scratchpad.md` record required completion, downstream contracts and validation history. No product behavior or source-scope deviation.
 - **Files modified**: `internal/tui/viewmodel/viewmodel.go`, `internal/tui/viewmodel/viewmodel_test.go`, `internal/tui/viewmodel/supervision.go`, `internal/tui/viewmodel/supervision_test.go`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
+
 
 ### Task 7 — Implement safe exit rows and typed TUI controls
 
