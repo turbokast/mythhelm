@@ -80,7 +80,7 @@ func descendants(p *ownedProc, _ string) ([]int, []ProcessIdentity, error) {
 
 // ProcessStartTime returns pid's creation time (GetProcessTimes).
 func ProcessStartTime(pid int) (time.Time, error) {
-	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid)) //nolint:gosec // G115: PIDs fit in 32 bits on Windows
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, uint32(pid)) //nolint:gosec // G115: PIDs fit in 32 bits on Windows
 	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
 		return time.Time{}, fmt.Errorf("%w: pid %d", ErrNoProcess, pid)
 	}
@@ -88,6 +88,18 @@ func ProcessStartTime(pid int) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("pid %d: %w", pid, err)
 	}
 	defer func() { _ = windows.CloseHandle(h) }()
+	// An exited process can retain a readable creation time while another
+	// handle pins its kernel object. Only a nonsignalled process is live.
+	status, err := windows.WaitForSingleObject(h, 0)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("pid %d: wait for liveness: %w", pid, err)
+	}
+	if status == windows.WAIT_OBJECT_0 {
+		return time.Time{}, fmt.Errorf("%w: pid %d exited", ErrNoProcess, pid)
+	}
+	if status != uint32(windows.WAIT_TIMEOUT) {
+		return time.Time{}, fmt.Errorf("pid %d: unexpected liveness status %d", pid, status)
+	}
 	var created, exited, kernel, user windows.Filetime
 	if err := windows.GetProcessTimes(h, &created, &exited, &kernel, &user); err != nil {
 		return time.Time{}, fmt.Errorf("pid %d: %w", pid, err)
