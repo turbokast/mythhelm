@@ -239,8 +239,8 @@ func TestStopLabelsRequested(t *testing.T) {
 		m := actionModel(t, fullCaps, withState(state, "succeeded_native"), fakes.actions())
 		m, _ = pressKey(t, m, runeMsg(":"))
 		view := m.View()
-		if !strings.Contains(view, "Stop run (palette)") || !strings.Contains(view, "disabled") ||
-			!strings.Contains(view, "needs executing or verifying") {
+		if !strings.Contains(view, "Stop run (s)") || !strings.Contains(view, "disabled") ||
+			!strings.Contains(view, "needs executing") {
 			t.Errorf("state %s: palette lacks the disabled stop reason\n%s", state, view)
 		}
 		m, _ = pressKey(t, m, specialMsg(tea.KeyEnter))
@@ -296,6 +296,10 @@ func TestActionRunsOffLoop(t *testing.T) {
 	results := make(chan tea.Msg, 1)
 	go func() { results <- cmd() }()
 	<-started
+	m, firstQuit := pressKey(t, m, specialMsg(tea.KeyCtrlC))
+	if firstQuit != nil || m.working == "" || m.actCancel == nil {
+		t.Fatal("first Ctrl-C must keep the action alive")
+	}
 	m, quit := pressKey(t, m, specialMsg(tea.KeyCtrlC))
 	if quit == nil {
 		t.Fatal("ctrl+c returned no quit command")
@@ -356,7 +360,7 @@ func TestRecoverOnlyWhenInterrupted(t *testing.T) {
 		m := actionModel(t, fullCaps, withState(state, "running"), fakes.actions())
 		m, _ = pressKey(t, m, runeMsg(":"))
 		view := m.View()
-		if !strings.Contains(view, "Recover run (palette)") || !strings.Contains(view, "disabled") ||
+		if !strings.Contains(view, "Recover run (r)") || !strings.Contains(view, "disabled") ||
 			!strings.Contains(view, "needs interrupted") {
 			t.Errorf("state %s: palette lacks the disabled recover reason\n%s", state, view)
 		}

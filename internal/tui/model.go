@@ -35,10 +35,16 @@ type Config struct {
 	// ThemeName names the built-in theme Tokens came from, so the first
 	// toggle moves away from it; empty means "dark". Custom loaded tokens
 	// keep no name: toggling from them lands on a built-in.
-	ThemeName string
-	Events    <-chan journal.Event
-	Notices   *NoticeBacklog
-	Actions   Actions
+	ThemeName        string
+	Events           <-chan journal.Event
+	Notices          *NoticeBacklog
+	Actions          Actions
+	Mode             ClientMode
+	RequestStop      func()
+	Detach           func()
+	Signals          <-chan ClientSignal
+	OnExit           func(ExitIntent)
+	OnHeadlessAction func(ActionCompletion)
 }
 
 // Model is the mission-view program: one snapshot rendered through the §15.4
@@ -53,7 +59,18 @@ type Config struct {
 // seam; liveQuit/liveDone join the channel pump; recoverEvents and
 // recoverNotices feed the in-flight recover action live (live.go).
 type Model struct {
+	viewDone         chan struct{}
 	cfg              Config
+	action           *actionCall
+	interrupts       uint64
+	actionQuitArmed  bool
+	exiting          bool
+	exitIntent       ExitIntent
+	terminalLoss     bool
+	stopSent         bool
+	detachSent       bool
+	exitRow          int
+	managedPoll      bool
 	snap             viewmodel.Snapshot
 	ready            bool
 	loadErr          error
@@ -106,6 +123,7 @@ func newModel(cfg Config) *Model {
 	}
 	return &Model{
 		cfg:          cfg,
+		viewDone:     make(chan struct{}),
 		loadDiff:     defaultLoadDiff,
 		loadSnapshot: viewmodel.Load,
 		width:        singleWidth,
@@ -142,18 +160,7 @@ func Run(ctx context.Context, cfg Config) error {
 	} else {
 		m.setSnapshot(ctx, snap)
 	}
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	if cfg.Events != nil {
-		m.startLivePump(func(ev journal.Event) { p.Send(eventMsg{Event: ev}) })
-	}
-	// Bootstrap the poll chain with one immediate tick: Init stays the
-	// motion tick alone, so the motion tests keep asserting Init nil-ness
-	// for "no motion frames" while live and inspect modes still reload.
-	go func() { p.Send(pollTickMsg{}) }()
-	_, err = p.Run()
-	m.stopLivePump()
-	m.cancelAction()
-	return err
+	return runProgram(ctx, m, tea.WithAltScreen())
 }
 
 // setSnapshot installs a snapshot and (re)loads its candidate diff. The
@@ -235,11 +242,14 @@ func defaultLoadDiff(ctx context.Context, ws, base, commit string) (Diff, error)
 func (m *Model) Init() tea.Cmd { return m.scheduleMotion() }
 
 // Update implements tea.Model: resizes re-lay out around preserved identity,
-// keys dispatch through handleKey (nav.go), where Ctrl-C alone quits; live
+// keys dispatch through handleKey (nav.go) and the lifecycle policy; live
 // events fold into the snapshot and arm their moment (motion.go); motion
 // frames count the active moments down; poll ticks drain notices and rebuild
 // the snapshot once (live.go). Any key skips a pending arrival.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.exiting {
+		return m, nil
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.applySize(msg)
@@ -250,8 +260,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case eventMsg:
 		m.consumeEvent(msg.Event)
 		return m, m.scheduleMotion()
+	case ClientSignal:
+		if msg == SignalTerminalLost {
+			return m, m.terminalLost()
+		}
+		if msg == SignalInterrupt {
+			return m, m.interrupt()
+		}
+		return m, nil
+	case parentCancelledMsg:
+		m.cancelAction()
+		return m, m.exit(ExitUnresolvedAction)
 	case pollTickMsg:
 		m.onPollTick()
+		if m.managedPoll {
+			return m, m.scheduleMotion()
+		}
 		return m, tea.Batch(m.pollCmd(), m.scheduleMotion())
 	case actionResultMsg:
 		m.applyActionResult(msg)

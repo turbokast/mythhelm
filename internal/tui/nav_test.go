@@ -188,7 +188,7 @@ func TestKeyFlows(t *testing.T) {
 			t.Fatalf("after q dialog = %q, want exit-options", m.dialog)
 		}
 		view := m.View()
-		for _, want := range []string{"Exit options", "detach (leave running)", "request stop", "cancel"} {
+		for _, want := range []string{"Exit options", "quit", "back"} {
 			if !strings.Contains(view, want) {
 				t.Errorf("exit-options dialog lacks %q\n%s", want, view)
 			}
@@ -339,8 +339,8 @@ func TestPaletteSearchable(t *testing.T) {
 		if got := len(m.filteredActions()); got != len(actionRegistry) {
 			t.Errorf("unfiltered palette holds %d actions, want %d", got, len(actionRegistry))
 		}
-		if len(actionRegistry) != 8 {
-			t.Errorf("registry holds %d actions, want the 8 design §10 actions", len(actionRegistry))
+		if len(actionRegistry) != 9 {
+			t.Errorf("registry holds %d actions, want the 9 lifecycle and design §10 actions", len(actionRegistry))
 		}
 	})
 }
@@ -536,6 +536,7 @@ func TestPaletteViewOnlyActions(t *testing.T) {
 	run := func(t *testing.T, name string) *Model {
 		t.Helper()
 		m := flowModel(t)
+		m.cfg.Actions = (&fakeActions{}).actions()
 		m, _ = pressKey(t, m, runeMsg(":"))
 		m = typeRunes(t, m, name)
 		if got := len(m.filteredActions()); got != 1 {

@@ -36,7 +36,11 @@ func (m *Model) helpLines() []line {
 		{text: "Actions:"},
 	}
 	for _, def := range actionRegistry {
-		rows = append(rows, line{text: "  " + def.name + " (" + def.keys + ")" + d + def.desc})
+		text := "  " + def.name + " (" + def.keys + ")" + d + def.desc
+		if ok, reason := m.actionGate(def.id); !ok {
+			text += " disabled: " + reason
+		}
+		rows = append(rows, line{text: text})
 	}
 	return append(rows, line{text: "Esc closes this help", colour: t.TextMuted})
 }

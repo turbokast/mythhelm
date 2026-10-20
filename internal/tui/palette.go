@@ -20,6 +20,7 @@ const (
 	actionTheme
 	actionHelp
 	actionQuit
+	actionDetach
 )
 
 // actionDef is one registered palette entry: its full action name, the key
@@ -33,14 +34,15 @@ type actionDef struct {
 
 // actionRegistry lists every action the palette offers, in display order.
 var actionRegistry = []actionDef{
-	{actionStop, "Stop run", "palette", "Request the worker stop (confirmation)"},
-	{actionRecover, "Recover run", "palette", "Recover the interrupted run (confirmation)"},
-	{actionApply, "Apply candidate", "palette", "Apply the candidate to its branch (confirmation)"},
-	{actionExport, "Export view", "palette", "Export the focused pane as plain text"},
+	{actionStop, "Stop run", "s", "Request the worker stop (confirmation)"},
+	{actionRecover, "Recover run", "r", "Recover the interrupted run (confirmation)"},
+	{actionApply, "Apply candidate", "a", "Apply the candidate to its branch (confirmation)"},
+	{actionExport, "Export view", "e", "Export the focused pane as plain text"},
 	{actionSwitchPane, "Switch pane", "Tab", "Move focus to the next pane"},
 	{actionTheme, "Toggle theme", "palette", "Switch between the dark and light themes"},
 	{actionHelp, "Help", "?", "Show contextual help"},
-	{actionQuit, "Exit options", "q", "Detach, request stop, or cancel"},
+	{actionQuit, "Exit options", "q", "Show exit options; initially back"},
+	{actionDetach, "Detach (leave running)", "d", "Leave the worker running (confirmation)"},
 }
 
 // paletteState is the command-palette overlay: whether it is open, its
@@ -84,6 +86,8 @@ func (m *Model) runPaletteSelection() {
 	}
 	m.palette.open = false
 	switch id {
+	case actionDetach:
+		m.openDialog(dialogDetach)
 	case actionStop:
 		m.openDialog(dialogStop)
 	case actionRecover:

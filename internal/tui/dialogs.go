@@ -16,6 +16,7 @@ import (
 // prompt an action reports through.
 const (
 	dialogExitOptions = "exit-options"
+	dialogDetach      = "detach"
 	dialogStop        = "stop"
 	dialogRecover     = "recover"
 	dialogApply       = "apply"
@@ -49,6 +50,7 @@ const maxBranchRunes = 128
 // source branch when the snapshot records one.
 func (m *Model) openDialog(id string) {
 	m.dialog = id
+	m.exitRow = len(m.exitRows()) - 1
 	m.dialogField = 0
 	m.dialogFocus = buttonCancel
 	m.dialogErr = ""
@@ -83,7 +85,7 @@ func (m *Model) showResult(title, body string) {
 // dialogKey routes keys while a dialog is open. Esc cancels every dialog
 // with no call made (AC-3.3); every other key is dialog-specific. While a
 // confirmed call is in flight the dialog holds its working state and keys
-// are inert: the call cannot be unmade, and quitting (ctrl+c) cancels it.
+// are inert: explicit double-quit cancels and joins the call.
 func (m *Model) dialogKey(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.working != "" {
 		return m, nil
@@ -94,9 +96,9 @@ func (m *Model) dialogKey(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch m.dialog {
 	case dialogExitOptions:
-		// Task 7 behaviour preserved: the exit-options prompt is
-		// informational until a later task wires its rows; only Esc acts.
-		return m, nil
+		return m, m.exitKey(key)
+	case dialogDetach:
+		return m, m.confirmKey(key, m.confirmDetach)
 	case dialogDone:
 		if key == "enter" || key == " " {
 			m.closeDialog()
@@ -171,13 +173,9 @@ func (m *Model) applyKey(key string, msg tea.KeyMsg) tea.Cmd {
 func (m *Model) dialogLines() []line {
 	switch m.dialog {
 	case dialogExitOptions:
-		return []line{
-			{text: "Exit options", colour: m.cfg.Tokens.Text},
-			{text: "detach (leave running)"},
-			{text: "request stop"},
-			{text: "cancel"},
-			{text: "Esc cancels", colour: m.cfg.Tokens.TextMuted},
-		}
+		return m.exitLines()
+	case dialogDetach:
+		return m.withDialogErr([]line{{text: "Detach (leave running)"}, {text: "effect: leave the worker running; run is not complete"}, m.buttonLine("Detach")})
 	case dialogStop:
 		rows := []line{
 			{text: "Stop run", colour: m.cfg.Tokens.Text},
@@ -265,7 +263,7 @@ func (m *Model) buttonLine(confirm string) line {
 // never swallowed.
 func (m *Model) withDialogErr(rows []line) []line {
 	if m.working != "" {
-		return append(rows, line{text: cell(m.working), colour: m.cfg.Tokens.TextMuted})
+		rows = append(rows, line{text: cell(m.working), colour: m.cfg.Tokens.TextMuted})
 	}
 	if m.dialogErr == "" {
 		return rows
