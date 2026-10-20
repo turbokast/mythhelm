@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/adapter"
+	"github.com/turbokast/mythhelm/internal/processsupport"
 )
 
 // TestMain lets the test binary play the fake agent: the adapter runs
@@ -600,8 +601,9 @@ func TestCapabilityRecordUnknownNotOptimistic(t *testing.T) {
 	for goos, want := range map[string]adapter.Platform{
 		"linux":   {OS: "linux", WorkerDetachment: adapter.Supported, ProcessTreeOwnership: adapter.Supported},
 		"darwin":  {OS: "darwin", WorkerDetachment: adapter.Supported, ProcessTreeOwnership: adapter.Supported},
-		"windows": {OS: "windows", WorkerDetachment: adapter.Unknown, ProcessTreeOwnership: adapter.Unsupported},
+		"windows": {OS: "windows", WorkerDetachment: adapter.Unknown, ProcessTreeOwnership: adapter.Unknown},
 		"freebsd": {OS: "freebsd", WorkerDetachment: adapter.Unknown, ProcessTreeOwnership: adapter.Unknown},
+		"future":  {OS: "future", WorkerDetachment: adapter.Unknown, ProcessTreeOwnership: adapter.Unknown},
 	} {
 		if got := a.Capabilities(adapter.Probe{OS: goos}).Platform; got != want {
 			t.Errorf("%s platform = %+v, want %+v", goos, got, want)
@@ -847,5 +849,63 @@ func TestTreeReportConfined(t *testing.T) {
 				t.Fatalf("outside report = %q, %v", got, err)
 			}
 		})
+	}
+}
+
+// syntheticWindowsMatrix supplies declared, synthetic evidence, never a support promotion.
+func syntheticWindowsMatrix(t *testing.T, arch, surface, ownership, detach string) processsupport.Matrix {
+	t.Helper()
+	job := "windows-latest"
+	if arch == "arm64" {
+		job = "windows-11-arm"
+	}
+	table := "| arch | surface | process_tree_ownership | worker_detachment | crash behaviour | tests | CI job |\n| --- | --- | --- | --- | --- | --- | --- |\n" +
+		fmt.Sprintf("| %s | %s | %s | %s | kill_on_close | `TestStopKillsChildAndGrandchild` | %s https://github.com/turbokast/mythhelm/actions/runs/1 |\n", arch, surface, ownership, detach, job)
+	m, err := processsupport.Parse([]byte(table))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func TestFakeWindowsCapabilityFollowsMatrix(t *testing.T) {
+	t.Parallel()
+	full := syntheticWindowsMatrix(t, "amd64", "scripted-child-process", "supported", "supported")
+	split := syntheticWindowsMatrix(t, "amd64", "scripted-child-process", "supported", "unknown")
+	otherSurface := syntheticWindowsMatrix(t, "amd64", "native-cli-structured (print, stream-json)", "supported", "supported")
+	empty := processsupport.Matrix{}
+	for _, tc := range []struct {
+		name, arch        string
+		matrix            *processsupport.Matrix
+		ownership, detach adapter.Tri
+	}{
+		{"embedded empty", "amd64", nil, adapter.Unknown, adapter.Unknown},
+		{"explicit empty", "amd64", &empty, adapter.Unknown, adapter.Unknown},
+		{"qualified exact pair", "amd64", &full, adapter.Supported, adapter.Supported},
+		{"independent capability values", "amd64", &split, adapter.Supported, adapter.Unknown},
+		{"different arch", "arm64", &full, adapter.Unknown, adapter.Unknown},
+		{"missing arch", "", &full, adapter.Unknown, adapter.Unknown},
+		{"future arch", "future", &full, adapter.Unknown, adapter.Unknown},
+		{"different surface", "amd64", &otherSurface, adapter.Unknown, adapter.Unknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := (fakeAdapter{matrix: tc.matrix}).Capabilities(adapter.Probe{OS: "windows", Arch: tc.arch})
+			// I14 (v2 §2): evidence qualifies only its exact pair and capability.
+			if got.Platform.ProcessTreeOwnership != tc.ownership || got.Platform.WorkerDetachment != tc.detach || got.ExecutionSurface != "scripted-child-process" {
+				t.Fatalf("capabilities = %+v, want ownership %s detachment %s", got, tc.ownership, tc.detach)
+			}
+		})
+	}
+}
+
+func TestPrepareProbeCarriesArch(t *testing.T) {
+	t.Parallel()
+	m := syntheticWindowsMatrix(t, runtime.GOARCH, "scripted-child-process", "supported", "unknown")
+	lp, err := (fakeAdapter{matrix: &m}).prepare(context.Background(), adapter.PrepareInput{Workdir: t.TempDir(), AttemptID: "att_arch", Scenario: "happy"}, "windows")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lp.Capabilities.Platform.ProcessTreeOwnership != adapter.Supported || lp.Capabilities.Platform.WorkerDetachment != adapter.Unknown {
+		t.Fatalf("Prepare did not use the architecture-qualified probe: %+v", lp.Capabilities.Platform)
 	}
 }

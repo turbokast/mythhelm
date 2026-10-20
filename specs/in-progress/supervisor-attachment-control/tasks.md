@@ -10,7 +10,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Review the service composition decision
+### Task 1 — Review the service composition decision ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -26,7 +26,12 @@
 - **Test plan**: Synthetic fixtures and deterministic barriers for the named cases; pair negative assertions with a deliberately violating fixture. Public process behavior uses the packaged binary in the integration task, not helper-only evidence.
 - **Invariants touched**: I03/I06/I12/I18/I23 (v2 §§3/5/6: no new owner or weakened recovery).
 
-### Task 2 — Define typed service and attachment protocols
+- **Status**: ✅ Completed — recorded exact-revision ADR 0021 acceptance under delegated maintainer authority, with independent architecture and code review; PR #501.
+- **Implementation**: Commit `5386aff` binds acceptance to proposal `e50faa8` and independently confirmed original-file SHA-256 `b30067e53dadaddbc416f8501ed67ea127ff8b02f7f6591be0b86fd49ca53393`; Decision text is unchanged. Independent architecture/code review and the coordinator's separate output review returned Ready without blocking findings. Lifecycle PR #498 merged as `b2b46e5` before task bookkeeping.
+- **Spec deviations**: Own completion, handoff and scratchpad paths record required lifecycle evidence beyond the docs Files list. The pre-merge completion entry follows WORKFLOW and task-completion, which take precedence over this spec's heading-after-merge wording; the marker does not claim that PR #501 has merged. No contract deviation.
+- **Files modified**: `docs/decisions/0021-service-attachment-composition.md`, `docs/decisions/README.md`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
+
+### Task 2 — Define typed service and attachment protocols ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -47,6 +52,12 @@
   - TestRunOperationObservationCodec round-trips each method/result union and mixed historical/v2 event page; rejects incompatible arms, invalid cursor/bounds, future critical schemas and undocumented wire keys.
 - **Test plan**: Synthetic fixtures and deterministic barriers for the named cases; pair negative assertions with a deliberately violating fixture. Public process behavior uses the packaged binary in the integration task, not helper-only evidence.
 - **Invariants touched**: I02/I03/I09/I19 (v2 §§4/7/8: typed scope and no secret transport).
+
+- **Status**: ✅ Completed — implemented the closed typed run/attachment contracts, strict bounded codecs and scoped clients; PR #506.
+- **Implementation**: Codex go-implementer, source commit `41813fe`. Exact schema2 standalone bodies preserve admission flags and nil/zero ceilings; operation unions and historical/v2 observation validation remain separate from safe attachment projections. Independent code/architecture review returned Ready after correcting the total dial budget; a prepublication author finding corrected pointer/null codec panics and received fresh independent Ready review. Final full race gate passed (420.5s), lint reported zero issues, and all six gate markers were fresh; Windowsamd64/Darwinarm64 control cross-vet exited 0. The coordinator independently reran the three acceptance and three pointer tests under race (1.312s).
+- **Spec deviations**: Approved five extra paths (`internal/control/transport.go`, `internal/control/transport_unix.go`, `internal/control/transport_windows.go`, `internal/control/transport_unix_test.go`, `internal/control/transport_windows_test.go`) provide context-aware dialing for design §8's shared end-to-end deadline. Pointer/bounds/null/identity regressions strengthen the same strict codec contract without changing wire types. StopResult.Reason is empty, stop_unconfirmed or an existing canonical v2 code, an independently reviewed finite interpretation of the bounded enum requirement. Own task records are required lifecycle evidence; the pre-merge completion marker follows WORKFLOW/task-completion and does not claim PR #506 merged.
+- **Red-first evidence**: Duplicate keys, missing task binding/invalid flags and incompatible result arms failed before strict decoding/validation. Contextless dialing failed cancellation; pointer roundtrips and top-level null failed with caught panic assertions before correction. A temporary skip-Validate overlay mutant failed the retained missing-identity fixture; restored pointer/acceptance tests passed under race. Initial lint findings were corrected with only one documented fixture-inventory false-positive suppression.
+- **Files modified**: `internal/control/run_contract.go`, `internal/control/attachment.go`, `internal/control/attachment_contract_test.go`, `internal/control/frame.go`, `internal/control/client.go`, `internal/control/frame_test.go`, `internal/control/run_contract_test.go`, `internal/control/transport.go`, `internal/control/transport_unix.go`, `internal/control/transport_unix_test.go`, `internal/control/transport_windows.go`, `internal/control/transport_windows_test.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
 ### Task 3 — Persist authority, revision and durable operation state
 

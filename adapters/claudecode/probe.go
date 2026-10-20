@@ -53,7 +53,7 @@ func probePlatform(ctx context.Context, in adapter.ProbeInput, goos string) (ada
 
 func (a *claudeAdapter) probe(ctx context.Context, in adapter.ProbeInput, goos string) (adapter.Probe, error) {
 	if goos == "windows" {
-		return adapter.Probe{}, fmt.Errorf("%w: process_tree_ownership unsupported on Windows", ErrCapability)
+		return adapter.Probe{}, fmt.Errorf("%w: Windows native-harness qualification missing", ErrCapability)
 	}
 	if goos != "linux" && goos != "darwin" {
 		return adapter.Probe{}, fmt.Errorf("%w: platform unqualified", ErrCapability)

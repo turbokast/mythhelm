@@ -1,7 +1,18 @@
 # 0021. Production singleton composition and scoped attachment control
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-15
+- Approval: delegated maintainer decision recorded below, 2026-10-20.
+
+## Task 1 authorization record
+
+The delivery coordinator accepted the exact reviewed proposal below on 2026-10-20, exercising the maintainer’s direct instruction granting “full permission to ship autonomously for the entire day” and waiving delivery checkpoints for the ongoing backlog work. This records the coordinator’s acceptance under delegated authority, not a claim that the maintainer personally inspected the concrete ADR.
+
+Acceptance concerns the complete proposal at [e50faa8](https://github.com/turbokast/mythhelm/blob/e50faa8bd0d79ee0bbd647e4642cd9e2402d19f5/docs/decisions/0021-service-attachment-composition.md), reviewed during [PR #498](https://github.com/turbokast/mythhelm/pull/498). The original complete file has independently confirmed SHA-256 `b30067e53dadaddbc416f8501ed67ea127ff8b02f7f6591be0b86fd49ca53393`. This digest identifies the proposal before this authorization record and status update; it is neither a digital signature nor the digest of this amended file. The Decision section is unchanged.
+
+Independent architecture and code review of that exact revision returned Ready with no critical, important or conflicting-contract findings. The reviewer checked the production ownership, admission, snapshot, operation and adoption premises against the code and Task 1 prerequisites. Review retained ordinary production dispatch and root-wide migration, rejecting enrollment-only and concurrent legacy/service ownership alternatives. The delivery coordinator reviewed and accepted that identified proposal separately from its author; the maintainer’s instruction supplies the delegated authority, while independent review supplies design scrutiny.
+
+This acceptance implements the existing ADR 0014 singleton and ADR 0016 root-migration policy. It is not a signed product approval or formal autonomy grant and changes neither approval system. It establishes no runtime, native, billing, host or platform qualification and does not replace implementation tests, PR review or CI.
 
 ## Context
 
@@ -33,4 +44,4 @@ Acceptance tests must demonstrate ordinary run→attach with one worker, root co
 
 ## Approval boundary
 
-This record proposes implementation of the accepted singleton policy. Status remains proposed until actual architecture/maintainer review accepts the concrete contracts; no signed product approval is inferred. Recovered-only FR-1, per-run mixed-mode migration, new native authority or concurrent legacy/service mutation would be a different decision and are not authorized here.
+This record accepts implementation of the existing singleton policy under the exact-revision architecture review and delegated maintainer decision above; no signed product approval is inferred. Recovered-only FR-1, per-run mixed-mode migration, new native authority or concurrent legacy/service mutation would be a different decision and are not authorized here.

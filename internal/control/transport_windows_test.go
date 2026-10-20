@@ -307,3 +307,17 @@ func TestSpawnEnvCarriesWindowsLocators(t *testing.T) {
 		t.Errorf("spawn environment passes an unlisted variable:\n%s", env)
 	}
 }
+
+func TestPipeDialContextPrecancelled(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	tr, err := NewPipeTransport()
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := tr.DialContext(ctx, endpoint(t))
+	if !errors.Is(err, context.Canceled) || conn != nil {
+		t.Fatalf("precancelled pipe dial = %v, %v", conn, err)
+	}
+}
