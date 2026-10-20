@@ -125,84 +125,108 @@ func assertRunningDetached(t *testing.T, f fixture, d admission.Decision) {
 }
 
 func TestDetachDuringStopping(t *testing.T) {
-	// In-process supervision changes the runtime environment.
-	f := newFixture(t)
-	d := detachDecision(t, f, "ignore-term")
-	interrupts := make(chan os.Signal, 1)
-	detach := make(chan struct{}, 1)
-	var notices []string
-	sent := false
-	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
-	defer cancel()
-	out, err := f.runInProcessWith(ctx, t, d, supervisor.Hooks{Interrupt: interrupts, Detach: detach,
-		Event: func(ev journal.Event) {
-			if !sent && ev.Type == "attempt.state_changed" && payloadOf(t, ev)["state"] == "running" {
-				sent = true
-				interrupts <- os.Interrupt
+	for _, terminalBeforeJoin := range []bool{false, true} {
+		t.Run(fmt.Sprintf("terminal_before_join_%t", terminalBeforeJoin), func(t *testing.T) {
+			// In-process supervision changes the runtime environment.
+			f := newFixture(t)
+			d := detachDecision(t, f, "ignore-term")
+			interrupts := make(chan os.Signal, 1)
+			detach := make(chan struct{}, 1)
+			var notices []string
+			sent := false
+			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+			defer cancel()
+			out, err := f.runInProcessWith(ctx, t, d, supervisor.Hooks{Interrupt: interrupts, Detach: detach,
+				Event: func(ev journal.Event) {
+					if !sent && ev.Type == "attempt.state_changed" && payloadOf(t, ev)["state"] == "running" {
+						sent = true
+						interrupts <- os.Interrupt
+					}
+				},
+				Notice: func(s string) {
+					notices = append(notices, s)
+					if s == supervisor.StopRequestedNotice {
+						detach <- struct{}{}
+					}
+				},
+			})
+			pending := out.Detached && !out.DetachedRunning && out.State == supervisor.RunStopping
+			// The Windows fake uses one immediate Kill rung (fake.stopLadder), so
+			// durable terminal evidence can win before the next owner ingest. Unix
+			// ignore-term instead keeps the ladder pending and must prove detachment.
+			terminal := runtime.GOOS == "windows" && !out.Detached && !out.DetachedRunning &&
+				out.State == supervisor.RunCancelled && out.AttemptState == supervisor.AttemptStopped
+			if err != nil || !sent || (!pending && !terminal) {
+				t.Fatalf("pending stop or confirmed Windows terminal outcome %+v, err=%v", out, err)
 			}
-		},
-		Notice: func(s string) {
-			notices = append(notices, s)
-			if s == supervisor.StopRequestedNotice {
+			if pending && notices[len(notices)-1] != fmt.Sprintf(supervisor.DetachedNotice, d.RunID) {
+				t.Fatalf("notices %q", notices)
+			}
+			dir := workers.AttemptDir(f.state, d.RunID, d.AttemptID)
+			request, err := os.ReadFile(filepath.Join(dir, "stop.request")) // #nosec G304 -- fixed control filename under the synthetic fixture attempt directory
+			if err != nil {
+				t.Fatal(err)
+			}
+			if pending {
+				if _, err := f.journal(t).Candidate(t.Context(), d.AttemptID); !errors.Is(err, journal.ErrNotFound) {
+					t.Fatalf("freeze before stop confirmed: %v", err)
+				}
+				// A recovered pending stop must detach without consuming another
+				// queued interrupt (which could otherwise request a duplicate stop).
+				extraInterrupt := make(chan os.Signal, 1)
+				extraInterrupt <- os.Interrupt
 				detach <- struct{}{}
+				detachedAgain, err := supervisor.RecoverWithHooks(ctx, f.journal(t), d.RunID, supervisor.Hooks{Detach: detach, Interrupt: extraInterrupt})
+				pendingAgain := detachedAgain.Detached && detachedAgain.State == supervisor.RunStopping
+				finished := detachedAgain.State == supervisor.RunCancelled && detachedAgain.AttemptState == supervisor.AttemptStopped
+				if err != nil || detachedAgain.DetachedRunning || len(extraInterrupt) != 1 || (!pendingAgain && !finished) {
+					t.Fatalf("recovered pending detach %+v, queued interrupts=%d: %v", detachedAgain, len(extraInterrupt), err)
+				}
 			}
-		},
-	})
-	pending := out.Detached && !out.DetachedRunning && out.State == supervisor.RunStopping
-	// The Windows fake uses one immediate Kill rung (fake.stopLadder), so
-	// durable terminal evidence can win before the next owner ingest. Unix
-	// ignore-term instead keeps the ladder pending and must prove detachment.
-	terminal := runtime.GOOS == "windows" && !out.Detached && !out.DetachedRunning &&
-		out.State == supervisor.RunCancelled && out.AttemptState == supervisor.AttemptStopped
-	if err != nil || !sent || (!pending && !terminal) {
-		t.Fatalf("pending stop or confirmed Windows terminal outcome %+v, err=%v", out, err)
-	}
-	if pending && notices[len(notices)-1] != fmt.Sprintf(supervisor.DetachedNotice, d.RunID) {
-		t.Fatalf("notices %q", notices)
-	}
-	dir := workers.AttemptDir(f.state, d.RunID, d.AttemptID)
-	request, err := os.ReadFile(filepath.Join(dir, "stop.request")) // #nosec G304 -- fixed control filename under the synthetic fixture attempt directory
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pending {
-		if _, err := f.journal(t).Candidate(t.Context(), d.AttemptID); !errors.Is(err, journal.ErrNotFound) {
-			t.Fatalf("freeze before stop confirmed: %v", err)
-		}
-		// A recovered pending stop must detach without consuming another
-		// queued interrupt (which could otherwise request a duplicate stop).
-		extraInterrupt := make(chan os.Signal, 1)
-		extraInterrupt <- os.Interrupt
-		detach <- struct{}{}
-		detachedAgain, err := supervisor.RecoverWithHooks(ctx, f.journal(t), d.RunID, supervisor.Hooks{Detach: detach, Interrupt: extraInterrupt})
-		pendingAgain := detachedAgain.Detached && detachedAgain.State == supervisor.RunStopping
-		finished := detachedAgain.State == supervisor.RunCancelled && detachedAgain.AttemptState == supervisor.AttemptStopped
-		if err != nil || detachedAgain.DetachedRunning || len(extraInterrupt) != 1 || (!pendingAgain && !finished) {
-			t.Fatalf("recovered pending detach %+v, queued interrupts=%d: %v", detachedAgain, len(extraInterrupt), err)
-		}
-		// Join the existing stop without sending another control request.
-		recovered, err := supervisor.RecoverWithHooks(ctx, f.journal(t), d.RunID, supervisor.Hooks{})
-		if err != nil || recovered.State != supervisor.RunCancelled || recovered.AttemptState != supervisor.AttemptStopped {
-			t.Fatalf("recover %+v: %v", recovered, err)
-		}
-	}
-	// Both paths must finish with a durable confirmed stop and candidate.
-	attempt, err := f.journal(t).Attempt(t.Context(), d.AttemptID)
-	if err != nil || attempt.State != string(supervisor.AttemptStopped) {
-		t.Fatalf("durable attempt %+v: %v", attempt, err)
-	}
-	if _, err := f.journal(t).Candidate(t.Context(), d.AttemptID); err != nil {
-		t.Fatal(err)
-	}
-	if n := eventTypeCounts(t, f, d.RunID)["attempt.launched"]; n != 1 {
-		t.Fatalf("native launches %d, want 1", n)
-	}
-	after, err := os.ReadFile(filepath.Join(dir, "stop.request")) // #nosec G304 -- fixed control filename under the synthetic fixture attempt directory
-	if err != nil || string(after) != string(request) {
-		t.Fatalf("stop request changed: %q -> %q (%v)", request, after, err)
-	}
-	if n := eventTypeCounts(t, f, d.RunID)["attempt.stop_requested"]; n != 1 {
-		t.Fatalf("stop requests %d, want 1", n)
+			if terminalBeforeJoin {
+				// Force the terminal-before-final-recovery ordering observed on
+				// Windows ARM64, without depending on platform speed or a delay.
+				completed, err := supervisor.RecoverWithHooks(ctx, f.journal(t), d.RunID, supervisor.Hooks{})
+				if err != nil || completed.State != supervisor.RunCancelled {
+					t.Fatalf("forced terminal join %+v: %v", completed, err)
+				}
+			}
+			// Join the existing stop without sending another control request.
+			recovered, err := supervisor.RecoverWithHooks(ctx, f.journal(t), d.RunID, supervisor.Hooks{})
+			if err != nil || recovered.RunID != d.RunID || recovered.State != supervisor.RunCancelled || recovered.Detached || recovered.DetachedRunning {
+				t.Fatalf("recover %+v: %v", recovered, err)
+			}
+			// Terminal Recover repairs the receipt before loading an attempt
+			// (recover.go's terminal fast path), so these fields may be absent.
+			// Durable run/attempt/candidate checks below still prove the stop.
+			if recovered.AttemptID != "" && recovered.AttemptID != d.AttemptID ||
+				recovered.AttemptState != "" && recovered.AttemptState != supervisor.AttemptStopped {
+				t.Fatalf("recover reports another attempt/state: %+v", recovered)
+			}
+			// Both paths must finish with a durable confirmed stop and candidate.
+			attempt, err := f.journal(t).Attempt(t.Context(), d.AttemptID)
+			if err != nil || attempt.RunID != d.RunID || attempt.AttemptID != d.AttemptID || attempt.State != string(supervisor.AttemptStopped) {
+				t.Fatalf("durable attempt %+v: %v", attempt, err)
+			}
+			run, err := f.journal(t).Run(t.Context(), d.RunID)
+			if err != nil || run.RunID != d.RunID || run.State != string(supervisor.RunCancelled) {
+				t.Fatalf("durable run %+v: %v", run, err)
+			}
+			candidate, err := f.journal(t).Candidate(t.Context(), d.AttemptID)
+			if err != nil || candidate.AttemptID != d.AttemptID || candidate.Commit == "" {
+				t.Fatalf("durable candidate %+v: %v", candidate, err)
+			}
+			if n := eventTypeCounts(t, f, d.RunID)["attempt.launched"]; n != 1 {
+				t.Fatalf("native launches %d, want 1", n)
+			}
+			after, err := os.ReadFile(filepath.Join(dir, "stop.request")) // #nosec G304 -- fixed control filename under the synthetic fixture attempt directory
+			if err != nil || string(after) != string(request) {
+				t.Fatalf("stop request changed: %q -> %q (%v)", request, after, err)
+			}
+			if n := eventTypeCounts(t, f, d.RunID)["attempt.stop_requested"]; n != 1 {
+				t.Fatalf("stop requests %d, want 1", n)
+			}
+		})
 	}
 }
 
