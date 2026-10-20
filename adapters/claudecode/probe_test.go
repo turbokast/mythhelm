@@ -501,3 +501,26 @@ func TestUserMCPDigestIgnoresUnconfiguredWorkspacePaths(t *testing.T) {
 		t.Fatal("unchanged user MCP needs different trust for each generated workspace path")
 	}
 }
+
+func TestClaudecodeCapabilitiesWindowsUnsupported(t *testing.T) {
+	t.Parallel()
+	a := New().(*claudeAdapter)
+	for _, arch := range []string{"amd64", "arm64", "future", ""} {
+		caps := a.Capabilities(adapter.Probe{OS: "windows", Arch: arch})
+		// I14 (v2 §2): worker evidence does not qualify a native harness.
+		if caps.Platform.ProcessTreeOwnership != adapter.Unsupported || caps.Platform.WorkerDetachment != adapter.Unsupported {
+			t.Fatalf("%s: %+v", arch, caps.Platform)
+		}
+	}
+	_, probeErr := a.probe(context.Background(), adapter.ProbeInput{ExecutableOverride: "must-not-execute"}, "windows")
+	_, prepareErr := a.prepare(context.Background(), adapter.PrepareInput{}, "windows")
+	for name, err := range map[string]error{"probe": probeErr, "prepare": prepareErr} {
+		// I02 (v2 §2): the missing qualification blocks before executable access.
+		if !errors.Is(err, ErrCapability) {
+			t.Fatalf("%s: want ErrCapability, got %v", name, err)
+		}
+		if !strings.Contains(err.Error(), "Windows native-harness qualification missing") {
+			t.Errorf("%s: refusal = %v", name, err)
+		}
+	}
+}

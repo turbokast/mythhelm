@@ -159,9 +159,15 @@ func (t *pipeTransport) Listen(path string) (Listener, error) {
 }
 
 func (t *pipeTransport) Dial(path string) (Conn, error) {
-	name := pipeName(path)
 	ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
 	defer cancel()
+	return t.DialContext(ctx, path)
+}
+func (t *pipeTransport) DialContext(ctx context.Context, path string) (Conn, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	name := pipeName(path)
 	nc, err := winio.DialPipeContext(ctx, name)
 	switch {
 	case errors.Is(err, windows.ERROR_FILE_NOT_FOUND), errors.Is(err, os.ErrNotExist):
@@ -172,6 +178,10 @@ func (t *pipeTransport) Dial(path string) (Conn, error) {
 		return nil, fmt.Errorf("control: dial %s: %w", name, err)
 	}
 	p, err := t.peer(nc, false)
+	if ctx.Err() != nil {
+		_ = nc.Close()
+		return nil, ctx.Err()
+	}
 	if err != nil {
 		_ = nc.Close()
 		return nil, err

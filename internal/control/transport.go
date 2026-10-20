@@ -31,6 +31,8 @@ type Transport interface {
 	// none is running and a permission error when the endpoint is not
 	// reachable by this user.
 	Dial(path string) (Conn, error)
+	// DialContext includes endpoint connection and peer authentication in ctx.
+	DialContext(ctx context.Context, path string) (Conn, error)
 }
 
 // ErrNoSupervisor is returned by Dial when nothing is listening at the path.

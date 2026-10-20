@@ -420,3 +420,117 @@ func TestOutgoingFramesAreValidated(t *testing.T) {
 		t.Errorf("Receive after rejected frames = %q, %v; want the valid frame", got, err)
 	}
 }
+
+// Synthetic transport and connection isolate cancellation from OS scheduling.
+type existingTransport struct {
+	dial func(context.Context) (Conn, error)
+}
+
+func (t existingTransport) Dial(string) (Conn, error) { return t.dial(context.Background()) }
+func (t existingTransport) DialContext(ctx context.Context, _ string) (Conn, error) {
+	return t.dial(ctx)
+}
+func (t existingTransport) Listen(string) (Listener, error) {
+	return nil, errors.New("unexpected listener")
+}
+
+type existingConn struct {
+	request func(context.Context) ([]byte, error)
+	closed  bool
+}
+
+func (*existingConn) Peer() Peer                                              { return Peer{SameUser: true} }
+func (c *existingConn) Request(ctx context.Context, _ []byte) ([]byte, error) { return c.request(ctx) }
+func (*existingConn) Receive(context.Context) ([]byte, error) {
+	return nil, errors.New("unexpected receive")
+}
+func (*existingConn) Respond([]byte) error { return errors.New("unexpected respond") }
+func (c *existingConn) Close() error       { c.closed = true; return nil }
+
+func TestExistingDialCancellation(t *testing.T) {
+	t.Parallel()
+	entered := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	tr := existingTransport{dial: func(ctx context.Context) (Conn, error) {
+		close(entered)
+		if ctx.Done() == nil {
+			return nil, errors.New("uncancellable dial context")
+		}
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+	done := make(chan error, 1)
+	go func() { _, err := dialExisting(ctx, tr, "synthetic-endpoint", "synthetic-root"); done <- err }()
+	<-entered
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("dial cancellation = %v", err)
+	}
+}
+
+func TestExistingDialSharesBudgetWithRootCheck(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	deadline, _ := ctx.Deadline()
+	root := canonicalRoot(t.TempDir())
+	conn := &existingConn{}
+	conn.request = func(got context.Context) ([]byte, error) {
+		if d, ok := got.Deadline(); !ok || !d.Equal(deadline) {
+			t.Fatalf("root check changed dial budget: %v, %v", d, ok)
+		}
+		body, _ := json.Marshal(map[string]string{"root": root})
+		return Encode(Result{Body: body})
+	}
+	tr := existingTransport{dial: func(got context.Context) (Conn, error) {
+		if got != ctx {
+			t.Fatal("dial replaced caller context")
+		}
+		return conn, nil
+	}}
+	got, err := dialExisting(ctx, tr, "synthetic-endpoint", root)
+	if err != nil || got != conn || conn.closed {
+		t.Fatalf("existing dial = %v, %v closed=%v", got, err, conn.closed)
+	}
+	conn.request = func(got context.Context) ([]byte, error) { cancel(); <-got.Done(); return nil, got.Err() }
+	if _, err := dialExisting(ctx, tr, "synthetic-endpoint", root); !errors.Is(err, context.Canceled) || !conn.closed {
+		t.Fatalf("root cancellation = %v closed=%v", err, conn.closed)
+	}
+}
+
+func TestDialContextPrecancelled(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	conn, err := NewUnixTransport().DialContext(ctx, socketPath(t))
+	if !errors.Is(err, context.Canceled) || conn != nil {
+		t.Fatalf("precancelled dial = %v, %v", conn, err)
+	}
+}
+
+func TestDialExistingDoesNotStartService(t *testing.T) {
+	// Process environment selects isolated endpoint/root, so this is not parallel.
+	base := shortDir(t)
+	root := filepath.Join(base, "state")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_RUNTIME_DIR", base)
+	t.Setenv("MYTHHELM_HOME", root)
+	conn, err := DialExisting(context.Background())
+	if !errors.Is(err, ErrNoSupervisor) || conn != nil {
+		t.Fatalf("existing-only dial = %v, %v", conn, err)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("missing service mutated root: %v, %v", entries, err)
+	}
+	endpoint, err := EndpointPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(endpoint); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing service created endpoint: %v", err)
+	}
+}

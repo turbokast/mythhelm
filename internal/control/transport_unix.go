@@ -3,6 +3,7 @@
 package control
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -91,7 +92,13 @@ func ensureSocketDir(dir string, uid uint32) error {
 }
 
 func (t *unixTransport) Dial(path string) (Conn, error) {
-	nc, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: path, Net: "unix"})
+	return t.DialContext(context.Background(), path)
+}
+func (t *unixTransport) DialContext(ctx context.Context, path string) (Conn, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	nc, err := (&net.Dialer{}).DialContext(ctx, "unix", path)
 	switch {
 	case errors.Is(err, os.ErrNotExist), errors.Is(err, syscall.ECONNREFUSED):
 		return nil, ErrNoSupervisor
@@ -100,7 +107,16 @@ func (t *unixTransport) Dial(path string) (Conn, error) {
 	case err != nil:
 		return nil, fmt.Errorf("control: dial %s: %w", path, err)
 	}
-	p, err := t.peer(nc)
+	uc, ok := nc.(*net.UnixConn)
+	if !ok {
+		_ = nc.Close()
+		return nil, errors.New("control: unexpected Unix transport")
+	}
+	p, err := t.peer(uc)
+	if ctx.Err() != nil {
+		_ = nc.Close()
+		return nil, ctx.Err()
+	}
 	if err != nil {
 		_ = nc.Close()
 		return nil, err

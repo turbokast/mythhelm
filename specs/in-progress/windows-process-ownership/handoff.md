@@ -65,11 +65,18 @@
 
 ## Task 8 — Windows process-support matrix (leaf package)
 
-<!-- pending -->
+- **Produces**: `processsupport.Support`, `Matrix`, `Parse([]byte) (Matrix, error)`, `Matrix.Windows(goarch, surface)` and package `Windows(goarch, surface)`, exactly as design §2.6. `SUPPORT.md` is embedded and has no rows; the control-method matrix now points here for lifecycle evidence.
+- **For Task 9**: package `Windows` reads the embedded table; injected matrices come from `Parse`. A zero matrix and absent exact pairs return explicit `adapter.Unknown` for both fields. Lookup never infers architecture or surface. The leaf imports only the adapter contract among project packages, avoiding adapter/worker cycles.
+- **Table contract for Tasks 10–11**: seven columns; amd64 pairs require `windows-latest`, arm64 pairs require `windows-11-arm`. The CI cell is the job name followed by a repository Actions run URL with a positive numeric run ID. Capability values stay separate; crash behaviour is `kill_on_close` or `survives`; evidence is a comma-separated list of backticked test names. Duplicate pairs, malformed syntax or unbound CI evidence reject the whole table, including previously valid rows.
+- **Qualification boundary**: parser validation checks syntax and CI binding, not passing run outcomes. The AST exactness oracle discovers actual Windows test declarations in workers, supervisor, fake and E2E sources. Task 11 must review FR-1–FR-4 coverage, the matching native runner and landed commit before adding rows, and update the deliberately empty-matrix expectation. Synthetic parser fixtures do not promote support.
+- **Evidence and review**: source `418c4a3`, PR #500; seven focused race tests passed (1.263s), full race gate passed and all six gate markers were fresh. Coordinator code/architecture review and independent acceptance rerun found no remaining blocker. Root expansion is a review clarification consistent with design §2.6; no API or task-file scope changed.
 
 ## Task 9 — adapter capability derivation
 
-<!-- pending -->
+- **Produces**: fake Windows capabilities now use `processsupport.Windows(Arch, "scripted-child-process")`; the Prepare-time probe supplies the runtime architecture. No exported API changes. Source `a6c8572`, PR #503.
+- **For Tasks 10–11**: the embedded table is still empty, so both fake Windows capability fields are unknown on every architecture. Exact architecture and surface evidence is mandatory; neither field inherits the other. Synthetic test matrices are not qualification rows.
+- **Native harness boundary**: Claude Code still reports both Windows platform capabilities unsupported and refuses probe and Prepare with `ErrCapability`, naming missing Windows native-harness qualification. Worker Job Object ownership does not qualify a native harness; the compatibility note says so.
+- **Tests and review**: all three named race acceptance tests passed, seven overlay counterfactuals failed, the full race gate passed (213.1s), and independent code/architecture review returned Ready. The per-instance optional matrix and unexported platform seams keep tests free of mutable package state and native credentials. No change to later task inputs.
 
 ## Task 10 — Windows documentation
 
