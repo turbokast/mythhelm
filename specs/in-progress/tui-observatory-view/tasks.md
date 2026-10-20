@@ -142,7 +142,7 @@
   - Own `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md` and `specs/in-progress/tui-observatory-view/scratchpad.md` record completion and downstream evidence as required by the completion convention.
 - **Files modified**: `internal/supervisor/pipeline.go`, `internal/supervisor/recover.go`, `internal/supervisor/detach_test.go`, `internal/cli/exit.go`, `internal/cli/run.go`, `internal/cli/run_test.go`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
 
-### Task 6 — Add journal-backed observatory data
+### Task 6 — Add journal-backed observatory data ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: complex (journal projection and bounded evidence)
@@ -161,6 +161,14 @@
   - `TestViewPollingDoesNotOwnRun` polls during real owner acquisition/recover, checks no owner.lock creation or lock interference and no file/journal changes from viewmodel reads (AC-4.12).
 - **Test plan**: Synthetic journal and beat fixtures; existing accessible consumers still use unchanged readers. Treat I/O errors as errors/unknown, not zero evidence.
 - **Invariants touched**: I05/I07/I09/I12/I14/I23 (v2 §§6.4,7.3,15.1: read-only evidence, missing is unknown).
+
+- **Status**: ✅ Completed — added current-attempt model and event-tail evidence, raw usage, admitted detachment capability and conservative read-only supervision; PR #509.
+- **Implementation**: Commit `072a412` implements design §4; `58d52d5` corrects only the portable ownership fixture described below, with focused independent code/architecture review Ready. Signed integrations `0d1d059` / `f8e3029` preserve the tested source and establish PR #511's actual merge `5ebf9fb` on main; the historical CLI watchdog cause remains unknown. The single new combined-tree race gate passed in 280.7s (CLI 110.062s, supervisor 271.619s); corrected ownership acceptance passed in 4.708s with a coordinator repeat in 4.704s. First pass remains false; actual gate failures and diagnostic comparisons are preserved in scratchpad.
+- **Spec deviations**:
+  - Native Windows fixture correction (consistent with design §4): commit `58d52d5` accounts for mandatory byte-range locks by checking seeded lock bytes after release, held lock identity/size/mode/modtime, and every other canonical file's exact bytes while held. Initial no-lock polling, real held-owner recovery refusals and subsequent acquisition/recovery remain asserted. Independent focused code/architecture review returned Ready; no runtime, bound or ownership assertion changed.
+  - Own `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md` and `specs/in-progress/tui-observatory-view/scratchpad.md` record required completion, downstream contracts and validation history. No product behavior or source-scope deviation.
+- **Files modified**: `internal/tui/viewmodel/viewmodel.go`, `internal/tui/viewmodel/viewmodel_test.go`, `internal/tui/viewmodel/supervision.go`, `internal/tui/viewmodel/supervision_test.go`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
+
 
 ### Task 7 — Implement safe exit rows and typed TUI controls
 
