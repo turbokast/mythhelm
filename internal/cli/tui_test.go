@@ -1067,7 +1067,9 @@ func TestFinalRunJournaledPolicy(t *testing.T) {
 		{name: "missing database", firstErr: journal.ErrNoDatabase, wantCalls: 1},
 		{name: "missing row", firstErr: journal.ErrNotFound, wantCalls: 1},
 		{name: "retry finds run", firstErr: readErr, recover: true, wantFound: true, wantCalls: 2, wantElapsed: accessibleRunWaitPace},
+		// I09 (v2 §2): unreadable evidence remains unknown, not observed absence.
 		{name: "permanent error is not absence", firstErr: readErr, wantErr: readErr, wantElapsed: 500 * time.Millisecond},
+		// I09 (v2 §2): a cancelled read cannot establish absence.
 		{name: "in flight read is cancelled", block: true, wantErr: context.DeadlineExceeded, wantElapsed: 500 * time.Millisecond},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
