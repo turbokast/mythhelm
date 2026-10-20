@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -54,29 +55,38 @@ func TestDetachConsoleHelper(t *testing.T) {
 
 func TestSurvivesCLIExitAndConsoleClose(t *testing.T) {
 	// Each case installs a private runtime directory for real supervisor recovery.
-	for _, action := range []string{"cli_exit", "console_close"} {
+	outer := t
+	for _, action := range []string{"cli_exit", "console_close", "early_setup_return"} {
+		var earlyWorker, earlyNative windows.Handle
 		t.Run(action, func(t *testing.T) {
-			state, repo, runtimeDir := t.TempDir(), t.TempDir(), t.TempDir()
+			tempDir := t.TempDir
+			if action == "early_setup_return" {
+				// Keep files intact until the outer exit assertions. TempDir deletion
+				// must not stop a mutant's live worker and mask the missing fallback.
+				tempDir = outer.TempDir
+			}
+			state, repo, runtimeDir := tempDir(), tempDir(), tempDir()
 			t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
 			release, err := control.AcquireInstance(state)
 			if err != nil {
 				t.Fatal(err)
 			}
 			release() // Persist the boot generation used by the worker spawn.
+			gitHome := tempDir()
 			for _, args := range [][]string{
 				{"init", "--quiet", "--initial-branch=main"},
 				{"config", "user.name", "Test"},
 				{"config", "user.email", "test@example.com"},
-				{"-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--quiet", "--allow-empty", "-m", "synthetic fixture"},
+				{"commit", "--quiet", "--allow-empty", "-m", "synthetic fixture"},
 			} {
 				cmd := exec.CommandContext(t.Context(), "git", args...)
 				cmd.Dir = repo
-				cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "GIT_CONFIG_NOSYSTEM=1")
+				cmd.Env = append(os.Environ(), "HOME="+gitHome, "XDG_CONFIG_HOME="+gitHome, "GIT_CONFIG_NOSYSTEM=1")
 				if out, err := cmd.CombinedOutput(); err != nil {
 					t.Fatalf("git: %v: %s", err, out)
 				}
 			}
-			task := filepath.Join(t.TempDir(), "task.md")
+			task := filepath.Join(tempDir(), "task.md")
 			if err := os.WriteFile(task, []byte("# Synthetic detach task\nWrite demo.txt.\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -84,7 +94,7 @@ func TestSurvivesCLIExitAndConsoleClose(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, os.Args[0], args...) //nolint:gosec // G702: own test executable, fixed helper selector and synthetic fixture paths.
-			cmd.Env = append(os.Environ(), "MYTHHELM_HOME="+state, "HOME="+t.TempDir(), "XDG_CONFIG_HOME="+t.TempDir())
+			cmd.Env = append(os.Environ(), "MYTHHELM_HOME="+state, "HOME="+tempDir(), "XDG_CONFIG_HOME="+tempDir())
 			cmd.Dir = repo
 			cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.DETACHED_PROCESS}
 			output, err := cmd.StdoutPipe()
@@ -93,6 +103,9 @@ func TestSurvivesCLIExitAndConsoleClose(t *testing.T) {
 			}
 			var diagnostics bytes.Buffer
 			cmd.Stderr = &diagnostics
+			// Registered before launch: the later helper pin and Wait cleanups run
+			// first, preventing the spawning CLI from racing this private-state scan.
+			t.Cleanup(func() { cleanupDetachState(t, state) })
 			if err := cmd.Start(); err != nil {
 				t.Fatal(err)
 			}
@@ -113,6 +126,41 @@ func TestSurvivesCLIExitAndConsoleClose(t *testing.T) {
 			}
 			if ready.Blocked != "" {
 				t.Skipf("blocked: %s: %s", action, ready.Blocked)
+			}
+			if action == "early_setup_return" {
+				// Intentionally return before consuming attempt.launched. Only the
+				// pre-launch fallback owns teardown; parent-lifetime emergency cleanup
+				// runs only after the exit assertions and keeps a failing mutant leak-free.
+				// Anchor the identity deadline to launch evidence, excluding admission
+				// and Git setup; leave attempt.launched unread in the output pipe.
+				intentObserved := false
+				for scan.Scan() {
+					var ev journal.Event
+					if err := json.Unmarshal(scan.Bytes(), &ev); err != nil {
+						t.Fatal(err)
+					}
+					if ev.Type == "attempt.launch_intent_recorded" {
+						intentObserved = true
+						break
+					}
+				}
+				if !intentObserved {
+					t.Fatalf("early-return fixture lacks launch intent: %v", scan.Err())
+				}
+				id := waitDetachNativeIdentity(t, state)
+				earlyWorker, err = openDetachIdentity(workers.ProcessIdentity{PID: id.PID, StartTime: id.StartTime})
+				if err != nil {
+					t.Fatal(err)
+				}
+				outer.Cleanup(func() { terminateDetachHandle(outer, earlyWorker); _ = windows.CloseHandle(earlyWorker) })
+				earlyNative, err = openDetachIdentity(workers.ProcessIdentity{PID: *id.NativePID, StartTime: *id.NativeStartTime})
+				if err != nil {
+					t.Fatal(err)
+				}
+				outer.Cleanup(func() { terminateDetachHandle(outer, earlyNative); _ = windows.CloseHandle(earlyNative) })
+				requireDetachedLive(t, earlyWorker, id.StartTime)
+				requireDetachedLive(t, earlyNative, *id.NativeStartTime)
+				return
 			}
 			// Install worker cleanup as soon as its first durable launch evidence is
 			// rendered, before any later native-session or console assertion can fail.
@@ -214,32 +262,139 @@ func TestSurvivesCLIExitAndConsoleClose(t *testing.T) {
 				t.Fatalf("post-reconnect stop: %+v %v", stopped, err)
 			}
 		})
+		if action == "early_setup_return" && earlyWorker != 0 && earlyNative != 0 {
+			for _, h := range []windows.Handle{earlyWorker, earlyNative} {
+				status, err := windows.WaitForSingleObject(h, 5000)
+				if err != nil || status != windows.WAIT_OBJECT_0 {
+					t.Errorf("early setup cleanup left owned process alive: status=%d err=%v", status, err)
+				}
+			}
+		}
 	}
 }
 
 // Check creation time on the same retained handle before registering any
 // termination. A failed identity observation can never authorize cleanup.
-func pinDetachIdentity(t *testing.T, id workers.ProcessIdentity) windows.Handle {
-	t.Helper()
+var errDetachIdentityMismatch = errors.New("fixture process creation time differs")
+
+func openDetachIdentity(id workers.ProcessIdentity) (windows.Handle, error) {
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, uint32(id.PID)) //nolint:gosec // G115: fixture PID originates from Windows.
 	if err != nil {
-		t.Fatal(err)
+		return 0, err
 	}
 	var created, exited, kernel, user windows.Filetime
 	if err := windows.GetProcessTimes(h, &created, &exited, &kernel, &user); err != nil {
 		_ = windows.CloseHandle(h)
-		t.Fatal(err)
+		return 0, err
 	}
 	if !time.Unix(0, created.Nanoseconds()).Equal(id.StartTime) {
 		_ = windows.CloseHandle(h)
-		t.Fatal("fixture process creation time differs")
+		return 0, errDetachIdentityMismatch
 	}
-	t.Cleanup(func() {
-		_ = windows.TerminateProcess(h, 1)
-		_, _ = windows.WaitForSingleObject(h, 5000)
-		_ = windows.CloseHandle(h)
-	})
+	return h, nil
+}
+
+func pinDetachIdentity(t *testing.T, id workers.ProcessIdentity) windows.Handle {
+	t.Helper()
+	h, err := openDetachIdentity(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { terminateDetachHandle(t, h); _ = windows.CloseHandle(h) })
 	return h
+}
+
+func terminateDetachHandle(t *testing.T, h windows.Handle) bool {
+	t.Helper()
+	status, err := windows.WaitForSingleObject(h, 0)
+	if err == nil && status == windows.WAIT_OBJECT_0 {
+		return true
+	}
+	if err := windows.TerminateProcess(h, 1); err != nil {
+		t.Errorf("terminate fixture identity: %v", err)
+		return false
+	}
+	status, err = windows.WaitForSingleObject(h, 5000)
+	if err != nil || status != windows.WAIT_OBJECT_0 {
+		t.Errorf("fixture identity cleanup unconfirmed: status=%d err=%v", status, err)
+		return false
+	}
+	return true
+}
+
+func waitDetachNativeIdentity(t *testing.T, state string) workers.Identity {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		files, err := filepath.Glob(filepath.Join(state, "runs", "*", "attempts", "*", "worker.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, file := range files {
+			id, err := workers.ReadIdentity(filepath.Dir(file))
+			if err == nil && id.NativePID != nil && id.NativeStartTime != nil {
+				return id
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("early-return fixture never persisted native identity")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// The spawning CLI is already quiescent when this cleanup runs. Scan only
+// this test's private durable identities, never OS process names or PID ranges.
+func cleanupDetachState(t *testing.T, state string) {
+	t.Helper()
+	dirs, err := filepath.Glob(filepath.Join(state, "runs", "*", "attempts", "*"))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	for _, dir := range dirs {
+		id, err := workers.ReadIdentity(dir)
+		if err != nil {
+			t.Errorf("cleanup worker identity unknown: %v", err)
+			continue
+		}
+		h, err := openDetachIdentity(workers.ProcessIdentity{PID: id.PID, StartTime: id.StartTime})
+		switch {
+		case err == nil:
+			gone := terminateDetachHandle(t, h)
+			_ = windows.CloseHandle(h)
+			if !gone {
+				continue
+			}
+		case errors.Is(err, windows.ERROR_INVALID_PARAMETER), errors.Is(err, errDetachIdentityMismatch):
+			// The recorded worker is gone; a reused PID grants no termination authority.
+		default:
+			t.Errorf("cleanup worker observation unknown: %v", err)
+			continue
+		}
+		// A worker may have persisted its native after the first read. Re-read only
+		// after its exact process has exited so it cannot create another native.
+		id, err = workers.ReadIdentity(dir)
+		if err != nil {
+			t.Errorf("cleanup final identity unknown: %v", err)
+			continue
+		}
+		if id.NativePID == nil || id.NativeStartTime == nil {
+			if id.NativeLaunchIntent != nil {
+				t.Error("cleanup native identity unknown after launch intent")
+			}
+			continue
+		}
+		h, err = openDetachIdentity(workers.ProcessIdentity{PID: *id.NativePID, StartTime: *id.NativeStartTime})
+		switch {
+		case err == nil:
+			terminateDetachHandle(t, h)
+			_ = windows.CloseHandle(h)
+		case errors.Is(err, windows.ERROR_INVALID_PARAMETER), errors.Is(err, errDetachIdentityMismatch):
+		default:
+			t.Errorf("cleanup native observation unknown: %v", err)
+		}
+	}
 }
 
 func requireDetachedLive(t *testing.T, h windows.Handle, start time.Time) {
