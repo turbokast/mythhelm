@@ -91,7 +91,7 @@ func TestLiveTUIIntentOutcomes(t *testing.T) {
 			if pending {
 				want = "stop not yet confirmed; run 'mythhelm recover run_detach'"
 			}
-			want += "; " + tuiRecoveryHint(dir, "run_detach") + "; not qualified on this platform\n"
+			want += "; " + literalRecoveryHintForTest(runtime.GOOS, dir, "run_detach") + "; not qualified on this platform\n"
 			if text != want {
 				t.Errorf("notice = %q, want %q", text, want)
 			}
@@ -216,6 +216,7 @@ func TestInspectUnresolvedExit(t *testing.T) {
 		{name: "cancelled apply completion", action: &tui.ActionCompletion{Kind: "apply", Err: context.Canceled}, intent: tui.ExitUnresolvedAction, message: "action cancelled"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			dir, id := t.TempDir(), "run_inspect"
 			deps := forcedDeps(true, func(_ context.Context, cfg tui.Config) error {
 				if cfg.Mode != tui.ModeInspect {
 					t.Error("inspect mode missing")
@@ -226,7 +227,7 @@ func TestInspectUnresolvedExit(t *testing.T) {
 				cfg.OnExit(tui.ExitIntent{Kind: tc.intent})
 				return nil
 			})
-			err := runInspectTUI(deps, t.TempDir(), "run_inspect", resolveTUIFlags(t, bareGetenv))
+			err := runInspectTUI(deps, dir, id, resolveTUIFlags(t, bareGetenv))
 			want := ExitOwnership
 			if tc.action == nil {
 				want = ExitOK
@@ -234,7 +235,7 @@ func TestInspectUnresolvedExit(t *testing.T) {
 			if exitCode(err) != want {
 				t.Fatalf("exit %d want %d: %v", exitCode(err), want, err)
 			}
-			if tc.action != nil && (!strings.Contains(err.Error(), "MYTHHELM_HOME=") || !strings.Contains(err.Error(), tc.message)) {
+			if tc.action != nil && (!hasStateBoundRecoveryHint(err.Error(), runtime.GOOS, dir, id) || !strings.Contains(err.Error(), tc.message)) {
 				t.Fatalf("wrong completion guidance: %v", err)
 			}
 		})
@@ -270,7 +271,7 @@ func TestInspectStopTerminalLoss(t *testing.T) {
 			if state != "stopped" && strings.Contains(err.Error(), "stop confirmed") {
 				t.Fatalf("false confirmation %v", err)
 			}
-			if state == "stop_requested" && (!strings.Contains(err.Error(), "not yet confirmed") || !strings.Contains(err.Error(), "MYTHHELM_HOME=")) {
+			if state == "stop_requested" && (!strings.Contains(err.Error(), "not yet confirmed") || !hasStateBoundRecoveryHint(err.Error(), runtime.GOOS, dir, id)) {
 				t.Fatalf("pending hint %v", err)
 			}
 			j := openJournal(t, dir)
@@ -715,11 +716,12 @@ func TestLiveUnresolvedExit(t *testing.T) {
 	for _, kind := range []string{"recover", "apply"} {
 		t.Run(kind, func(t *testing.T) {
 			stdio, _, _ := testStdio()
+			dir, id := t.TempDir(), "run_cancelled"
 			deps := forcedDeps(true, func(_ context.Context, cfg tui.Config) error {
 				cfg.OnExit(tui.ExitIntent{Kind: tui.ExitUnresolvedAction, Phase: "ready_for_review"})
 				return nil
 			})
-			_, err := runLiveTUI(stdio, deps, t.TempDir(), "run_cancelled", resolveTUIFlags(t, bareGetenv), func(_ context.Context, h supervisor.Hooks) (supervisor.Outcome, error) {
+			_, err := runLiveTUI(stdio, deps, dir, id, resolveTUIFlags(t, bareGetenv), func(_ context.Context, h supervisor.Hooks) (supervisor.Outcome, error) {
 				select {
 				case <-h.Interrupt:
 					t.Error("action cancellation requested worker stop")
@@ -727,7 +729,7 @@ func TestLiveUnresolvedExit(t *testing.T) {
 				}
 				return supervisor.Outcome{State: supervisor.RunReadyForReview}, nil
 			})
-			if exitCode(err) != ExitOwnership || !strings.Contains(err.Error(), "MYTHHELM_HOME=") || !strings.Contains(err.Error(), "mythhelm recover") {
+			if exitCode(err) != ExitOwnership || !hasStateBoundRecoveryHint(err.Error(), runtime.GOOS, dir, id) || !strings.Contains(err.Error(), "mythhelm recover") {
 				t.Fatalf("cancelled %s exit: %v", kind, err)
 			}
 		})
@@ -954,7 +956,7 @@ func TestLiveViewApplyProjection(t *testing.T) {
 			if !strings.Contains(stdout.String(), "result: "+wantState) || strings.Contains(stdout.String(), "result: ready_for_review") {
 				t.Fatalf("stale rendered result %q", stdout.String())
 			}
-			if cancelled && !strings.Contains(err.Error(), "MYTHHELM_HOME=") {
+			if cancelled && !hasStateBoundRecoveryHint(err.Error(), runtime.GOOS, dir, id) {
 				t.Fatalf("missing recovery hint: %v", err)
 			}
 		})
@@ -980,7 +982,7 @@ func TestLiveProjectionUnavailable(t *testing.T) {
 			if calls != 1 || out.RunID != id || out.State != "unknown" || out.Reason != "" || out.AttemptID != "" || out.AttemptState != "" || out.AttemptReason != "" || exitCode(err) != ExitOwnership || !errors.Is(err, fault) {
 				t.Fatalf("unavailable projection %+v calls %d err %v", out, calls, err)
 			}
-			if !strings.Contains(err.Error(), "canonical state unavailable") || !strings.Contains(err.Error(), "MYTHHELM_HOME=") {
+			if !strings.Contains(err.Error(), "canonical state unavailable") || !hasStateBoundRecoveryHint(err.Error(), runtime.GOOS, dir, id) {
 				t.Fatalf("unavailable guidance %v", err)
 			}
 			if !strings.Contains(stdout.String(), "result: unknown") || strings.Contains(stdout.String(), "not admitted") || strings.Contains(stdout.String(), "ready_for_review") || strings.Contains(stdout.String(), "stale") {
@@ -1060,7 +1062,7 @@ func TestHeadlessActionFailureProjectionUnavailable(t *testing.T) {
 			if out.RunID != id || out.State != "unknown" || out.Reason != "" || out.AttemptID != "" || out.AttemptState != "" || out.AttemptReason != "" {
 				t.Fatalf("stale projection %+v", out)
 			}
-			if !strings.Contains(err.Error(), "canonical state unavailable") || !strings.Contains(err.Error(), "MYTHHELM_HOME=") || !strings.Contains(stdout.String(), "result: unknown") || strings.Contains(stdout.String(), "ready_for_review") || strings.Contains(stdout.String(), "not admitted") {
+			if !strings.Contains(err.Error(), "canonical state unavailable") || !hasStateBoundRecoveryHint(err.Error(), runtime.GOOS, dir, id) || !strings.Contains(stdout.String(), "result: unknown") || strings.Contains(stdout.String(), "ready_for_review") || strings.Contains(stdout.String(), "not admitted") {
 				t.Fatalf("unavailable guidance/output %v / %q", err, stdout.String())
 			}
 		})
@@ -1103,13 +1105,14 @@ func TestHeadlessRecoverMissingOutcome(t *testing.T) {
 }
 
 func TestInspectRecoverMissingOutcome(t *testing.T) {
+	dir, id := t.TempDir(), "run_missing_recovery"
 	deps := forcedDeps(true, func(_ context.Context, cfg tui.Config) error {
 		cfg.OnExit(tui.ExitIntent{Kind: tui.ExitFinishHeadless, Phase: "recovering"})
 		cfg.OnHeadlessAction(tui.ActionCompletion{Kind: "recover"})
 		return nil
 	})
-	err := runInspectTUI(deps, t.TempDir(), "run_missing_recovery", resolveTUIFlags(t, bareGetenv))
-	if exitCode(err) != ExitOwnership || !strings.Contains(err.Error(), "MYTHHELM_HOME=") || !strings.Contains(err.Error(), "recovery outcome unresolved") || strings.Contains(err.Error(), "recovery result:") {
+	err := runInspectTUI(deps, dir, id, resolveTUIFlags(t, bareGetenv))
+	if exitCode(err) != ExitOwnership || !hasStateBoundRecoveryHint(err.Error(), runtime.GOOS, dir, id) || !strings.Contains(err.Error(), "recovery outcome unresolved") || strings.Contains(err.Error(), "recovery result:") {
 		t.Fatalf("missing result should remain unresolved: %v", err)
 	}
 }
@@ -1236,5 +1239,52 @@ func TestTerminalLossAfterViewExit(t *testing.T) {
 			})
 		}
 
+	}
+}
+
+// These fixtures use quote-free state paths. Expected shell syntax is an
+// independent literal template, never the production formatter's return value.
+func literalRecoveryHintForTest(goos, stateDir, runID string) string {
+	if goos == "windows" {
+		return "PowerShell: $env:MYTHHELM_HOME = '" + stateDir + "'; mythhelm recover '" + runID + "'"
+	}
+	return "POSIX sh/bash/zsh: env 'MYTHHELM_HOME=" + stateDir + "' mythhelm recover '" + runID + "'"
+}
+func hasStateBoundRecoveryHint(text, goos, stateDir, runID string) bool {
+	return strings.Contains(text, literalRecoveryHintForTest(goos, stateDir, runID))
+}
+
+func TestRecoveryHintOracle(t *testing.T) {
+	for _, tc := range []struct{ goos, stateDir, label, good string }{
+		{"linux", "/tmp/state root", "POSIX sh/bash/zsh", "POSIX sh/bash/zsh: env 'MYTHHELM_HOME=/tmp/state root' mythhelm recover 'run_expected'"},
+		{"windows", `C:\state root`, "PowerShell", `PowerShell: $env:MYTHHELM_HOME = 'C:\state root'; mythhelm recover 'run_expected'`},
+	} {
+		t.Run(tc.goos, func(t *testing.T) {
+			if got := literalRecoveryHintForTest(tc.goos, tc.stateDir, "run_expected"); got != tc.good {
+				t.Fatalf("literal oracle %q want %q", got, tc.good)
+			}
+			for _, sample := range []struct {
+				name, text string
+				want       bool
+			}{
+				{"complete", "action unresolved; " + tc.good, true},
+				{"missing", "action unresolved", false},
+				{"wrong state", strings.Replace(tc.good, tc.stateDir, "other-state", 1), false},
+				{"wrong run", strings.Replace(tc.good, "run_expected", "run_other", 1), false},
+				{"run prefix", strings.Replace(tc.good, "run_expected", "run_expected_suffix", 1), false},
+				{"empty run", strings.Replace(tc.good, "run_expected", "", 1), false},
+				{"state control", strings.Replace(tc.good, tc.stateDir, tc.stateDir+"\n", 1), false},
+				{"wrong label", strings.Replace(tc.good, tc.label, "other-shell", 1), false},
+				{"unquoted run", strings.Replace(tc.good, "'run_expected'", "run_expected", 1), false},
+				{"missing assignment", strings.Replace(tc.good, "MYTHHELM_HOME", "OTHER_HOME", 1), false},
+				{"wrong assignment syntax", strings.NewReplacer(": env ", ": ", " = ", " == ").Replace(tc.good), false},
+			} {
+				t.Run(sample.name, func(t *testing.T) {
+					if got := hasStateBoundRecoveryHint(sample.text, tc.goos, tc.stateDir, "run_expected"); got != sample.want {
+						t.Errorf("hint oracle %v want %v for %q", got, sample.want, sample.text)
+					}
+				})
+			}
+		})
 	}
 }
