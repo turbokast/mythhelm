@@ -10,7 +10,7 @@
 
 ## Implementation Tasks
 
-### Task 1 — Review the service composition decision
+### Task 1 — Review the service composition decision ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -25,6 +25,11 @@
   - Review evidence names the concrete accepted revision; status remains proposed without actual acceptance.
 - **Test plan**: Synthetic fixtures and deterministic barriers for the named cases; pair negative assertions with a deliberately violating fixture. Public process behavior uses the packaged binary in the integration task, not helper-only evidence.
 - **Invariants touched**: I03/I06/I12/I18/I23 (v2 §§3/5/6: no new owner or weakened recovery).
+
+- **Status**: ✅ Completed — recorded exact-revision ADR 0021 acceptance under delegated maintainer authority, with independent architecture and code review; PR #501.
+- **Implementation**: Commit `5386aff` binds acceptance to proposal `e50faa8` and independently confirmed original-file SHA-256 `b30067e53dadaddbc416f8501ed67ea127ff8b02f7f6591be0b86fd49ca53393`; Decision text is unchanged. Independent architecture/code review and the coordinator's separate output review returned Ready without blocking findings. Lifecycle PR #498 merged as `b2b46e5` before task bookkeeping.
+- **Spec deviations**: Own completion, handoff and scratchpad paths record required lifecycle evidence beyond the docs Files list. The pre-merge completion entry follows WORKFLOW and task-completion, which take precedence over this spec's heading-after-merge wording; the marker does not claim that PR #501 has merged. No contract deviation.
+- **Files modified**: `docs/decisions/0021-service-attachment-composition.md`, `docs/decisions/README.md`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
 ### Task 2 — Define typed service and attachment protocols
 

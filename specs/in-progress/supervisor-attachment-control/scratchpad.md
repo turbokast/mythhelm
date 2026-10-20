@@ -21,7 +21,8 @@
 
 ## Discoveries
 
-- None; no implementation or qualification claimed.
+- Task 1: Independent architecture/code review accepted the concrete ADR 0021 proposal at `e50faa8` (original-file SHA-256 `b30067e53dadaddbc416f8501ed67ea127ff8b02f7f6591be0b86fd49ca53393`) with a Ready verdict and no critical, important or conflicting-contract findings. The delivery coordinator accepted that exact proposal under direct operator delegation and independently reviewed author output `5386aff` as Ready. PR #501 changes ADR status/authority evidence, the decision index and own task records; the Decision section is byte-preserved. No runtime or platform qualification is claimed.
+- Task 1 lifecycle: PR #498 merged as `b2b46e5` before completion records were written. WORKFLOW/task-completion require the entry in the task PR before merge, taking precedence over this child's heading-after-merge wording; dependent code still waits for Task 1's merged PR.
 
 ## Validation round 1 fixes
 
