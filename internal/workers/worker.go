@@ -580,10 +580,14 @@ func (w *worker) run(ctx context.Context) (retErr error) {
 	if l.identityErr != nil {
 		return w.abort(ctx, sp, sess, outcome{}, l.identityErr)
 	}
-	if err := sp.emit(evLaunched, map[string]any{
+	launched := map[string]any{
 		"worker_pid": w.id.PID, "worker_start_time": w.id.StartTime,
 		"native_pid": w.id.NativePID, "native_pgid": w.id.NativePGID,
-	}); err != nil {
+	}
+	if w.id.NativeStartTime != nil {
+		launched["native_start_time"] = w.id.NativeStartTime
+	}
+	if err := sp.emit(evLaunched, launched); err != nil {
 		return w.abort(ctx, sp, sess, outcome{}, err)
 	}
 	if err := emitState(sp, "running", ""); err != nil {

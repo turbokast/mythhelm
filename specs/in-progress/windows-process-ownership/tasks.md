@@ -133,7 +133,7 @@
 - **Files modified**: `.github/workflows/ci.yml`, `docs/automation.md`, `internal/adapter/adapter.go`, `internal/cli/observatory_baseline_test.go`, `internal/supervisor/ladder_version_test.go`, `internal/supervisor/pinning_test.go`, `internal/supervisor/pipeline.go`, `internal/workers/job_other.go`, `internal/workers/job_windows.go`, `internal/workers/proc_unix.go`, `internal/workers/proc_windows.go`, `internal/workers/worker.go`, `internal/workers/worker_test.go`, `internal/workers/worker_windows_test.go`, `specs/in-progress/windows-process-ownership/scratchpad.md`, `tests/e2e/tui_test.go`, `specs/in-progress/windows-process-ownership/tasks.md`, `specs/in-progress/windows-process-ownership/handoff.md`.
 - **CI evidence**: [run 39148306697](https://github.com/turbokast/mythhelm/actions/runs/39148306697), source `1f21d09`: all 29 named launch/stop tests pass on both architectures; [ARM64 full suite](https://github.com/turbokast/mythhelm/actions/runs/39148306697/job/117736819760) passed (`internal/workers` 30.342s, `tests/e2e` 120.152s). [AMD64 full race suite](https://github.com/turbokast/mythhelm/actions/runs/39148306697/job/117736819762) passed (`internal/workers` 30.352s, `tests/e2e` 91.325s); whole CI passed. Subsequent merge `c3f3f5d` brings documentation-only main changes. Integrated local race gate passed (85.3s), all six markers fresh, independent E2E race check passed (2.861s), independent code/architecture and final E2E reviews Ready. Earlier full-suite integration failures and their precise test-only corrections are recorded in scratchpad; Wine is development evidence only. No qualification row is promoted.
 
-### Task 5 — native start time in the launch record
+### Task 5 — native start time in the launch record ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (persisted launch identity across platforms)
@@ -152,6 +152,16 @@
   - `TestStartTimeReadFailureTerminatesJob` (Windows, `startTime` replaced with an error): the failure happens right after `cmd.Start()`, before assignment and resume, so the suspended process is terminated and confirmed gone (nothing ran) and the job is empty, the attempt ends `failed_native`/`launch_failed`, and with termination also failing it ends `interrupted`/`stop_unconfirmed`. Fails before: the field and seam are absent.
   - `TestIngestAcceptsLaunchedWithStartTime`: an `attempt.launched` event with the extra field ingests without error and leaves the `attempts` row columns as before.
 - **Invariants touched**: I09 (absent is `unknown`), I12 (launch identity is matched, not replayed), I18 (match on PID and start identity).
+
+
+- **Status**: ✅ Completed — Windows launched events carry the observed native creation time, with identity, Unix omission and ingestion evidence; PR #499.
+- **Implementation**: Commits `e052905`, `067c453`; signed integration `b665237`. Task 3 already supplied `Identity.NativeStartTime`, pre-assignment persistence and read-failure cleanup; this task adds the Windows-only event field and retained equality/failure/compatibility tests. No database migration or qualification row changes.
+- **Spec deviations**:
+  - Approved `.github/workflows/ci.yml` and `docs/automation.md` extension exposes both named Windows acceptance tests without reducing full suites; integration preserves main's Windows package scheduling.
+  - Approved `tests/e2e/tui_test.go` correction validates each launched event against its own raw journal and durable worker.json identity before normalizing only the Windows creation timestamp across independent runs. Closed keys, nonzero/equality checks, Unix omission and counterfactuals remain strict (AC-1.4, N4).
+  - Added `TestUnixLaunchEventUnchanged` alongside the identity golden (consistent with N4); lifecycle records document the actual Task 3/5 boundary.
+- **Files modified**: `.github/workflows/ci.yml`, `docs/automation.md`, `internal/supervisor/ingest_ledger_test.go`, `internal/workers/identity_write_windows_test.go`, `internal/workers/launch_record_test.go`, `internal/workers/testdata/worker-json-unix.golden`, `internal/workers/worker.go`, `tests/e2e/tui_test.go`, `specs/in-progress/windows-process-ownership/tasks.md`, `specs/in-progress/windows-process-ownership/handoff.md`, `specs/in-progress/windows-process-ownership/scratchpad.md`.
+- **CI evidence**: [source run 39416955906](https://github.com/turbokast/mythhelm/actions/runs/39416955906), head `b665237`: [AMD64 job 118608248903](https://github.com/turbokast/mythhelm/actions/runs/39416955906/job/118608248903) passes both named tests (creation-time equality 0.26s; read-failure cleanup 0.08s/5.09s), full race workers45.730s/E2E66.170s; [ARM64 job 118608249088](https://github.com/turbokast/mythhelm/actions/runs/39416955906/job/118608249088) passes both named tests (0.28s; 0.09s/5.10s), full suite workers37.205s/E2E71.691s. Whole CI passed. Local full race238.9s, Unix record/event race1.372s and ingestion race1.396s; all six source markers fresh. Final metadata-head CI remains required before merge.
 
 ### Task 6 — Windows recovery verdict
 

@@ -222,3 +222,60 @@ func TestProjectUsageFailureRollsBack(t *testing.T) {
 		t.Fatalf("event journaled despite failed projection: %+v", evs)
 	}
 }
+
+func TestIngestAcceptsLaunchedWithStartTime(t *testing.T) { // I09/I12 (v2 §2): retain observation without a new projection column.
+	t.Parallel()
+	for _, extra := range []string{"", `,"native_start_time":"2026-01-02T03:04:06Z"`} {
+		t.Run(fmt.Sprintf("extra=%t", extra != ""), func(t *testing.T) {
+			t.Parallel()
+			f := newLedgerFixture(t)
+			row := journal.AttemptRow{AttemptID: "att_synthetic", RunID: f.runID, TaskID: "task_synthetic", AttemptNumber: 1,
+				State: "launching", LaunchTokenSHA256: "synthetic-digest", WorkspacePath: "/tmp/synthetic-workspace"}
+			if err := f.j.Transact(t.Context(), func(tx *sql.Tx) error { return journal.InsertAttempt(t.Context(), tx, row) }); err != nil {
+				t.Fatal(err)
+			}
+			ev := f.event("wrk_synthetic", "attempt.launched", `{"worker_pid":100,"worker_start_time":"2026-01-02T03:04:05Z","native_pid":101,"native_pgid":null`+extra+`}`)
+			ev.AttemptID = row.AttemptID
+			line, err := json.Marshal(ev)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoded, err := decodeSpoolLine(line, AttemptRef{RunID: f.runID, AttemptID: row.AttemptID}, ev.ProducerID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if decoded.Type != "attempt.launched" {
+				t.Fatalf("type=%q", decoded.Type)
+			}
+			f.append(t, decoded)
+			got, err := f.j.Attempt(t.Context(), row.AttemptID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != row {
+				t.Fatalf("attempt projection changed: got %+v, want %+v", got, row)
+			}
+			if err := f.j.Transact(t.Context(), func(tx *sql.Tx) error {
+				var workerPID, nativePID int
+				var start string
+				var pgid sql.NullInt64
+				if err := tx.QueryRowContext(t.Context(), `SELECT worker_pid, worker_start_time, native_pid, native_pgid FROM attempts WHERE attempt_id = ?`, row.AttemptID).Scan(&workerPID, &start, &nativePID, &pgid); err != nil {
+					return err
+				}
+				if workerPID != 100 || nativePID != 101 || start != "2026-01-02T03:04:05Z" || pgid.Valid {
+					return fmt.Errorf("process projection=%d/%s/%d/%v", workerPID, start, nativePID, pgid)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			events, err := f.j.Events(t.Context(), f.runID, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(events) != 1 || events[0].Type != "attempt.launched" || string(events[0].Payload) != string(ev.Payload) {
+				t.Fatalf("journal did not preserve launched payload: %+v", events)
+			}
+		})
+	}
+}
