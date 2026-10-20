@@ -59,60 +59,61 @@ type Config struct {
 // seam; liveQuit/liveDone join the channel pump; recoverEvents and
 // recoverNotices feed the in-flight recover action live (live.go).
 type Model struct {
-	viewDone         chan struct{}
-	cfg              Config
-	action           *actionCall
-	interrupts       uint64
-	actionQuitArmed  bool
-	exiting          bool
-	exitIntent       ExitIntent
-	terminalLoss     bool
-	stopSent         bool
-	detachSent       bool
-	exitRow          int
-	managedPoll      bool
-	snap             viewmodel.Snapshot
-	ready            bool
-	loadErr          error
-	empty            bool
-	runCtx           context.Context
-	actCancel        context.CancelFunc
-	working          string
-	diff             Diff
-	diffErr          error
-	loadDiff         func(ctx context.Context, workspace, base, commit string) (Diff, error)
-	loadSnapshot     func(ctx context.Context, dir, runID string) (viewmodel.Snapshot, error)
-	width            int
-	height           int
-	focusPane        string
-	focusPrev        string
-	focusIndex       int
-	selectedTask     string
-	selectedLane     string
-	dialog           string
-	dialogField      int
-	dialogFocus      int
-	applyBranch      string
-	acceptFlags      bool
-	acceptUnverified bool
-	stopRequested    bool
-	stopUnresolved   bool
-	stopConfirmed    bool
-	dialogErr        string
-	resultTitle      string
-	resultBody       string
-	filterOn         bool
-	filterText       string
-	palette          paletteState
-	helpOpen         bool
-	themeName        string
-	motion           motionState
-	notices          []journal.Event
-	liveQuit         chan struct{}
-	liveDone         chan struct{}
-	liveMu           sync.Mutex
-	recoverEvents    chan journal.Event
-	recoverNotices   *NoticeBacklog
+	viewDone            chan struct{}
+	cfg                 Config
+	action              *actionCall
+	interrupts          uint64
+	actionQuitArmed     bool
+	exiting             bool
+	exitIntent          ExitIntent
+	terminalLoss        bool
+	stopSent            bool
+	detachSent          bool
+	exitRow             int
+	managedPoll         bool
+	snap                viewmodel.Snapshot
+	ready               bool
+	loadErr             error
+	empty               bool
+	runCtx              context.Context
+	actCancel           context.CancelFunc
+	working             string
+	diff                Diff
+	diffErr             error
+	loadDiff            func(ctx context.Context, workspace, base, commit string) (Diff, error)
+	loadSnapshot        func(ctx context.Context, dir, runID string) (viewmodel.Snapshot, error)
+	width               int
+	height              int
+	focusPane           string
+	focusPrev           string
+	focusIndex          int
+	selectedTask        string
+	selectedLane        string
+	dialog              string
+	dialogField         int
+	dialogFocus         int
+	applyBranch         string
+	acceptFlags         bool
+	acceptUnverified    bool
+	stopRequested       bool
+	stopUnresolved      bool
+	actualStopConfirmed bool
+	stopConfirmed       bool
+	dialogErr           string
+	resultTitle         string
+	resultBody          string
+	filterOn            bool
+	filterText          string
+	palette             paletteState
+	helpOpen            bool
+	themeName           string
+	motion              motionState
+	notices             []journal.Event
+	liveQuit            chan struct{}
+	liveDone            chan struct{}
+	liveMu              sync.Mutex
+	recoverEvents       chan journal.Event
+	recoverNotices      *NoticeBacklog
 }
 
 // newModel builds the program state with default dimensions; the first
@@ -178,7 +179,14 @@ func (m *Model) setSnapshot(ctx context.Context, snap viewmodel.Snapshot) {
 	if snap.Attempt != nil {
 		nextAttempt = snap.Attempt.AttemptID
 	}
+	if nextAttempt != prevAttempt {
+		m.actualStopConfirmed = false
+	}
 	m.snap = snap
+	if snap.Attempt != nil && snap.Attempt.State == "stopped" {
+		m.actualStopConfirmed = true
+		m.stopUnresolved = false
+	}
 	m.ready = true
 	m.loadErr = nil
 	if stopConverged(snap) {
@@ -187,7 +195,6 @@ func (m *Model) setSnapshot(ctx context.Context, snap viewmodel.Snapshot) {
 		// retires and a late in-flight result cannot re-raise it; until
 		// then it renders requested, never stopped (I06).
 		m.stopRequested = false
-		m.stopUnresolved = false
 		m.stopConfirmed = true
 	}
 	if nextAttempt != prevAttempt {
@@ -261,9 +268,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	case eventMsg:
 		m.consumeEvent(msg.Event)
-		if m.stopConfirmed {
-			m.stopUnresolved = false
-		}
+		m.noteStopConfirmation(msg.Event)
 		return m, m.scheduleMotion()
 	case ClientSignal:
 		if msg == SignalTerminalLost {

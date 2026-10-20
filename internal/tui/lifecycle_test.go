@@ -748,7 +748,7 @@ func TestTerminalLossThenParentCancellationJoinsAction(t *testing.T) {
 
 func TestInspectStopErrorExitIntent(t *testing.T) {
 	t.Parallel()
-	for _, confirmation := range []string{"none", "before result", "after result"} {
+	for _, confirmation := range []string{"none", "before result", "after result", "interrupted", "created", "admission", "recovering", "applying", "unknown", "stopped snapshot", "foreign stopped", "malformed stopped"} {
 		t.Run(confirmation, func(t *testing.T) {
 			t.Parallel()
 			m := lifecycleModel(t, ModeInspect, "executing", "running")
@@ -769,15 +769,77 @@ func TestInspectStopErrorExitIntent(t *testing.T) {
 			if confirmation == "after result" {
 				m.Update(confirmed)
 			}
+			switch confirmation {
+			case "interrupted", "created", "admission", "recovering", "applying", "unknown":
+				snap := m.snap
+				snap.Run.State = confirmation
+				m.setSnapshot(t.Context(), snap)
+				m.Update(eventMsg{Event: journal.Event{Type: "ui.notice"}})
+			case "foreign stopped":
+				confirmed.Event.AttemptID = "att_other"
+				m.Update(confirmed)
+			case "malformed stopped":
+				confirmed.Event.Payload = json.RawMessage(`{"confirmed":true`)
+				m.Update(confirmed)
+			case "stopped snapshot":
+				snap := m.snap
+				attempt := *snap.Attempt
+				attempt.State = "stopped"
+				snap.Attempt = &attempt
+				m.setSnapshot(t.Context(), snap)
+			}
 			m.closeDialog()
 			m, quit := pressKey(t, m, specialMsg(tea.KeyCtrlC))
 			want := ExitUnresolvedAction
-			if confirmation != "none" {
+			if confirmation == "before result" || confirmation == "after result" || confirmation == "stopped snapshot" {
 				want = ExitView
 			}
 			if quit == nil || m.exitIntent.Kind != want {
 				t.Fatalf("exit=%+v want %d", m.exitIntent, want)
 			}
 		})
+	}
+}
+
+func TestInspectUnconfirmedStopSurvivesPoll(t *testing.T) {
+	t.Parallel()
+	for _, state := range []string{"stop_requested", "", "unrecognized"} {
+		t.Run(state, func(t *testing.T) {
+			t.Parallel()
+			m := lifecycleModel(t, ModeInspect, "executing", "running")
+			m.cfg.Actions.Stop = func(context.Context, string) (string, error) { return state, nil }
+			m.openDialog(dialogStop)
+			result := m.confirmStop()().(actionResultMsg)
+			m.applyActionResult(result)
+			snap := m.snap
+			snap.Run.State = "interrupted"
+			m.setSnapshot(t.Context(), snap)
+			m, quit := pressKey(t, m, specialMsg(tea.KeyCtrlC))
+			if quit == nil || m.exitIntent.Kind != ExitUnresolvedAction {
+				t.Fatalf("state=%q exit=%+v", state, m.exitIntent)
+			}
+		})
+	}
+}
+
+func TestLiveStopRemainsRequestedBeforeAdmission(t *testing.T) {
+	t.Parallel()
+	m := lifecycleModel(t, ModeLive, "created", "")
+	calls := 0
+	m.cfg.RequestStop = func() { calls++ }
+	m.openDialog(dialogStop)
+	m.confirmStop()
+	m.setSnapshot(t.Context(), m.snap)
+	if ok, reason := m.stopGate(); ok || reason != "stop already requested" {
+		t.Fatalf("gate=%v %q after accepted owner intent", ok, reason)
+	}
+	m.openDialog(dialogStop)
+	m.confirmStop()
+	if calls != 1 {
+		t.Fatalf("stop intents=%d", calls)
+	}
+	m, _ = pressKey(t, m, specialMsg(tea.KeyCtrlC))
+	if !strings.Contains(noticeText(m), "stop already requested") {
+		t.Fatalf("missing prior request notice: %s", noticeText(m))
 	}
 }

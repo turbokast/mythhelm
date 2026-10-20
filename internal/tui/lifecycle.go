@@ -132,7 +132,7 @@ func (m *Model) exit(kind ExitKind) tea.Cmd {
 	return tea.Quit
 }
 func (m *Model) viewExit() tea.Cmd {
-	if (m.stopRequested || (m.stopUnresolved && !m.stopConfirmed)) && m.cfg.Mode == ModeInspect {
+	if (m.stopRequested || m.stopUnresolved) && m.cfg.Mode == ModeInspect {
 		return m.exit(ExitUnresolvedAction)
 	}
 	return m.exit(ExitView)
@@ -190,7 +190,7 @@ func (m *Model) interrupt() tea.Cmd {
 		return m.viewExit()
 	}
 	if m.interrupts == 1 {
-		if m.phase() == "stopping" || m.stopRequested {
+		if m.phase() == "stopping" || m.stopRequested || m.stopSent {
 			m.lifecycleNotice("stop already requested")
 			return nil
 		}
@@ -417,4 +417,19 @@ func (m *Model) exitLines() []line {
 		rows = append(rows, line{text: text})
 	}
 	return append(rows, line{text: "Esc goes back", colour: m.cfg.Tokens.TextMuted})
+}
+
+// noteStopConfirmation keeps operation uncertainty separate from the older
+// pending-label convergence flag. A phase transition cannot prove a stop.
+func (m *Model) noteStopConfirmation(ev journal.Event) {
+	if ev.Type != "attempt.stopped" || m.snap.Attempt == nil {
+		return
+	}
+	if ev.AttemptID != "" && ev.AttemptID != m.snap.Attempt.AttemptID {
+		return
+	}
+	if stopConfirmed(ev.Payload) {
+		m.actualStopConfirmed = true
+		m.stopUnresolved = false
+	}
 }

@@ -54,7 +54,7 @@ func (m *Model) stopGate() (bool, string) {
 	if m.phaseBusy() {
 		return false, m.phase() + " in progress"
 	}
-	if m.phase() == "stopping" || m.stopRequested {
+	if m.phase() == "stopping" || m.stopRequested || (m.cfg.Mode == ModeLive && m.stopSent) {
 		return false, "stop already requested"
 	}
 	if m.phase() != "executing" && !(m.cfg.Mode == ModeLive && (m.phase() == "created" || m.phase() == "admission")) {
@@ -163,6 +163,7 @@ func (m *Model) confirmStop() tea.Cmd {
 	}
 	stop, runID := m.cfg.Actions.Stop, m.snap.Run.RunID
 	m.stopConfirmed = false
+	m.actualStopConfirmed = false
 	m.working = "Requesting stop..."
 	return m.startAction(func(ctx context.Context) actionResultMsg {
 		state, err := stop(ctx, runID)
@@ -230,11 +231,11 @@ func (m *Model) applyActionResult(msg actionResultMsg) {
 	switch msg.action {
 	case actionStop:
 		if msg.err != nil {
-			m.stopUnresolved = !m.stopConfirmed
+			m.stopUnresolved = !m.actualStopConfirmed
 			m.dialogErr = "stop failed: " + msg.err.Error()
 			return
 		}
-		m.stopUnresolved = false
+		m.stopUnresolved = msg.stopState != "stopped" && !m.actualStopConfirmed
 		// An already-confirmed stop ("stopped") leaves nothing pending:
 		// the label would lie about a request still outstanding (I06).
 		// A confirmation that arrived while the call ran also suppresses
