@@ -328,8 +328,14 @@ func terminateDetachHandle(t *testing.T, h windows.Handle) bool {
 
 // A matching retained object may exit between the initial wait and terminate.
 // ERROR_ACCESS_DENIED then means exit only if this same object is signalled.
+// Both terminate outcomes use the existing cleanup completion budget: an error
+// may arrive while another owner's asynchronous termination is still pending.
 func terminateDetachProcess(h windows.Handle, terminate func(windows.Handle, uint32) error) error {
-	status, err := windows.WaitForSingleObject(h, 0)
+	return terminateDetachProcessWithWait(h, terminate, windows.WaitForSingleObject)
+}
+
+func terminateDetachProcessWithWait(h windows.Handle, terminate func(windows.Handle, uint32) error, wait func(windows.Handle, uint32) (uint32, error)) error {
+	status, err := wait(h, 0)
 	if err != nil {
 		return fmt.Errorf("fixture exit observation unknown: %w", err)
 	}
@@ -340,13 +346,13 @@ func terminateDetachProcess(h windows.Handle, terminate func(windows.Handle, uin
 		return fmt.Errorf("fixture exit observation unknown: status=%d", status)
 	}
 	if err := terminate(h, 1); err != nil {
-		status, waitErr := windows.WaitForSingleObject(h, 0)
+		status, waitErr := wait(h, 5000)
 		if waitErr == nil && status == windows.WAIT_OBJECT_0 {
 			return nil
 		}
 		return fmt.Errorf("terminate fixture identity: %w; exit status=%d wait_error=%v", err, status, waitErr)
 	}
-	status, err = windows.WaitForSingleObject(h, 5000)
+	status, err = wait(h, 5000)
 	if err != nil || status != windows.WAIT_OBJECT_0 {
 		return fmt.Errorf("fixture identity cleanup unconfirmed: status=%d err=%v", status, err)
 	}
@@ -355,33 +361,64 @@ func terminateDetachProcess(h windows.Handle, terminate func(windows.Handle, uin
 
 func testDetachCleanupExitRace(t *testing.T) {
 	t.Helper()
-	for _, exitDuringTermination := range []bool{true, false} {
-		t.Run(fmt.Sprintf("exit_before_denial_%t", exitDuringTermination), func(t *testing.T) {
-			cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$") //nolint:gosec // G702: own test executable with a fixed empty test selector.
+	for _, state := range []string{"exited", "pending_exit", "live"} {
+		t.Run(state, func(t *testing.T) {
+			// Only the pinned cleanup owns termination after identity validation.
+			// A test context would cancel before Cleanup and race that owner.
+			cmd := exec.Command(os.Args[0], "-test.run=^$") //nolint:gosec // G702: own test executable with a fixed empty test selector.
 			cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_SUSPENDED | windows.DETACHED_PROCESS}
 			if err := cmd.Start(); err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { _ = cmd.Wait() })
+			pinned := false
+			t.Cleanup(func() {
+				if !pinned {
+					// os.Process retains the exact object returned by this Start;
+					// this setup-failure fallback never reopens a PID.
+					if err := cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+						t.Errorf("terminate unpinned fixture: %v", err)
+					}
+				}
+				_ = cmd.Wait()
+			})
 			start, err := workers.ProcessStartTime(cmd.Process.Pid)
 			if err != nil {
 				t.Fatal(err)
 			}
 			h := pinDetachIdentity(t, workers.ProcessIdentity{PID: cmd.Process.Pid, StartTime: start})
+			pinned = true
+			terminateReal := func(h windows.Handle) error {
+				if err := windows.TerminateProcess(h, 0); err != nil {
+					return err
+				}
+				status, err := windows.WaitForSingleObject(h, 5000)
+				if err != nil || status != windows.WAIT_OBJECT_0 {
+					return fmt.Errorf("fixture concurrent exit unconfirmed: status=%d err=%v", status, err)
+				}
+				return nil
+			}
+			denied := false
 			denial := func(h windows.Handle, _ uint32) error {
-				if exitDuringTermination {
-					if err := windows.TerminateProcess(h, 0); err != nil {
+				if state == "exited" {
+					if err := terminateReal(h); err != nil {
 						return err
 					}
-					status, err := windows.WaitForSingleObject(h, 5000)
-					if err != nil || status != windows.WAIT_OBJECT_0 {
-						return fmt.Errorf("fixture concurrent exit unconfirmed: status=%d err=%v", status, err)
-					}
 				}
+				denied = true
 				return windows.ERROR_ACCESS_DENIED
 			}
-			err = terminateDetachProcess(h, denial)
-			if exitDuringTermination {
+			wait := func(h windows.Handle, milliseconds uint32) (uint32, error) {
+				if state == "pending_exit" && denied && milliseconds > 0 {
+					// Keep the real suspended process live until the bounded
+					// post-error observation. No timer or cleanup can prove exit.
+					if err := windows.TerminateProcess(h, 0); err != nil {
+						return 0, err
+					}
+				}
+				return windows.WaitForSingleObject(h, milliseconds)
+			}
+			err = terminateDetachProcessWithWait(h, denial, wait)
+			if state != "live" {
 				status, waitErr := windows.WaitForSingleObject(h, 0)
 				if err != nil || waitErr != nil || status != windows.WAIT_OBJECT_0 {
 					t.Fatalf("exited retained object not confirmed: err=%v status=%d wait_error=%v", err, status, waitErr)
