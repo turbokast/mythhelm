@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "run_id": "run_synthetic",
+  "attempt_id": "att_synthetic",
+  "pid": 100,
+  "start_time": "2026-01-02T03:04:05Z",
+  "launch_token": "synthetic-token",
+  "native_launch_intent": "2026-01-02T03:04:05Z",
+  "native_pid": 101,
+  "native_pgid": 101,
+  "nonce": "synthetic-nonce"
+}

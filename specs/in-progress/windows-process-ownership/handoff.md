@@ -53,7 +53,12 @@
 
 ## Task 5 — native start time in the launch record
 
-<!-- pending -->
+- **Produces**: Windows `attempt.launched.native_start_time` equals the native creation time in worker.json and `ProcessStartTime(native_pid)`. `Identity.NativeStartTime` and pre-assignment read/cleanup were supplied by Task 3; no new exported API or database column is introduced here.
+- **For Task 6**: match PID and persisted creation time, preserving missing/unreadable identity as unresolved. Do not infer recovery ownership from this event or successful cleanup tests; ADR 0017 and Task 6 boundary acceptance still govern recovery.
+- **Unix compatibility**: fixed Identity golden and exact launched-event payload retain omission of creation time; never emit null or zero as observed evidence. Ingestion preserves the extra field in the journal without changing attempt projections.
+- **Test seams**: existing per-worker `startTime`, termination and membership hooks retain pre-assignment failure coverage, including unconfirmed termination; equality is observed while the native is live. The E2E oracle binds raw stream/journal timestamps to independent worker.json identity before event-specific normalization.
+- **Evidence**: commits `e052905`, `067c453`, integrated source `b665237`; CI [39416955906](https://github.com/turbokast/mythhelm/actions/runs/39416955906) passes both named tests and full Windows suites: AMD64 job `118608248903` (race workers45.730s/E2E66.170s), ARM64 job `118608249088` (workers37.205s/E2E71.691s). Local full race238.9s, Unix record/event race1.372s, ingestion race1.396s; source reviews Ready.
+- **Deviations and limits**: approved CI/docs acceptance exposure and E2E per-run creation-time binding; unchanged Unix event regression is consistent with N4. Shared stop fixture fixes arrived independently through PR505/main. No Windows qualification matrix is promoted. Retain `first_pass:false` for earlier local environmental gate failures and corrected native integration failures. Final metadata-head CI and merge remain the coordinator's responsibility.
 
 ## Task 6 — Windows recovery verdict
 
