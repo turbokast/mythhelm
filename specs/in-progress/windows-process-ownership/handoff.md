@@ -103,7 +103,13 @@
 
 ## Task 10 — Windows documentation
 
-<!-- pending -->
+- **Produces**: README and limitations statements separating experimental amd64/arm64 `scripted-child-process` results from qualified support; ADR 0004 status preserves accepted Unix decisions and links Windows supersession to ADR 0017.
+- **For Task 11**: the matrix remains empty and every Windows pair stays unknown. Task 10 does not qualify a platform, native harness or worker detachment. Promotion must update documentation and the retained claim-to-matrix regression together.
+- **Observed limits**: CI 39484713392 exercises CLI exit/reconnect and first Ctrl-C/Ctrl-Break on both architectures; physical console close passes only on arm64, while amd64 reports `PseudoConsoleWindow` blocked. Second interrupt remains blocked on both; do not convert named-test success into a detach claim.
+- **Recovery**: worker-crash ownership remains unresolved/quarantined; pre-assignment suspended-process residuals and parent kill-on-close launch refusal remain explicit. Stop remains kill-only.
+- **Tests**: `TestDocsMatchWindowsMatrix` parses the real embedded table and checks current Windows paragraphs plus ADR status. Retained controls reject fabricated pairs, multiarchitecture claims, Windows-first/paragraph-context recovery, omitted refusal and combined capability conflation; qualified live-worker and negated claims remain valid.
+- **Deviations**: none to task files or dependent contracts; independent review expanded the retained controls within Task 10 acceptance.
+
 
 ## Task 11 — promote tested Windows rows
 
