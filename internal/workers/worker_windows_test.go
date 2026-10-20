@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sync"
 	"testing"
@@ -221,6 +222,23 @@ func checkStopTimeoutEndsStopUnconfirmed(t *testing.T, delayLaunchPersistence, d
 	const watchdog = 12 * time.Second
 	a := newAttempt(t)
 	w := &worker{}
+	var diagnosticMu sync.Mutex
+	phase, lastEvent := "worker startup", "none"
+	setPhase := func(next string) {
+		diagnosticMu.Lock()
+		phase = next
+		diagnosticMu.Unlock()
+	}
+	dumpFailure := func() {
+		diagnosticMu.Lock()
+		currentPhase, currentEvent := phase, lastEvent
+		diagnosticMu.Unlock()
+		// Fixed storage bounds failure output; capture before cleanup changes
+		// the blocked call. No spool reads or waits belong in this diagnostic.
+		stack := make([]byte, 128<<10)
+		n := runtime.Stack(stack, true)
+		t.Logf("worker diagnostic: phase=%s last-event=%s stack-bytes=%d capacity=%d\n%s", currentPhase, currentEvent, n, len(stack), stack[:n])
+	}
 	stopReady := make(chan time.Time, 1)
 	firstSignal := make(chan time.Time, 1)
 	launchBlocked := make(chan time.Time, 1)
@@ -231,7 +249,12 @@ func checkStopTimeoutEndsStopUnconfirmed(t *testing.T, delayLaunchPersistence, d
 	unblockResult := sync.OnceFunc(func() { close(releaseResult) })
 	nativeReady := make(chan windows.Handle)
 	stopping := make(chan struct{})
-	w.jobOps.afterSpawn = func(pid int) error { return handoffStopTestNative(pid, nativeReady, stopping) }
+	w.jobOps.afterSpawn = func(pid int) error {
+		setPhase("native handle handoff")
+		err := handoffStopTestNative(pid, nativeReady, stopping)
+		setPhase("native handle handoff returned")
+		return err
+	}
 	calls := 0
 	w.jobOps.terminate = func(*jobObject) error {
 		calls++
@@ -241,10 +264,12 @@ func checkStopTimeoutEndsStopUnconfirmed(t *testing.T, delayLaunchPersistence, d
 		return nil
 	}
 	w.jobOps.afterResume = func() error {
+		setPhase("stop request persistence")
 		if err := RequestStop(a.dir, "test-stop"); err != nil {
 			return err
 		}
 		stopReady <- time.Now()
+		setPhase("stop request persisted")
 		return nil
 	}
 	var observerMu sync.Mutex
@@ -257,12 +282,24 @@ func checkStopTimeoutEndsStopUnconfirmed(t *testing.T, delayLaunchPersistence, d
 		observerEntry, observerActive = enteredAt, true
 		observerMu.Unlock()
 		defer func() { observerMu.Lock(); observerActive = false; observerMu.Unlock() }()
+		setPhase("spool observer read/classification")
 		body, err := os.ReadFile(f.Name())
 		if err != nil {
 			return err
 		}
+		line := bytes.TrimSpace(body)
+		line = line[bytes.LastIndexByte(line, '\n')+1:]
+		var event struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(line, &event) == nil {
+			diagnosticMu.Lock()
+			lastEvent = event.Type
+			diagnosticMu.Unlock()
+		}
 		if delayLaunchPersistence && !launchPaused && bytes.Contains(body, []byte(`"type":"attempt.launched"`)) {
 			launchPaused = true
+			setPhase("launch persistence barrier")
 			launchBlocked <- time.Now()
 			<-releaseLaunch
 		}
@@ -271,6 +308,7 @@ func checkStopTimeoutEndsStopUnconfirmed(t *testing.T, delayLaunchPersistence, d
 			// supervise returned: observe the append before this sync and the later
 			// receipt/state persistence. Keep the native live until the test observes it.
 			if delayObserver {
+				setPhase("native result observer delay")
 				delay := time.NewTimer(watchdog)
 				select {
 				case <-delay.C: // Deliberately slow classification, after recording callback entry.
@@ -278,10 +316,14 @@ func checkStopTimeoutEndsStopUnconfirmed(t *testing.T, delayLaunchPersistence, d
 					delay.Stop()
 				}
 			}
+			setPhase("native result observation barrier")
 			supervisionReached <- enteredAt
 			<-releaseResult
 		}
-		return f.Sync()
+		setPhase("spool f.Sync")
+		err = f.Sync()
+		setPhase("spool f.Sync returned; worker outside observer")
+		return err
 	}
 	l := a.launch(t, "slow")
 	if !slices.Equal(l.StopLadder, []adapter.StopStep{{Signal: adapter.StopKill, Grace: 5 * time.Second}}) {
@@ -290,7 +332,11 @@ func checkStopTimeoutEndsStopUnconfirmed(t *testing.T, delayLaunchPersistence, d
 	finished := make(chan struct{})
 	var runErr error
 	started := time.Now()
-	go func() { runErr = a.runInProcess(t, l, w); close(finished) }()
+	go func() {
+		runErr = a.runInProcess(t, l, w)
+		setPhase("worker returned")
+		close(finished)
+	}()
 	var native windows.Handle
 	t.Cleanup(func() {
 		close(stopping)
@@ -308,6 +354,7 @@ func checkStopTimeoutEndsStopUnconfirmed(t *testing.T, delayLaunchPersistence, d
 		select {
 		case <-finished:
 		case <-joined.C:
+			dumpFailure()
 			t.Error("cleanup: worker join exceeded 12s")
 		}
 		if native != 0 {
@@ -315,6 +362,11 @@ func checkStopTimeoutEndsStopUnconfirmed(t *testing.T, delayLaunchPersistence, d
 				t.Errorf("cleanup: native wait=%d err=%v", status, err)
 			}
 			_ = windows.CloseHandle(native)
+		}
+	})
+	t.Cleanup(func() {
+		if t.Failed() {
+			dumpFailure()
 		}
 	})
 	awaitPhase := func(ch <-chan time.Time, phase string) time.Time {
