@@ -36,6 +36,12 @@ import (
 // Command is the hidden mythhelm subcommand that runs a worker.
 const Command = "__worker"
 
+// DeadlineRequester identifies the durable execution-envelope stop request.
+const DeadlineRequester = "execution-deadline"
+
+// DeadlineReason is the journaled reason used by normal and recovering owners.
+const DeadlineReason = "envelope_deadline_exceeded"
+
 const (
 	stopPollInterval  = 250 * time.Millisecond
 	heartbeatInterval = 2 * time.Second
@@ -73,16 +79,18 @@ var adapters = map[string]func() adapter.Adapter{
 // stdin. It never touches the disk, because Env may carry the AC-4.7 opt-in
 // credential.
 type Launch struct {
-	LaunchToken  string             `json:"launch_token"`
-	TaskID       string             `json:"task_id"`
-	AdapterID    string             `json:"adapter_id"`
-	Path         string             `json:"path"`
-	NativeSHA256 string             `json:"native_sha256"` // pinned at probe; re-verified before exec
-	Args         []string           `json:"args"`
-	Dir          string             `json:"dir"`
-	Env          []string           `json:"env"`
-	PromptPath   string             `json:"prompt_path"` // the task file, delivered on the native's stdin
-	StopLadder   []adapter.StopStep `json:"stop_ladder"`
+	// ExecutionDeadline is the immutable admitted end of native execution.
+	ExecutionDeadline time.Time          `json:"execution_deadline"`
+	LaunchToken       string             `json:"launch_token"`
+	TaskID            string             `json:"task_id"`
+	AdapterID         string             `json:"adapter_id"`
+	Path              string             `json:"path"`
+	NativeSHA256      string             `json:"native_sha256"` // pinned at probe; re-verified before exec
+	Args              []string           `json:"args"`
+	Dir               string             `json:"dir"`
+	Env               []string           `json:"env"`
+	PromptPath        string             `json:"prompt_path"` // the task file, delivered on the native's stdin
+	StopLadder        []adapter.StopStep `json:"stop_ladder"`
 	// LadderVersion pins the stop ladder the worker climbs: it equals the
 	// version the supervisor journaled in attempt.admission_pinned, and
 	// the worker echoes it into attempt.stopped (design §3).
@@ -265,6 +273,9 @@ func readLaunch(r io.Reader) (Launch, error) {
 		return Launch{}, fmt.Errorf("decoding the launch: %w", err)
 	}
 	var problems []string
+	if l.ExecutionDeadline.IsZero() {
+		problems = append(problems, "no execution deadline")
+	}
 	if l.LaunchToken == "" {
 		problems = append(problems, "no launch token")
 	}
@@ -345,18 +356,39 @@ func RequestStop(dir, requestID string) error {
 	return nil
 }
 
-// readStopRequest reports a pending stop request. An unreadable request
-// still stops the attempt; only its requester is unknown.
-func readStopRequest(dir string) (string, bool) {
-	b, err := os.ReadFile(filepath.Join(dir, stopFile)) //nolint:gosec // G304: inside the attempt directory
+// readStopRequest distinguishes absence from unreadable or malformed evidence.
+// Unknown request ownership must abort, not silently create a new winner.
+func readStopRequest(dir string) (string, bool, error) {
+	f, err := openHash(filepath.Join(dir, stopFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", false, nil
+	}
 	if err != nil {
-		return "", false
+		return "", false, fmt.Errorf("reading stop request: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	st, err := f.Stat()
+	if err != nil {
+		return "", false, err
+	}
+	if !st.Mode().IsRegular() || st.Size() > 4096 {
+		return "", false, errors.New("invalid stop request file")
+	}
+	b, err := io.ReadAll(io.LimitReader(f, 4097))
+	if err != nil {
+		return "", false, err
+	}
+	if len(b) > 4096 {
+		return "", false, errors.New("stop request too large")
 	}
 	var req stopRequest
-	if json.Unmarshal(b, &req) != nil || req.RequestID == "" {
-		return "unknown", true
+	if err := json.Unmarshal(b, &req); err != nil {
+		return "", false, fmt.Errorf("decoding stop request: %w", err)
 	}
-	return req.RequestID, true
+	if req.RequestID == "" {
+		return "", false, errors.New("stop request has no requester")
+	}
+	return req.RequestID, true, nil
 }
 
 // writeTemp writes body to a new synced 0600 file next to name.
@@ -462,6 +494,9 @@ type outcome struct {
 }
 
 func (w *worker) run(ctx context.Context) (retErr error) {
+	if w.launch.ExecutionDeadline.IsZero() || !time.Now().Before(w.launch.ExecutionDeadline) {
+		return errors.New("execution deadline missing or expired before launch")
+	}
 	sp, err := createSpool(filepath.Join(w.dir, spoolFile), w.runID, w.launch.TaskID, w.attemptID)
 	if err != nil {
 		return err
@@ -562,6 +597,9 @@ func (w *worker) run(ctx context.Context) (retErr error) {
 	if err := w.conclude(ctx, sp, sess, out); err != nil {
 		return err
 	}
+	if out.stopBy == DeadlineRequester {
+		return nil // The deadline episode is durably terminal; no reconnect wait.
+	}
 	return w.awaitIfUnsupervised(ctx)
 }
 
@@ -618,6 +656,10 @@ func (w *worker) start(ctx context.Context, l *launcher) (adapter.Session, error
 	lp := adapter.LaunchProposal{
 		Spec:       adapter.ProcSpec{Path: w.launch.Path, Args: w.launch.Args, Dir: w.launch.Dir, Env: w.launch.Env, Stdin: prompt},
 		StopLadder: w.launch.StopLadder,
+	}
+	// Verification and opening the prompt can consume the remaining envelope.
+	if !time.Now().Before(w.launch.ExecutionDeadline) {
+		return nil, errors.New("execution deadline expired before native start")
 	}
 	return adapters[w.launch.AdapterID]().Start(ctx, lp, l)
 }
@@ -681,6 +723,9 @@ func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session)
 	beat := time.NewTicker(heartbeatInterval)
 	defer beat.Stop()
 	w.heartbeat()
+	executionTimer := time.NewTimer(time.Until(w.launch.ExecutionDeadline))
+	defer executionTimer.Stop()
+	executionExpired := executionTimer.C
 	var stopDeadline *time.Timer
 	var stopExpired <-chan time.Time
 	defer func() {
@@ -722,32 +767,58 @@ func (w *worker) supervise(ctx context.Context, sp *spool, sess adapter.Session)
 		case rep := <-out.pending:
 			out.report, out.pending = rep, nil
 			w.pendingStop = nil
-			if runtime.GOOS == "windows" && !out.exited {
+			if (runtime.GOOS == "windows" || out.stopBy == DeadlineRequester) && !out.exited {
 				stopDeadline = time.NewTimer(waitDelay)
 				stopExpired = stopDeadline.C
 			}
 		case <-stopExpired:
 			out.report.Confirmed = false
 			return out, prog.flush(sp, true)
+		case <-executionExpired:
+			executionExpired = nil
+			if err := w.acceptStop(ctx, sp, sess, &out, true); err != nil {
+				return out, err
+			}
 		case <-beat.C:
 			w.heartbeat()
 		case <-poll.C:
 			if err := prog.flush(sp, false); err != nil {
 				return out, err
 			}
-			if out.exited || out.stopBy != "" {
-				continue
-			}
-			by, ok := readStopRequest(w.dir)
-			if !ok {
-				continue
-			}
-			if err := w.requestStop(ctx, sp, sess, &out, by, ""); err != nil {
+			if err := w.acceptStop(ctx, sp, sess, &out, false); err != nil {
 				return out, err
 			}
 		}
 	}
 	return out, prog.flush(sp, true)
+}
+
+// acceptStop arbitrates both timer and file polling against the same durable
+// first request. An accepted ladder is never replaced by a later timer.
+func (w *worker) acceptStop(ctx context.Context, sp *spool, sess adapter.Session, out *outcome, deadline bool) error {
+	if out.exited || out.stopStarted {
+		return nil
+	}
+	by, ok, err := readStopRequest(w.dir)
+	if err != nil {
+		return err
+	}
+	if !ok && deadline {
+		if err := RequestStop(w.dir, DeadlineRequester); err != nil {
+			return err
+		}
+		by, ok, err = readStopRequest(w.dir)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errors.New("deadline request unavailable after creation")
+		}
+	}
+	if !ok {
+		return nil
+	}
+	return w.requestStop(ctx, sp, sess, out, by, "")
 }
 
 // errOwnershipUnresolved reports that the worker's identity file no longer
@@ -799,6 +870,9 @@ func (w *worker) requestStop(ctx context.Context, sp *spool, sess adapter.Sessio
 		return nil
 	}
 	out.stopStarted = true
+	if by == DeadlineRequester && reason == "" {
+		reason = DeadlineReason
+	}
 	out.stopBy, out.stopReason = by, reason
 	if err := sp.emit(evStopRequested, map[string]string{"requested_by": by}); err != nil {
 		return err
@@ -1202,6 +1276,21 @@ func (l *launcher) Launch(_ context.Context, spec adapter.ProcSpec) (proc adapte
 	if err != nil {
 		h.stop()
 		return nil, err
+	}
+	// Admission rejects a zero pin before reaching the launcher. Helper-only
+	// containment fixtures do not execute that handoff and retain zero here.
+	// Recheck after durable intent/job/containment preparation, at the actual
+	// native-start boundary: those operations can consume the last time left.
+	if pin := l.w.launch.ExecutionDeadline; !pin.IsZero() && !time.Now().Before(pin) {
+		h.stop()
+		errs := []error{errors.New("execution deadline expired during native preparation"), stdout.Close()}
+		if writer, ok := cmd.Stdout.(io.Closer); ok {
+			errs = append(errs, writer.Close())
+		}
+		if l.job != nil {
+			errs = append(errs, l.job.close())
+		}
+		return nil, errors.Join(errs...)
 	}
 	if err := cmd.Start(); err != nil {
 		h.stop()

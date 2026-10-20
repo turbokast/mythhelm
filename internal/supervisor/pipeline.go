@@ -270,11 +270,9 @@ type pipeline struct {
 	rendered int64 // run_sequence of the last event passed to h.Event
 
 	// ceilings are the run's resolved envelope, set at admission; deadline is
-	// when its execution time ends (zero until the first attempt starts), and
-	// deadlineHit records that the stop in progress is the deadline's.
-	ceilings    billing.Ceilings
-	deadline    time.Time
-	deadlineHit bool
+	// when its execution time ends (zero until the first attempt starts).
+	ceilings billing.Ceilings
+	deadline time.Time
 }
 
 func (p *pipeline) run(ctx context.Context) error {
@@ -422,12 +420,9 @@ func (p *pipeline) exhausted(ctx context.Context) error {
 }
 
 // endStop finishes a stopping run: cancelled when the user asked for the
-// stop, blocked when the execution deadline did. Either way the stop ladder
-// already ran and the candidate is preserved (I06).
+// stop. Deadline stops are classified from durable attempt evidence in
+// conclude, including recovery. The candidate is preserved (I06).
 func (p *pipeline) endStop(ctx context.Context) error {
-	if p.deadlineHit {
-		return p.runTo(ctx, RunBlocked, "envelope_deadline_exceeded")
-	}
 	return p.runTo(ctx, RunCancelled, "")
 }
 
@@ -541,6 +536,7 @@ func (p *pipeline) attempt(ctx context.Context) error {
 			p.runTo(ctx, RunFailed, "admission_pin_failed"))
 	}
 	launch := launchForAttempt(d, token)
+	launch.ExecutionDeadline = p.deadline
 	launch.LadderVersion = stopLadderVersion(runtime.GOOS)
 	launch.Nonce = nonce
 	launch.Generation = generation
@@ -1042,9 +1038,8 @@ func (p *pipeline) watch(ctx context.Context, ref AttemptRef, exited <-chan stru
 			// The execution deadline ends the attempt through the same stop
 			// ladder as a user's stop; conclude reports it as blocked.
 			expiry = nil
-			// A stop the user already asked for stays the user's.
-			p.deadlineHit = p.out.State != RunStopping
-			if err := workers.RequestStop(ref.Dir(), stopRequester); err != nil {
+			// RequestStop preserves an earlier user request atomically.
+			if err := workers.RequestStop(ref.Dir(), workers.DeadlineRequester); err != nil {
 				return fmt.Errorf("requesting a stop at the deadline: %w", err)
 			}
 			if p.out.State != RunStopping {
@@ -1108,6 +1103,9 @@ func (p *pipeline) conclude(ctx context.Context) error {
 		}
 		return p.runTo(ctx, RunInterrupted, reason)
 	case AttemptStopped:
+		if p.out.AttemptReason == workers.DeadlineReason {
+			return p.runTo(ctx, RunBlocked, workers.DeadlineReason)
+		}
 		// A worker-initiated billing stop is a policy block, not a
 		// cancellation, even when the run is already stopping because the
 		// user also asked: the route violation is the significant fact

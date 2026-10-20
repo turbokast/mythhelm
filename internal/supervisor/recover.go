@@ -230,7 +230,8 @@ func RecoverWithHooks(ctx context.Context, j *journal.Journal, runID string, h H
 		}()
 	}
 	// The execution clock lives in the journaled envelope, so the recovering
-	// supervisor enforces the same deadline the launch did (I21, AC-4.1).
+	// supervisor arms its watchdog (I21, AC-4.1). Existing workers retain
+	// their immutable launch deadline; recovery never sends a replacement.
 	if err := p.recoverDeadline(ctx); err != nil {
 		return out, err
 	}
@@ -354,7 +355,8 @@ func (p *pipeline) recordFromCheckEvents(ctx context.Context) error {
 
 // recoverDeadline re-derives the execution deadline from the run's journaled
 // envelope, with any extension granted since launch (AC-4.2). A run whose
-// envelope cannot be read is not watched without a deadline (I02).
+// envelope cannot be read is not watched without a deadline (I02). This
+// updates only the owner watchdog: extensions never change a live worker pin.
 func (p *pipeline) recoverDeadline(ctx context.Context) error {
 	row, err := p.j.RunEnvelope(ctx, p.d.RunID)
 	if err != nil {

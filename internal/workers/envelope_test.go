@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -317,7 +318,7 @@ func TestSpoolFailureStopsBlindWorker(t *testing.T) {
 		return nil
 	}
 	w := &worker{dir: dir, runID: "run_blind", attemptID: "att_blind",
-		launch: Launch{LaunchToken: "tok_blind", Generation: 1},
+		launch: Launch{ExecutionDeadline: time.Now().Add(time.Minute), LaunchToken: "tok_blind", Generation: 1},
 		log:    slog.New(slog.NewTextHandler(io.Discard, nil)), stderr: &ring{max: stderrRingBytes}}
 	sess := &scriptedSession{obs: []adapter.Observation{adapter.SessionStarted{SessionID: "s", APIKeySource: "none"}}, exit: adapter.NativeExit{Code: 0}}
 	out, err := w.supervise(context.Background(), sp, sess)
@@ -400,6 +401,7 @@ func TestSupervisorBeatLossAndReturn(t *testing.T) {
 	l.Generation = 1
 	writeBeatFile(t, a.dir, 1, time.Now().UTC(), 1) // fresh: the episode runs supervised
 	proc := a.spawn(t, l)
+	exited := observeWorkerExit(t, proc)
 	a.waitSessionStarted(t) // mid-episode, supervised
 	if err := os.Remove(filepath.Join(a.dir, supervisorBeatFile)); err != nil {
 		t.Fatal(err)
@@ -415,13 +417,14 @@ func TestSupervisorBeatLossAndReturn(t *testing.T) {
 	}
 	// ... but the worker does not exit: with the beat stale it entered
 	// the reconnect wait after finishing and spooling.
-	if waitExit(proc, time.Second) {
-		t.Fatal("the worker exited under a stale beat, want it awaiting reconnection")
+	select {
+	case err := <-exited:
+		t.Fatalf("worker exited under a stale beat: %v", err)
+	case <-time.After(time.Second):
 	}
-	// The supervisor returns: a fresh beat ends the wait.
-	writeBeatFile(t, a.dir, 2, time.Now().UTC(), 1)
-	if !waitExit(proc, 30*time.Second) {
-		t.Fatal("the worker did not exit after a fresh beat")
+	// The supervisor returns and keeps renewing its presence until exit.
+	if err := awaitWorkerReturn(t, a.dir, 1, exited); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -462,6 +465,7 @@ func TestUnsupervisedWorkerStartsNothing(t *testing.T) {
 	l.Generation = 1
 	// No beat file at all: the supervisor is lost for the whole episode.
 	proc := a.spawn(t, l)
+	exited := observeWorkerExit(t, proc)
 	a.waitDone(t) // the admitted episode finishes and spools
 	// Probe 1 (Unix: the descendant scan exists on Linux and macOS only):
 	// no new task started — nothing alive carries the attempt marker.
@@ -515,13 +519,14 @@ func TestUnsupervisedWorkerStartsNothing(t *testing.T) {
 	if err := CheckEnvelope(env, a.attemptID, "tok_wrong", 1); !errors.Is(err, errRevisionConflict) {
 		t.Fatalf("CheckEnvelope with a wrong launch_id = %v, want revision_conflict", err)
 	}
-	if waitExit(proc, time.Second) {
-		t.Fatal("the worker exited with no beat written, want it still awaiting reconnection")
+	select {
+	case err := <-exited:
+		t.Fatalf("worker exited with no beat written: %v", err)
+	case <-time.After(time.Second):
 	}
-	// Release it: a fresh beat ends the wait.
-	writeBeatFile(t, a.dir, 1, time.Now().UTC(), 1)
-	if !waitExit(proc, 30*time.Second) {
-		t.Fatal("the worker did not exit after a fresh beat")
+	// A returned supervisor keeps renewing its presence until exit.
+	if err := awaitWorkerReturn(t, a.dir, 1, exited); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -549,16 +554,18 @@ func TestUILossHasNoExecutionEffect(t *testing.T) {
 	lb := b.launch(t, "happy")
 	lb.Generation = 1
 	bproc := b.spawn(t, lb)
+	bexited := observeWorkerExit(t, bproc)
 	bevs := b.waitDone(t)
 	if st, _ := final(t, bevs); st != "succeeded_native" {
 		t.Fatalf("final state = %s, want succeeded_native", st)
 	}
-	if waitExit(bproc, time.Second) {
-		t.Fatal("the worker exited under a stale beat: only a stale beat enters the wait, and this one should have")
+	select {
+	case err := <-bexited:
+		t.Fatalf("worker exited under a stale beat: %v", err)
+	case <-time.After(time.Second):
 	}
-	writeBeatFile(t, b.dir, 1, time.Now().UTC(), 1)
-	if !waitExit(bproc, 30*time.Second) {
-		t.Fatal("the worker did not exit after a fresh beat")
+	if err := awaitWorkerReturn(t, b.dir, 1, bexited); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -578,5 +585,80 @@ func TestEnvelopeGenerationZeroUnfenced(t *testing.T) {
 	}
 	if st, _ := final(t, a.events(t)); st != "succeeded_native" {
 		t.Fatalf("final state = %s, want succeeded_native", st)
+	}
+}
+
+// observeWorkerExit owns exactly one Process.Wait across the stale and fresh
+// supervision phases. Cleanup joins that waiter before spawn's fallback.
+func observeWorkerExit(t *testing.T, proc *os.Process) <-chan error {
+	t.Helper()
+	result := make(chan error, 1)
+	joined := make(chan struct{})
+	go func() {
+		defer close(joined)
+		state, err := proc.Wait()
+		if err == nil && !state.Success() {
+			err = fmt.Errorf("worker exited: %s", state)
+		}
+		result <- err
+	}()
+	t.Cleanup(func() { _ = proc.Kill(); <-joined })
+	return result
+}
+
+// awaitWorkerReturn renews the beat like pipeline.watch does after every
+// ingest tick. A single write can expire before the worker is scheduled.
+func awaitWorkerReturn(t *testing.T, dir string, generation int64, exited <-chan error) error {
+	t.Helper()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	limit := time.NewTimer(30 * time.Second)
+	defer limit.Stop()
+	for beat := uint64(1); ; beat++ {
+		writeBeatFile(t, dir, beat, time.Now().UTC(), generation)
+		select {
+		case err := <-exited:
+			return err
+		case <-tick.C:
+		case <-limit.C:
+			return errors.New("worker did not exit under returned supervision")
+		}
+	}
+}
+
+func TestReconnectBeatProducerRenewsForDelayedObserver(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	observed := make(chan error, 1)
+	go func() {
+		tick := time.NewTicker(5 * time.Millisecond)
+		defer tick.Stop()
+		limit := time.NewTimer(3 * time.Second)
+		defer limit.Stop()
+		var first time.Time
+		for {
+			at, _, ok := ReadSupervisorBeat(dir)
+			if ok {
+				if first.IsZero() {
+					first = at
+				}
+				// A consumer delayed by two freshness windows must see renewed
+				// evidence. Use its fixed observation time to avoid another race
+				// between this assertion and a scheduled writer on a loaded host.
+				if at.After(first) && beatFresh(at, first.Add(2*MaxSupervisorBeatAge)) {
+					observed <- nil
+					return
+				}
+			}
+			select {
+			case <-tick.C:
+			case <-limit.C:
+				observed <- fmt.Errorf("one-shot beat remained stale for delayed observation: first=%s last=%s", first, at)
+				return
+			}
+		}
+	}()
+	if err := awaitWorkerReturn(t, dir, 1, observed); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -376,7 +376,8 @@ func TestWorkerRehashesMutableConfig(t *testing.T) {
 	launch := func(t *testing.T, dir, taskPath string, env, paths, digests map[string]string) workers.Launch {
 		t.Helper()
 		return workers.Launch{
-			LaunchToken: "tok_t9rehash", TaskID: "task_t9rehash", AdapterID: "builtin/fake",
+			ExecutionDeadline: time.Now().Add(10 * time.Minute),
+			LaunchToken:       "tok_t9rehash", TaskID: "task_t9rehash", AdapterID: "builtin/fake",
 			Path: bin, NativeSHA256: binDigest,
 			Args:            []string{fake.AgentCommand, "--scenario", "happy", "--workdir", dir},
 			Dir:             dir,

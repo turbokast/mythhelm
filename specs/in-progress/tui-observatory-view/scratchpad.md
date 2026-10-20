@@ -112,3 +112,38 @@ Native Codex docs implementation, PR #484, commit `54f859d`: ADR 0020 remains pr
 
 - A long temporary root truncates event 4 before its `/runs/` segment. `TestObservatoryReceiptWaitWithTruncatedStatePath` first failed with `demo workspace line lacks state path`; after resolving the unique state directory inside a capture-owned temporary root, it passes and rejects ambiguous state roots. The captured line remains unchanged.
 - Failed demo probes now report exit status, stderr and stdout. `go test -race -run TestObservatory ./internal/cli -v` passes all seven immutable captures, semantic counterfactuals and the kept truncation regression (5.815s). No baseline fixture or production behavior changed.
+
+
+### Task 4 — Worker-owned deadline and durable conclusion
+
+Implementation `bb152be`, PR #497, completed by the Codex go-implementer role. Required handoff validation, a generation-independent worker timer and shared normal/recover classification now implement accepted ADR 0020 §Decision / design §2. No identity/spool schema, module or immutable output capture changed.
+
+| Contract / invariant | Retained acceptance evidence |
+| --- | --- |
+| Mandatory and incompatible handoffs refuse native launch (I02/I21) | `TestLaunchDeadlineRequired`, `TestMixedWorkerHandoffVersions` |
+| Expiry before or during preparation creates no native process (I02/I21) | `TestExpiredDeadlineDoesNotLaunch`, `TestExpiredDeadlineDuringPreparationDoesNotLaunch` |
+| Worker independently enforces two-second execution and exits without a client, generations 0/7 (I18/I21) | `TestWorkerDeadlineWithoutSupervisor` |
+| Durable first-request winner and one ladder (I06/I18) | `TestDeadlineRequestPrecedence`: user-file-first, deadline-file-first, already-running user ladder, both timer/poll orders |
+| Persistence or ownership uncertainty never becomes a confirmed deadline outcome (I06/I21) | `TestDeadlineStopFailureStaysUnresolved`, `TestDeadlineStopWithoutNativeExitIsBounded` |
+| Autonomous deadline reason survives recovery without relaunch (I12/I21) | `TestDeadlineRecoveryConclusion`, existing `TestRecoverArmsExecutionDeadline` |
+| Existing contracts remain intact | Full race suite includes RequestExtension, running-worker recovery, process ownership and Task1 `TestObservatoryLinearBaseline` regressions |
+
+Red-first observations: the original decoder accepted a missing pin; an expired handoff actually emitted `attempt.launched`; workers with no supervisor stayed active past the two-second envelope; malformed stop evidence was accepted as a successful unknown-requester stop; recovery returned cancelled despite a journaled deadline reason. Each corresponding restored test passes. Kept controlled counterfactuals also fail when the timer is removed, deadline workers retain reconnect waiting, a timer relabels an earlier user request, or the deadline native-exit wait is unbounded. Failed-case cleanup stops/reaps the native fixtures and joins the controlled session goroutine.
+
+Independent architecture review returned Ready. Code review found that an early deadline check did not cover durable launch-intent and containment/job preparation. The regression deliberately holds identity persistence until expiry and first observed an actual native PID; the correction rechecks immediately before native start, closes both prepared stdout endpoints and the Windows job, and joins containment cleanup. Fresh review of the correction returned Ready. This is a consistent acceptance correction, not a new qualification claim.
+
+Validation on the final implementation: full Go race gate passed in 226.7s (supervisor 220.906s; workers 21.367s; CLI 82.505s); vet/tidy/lint passed with zero lint issues. Named `-race -v` acceptance output passed for workers in 6.267s and supervisor in 4.519s. Full-repository Windows AMD64 and Darwin ARM64 vet passed. All six required markers are refreshed before publication.
+
+Actual gate history: the initial full race run failed `TestSecondInstanceHeld`, `TestRootConflictRefused` and `TestStaleLockAdoptedWithGenerationBump` because inherited runtime resolution selected a shared lock held by a supervisor predating this task. The lock metadata and independent process start time established that cause; the service was preserved. A private `XDG_RUNTIME_DIR` isolated subsequent verification. A later lint run found the test subprocess taint annotation and integer formatting; the narrow fixes preceded the final green gate. First pass is false.
+
+For downstream lifecycle work: the launch deadline is immutable even after an extension or recovery watchdog recalculation. The strict private stdin handoff intentionally refuses mixed binaries; replacing an executable while an old supervisor is between admission and spawn remains unsupported. Existing running workers are recovered through unchanged identity/spool data. Non-deadline Unix stop behavior, fenced reconnect limitations and Windows job confirmation/cleanup remain intact.
+
+### Task 4 — Hosted CI reconnect fixture correction
+
+The original implementation head `150ccfd` failed macOS job [117749425235](https://github.com/turbokast/mythhelm/actions/runs/39152598817/job/117749425235): `TestSupervisorBeatLossAndReturn` took 31.51s and reported `envelope_test.go:424: the worker did not exit after a fresh beat` (workers 45.189s). The overall run later concluded cancelled: both Linux architectures succeeded, both Windows jobs were cancelled, and CI OK failed. Cancelled jobs establish no native pass. Integrating main in `49e946b` did not establish that the failure was resolved.
+
+The original macOS trigger remains undetermined. Inspection established two independent fixture hazards: the first timed-out `waitExit` left `Process.Wait` active before the second call started another wait on the same process, and a one-shot beat could expire before a delayed worker observed it. Production renews supervision after each ingest tick. Correction `27f3344` uses one retained, joined process waiter that reports the actual error and renews beats every 100ms until exit. All three affected fixtures retain their one-second stale/no-beat non-exit assertion and unchanged 30-second return timeout. No production behavior changed.
+
+The kept real-file regression `TestReconnectBeatProducerRenewsForDelayedObserver` first failed with the one-shot producer after 3.008s: its first and last beat timestamps were identical and stale for the delayed observation. With renewal, it and the three affected reconnect fixtures passed under race (3.652s). Independent code review returned Ready with no findings; coordinator review agreed. Neither these fixture corrections nor cross-platform vet identify the original native failure's precise cause or promote platform qualification.
+
+Refreshed local gates with a private runtime directory: go-fmt PASS 0.1s; go-vet PASS 0.5s; go-test PASS 195.7s (supervisor 190.558s, workers 21.773s, CLI 77.101s); go-mod-tidy PASS 0.1s; golangci-lint PASS 4.1s with zero issues. Windows AMD64 and Darwin ARM64 full-repository vet passed. Hygiene passed after the fixture change (6.5s, 1043 files) and is refreshed again after this bookkeeping. Hosted CI and review remain coordinator-owned; first pass remains false.

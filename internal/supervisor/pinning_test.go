@@ -111,7 +111,8 @@ func TestSpawnMintsAndJournalsNonce(t *testing.T) {
 		t.Fatal(err)
 	}
 	proc, err := workers.Spawn(os.Args[0], stateDir, runID, attemptID, workers.Launch{
-		LaunchToken: "tok_" + attemptID, TaskID: taskID, AdapterID: fake.New().Descriptor().ID,
+		ExecutionDeadline: time.Now().Add(10 * time.Minute),
+		LaunchToken:       "tok_" + attemptID, TaskID: taskID, AdapterID: fake.New().Descriptor().ID,
 		Path: lp.Spec.Path, NativeSHA256: probe.SHA256, Args: lp.Spec.Args, Dir: lp.Spec.Dir,
 		Env: lp.Spec.Env, PromptPath: prompt, StopLadder: lp.StopLadder,
 		LadderVersion: "stop-ladder/v1", Nonce: nonce, Generation: gen,
