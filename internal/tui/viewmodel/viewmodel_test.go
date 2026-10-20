@@ -938,6 +938,11 @@ func TestViewPollingDoesNotOwnRun(t *testing.T) { // I05/I12/I23 (v2 §2): obser
 	if _, err := os.Stat(filepath.Join(runDir, ownerlock.File)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("poll created lock: %v", err)
 	}
+	lockPath := filepath.Join(runDir, ownerlock.File)
+	lockSeed := []byte("synthetic owner-lock evidence\n")
+	if err := os.WriteFile(lockPath, lockSeed, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	release, err := ownerlock.Acquire(runDir)
 	if err != nil {
 		t.Fatal(err)
@@ -949,7 +954,14 @@ func TestViewPollingDoesNotOwnRun(t *testing.T) { // I05/I12/I23 (v2 §2): obser
 	if _, err := supervisor.Recover(t.Context(), b.j, runID); !errors.Is(err, ownerlock.ErrHeld) {
 		t.Fatalf("held recovery error %v", err)
 	}
-	before := stateContents(t, b.dir)
+	// Windows byte-range locks forbid reading the held byte. Preserve its
+	// metadata now and compare the exact seeded bytes after releasing it;
+	// every other canonical file remains byte-checked while ownership is held.
+	lockBefore, err := os.Stat(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := stateContents(t, b.dir, lockPath)
 	done := make(chan error, 1)
 	joined := false
 	defer func() {
@@ -966,10 +978,24 @@ func TestViewPollingDoesNotOwnRun(t *testing.T) { // I05/I12/I23 (v2 §2): obser
 	if err := recoveryErr; !errors.Is(err, ownerlock.ErrHeld) {
 		t.Fatalf("concurrent recovery error %v", err)
 	}
-	if after := stateContents(t, b.dir); !reflect.DeepEqual(before, after) {
+	if after := stateContents(t, b.dir, lockPath); !reflect.DeepEqual(before, after) {
 		t.Fatal("view polling changed canonical file bytes")
 	}
+	lockAfter, err := os.Stat(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(lockBefore, lockAfter) || lockBefore.Size() != lockAfter.Size() || lockBefore.Mode() != lockAfter.Mode() || !lockBefore.ModTime().Equal(lockAfter.ModTime()) {
+		t.Fatal("view polling changed held owner-lock metadata")
+	}
 	release()
+	lockBytes, err := os.ReadFile(lockPath) // #nosec G304 -- fixed name under the synthetic test-owned run directory
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(lockBytes) != string(lockSeed) {
+		t.Fatalf("poll changed owner-lock bytes: %q", lockBytes)
+	}
 	poll("unknown")
 	releaseAgain, err := ownerlock.Acquire(runDir)
 	if err != nil {
@@ -987,9 +1013,9 @@ func TestViewPollingDoesNotOwnRun(t *testing.T) { // I05/I12/I23 (v2 §2): obser
 	if err != nil || recovered.RunID != runID || recovered.State != supervisor.RunCancelled || recovered.Mode != "continued" {
 		t.Fatalf("recovery after polling: %+v, %v", recovered, err)
 	}
-	repaired := stateContents(t, b.dir)
+	repaired := stateContents(t, b.dir, "")
 	poll("unknown")
-	if after := stateContents(t, b.dir); !reflect.DeepEqual(repaired, after) {
+	if after := stateContents(t, b.dir, ""); !reflect.DeepEqual(repaired, after) {
 		t.Fatal("poll changed recovered evidence")
 	}
 	beat := filepath.Join(workers.AttemptDir(b.dir, runID, attempt), "supervisor.beat")
@@ -1022,7 +1048,7 @@ func TestViewPollingDoesNotOwnRun(t *testing.T) { // I05/I12/I23 (v2 §2): obser
 	}
 }
 
-func stateContents(t *testing.T, dir string) map[string]string {
+func stateContents(t *testing.T, dir, heldLock string) map[string]string {
 	t.Helper()
 	out := map[string]string{}
 	root, err := os.OpenRoot(dir)
@@ -1034,7 +1060,7 @@ func stateContents(t *testing.T, dir string) map[string]string {
 		if err != nil {
 			return err
 		}
-		if entry.IsDir() {
+		if entry.IsDir() || path == heldLock {
 			return nil
 		}
 		rel, err := filepath.Rel(dir, path)
