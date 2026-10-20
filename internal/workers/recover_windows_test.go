@@ -134,25 +134,41 @@ func crashBoundary(t *testing.T, boundary string) (attempt, Identity, *ProcessId
 	} else if !errors.Is(err, os.ErrNotExist) {
 		t.Fatal(err)
 	}
-	if spawned != nil {
-		h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, uint32(spawned.PID)) //nolint:gosec // G115: fixture PID.
-		if err == nil {
-			var created, exited, kernel, user windows.Filetime
-			if err := windows.GetProcessTimes(h, &created, &exited, &kernel, &user); err != nil {
-				_ = windows.CloseHandle(h)
+	if boundary == "afterResume" {
+		// Install exact-identity cleanup before any exit assertion, so a
+		// missing-kill counterfactual can fail without leaking descendants.
+		data, err := os.ReadFile(filepath.Join(a.workdir, "tree.jsonl"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		dec := json.NewDecoder(bytes.NewReader(data))
+		for {
+			var row struct {
+				Role      string    `json:"role"`
+				PID       int       `json:"pid"`
+				StartTime time.Time `json:"start_time"`
+			}
+			err := dec.Decode(&row)
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
 				t.Fatal(err)
 			}
-			if !time.Unix(0, created.Nanoseconds()).Equal(spawned.StartTime) {
-				_ = windows.CloseHandle(h)
-				t.Fatal("spawned PID reused before cleanup handle was pinned")
+			if row.Role == "child" || row.Role == "grandchild" {
+				_ = pinCrashedIdentity(t, ProcessIdentity{PID: row.PID, StartTime: row.StartTime})
 			}
-			t.Cleanup(func() {
-				_ = windows.TerminateProcess(h, 1)
-				_, _ = windows.WaitForSingleObject(h, 5000)
-				_ = windows.CloseHandle(h)
-			})
-		} else if !errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
-			t.Fatal(err)
+		}
+	}
+	if spawned != nil {
+		h := pinCrashedIdentity(t, *spawned)
+		if h != 0 && (boundary == "beforeResume" || boundary == "afterResume") {
+			// Worker exit initiates kill-on-close. Confirmation remains bounded
+			// by the existing five-second native wait, with no cleanup signal.
+			status, err := windows.WaitForSingleObject(h, 5000)
+			if err != nil || status != windows.WAIT_OBJECT_0 {
+				t.Fatalf("job native did not exit after worker crash: status=%d err=%v", status, err)
+			}
 		}
 	}
 	return a, id, spawned
@@ -202,8 +218,8 @@ func TestLaunchBoundaryCrashRecords(t *testing.T) {
 					if err != nil || !start.Equal(spawned.StartTime) {
 						t.Fatalf("suspended residual missing: %s %v", start, err)
 					}
-				} else if !errors.Is(err, ErrNoProcess) {
-					t.Fatalf("job native still alive after crash: %s %v", start, err)
+				} else {
+					assertCrashedIdentityGone(t, *spawned)
 				}
 				if recorded && (*id.NativePID != spawned.PID || !id.NativeStartTime.Equal(spawned.StartTime)) {
 					t.Fatal("record differs from actual spawned identity")
@@ -233,9 +249,8 @@ func TestLaunchBoundaryCrashRecords(t *testing.T) {
 					}
 					if row.Role == "child" || row.Role == "grandchild" {
 						count++
-						if start, err := ProcessStartTime(row.PID); !errors.Is(err, ErrNoProcess) {
-							t.Fatalf("%s survived crash: %s %v", row.Role, start, err)
-						}
+						awaitCrashedDescendant(t, ProcessIdentity{PID: row.PID, StartTime: row.StartTime})
+						assertCrashedIdentityGone(t, ProcessIdentity{PID: row.PID, StartTime: row.StartTime})
 					}
 				}
 				if count != 2 {
@@ -270,4 +285,58 @@ func TestLaunchBoundaryCrashRecords(t *testing.T) {
 			}
 		})
 	}
+}
+
+// pinCrashedIdentity retains only the exact recorded process for observation
+// and test-owned cleanup. Reused PIDs are never terminated.
+func pinCrashedIdentity(t *testing.T, id ProcessIdentity) windows.Handle {
+	t.Helper()
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, uint32(id.PID)) //nolint:gosec // G115: fixture PID.
+	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+		return 0
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var created, exited, kernel, user windows.Filetime
+	if err := windows.GetProcessTimes(h, &created, &exited, &kernel, &user); err != nil {
+		_ = windows.CloseHandle(h)
+		t.Fatal(err)
+	}
+	if !time.Unix(0, created.Nanoseconds()).Equal(id.StartTime) {
+		_ = windows.CloseHandle(h)
+		return 0 // The original identity is gone; never retain a stranger for cleanup.
+	}
+	t.Cleanup(func() {
+		_ = windows.TerminateProcess(h, 1)
+		status, err := windows.WaitForSingleObject(h, 5000)
+		_ = windows.CloseHandle(h)
+		if err != nil || status != windows.WAIT_OBJECT_0 {
+			t.Errorf("fixture identity cleanup failed: status=%d err=%v", status, err)
+		}
+	})
+	return h
+}
+
+// awaitCrashedDescendant confirms termination independently from worker exit.
+// A timeout is a failure; no signal is sent before the assertion or cleanup.
+func awaitCrashedDescendant(t *testing.T, id ProcessIdentity) {
+	t.Helper()
+	h := pinCrashedIdentity(t, id)
+	if h == 0 {
+		return
+	}
+	status, err := windows.WaitForSingleObject(h, 5000)
+	if err != nil || status != windows.WAIT_OBJECT_0 {
+		t.Fatalf("descendant did not exit after worker crash: status=%d err=%v", status, err)
+	}
+}
+
+func assertCrashedIdentityGone(t *testing.T, id ProcessIdentity) {
+	t.Helper()
+	start, err := ProcessStartTime(id.PID)
+	if errors.Is(err, ErrNoProcess) || (err == nil && !start.Equal(id.StartTime)) {
+		return
+	}
+	t.Fatalf("recorded process still live or unreadable after crash: pid=%d start=%s err=%v", id.PID, start, err)
 }

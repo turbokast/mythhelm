@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -59,6 +60,36 @@ func persistRecoveryIdentity(t *testing.T, f fixture, d admission.Decision, id w
 	}
 }
 
+// Ingest preserves worker event identity and payload; only RunSequence is
+// assigned by Append (ingest.go decodeSpoolLine). Compare every other field.
+func recordRecoveryLaunch(t *testing.T, into map[string]journal.Event, event journal.Event) {
+	t.Helper()
+	if event.Type != "attempt.launched" {
+		return
+	}
+	event.RunSequence = 0
+	if prior, ok := into[event.EventID]; ok && !reflect.DeepEqual(prior, event) {
+		t.Fatal("preexisting launch identity disagrees between journal and spool")
+	}
+	into[event.EventID] = event
+}
+
+func recordRecoverySpoolLaunches(t *testing.T, into map[string]journal.Event, spool []byte) {
+	t.Helper()
+	if end := bytes.LastIndexByte(spool, '\n'); end >= 0 {
+		for line := range bytes.SplitSeq(spool[:end+1], []byte("\n")) {
+			if len(line) == 0 {
+				continue
+			}
+			var event journal.Event
+			if err := json.Unmarshal(line, &event); err != nil {
+				t.Fatal(err)
+			}
+			recordRecoveryLaunch(t, into, event)
+		}
+	}
+}
+
 func recoverUnresolvedWindows(t *testing.T, f fixture, d admission.Decision, wantPIDs []int) {
 	t.Helper()
 	j := f.journal(t)
@@ -70,8 +101,18 @@ func recoverUnresolvedWindows(t *testing.T, f fixture, d admission.Decision, wan
 	if err := rawDB(t, f.state).QueryRowContext(t.Context(), "SELECT count(*) FROM attempts WHERE run_id = ?", d.RunID).Scan(&beforeCount); err != nil {
 		t.Fatal(err)
 	}
-	beforeCounts := eventTypeCounts(t, f, d.RunID)
 	dir := workers.AttemptDir(f.state, d.RunID, d.AttemptID)
+	beforeSpool, err := os.ReadFile(filepath.Join(dir, supervisor.SpoolFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Recovery may project a launch that the worker already durably emitted.
+	// Snapshot journal plus complete spool records before recovery, by event ID.
+	beforeLaunches := map[string]journal.Event{}
+	for _, event := range f.events(t, d.RunID) {
+		recordRecoveryLaunch(t, beforeLaunches, event)
+	}
+	recordRecoverySpoolLaunches(t, beforeLaunches, beforeSpool)
 	raw, err := os.ReadFile(filepath.Join(dir, "worker.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -107,8 +148,20 @@ func recoverUnresolvedWindows(t *testing.T, f fixture, d admission.Decision, wan
 	if err := rawDB(t, f.state).QueryRowContext(t.Context(), "SELECT count(*) FROM attempts WHERE run_id = ?", d.RunID).Scan(&afterCount); err != nil {
 		t.Fatal(err)
 	}
-	if beforeCount != afterCount || eventTypeCounts(t, f, d.RunID)["attempt.launched"] != beforeCounts["attempt.launched"] {
-		t.Fatal("recovery launched another native")
+	if beforeCount != afterCount {
+		t.Fatal("recovery created another attempt")
+	}
+	afterLaunches := map[string]journal.Event{}
+	for _, event := range f.events(t, d.RunID) {
+		recordRecoveryLaunch(t, afterLaunches, event)
+	}
+	afterSpool, err := os.ReadFile(filepath.Join(dir, supervisor.SpoolFile))
+	if err != nil || !bytes.Equal(beforeSpool, afterSpool) {
+		t.Fatalf("worker spool changed during recovery: %v", err)
+	}
+	recordRecoverySpoolLaunches(t, afterLaunches, afterSpool)
+	if !reflect.DeepEqual(beforeLaunches, afterLaunches) {
+		t.Fatalf("launch observations changed: before=%v after=%v", beforeLaunches, afterLaunches)
 	}
 	afterRaw, err := os.ReadFile(filepath.Join(dir, "worker.json"))
 	if err != nil || !bytes.Equal(raw, afterRaw) {
