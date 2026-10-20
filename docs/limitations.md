@@ -13,7 +13,8 @@ Anything below marked experimental may change without notice.
 ## Supported today
 
 - Headless `mythhelm run` with admission, supervision, verification, review,
-  apply and recovery, on Linux, macOS and Windows.
+  apply and recovery, on Linux and macOS. Windows lifecycle evidence is limited
+  to the experimental scripted subset below.
 - `mythhelm demo`: a fully offline scripted run in a disposable repository;
   every screen is labelled `SCRIPTED DEMO`.
 - `mythhelm doctor`: a read-only prerequisite report that writes nothing. Its
@@ -128,7 +129,9 @@ not verified `NOT RUN`. What it does not cover is listed here; the
   binaries; the archive pipeline is implemented and dry-run proven on a test
   tag, but has not published a release.
 - Narrow adapter coverage: the scripted fake adapter plus a Claude Code
-  adapter. Native Claude execution is refused on Windows by design (exit 7).
+  adapter. Windows native Claude Code and Codex launch remain refused pending
+  their separate native-harness qualification; synthetic lifecycle tests do not
+  qualify either harness.
 - Allowance exhaustion is recognised only from a synthetic fixture shape; no
   recorded native run produces it, so on a real route the bucket is not
   recorded and the retry schedule never starts.
@@ -147,6 +150,33 @@ not verified `NOT RUN`. What it does not cover is listed here; the
 - `mythhelm apply` accepts only a `ready_for_review` run, so the candidate of a run that ended `failed (verification_failed)` cannot be applied or exported (#380).
 - The Linux execution boundary does not block direct network egress (the proxy is pinned through environment variables) or signalling of same-user host processes (no PID namespace). On macOS and Windows, and for the Claude Code route on every OS, `restricted` and `inspect` are refused with exit 7, so real Claude Code runs need `--execution-profile trusted-host`.
 - The supervisor's lazy start has Linux and macOS evidence only. The Windows named-pipe transport is covered by tests, but its lazy start and detach are not.
+
+### Windows lifecycle evidence
+
+[Windows CI run 39484713392](https://github.com/turbokast/mythhelm/actions/runs/39484713392)
+on amd64 and arm64 exercises `scripted-child-process` fake tests for suspended
+launch, Job Object assignment, child/grandchild termination, kill-only stop
+(`stop-ladder/v2-windows`), native creation-time identity, CLI exit and reconnect
+to the same live worker. First Ctrl-C and Ctrl-Break request a stop with a
+confirmed exit 130. These are synthetic fake-process results, not qualified
+Windows platform or native-harness support. The [process-support matrix](../internal/processsupport/SUPPORT.md)
+has no qualified rows: `process_tree_ownership` and `worker_detachment` remain
+`unknown` for every Windows architecture/surface pair.
+
+Windows physical console close passed on arm64 with `ConsoleWindowClass`;
+amd64 reported that case blocked under `PseudoConsoleWindow`. The second interrupt
+(detach with exit 6 while stopping) is untested on both architectures because
+no approved scenario holds the immediate kill-only stop open. Other hosted console,
+terminal, shell and filesystem combinations are untested; these results do not
+establish a general console-close or worker-detachment guarantee.
+
+Windows launch is refused inside a kill-on-close parent job, or when the parent-job
+query fails. After a worker crash, recovery retains `ownership_unresolved` and
+quarantine; kill-on-close does not prove ownership reconciled. Before Job Object
+assignment, an inert suspended native may survive outside the job, and a crash
+before identity persistence can leave it unnamed. Recovery never signals such a
+process or launches a replacement. Reconnecting to a live worker after CLI exit
+is distinct from recovery after worker death. See [ADR 0017](decisions/0017-windows-process-ownership.md).
 
 ### Codex
 

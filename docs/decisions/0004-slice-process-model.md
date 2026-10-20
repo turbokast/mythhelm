@@ -1,6 +1,6 @@
 # 0004. Slice process model: detached worker, spool and stop ladder
 
-- Status: accepted
+- Status: accepted for Unix; Windows process-model, stop-ladder and capability statements superseded by [ADR 0017](0017-windows-process-ownership.md). Historical implementation evidence below remains historical.
 - Date: 2026-09-29
 
 ## Context
