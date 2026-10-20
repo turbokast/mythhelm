@@ -222,7 +222,7 @@
 - **Spec deviations**: Review clarification (consistent with design §2.6): AST evidence discovery includes Windows worker, supervisor, fake and E2E package roots, so forthcoming recovery/detach evidence is discoverable. No scope or API deviation.
 - **Files modified**: `internal/processsupport/SUPPORT.md`, `internal/processsupport/support.go`, `internal/processsupport/support_test.go`, `internal/control/SUPPORT.md`, `specs/in-progress/windows-process-ownership/tasks.md`, `specs/in-progress/windows-process-ownership/handoff.md`, `specs/in-progress/windows-process-ownership/scratchpad.md`.
 
-### Task 9 — adapter capability derivation
+### Task 9 — adapter capability derivation ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -240,6 +240,13 @@
   - `TestClaudecodeCapabilitiesWindowsUnsupported`: a direct call to `Capabilities` with `OS: "windows"` returns `unsupported` for both fields, while `Prepare` and `probe` still refuse with `ErrCapability` and the message names the missing Windows qualification, not process-tree ownership (AC-5.3). Fails before: the message names ownership.
   - `TestPrepareProbeCarriesArch`: the probe built at the fake's Prepare call has a non-empty `Arch`.
 - **Invariants touched**: I14 (the claudecode surface is not advertised), I02 (a missing capability blocks before launch).
+
+- **Status**: ✅ Completed — the fake adapter derives Windows capabilities from exact matrix evidence and Claude Code remains refused pending native-harness qualification; PR #503.
+- **Implementation**: Codex implemented the go-implementer task in `a6c8572`. A per-instance matrix pointer uses embedded evidence by default and accepts explicit zero or synthetic matrices without package-level state. Prepare passes the runtime architecture. Claude Code retains two unsupported platform fields and refuses before executable access with the missing native-harness qualification. The compatibility note states that worker ownership does not qualify a harness.
+  Red-first: old Windows capability values, omitted Prepare architecture and the old refusal message failed the named assertions. Seven Go-overlay counterfactuals (ignored architecture, wrong surface, collapsed fields, omitted Prepare architecture, either Claude refusal removed, Claude ownership promoted) failed their regressions; restored named race tests passed (`fake` 1.025s, `claudecode` 1.050s). Empty matrix, unmatched/future architectures, another surface and independent capability fields remain as cases; the platform table also keeps future OS unknown.
+  Gates: formatter, vet, full race (213.1s), tidy, lint (zero issues, 9.9s), and public hygiene all passed. Independent code and architecture review returned Ready with no important or critical findings. No support row is promoted and these local synthetic fixtures do not qualify Windows.
+- **Spec deviations**: Unexported platform parameters let the actual Prepare logic exercise Windows probes/refusals on every contributor host; public entrypoints retain runtime platform selection (consistent with design §2.6). No API, module or file-scope deviation.
+- **Files modified**: `adapters/fake/fake.go`, `adapters/fake/fake_test.go`, `adapters/claudecode/launch.go`, `adapters/claudecode/probe.go`, `adapters/claudecode/probe_test.go`, `adapters/claudecode/COMPATIBILITY.md`, `specs/in-progress/windows-process-ownership/tasks.md`, `specs/in-progress/windows-process-ownership/handoff.md`, `specs/in-progress/windows-process-ownership/scratchpad.md`.
 
 ### Task 10 — Windows documentation
 

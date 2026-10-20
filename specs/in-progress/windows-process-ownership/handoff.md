@@ -73,7 +73,10 @@
 
 ## Task 9 — adapter capability derivation
 
-<!-- pending -->
+- **Produces**: fake Windows capabilities now use `processsupport.Windows(Arch, "scripted-child-process")`; the Prepare-time probe supplies the runtime architecture. No exported API changes. Source `a6c8572`, PR #503.
+- **For Tasks 10–11**: the embedded table is still empty, so both fake Windows capability fields are unknown on every architecture. Exact architecture and surface evidence is mandatory; neither field inherits the other. Synthetic test matrices are not qualification rows.
+- **Native harness boundary**: Claude Code still reports both Windows platform capabilities unsupported and refuses probe and Prepare with `ErrCapability`, naming missing Windows native-harness qualification. Worker Job Object ownership does not qualify a native harness; the compatibility note says so.
+- **Tests and review**: all three named race acceptance tests passed, seven overlay counterfactuals failed, the full race gate passed (213.1s), and independent code/architecture review returned Ready. The per-instance optional matrix and unexported platform seams keep tests free of mutable package state and native credentials. No change to later task inputs.
 
 ## Task 10 — Windows documentation
 
