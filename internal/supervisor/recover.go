@@ -236,7 +236,7 @@ func RecoverWithHooks(ctx context.Context, j *journal.Journal, runID string, h H
 		return out, err
 	}
 	err = p.watch(ctx, AttemptRef{StateDir: d.StateDir, RunID: runID, AttemptID: a.AttemptID}, exited)
-	if err == nil && !p.out.Detached && p.out.State != RunInterrupted {
+	if err == nil && !p.out.Detached && !p.out.DetachedRunning && p.out.State != RunInterrupted {
 		// The candidate row and its journal event commit together. A freeze that
 		// already committed is not repeated on recovery.
 		if _, cerr := j.Candidate(ctx, a.AttemptID); errors.Is(cerr, journal.ErrNotFound) {

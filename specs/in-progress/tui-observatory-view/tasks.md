@@ -111,7 +111,7 @@
   - Own `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md` and `specs/in-progress/tui-observatory-view/scratchpad.md` record completion, compatibility limits and downstream inputs as required by the completion convention.
 - **Files modified**: `internal/workers/worker.go`, `internal/workers/worker_test.go`, `internal/workers/envelope_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/recover.go`, `internal/supervisor/deadline_test.go`, `internal/supervisor/faults_test.go`, `internal/supervisor/pinning_test.go`, `internal/admission/launch_fixture_test.go`, `internal/workers/deadline_test.go`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
 
-### Task 5 — Add a stop-less owner detach control
+### Task 5 — Add a stop-less owner detach control ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (process ownership and concurrency)
@@ -131,6 +131,16 @@
   - `TestDetachedOutcomeDescription` distinguishes running from unconfirmed-stop wording and maps both to6. Existing first/second interrupt tests and Task 1 fixtures remain unchanged.
 - **Test plan**: Real owner/worker fixture, count native launches before/after Recover; no new attempt and no early freeze.
 - **Invariants touched**: I05/I06/I08/I12/I18/I21 (v2 §§6.4,15.2: preserve original source, one writer and worker deadline).
+
+
+- **Status**: ✅ Completed — added accepted-running detach, distinct pending-stop outcomes and exit 6 without stopping or freezing live execution; PR #502.
+- **Implementation**: Commit `1918f05` adds the queued hook, distinct outcomes and guarded continuation; `57c563a` corrects the terminal-recovery test oracle against existing durable evidence. Independent source/architecture reviews returned Ready; refreshed full race gate passed in 262.5s (supervisor 259.016s, CLI 75.930s), with all six markers fresh before publication.
+- **Spec deviations**:
+  - Review correction round 1 (consistent with design §2 / ADR 0020): prioritize a ready first interrupt before stop-less detach; an already pending stop detaches without consuming another queued interrupt. The retained regression failed four of twelve queued-control cases before the correction and all twelve pass under race afterward.
+  - Portable stopping fixture (consistent with terminal precedence): Unix ignore-term requires pending detach; the Windows fake's immediate Kill rung may instead finish first, in which case durable stopped/cancelled evidence and a candidate are required. Both paths retain exactly one unchanged stop request and one native launch; no platform qualification is inferred.
+  - Hosted CI oracle correction (consistent with design §2): the existing terminal Recover fast path repairs the receipt before loading attempt metadata. Both live-join and forced-terminal-before-final-Recover cases now require exact canonical stopped attempt/run and a bound candidate; any supplied outcome metadata must match. Native ARM64 failed the old assertion at PR head `48e6e83`; deterministic local red-first coverage reproduces it. No production behavior, timeout or side-effect assertion changed.
+  - Own `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md` and `specs/in-progress/tui-observatory-view/scratchpad.md` record completion and downstream evidence as required by the completion convention.
+- **Files modified**: `internal/supervisor/pipeline.go`, `internal/supervisor/recover.go`, `internal/supervisor/detach_test.go`, `internal/cli/exit.go`, `internal/cli/run.go`, `internal/cli/run_test.go`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
 
 ### Task 6 — Add journal-backed observatory data
 

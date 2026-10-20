@@ -102,7 +102,7 @@ var categories = map[ExitCode]string{
 // runExit maps where a run stopped to its exit code and error category
 // (design §10).
 func runExit(o supervisor.Outcome) (ExitCode, string) {
-	if o.Detached {
+	if o.Detached || o.DetachedRunning {
 		return ExitOwnership, categories[ExitOwnership]
 	}
 	switch o.State {
