@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -284,5 +285,102 @@ func TestCheckIngressRejectsEmptyOperationID(t *testing.T) {
 func TestCheckIngressAcceptsMinimalFrame(t *testing.T) {
 	if err := control.CheckIngress(prefixFrame([]byte(`{"operation_id":"op-min"}`))); err != nil {
 		t.Fatalf("CheckIngress minimal frame: %v", err)
+	}
+}
+
+func TestAttachmentFrameCeiling(t *testing.T) {
+	t.Parallel()
+	frame := func(n int) []byte {
+		return prefixFrame([]byte(`{"operation_id":"op","method":"attachment.unsupported","params":{"pad":"` + strings.Repeat("x", n) + `"}}`))
+	}
+	exact := frame((64 << 10) - len(frame(0)))
+	if len(exact) != 64<<10 {
+		t.Fatal("invalid exact-boundary fixture")
+	}
+	if err := control.CheckIngress(exact); err != nil {
+		t.Fatalf("exact attachment limit: %v", err)
+	}
+	if err := control.CheckIngress(frame((64 << 10) - len(frame(0)) + 1)); err == nil {
+		t.Fatal("oversized attachment request accepted")
+	}
+}
+
+// decodeWithoutPanic keeps a library panic as an assertion failure, so the
+// regression proves both the returned value/error and the no-panic contract.
+func decodeWithoutPanic[T v2contract.Validator](t *testing.T, frame []byte) (out T, err error) {
+	t.Helper()
+	defer func() {
+		if caught := recover(); caught != nil {
+			t.Errorf("Decode[%T] panicked: %v", out, caught)
+			err = errors.New("decoder panicked")
+		}
+	}()
+	return control.Decode[T](frame)
+}
+
+func TestFramePointerValidators(t *testing.T) {
+	t.Parallel()
+	opened := attachmentFixture()
+	t.Run("projection", func(t *testing.T) {
+		frame, err := control.Encode(opened.Projection)
+		if err != nil {
+			t.Fatal(err)
+		}
+		projection, err := decodeWithoutPanic[*control.Projection](t, frame)
+		if err != nil || projection == nil || projection.RunID != "run" || projection.RunRevision != 3 {
+			t.Fatalf("pointer projection = %+v, %v", projection, err)
+		}
+	})
+	t.Run("complete attachment", func(t *testing.T) {
+		frame, err := control.Encode(opened)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := decodeWithoutPanic[*control.OpenAttachment](t, frame)
+		if err != nil || result == nil || result.Grant.Token != "synthetic-token" || result.Projection.AttachmentID != "attachment" {
+			t.Fatalf("pointer attachment = %+v, %v", result, err)
+		}
+	})
+}
+
+func TestFramePointerBoundsAndNull(t *testing.T) {
+	t.Parallel()
+	frame, err := control.Encode(attachmentFixture().Projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Legal trailing whitespace keeps the shape valid, independently testing the
+	// complete encoded attachment limit rather than an invalid projection field.
+	payload := append(append([]byte{}, frame[4:]...), bytes.Repeat([]byte(" "), (64<<10)-len(frame)+1)...)
+	if got, err := decodeWithoutPanic[*control.Projection](t, prefixFrame(payload)); err == nil || got != nil {
+		t.Fatalf("oversized pointer projection = %+v, %v", got, err)
+	}
+	if got, err := decodeWithoutPanic[*control.RunSpec](t, prefixFrame([]byte("null"))); err == nil || got != nil {
+		t.Fatalf("null pointer run spec = %+v, %v", got, err)
+	}
+	if got, err := decodeWithoutPanic[*control.OpenAttachment](t, prefixFrame([]byte("null"))); err == nil || got != nil {
+		t.Fatalf("null pointer attachment = %+v, %v", got, err)
+	}
+}
+
+func TestFramePointerMissingIdentity(t *testing.T) {
+	t.Parallel()
+	opened := attachmentFixture()
+	opened.Projection.RunID = ""
+	frame, err := control.Encode(opened.Projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := decodeWithoutPanic[*control.Projection](t, frame); !errors.Is(err, &control.Error{Code: control.CodeInvalidContract}) || got != nil {
+		t.Fatalf("missing pointer projection identity = %+v, %v", got, err)
+	}
+	opened = attachmentFixture()
+	opened.Grant.RunID = ""
+	frame, err = control.Encode(opened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := decodeWithoutPanic[*control.OpenAttachment](t, frame); !errors.Is(err, &control.Error{Code: control.CodeInvalidContract}) || got != nil {
+		t.Fatalf("missing pointer attachment identity = %+v, %v", got, err)
 	}
 }

@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"reflect"
+	"strings"
 
 	"github.com/turbokast/mythhelm/internal/v2contract"
 )
@@ -63,19 +65,127 @@ func Encode(v any) ([]byte, error) {
 
 // Decode strips the length prefix and strictly decodes the payload into T
 // with v2contract.Decode semantics: unknown keys rejected, trailing data
-// rejected, then Validate. It performs no limit enforcement; ingress
-// points call CheckIngress instead.
+// rejected, then Validate. Both core and attachment limits are checked
+// before decoding typed payloads.
 func Decode[T v2contract.Validator](frame []byte) (T, error) {
 	var zero T
+	limit := v2contract.MaxFrameBytes
+	recordType := reflect.TypeFor[T]()
+	for recordType.Kind() == reflect.Pointer {
+		recordType = recordType.Elem()
+	}
+	if bounded, ok := reflect.TypeAssert[interface{ frameLimit() int }](reflect.Zero(recordType)); ok {
+		limit = bounded.frameLimit()
+	}
+	if len(frame) > limit {
+		return zero, contractError("frame exceeds limit")
+	}
 	payload, err := splitPrefix(frame)
 	if err != nil {
 		return zero, err
 	}
-	v, err := v2contract.Decode[T](payload)
+	v, err := decodeWire[T](payload)
 	if err != nil {
-		return zero, fmt.Errorf("control: decode frame: %w", err)
+		return zero, err
+	}
+	if err := v.Validate(); err != nil {
+		return zero, err
 	}
 	return v, nil
+}
+
+// decodeWire checks bounded JSON structure, duplicate keys and exact field names
+// before decoding. Raw journal payloads remain opaque historical event data.
+func decodeWire[T any](payload []byte) (T, error) {
+	var zero T
+	if len(payload)+prefixLen > v2contract.MaxFrameBytes {
+		return zero, contractError("frame exceeds limit")
+	}
+	if bytes.Equal(bytes.TrimSpace(payload), []byte("null")) {
+		return zero, contractError("top-level record cannot be null")
+	}
+
+	depth, refs, err := scanPayload(payload)
+	if err != nil {
+		return zero, contractError("malformed JSON frame: " + err.Error())
+	}
+	if err := v2contract.CheckFrameLimits(len(payload)+prefixLen, depth, refs); err != nil {
+		return zero, contractError(err.Error())
+	}
+	if err := wireShape(payload, reflect.TypeFor[T]()); err != nil {
+		return zero, err
+	}
+	dec := json.NewDecoder(bytes.NewReader(payload))
+	dec.DisallowUnknownFields()
+	var value T
+	if err := dec.Decode(&value); err != nil {
+		return zero, contractError("malformed typed frame")
+	}
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		return zero, contractError("trailing JSON data")
+	}
+	return value, nil
+}
+
+func wireShape(data []byte, t reflect.Type) error {
+	if t.Kind() == reflect.Pointer {
+		if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+			return nil
+		}
+		return wireShape(data, t.Elem())
+	}
+	if t == reflect.TypeFor[json.RawMessage]() {
+		return nil
+	}
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return contractError("null nonoptional field")
+	}
+	if t.Implements(reflect.TypeFor[json.Marshaler]()) {
+		return nil
+	}
+	switch t.Kind() {
+	case reflect.Struct:
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(data, &fields); err != nil || fields == nil {
+			return contractError("expected object")
+		}
+		allowed := make(map[string]reflect.Type)
+		var addFields func(reflect.Type)
+		addFields = func(st reflect.Type) {
+			for f := range st.Fields() {
+				if f.Anonymous {
+					addFields(f.Type)
+					continue
+				}
+				key, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+				if key != "" && key != "-" {
+					allowed[key] = f.Type
+				}
+			}
+		}
+		addFields(t)
+		for k, v := range fields {
+			ft, ok := allowed[k]
+			if !ok {
+				return contractError("unknown field " + k)
+			}
+			if err := wireShape(v, ft); err != nil {
+				return err
+			}
+		}
+	case reflect.Slice:
+		var values []json.RawMessage
+		if err := json.Unmarshal(data, &values); err != nil {
+			return contractError("expected array")
+		}
+		for _, v := range values {
+			if err := wireShape(v, t.Elem()); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // CheckIngress enforces NFR-1 at one frame ingress: the length prefix must
@@ -105,8 +215,14 @@ func checkIngress(frame []byte) error {
 	if err != nil {
 		return err
 	}
-	if _, err := v2contract.Decode[Frame](payload); err != nil {
+	if f, err := decodeWire[Frame](payload); err != nil {
 		return fmt.Errorf("control: ingress frame malformed: %w", err)
+	} else if err := f.Validate(); err != nil {
+		return err
+	} else if strings.HasPrefix(f.Method, "attachment.") && len(frame) > AttachmentFrameBytes {
+		return contractError("attachment frame exceeds limit")
+	} else if err := validateMethodParams(f); err != nil {
+		return err
 	}
 	depth, refs, err := scanPayload(payload)
 	if err != nil {
@@ -146,6 +262,7 @@ func scanPayload(payload []byte) (maxDepth, refs int, err error) {
 		object    bool
 		expectKey bool
 		refArmed  bool
+		keys      map[string]bool
 	}
 	var stack []container
 	// finishValue runs after any complete value inside the current
@@ -178,7 +295,10 @@ func scanPayload(payload []byte) (maxDepth, refs int, err error) {
 		case json.Delim:
 			switch tok {
 			case '{', '[':
-				stack = append(stack, container{object: tok == '{', expectKey: true})
+				stack = append(stack, container{object: tok == '{', expectKey: true, keys: make(map[string]bool)})
+				if len(stack) > v2contract.MaxNestingDepth {
+					return 0, 0, errors.New("JSON nesting depth exceeds limit")
+				}
 				if len(stack) > maxDepth {
 					maxDepth = len(stack)
 				}
@@ -192,6 +312,10 @@ func scanPayload(payload []byte) (maxDepth, refs int, err error) {
 		case string:
 			if len(stack) > 0 && stack[len(stack)-1].object && stack[len(stack)-1].expectKey {
 				top := &stack[len(stack)-1]
+				if top.keys[tok] {
+					return 0, 0, errors.New("duplicate JSON key " + tok)
+				}
+				top.keys[tok] = true
 				top.expectKey = false
 				top.refArmed = tok == refKey
 			} else {
@@ -201,4 +325,55 @@ func scanPayload(payload []byte) (maxDepth, refs int, err error) {
 			finishValue(false)
 		}
 	}
+}
+
+// DecodeParams applies the same closed bounded contract to a handler body.
+func DecodeParams[T v2contract.Validator](params json.RawMessage) (T, error) {
+	var zero T
+	value, err := decodeWire[T](params)
+	if err != nil {
+		return zero, err
+	}
+	if err := value.Validate(); err != nil {
+		return zero, err
+	}
+	return value, nil
+}
+func validateMethodParams(f Frame) error {
+	switch f.Method {
+	case "run.prepare":
+		_, err := DecodeParams[RunSpec](f.Params)
+		return err
+	case "run.confirm":
+		_, err := DecodeParams[RunConfirmation](f.Params)
+		return err
+	case "run.start":
+		_, err := DecodeParams[StartRun](f.Params)
+		return err
+	case "run.recover":
+		_, err := DecodeParams[RecoverRun](f.Params)
+		return err
+	case "run.apply":
+		_, err := DecodeParams[ApplyRun](f.Params)
+		return err
+	case "run.operation":
+		_, err := DecodeParams[OperationQuery](f.Params)
+		return err
+	case "run.observe":
+		_, err := DecodeParams[ObserveRun](f.Params)
+		return err
+	case "attachment.open":
+		_, err := DecodeParams[attachmentOpenParams](f.Params)
+		return err
+	case "attachment.read", "attachment.close":
+		_, err := DecodeParams[attachmentGrantParams](f.Params)
+		return err
+	case "attachment.stop":
+		_, err := DecodeParams[attachmentStopParams](f.Params)
+		return err
+	case "attachment.operation":
+		_, err := DecodeParams[attachmentOperationParams](f.Params)
+		return err
+	}
+	return nil
 }
