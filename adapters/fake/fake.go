@@ -25,6 +25,7 @@ import (
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/adapter/ndjson"
 	"github.com/turbokast/mythhelm/internal/buildinfo"
+	"github.com/turbokast/mythhelm/internal/processsupport"
 )
 
 const (
@@ -44,7 +45,7 @@ const (
 // embedded.
 var ErrUnknownScenario = errors.New("unknown fake scenario")
 
-type fakeAdapter struct{}
+type fakeAdapter struct{ matrix *processsupport.Matrix }
 
 // New returns the fake adapter.
 func New() adapter.Adapter { return fakeAdapter{} }
@@ -74,17 +75,19 @@ func (fakeAdapter) Probe(_ context.Context, _ adapter.ProbeInput) (adapter.Probe
 }
 
 // Capabilities never claims billing or containment safety. Worker
-// detachment and process-group ownership are supported only where the
-// worker's platform tests establish them, Linux and macOS (internal/workers,
-// ADR 0004); they stay unknown elsewhere (I14), and Windows has no group
-// ownership.
-func (fakeAdapter) Capabilities(p adapter.Probe) adapter.CapabilityRecord {
+// detachment and process-tree ownership follow the established Unix tests
+// and the evidence matrix on Windows. An unqualified pair stays unknown (I14).
+func (f fakeAdapter) Capabilities(p adapter.Probe) adapter.CapabilityRecord {
 	platform := adapter.Platform{OS: p.OS, WorkerDetachment: adapter.Unknown, ProcessTreeOwnership: adapter.Unknown}
 	switch p.OS {
 	case "linux", "darwin":
 		platform.WorkerDetachment, platform.ProcessTreeOwnership = adapter.Supported, adapter.Supported
 	case "windows":
-		platform.ProcessTreeOwnership = adapter.Unsupported
+		support := processsupport.Windows(p.Arch, "scripted-child-process")
+		if f.matrix != nil {
+			support = f.matrix.Windows(p.Arch, "scripted-child-process")
+		}
+		platform.ProcessTreeOwnership, platform.WorkerDetachment = support.ProcessTreeOwnership, support.WorkerDetachment
 	}
 	return adapter.CapabilityRecord{
 		SchemaVersion:         1,
@@ -121,7 +124,11 @@ func (fakeAdapter) Capabilities(p adapter.Probe) adapter.CapabilityRecord {
 	}
 }
 
-func (f fakeAdapter) Prepare(_ context.Context, in adapter.PrepareInput) (adapter.LaunchProposal, error) {
+func (f fakeAdapter) Prepare(ctx context.Context, in adapter.PrepareInput) (adapter.LaunchProposal, error) {
+	return f.prepare(ctx, in, runtime.GOOS)
+}
+
+func (f fakeAdapter) prepare(_ context.Context, in adapter.PrepareInput, goos string) (adapter.LaunchProposal, error) {
 	switch {
 	case !filepath.IsAbs(in.Workdir):
 		return adapter.LaunchProposal{}, fmt.Errorf("fake adapter: workdir %q is not an absolute path", in.Workdir)
@@ -150,7 +157,7 @@ func (f fakeAdapter) Prepare(_ context.Context, in adapter.PrepareInput) (adapte
 			Env:   env,
 			Stdin: in.Prompt,
 		},
-		StopLadder: stopLadder(runtime.GOOS),
+		StopLadder: stopLadder(goos),
 		Overrides:  []adapter.ConfigDelta{{Kind: "env", Name: attemptEnvVar, Value: in.AttemptID, Reason: "orphan-scan marker"}},
 		Billing: adapter.BillingPosture{
 			Mode:                            "local-scripted",
@@ -162,12 +169,12 @@ func (f fakeAdapter) Prepare(_ context.Context, in adapter.PrepareInput) (adapte
 			G05:                             "not-applicable",
 		},
 		Manifest:     adapter.ConfigManifest{Digests: map[string]string{}},
-		Capabilities: f.Capabilities(adapter.Probe{OS: runtime.GOOS, Version: buildinfo.Get().Version}),
+		Capabilities: f.Capabilities(adapter.Probe{OS: goos, Arch: runtime.GOARCH, Version: buildinfo.Get().Version}),
 	}, nil
 }
 
 // stopLadder climbs SIGINT, SIGTERM, SIGKILL on Unix so every rung is
-// exercised. On Windows the fake is a single process stopped by Kill.
+// exercised. On Windows Kill terminates the worker-owned Job Object.
 func stopLadder(goos string) []adapter.StopStep {
 	if goos == "windows" {
 		return []adapter.StopStep{{Signal: adapter.StopKill, Grace: 5 * time.Second}}

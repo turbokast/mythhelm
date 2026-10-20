@@ -66,9 +66,10 @@ subscription-only eligibility.
 - **Herdr attachment status**: standalone (Herdr out of scope).
 - **Unresolved limitations**: no success-stream recording yet (the recording
   is a rate-limit encounter; a success stream is future work); the 1h
-  subscription / 5m API TTL split is reported, not pinned; Windows refused by
-  design (exit 7); Q6 open (single observation: only local hook/system frames
-  preceded `init`, zero inference tokens); native transcripts persist outside
+  subscription / 5m API TTL split is reported, not pinned; Windows refused
+  pending native-harness qualification (exit 7); worker Job Object ownership
+  does not qualify the native harness; Q6 open (single observation: only local
+  hook/system frames preceded `init`, zero inference tokens); native transcripts persist outside
   MYTHHELM; `auth status` treated as possibly networked.
 
 ## Live record
