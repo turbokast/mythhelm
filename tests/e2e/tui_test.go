@@ -3,14 +3,18 @@ package e2e
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/turbokast/mythhelm/internal/journal"
+	"github.com/turbokast/mythhelm/internal/workers"
 )
 
 // This file covers the packaged binary's TUI-slice launch rule, flag
@@ -115,6 +119,8 @@ func normalizeJSONLPayload(typ string, p map[string]any, e env, repo string) map
 	out := make(map[string]any, len(p))
 	for k, v := range p {
 		switch {
+		case k == "native_start_time" && typ == "attempt.launched":
+			out[k] = "<native_start_time>"
 		case tuiVolatilePayloadKeys[k]:
 			out[k] = "<" + k + ">"
 		case k == "sha256" && typ == "receipt.written":
@@ -300,7 +306,8 @@ func TestE2EPlainForcesLinear(t *testing.T) {
 // per-run values (N4: machine output unchanged), with matching exits. Each
 // leg runs in its own env over the same repo. Stop observations can differ
 // between processes: each complete stopped envelope must match its own durable
-// journal exactly, including signals, confirmation and identities.
+// journal exactly, including signals, confirmation and identities. Launch
+// observations also match worker.json before their creation time is normalised.
 func TestE2EJsonlStable(t *testing.T) {
 	e := newEnv(t)
 	repo, digest := mkRepo(t, e, t.TempDir(), "pass")
@@ -320,12 +327,15 @@ func TestE2EJsonlStable(t *testing.T) {
 	}
 	identical := len(plainLines) > 0
 	for i := range plainLines {
-		if assertDurableStoppedEnvelope(t, plainLines[i], e) {
-			if !assertDurableStoppedEnvelope(t, tuiLines[i], other) {
+		if assertDurableEnvelope(t, plainLines[i], e, "attempt.stopped") {
+			if !assertDurableEnvelope(t, tuiLines[i], other, "attempt.stopped") {
 				t.Fatal("stopped event order differs with TUI flags")
 			}
 			identical = identical && plainLines[i] == tuiLines[i]
 			continue
+		}
+		if assertDurableLaunchEnvelope(t, plainLines[i], e) && !assertDurableLaunchEnvelope(t, tuiLines[i], other) {
+			t.Fatal("launched event order differs with TUI flags")
 		}
 		normalPlain := normalizeJSONLLine(t, plainLines[i], e, repo)
 		normalTUI := normalizeJSONLLine(t, tuiLines[i], other, repo)
@@ -488,9 +498,9 @@ func TestE2EReviewUnknownExits1(t *testing.T) {
 	})
 }
 
-// compareStoppedEnvelope compares complete JSON values without normalising
+// compareDurableEnvelope compares complete JSON values without normalising
 // process evidence or dropping unknown fields.
-func compareStoppedEnvelope(actual, durable []byte) error {
+func compareDurableEnvelope(actual, durable []byte) error {
 	var got, want any
 	actualDecoder := json.NewDecoder(bytes.NewReader(actual))
 	actualDecoder.UseNumber()
@@ -503,18 +513,18 @@ func compareStoppedEnvelope(actual, durable []byte) error {
 		return err
 	}
 	if !reflect.DeepEqual(got, want) {
-		return fmt.Errorf("stopped envelope differs from durable journal: got %s, want %s", actual, durable)
+		return fmt.Errorf("event envelope differs from durable journal: got %s, want %s", actual, durable)
 	}
 	return nil
 }
 
-func assertDurableStoppedEnvelope(t *testing.T, line string, e env) bool {
+func assertDurableEnvelope(t *testing.T, line string, e env, eventType string) bool {
 	t.Helper()
 	var event journal.Event
 	if err := json.Unmarshal([]byte(line), &event); err != nil {
 		t.Fatal(err)
 	}
-	if event.Type != "attempt.stopped" {
+	if event.Type != eventType {
 		return false
 	}
 	j := ledgerOpenState(t, e)
@@ -530,12 +540,12 @@ func assertDurableStoppedEnvelope(t *testing.T, line string, e env) bool {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := compareStoppedEnvelope([]byte(line), encoded); err != nil {
+		if err := compareDurableEnvelope([]byte(line), encoded); err != nil {
 			t.Fatal(err)
 		}
 		return true
 	}
-	t.Fatal("printed stopped event absent from durable journal")
+	t.Fatalf("printed %s event absent from durable journal", eventType)
 	return false
 }
 
@@ -543,7 +553,7 @@ func TestStoppedEnvelopeKeepsStopEvidence(t *testing.T) {
 	empty := []byte(`{"type":"attempt.stopped","event_id":"evt-one","payload":{"confirmed":true,"sent":[],"signals_sent":[],"ladder_version":"stop-ladder/v2-windows","descendant_scan":"job-object"}}`)
 	killed := []byte(`{"type":"attempt.stopped","event_id":"evt-one","payload":{"confirmed":true,"sent":[{"signal":"kill","grace":5000000000}],"signals_sent":["kill"],"ladder_version":"stop-ladder/v2-windows","descendant_scan":"job-object"}}`)
 	for _, durable := range [][]byte{empty, killed} {
-		if err := compareStoppedEnvelope(durable, durable); err != nil {
+		if err := compareDurableEnvelope(durable, durable); err != nil {
 			t.Fatal(err)
 		}
 		for name, altered := range map[string][]byte{
@@ -551,15 +561,156 @@ func TestStoppedEnvelopeKeepsStopEvidence(t *testing.T) {
 			"event identity": bytes.Replace(durable, []byte(`evt-one`), []byte(`evt-other`), 1),
 			"extra field":    bytes.Replace(durable, []byte(`"sent":`), []byte(`"unexpected":true,"sent":`), 1),
 		} {
-			if err := compareStoppedEnvelope(altered, durable); err == nil {
+			if err := compareDurableEnvelope(altered, durable); err == nil {
 				t.Errorf("accepted altered %s", name)
 			}
 		}
 	}
-	if err := compareStoppedEnvelope(empty, killed); err == nil {
+	if err := compareDurableEnvelope(empty, killed); err == nil {
 		t.Error("accepted missing kill evidence")
 	}
-	if err := compareStoppedEnvelope(killed, empty); err == nil {
+	if err := compareDurableEnvelope(killed, empty); err == nil {
 		t.Error("accepted invented kill evidence")
+	}
+}
+
+func assertDurableLaunchEnvelope(t *testing.T, line string, e env) bool {
+	t.Helper()
+	if !assertDurableEnvelope(t, line, e, "attempt.launched") {
+		return false
+	}
+	var event journal.Event
+	if err := json.Unmarshal([]byte(line), &event); err != nil {
+		t.Fatal(err)
+	}
+	id, err := workers.ReadIdentity(workers.AttemptDir(e.state, event.RunID, event.AttemptID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateLaunchedIdentity(event, id, runtime.GOOS); err != nil {
+		t.Fatal(err)
+	}
+	return true
+}
+
+// validateLaunchedIdentity binds the displayed/journaled launch to worker.json
+// before any process observation is normalised for independent-run comparison.
+func validateLaunchedIdentity(event journal.Event, id workers.Identity, goos string) error {
+	if event.Type != "attempt.launched" || event.RunID != id.RunID || event.AttemptID != id.AttemptID {
+		return errors.New("launched event does not match the persisted attempt")
+	}
+	var payload struct {
+		WorkerPID       int        `json:"worker_pid"`
+		WorkerStartTime time.Time  `json:"worker_start_time"`
+		NativePID       *int       `json:"native_pid"`
+		NativePGID      *int       `json:"native_pgid"`
+		NativeStartTime *time.Time `json:"native_start_time"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(event.Payload))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&payload); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(event.Payload, &fields); err != nil {
+		return err
+	}
+	required := []string{"worker_pid", "worker_start_time", "native_pid", "native_pgid"}
+	if goos == "windows" {
+		required = append(required, "native_start_time")
+	}
+	if len(fields) != len(required) {
+		return fmt.Errorf("launched payload has %d fields, want %d", len(fields), len(required))
+	}
+	for _, key := range required {
+		if _, ok := fields[key]; !ok {
+			return fmt.Errorf("launched payload lacks %s", key)
+		}
+	}
+	if payload.WorkerPID != id.PID || !payload.WorkerStartTime.Equal(id.StartTime) ||
+		payload.NativePID == nil || id.NativePID == nil || *payload.NativePID != *id.NativePID || !reflect.DeepEqual(payload.NativePGID, id.NativePGID) {
+		return errors.New("launched process identity differs from worker.json")
+	}
+	if goos == "windows" {
+		if payload.NativeStartTime == nil || payload.NativeStartTime.IsZero() || id.NativeStartTime == nil || id.NativeStartTime.IsZero() || !payload.NativeStartTime.Equal(*id.NativeStartTime) {
+			return errors.New("launched native creation time differs from worker.json or is unknown")
+		}
+	} else if id.NativeStartTime != nil {
+		return errors.New("Unix worker.json invented native creation time")
+	}
+	return nil
+}
+
+func TestLaunchEnvelopeKeepsCreationTimeEvidence(t *testing.T) {
+	t.Parallel()
+	stamp := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	nativeStamp := stamp.Add(time.Second)
+	pid := 101
+	id := workers.Identity{RunID: "run_synthetic", AttemptID: "att_synthetic", PID: 100, StartTime: stamp, NativePID: &pid, NativeStartTime: &nativeStamp}
+	valid := journal.Event{Type: "attempt.launched", RunID: id.RunID, AttemptID: id.AttemptID,
+		Payload: json.RawMessage(`{"worker_pid":100,"worker_start_time":"2026-01-02T03:04:05Z","native_pid":101,"native_pgid":null,"native_start_time":"2026-01-02T03:04:06Z"}`)}
+	if err := validateLaunchedIdentity(valid, id, "windows"); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := compareDurableEnvelope(encoded, encoded); err != nil {
+		t.Fatal(err)
+	}
+	for name, payload := range map[string][]byte{
+		"changed creation time": bytes.Replace(valid.Payload, []byte("03:04:06Z"), []byte("03:04:07Z"), 1),
+		"missing creation time": bytes.Replace(valid.Payload, []byte(`,"native_start_time":"2026-01-02T03:04:06Z"`), nil, 1),
+		"null creation time":    bytes.Replace(valid.Payload, []byte(`"native_start_time":"2026-01-02T03:04:06Z"`), []byte(`"native_start_time":null`), 1),
+		"extra evidence":        bytes.Replace(valid.Payload, []byte(`"native_pgid":null`), []byte(`"native_pgid":null,"unexpected":true`), 1),
+		"changed PID":           bytes.Replace(valid.Payload, []byte(`"native_pid":101`), []byte(`"native_pid":102`), 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			altered := valid
+			altered.Payload = payload
+			raw, err := json.Marshal(altered)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := compareDurableEnvelope(raw, encoded); err == nil {
+				t.Fatal("printed evidence mismatch accepted")
+			}
+			// Even if stream and journal share the defect, worker.json must reject it.
+			if err := validateLaunchedIdentity(altered, id, "windows"); err == nil {
+				t.Fatal("evidence inconsistent with worker.json accepted")
+			}
+		})
+	}
+	unix := valid
+	unix.Payload = bytes.Replace(valid.Payload, []byte(`,"native_start_time":"2026-01-02T03:04:06Z"`), nil, 1)
+	unixID := id
+	unixID.NativeStartTime = nil
+	if err := validateLaunchedIdentity(unix, unixID, "linux"); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateLaunchedIdentity(valid, unixID, "linux"); err == nil {
+		t.Fatal("Unix launched event invented creation time")
+	}
+}
+
+func TestNormalizeLaunchCreationTimeOnly(t *testing.T) {
+	t.Parallel()
+	e := env{state: "/state/synthetic", home: "/synthetic/home"}
+	first := `{"type":"attempt.launched","payload":{"native_start_time":"2026-01-02T03:04:05Z"}}`
+	second := strings.Replace(first, "03:04:05Z", "03:04:06Z", 1)
+	if normalizeJSONLLine(t, first, e, "/repo/synthetic") != normalizeJSONLLine(t, second, e, "/repo/synthetic") {
+		t.Fatal("independent launch creation times compare differently")
+	}
+	missing := `{"type":"attempt.launched","payload":{}}`
+	if normalizeJSONLLine(t, first, e, "/repo/synthetic") == normalizeJSONLLine(t, missing, e, "/repo/synthetic") {
+		t.Fatal("missing launch timestamp normalised away")
+	}
+	for _, typ := range []string{"attempt.stopped", "attempt.progress"} {
+		left := strings.Replace(first, "attempt.launched", typ, 1)
+		right := strings.Replace(second, "attempt.launched", typ, 1)
+		if normalizeJSONLLine(t, left, e, "/repo/synthetic") == normalizeJSONLLine(t, right, e, "/repo/synthetic") {
+			t.Fatalf("%s creation time normalised", typ)
+		}
 	}
 }
