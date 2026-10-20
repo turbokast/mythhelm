@@ -201,29 +201,41 @@ func TestTerminalLossStateTable(t *testing.T) {
 
 func TestInspectUnresolvedExit(t *testing.T) {
 	t.Parallel()
-	for _, kind := range []string{"quit", "stop", "recover", "apply"} {
-		t.Run(kind, func(t *testing.T) {
+	// These are distinct completion inputs to the CLI projection seam. Actual
+	// action cancellation/join is proven by tui.TestExplicitActionQuitCancelsAndJoins
+	// and the real live ApplyRun cancellation test, rather than simulated here.
+	for _, tc := range []struct {
+		name    string
+		action  *tui.ActionCompletion
+		intent  tui.ExitKind
+		message string
+	}{
+		{name: "ordinary quit", intent: tui.ExitView},
+		{name: "pending stop completion", action: &tui.ActionCompletion{Kind: "stop", StopState: "stop_requested"}, intent: tui.ExitFinishHeadless, message: "stop requested; stop not yet confirmed"},
+		{name: "cancelled recover completion", action: &tui.ActionCompletion{Kind: "recover", Err: context.Canceled}, intent: tui.ExitUnresolvedAction, message: "action cancelled"},
+		{name: "cancelled apply completion", action: &tui.ActionCompletion{Kind: "apply", Err: context.Canceled}, intent: tui.ExitUnresolvedAction, message: "action cancelled"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			deps := forcedDeps(true, func(_ context.Context, cfg tui.Config) error {
 				if cfg.Mode != tui.ModeInspect {
 					t.Error("inspect mode missing")
 				}
-				intent := tui.ExitView
-				if kind != "quit" {
-					intent = tui.ExitUnresolvedAction
+				if tc.action != nil {
+					cfg.OnHeadlessAction(*tc.action)
 				}
-				cfg.OnExit(tui.ExitIntent{Kind: intent})
+				cfg.OnExit(tui.ExitIntent{Kind: tc.intent})
 				return nil
 			})
 			err := runInspectTUI(deps, t.TempDir(), "run_inspect", resolveTUIFlags(t, bareGetenv))
 			want := ExitOwnership
-			if kind == "quit" {
+			if tc.action == nil {
 				want = ExitOK
 			}
 			if exitCode(err) != want {
 				t.Fatalf("exit %d want %d: %v", exitCode(err), want, err)
 			}
-			if kind != "quit" && !strings.Contains(err.Error(), "MYTHHELM_HOME=") {
-				t.Fatalf("no state-bound recovery: %v", err)
+			if tc.action != nil && (!strings.Contains(err.Error(), "MYTHHELM_HOME=") || !strings.Contains(err.Error(), tc.message)) {
+				t.Fatalf("wrong completion guidance: %v", err)
 			}
 		})
 	}
@@ -1099,5 +1111,130 @@ func TestInspectRecoverMissingOutcome(t *testing.T) {
 	err := runInspectTUI(deps, t.TempDir(), "run_missing_recovery", resolveTUIFlags(t, bareGetenv))
 	if exitCode(err) != ExitOwnership || !strings.Contains(err.Error(), "MYTHHELM_HOME=") || !strings.Contains(err.Error(), "recovery outcome unresolved") || strings.Contains(err.Error(), "recovery result:") {
 		t.Fatalf("missing result should remain unresolved: %v", err)
+	}
+}
+
+// Registered signal injection proves classifier/mailbox policy, not physical
+// console-close delivery or any platform's detachment qualification.
+func registeredTerminalSignal(t *testing.T) os.Signal {
+	t.Helper()
+	if tuiTerminalSignal(os.Interrupt) {
+		t.Fatal("interrupt classified as terminal loss")
+	}
+	for _, sig := range tuiOSSignals() {
+		if tuiTerminalSignal(sig) {
+			return sig
+		}
+	}
+	if runtime.GOOS == "windows" || runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+		t.Fatal("platform has no registered terminal-loss signal")
+	}
+	t.Skip("platform has no defined terminal-loss signal")
+	return nil
+}
+
+func TestRegisteredTerminalSignal(t *testing.T) {
+	sig := registeredTerminalSignal(t)
+	owner := newTUILifecycle()
+	owner.osSignals <- sig
+	select {
+	case got := <-owner.signals:
+		if got != tui.SignalTerminalLost {
+			t.Errorf("typed signal %v", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("terminal signal not delivered")
+	}
+	owner.close()
+	if !owner.snapshot().lost {
+		t.Error("terminal loss not latched")
+	}
+	select {
+	case <-owner.detach:
+		t.Error("loss detached while view still active")
+	default:
+	}
+}
+
+func TestTerminalLossAfterViewExit(t *testing.T) {
+	sig := registeredTerminalSignal(t)
+	for _, tc := range []struct {
+		name                 string
+		intent               *tui.ExitIntent
+		action, stop, detach bool
+	}{
+		{name: "no intent before acceptance", detach: true},
+		{name: "explicit detach", intent: &tui.ExitIntent{Kind: tui.ExitDetach}, detach: true},
+		{name: "pending stop before loss", stop: true, detach: true},
+		{name: "finish headless", intent: &tui.ExitIntent{Kind: tui.ExitFinishHeadless}},
+		{name: "headless preserves earlier stop", intent: &tui.ExitIntent{Kind: tui.ExitFinishHeadless}, stop: true},
+		{name: "unresolved action", intent: &tui.ExitIntent{Kind: tui.ExitUnresolvedAction}},
+		{name: "ordinary view exit", intent: &tui.ExitIntent{Kind: tui.ExitView}},
+		{name: "confirmed action", action: true},
+		{name: "confirmed action with detach intent", action: true, intent: &tui.ExitIntent{Kind: tui.ExitDetach}},
+	} {
+		for _, lossFirst := range []bool{false, true} {
+			t.Run(tc.name+"/loss-first-"+strconv.FormatBool(lossFirst), func(t *testing.T) {
+				owner := newTUILifecycle()
+				cfg := owner.config(t.TempDir(), "run_late_loss", resolveTUIFlags(t, bareGetenv), tui.ModeLive)
+				if tc.intent != nil {
+					cfg.OnExit(*tc.intent)
+				}
+				if tc.action {
+					cfg.OnHeadlessAction(tui.ActionCompletion{Kind: "stop", StopState: "stopped"})
+				}
+				if tc.stop {
+					cfg.RequestStop()
+				}
+				if !lossFirst {
+					owner.endView()
+				}
+				owner.osSignals <- sig
+				select {
+				case got := <-cfg.Signals:
+					if got != tui.SignalTerminalLost {
+						t.Errorf("typed signal %v", got)
+					}
+				case <-time.After(5 * time.Second):
+					t.Error("signal not delivered")
+				}
+				if lossFirst {
+					owner.endView()
+				}
+				owner.close() // joins and drains the mailbox before checking absence.
+				if !owner.snapshot().lost {
+					t.Error("loss not retained")
+				}
+				gotDetach := false
+				select {
+				case <-owner.detach:
+					gotDetach = true
+				default:
+				}
+				if gotDetach != tc.detach {
+					t.Errorf("detach %v want %v", gotDetach, tc.detach)
+				}
+				select {
+				case <-owner.detach:
+					t.Error("duplicate detach")
+				default:
+				}
+				gotStop := false
+				select {
+				case <-owner.interrupt:
+					gotStop = true
+				default:
+				}
+				if gotStop != tc.stop {
+					t.Errorf("stop %v want %v", gotStop, tc.stop)
+				}
+				select {
+				case <-owner.interrupt:
+					t.Error("duplicate stop")
+				default:
+				}
+			})
+		}
+
 	}
 }

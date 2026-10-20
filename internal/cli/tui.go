@@ -235,16 +235,11 @@ func runLiveTUI(stdio Stdio, deps tuiDeps, stateDir, runID string, opts tuiOptio
 	cfg := owner.config(stateDir, runID, opts, tui.ModeLive)
 	cfg.Events, cfg.Notices = events, notices
 	viewErr := deps.runTUI(context.Background(), cfg)
-	owner.update(func(s *lifecycleState) { s.viewEnded = true })
+	owner.endView()
 	state := owner.snapshot()
 	if viewErr != nil && !state.hasIntent {
 		_, noticeErr := fmt.Fprintf(stdio.Err, "run %s continues in this process; inspect with: mythhelm review %s\n", cell(runID), cell(runID))
 		viewErr = errors.Join(viewErr, noticeErr)
-	}
-	// Terminal loss before a snapshot still queues a single stop-less detach.
-	// The supervisor retains it until canonical worker acceptance or conclusion.
-	if state.lost && !state.hasAction && (!state.hasIntent || state.intent.Kind == tui.ExitDetach) {
-		owner.requestDetach()
 	}
 	res := <-done
 	state = owner.snapshot()
@@ -286,7 +281,9 @@ func runLiveTUI(stdio Stdio, deps tuiDeps, stateDir, runID string, opts tuiOptio
 	if (exitCode(mapped) == ExitOwnership || projectionUnavailable) && !res.out.Detached && !res.out.DetachedRunning {
 		mapped = &outcomeError{code: exitCode(mapped), category: errorCategory(mapped), err: fmt.Errorf("%w; %s", mapped, tuiRecoveryHint(stateDir, runID))}
 	}
-	if (state.detach && state.lost || state.hasIntent && state.intent.Kind == tui.ExitDetach) && !res.out.Detached && !res.out.DetachedRunning && !tuiDetachQualified(stateDir, runID) {
+	detachIntent := state.detach && state.lost || state.hasIntent && state.intent.Kind == tui.ExitDetach
+	unqualified := (detachIntent || res.out.Detached || res.out.DetachedRunning) && !tuiDetachQualified(context.Background(), stateDir, runID)
+	if detachIntent && !res.out.Detached && !res.out.DetachedRunning && unqualified {
 		_, writeErr := fmt.Fprintln(stdio.Out, "not qualified on this platform")
 		mapped = errors.Join(mapped, writeErr)
 	}
@@ -296,7 +293,7 @@ func runLiveTUI(stdio Stdio, deps tuiDeps, stateDir, runID string, opts tuiOptio
 			text = fmt.Sprintf(supervisor.DetachedNotice, cell(runID))
 		}
 		text += "; " + tuiRecoveryHint(stateDir, runID)
-		if !tuiDetachQualified(stateDir, runID) {
+		if unqualified {
 			text += "; not qualified on this platform"
 		}
 		_, writeErr := fmt.Fprintln(stdio.Out, text)
@@ -310,7 +307,7 @@ func runInspectTUI(deps tuiDeps, stateDir, runID string, opts tuiOptions) error 
 	owner := deps.lifecycleOwner()
 	defer owner.close()
 	err := deps.runTUI(context.Background(), owner.config(stateDir, runID, opts, tui.ModeInspect))
-	owner.update(func(s *lifecycleState) { s.viewEnded = true })
+	owner.endView()
 	state := owner.snapshot()
 	var mapped error
 	if state.hasAction {

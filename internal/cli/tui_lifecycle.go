@@ -31,6 +31,15 @@ type lifecycleState struct {
 	hasAction    bool
 	action       tui.ActionCompletion
 }
+
+// latchTerminalDetach is called only under the mailbox lock. A late loss
+// cannot override an already chosen view/action disposition.
+func (s *lifecycleState) latchTerminalDetach() {
+	if s.viewEnded && s.lost && !s.hasAction && (!s.hasIntent || s.intent.Kind == tui.ExitDetach) {
+		s.detach = true
+	}
+}
+
 type tuiLifecycle struct {
 	mu        sync.Mutex
 	state     lifecycleState
@@ -66,7 +75,10 @@ func (c *tuiLifecycle) update(f func(*lifecycleState)) {
 	}
 }
 func (c *tuiLifecycle) snapshot() lifecycleState { c.mu.Lock(); defer c.mu.Unlock(); return c.state }
-func (c *tuiLifecycle) requestDetach()           { c.update(func(s *lifecycleState) { s.detach = true }) }
+func (c *tuiLifecycle) endView() {
+	c.update(func(s *lifecycleState) { s.viewEnded = true; s.latchTerminalDetach() })
+}
+func (c *tuiLifecycle) requestDetach() { c.update(func(s *lifecycleState) { s.detach = true }) }
 func (c *tuiLifecycle) pump() {
 	defer close(c.done)
 	var stopSent, detachSent bool
@@ -96,9 +108,7 @@ func (c *tuiLifecycle) pump() {
 				typed = tui.SignalTerminalLost
 				c.update(func(s *lifecycleState) {
 					s.lost = true
-					if s.viewEnded {
-						s.detach = true
-					}
+					s.latchTerminalDetach()
 				})
 			}
 			// The state machine needs at most two interrupts and one terminal loss.
@@ -154,8 +164,8 @@ func expectedViewError(err error, s lifecycleState) error {
 	}
 	return err
 }
-func tuiDetachQualified(stateDir, runID string) bool {
-	snap, err := viewmodel.Load(context.Background(), stateDir, runID)
+func tuiDetachQualified(ctx context.Context, stateDir, runID string) bool {
+	snap, err := viewmodel.Load(ctx, stateDir, runID)
 	return err == nil && snap.Admission != nil && snap.Admission.WorkerDetachment == "supported"
 }
 

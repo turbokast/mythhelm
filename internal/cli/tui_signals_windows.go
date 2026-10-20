@@ -1,6 +1,11 @@
 package cli
 
-import "os"
+import (
+	"os"
+	"syscall"
+)
 
-func tuiOSSignals() []os.Signal        { return []os.Signal{os.Interrupt} }
-func tuiTerminalSignal(os.Signal) bool { return false }
+// Go exposes close/logoff/shutdown notifications as SIGTERM. This is only
+// a best-effort cleanup opportunity; Windows can still terminate the process.
+func tuiOSSignals() []os.Signal          { return []os.Signal{os.Interrupt, syscall.SIGTERM} }
+func tuiTerminalSignal(s os.Signal) bool { return s == syscall.SIGTERM }
