@@ -17,16 +17,33 @@ s#<EMPTY_SHA256>#e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85
 s#evidence/[0-9a-f]{12}/#evidence/<SHA12>/#g
 s#snapshot: [0-9a-f]{20}\.\.\. \(truncated\)#snapshot: <SHA20>... (truncated)#g
 s#^goal: (unknown|Demo task)$#goal: <LIVE-SAMPLE>#
+/^goal: <LIVE-SAMPLE>$/,/^event [0-9]+:/ {
+/^goal: <LIVE-SAMPLE>$/ {
+x
+s/.*/unobserved sample state/
+x
+}
+/^run state: (created|admission|executing) \(reason: none\)$/h
+s#^run state: executing \(reason: none\)$#run state: <LIVE-SAMPLE> (reason: none)#
+/^next action: wait for (admission to decide|worker to finish)$/ {
+N
+/\nactions: /! {
+P
+D
+}
+G
+s#^next action: wait for admission to decide\nactions: none available\nrun state: (created|admission) \(reason: none\)$#next action: <LIVE-SAMPLE>\
+actions: <LIVE-SAMPLE>#
+s#^next action: wait for worker to finish\nactions: stop\nrun state: executing \(reason: none\)$#next action: <LIVE-SAMPLE>\
+actions: <LIVE-SAMPLE>#
+s#\n(run state: (created|admission|executing) \(reason: none\)|unobserved sample state)$##
+}
+}
 s#^run state: (created|admission) \(reason: none\)$#run state: <LIVE-SAMPLE> (reason: none)#
 s#^admission: (unknown|adapter builtin/fake 0\.1\.0 \(scripted-child-process \(ndjson\)\); qualified: false; paid continuation: not-applicable)$#admission: <LIVE-SAMPLE>#
 /^admission: <LIVE-SAMPLE>$/{
 n
 s#^entitlement: (unknown|not applicable \(local-scripted: no inference, no network\))$#entitlement: <LIVE-SAMPLE>#
-}
-/^goal: <LIVE-SAMPLE>$/,/^event [0-9]+:/ {
-s#^run state: executing \(reason: none\)$#run state: <LIVE-SAMPLE> (reason: none)#
-s#^next action: wait for (admission to decide|worker to finish)$#next action: <LIVE-SAMPLE>#
-s#^actions: (none available|stop)$#actions: <LIVE-SAMPLE>#
 }
 /^event [0-9]+: receipt\.written$/d
 s#^next-after: (21|22|23)$#next-after: <LIVE-CURSOR>#

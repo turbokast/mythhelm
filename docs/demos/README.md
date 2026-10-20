@@ -186,3 +186,6 @@ The first accessible snapshot can already be `executing`: its admission/worker
 wait instruction and `none available`/`stop` action values are also marked
 `<LIVE-SAMPLE>`. These additional rules stop at the first journal event;
 terminal states, other action text, event lines and review results stay exact.
+Only matching state/instruction/action combinations normalize: created or
+admission with admission wait and no actions, or executing with worker wait
+and stop. An inconsistent combination still fails the transcript comparison.
