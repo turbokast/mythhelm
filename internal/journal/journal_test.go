@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -96,7 +97,7 @@ func TestPragmasApplied(t *testing.T) {
 		"foreign_keys": "1",
 		"synchronous":  "2",
 		"busy_timeout": "5000",
-		"user_version": "8",
+		"user_version": strconv.Itoa(SchemaVersion),
 	} {
 		var got string
 		if err := conn.QueryRowContext(t.Context(), "PRAGMA "+pragma).Scan(&got); err != nil {

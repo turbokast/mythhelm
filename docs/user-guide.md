@@ -768,7 +768,7 @@ credentials and no network, and writes nothing. `mythhelm migrate --apply
 --yes` repeats the preview, then drains the legacy run owners (an owner
 still holding its lock at the deadline stops the migration with
 `ownership_unresolved`, exit 6), takes a backup next to the ledger as
-`mythhelm.db.bak-migration-v8` with a `.json` sidecar, and imports every
+`mythhelm.db.bak-migration-v9` with a `.json` sidecar, and imports every
 legacy run as a one-task run. Imported runs keep their IDs, billing
 posture and evidence, and stay unverified. Without `--yes`, `--apply`
 prints the preview and writes nothing.

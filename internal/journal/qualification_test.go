@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 )
 
@@ -28,8 +29,8 @@ func TestMigration0002Applies(t *testing.T) {
 		t.Fatalf("0001_init.sql sha256 = %s, want %s (released migrations are frozen)", got, frozenV1MigrationSHA256)
 	}
 
-	if SchemaVersion != 8 {
-		t.Fatalf("SchemaVersion = %d, want 8", SchemaVersion)
+	if SchemaVersion < 2 {
+		t.Fatalf("SchemaVersion = %d, want at least 2", SchemaVersion)
 	}
 
 	// A database at user_version=1 migrates to 2 with the table present and
@@ -65,14 +66,14 @@ func TestMigration0002Applies(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A fresh Open reports user_version "8".
+	// A fresh Open reports the current schema version.
 	fresh, _ := openTemp(t)
 	var freshVersion string
 	if err := fresh.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&freshVersion); err != nil {
 		t.Fatal(err)
 	}
-	if freshVersion != "8" {
-		t.Fatalf("fresh user_version = %q, want %q", freshVersion, "8")
+	if freshVersion != strconv.Itoa(SchemaVersion) {
+		t.Fatalf("fresh user_version = %q, want %q", freshVersion, strconv.Itoa(SchemaVersion))
 	}
 
 	// OpenReadOnly opens the migrated database without ErrSchemaTooNew.

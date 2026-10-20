@@ -27,7 +27,7 @@ import (
 // fails when the mirrors drift, so a schema bump must sweep this file too.
 const (
 	dbName                 = "mythhelm.db"
-	supportedSchemaVersion = 8
+	supportedSchemaVersion = 9
 )
 
 // migrationFiles names every schema migration in version order, mirroring
@@ -42,6 +42,7 @@ var migrationFiles = []string{
 	"0006_evaluator.sql",
 	"0007_v2contracts.sql",
 	"0008_acceptance.sql",
+	"0009_attachments.sql",
 }
 
 // Owners lists the legacy owner sites Drain quiesces, in drain order

@@ -123,7 +123,7 @@ func TestMigration0008AdditiveAndV7DataSurvives(t *testing.T) { // I09 (v2 §2):
 		t.Fatal(err)
 	}
 
-	j, err := Open(ctx, dir)
+	j, err := open(ctx, dir, migrations[:8])
 	if err != nil {
 		t.Fatalf("Open on a schema-7 database: %v", err)
 	}
@@ -139,8 +139,8 @@ func TestMigration0008AdditiveAndV7DataSurvives(t *testing.T) { // I09 (v2 §2):
 	if err := j.db.QueryRowContext(ctx, `SELECT schema_version FROM migration_state WHERE id = 1`).Scan(&stateSchema); err != nil {
 		t.Fatal(err)
 	}
-	if stateSchema != SchemaVersion {
-		t.Errorf("migration_state.schema_version = %d after the upgrade, want %d", stateSchema, SchemaVersion)
+	if stateSchema != 8 {
+		t.Errorf("migration_state.schema_version = %d after the upgrade, want %d", stateSchema, 8)
 	}
 	got, err := j.LatestVerification(ctx, "run_old")
 	if err != nil {

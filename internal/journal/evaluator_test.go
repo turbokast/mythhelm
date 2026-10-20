@@ -12,8 +12,8 @@ func TestVerificationRowCarriesEvaluator(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = j.Close() }()
-	if SchemaVersion != 8 {
-		t.Fatalf("SchemaVersion = %d, want 8", SchemaVersion)
+	if SchemaVersion < 6 {
+		t.Fatalf("SchemaVersion = %d, want at least 6", SchemaVersion)
 	}
 	var table string
 	err = j.db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'verification_evaluators'`).Scan(&table)
