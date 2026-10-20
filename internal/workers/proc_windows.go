@@ -78,7 +78,8 @@ func descendants(p *ownedProc, _ string) ([]int, []ProcessIdentity, error) {
 	return pids, identities, nil
 }
 
-// ProcessStartTime returns pid's creation time (GetProcessTimes).
+// ProcessStartTime returns a nonsignalled process's creation time.
+// The observation does not prevent that process from exiting immediately after it.
 func ProcessStartTime(pid int) (time.Time, error) {
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, uint32(pid)) //nolint:gosec // G115: PIDs fit in 32 bits on Windows
 	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {

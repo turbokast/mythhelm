@@ -25,6 +25,7 @@ func TestProcessStartTimeRejectsExitedWindows(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, uint32(cmd.Process.Pid)) //nolint:gosec // G115: child PID originates from Windows.
 	if err != nil {
 		t.Fatal(err)
