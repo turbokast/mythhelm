@@ -182,3 +182,10 @@ state:`/`admission:` values and the `entitlement:` line right after `admission:`
 `receipt.written` event line (deleted) and the `next-after` cursor
 (`<LIVE-CURSOR>`; the cursor reads 21, 22 or 23 depending on whether the receipt event lands before the last read). The `reservation held on bucket` notice is kept right after `run: admission` in the linear takes and dropped everywhere else: in the `--accessible` stream the notice and the first snapshot are printed by different goroutines, so its position varies between runs. Label names stay verbatim; only sampled values normalize.
 The transcript keeps the binary's own `SCRIPTED DEMO` labels verbatim.
+The first accessible snapshot can already be `executing`: its admission/worker
+wait instruction and `none available`/`stop` action values are also marked
+`<LIVE-SAMPLE>`. These additional rules stop at the first journal event;
+terminal states, other action text, event lines and review results stay exact.
+Only matching state/instruction/action combinations normalize: created or
+admission with admission wait and no actions, or executing with worker wait
+and stop. An inconsistent combination still fails the transcript comparison.
