@@ -2,19 +2,19 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/turbokast/mythhelm/internal/journal"
-	"github.com/turbokast/mythhelm/internal/supervisor"
-	"github.com/turbokast/mythhelm/internal/tui/viewmodel"
-
 	"io"
-
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/turbokast/mythhelm/internal/journal"
+	"github.com/turbokast/mythhelm/internal/supervisor"
+	"github.com/turbokast/mythhelm/internal/tui/viewmodel"
 )
 
 func TestExitModeTable(t *testing.T) {
@@ -659,5 +659,125 @@ func TestLifecycleEOFIsNotTerminalLoss(t *testing.T) {
 	}
 	if m.terminalLoss || m.exitIntent.Kind != ExitView {
 		t.Fatalf("EOF treated as terminal loss: %+v", m.exitIntent)
+	}
+}
+
+func TestTerminalLossThenParentCancellationJoinsAction(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []ClientMode{ModeInspect, ModeLive} {
+		t.Run(fmt.Sprint(mode), func(t *testing.T) {
+			t.Parallel()
+			m := lifecycleModel(t, mode, "ready_for_review", "succeeded_native")
+			started := make(chan context.Context, 1)
+			cancelled, cleanup, fallback := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			m.cfg.Actions.Apply = func(ctx context.Context, _, _ string, _, _ bool) (supervisor.Receipt, error) {
+				started <- ctx
+				select {
+				case <-ctx.Done():
+					close(cancelled)
+					<-cleanup
+					return nil, ctx.Err()
+				case <-fallback:
+					return supervisor.Receipt{"run_id": "finished"}, nil
+				}
+			}
+			m.openDialog(dialogApply)
+			m.applyBranch = "approved"
+			cmd := m.confirmApply()
+			actCtx := <-started
+			signals := make(chan ClientSignal, 1)
+			m.cfg.Signals = signals
+			completed := make(chan ActionCompletion, 2)
+			m.cfg.OnHeadlessAction = func(x ActionCompletion) { completed <- x }
+			exits := make(chan ExitIntent, 2)
+			m.cfg.OnExit = func(x ExitIntent) { exits <- x }
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			result := make(chan error, 1)
+			go func() {
+				result <- runProgram(ctx, m, tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithoutRenderer())
+			}()
+			signals <- SignalTerminalLost
+			awaitClosed(t, m.viewDone)
+			preserved := actCtx.Err() == nil
+			cancel()
+			observed := false
+			select {
+			case <-cancelled:
+				observed = true
+			case <-time.After(250 * time.Millisecond):
+			}
+			earlyReturn := false
+			select {
+			case <-result:
+				earlyReturn = true
+			default:
+			}
+			// Always release and join, including the broken input that ignores parent
+			// cancellation, so failure cannot leave a test-owned operation behind.
+			close(cleanup)
+			close(fallback)
+			if !earlyReturn {
+				if err := awaitResult(t, result); err != nil {
+					t.Fatal(err)
+				}
+			}
+			actual := cmd().(actionResultMsg)
+			out := <-completed
+			if !preserved {
+				t.Error("terminal loss itself cancelled the approved action")
+			}
+			if !observed {
+				t.Error("parent cancellation after terminal loss never reached action context")
+			}
+			if earlyReturn {
+				t.Error("Run returned before action cancellation cleanup joined")
+			}
+			if !errors.Is(actual.err, context.Canceled) || !errors.Is(out.Err, context.Canceled) || out.Kind != "apply" {
+				t.Errorf("actual=%+v completion=%+v", actual, out)
+			}
+			if exit := <-exits; exit.Kind != ExitFinishHeadless {
+				t.Errorf("exit=%+v", exit)
+			}
+			if len(exits) != 0 || len(completed) != 0 {
+				t.Error("duplicate exit or completion callback")
+			}
+		})
+	}
+}
+
+func TestInspectStopErrorExitIntent(t *testing.T) {
+	t.Parallel()
+	for _, confirmation := range []string{"none", "before result", "after result"} {
+		t.Run(confirmation, func(t *testing.T) {
+			t.Parallel()
+			m := lifecycleModel(t, ModeInspect, "executing", "running")
+			m.cfg.Actions.Stop = func(context.Context, string) (string, error) { return "", supervisor.ErrOwnership }
+			m.openDialog(dialogStop)
+			cmd := m.confirmStop()
+			confirmed := eventMsg{Event: journal.Event{Type: "attempt.stopped", AttemptID: m.snap.Attempt.AttemptID, Payload: json.RawMessage(`{"confirmed":true,"unresolved_pids":[],"descendant_scan":"proc-environ"}`)}}
+			if confirmation == "before result" {
+				m.Update(confirmed)
+			}
+			m.applyActionResult(cmd().(actionResultMsg))
+			if !strings.Contains(m.View(), "stop failed:") {
+				t.Fatalf("original error missing: %s", m.View())
+			}
+			if m.stopRequested {
+				t.Fatal("request delivery invented from an error")
+			}
+			if confirmation == "after result" {
+				m.Update(confirmed)
+			}
+			m.closeDialog()
+			m, quit := pressKey(t, m, specialMsg(tea.KeyCtrlC))
+			want := ExitUnresolvedAction
+			if confirmation != "none" {
+				want = ExitView
+			}
+			if quit == nil || m.exitIntent.Kind != want {
+				t.Fatalf("exit=%+v want %d", m.exitIntent, want)
+			}
+		})
 	}
 }

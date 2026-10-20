@@ -230,9 +230,11 @@ func (m *Model) applyActionResult(msg actionResultMsg) {
 	switch msg.action {
 	case actionStop:
 		if msg.err != nil {
+			m.stopUnresolved = !m.stopConfirmed
 			m.dialogErr = "stop failed: " + msg.err.Error()
 			return
 		}
+		m.stopUnresolved = false
 		// An already-confirmed stop ("stopped") leaves nothing pending:
 		// the label would lie about a request still outstanding (I06).
 		// A confirmation that arrived while the call ran also suppresses

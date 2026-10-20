@@ -96,6 +96,7 @@ type Model struct {
 	acceptFlags      bool
 	acceptUnverified bool
 	stopRequested    bool
+	stopUnresolved   bool
 	stopConfirmed    bool
 	dialogErr        string
 	resultTitle      string
@@ -186,6 +187,7 @@ func (m *Model) setSnapshot(ctx context.Context, snap viewmodel.Snapshot) {
 		// retires and a late in-flight result cannot re-raise it; until
 		// then it renders requested, never stopped (I06).
 		m.stopRequested = false
+		m.stopUnresolved = false
 		m.stopConfirmed = true
 	}
 	if nextAttempt != prevAttempt {
@@ -259,6 +261,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	case eventMsg:
 		m.consumeEvent(msg.Event)
+		if m.stopConfirmed {
+			m.stopUnresolved = false
+		}
 		return m, m.scheduleMotion()
 	case ClientSignal:
 		if msg == SignalTerminalLost {

@@ -132,7 +132,7 @@ func (m *Model) exit(kind ExitKind) tea.Cmd {
 	return tea.Quit
 }
 func (m *Model) viewExit() tea.Cmd {
-	if m.stopRequested && m.cfg.Mode == ModeInspect {
+	if (m.stopRequested || (m.stopUnresolved && !m.stopConfirmed)) && m.cfg.Mode == ModeInspect {
 		return m.exit(ExitUnresolvedAction)
 	}
 	return m.exit(ExitView)
@@ -307,7 +307,14 @@ func runProgram(ctx context.Context, m *Model, options ...tea.ProgramOption) err
 	// Terminal loss preserves the same operation; every other unfinished
 	// shutdown explicitly cancels it, then joins its cleanup.
 	if m.action != nil {
-		<-m.action.done
+		select {
+		case <-m.action.done:
+		case <-ctx.Done():
+			// The view's signal pump has joined, but Run still owns parent
+			// cancellation throughout headless action completion.
+			m.action.cancel()
+			<-m.action.done
+		}
 		if m.terminalLoss && m.cfg.OnHeadlessAction != nil {
 			m.cfg.OnHeadlessAction(m.action.result.completion())
 		}
