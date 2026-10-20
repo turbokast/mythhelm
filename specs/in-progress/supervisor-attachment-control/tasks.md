@@ -59,7 +59,7 @@
 - **Red-first evidence**: Duplicate keys, missing task binding/invalid flags and incompatible result arms failed before strict decoding/validation. Contextless dialing failed cancellation; pointer roundtrips and top-level null failed with caught panic assertions before correction. A temporary skip-Validate overlay mutant failed the retained missing-identity fixture; restored pointer/acceptance tests passed under race. Initial lint findings were corrected with only one documented fixture-inventory false-positive suppression.
 - **Files modified**: `internal/control/run_contract.go`, `internal/control/attachment.go`, `internal/control/attachment_contract_test.go`, `internal/control/frame.go`, `internal/control/client.go`, `internal/control/frame_test.go`, `internal/control/run_contract_test.go`, `internal/control/transport.go`, `internal/control/transport_unix.go`, `internal/control/transport_unix_test.go`, `internal/control/transport_windows.go`, `internal/control/transport_windows_test.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
-### Task 3 — Persist authority, revision and durable operation state
+### Task 3 — Persist authority, revision and durable operation state ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -78,6 +78,15 @@
   - TestImmutableStopAck rejects UPDATE to a completed operations.result while separate stop_results advances.
 - **Test plan**: Synthetic fixtures and deterministic barriers for the named cases; pair negative assertions with a deliberately violating fixture. Public process behavior uses the packaged binary in the integration task, not helper-only evidence.
 - **Invariants touched**: I07/I09/I12/I23 (v2 §§5/6: canonical revision/evidence and immutable replay).
+
+- **Status**: ✅ Completed — implemented additive attachment authority, canonical run revisions and separate durable stop state; PR #507.
+- **Implementation**: Source `4379c3e` adds schema 9 and `journal.RunRevision` with same-transaction dependency triggers and immutable acknowledgment/outbox protection. Signed integration `7b68070` includes the verified main-branch Windows fix; reviewed task SQL and tests are unchanged.
+- **Spec deviations**:
+  - Approved schema-assertion scope: `internal/journal/acceptance_test.go` isolates the exact historical schema-8 inventory; `internal/journal/evaluator_test.go` and `internal/journal/qualification_test.go` retain introduced-schema floors and current-version checks; `internal/journal/journal_test.go` follows the current pragma version; `internal/journal/migrate_tables_test.go` pins schema 9.
+  - Approved compatibility scope: `internal/migrate/backup.go` and `internal/migrate/preview/plan.go` move the required schema mirrors and ordered migration list together; `internal/migrate/SUPPORT.md` follows the renamed evidence test; `docs/user-guide.md` updates only the current backup filename.
+  - Approved preview-test scope: `internal/cli/migrate_test.go` derives the exact ordered remaining schema-7 migration files, independently of the production preview list.
+  - Review corrections consistent with design §5: cover INSERT/UPDATE replacement through every declared unique key and physical row alias; retain unreferenced-victim counterexamples so foreign keys cannot mask omitted guards. Completed-operation duplicate insertion is ignored with zero affected rows, preserving concurrent claim semantics and the entire immutable acknowledgment row; existing completed UPDATE/DELETE guards remain intact.
+- **Files modified**: `docs/user-guide.md`, `internal/cli/migrate_test.go`, `internal/control/assign_revision_test.go`, `internal/journal/acceptance_test.go`, `internal/journal/attachment_revision.go`, `internal/journal/attachment_revision_test.go`, `internal/journal/evaluator_test.go`, `internal/journal/journal.go`, `internal/journal/journal_test.go`, `internal/journal/migrate_tables_test.go`, `internal/journal/migrations/0009_attachments.sql`, `internal/journal/qualification_test.go`, `internal/migrate/SUPPORT.md`, `internal/migrate/backup.go`, `internal/migrate/preview/plan.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
 ### Task 4 — Extract lock-held lifecycle entrypoints
 
