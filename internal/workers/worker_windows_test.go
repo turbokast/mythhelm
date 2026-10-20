@@ -484,6 +484,10 @@ func TestStopTimeoutCleanupOwnsLateNativeHandoff(t *testing.T) {
 	t.Parallel()
 	a := newAttempt(t)
 	w := &worker{}
+	// afterSpawn fails before job assignment. Production launch cleanup must
+	// not hide a missing termination in the handoff helper's deferred cleanup.
+	w.jobOps.terminate = func(*jobObject) error { return nil }
+	w.jobOps.terminateNative = func(*os.Process) error { return nil }
 	ready := make(chan windows.Handle)
 	stopping, release := make(chan struct{}), make(chan struct{})
 	cancel := sync.OnceFunc(func() { close(stopping) })
@@ -543,6 +547,9 @@ func TestStopTimeoutCleanupOwnsLateNativeHandoff(t *testing.T) {
 	case probe = <-probeReady:
 	case <-setup.C:
 		t.Fatal("native was not spawned")
+	}
+	if status, err := windows.WaitForSingleObject(probe, 0); err != nil || status != uint32(windows.WAIT_TIMEOUT) {
+		t.Fatalf("late native not live before cancelled setup: wait=%d err=%v", status, err)
 	}
 	cancel() // Simulate setup failure before afterSpawn can publish ownership.
 	unblock()
