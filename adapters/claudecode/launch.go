@@ -66,9 +66,13 @@ func Argv(bin string, allowedTools []string) []string {
 // between probe and launch fails closed. Billing and the config manifest
 // stay zero here: admission resolves them (auth evidence, declaration,
 // native inventory) and records them on the proposal it journals.
-func (a *claudeAdapter) Prepare(_ context.Context, in adapter.PrepareInput) (adapter.LaunchProposal, error) {
-	if runtime.GOOS == "windows" {
-		return adapter.LaunchProposal{}, fmt.Errorf("%w: process_tree_ownership unsupported on Windows", ErrCapability)
+func (a *claudeAdapter) Prepare(ctx context.Context, in adapter.PrepareInput) (adapter.LaunchProposal, error) {
+	return a.prepare(ctx, in, runtime.GOOS)
+}
+
+func (a *claudeAdapter) prepare(_ context.Context, in adapter.PrepareInput, goos string) (adapter.LaunchProposal, error) {
+	if goos == "windows" {
+		return adapter.LaunchProposal{}, fmt.Errorf("%w: Windows native-harness qualification missing", ErrCapability)
 	}
 	if !filepath.IsAbs(in.Workdir) {
 		return adapter.LaunchProposal{}, fmt.Errorf("claudecode: workdir %q is not an absolute path", in.Workdir)
