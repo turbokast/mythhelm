@@ -42,6 +42,9 @@ func TestMain(m *testing.M) {
 	}
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "__crash-worker":
+			// Windows Task 6 runs its hook-bearing helper through the test runner.
+			os.Args = append([]string{os.Args[0], "-test.run=^TestCrashWorkerHelper$", "--"}, os.Args[2:]...)
 		case contain.Command:
 			os.Exit(contain.Main(os.Args[2:]))
 		case Command:
