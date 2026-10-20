@@ -23,5 +23,10 @@ s#^admission: (unknown|adapter builtin/fake 0\.1\.0 \(scripted-child-process \(n
 n
 s#^entitlement: (unknown|not applicable \(local-scripted: no inference, no network\))$#entitlement: <LIVE-SAMPLE>#
 }
+/^goal: <LIVE-SAMPLE>$/,/^event [0-9]+:/ {
+s#^run state: executing \(reason: none\)$#run state: <LIVE-SAMPLE> (reason: none)#
+s#^next action: wait for (admission to decide|worker to finish)$#next action: <LIVE-SAMPLE>#
+s#^actions: (none available|stop)$#actions: <LIVE-SAMPLE>#
+}
 /^event [0-9]+: receipt\.written$/d
 s#^next-after: (21|22|23)$#next-after: <LIVE-CURSOR>#
