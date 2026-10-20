@@ -319,7 +319,8 @@ func TestEmergencyDetachQualification(t *testing.T) {
 				}
 				m, _ = pressKey(t, m, runeMsg("q"))
 				m, _ = pressKey(t, m, specialMsg(tea.KeyDown))
-				m, cmd := pressKey(t, m, specialMsg(tea.KeyEnter))
+				var cmd tea.Cmd
+				m, cmd = pressKey(t, m, specialMsg(tea.KeyEnter))
 				if cmd != nil || m.dialog != dialogExitOptions || detaches != 0 {
 					t.Fatal("unqualified q detach row acted")
 				}
