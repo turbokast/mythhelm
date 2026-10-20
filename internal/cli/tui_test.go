@@ -12,8 +12,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -905,16 +907,41 @@ func TestReviewResumePastEndReturnsPromptly(t *testing.T) {
 	f.addRun(runID, "completed", strings.Repeat("0", 64))
 	var out bytes.Buffer
 	done := make(chan error, 1)
+	var completedAt atomic.Int64
+	began := time.Now()
 	go func() {
-		done <- runAccessibleReview(Stdio{Out: &out}, f.dir, runID, 999)
+		err := runAccessibleReview(Stdio{Out: &out}, f.dir, runID, 999)
+		completedAt.Store(int64(time.Since(began)))
+		done <- err
 	}()
 	select {
 	case err := <-done:
 		if err != nil {
 			t.Fatalf("runAccessibleReview: %v", err)
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("resume past end hung: watch never started on the empty page")
+	case deadline := <-time.After(5 * time.Second):
+		observedAt := time.Since(began)
+		completed := completedAt.Load()
+		completion := "not recorded when watchdog selected"
+		if completed != 0 {
+			completion = time.Duration(completed).String()
+		}
+		const stackLimit = 512 << 10
+		stack := make([]byte, stackLimit)
+		n := runtime.Stack(stack, true)
+		dump := string(stack[:n])
+		actorID := "unavailable (not present in bounded dump)"
+		for goroutine := range strings.SplitSeq(dump, "\n\n") {
+			if strings.Contains(goroutine, "github.com/turbokast/mythhelm/internal/cli.TestReviewResumePastEndReturnsPromptly.func1(") {
+				header, _, _ := strings.Cut(goroutine, "\n")
+				fields := strings.Fields(header)
+				if len(fields) >= 2 && fields[0] == "goroutine" {
+					actorID = fields[1]
+				}
+				break
+			}
+		}
+		t.Fatalf("resume past end selected the 5s watchdog; timer deadline=%s; observer elapsed=%s; actor completion=%s; target goroutine=%s; stack bytes=%d limit=%d:\n%s", deadline.Sub(began), observedAt, completion, actorID, n, stackLimit, dump)
 	}
 	if got := out.String(); got != "next-after: 999\n" {
 		t.Fatalf("output = %q, want only the echo trailer", got)
