@@ -425,7 +425,7 @@ func (m *Model) noteStopConfirmation(ev journal.Event) {
 	if ev.Type != "attempt.stopped" || m.snap.Attempt == nil {
 		return
 	}
-	if ev.AttemptID != "" && ev.AttemptID != m.snap.Attempt.AttemptID {
+	if m.snap.Run.RunID == "" || m.snap.Attempt.AttemptID == "" || ev.RunID != m.snap.Run.RunID || ev.AttemptID != m.snap.Attempt.AttemptID {
 		return
 	}
 	if stopConfirmed(ev.Payload) {

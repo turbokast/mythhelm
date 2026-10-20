@@ -748,14 +748,14 @@ func TestTerminalLossThenParentCancellationJoinsAction(t *testing.T) {
 
 func TestInspectStopErrorExitIntent(t *testing.T) {
 	t.Parallel()
-	for _, confirmation := range []string{"none", "before result", "after result", "interrupted", "created", "admission", "recovering", "applying", "unknown", "stopped snapshot", "foreign stopped", "malformed stopped"} {
+	for _, confirmation := range []string{"none", "before result", "after result", "interrupted", "created", "admission", "recovering", "applying", "unknown", "stopped snapshot", "foreign stopped", "malformed stopped", "missing run", "missing attempt", "foreign run"} {
 		t.Run(confirmation, func(t *testing.T) {
 			t.Parallel()
 			m := lifecycleModel(t, ModeInspect, "executing", "running")
 			m.cfg.Actions.Stop = func(context.Context, string) (string, error) { return "", supervisor.ErrOwnership }
 			m.openDialog(dialogStop)
 			cmd := m.confirmStop()
-			confirmed := eventMsg{Event: journal.Event{Type: "attempt.stopped", AttemptID: m.snap.Attempt.AttemptID, Payload: json.RawMessage(`{"confirmed":true,"unresolved_pids":[],"descendant_scan":"proc-environ"}`)}}
+			confirmed := eventMsg{Event: journal.Event{Type: "attempt.stopped", RunID: m.snap.Run.RunID, AttemptID: m.snap.Attempt.AttemptID, Payload: json.RawMessage(`{"confirmed":true,"unresolved_pids":[],"descendant_scan":"proc-environ"}`)}}
 			if confirmation == "before result" {
 				m.Update(confirmed)
 			}
@@ -775,6 +775,15 @@ func TestInspectStopErrorExitIntent(t *testing.T) {
 				snap.Run.State = confirmation
 				m.setSnapshot(t.Context(), snap)
 				m.Update(eventMsg{Event: journal.Event{Type: "ui.notice"}})
+			case "missing run":
+				confirmed.Event.RunID = ""
+				m.Update(confirmed)
+			case "missing attempt":
+				confirmed.Event.AttemptID = ""
+				m.Update(confirmed)
+			case "foreign run":
+				confirmed.Event.RunID = "run_other"
+				m.Update(confirmed)
 			case "foreign stopped":
 				confirmed.Event.AttemptID = "att_other"
 				m.Update(confirmed)
