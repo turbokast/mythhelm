@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 
@@ -23,7 +24,7 @@ import (
 
 // The outer test never attaches to a console or generates control events.
 // Ctrl-C cannot target a process group, so broadcast is permitted only inside
-// a detached helper's newly allocated console, containing test processes alone.
+// a helper's console created before Go startup, containing test processes alone.
 func TestFirstInterruptRequestsStop(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -36,7 +37,7 @@ func TestFirstInterruptRequestsStop(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestFirstInterruptConsoleHelper$", "-test.v", "--", strconv.FormatUint(uint64(tc.event), 10)) //nolint:gosec // G702: own executable and fixed test helper with a numeric console-event selector.
-			cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.DETACHED_PROCESS}
+			cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_CONSOLE}
 			var output bytes.Buffer
 			cmd.Stdout, cmd.Stderr = &output, &output
 			if err := cmd.Start(); err != nil {
@@ -69,13 +70,9 @@ func TestFirstInterruptConsoleHelper(t *testing.T) {
 	if len(os.Args) != 5 || os.Args[3] != "--" {
 		return
 	}
-	// This test changes this isolated process's console and signal registration.
-	kernel := windows.NewLazySystemDLL("kernel32.dll")
-	ok, _, err := kernel.NewProc("AllocConsole").Call()
-	if ok == 0 {
-		t.Skipf("blocked: AllocConsole: %v", err)
-	}
-	defer func() { _, _, _ = kernel.NewProc("FreeConsole").Call() }()
+	// CREATE_NEW_CONSOLE establishes ownership before Go registers its
+	// runtime handler. AllocConsole here would erase that startup handler.
+	requireInterruptConsoleMembers(t, os.Getpid())
 	event, err := strconv.ParseUint(os.Args[4], 10, 32)
 	if err != nil || (event != windows.CTRL_C_EVENT && event != windows.CTRL_BREAK_EVENT) {
 		t.Fatalf("invalid helper console event %q", os.Args[4])
@@ -109,6 +106,7 @@ func TestFirstInterruptConsoleHelper(t *testing.T) {
 	if status, err := windows.WaitForSingleObject(h, 0); err != nil || status != uint32(windows.WAIT_TIMEOUT) {
 		t.Fatalf("worker is not live before console interrupt: %d %v", status, err)
 	}
+	requireInterruptConsoleMembers(t, os.Getpid(), r.cmd.Process.Pid)
 	if err := windows.GenerateConsoleCtrlEvent(uint32(event), 0); err != nil {
 		t.Skipf("blocked: GenerateConsoleCtrlEvent(%d) in isolated console: %v", event, err)
 	}
@@ -148,4 +146,28 @@ func TestSecondInterruptDetaches(t *testing.T) {
 	// only qualified Windows rung. Queuing two interrupts would test a scheduler
 	// race, not a held-open stop. Never substitute that for worker-alive exit 6.
 	t.Skipf("blocked: Windows %s stop-ladder/v2-windows has only immediate job termination; no approved fake scenario holds the stop open for a second console interrupt; worker_detachment remains unknown pending Task 11 qualification", runtime.GOARCH)
+}
+
+// Inspect only the helper's already isolated console; never attach elsewhere.
+func requireInterruptConsoleMembers(t *testing.T, expected ...int) {
+	t.Helper()
+	var members [8]uint32
+	count, _, err := windows.NewLazySystemDLL("kernel32.dll").NewProc("GetConsoleProcessList").Call(uintptr(unsafe.Pointer(&members[0])), uintptr(len(members)))
+	if count == 0 {
+		t.Skipf("blocked: GetConsoleProcessList on test-owned console: %v", err)
+	}
+	if count > uintptr(len(members)) || count != uintptr(len(expected)) {
+		t.Fatalf("isolated console has %d members, want %d; no control event sent", count, len(expected))
+	}
+	for _, pid := range members[:count] {
+		matched := false
+		for _, want := range expected {
+			if int(pid) == want {
+				matched = true
+			}
+		}
+		if !matched {
+			t.Fatalf("unexpected process %d in isolated console; no control event sent", pid)
+		}
+	}
 }

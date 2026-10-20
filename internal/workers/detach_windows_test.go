@@ -28,10 +28,12 @@ import (
 
 type detachConsoleReady struct {
 	Window  uintptr
-	Blocked string
+	Class   string
+	Visible bool
 }
 
-// The selected helper runs the real CLI with a newly allocated console.
+// The selected helper runs the real CLI; the console-close variant starts
+// with its own console created before Go registers the runtime handler.
 // Neither the test runner nor its host console is ever attached to it.
 func TestDetachConsoleHelper(t *testing.T) {
 	if len(os.Args) < 5 || os.Args[2] != "--" {
@@ -39,13 +41,18 @@ func TestDetachConsoleHelper(t *testing.T) {
 	}
 	ready := detachConsoleReady{}
 	if os.Args[3] == "console_close" {
-		kernel := windows.NewLazySystemDLL("kernel32.dll")
-		ok, _, err := kernel.NewProc("AllocConsole").Call()
-		if ok == 0 {
-			_ = json.NewEncoder(os.Stdout).Encode(detachConsoleReady{Blocked: fmt.Sprintf("AllocConsole: %v", err)})
-			return
+		// The parent created this console before Go startup, preserving the
+		// runtime handler table. Never allocate/attach a console after startup.
+		ready.Window, _, _ = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetConsoleWindow").Call()
+		if ready.Window != 0 {
+			var class [128]uint16
+			n, err := windows.GetClassName(windows.HWND(ready.Window), &class[0], int32(len(class)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ready.Class = windows.UTF16ToString(class[:n])
+			ready.Visible = windows.IsWindowVisible(windows.HWND(ready.Window))
 		}
-		ready.Window, _, _ = kernel.NewProc("GetConsoleWindow").Call()
 	}
 	if err := json.NewEncoder(os.Stdout).Encode(ready); err != nil {
 		t.Fatal(err)
@@ -55,6 +62,7 @@ func TestDetachConsoleHelper(t *testing.T) {
 
 func TestSurvivesCLIExitAndConsoleClose(t *testing.T) {
 	// Each case installs a private runtime directory for real supervisor recovery.
+	t.Run("cleanup_exit_race", testDetachCleanupExitRace)
 	outer := t
 	for _, action := range []string{"cli_exit", "console_close", "early_setup_return"} {
 		var earlyWorker, earlyNative windows.Handle
@@ -96,7 +104,11 @@ func TestSurvivesCLIExitAndConsoleClose(t *testing.T) {
 			cmd := exec.CommandContext(ctx, os.Args[0], args...) //nolint:gosec // G702: own test executable, fixed helper selector and synthetic fixture paths.
 			cmd.Env = append(os.Environ(), "MYTHHELM_HOME="+state, "HOME="+tempDir(), "XDG_CONFIG_HOME="+tempDir())
 			cmd.Dir = repo
-			cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.DETACHED_PROCESS}
+			flags := uint32(windows.DETACHED_PROCESS)
+			if action == "console_close" {
+				flags = windows.CREATE_NEW_CONSOLE
+			}
+			cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: flags}
 			output, err := cmd.StdoutPipe()
 			if err != nil {
 				t.Fatal(err)
@@ -123,9 +135,6 @@ func TestSurvivesCLIExitAndConsoleClose(t *testing.T) {
 			var ready detachConsoleReady
 			if err := json.Unmarshal(scan.Bytes(), &ready); err != nil {
 				t.Fatal(err)
-			}
-			if ready.Blocked != "" {
-				t.Skipf("blocked: %s: %s", action, ready.Blocked)
 			}
 			if action == "early_setup_return" {
 				// Intentionally return before consuming attempt.launched. Only the
@@ -198,6 +207,10 @@ func TestSurvivesCLIExitAndConsoleClose(t *testing.T) {
 				t.Fatalf("CLI never established a native session: %v; last=%s; stderr=%s", scan.Err(), lastLine, diagnostics.String())
 			}
 			if action == "console_close" {
+				t.Logf("test-owned console class=%q visible=%t", ready.Class, ready.Visible)
+				if ready.Class == "PseudoConsoleWindow" {
+					t.Skip("blocked: console_close: GetConsoleWindow returned a PseudoConsoleWindow message window; a physical console-window close is unavailable on this runner")
+				}
 				if ready.Window == 0 {
 					t.Skip("blocked: console_close: allocated console has no window on this runner")
 				}
@@ -212,7 +225,7 @@ func TestSurvivesCLIExitAndConsoleClose(t *testing.T) {
 			}
 			status, err := windows.WaitForSingleObject(helper, 5000)
 			if err != nil || status != windows.WAIT_OBJECT_0 {
-				t.Fatalf("CLI did not exit after %s: status=%d err=%v", action, status, err)
+				t.Fatalf("CLI did not exit after %s: status=%d err=%v console_class=%q visible=%t", action, status, err, ready.Class, ready.Visible)
 			}
 			requireDetachedLive(t, worker, id.StartTime)
 			requireDetachedLive(t, native, *id.NativeStartTime)
@@ -306,20 +319,81 @@ func pinDetachIdentity(t *testing.T, id workers.ProcessIdentity) windows.Handle 
 
 func terminateDetachHandle(t *testing.T, h windows.Handle) bool {
 	t.Helper()
-	status, err := windows.WaitForSingleObject(h, 0)
-	if err == nil && status == windows.WAIT_OBJECT_0 {
-		return true
-	}
-	if err := windows.TerminateProcess(h, 1); err != nil {
-		t.Errorf("terminate fixture identity: %v", err)
-		return false
-	}
-	status, err = windows.WaitForSingleObject(h, 5000)
-	if err != nil || status != windows.WAIT_OBJECT_0 {
-		t.Errorf("fixture identity cleanup unconfirmed: status=%d err=%v", status, err)
+	if err := terminateDetachProcess(h, windows.TerminateProcess); err != nil {
+		t.Error(err)
 		return false
 	}
 	return true
+}
+
+// A matching retained object may exit between the initial wait and terminate.
+// ERROR_ACCESS_DENIED then means exit only if this same object is signalled.
+func terminateDetachProcess(h windows.Handle, terminate func(windows.Handle, uint32) error) error {
+	status, err := windows.WaitForSingleObject(h, 0)
+	if err != nil {
+		return fmt.Errorf("fixture exit observation unknown: %w", err)
+	}
+	if status == windows.WAIT_OBJECT_0 {
+		return nil
+	}
+	if status != uint32(windows.WAIT_TIMEOUT) {
+		return fmt.Errorf("fixture exit observation unknown: status=%d", status)
+	}
+	if err := terminate(h, 1); err != nil {
+		status, waitErr := windows.WaitForSingleObject(h, 0)
+		if waitErr == nil && status == windows.WAIT_OBJECT_0 {
+			return nil
+		}
+		return fmt.Errorf("terminate fixture identity: %w; exit status=%d wait_error=%v", err, status, waitErr)
+	}
+	status, err = windows.WaitForSingleObject(h, 5000)
+	if err != nil || status != windows.WAIT_OBJECT_0 {
+		return fmt.Errorf("fixture identity cleanup unconfirmed: status=%d err=%v", status, err)
+	}
+	return nil
+}
+
+func testDetachCleanupExitRace(t *testing.T) {
+	t.Helper()
+	for _, exitDuringTermination := range []bool{true, false} {
+		t.Run(fmt.Sprintf("exit_before_denial_%t", exitDuringTermination), func(t *testing.T) {
+			cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$") //nolint:gosec // G702: own test executable with a fixed empty test selector.
+			cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_SUSPENDED | windows.DETACHED_PROCESS}
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = cmd.Wait() })
+			start, err := workers.ProcessStartTime(cmd.Process.Pid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			h := pinDetachIdentity(t, workers.ProcessIdentity{PID: cmd.Process.Pid, StartTime: start})
+			denial := func(h windows.Handle, _ uint32) error {
+				if exitDuringTermination {
+					if err := windows.TerminateProcess(h, 0); err != nil {
+						return err
+					}
+					status, err := windows.WaitForSingleObject(h, 5000)
+					if err != nil || status != windows.WAIT_OBJECT_0 {
+						return fmt.Errorf("fixture concurrent exit unconfirmed: status=%d err=%v", status, err)
+					}
+				}
+				return windows.ERROR_ACCESS_DENIED
+			}
+			err = terminateDetachProcess(h, denial)
+			if exitDuringTermination {
+				status, waitErr := windows.WaitForSingleObject(h, 0)
+				if err != nil || waitErr != nil || status != windows.WAIT_OBJECT_0 {
+					t.Fatalf("exited retained object not confirmed: err=%v status=%d wait_error=%v", err, status, waitErr)
+				}
+			} else {
+				requireDetachedLive(t, h, start)
+				if !errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+					t.Fatalf("live denied process reported gone: %v", err)
+				}
+			}
+		})
+	}
 }
 
 func waitDetachNativeIdentity(t *testing.T, state string) workers.Identity {
