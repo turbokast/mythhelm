@@ -62,7 +62,16 @@
 
 ## Task 6 — Windows recovery verdict
 
-<!-- pending -->
+- **Produces**: Windows recovery reports only a live native matching both recorded PID and `native_start_time`. All worker-crash boundaries retain `interrupted_and_quarantined` and `ErrOwnership`; no recovery path starts another native or signals the observed one.
+- **For Task 7**: `workers.OrphanPIDs` still returns `ErrUnsupported` on Windows. Descendant ownership is unobserved after worker death; kill-on-close is not reconciliation evidence under ADR 0017. Missing, mismatched, unreadable and exited native observations do not resolve ownership.
+- **Process probe**: `ProcessStartTime` checks a pinned process handle for exit before reading creation time. An exited object retained by another handle returns `ErrNoProcess`; denied/query/wait failures remain errors. The observation may become stale immediately and grants no signalling or ownership authority.
+- **Crash boundaries**: intent-only records remain indistinguishable before identity persistence. A suspended native outside the job can remain live before assignment, named only when its creation time is recorded. Assigned and resumed natives die with the worker; tests independently observe actual child/grandchild identities before the resumed crash.
+- **Compatibility**: Unix/macOS marker lookup, notice text and existing error handling are retained. Linux tests use a real marked child and retain the older quarantine, worker-PID reuse and no-relaunch cases.
+- **Test seams**: the workers test binary's `__crash-worker` mode selects the existing six `jobOps` hooks and exits without deferred worker cleanup. Side-channel spawn identities are test evidence only; production persists no new launch phase or job identifier. Suspended residual cleanup pins and verifies the exact process before terminating it.
+- **Scope**: the approved CI/docs deviation exposes six named Windows tests and the supervisor package in the existing verbose step. Full suites and scheduling stay intact. PR508's CLI journal-read fixture correction is an independent prerequisite, integrated without taking ownership of its two files.
+- **Evidence limits**: local Wine crash-boundary and creation-time checks are development evidence. Hosted Windows AMD64/ARM64 CI remains required; no process-support matrix row or native-harness qualification is promoted by this task.
+- **Red-first and lint**: delayed identity persistence, PID-only matching and removal of kill-on-close each fail retained assertions; restored focused checks pass. The initial lint rejection was corrected mechanically; retain `first_pass:false` in the task report.
+
 
 ## Task 7 — detach and interrupt behaviour on Windows
 
