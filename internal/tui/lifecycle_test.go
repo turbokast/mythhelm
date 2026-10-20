@@ -8,13 +8,16 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/supervisor"
+	"github.com/turbokast/mythhelm/internal/tui/caps"
 	"github.com/turbokast/mythhelm/internal/tui/viewmodel"
 )
 
@@ -287,6 +290,60 @@ func TestLiveCtrlCIntents(t *testing.T) {
 			}
 			if (detaches == 1) != (to == "executing" || to == "stopping") {
 				t.Fatalf("detaches=%d", detaches)
+			}
+		})
+	}
+}
+
+// AC-6.10/OQ-29 intentionally distinguishes qualified deliberate detach
+// from the emergency second interrupt on an accepted worker.
+func TestEmergencyDetachQualification(t *testing.T) {
+	t.Parallel()
+	for _, capability := range []string{"supported", "unknown", "unsupported", "missing admission"} {
+		t.Run(capability, func(t *testing.T) {
+			t.Parallel()
+			m := lifecycleModel(t, ModeLive, "executing", "running")
+			if capability == "missing admission" {
+				m.snap.Admission = nil
+			} else {
+				m.snap.Admission.WorkerDetachment = capability
+			}
+			stops, detaches, exits := 0, 0, []ExitIntent{}
+			m.cfg.RequestStop = func() { stops++ }
+			m.cfg.Detach = func() { detaches++ }
+			m.cfg.OnExit = func(x ExitIntent) { exits = append(exits, x) }
+			if capability != "supported" {
+				m, _ = pressKey(t, m, runeMsg("d"))
+				if m.dialog != "" || noticeText(m) != "notice: detach is not qualified on this platform\n" {
+					t.Fatalf("deliberate key acted or hid reason: %s", m.View())
+				}
+				m, _ = pressKey(t, m, runeMsg("q"))
+				m, _ = pressKey(t, m, specialMsg(tea.KeyDown))
+				m, cmd := pressKey(t, m, specialMsg(tea.KeyEnter))
+				if cmd != nil || m.dialog != dialogExitOptions || detaches != 0 {
+					t.Fatal("unqualified q detach row acted")
+				}
+				m, _ = pressKey(t, m, specialMsg(tea.KeyEsc))
+			}
+			m.notices = nil
+			m, first := pressKey(t, m, specialMsg(tea.KeyCtrlC))
+			if first != nil || stops != 1 || detaches != 0 || len(exits) != 0 {
+				t.Fatalf("first interrupt: stop=%d detach=%d exits=%+v", stops, detaches, exits)
+			}
+			m, second := pressKey(t, m, specialMsg(tea.KeyCtrlC))
+			if second == nil || stops != 1 || detaches != 1 || len(exits) != 1 || exits[0] != (ExitIntent{Kind: ExitDetach, Phase: "executing"}) {
+				t.Fatalf("second interrupt: stop=%d detach=%d exits=%+v", stops, detaches, exits)
+			}
+			want := "notice: stop requested — waiting for worker confirmation\n"
+			if capability != "supported" {
+				want += "notice: not qualified on this platform\n"
+			}
+			if got := noticeText(m); got != want {
+				t.Fatalf("notices=%q want %q", got, want)
+			}
+			m.Update(SignalInterrupt)
+			if stops != 1 || detaches != 1 || len(exits) != 1 {
+				t.Fatal("repeated emergency control duplicated callbacks")
 			}
 		})
 	}
@@ -665,81 +722,96 @@ func TestTerminalLossThenParentCancellationJoinsAction(t *testing.T) {
 	for _, mode := range []ClientMode{ModeInspect, ModeLive} {
 		t.Run(fmt.Sprint(mode), func(t *testing.T) {
 			t.Parallel()
-			m := lifecycleModel(t, mode, "ready_for_review", "succeeded_native")
-			started := make(chan context.Context, 1)
-			cancelled, cleanup, fallback := make(chan struct{}), make(chan struct{}), make(chan struct{})
-			m.cfg.Actions.Apply = func(ctx context.Context, _, _ string, _, _ bool) (supervisor.Receipt, error) {
-				started <- ctx
+			synctest.Test(t, func(t *testing.T) {
+				m := lifecycleModel(t, mode, "ready_for_review", "succeeded_native")
+				// Visual Tea tick commands are unrelated to action cancellation.
+				m.cfg.Caps.Motion = caps.MotionOff
+				snap := m.snap
+				m.loadSnapshot = func(context.Context, string, string) (viewmodel.Snapshot, error) { return snap, nil }
+				started := make(chan context.Context, 1)
+				cancelled, cleanup, fallback := make(chan struct{}), make(chan struct{}), make(chan struct{})
+				release := sync.OnceFunc(func() { close(cleanup); close(fallback) })
+				m.cfg.Actions.Apply = func(ctx context.Context, _, _ string, _, _ bool) (supervisor.Receipt, error) {
+					started <- ctx
+					select {
+					case <-ctx.Done():
+						close(cancelled)
+						<-cleanup
+						return nil, ctx.Err()
+					case <-fallback:
+						return supervisor.Receipt{"run_id": "finished"}, nil
+					}
+				}
+				m.openDialog(dialogApply)
+				m.applyBranch = "approved"
+				cmd := m.confirmApply()
+				actCtx := <-started
+				signals := make(chan ClientSignal, 1)
+				m.cfg.Signals = signals
+				completed := make(chan ActionCompletion, 2)
+				m.cfg.OnHeadlessAction = func(x ActionCompletion) { completed <- x }
+				exits := make(chan ExitIntent, 2)
+				m.cfg.OnExit = func(x ExitIntent) { exits <- x }
+				ctx, cancel := context.WithCancel(t.Context())
+				result := make(chan error, 1)
+				joined := false
+				go func() {
+					result <- runProgram(ctx, m, tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithoutRenderer())
+				}()
+				t.Cleanup(func() {
+					cancel()
+					release()
+					if !joined {
+						<-result
+					}
+					// The command independently observes the same completed operation.
+					cmd()
+				})
+				signals <- SignalTerminalLost
+				synctest.Wait()
 				select {
-				case <-ctx.Done():
-					close(cancelled)
-					<-cleanup
-					return nil, ctx.Err()
-				case <-fallback:
-					return supervisor.Receipt{"run_id": "finished"}, nil
+				case <-m.viewDone:
+				default:
+					t.Fatal("terminal loss did not join view pumps")
 				}
-			}
-			m.openDialog(dialogApply)
-			m.applyBranch = "approved"
-			cmd := m.confirmApply()
-			actCtx := <-started
-			signals := make(chan ClientSignal, 1)
-			m.cfg.Signals = signals
-			completed := make(chan ActionCompletion, 2)
-			m.cfg.OnHeadlessAction = func(x ActionCompletion) { completed <- x }
-			exits := make(chan ExitIntent, 2)
-			m.cfg.OnExit = func(x ExitIntent) { exits <- x }
-			ctx, cancel := context.WithCancel(t.Context())
-			defer cancel()
-			result := make(chan error, 1)
-			go func() {
-				result <- runProgram(ctx, m, tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithoutRenderer())
-			}()
-			signals <- SignalTerminalLost
-			awaitClosed(t, m.viewDone)
-			preserved := actCtx.Err() == nil
-			cancel()
-			observed := false
-			select {
-			case <-cancelled:
-				observed = true
-			case <-time.After(250 * time.Millisecond):
-			}
-			earlyReturn := false
-			select {
-			case <-result:
-				earlyReturn = true
-			default:
-			}
-			// Always release and join, including the broken input that ignores parent
-			// cancellation, so failure cannot leave a test-owned operation behind.
-			close(cleanup)
-			close(fallback)
-			if !earlyReturn {
-				if err := awaitResult(t, result); err != nil {
-					t.Fatal(err)
+				if actCtx.Err() != nil {
+					t.Error("terminal loss itself cancelled the approved action")
 				}
-			}
-			actual := cmd().(actionResultMsg)
-			out := <-completed
-			if !preserved {
-				t.Error("terminal loss itself cancelled the approved action")
-			}
-			if !observed {
-				t.Error("parent cancellation after terminal loss never reached action context")
-			}
-			if earlyReturn {
-				t.Error("Run returned before action cancellation cleanup joined")
-			}
-			if !errors.Is(actual.err, context.Canceled) || !errors.Is(out.Err, context.Canceled) || out.Kind != "apply" {
-				t.Errorf("actual=%+v completion=%+v", actual, out)
-			}
-			if exit := <-exits; exit.Kind != ExitFinishHeadless {
-				t.Errorf("exit=%+v", exit)
-			}
-			if len(exits) != 0 || len(completed) != 0 {
-				t.Error("duplicate exit or completion callback")
-			}
+				cancel()
+				// All goroutines are inside this bubble. Wait observes durable blocking,
+				// with no scheduler-latency or real-time cancellation deadline.
+				synctest.Wait()
+				select {
+				case <-cancelled:
+				default:
+					t.Error("parent cancellation after terminal loss never reached action context")
+				}
+				select {
+				case <-result:
+					joined = true
+					t.Error("Run returned before action cancellation cleanup joined")
+				default:
+				}
+				release()
+				if !joined {
+					err := <-result
+					joined = true
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				actual := cmd().(actionResultMsg)
+				out := <-completed
+				if !errors.Is(actual.err, context.Canceled) || !errors.Is(out.Err, context.Canceled) || out.Kind != "apply" {
+					t.Errorf("actual=%+v completion=%+v", actual, out)
+				}
+				if exit := <-exits; exit.Kind != ExitFinishHeadless {
+					t.Errorf("exit=%+v", exit)
+				}
+				if len(exits) != 0 || len(completed) != 0 {
+					t.Error("duplicate exit or completion callback")
+				}
+			})
 		})
 	}
 }
