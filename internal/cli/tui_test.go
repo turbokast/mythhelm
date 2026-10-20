@@ -988,11 +988,9 @@ func TestWaitForRunJournaledSurfacesJournalErrors(t *testing.T) {
 	}
 }
 
-// TestFinalRunJournaled pins the live stream's fast-run fallback: absence
-// means the pipeline failed before journaling (nothing to stream), but a
-// journal read error is not absence — it must surface, never collapse into
-// an empty stream that exits with only the run's code.
-func TestFinalRunJournaled(t *testing.T) {
+// TestRunJournaled checks the real read-only journal boundary separately from
+// the final-check retry policy. Cold schema reads are I/O, not a latency promise.
+func TestRunJournaled(t *testing.T) {
 	t.Parallel()
 	journaled := newAccessibleFixture(t)
 	journaledID := ids.New("run")
@@ -1002,30 +1000,113 @@ func TestFinalRunJournaled(t *testing.T) {
 		t.Fatal(err)
 	}
 	tests := []struct {
-		name      string
-		dir       string
-		runID     string
-		wantFound bool
-		wantErr   bool
+		name, dir, runID string
+		wantFound        bool
+		wantErr          error
+		wantReadErr      bool
 	}{
 		{name: "journaled run is found", dir: journaled.dir, runID: journaledID, wantFound: true},
-		{name: "missing run row is absent", dir: journaled.dir, runID: "run_missing"},
-		{name: "missing database is absent", dir: t.TempDir(), runID: "run_missing"},
-		{name: "corrupt database surfaces its read error", dir: corrupt, runID: "run_broken", wantErr: true},
+		{name: "missing run row is absent", dir: journaled.dir, runID: "run_missing", wantErr: journal.ErrNotFound},
+		{name: "missing database is absent", dir: t.TempDir(), runID: "run_missing", wantErr: journal.ErrNoDatabase},
+		{name: "corrupt database surfaces its read error", dir: corrupt, runID: "run_broken", wantReadErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			found, err := finalRunJournaled(tt.dir, tt.runID)
+			found, err := runJournaled(t.Context(), tt.dir, tt.runID)
 			if found != tt.wantFound {
 				t.Errorf("found = %v, want %v", found, tt.wantFound)
 			}
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("err = %v, want error %v", err, tt.wantErr)
+			if tt.wantReadErr {
+				if err == nil || errors.Is(err, journal.ErrNoDatabase) || errors.Is(err, journal.ErrNotFound) {
+					t.Fatalf("err = %v, want a read error", err)
+				}
+				return
 			}
-			if tt.wantErr && (errors.Is(err, journal.ErrNoDatabase) || errors.Is(err, journal.ErrNotFound)) {
-				t.Fatalf("err = %v, want the read error, not absence", err)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
+		})
+	}
+}
+
+// TestFinalRunJournaled checks production wiring for known absence and a real
+// unreadable database. The latter must remain an error even if the retry
+// budget expires before the read finishes.
+func TestFinalRunJournaled(t *testing.T) {
+	t.Parallel()
+	missing := t.TempDir()
+	if found, err := finalRunJournaled(missing, "run_missing"); found || err != nil {
+		t.Fatalf("missing database=(%v,%v), want (false,nil)", found, err)
+	}
+	corrupt := t.TempDir()
+	if err := os.WriteFile(filepath.Join(corrupt, journal.DBName), []byte("not a database"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	found, err := finalRunJournaled(corrupt, "run_broken")
+	if found || err == nil || errors.Is(err, journal.ErrNoDatabase) || errors.Is(err, journal.ErrNotFound) {
+		t.Fatalf("corrupt database=(%v,%v), want a read error", found, err)
+	}
+}
+
+// TestFinalRunJournaledPolicy controls the I/O boundary while the production
+// timers run on synctest's clock. Results, error identity, and elapsed time pin
+// the retry policy without requiring a cold SQLite parse to win a CPU race.
+func TestFinalRunJournaledPolicy(t *testing.T) {
+	readErr := errors.New("journal temporarily unreadable")
+	for _, tt := range []struct {
+		name           string
+		firstErr       error
+		recover, block bool
+		wantFound      bool
+		wantErr        error
+		wantCalls      int
+		wantElapsed    time.Duration
+	}{
+		{name: "found", wantFound: true, wantCalls: 1},
+		{name: "missing database", firstErr: journal.ErrNoDatabase, wantCalls: 1},
+		{name: "missing row", firstErr: journal.ErrNotFound, wantCalls: 1},
+		{name: "retry finds run", firstErr: readErr, recover: true, wantFound: true, wantCalls: 2, wantElapsed: accessibleRunWaitPace},
+		// I09 (v2 §2): unreadable evidence remains unknown, not observed absence.
+		{name: "permanent error is not absence", firstErr: readErr, wantErr: readErr, wantElapsed: 500 * time.Millisecond},
+		// I09 (v2 §2): a cancelled read cannot establish absence.
+		{name: "in flight read is cancelled", block: true, wantErr: context.DeadlineExceeded, wantElapsed: 500 * time.Millisecond},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				start := time.Now()
+				calls := 0
+				found, err := finalRunJournaledWith("state", "run_test", func(ctx context.Context, dir, runID string) (bool, error) {
+					calls++
+					if dir != "state" || runID != "run_test" {
+						t.Fatalf("read(%q,%q), want original state and run", dir, runID)
+					}
+					deadline, ok := ctx.Deadline()
+					if !ok || deadline.Sub(start) != 500*time.Millisecond {
+						t.Fatalf("read deadline = %v (present %v), want exactly 500 ms", deadline.Sub(start), ok)
+					}
+					if tt.block {
+						<-ctx.Done()
+						return false, ctx.Err()
+					}
+					if tt.firstErr != nil && (!tt.recover || calls == 1) {
+						return false, tt.firstErr
+					}
+					return true, nil
+				})
+				if found != tt.wantFound || !errors.Is(err, tt.wantErr) {
+					t.Fatalf("result=(%v,%v), want (%v,%v)", found, err, tt.wantFound, tt.wantErr)
+				}
+				if got := time.Since(start); got != tt.wantElapsed {
+					t.Errorf("elapsed=%v, want %v", got, tt.wantElapsed)
+				}
+				if tt.wantCalls > 0 && calls != tt.wantCalls {
+					t.Errorf("calls=%d, want %d", calls, tt.wantCalls)
+				}
+				if tt.wantCalls == 0 && !tt.block && calls < 2 {
+					t.Errorf("calls=%d, want repeated reads before permanent error", calls)
+				}
+			})
 		})
 	}
 }
@@ -1073,12 +1154,25 @@ func TestRunAccessibleLiveEndsOnStrandedRun(t *testing.T) {
 	j := openJournal(t, dir)
 	p := supervisor.NewProducer(ids.New("sup"), 1)
 	runID := createRun(t, j, p, t.TempDir())
+	row, err := j.Run(t.Context(), runID)
+	if err != nil || row.State != "created" {
+		t.Fatalf("run=(%+v,%v), want stranded created run", row, err)
+	}
 	if err := j.Close(); err != nil {
 		t.Fatal(err)
 	}
 	boom := errors.New("flush boom")
+	// The synthetic supervisor returns only after the real journal wait has
+	// succeeded. This test targets shutdown after startup; fast-run fallback
+	// and its read errors have separate tests above.
+	journalReady := make(chan error, 1)
+	wait := func(ctx context.Context, stateDir, id string) error {
+		err := waitForRunJournaled(ctx, stateDir, id)
+		journalReady <- err
+		return err
+	}
 	supervise := func(context.Context, supervisor.Hooks) (supervisor.Outcome, error) {
-		return supervisor.Outcome{}, boom
+		return supervisor.Outcome{}, errors.Join(boom, <-journalReady)
 	}
 	var out, errBuf bytes.Buffer
 	type result struct {
@@ -1087,7 +1181,7 @@ func TestRunAccessibleLiveEndsOnStrandedRun(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		outcome, err := runAccessibleLive(Stdio{Out: &out, Err: &errBuf}, dir, runID, 0, supervise)
+		outcome, err := runAccessibleLiveWith(Stdio{Out: &out, Err: &errBuf}, dir, runID, 0, supervise, wait, finalRunJournaled)
 		done <- result{out: outcome, err: err}
 	}()
 	select {
@@ -1095,7 +1189,7 @@ func TestRunAccessibleLiveEndsOnStrandedRun(t *testing.T) {
 		if !errors.Is(r.err, boom) {
 			t.Fatalf("runAccessibleLive = %v, want the pipeline error", r.err)
 		}
-		if !strings.Contains(out.String(), "next-after:") {
+		if !strings.HasSuffix(out.String(), "next-after: 1\n") {
 			t.Fatalf("stream lacks its trailer, got:\n%s", out.String())
 		}
 	case <-time.After(30 * time.Second):

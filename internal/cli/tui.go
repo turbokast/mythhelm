@@ -402,12 +402,18 @@ const accessibleFinalCheckBound = 500 * time.Millisecond
 // false with no error; any other journal error is retried within
 // accessibleFinalCheckBound and then returned, never read as absence.
 func finalRunJournaled(stateDir, runID string) (bool, error) {
+	return finalRunJournaledWith(stateDir, runID, runJournaled)
+}
+
+// finalRunJournaledWith keeps the bounded retry policy separate from the I/O
+// boundary. Production always supplies the real read-only journal reader.
+func finalRunJournaledWith(stateDir, runID string, read func(context.Context, string, string) (bool, error)) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), accessibleFinalCheckBound)
 	defer cancel()
 	t := time.NewTicker(accessibleRunWaitPace)
 	defer t.Stop()
 	for {
-		found, err := runJournaled(ctx, stateDir, runID)
+		found, err := read(ctx, stateDir, runID)
 		if errors.Is(err, journal.ErrNoDatabase) || errors.Is(err, journal.ErrNotFound) {
 			return false, nil
 		}
