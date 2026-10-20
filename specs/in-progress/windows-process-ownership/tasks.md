@@ -279,7 +279,7 @@
 - **Spec deviations**: Unexported platform parameters let the actual Prepare logic exercise Windows probes/refusals on every contributor host; public entrypoints retain runtime platform selection (consistent with design §2.6). No API, module or file-scope deviation.
 - **Files modified**: `adapters/fake/fake.go`, `adapters/fake/fake_test.go`, `adapters/claudecode/launch.go`, `adapters/claudecode/probe.go`, `adapters/claudecode/probe_test.go`, `adapters/claudecode/COMPATIBILITY.md`, `specs/in-progress/windows-process-ownership/tasks.md`, `specs/in-progress/windows-process-ownership/handoff.md`, `specs/in-progress/windows-process-ownership/scratchpad.md`.
 
-### Task 10 — Windows documentation
+### Task 10 — Windows documentation ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -294,6 +294,12 @@
   - `TestDocsMatchWindowsMatrix` (new, in `internal/processsupport/docs_test.go`): every Windows (arch, surface) pair the three docs name as supported is a row of the matrix, the docs name the untested subset and the launch refusal inside a kill-on-close job, and `docs/limitations.md` contains no unqualified sentence that recovery works on Windows (checked by anchoring on its Windows paragraph, not a file-wide match). Fails before: the doc claims recovery on Windows.
   - `scripts/ci/check-public-hygiene.sh` passes.
 - **Invariants touched**: I14 (documentation claims only tested subsets).
+- **Status**: ✅ Completed — corrected Windows documentation to experimental fake lifecycle evidence without qualification promotion; PR #515.
+- **Implementation**: Commit `2ccdba6` separates observed Windows results from support, bounds ADR 0004 supersession to Windows, and checks current paragraphs against the embedded matrix. Red-first: old limitations failed recovery/subset/refusal assertions; retained controls reject fabricated/multiarchitecture support, Windows-first/context recovery and mixed-capability claims. Both independent code and architecture reviews Ready.
+- **Spec deviations**:
+  - Added retained paragraph-context, negated/qualified recovery, multiarchitecture and combined-capability controls in review rounds (consistent with design §2.6 and Task 10 acceptance); no file-scope or production changes.
+- **Files modified**: `README.md`, `docs/limitations.md`, `docs/decisions/0004-slice-process-model.md`, `internal/processsupport/docs_test.go`, `specs/in-progress/windows-process-ownership/tasks.md`, `specs/in-progress/windows-process-ownership/handoff.md`, `specs/in-progress/windows-process-ownership/scratchpad.md`.
+- **Gate evidence**: `go-fmt`, `go-vet`, `go-mod-tidy`, `golangci-lint` (0 issues), full `go-test` race gate (290.3s), and `hygiene` passed. Initial lint required network access and reported mechanical fixed-path/modernization findings, corrected before final checks; retain `first_pass:false`.
 
 ### Task 11 — promote tested Windows rows
 
