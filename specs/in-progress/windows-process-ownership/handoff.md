@@ -71,6 +71,7 @@
 - **Scope**: the approved CI/docs deviation exposes six named Windows tests and the supervisor package in the existing verbose step. Full suites and scheduling stay intact. PR508's CLI journal-read fixture correction is an independent prerequisite, integrated without taking ownership of its two files.
 - **Evidence limits**: local Wine crash-boundary and creation-time checks are development evidence. Hosted Windows AMD64/ARM64 CI remains required; no process-support matrix row or native-harness qualification is promoted by this task.
 - **Red-first and lint**: delayed identity persistence, PID-only matching and removal of kill-on-close each fail retained assertions; restored focused checks pass. The initial lint rejection was corrected mechanically; retain `first_pass:false` in the task report.
+- **Native review round 1**: source CI `39430928707` exposed two test-oracle errors on both architectures: checking native death immediately after worker exit, and treating projection of an already durable spooled launch as a new launch. Corrected tests retain the existing five-second exact-handle confirmation bound, compare full pre/post journal/spool launch identities except assigned `RunSequence`, and keep spool/intent/attempt-count/worker-identity assertions. Missing kill-on-close still fails the resumed-tree row before cleanup; a fresh valid launch event still fails the launch-evidence assertion. Production recovery is unchanged.
 
 
 ## Task 7 — detach and interrupt behaviour on Windows
