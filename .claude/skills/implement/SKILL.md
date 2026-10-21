@@ -23,6 +23,13 @@ Runs one task of a spec from start to an open, reviewable pull request. `/run-sp
 
 ## Steps
 
+For backlog delivery, first follow `docs/harness/measured-delivery.md`. Receive
+or create the private measurement ID before execution, use the admitted
+MYTHHELM route or record a concrete fallback, and preserve native receipts and
+unknown usage privately. The final report includes that ID and measurement
+coverage. The orchestrator records independent acceptance and later defects;
+a native success result never closes the record as accepted by itself.
+
 1. **Resolve.** `scripts/harness/spec-lifecycle.sh resolve <spec>` must print exactly one path (`.claude/skills/spec-resolution/SKILL.md`). Refuse a spec in `unrefined/` or `refined/` (point to `/refine-spec` or `/spec`), and one in `unfinalized/`, `done/` or `archived/`. A spec still in `todo/` is started by `/run-spec`, which moves it; a single task taken by hand may proceed from `todo/` and says so in its report.
 2. **Pick the task.** `python3 scripts/harness/runspec.py status specs/<state>/<spec>/tasks.md`. The target must be incomplete, not `Blocked`, and every task in its `Depends on` complete **on origin/main**: `python3 scripts/harness/runspec.py deps-merged <spec> <N>` exits 0. A task whose `Domain/agent` is `maintainer` is the operator's: report it and stop. Check that no pull request for this task is already open (`gh pr list --state open --search '"<alias> task <N>" in:title' --json number,title,headRefName --jq '.[] | select(.title | endswith("(<alias> task <N>)"))'`); continue that one instead of opening a second.
 3. **Take a worktree from origin/main.** Never implement in the shared checkout: other sessions use its index and working tree. A `/run-spec` worker is already in a linked worktree (Agent `isolation: "worktree"`); by hand, create one with `git worktree add ../<repo>-<alias>-t<N> origin/main`. Then fix the base explicitly, whatever the tool based it on:

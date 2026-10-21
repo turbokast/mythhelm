@@ -27,10 +27,17 @@ How `/run-spec` turns a ready task into a worker. The prompt is deliberately sma
 
 ## Accounting
 
+Before every task dispatch, apply `docs/harness/measured-delivery.md`: begin the
+private measurement record and include its ID and state directory in the prompt.
+Use MYTHHELM's admitted native route for execution. A blocked route needs an
+explicit recorded fallback; a generic delivery instruction does not approve new
+hooks, MCP destinations, paid routes or a failed admission. Keep dispatch/attempt
+events distinct from the measurement ledger; neither substitutes for the other.
+
 Record every Agent call as it is sent, never after:
 
 ```bash
-python3 scripts/harness/runspec.py event --spec <spec> --kind dispatch --task <N> --attempt <K> --agent <agent>
+python3 scripts/harness/runspec.py event --spec <spec> --kind dispatch --task <N> --attempt <K> --agent <agent> --measurement-id <id>
 ```
 
 Each result then gets one `return` event (a report arrived), or `fail`, or `lost` (nothing came back). Before consuming a batch's results print `dispatched=N returned=M failed=K`, and name the tasks when `M + K < N`: a worker that died returns nothing, and "found nothing" must never be confused with "never ran" (`.claude/rules/agent-behavioral-posture.md` §5).

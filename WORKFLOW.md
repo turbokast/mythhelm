@@ -97,6 +97,14 @@ The harness learns from its own runs. A finalize retrospective turns lessons tha
 
 ## Autonomous delivery
 
+Backlog delivery also follows [measured delivery](docs/harness/measured-delivery.md):
+MYTHHELM owns admitted native execution, every task starts a private measurement
+record before dispatch, and independent acceptance and later defect observations
+close its evidence. An admission or concrete configuration approval block stays
+visible with any direct-session fallback. Routine delivery records are separate
+from preregistered matched comparisons; public performance claims require the
+protocol, all-assigned results, uncertainty and independent review.
+
 The delivery procedure (Claude Code: `/deliver-backlog`; other clients: `mythhelm-deliver-backlog`) takes a set of backlog cards and specs through the whole lifecycle, from create-spec to finalize-spec, in dependency order: specifying runs ahead, building waits until what it depends on is done. It orchestrates the stages above and never implements. Its state lives in the main checkout's `orchestration/` ([`orchestration/README.md`](orchestration/README.md)), so a new session resumes where the last one stopped.
 
 With you present, it asks you at each spec checkpoint and when it is stuck. The grant service recognizes Claude Code and Codex session IDs, but only Claude Code has the hook enforcement and automatic continuation described below. Other clients use interactive delivery until a tested adapter supplies equivalent enforcement. To let a Claude Code session run while you are away, grant it autonomy from your own terminal:

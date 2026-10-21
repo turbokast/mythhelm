@@ -13,6 +13,7 @@ Use this for `status`, `start <MH-n,spec:name,...>`, `resume`, or a bounded `max
 2. Run `python3 scripts/orchestration/delivery.py reconcile`. Correct each recorded stage that differs from the actual spec and PR state. Read answered questions before choosing work.
 3. With no run, initialize only the requested scope through `delivery.py init --scope <ids>`, then record each item's current stage and grounded dependencies. Never silently add a card.
 4. Run `delivery.py actionable`. Advance the lowest dependency wave. Specify ahead of dependencies; build or finalize only after dependencies are done.
+5. Apply `docs/harness/measured-delivery.md` before dispatch: use an admitted MYTHHELM native route, start the private measurement record and pass its ID/state directory to the worker. Record blocked routes and an explicit fallback when needed. Reconcile unfinished records on resume; never backdate starts or treat missing usage as zero. Close each record with independent acceptance or its actual failure, and append later defect evidence.
 
 ## Advance one stage at a time
 
