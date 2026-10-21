@@ -1,15 +1,23 @@
 package e2e
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -713,4 +721,479 @@ func TestNormalizeLaunchCreationTimeOnly(t *testing.T) {
 			t.Fatalf("%s creation time normalised", typ)
 		}
 	}
+}
+
+// ptyReply is one answer from tui_pty.py. Post is the visible output after
+// the view last left the alternate screen: what the CLI printed itself.
+type ptyReply struct {
+	OK     bool   `json:"ok"`
+	Error  string `json:"error"`
+	Tail   string `json:"tail"`
+	PID    int    `json:"pid"`
+	At     int    `json:"at"`
+	Alive  bool   `json:"alive"`
+	Code   int    `json:"code"`
+	Output string `json:"output"`
+	Post   string `json:"post"`
+}
+
+// ptyClient is one packaged invocation running as the session leader of a
+// pseudo-terminal that tui_pty.py owns. The driver is the child the test
+// starts and joins; it kills and reaps the packaged process on end of input.
+type ptyClient struct {
+	t      *testing.T
+	cmd    *exec.Cmd
+	in     io.WriteCloser
+	out    *bufio.Reader
+	stderr *bytes.Buffer
+	pid    int
+}
+
+// startPTY runs the packaged binary with args on a 160x40 terminal in dir.
+// python3 is a hard requirement wherever this runs: a missing interpreter
+// fails rather than skipping the lifecycle evidence.
+func startPTY(t *testing.T, environ []string, dir string, args ...string) *ptyClient {
+	t.Helper()
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatalf("python3 is required for the packaged TUI lifecycle tests: %v", err)
+	}
+	driver, err := filepath.Abs("tui_pty.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(python, append([]string{"-I", "-B", driver, "160", "40", dir, mythhelmBin}, args...)...)
+	cmd.Env = environ
+	c := &ptyClient{t: t, cmd: cmd, stderr: &bytes.Buffer{}}
+	cmd.Stderr = c.stderr
+	if c.in, err = cmd.StdinPipe(); err != nil {
+		t.Fatal(err)
+	}
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.out = bufio.NewReaderSize(out, 1<<20)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = c.in.Close()
+		_ = c.cmd.Wait()
+	})
+	c.pid = c.read().PID
+	return c
+}
+
+func (c *ptyClient) read() ptyReply {
+	c.t.Helper()
+	line, err := c.out.ReadBytes('\n')
+	if err != nil {
+		c.t.Fatalf("PTY driver ended: %v; stderr %q", err, c.stderr.String())
+	}
+	var r ptyReply
+	if err := json.Unmarshal(line, &r); err != nil {
+		c.t.Fatalf("PTY driver reply %q: %v", line, err)
+	}
+	if !r.OK {
+		c.t.Fatalf("PTY driver: %s\nvisible tail:\n%s", r.Error, r.Tail)
+	}
+	return r
+}
+
+func (c *ptyClient) call(req map[string]any) ptyReply {
+	c.t.Helper()
+	line, err := json.Marshal(req)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	if _, err := c.in.Write(append(line, '\n')); err != nil {
+		c.t.Fatalf("PTY driver input: %v", err)
+	}
+	return c.read()
+}
+
+// send writes keys to the terminal as typed input.
+func (c *ptyClient) send(keys string) {
+	c.t.Helper()
+	c.call(map[string]any{"op": "send", "data": keys})
+}
+
+// mark is the current offset of the visible output, for waits that must
+// observe only what is drawn afterwards.
+func (c *ptyClient) mark() int {
+	c.t.Helper()
+	return c.call(map[string]any{"op": "mark"}).At
+}
+
+// waitText waits for text drawn after offset from. A non-empty resend is
+// typed at once and again every half second until text appears: the view
+// ignores a key whose gate its latest snapshot has not opened yet, and the
+// text is the view's own acknowledgement that a press was accepted.
+func (c *ptyClient) waitText(text string, from int, resend string) int {
+	c.t.Helper()
+	req := map[string]any{"op": "wait", "text": text, "from": from, "timeout": 60}
+	if resend != "" {
+		req["resend"], req["every"] = resend, 0.5
+	}
+	return c.call(req).At
+}
+
+// waitViewClosed waits until the view has left the alternate screen.
+func (c *ptyClient) waitViewClosed() {
+	c.t.Helper()
+	c.call(map[string]any{"op": "wait_view_closed", "timeout": 60})
+}
+
+// alive reports whether the packaged process is still running.
+func (c *ptyClient) alive() bool {
+	c.t.Helper()
+	return c.call(map[string]any{"op": "alive"}).Alive
+}
+
+// signal delivers sig to the packaged process exactly once.
+func (c *ptyClient) signal(sig os.Signal) {
+	c.t.Helper()
+	p, err := os.FindProcess(c.pid)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	if err := p.Signal(sig); err != nil {
+		c.t.Fatalf("signal %v to pid %d: %v", sig, c.pid, err)
+	}
+}
+
+// exit waits for the packaged process and the end of its terminal output.
+func (c *ptyClient) exit(timeout time.Duration) ptyReply {
+	c.t.Helper()
+	return c.call(map[string]any{"op": "exit", "timeout": timeout.Seconds()})
+}
+
+// confirmKeys moves a confirmation's focus from Cancel to its confirm
+// button and activates it: two deliberate keys, never one (I03 (v2 §2)).
+const confirmKeys = "\t\r"
+
+// openDetach presses d until the view draws its detach confirmation: the
+// view's own proof that its snapshot holds a running worker.
+func openDetach(c *ptyClient) {
+	c.t.Helper()
+	c.waitText("Detach (leave running)", c.mark(), "d")
+}
+
+// openStop presses s until the view draws its stop confirmation.
+func openStop(c *ptyClient) {
+	c.t.Helper()
+	c.waitText("Stop run", c.mark(), "s")
+}
+
+// posixQuote is the independent oracle for POSIX single quoting.
+func posixQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'" }
+
+// wantRecover is the exact labelled command bound to the run's state root.
+func wantRecover(state, runID string) string {
+	return "POSIX sh/bash/zsh: env " + posixQuote("MYTHHELM_HOME="+state) + " mythhelm recover " + posixQuote(runID)
+}
+
+// printedCommand returns the one labelled recovery command in out.
+func printedCommand(t *testing.T, out string) string {
+	t.Helper()
+	const label = "POSIX sh/bash/zsh: "
+	if n := strings.Count(out, "mythhelm recover"); n != 1 {
+		t.Fatalf("output names mythhelm recover %d times, want once:\n%s", n, out)
+	}
+	_, rest, ok := strings.Cut(out, label)
+	if !ok {
+		t.Fatalf("output has no %q command:\n%s", label, out)
+	}
+	command, _, _ := strings.Cut(rest, "\n")
+	return strings.TrimRight(command, " ")
+}
+
+// hasExactLine reports whether out has a line equal to want once trailing
+// cell padding is removed.
+func hasExactLine(out, want string) bool {
+	for line := range strings.Lines(out) {
+		if strings.TrimRight(line, " \n") == want {
+			return true
+		}
+	}
+	return false
+}
+
+// unrelatedHome is a caller MYTHHELM_HOME that a state-bound command must
+// not touch; its sentinel is the only entry it may ever hold.
+func unrelatedHome(t *testing.T) string {
+	t.Helper()
+	dir := canonicalDir(t, t.TempDir())
+	if err := os.WriteFile(filepath.Join(dir, "sentinel"), []byte("caller state\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func assertUntouched(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "sentinel"))
+	if err != nil || string(body) != "caller state\n" || len(entries) != 1 {
+		t.Fatalf("caller state %s changed: %d entries, sentinel %q (%v)", dir, len(entries), body, err)
+	}
+}
+
+// runPrinted executes exactly the printed command in its named POSIX shell
+// from a caller whose own MYTHHELM_HOME is home; `mythhelm` resolves to the
+// packaged binary through PATH.
+func runPrinted(t *testing.T, environ []string, home, command string) (int, string) {
+	t.Helper()
+	bin := t.TempDir()
+	if err := os.Symlink(mythhelmBin, filepath.Join(bin, "mythhelm")); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	cmd.Dir = t.TempDir()
+	cmd.Env = append(slices.Clone(environ), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "MYTHHELM_HOME="+home)
+	out, err := cmd.CombinedOutput()
+	if cmd.ProcessState == nil {
+		t.Fatalf("printed command did not run: %v", err)
+	}
+	return cmd.ProcessState.ExitCode(), string(out)
+}
+
+// waitSpool waits until the attempt's spool satisfies cond.
+func waitSpool(t *testing.T, dir, what string, cond func([]journal.Event) bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "spool.jsonl")); err == nil && cond(spoolEvents(t, dir)) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s in the spool", what)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func spoolHasStop(events []journal.Event) bool {
+	return slices.ContainsFunc(events, func(ev journal.Event) bool { return ev.Type == "attempt.stop_requested" })
+}
+
+// liveAttempt is the attempt a detached client left: its directory and the
+// recorded worker, which the test reaps if it is still running at the end.
+func liveAttempt(t *testing.T, state, runID string) (string, workers.Identity) {
+	t.Helper()
+	_, a, _ := runSnapshot(t, state, runID)
+	id := workerOf(t, state, runID, a.AttemptID)
+	reapDetached(t, id)
+	return workers.AttemptDir(state, runID, a.AttemptID), id
+}
+
+// canonicalEnv is newEnv with its roots resolved: the binary reports
+// resolved paths (macOS /var is /private/var, Windows short names expand),
+// so an exact path comparison needs the same spelling.
+func canonicalEnv(t *testing.T) env {
+	t.Helper()
+	e := newEnv(t)
+	home, state := canonicalDir(t, e.home), canonicalDir(t, e.state)
+	for i, kv := range e.vars {
+		name, value, _ := strings.Cut(kv, "=")
+		switch value {
+		case e.home:
+			e.vars[i] = name + "=" + home
+		case e.state:
+			e.vars[i] = name + "=" + state
+		}
+	}
+	e.home, e.state = home, state
+	return e
+}
+
+func canonicalDir(t *testing.T, dir string) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resolved
+}
+
+// pollUntil re-evaluates a named condition against fresh read-only journal
+// handles until it holds, failing after two minutes. A journal or row that
+// does not exist yet reads as not yet.
+func pollUntil(t *testing.T, state, what string, cond func(context.Context, *journal.Journal) (bool, error)) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Minute)
+	var last error
+	for time.Now().Before(deadline) {
+		ok, err := func() (bool, error) {
+			j, err := journal.OpenReadOnly(t.Context(), state)
+			if err != nil {
+				return false, err
+			}
+			defer func() { _ = j.Close() }()
+			return cond(t.Context(), j)
+		}()
+		if ok {
+			return
+		}
+		last = err
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s (last error %v)", what, last)
+}
+
+// onlyRun waits for the state's single run and returns its ID.
+func onlyRun(t *testing.T, state string) string {
+	t.Helper()
+	var runID string
+	pollUntil(t, state, "the run row", func(ctx context.Context, j *journal.Journal) (bool, error) {
+		runs, err := j.ListRuns(ctx, 2)
+		if err != nil || len(runs) == 0 {
+			return false, err
+		}
+		if len(runs) > 1 {
+			return false, fmt.Errorf("state holds %d runs, want one", len(runs))
+		}
+		runID = runs[0].RunID
+		return true, nil
+	})
+	return runID
+}
+
+// waitRunState waits until the run's journaled state is want.
+func waitRunState(t *testing.T, state, runID, want string) {
+	t.Helper()
+	pollUntil(t, state, "run state "+want, func(ctx context.Context, j *journal.Journal) (bool, error) {
+		run, err := j.Run(ctx, runID)
+		return err == nil && run.State == want, err
+	})
+}
+
+// waitAttemptState waits until the latest attempt's journaled state is want.
+func waitAttemptState(t *testing.T, state, runID, want string) {
+	t.Helper()
+	pollUntil(t, state, "attempt state "+want, func(ctx context.Context, j *journal.Journal) (bool, error) {
+		a, err := j.LatestAttempt(ctx, runID)
+		return err == nil && a.State == want, err
+	})
+}
+
+// runSnapshot reads the run row, its latest attempt and per-type event counts.
+func runSnapshot(t *testing.T, state, runID string) (journal.RunRow, journal.AttemptRow, map[string]int) {
+	t.Helper()
+	j, err := journal.OpenReadOnly(t.Context(), state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = j.Close() }()
+	run, err := j.Run(t.Context(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := j.LatestAttempt(t.Context(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return run, a, ledgerEventCounts(t, j, runID)
+}
+
+// spoolEvents reads the worker's own spool for the attempt: the durable
+// record a worker keeps whether or not any supervisor ingests it.
+func spoolEvents(t *testing.T, dir string) []journal.Event {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(dir, "spool.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var events []journal.Event
+	for line := range strings.Lines(string(raw)) {
+		var ev journal.Event
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			t.Fatalf("spool line %q: %v", line, err)
+		}
+		events = append(events, ev)
+	}
+	return events
+}
+
+// stopRequesters lists requested_by of every spooled attempt.stop_requested.
+func stopRequesters(t *testing.T, events []journal.Event) []string {
+	t.Helper()
+	var out []string
+	for _, ev := range events {
+		if ev.Type != "attempt.stop_requested" {
+			continue
+		}
+		var p struct {
+			RequestedBy string `json:"requested_by"`
+		}
+		if err := json.Unmarshal(ev.Payload, &p); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, p.RequestedBy)
+	}
+	return out
+}
+
+// workerOf reads the attempt's recorded worker identity.
+func workerOf(t *testing.T, state, runID, attemptID string) workers.Identity {
+	t.Helper()
+	id, err := workers.ReadIdentity(workers.AttemptDir(state, runID, attemptID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id.NativePID == nil {
+		t.Fatal("worker.json records no native PID")
+	}
+	return id
+}
+
+// workerAlive reports whether the recorded worker process is the one still
+// running: same PID and same start time, so a reused PID never counts.
+func workerAlive(id workers.Identity) bool {
+	start, err := workers.ProcessStartTime(id.PID)
+	return err == nil && start.Equal(id.StartTime)
+}
+
+// nativeAlive reports whether the recorded native PID still exists.
+func nativeAlive(id workers.Identity) bool {
+	p, err := os.FindProcess(*id.NativePID)
+	return err == nil && p.Signal(syscall.Signal(0)) == nil
+}
+
+// waitProcessesGone waits until neither the worker nor its native runs.
+func waitProcessesGone(t *testing.T, id workers.Identity) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Minute)
+	for workerAlive(id) || nativeAlive(id) {
+		if time.Now().After(deadline) {
+			t.Fatalf("worker %d / native %d still running", id.PID, *id.NativePID)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// reapDetached registers the finite cleanup for a worker the test may leave
+// running: kill the identified worker and native, then wait until both are
+// gone.
+func reapDetached(t *testing.T, id workers.Identity) {
+	t.Helper()
+	t.Cleanup(func() {
+		if workerAlive(id) {
+			if p, err := os.FindProcess(id.PID); err == nil {
+				_ = p.Kill()
+			}
+		}
+		if nativeAlive(id) {
+			if p, err := os.FindProcess(*id.NativePID); err == nil {
+				_ = p.Kill()
+			}
+		}
+		waitProcessesGone(t, id)
+	})
 }
