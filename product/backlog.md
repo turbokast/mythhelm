@@ -2,6 +2,15 @@
 
 Every planned piece of work larger than a fix, as one card, scored and ordered. Open cards cite [Master Specification v2](../mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md); the [adoption map](../docs/spec/synthesis-adoption.md) connects W01–W16 and their prerequisites. Closed cards and older decision/signal entries retain Revision 1.1 section meanings. A shipped historical slice does not imply v2 gate qualification. The backlog is the plan of record; [roadmap.md](roadmap.md) is a view generated from it. Each card has a public GitHub issue, which is where contributors discuss it. Who may change this file, and how, is in [README.md](README.md).
 
+## Selection during validation
+
+For the bounded validation cycle in [objectives.md](objectives.md#bounded-validation-focus),
+rank only work necessary for one native workflow, route/evidence readiness,
+essential correctness/CI repairs and a separately approved minimum continuity/context
+candidate. Defer broad expansion while testing the [feasibility targets](../docs/validation-plan.md).
+Scores, statuses, stages and prerequisite evidence do not change merely because
+this selection focus changes; a high score does not make deferred work actionable.
+
 ## Schema
 
 A card is a level-3 heading and a fixed list of fields, in this order:
