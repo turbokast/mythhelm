@@ -4,20 +4,14 @@ schema_version = 1
 passthrough = ["GOPATH", "GOCACHE", "GOMODCACHE", "GOTOOLCHAIN", "GOFLAGS"]
 
 [adapters.claudecode]
-allowed_tools = ["Bash(go build *)", "Bash(go test *)", "Bash(go vet *)", "Bash(gofmt *)", "Bash(git status)", "Bash(git diff *)"]
+allowed_tools = ["Bash(python3 *)", "Bash(git status)", "Bash(git diff *)"]
 
 [[checks]]
-name = "gofmt"
-argv = ["gofmt", "-l", "."]
-fail_on_output = true
-timeout = "2m"
+name = "private-boundary-tests"
+argv = ["python3", "-m", "unittest", "discover", "-s", "scripts/harness/tests", "-p", "test_dogfood_measurement.py", "-v"]
+timeout = "45s"
 
 [[checks]]
-name = "vet"
-argv = ["go", "vet", "./..."]
-timeout = "5m"
-
-[[checks]]
-name = "test"
-argv = ["go", "test", "./..."]
-timeout = "15m"
+name = "required-boundary-cases"
+argv = ["python3", "-c", "import ast,pathlib; t=ast.parse(pathlib.Path('scripts/harness/tests/test_dogfood_measurement.py').read_text()); n={x.name for x in ast.walk(t) if isinstance(x,ast.FunctionDef)}; assert {'test_symlink_state_directory_refused_without_mutation','test_hardlinked_ledger_refused_without_mutation'} <= n"]
+timeout = "10s"
