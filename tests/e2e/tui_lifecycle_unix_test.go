@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/admission"
+	"github.com/turbokast/mythhelm/internal/supervisor"
 	"github.com/turbokast/mythhelm/internal/workers"
 )
 
@@ -213,7 +214,7 @@ func TestTUIDetachRecoverBinary(t *testing.T) {
 			if spoolHasStop(spoolEvents(t, dir)) {
 				t.Fatal("the worker spooled a stop request after a stop-less detach")
 			}
-			if !workerAlive(worker) || !nativeAlive(worker) {
+			if !workerAlive(t, worker) || !nativeAlive(t, worker) {
 				t.Fatalf("recorded worker %d / native %d did not survive the detach", worker.PID, *worker.NativePID)
 			}
 
@@ -270,7 +271,7 @@ func TestTUIStopDetachRecoverBinary(t *testing.T) {
 	if run.State != "stopping" || counts["attempt.stopped"] != 0 {
 		t.Fatalf("after detach run %s, events %v; want stopping with no stopped event", run.State, counts)
 	}
-	if !workerAlive(worker) {
+	if !workerAlive(t, worker) {
 		t.Fatal("the worker exited before its stop ladder finished")
 	}
 
@@ -363,8 +364,10 @@ func TestTUISIGINTOnceBinary(t *testing.T) {
 // barrier (AC-6.13). Early and running clients detach without a stop once a
 // worker is accepted; stopping detaches with its single stop pending;
 // verifying and applying finish headless and keep the canonical outcome.
-// Every client exits 6, no run is left in created or admission, and no
-// extra stop is requested. I06/I12/I18/I21 (v2 §2).
+// A client exits 6 unless the headless phase failed, when it keeps the
+// failure's own code (5 for a failed check, 3 for a refused apply); no run
+// is left in created or admission, and no extra stop is requested.
+// I06/I12/I18/I21 (v2 §2).
 func TestTUITerminalLossBinary(t *testing.T) {
 	t.Parallel()
 	phases := []struct {
@@ -377,6 +380,7 @@ func TestTUITerminalLossBinary(t *testing.T) {
 		{"verifying", lossVerifying},
 		{"verifying failed", lossVerifyingFailed},
 		{"applying", lossApplying},
+		{"applying conflict", lossApplyingConflict},
 	}
 	for _, sig := range []struct {
 		name string
@@ -436,7 +440,7 @@ func lossEarly(t *testing.T, sig syscall.Signal) {
 	waitAttemptState(t, state, runID, "running")
 	dir, worker := liveAttempt(t, state, runID)
 	lostClient(t, c, state, runID, "executing", 0)
-	if spoolHasStop(spoolEvents(t, dir)) || !workerAlive(worker) || !nativeAlive(worker) {
+	if spoolHasStop(spoolEvents(t, dir)) || !workerAlive(t, worker) || !nativeAlive(t, worker) {
 		t.Fatal("early terminal loss stopped the accepted worker instead of detaching")
 	}
 }
@@ -450,7 +454,7 @@ func lossRunning(t *testing.T, sig syscall.Signal) {
 	dir, worker := liveAttempt(t, state, runID)
 	c.signal(sig)
 	lostClient(t, c, state, runID, "executing", 0)
-	if spoolHasStop(spoolEvents(t, dir)) || !workerAlive(worker) || !nativeAlive(worker) {
+	if spoolHasStop(spoolEvents(t, dir)) || !workerAlive(t, worker) || !nativeAlive(t, worker) {
 		t.Fatal("terminal loss stopped the running worker instead of detaching")
 	}
 }
@@ -468,8 +472,8 @@ func lossStopping(t *testing.T, sig syscall.Signal) {
 	waitSpool(t, dir, "the worker's stop request", spoolHasStop)
 	c.signal(sig)
 	lostClient(t, c, state, runID, "stopping", 1)
-	if got := stopRequesters(t, spoolEvents(t, dir)); !slices.Equal(got, []string{"user-interrupt"}) || !workerAlive(worker) {
-		t.Fatalf("stopping terminal loss: spooled requesters %v, worker alive %v; want one stop with the ladder still running", got, workerAlive(worker))
+	if got, alive := stopRequesters(t, spoolEvents(t, dir)), workerAlive(t, worker); !slices.Equal(got, []string{"user-interrupt"}) || !alive {
+		t.Fatalf("stopping terminal loss: spooled requesters %v, worker alive %v; want one stop with the ladder still running", got, alive)
 	}
 }
 
@@ -534,7 +538,21 @@ func assertHeadlessOutcome(t *testing.T, state, runID, verification string) {
 	}
 }
 
-func lossApplying(t *testing.T, sig syscall.Signal) {
+func lossApplying(t *testing.T, sig syscall.Signal) { lossApplyingOutcome(t, sig, false) }
+
+// lossApplyingConflict loses the terminal while the real guarded apply is
+// held at its fetch barrier, then an external writer takes the destination
+// branch: the joined apply's compare-and-swap refuses it, the run is
+// blocked with its canonical receipt, the client keeps the blocked exit 3
+// instead of a detach or success, and the external ref stands.
+func lossApplyingConflict(t *testing.T, sig syscall.Signal) { lossApplyingOutcome(t, sig, true) }
+
+// lossApplyingOutcome holds the single in-flight apply at the real Git fetch
+// barrier after its durable intent, delivers sig, and checks that the
+// original owner lock stays held through the loss, the same action finishes
+// headless with one intent and the canonical receipt, and the lock is
+// released once the client has joined it (design §3; AC-6.13).
+func lossApplyingOutcome(t *testing.T, sig syscall.Signal, conflict bool) {
 	f := newLifecycleFixture(t, "")
 	c := f.start(t, "fetch", "happy")
 	state := f.e.state
@@ -546,22 +564,74 @@ func lossApplying(t *testing.T, sig syscall.Signal) {
 	c.send(strings.Repeat("\x7f", 32) + "e2e-applied" + "\t\t\t" + "\x1b[C" + "\r")
 	f.waitGate(t)
 	waitRunState(t, state, runID, "applying")
+	runDir := filepath.Join(state, "runs", runID)
+	assertOwnerHeld(t, runDir)
 	c.signal(sig)
 	headless(t, c)
+	assertOwnerHeld(t, runDir)
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = f.repo
+		cmd.Env = f.e.withParent(t)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("git %s: %v", strings.Join(args, " "), err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	base := git("rev-parse", "--verify", "refs/heads/main")
+	if conflict {
+		git("branch", "e2e-applied", base)
+	}
 	f.release(t)
-	lostClient(t, c, state, runID, "completed", 0)
-	_, a, _ := runSnapshot(t, state, runID)
+	wantState, wantCode, wantCompleted := "completed", 6, 1
+	if conflict {
+		wantState, wantCode, wantCompleted = "blocked", 3, 0
+	}
+	lostClientCode(t, c, state, runID, wantState, 0, wantCode)
+	unlock, err := supervisor.AcquireOwner(runDir)
+	if err != nil {
+		t.Fatalf("owner lock not released after the joined apply: %v", err)
+	}
+	unlock()
+
+	_, a, counts := runSnapshot(t, state, runID)
+	if counts["apply.intent_recorded"] != 1 || counts["apply.completed"] != wantCompleted ||
+		counts["attempt.launched"] != 1 || counts["attempt.stop_requested"] != 0 {
+		t.Fatalf("after headless apply events %v; want one apply intent, %d completions, one launch and no stop", counts, wantCompleted)
+	}
 	j := ledgerOpenState(t, env{state: state})
+	receipt, _, err := supervisor.ReadReceipt(t.Context(), j, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt["state"] != wantState {
+		t.Fatalf("final receipt state %v, want %s", receipt["state"], wantState)
+	}
 	candidate, err := j.Candidate(t.Context(), a.AttemptID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("git", "rev-parse", "--verify", "refs/heads/e2e-applied")
-	cmd.Dir = f.repo
-	cmd.Env = f.e.withParent(t)
-	out, err := cmd.Output()
-	if err != nil || strings.TrimSpace(string(out)) != candidate.Commit {
-		t.Fatalf("applied branch is %q (%v), want candidate %s", out, err, candidate.Commit)
+	want := candidate.Commit
+	if conflict {
+		want = base
+	}
+	if got := git("rev-parse", "--verify", "refs/heads/e2e-applied"); got != want {
+		t.Fatalf("destination branch is %s, want %s (candidate %s)", got, want, candidate.Commit)
+	}
+}
+
+// assertOwnerHeld requires the run's owner lock to be held by its owner.
+func assertOwnerHeld(t *testing.T, runDir string) {
+	t.Helper()
+	unlock, err := supervisor.AcquireOwner(runDir)
+	if err == nil {
+		unlock()
+		t.Fatal("the run's owner lock was free while its apply is in flight")
+	}
+	if !errors.Is(err, supervisor.ErrOwnerHeld) {
+		t.Fatalf("owner lock probe: %v", err)
 	}
 }
 
@@ -622,7 +692,7 @@ func TestDemoDetachRecoverBinary(t *testing.T) {
 			if spoolHasStop(spoolEvents(t, dir)) {
 				t.Fatal("the demo worker spooled a stop request after a stop-less detach")
 			}
-			if !workerAlive(worker) || !nativeAlive(worker) {
+			if !workerAlive(t, worker) || !nativeAlive(t, worker) {
 				t.Fatalf("recorded demo worker %d / native %d did not survive the detach", worker.PID, *worker.NativePID)
 			}
 
@@ -640,22 +710,20 @@ func TestDemoDetachRecoverBinary(t *testing.T) {
 				t.Fatalf("after demo recovery run %s, attempt %s (was %s), events %v; want ready_for_review on the same single launch",
 					row.State, after.AttemptID, a.AttemptID, counts)
 			}
-			waitProcessesGone(t, worker)
 			assertUntouched(t, home)
 			assertDemoRetained(t, tmp, repo, state, a.WorkspacePath, dir)
 
-			// The operator's explicit removal, only now and only of the two
-			// directories the demo named.
-			for _, retained := range []string{repo, state} {
-				if err := os.RemoveAll(retained); err != nil {
-					t.Fatal(err)
-				}
+			// The operator's explicit removal, only once the worker and
+			// native are proven gone and only of the two directories the
+			// demo named.
+			if err := removeAfterGone(workers.ProcessStartTime, 2*time.Minute, []procID{worker.worker(), worker.native()}, repo, state); err != nil {
+				t.Fatal(err)
 			}
 			entries, err := os.ReadDir(tmp)
 			if err != nil {
 				t.Fatal(err)
 			}
-			body, err := os.ReadFile(filepath.Join(unrelated, "keep"))
+			body, err := os.ReadFile(filepath.Join(unrelated, "keep")) //nolint:gosec // G304: fixed name in the test's own temp root
 			if len(entries) != 1 || entries[0].Name() != "unrelated" || err != nil || string(body) != "unrelated\n" {
 				t.Fatalf("temporary root after removal holds %v, unrelated %q (%v); want only the untouched unrelated directory", entries, body, err)
 			}
@@ -756,11 +824,10 @@ func TestDemoRetainedRejectsLostEvidence(t *testing.T) {
 	}
 }
 
-// TestKillIdentifiedSparesReusedPID binds a live process by PID and start
-// time: a changed start time, as a reused PID would show, must neither count
-// as alive nor be killed. The real identity is then killed and observed gone.
-func TestKillIdentifiedSparesReusedPID(t *testing.T) {
-	t.Parallel()
+// ownedSleeper starts a direct child with no descendants that the test owns
+// and joins: done closes once its single waiter has reaped it.
+func ownedSleeper(t *testing.T) (procID, <-chan struct{}) {
+	t.Helper()
 	cmd := exec.Command("sleep", "600")
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -778,26 +845,207 @@ func TestKillIdentifiedSparesReusedPID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reused := start.Add(-time.Second)
-	pid := cmd.Process.Pid
-	procs := attemptProcs{Identity: workers.Identity{PID: pid, StartTime: reused, NativePID: &pid}, NativeStart: reused}
-	if workerAlive(procs) || nativeAlive(procs) {
+	return procID{cmd.Process.Pid, start}, done
+}
+
+// TestKillIdentifiedSparesReusedPID binds a live process by PID and start
+// time: a changed start time, as a reused PID would show, must neither count
+// as alive nor be killed. The real identity is then killed and observed gone.
+func TestKillIdentifiedSparesReusedPID(t *testing.T) {
+	t.Parallel()
+	orig, done := ownedSleeper(t)
+	reused := procID{orig.pid, orig.start.Add(-time.Second)}
+	pid := orig.pid
+	procs := attemptProcs{NativeStart: reused.start}
+	procs.PID, procs.StartTime, procs.NativePID = pid, reused.start, &pid
+	if workerAlive(t, procs) || nativeAlive(t, procs) {
 		t.Fatal("a changed start time counted as the recorded process")
 	}
-	killIdentified(pid, reused)
+	if err := killIdentified(workers.ProcessStartTime, reused); err != nil {
+		t.Fatal(err)
+	}
 	select {
 	case <-done:
 		t.Fatal("a process holding the PID under another identity was killed")
 	case <-time.After(200 * time.Millisecond):
 	}
-	if !sameProcess(pid, start) {
+	if err := waitGone(workers.ProcessStartTime, 0, reused); err != nil {
+		t.Fatalf("a reused PID is not the recorded process, so the recorded one is gone: %v", err)
+	}
+	if !sameProcess(t, orig.pid, orig.start) {
 		t.Fatal("the real identity does not match its own start time")
 	}
-	killIdentified(pid, start)
+	if err := killIdentified(workers.ProcessStartTime, orig); err != nil {
+		t.Fatal(err)
+	}
 	select {
 	case <-done:
 	case <-time.After(ownedJoinGrace):
 		t.Fatal("the identified process survived its kill")
+	}
+	if err := waitGone(workers.ProcessStartTime, ownedJoinGrace, orig); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestUnknownIdentityIsNeitherLiveNorGone keeps the broken lookup the
+// identity helpers exist to survive: a start-time read that fails with
+// anything but ErrNoProcess. It must not count as gone (no wait returns, no
+// retained directory is removed), nor authorise a kill of the live process
+// that holds the PID; only ErrNoProcess or a mismatch is absence.
+func TestUnknownIdentityIsNeitherLiveNorGone(t *testing.T) {
+	t.Parallel()
+	live, done := ownedSleeper(t)
+	unreadable := errors.New("synthetic: start time unreadable")
+	for _, tc := range []struct {
+		name string
+		got  time.Time
+		err  error
+		want procState
+	}{
+		{"matching start time is the same process", live.start, nil, procSame},
+		{"changed start time is a reused PID", live.start.Add(time.Second), nil, procGone},
+		{"ErrNoProcess is gone", time.Time{}, fmt.Errorf("%w: pid %d", workers.ErrNoProcess, live.pid), procGone},
+		{"another read error is unknown", time.Time{}, unreadable, procUnknown},
+	} {
+		if got := classifyProcess(tc.got, tc.err, live.start); got != tc.want {
+			t.Errorf("%s: classified %d, want %d", tc.name, got, tc.want)
+		}
+	}
+
+	failing := func(int) (time.Time, error) { return time.Time{}, unreadable }
+	if err := killIdentified(failing, live); !errors.Is(err, unreadable) {
+		t.Fatalf("kill on an unknown identity returned %v, want the read error and no kill", err)
+	}
+	select {
+	case <-done:
+		t.Fatal("an unknown identity authorised killing the live process")
+	case <-time.After(200 * time.Millisecond):
+	}
+	if err := waitGone(failing, 300*time.Millisecond, live); !errors.Is(err, unreadable) {
+		t.Fatalf("waiting on an unknown identity returned %v, want it reported, not taken for gone", err)
+	}
+	retained := t.TempDir()
+	if err := removeAfterGone(failing, 300*time.Millisecond, []procID{live}, retained); !errors.Is(err, unreadable) {
+		t.Fatalf("removal with an unknown writer returned %v, want it refused", err)
+	}
+	if _, err := os.Stat(retained); err != nil {
+		t.Fatalf("a retained directory was removed while its writer was unknown: %v", err)
+	}
+	gone := func(pid int) (time.Time, error) {
+		return time.Time{}, fmt.Errorf("%w: pid %d", workers.ErrNoProcess, pid)
+	}
+	if err := removeAfterGone(gone, 0, []procID{live}, retained); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(retained); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a proven-gone writer did not release the retained directory: %v", err)
+	}
+}
+
+// hostileChild is a direct packaged-child stand-in with no descendants: it
+// ignores SIGHUP (the terminal closing) and SIGTERM, so only an explicit kill
+// ends it, and it prints hostileReady once both are ignored.
+const (
+	hostileReady = "hostile-child-ready"
+	hostileChild = "import signal, time\n" +
+		"signal.signal(signal.SIGHUP, signal.SIG_IGN)\n" +
+		"signal.signal(signal.SIGTERM, signal.SIG_IGN)\n" +
+		"print('" + hostileReady + "', flush=True)\n" +
+		"while True:\n    time.sleep(60)\n"
+)
+
+// eofIgnoringDriver is a synthetic driver built on the real tui_pty.py
+// Terminal and protocol: it serves requests until end of input and then
+// ignores it, and SIGTERM, forever.
+const eofIgnoringDriver = "import signal, sys, threading\n" +
+	"sys.path.insert(0, sys.argv[1])\n" +
+	"import tui_pty\n" +
+	"signal.signal(signal.SIGTERM, signal.SIG_IGN)\n" +
+	"term = tui_pty.Terminal(160, 40, sys.argv[2], sys.argv[3:])\n" +
+	"tui_pty.reply(ok=True, pid=term.pid)\n" +
+	"tui_pty.serve(term)\n" +
+	"threading.Event().wait()\n"
+
+// TestPTYClientCleanupBinary drives the actual ptyClient shutdown and the
+// actual tui_pty.py exit path with a packaged child that only a kill ends.
+// A driver that ignores end of input is escalated within its bounded grace
+// and the identified child it leaves is killed; a malformed request makes
+// tui_pty.py itself kill and reap its child before it exits. Each case
+// proves the driver joined and the recorded child no longer runs.
+func TestPTYClientCleanupBinary(t *testing.T) {
+	t.Parallel()
+	const grace = 2 * time.Second
+	for _, tc := range []struct {
+		name       string
+		args       func(t *testing.T, dir, python string) []string
+		malformed  bool
+		wantKilled bool
+	}{
+		{"driver ignoring end of input is killed with its child", func(t *testing.T, dir, python string) []string {
+			return []string{"-I", "-B", "-c", eofIgnoringDriver, filepath.Dir(ptyDriver(t)), dir, python, "-I", "-c", hostileChild}
+		}, false, true},
+		{"malformed request makes the driver kill and reap its child", func(t *testing.T, dir, python string) []string {
+			return []string{"-I", "-B", ptyDriver(t), "160", "40", dir, python, "-I", "-c", hostileChild}
+		}, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			python := python3(t)
+			c := startDriver(t, []string{"PATH=" + os.Getenv("PATH")}, grace, tc.args(t, t.TempDir(), python)...)
+			c.selfChecked = true
+			child := procID{c.pid, c.start}
+			// Finite cleanup under any mutant: kill the driver and the
+			// identified child, then require both gone.
+			t.Cleanup(func() {
+				_ = c.cmd.Process.Kill()
+				select {
+				case <-c.done:
+				case <-time.After(ownedJoinGrace):
+					t.Errorf("PTY driver %d survived its kill", c.cmd.Process.Pid)
+				}
+				if err := killIdentified(workers.ProcessStartTime, child); err != nil {
+					t.Error(err)
+				}
+				if err := waitGone(workers.ProcessStartTime, ownedJoinGrace, child); err != nil {
+					t.Errorf("leaked packaged child: %v", err)
+				}
+			})
+			c.waitText(hostileReady, 0, "")
+			began := time.Now()
+			if tc.malformed {
+				if _, err := c.in.Write([]byte("{not json\n")); err != nil {
+					t.Fatal(err)
+				}
+				select {
+				case <-c.done:
+				case <-time.After(grace):
+					t.Fatalf("tui_pty.py did not exit after a malformed request; stderr %q", c.stderr.String())
+				}
+				if !strings.Contains(c.stderr.String(), "JSONDecodeError") {
+					t.Fatalf("the driver exited without the malformed-request exception; stderr %q", c.stderr.String())
+				}
+				// The driver reaped its own child: the PID is free at once.
+				if err := waitGone(workers.ProcessStartTime, 0, child); err != nil {
+					t.Fatalf("tui_pty.py exited without killing and reaping its child: %v", err)
+				}
+			}
+			killed, err := c.shutdown()
+			if err != nil || killed != tc.wantKilled {
+				t.Fatalf("shutdown killed %v, err %v; want killed %v and joined; stderr %q", killed, err, tc.wantKilled, c.stderr.String())
+			}
+			select {
+			case <-c.done:
+			default:
+				t.Fatal("shutdown returned before the driver was joined")
+			}
+			if err := waitGone(workers.ProcessStartTime, grace, child); err != nil {
+				t.Fatalf("the packaged child outlived the driver's shutdown: %v", err)
+			}
+			if elapsed := time.Since(began); elapsed > 3*grace {
+				t.Fatalf("cleanup took %v, beyond its bounded steps", elapsed)
+			}
+		})
 	}
 }
 

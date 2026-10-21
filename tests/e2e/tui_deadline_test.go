@@ -158,7 +158,7 @@ func waitBeat(t *testing.T, dir string) int64 {
 // socket path, so no host supervisor is consulted or disturbed.
 func shortRuntimeDir(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "mhrt")
+	dir, err := os.MkdirTemp("/tmp", "mhrt") //nolint:usetesting // t.TempDir() is too long for sun_path on macOS
 	if err != nil {
 		t.Fatal(err)
 	}

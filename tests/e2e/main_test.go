@@ -81,12 +81,12 @@ const (
 
 // holdAtGate announces arrival in dir and waits, bounded, for the release.
 func holdAtGate(dir string) error {
-	if err := os.WriteFile(filepath.Join(dir, gateEntered), nil, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, gateEntered), nil, 0o600); err != nil { //nolint:gosec // G703: dir is the gate directory the test fixture created and passed to its own helper
 		return err
 	}
 	deadline := time.Now().Add(5 * time.Minute)
 	for {
-		if _, err := os.Stat(filepath.Join(dir, gateRelease)); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, gateRelease)); err == nil { //nolint:gosec // G703: fixed barrier name in the fixture-owned gate directory
 			return nil
 		}
 		if time.Now().After(deadline) {
@@ -123,7 +123,7 @@ func gitGateMain(args []string) int {
 			return 1
 		}
 	}
-	cmd := exec.Command(os.Getenv("E2E_REAL_GIT"), args...)
+	cmd := exec.Command(os.Getenv("E2E_REAL_GIT"), args...) //nolint:gosec // G702: the fixture sets E2E_REAL_GIT to the real Git from exec.LookPath and forwards the product's own Git argv; no shell
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	err := cmd.Run()
 	if exit, ok := errors.AsType[*exec.ExitError](err); ok {

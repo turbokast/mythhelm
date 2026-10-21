@@ -748,7 +748,14 @@ type ptyClient struct {
 	stderr *lockedBuffer
 	done   chan struct{} // closed by the one goroutine that calls cmd.Wait
 	pid    int
-	start  time.Time // the packaged process's start time, its identity with pid
+	start  time.Time     // the packaged process's start time, its identity with pid
+	grace  time.Duration // each step of the driver's shutdown
+	once   sync.Once     // shutdown runs once; killed and err are its result
+	killed bool
+	err    error
+	// selfChecked marks a test that asserts the shutdown result itself, so
+	// the cleanup does not report an expected escalation again.
+	selfChecked bool
 }
 
 // ptyReplyLimit bounds one driver reply line; the exit reply carries the
@@ -807,17 +814,36 @@ func joinOwned(done <-chan struct{}, ask, kill func(), grace time.Duration) (kil
 // fails rather than skipping the lifecycle evidence.
 func startPTY(t *testing.T, environ []string, dir string, args ...string) *ptyClient {
 	t.Helper()
+	return startDriver(t, environ, ownedJoinGrace, append([]string{"-I", "-B", ptyDriver(t), "160", "40", dir, mythhelmBin}, args...)...)
+}
+
+// python3 is a hard requirement wherever the PTY tests run.
+func python3(t *testing.T) string {
+	t.Helper()
 	python, err := exec.LookPath("python3")
 	if err != nil {
 		t.Fatalf("python3 is required for the packaged TUI lifecycle tests: %v", err)
 	}
+	return python
+}
+
+func ptyDriver(t *testing.T) string {
+	t.Helper()
 	driver, err := filepath.Abs("tui_pty.py")
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(python, append([]string{"-I", "-B", driver, "160", "40", dir, mythhelmBin}, args...)...)
+	return driver
+}
+
+// startDriver runs python3 with pyArgs as the PTY driver the test owns and
+// joins, reads its first reply and binds the identity of the child it
+// started. Cleanup shuts it down within grace per step.
+func startDriver(t *testing.T, environ []string, grace time.Duration, pyArgs ...string) *ptyClient {
+	t.Helper()
+	cmd := exec.Command(python3(t), pyArgs...)
 	cmd.Env = environ
-	c := &ptyClient{t: t, cmd: cmd, stderr: &lockedBuffer{}, done: make(chan struct{})}
+	c := &ptyClient{t: t, cmd: cmd, stderr: &lockedBuffer{}, done: make(chan struct{}), grace: grace}
 	cmd.Stderr = c.stderr
 	inR, inW, err := os.Pipe()
 	if err != nil {
@@ -846,16 +872,27 @@ func startPTY(t *testing.T, environ []string, dir string, args ...string) *ptyCl
 	return c
 }
 
-// close ends the driver: end of input asks it to kill and reap the packaged
-// process; a driver that does not exit is killed, and so is the packaged
-// process it leaves, but only while that is still the same process.
+// shutdown ends the driver once: end of input asks it to kill and reap the
+// packaged process; a driver that does not exit is killed, and so is the
+// packaged process it leaves, but only while that positively is the same
+// process. It reports whether the driver had to be killed.
+func (c *ptyClient) shutdown() (bool, error) {
+	c.once.Do(func() {
+		_ = c.in.Close()
+		c.killed, c.err = joinOwned(c.done, func() {}, func() { _ = c.cmd.Process.Kill() }, c.grace)
+		if c.killed && !c.start.IsZero() {
+			c.err = errors.Join(c.err, killIdentified(workers.ProcessStartTime, procID{c.pid, c.start}))
+		}
+		_ = c.outF.Close()
+	})
+	return c.killed, c.err
+}
+
 func (c *ptyClient) close() {
-	_ = c.in.Close()
-	killed, err := joinOwned(c.done, func() {}, func() { _ = c.cmd.Process.Kill() }, ownedJoinGrace)
-	if killed && !c.start.IsZero() {
-		killIdentified(c.pid, c.start)
+	killed, err := c.shutdown()
+	if c.selfChecked {
+		return
 	}
-	_ = c.outF.Close()
 	if err != nil {
 		c.t.Errorf("PTY driver %d: %v; stderr %q", c.cmd.Process.Pid, err, c.stderr.String())
 	} else if killed {
@@ -944,7 +981,7 @@ func (c *ptyClient) alive() bool {
 // signal delivers sig to the packaged process exactly once.
 func (c *ptyClient) signal(sig os.Signal) {
 	c.t.Helper()
-	if !sameProcess(c.pid, c.start) {
+	if !sameProcess(c.t, c.pid, c.start) {
 		c.t.Fatalf("packaged process %d is no longer the one started; no signal sent", c.pid)
 	}
 	p, err := os.FindProcess(c.pid)
@@ -1030,7 +1067,7 @@ func assertUntouched(t *testing.T, dir string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, err := os.ReadFile(filepath.Join(dir, "sentinel"))
+	body, err := os.ReadFile(filepath.Join(dir, "sentinel")) //nolint:gosec // G304: fixed sentinel name in the test's own temp dir
 	if err != nil || string(body) != "caller state\n" || len(entries) != 1 {
 		t.Fatalf("caller state %s changed: %d entries, sentinel %q (%v)", dir, len(entries), body, err)
 	}
@@ -1199,7 +1236,7 @@ func runSnapshot(t *testing.T, state, runID string) (journal.RunRow, journal.Att
 // record a worker keeps whether or not any supervisor ingests it.
 func spoolEvents(t *testing.T, dir string) []journal.Event {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(dir, "spool.jsonl"))
+	raw, err := os.ReadFile(filepath.Join(dir, "spool.jsonl")) //nolint:gosec // G304: fixed spool name under the test-owned attempt directory
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1254,7 +1291,7 @@ func workerOf(t *testing.T, state, runID, attemptID string) attemptProcs {
 	if id.NativePID == nil {
 		t.Fatal("worker.json records no native PID")
 	}
-	if !sameProcess(id.PID, id.StartTime) {
+	if !sameProcess(t, id.PID, id.StartTime) {
 		t.Fatalf("recorded worker %d is not running; its native %d cannot be bound", id.PID, *id.NativePID)
 	}
 	start, err := workers.ProcessStartTime(*id.NativePID)
@@ -1264,40 +1301,137 @@ func workerOf(t *testing.T, state, runID, attemptID string) attemptProcs {
 	return attemptProcs{Identity: id, NativeStart: start}
 }
 
+// procID is a captured process identity: a PID is reusable, its start time
+// with it is not.
+type procID struct {
+	pid   int
+	start time.Time
+}
+
+func (p attemptProcs) worker() procID { return procID{p.PID, p.StartTime} }
+
+func (p attemptProcs) native() procID { return procID{*p.NativePID, p.NativeStart} }
+
+// procState is what one start-time lookup proves about a captured identity.
+type procState int
+
+const (
+	procUnknown procState = iota // the lookup failed: neither live nor gone
+	procGone                     // no such process, or the PID holds another
+	procSame                     // the captured process still runs
+)
+
+// startLookup reads a PID's start time; workers.ProcessStartTime in the
+// lifecycle tests, a failing reader in the controls.
+type startLookup func(pid int) (time.Time, error)
+
+// classifyProcess maps one lookup for the identity that started at start.
+// Only ErrNoProcess or a proven start-time mismatch is absence; any other
+// read error is unknown, never live, gone or safe to kill.
+func classifyProcess(got time.Time, err error, start time.Time) procState {
+	switch {
+	case errors.Is(err, workers.ErrNoProcess):
+		return procGone
+	case err != nil:
+		return procUnknown
+	case got.Equal(start):
+		return procSame
+	default:
+		return procGone
+	}
+}
+
 // sameProcess reports whether pid is still the process that started at
-// start: a reused PID never counts, and an unreadable start time is not
-// evidence of this process.
-func sameProcess(pid int, start time.Time) bool {
-	got, err := workers.ProcessStartTime(pid)
-	return err == nil && got.Equal(start)
-}
-
-func workerAlive(p attemptProcs) bool { return sameProcess(p.PID, p.StartTime) }
-
-func nativeAlive(p attemptProcs) bool { return sameProcess(*p.NativePID, p.NativeStart) }
-
-// killIdentified kills pid only while it is still the process that started
-// at start; any other process holding a reused PID is left alone.
-func killIdentified(pid int, start time.Time) {
-	if !sameProcess(pid, start) {
-		return
-	}
-	if p, err := os.FindProcess(pid); err == nil {
-		_ = p.Kill()
-	}
-}
-
-// waitProcessesGone waits until neither the identified worker nor its
-// identified native runs.
-func waitProcessesGone(t *testing.T, p attemptProcs) {
+// start. An identity that cannot be read fails the test: it is not evidence
+// either way.
+func sameProcess(t *testing.T, pid int, start time.Time) bool {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Minute)
-	for workerAlive(p) || nativeAlive(p) {
+	got, err := workers.ProcessStartTime(pid)
+	switch classifyProcess(got, err, start) {
+	case procSame:
+		return true
+	case procGone:
+		return false
+	}
+	t.Fatalf("process %d identity unknown: %v", pid, err)
+	return false
+}
+
+func workerAlive(t *testing.T, p attemptProcs) bool { return sameProcess(t, p.PID, p.StartTime) }
+
+func nativeAlive(t *testing.T, p attemptProcs) bool {
+	return sameProcess(t, *p.NativePID, p.NativeStart)
+}
+
+// killIdentified kills id only when lookup positively matches its start
+// time. A process holding a reused PID is left alone, and an unreadable
+// identity is reported instead of killed.
+func killIdentified(lookup startLookup, id procID) error {
+	got, err := lookup(id.pid)
+	switch classifyProcess(got, err, id.start) {
+	case procGone:
+		return nil
+	case procUnknown:
+		return fmt.Errorf("process %d identity unknown, not killed: %w", id.pid, err)
+	}
+	p, err := os.FindProcess(id.pid)
+	if err != nil {
+		return err
+	}
+	if err := p.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return fmt.Errorf("kill identified process %d: %w", id.pid, err)
+	}
+	return nil
+}
+
+// waitGone polls until lookup proves every identity gone. A running or
+// unreadable identity past limit is an error naming it: unknown is never
+// taken for gone.
+func waitGone(lookup startLookup, limit time.Duration, ids ...procID) error {
+	deadline := time.Now().Add(limit)
+	for {
+		var pending error
+		for _, id := range ids {
+			got, err := lookup(id.pid)
+			switch classifyProcess(got, err, id.start) {
+			case procUnknown:
+				pending = fmt.Errorf("process %d identity unknown: %w", id.pid, err)
+			case procSame:
+				pending = fmt.Errorf("process %d still running", id.pid)
+			}
+		}
+		if pending == nil {
+			return nil
+		}
 		if time.Now().After(deadline) {
-			t.Fatalf("worker %d / native %d still running", p.PID, *p.NativePID)
+			return pending
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+}
+
+// waitProcessesGone waits until the identified worker and its identified
+// native are both proven gone.
+func waitProcessesGone(t *testing.T, p attemptProcs) {
+	t.Helper()
+	if err := waitGone(workers.ProcessStartTime, 2*time.Minute, p.worker(), p.native()); err != nil {
+		t.Fatalf("worker %d / native %d: %v", p.PID, *p.NativePID, err)
+	}
+}
+
+// removeAfterGone is the operator's removal of retained directories: only
+// once every identity is proven gone, so no live or unknown writer loses
+// them. On error nothing is removed.
+func removeAfterGone(lookup startLookup, limit time.Duration, ids []procID, dirs ...string) error {
+	if err := waitGone(lookup, limit, ids...); err != nil {
+		return fmt.Errorf("retained directories kept: %w", err)
+	}
+	for _, dir := range dirs {
+		if err := os.RemoveAll(dir); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // reapDetached registers the finite cleanup for a worker the test may leave
@@ -1306,8 +1440,11 @@ func waitProcessesGone(t *testing.T, p attemptProcs) {
 func reapDetached(t *testing.T, p attemptProcs) {
 	t.Helper()
 	t.Cleanup(func() {
-		killIdentified(p.PID, p.StartTime)
-		killIdentified(*p.NativePID, p.NativeStart)
+		for _, id := range []procID{p.worker(), p.native()} {
+			if err := killIdentified(workers.ProcessStartTime, id); err != nil {
+				t.Error(err)
+			}
+		}
 		waitProcessesGone(t, p)
 	})
 }
