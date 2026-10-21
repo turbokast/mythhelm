@@ -9,6 +9,11 @@ title: Benchmarks and dogfooding
 tokens or produces fewer bugs than direct native agents or other orchestrators.**
 We are building reproducible evidence before making that claim.
 
+The [focused validation plan](validation-plan.md) defines the next bounded
+feasibility cycle: one native workflow, a strong direct-native baseline, external
+repeat use and explicit continue/simplify/stop criteria. Its targets are not results
+or authorization to launch experiments.
+
 Contributor backlog delivery requires admitted MYTHHELM execution where available,
 a private measurement record for each attempt, and a recorded reason for direct
 fallbacks. Blocked launches, errors, retries, missing usage and unfinished work
