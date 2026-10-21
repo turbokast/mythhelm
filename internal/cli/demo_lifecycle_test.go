@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -192,11 +193,7 @@ func TestDemoDetachRetainsWorkspace(t *testing.T) {
 		{name: "completed", out: supervisor.Outcome{State: supervisor.RunReadyForReview, AttemptState: supervisor.AttemptSucceededNative}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
-			t.Setenv("TMPDIR", root)
-			t.Setenv("TMP", root)
-			t.Setenv("TEMP", root)
-			t.Setenv("TERM", "xterm")
+			setDemoFixtureRoot(t, t.TempDir())
 			stdio, stdout, stderr := testStdio()
 			viewDone := make(chan struct{})
 			joined := make(chan struct{})
@@ -264,7 +261,7 @@ func TestDemoDetachRetainsWorkspace(t *testing.T) {
 				if strings.Count(combined, "mythhelm recover") != 1 {
 					t.Errorf("expected one recovery command across all output: %s", combined)
 				}
-				for _, want := range []string{"demo repository retained: " + repo, "demo state retained: " + state, "terminal outcome and no live writer", "Recovery preserves evidence", "Only then remove these two demo directories explicitly"} {
+				for _, want := range []string{"demo repository retained: " + repo + "\n", "demo state retained: " + state + "\n", "terminal outcome and no live writer", "Recovery preserves evidence", "Only then remove these two demo directories explicitly"} {
 					if !strings.Contains(stdout.String(), want) {
 						t.Errorf("retention notice missing %q: %s", want, stdout.String())
 					}
@@ -311,11 +308,7 @@ func TestRecoveryHintShellLabel(t *testing.T) {
 
 func TestDemoRetentionNotice(t *testing.T) {
 	// Owns process environment to force live launch and contain owned directories.
-	root := t.TempDir()
-	t.Setenv("TMPDIR", root)
-	t.Setenv("TMP", root)
-	t.Setenv("TEMP", root)
-	t.Setenv("TERM", "xterm")
+	setDemoFixtureRoot(t, t.TempDir())
 	stdio, stdout, stderr := testStdio()
 	fault := errors.New("view startup failed")
 	viewEnded := make(chan struct{})
@@ -330,7 +323,7 @@ func TestDemoRetentionNotice(t *testing.T) {
 		t.Fatalf("startup error lost: %v", err)
 	}
 	combined := stdout.String() + stderr.String() + err.Error()
-	for _, want := range []string{"demo repository retained: " + repo, "demo state retained: " + state, "terminal outcome and no live writer", "fish or cmd", "Recovery preserves evidence"} {
+	for _, want := range []string{"demo repository retained: " + repo + "\n", "demo state retained: " + state + "\n", "terminal outcome and no live writer", "fish or cmd", "Recovery preserves evidence"} {
 		if !strings.Contains(combined, want) {
 			t.Errorf("notice missing %q: %s", want, combined)
 		}
@@ -353,11 +346,7 @@ func TestDemoRetentionNotice(t *testing.T) {
 
 func TestDemoReviewFailureRetainsEvidence(t *testing.T) {
 	// Environment isolates the real temporary resources and forces TUI launch.
-	root := t.TempDir()
-	t.Setenv("TMPDIR", root)
-	t.Setenv("TMP", root)
-	t.Setenv("TEMP", root)
-	t.Setenv("TERM", "xterm")
+	setDemoFixtureRoot(t, t.TempDir())
 	stdio, stdout, stderr := testStdio()
 	fault := errors.New("receipt unavailable")
 	var repo, state string
@@ -462,6 +451,136 @@ func TestRecoveryCaptureRejectsMalformedStub(t *testing.T) {
 			}
 			if _, err := os.Stat(capture); !os.IsNotExist(err) {
 				t.Fatalf("invalid native invocation wrote capture: %v", err)
+			}
+		})
+	}
+}
+
+// This fixture owns process-wide temporary-directory and launch configuration.
+func setDemoFixtureRoot(t *testing.T, root string) {
+	t.Helper()
+	// Admission resolves the repository; use that same identity before temp creation.
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root = resolved
+	t.Setenv("TMPDIR", root)
+	t.Setenv("TMP", root)
+	t.Setenv("TEMP", root)
+	t.Setenv("TERM", "xterm")
+}
+
+func demoNoticePathsMatch(text, repo, state string) bool {
+	return strings.Contains(text, "demo repository retained: "+repo+"\n") && strings.Contains(text, "demo state retained: "+state+"\n")
+}
+
+func demoFixtureDirectoryAlias(t *testing.T, target, alias string) {
+	t.Helper()
+	if err := os.Symlink(target, alias); err != nil {
+		if demoAliasPrivilegeUnavailable(runtime.GOOS, err) {
+			t.Skipf("directory-alias counterfactual unavailable without Windows symlink privileges: %v", err)
+		}
+		t.Fatal(err)
+	}
+}
+
+func TestDemoFixtureTempRootAlias(t *testing.T) {
+	// Owns process-wide temporary-directory configuration; no parallel execution.
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, alias := filepath.Join(parent, "real-root"), filepath.Join(parent, "alias-root")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	demoFixtureDirectoryAlias(t, target, alias)
+	setDemoFixtureRoot(t, alias)
+	repo, err := os.MkdirTemp("", "repo-") //nolint:usetesting // Exercise the demo's empty-parent MkdirTemp after changing its fixture environment.
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := os.MkdirTemp("", "state-") //nolint:usetesting // t.TempDir reuses its earlier base and would miss this environment-dependent producer.
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalRepo, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{repo, state} {
+		if err := os.WriteFile(filepath.Join(dir, "sentinel"), []byte("owned fixture"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var notice strings.Builder
+	if err := demoRetentionNotice(&notice, repo, state, "run_alias"); err != nil {
+		t.Fatal(err)
+	}
+	if !demoNoticePathsMatch(notice.String(), canonicalRepo, state) {
+		t.Fatalf("fixture mixes lexical owned path %q with canonical admission path %q: %s", repo, canonicalRepo, notice.String())
+	}
+	for _, key := range []string{"TMPDIR", "TMP", "TEMP"} {
+		if got := os.Getenv(key); got != target {
+			t.Errorf("%s=%q; want exact resolved fixture root %q", key, got, target)
+		}
+	}
+	for _, tc := range []struct{ name, old, replacement string }{
+		{"lexical alias", repo, filepath.Join(alias, filepath.Base(repo))},
+		{"wrong repository", repo, filepath.Join(target, "wrong-repository")},
+		{"wrong state", state, filepath.Join(target, "wrong-state")},
+		{"repository child", repo, filepath.Join(repo, "child")},
+		{"state child", state, filepath.Join(state, "child")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			changed := strings.ReplaceAll(notice.String(), tc.old, tc.replacement)
+			if changed == notice.String() {
+				t.Fatal("counterfactual did not change its subject")
+			}
+			if demoNoticePathsMatch(changed, canonicalRepo, state) {
+				t.Fatalf("wrong directory accepted: %s", changed)
+			}
+		})
+	}
+	for _, dir := range []string{repo, state} {
+		root, err := os.OpenRoot(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := root.ReadFile("sentinel")
+		closeErr := root.Close()
+		if closeErr != nil {
+			t.Fatal(closeErr)
+		}
+		if err != nil || string(data) != "owned fixture" {
+			t.Fatalf("retained fixture changed: %q, %v", data, err)
+		}
+	}
+}
+
+func demoAliasPrivilegeUnavailable(goos string, err error) bool {
+	// Windows ERROR_PRIVILEGE_NOT_HELD, from Go's syscall/types_windows.go.
+	const privilegeNotHeld = syscall.Errno(1314)
+	return goos == "windows" && errors.Is(err, privilegeNotHeld)
+}
+
+func TestDemoAliasPrivilegeClassification(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, goos string
+		err        error
+		want       bool
+	}{
+		{"native Windows privilege missing", "windows", &os.LinkError{Op: "symlink", Old: "fixture", New: "alias", Err: syscall.Errno(1314)}, true},
+		{"Windows access denied", "windows", syscall.Errno(5), false},
+		{"Windows missing target", "windows", os.ErrNotExist, false},
+		{"Windows unexpected IO", "windows", errors.New("synthetic IO failure"), false},
+		{"Unix native errno", "linux", syscall.Errno(1314), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := demoAliasPrivilegeUnavailable(tc.goos, tc.err); got != tc.want {
+				t.Fatalf("fixture-unavailable=%t, want %t for %v", got, tc.want, tc.err)
 			}
 		})
 	}
