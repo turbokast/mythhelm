@@ -13,6 +13,7 @@ import tempfile
 import textwrap
 import unittest
 from contextlib import redirect_stdout
+from unittest.mock import patch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
@@ -622,14 +623,19 @@ class GitTests(GhBase):
 
     def test_events_and_summary(self):
         with redirect_stdout(io.StringIO()):
-            for args in (["--kind", "dispatch", "--task", "2", "--attempt", "1", "--agent", "release-engineer"],
+            for index, args in enumerate((["--kind", "dispatch", "--task", "2", "--attempt", "1", "--agent", "release-engineer"],
                          ["--kind", "return", "--task", "2", "--pr", "30"],
                          ["--kind", "merge", "--task", "2", "--pr", "30", "--result", "ok"],
                          ["--kind", "dispatch", "--task", "3", "--attempt", "1", "--agent", "go-implementer"],
                          ["--kind", "fail", "--task", "3", "--detail", "tests red"],
-                         ["--kind", "dispatch", "--task", "3", "--attempt", "2", "--agent", "go-implementer"]):
+                         ["--kind", "dispatch", "--task", "3", "--attempt", "2", "--agent", "go-implementer"])):
+                if args[1] == "dispatch":
+                    identifier = "fixture-%d" % index
+                    self.measure(identifier, "demo-" + args[args.index("--task") + 1])
+                    args += ["--measurement-id", identifier]
                 self.assertEqual(runspec.main(["event", "--spec", "demo"] + args), 0)
-            runspec.main(["event", "--spec", "other", "--kind", "dispatch", "--task", "2"])
+            self.measure("other", "other-2")
+            runspec.main(["event", "--spec", "other", "--kind", "dispatch", "--task", "2", "--attempt", "1", "--measurement-id", "other"])
         rows = open(os.path.join(self.repo, ".claude", "data", "run-events.jsonl"), encoding="utf-8").read().splitlines()
         self.assertEqual(len(rows), 7)
         s = runspec.summarize(runspec.read_events("demo"))
@@ -641,6 +647,72 @@ class GitTests(GhBase):
             runspec.main(["summary", "--spec", "demo"])
         self.assertIn("dispatched=3 returned=1 failed=1", out.getvalue())
         self.assertIn("unaccounted=task 3", out.getvalue())
+
+    def test_dispatch_refuses_missing_measurement(self):
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(runspec.main(["event", "--spec", "demo", "--kind", "dispatch", "--task", "2", "--attempt", "1"]), 2)
+
+    def measure(self, identifier, task):
+        from test_dogfood_measurement import start
+        record = start(identifier); record.update(task_id=task, pair_id=None)
+        runspec.dogfood_measurement.begin(os.path.join(runspec.main_data_dir(), "dogfood-measurements"), record)
+
+    def test_dispatch_requires_matching_open_unused_measurement(self):
+        from test_dogfood_measurement import end
+        self.measure("wrong-task", "demo-3")
+        base = ["event", "--spec", "demo", "--kind", "dispatch", "--task", "2", "--attempt", "1", "--measurement-id"]
+        self.assertEqual(runspec.main(base + ["wrong-task"]), 2)
+        self.measure("closed", "demo-2")
+        runspec.dogfood_measurement.finish(os.path.join(runspec.main_data_dir(), "dogfood-measurements"), "closed", end())
+        self.assertEqual(runspec.main(base + ["closed"]), 2)
+        self.measure("valid", "demo-2")
+        with redirect_stdout(io.StringIO()): self.assertEqual(runspec.main(base + ["valid"]), 0)
+        self.assertEqual(runspec.main(base + ["valid"]), 2)
+        self.assertEqual(runspec.read_events("demo")[-1]["measurement_id"], "valid")
+
+    def test_dispatch_measurement_is_shared_from_worktree(self):
+        self.measure("linked", "demo-2")
+        wt = os.path.join(self.tmp, "measured-wt")
+        git(self.repo, "worktree", "add", "-q", "-b", "measured", wt)
+        os.chdir(wt)
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(runspec.main(["event", "--spec", "demo", "--kind", "dispatch", "--task", "2", "--attempt", "1", "--measurement-id", "linked"]), 0)
+        self.assertFalse(os.path.exists(os.path.join(wt, ".claude", "data", "dogfood-measurements")))
+
+    def test_dispatch_holds_lock_through_history_check_and_append(self):
+        from test_dogfood_measurement import end
+        self.measure("interleaved", "demo-2")
+        args = ["event", "--spec", "demo", "--kind", "dispatch", "--task", "2", "--attempt", "1", "--measurement-id", "interleaved"]
+        original = runspec.read_events
+        interleaved = []
+
+        def snapshot_then_compete(*positional, **keywords):
+            rows = original(*positional, **keywords)
+            if not interleaved:
+                interleaved.append("entered")
+                interleaved.append(runspec.main(args))
+                try:
+                    runspec.dogfood_measurement.finish(os.path.join(runspec.main_data_dir(), "dogfood-measurements"), "interleaved", end())
+                    interleaved.append("closed")
+                except runspec.dogfood_measurement.MeasurementError:
+                    interleaved.append("locked")
+            return rows
+
+        with patch.object(runspec, "read_events", snapshot_then_compete), redirect_stdout(io.StringIO()):
+            self.assertEqual(runspec.main(args), 0)
+        self.assertEqual(interleaved, ["entered", 2, "locked"])
+        self.assertEqual(len(original("demo")), 1)
+
+    def test_dispatch_refuses_corrupt_or_truncated_event_history(self):
+        path = os.path.join(runspec.main_data_dir(), "run-events.jsonl")
+        for index, raw in enumerate(['{"kind":"dispatch"', '{"spec":"demo","kind":"dispatch"}\n', 'not JSON\n']):
+            with self.subTest(index=index):
+                identifier = "corrupt-%d" % index
+                self.measure(identifier, "demo-2")
+                write(path, raw)
+                with redirect_stdout(io.StringIO()):
+                    self.assertEqual(runspec.main(["event", "--spec", "demo", "--kind", "dispatch", "--task", "2", "--attempt", "1", "--measurement-id", identifier]), 2)
+                self.assertEqual(read(path), raw)
 
     def test_event_rows_land_in_the_main_checkout_from_a_worktree(self):
         wt = os.path.join(self.tmp, "wt")

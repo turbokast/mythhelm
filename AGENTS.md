@@ -10,6 +10,7 @@ This file is the common entrypoint for every coding agent. [`WORKFLOW.md`](WORKF
 - Use the spec lifecycle in [`WORKFLOW.md`](WORKFLOW.md). The portable `mythhelm-deliver-backlog` skill under `.agents/skills/` coordinates a backlog run. Stage procedures currently in `.claude/skills/` are repository documents: read the relevant `SKILL.md` and translate tool-specific calls to the tools your client actually has. Never assume a named Claude subagent, model pin, Stop hook or slash command exists in another client.
 - Route by domain and task, using [`knowledge/domains.md`](knowledge/domains.md). The model pins in [`knowledge/agent-routing.md`](knowledge/agent-routing.md) apply only to Claude agent definitions; other clients choose a capable agent or work directly and record who did the work.
 - Inspect [`docs/harness/agent-support.md`](docs/harness/agent-support.md) for client discovery, workflow invocation and unattended-delivery limits.
+- Deliver backlog work through MYTHHELM's admitted native route and follow [`measured delivery`](docs/harness/measured-delivery.md). Before dispatch, record the task in the private measurement ledger; record outcomes, elapsed time, observed usage, retries, errors and later defects. If admission, configuration approval or client support blocks self-hosting, record the concrete fallback and missing measurements; never bypass the block or describe direct execution as MYTHHELM-owned. Routine delivery is observational evidence, not a controlled benchmark.
 
 ## Repository rules
 

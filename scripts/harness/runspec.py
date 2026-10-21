@@ -48,6 +48,8 @@ import subprocess
 import sys
 import tempfile
 
+import dogfood_measurement
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SPEC_STATES = ("in-progress", "unfinalized", "todo", "refined", "unrefined", "done", "archived")
 TASK_HEADING = re.compile(r"^###\s+Task\s+(\d+)\b\s*(?:[—–:-]\s*)?(.*?)\s*$")
@@ -660,23 +662,82 @@ def verify_merged(spec, task, pr, repo=None, fetch=True):
 # ---- run events --------------------------------------------------------------
 
 def append_event(args):
+    measurement_id = getattr(args, "measurement_id", None)
+    if args.kind == "dispatch":
+        if not measurement_id or args.task is None or args.task < 1 or args.attempt is None or args.attempt < 1:
+            raise Usage("dispatch requires --task, --attempt and an open --measurement-id; see docs/harness/measured-delivery.md")
+        state = os.path.join(main_data_dir(), "dogfood-measurements")
+        try:
+            dogfood_measurement.text(measurement_id)
+            with dogfood_measurement.private_lock(state) as directory, dogfood_measurement.ledger_file(directory) as handle:
+                starts, finishes = dogfood_measurement.fold(handle)
+                record = starts.get(measurement_id)
+                if record is None or measurement_id in finishes or record["task_id"] != "%s-%d" % (args.spec, args.task):
+                    raise Usage("dispatch needs an unfinished measurement for this exact spec/task")
+                if any(row.get("measurement_id") == measurement_id for row in read_events(None, strict=True)):
+                    raise Usage("a task attempt needs its own measurement; this ID was already dispatched")
+                return write_event(args, measurement_id)
+        except (dogfood_measurement.MeasurementError, OSError) as exc:
+            raise Usage("dispatch measurement unavailable; reconcile the shared private ledger") from exc
+    elif measurement_id:
+        raise Usage("measurement IDs attach to dispatch events only")
+    return write_event(args, None)
+
+
+def write_event(args, measurement_id):
+    """Dispatch callers hold the shared measurement lock through this append."""
     row = {
         "schema_version": 1,
         "ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "spec": args.spec, "kind": args.kind, "task": args.task, "attempt": args.attempt,
         "agent": args.agent, "pr": args.pr, "result": args.result, "detail": args.detail or "",
     }
+    if measurement_id:
+        row["measurement_id"] = measurement_id
     d = main_data_dir()
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "run-events.jsonl"), "a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, separators=(",", ":"), ensure_ascii=False) + "\n")
+        fh.flush()
+        os.fsync(fh.fileno())
     return row
 
 
-def read_events(spec):
+def read_events(spec, strict=False):
     path = os.path.join(main_data_dir(), "run-events.jsonl")
     rows = []
     try:
+        if strict:
+            with open(path, "rb") as fh:
+                raw = fh.read(dogfood_measurement.MAX_LEDGER_BYTES + 1)
+            if len(raw) > dogfood_measurement.MAX_LEDGER_BYTES or (raw and not raw.endswith(b"\n")):
+                raise Usage("dispatch history oversized or incomplete; preserve and reconcile it")
+            required = {"schema_version", "ts", "spec", "kind", "task", "attempt", "agent", "pr", "result", "detail"}
+            for line in raw.splitlines():
+                try:
+                    row = dogfood_measurement.parse_record(line.decode("utf-8"))
+                    if set(row) not in (required, required | {"measurement_id"}):
+                        raise Usage("dispatch history fields invalid")
+                    if type(row["schema_version"]) is not int or row["schema_version"] != 1:
+                        raise Usage("dispatch history version invalid")
+                    if not isinstance(row["spec"], str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", row["spec"]):
+                        raise Usage("dispatch history spec invalid")
+                    if row["kind"] not in EVENT_KINDS or row["result"] not in ("ok", "fail", "unknown", None):
+                        raise Usage("dispatch history kind or result invalid")
+                    if any(row[k] is not None and type(row[k]) is not int for k in ("task", "attempt", "pr")):
+                        raise Usage("dispatch history integer invalid")
+                    if not isinstance(row["detail"], str) or (row["agent"] is not None and not isinstance(row["agent"], str)):
+                        raise Usage("dispatch history text invalid")
+                    dogfood_measurement.timestamp(row["ts"])
+                    if "measurement_id" in row:
+                        dogfood_measurement.text(row["measurement_id"])
+                        if row["kind"] != "dispatch":
+                            raise Usage("measurement attached to non-dispatch history")
+                    if spec is None or row["spec"] == spec:
+                        rows.append(row)
+                except (dogfood_measurement.MeasurementError, UnicodeError) as exc:
+                    raise Usage("dispatch history corrupt; preserve and reconcile it") from exc
+            return rows
         with open(path, encoding="utf-8") as fh:
             for line in fh:
                 try:
@@ -764,6 +825,7 @@ def cmd_main(argv):
     p.add_argument("--task", type=int); p.add_argument("--attempt", type=int); p.add_argument("--agent")
     p.add_argument("--pr", type=int); p.add_argument("--result", choices=("ok", "fail", "unknown"))
     p.add_argument("--detail")
+    p.add_argument("--measurement-id", help="open shared measurement ID matching <spec>-<task>; required for dispatch")
     p = sub.add_parser("summary"); p.add_argument("--spec", required=True); p.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
 

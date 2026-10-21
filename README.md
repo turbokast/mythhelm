@@ -78,6 +78,11 @@ Known limitations (G09 findings, see the record §5):
 
 ## Principles
 
+We measure backlog delivery and require admitted MYTHHELM dogfooding where
+available, with explicit fallback records when blocked. We have **not yet
+established a comparative performance advantage**. See [benchmarks and
+dogfooding](docs/benchmarks.md) for the evidence, metrics and publication criteria.
+
 - **Native harnesses preserved.** MYTHHELM drives each agent through its own supported surface. It does not replace or impersonate it.
 - **Your subscriptions, no billing surprises.** Work runs against the allowances you already have. Metered spend is never started silently.
 - **Honest state.** Estimated, reported, observed and unknown values stay distinguishable everywhere.

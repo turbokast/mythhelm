@@ -11,6 +11,9 @@
 - name: Acceptance and evidence
   path: user-guide.md#acceptance
   group: Understand
+- name: Benchmarks and dogfooding
+  path: benchmarks.md
+  group: Understand
 - name: Limitations
   path: limitations.md
   group: Understand
