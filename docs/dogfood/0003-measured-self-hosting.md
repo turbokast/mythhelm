@@ -21,7 +21,7 @@ behavior, account settings or repository permissions change.
 - Input revision: `955e2c564cfe319073748b7a51f2d0472e7146d3`, on the
   `bench/measurement-boundaries-20261021` input branch. It contains the public
   measurement implementation and isolated Python checks, not benchmark outputs.
-- [Frozen task definition](fixtures/measurement-boundaries-task.md), SHA-256
+- [Frozen task definition](fixtures/measurement-boundaries-task.txt), SHA-256
   `03e0b625ec145e09dce079d0abb2cd36276ef91d6b7f8a4bac1f93d48a920493`.
 - [Frozen check configuration](fixtures/measurement-boundaries-checks.toml),
   SHA-256 `a352efcfd43f0cab3189b8774901ec69ecc73326a4532f3d5dc580d383d6b081`.
