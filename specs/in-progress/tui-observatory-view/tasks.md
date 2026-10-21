@@ -245,7 +245,7 @@
   - The original Windows ARM64/AMD64 runs exposed POSIX-only test expectations; round 1 replaced them with independent exact platform/state/run oracles and negative controls. This test-only correction preserves production output.
 - **Files modified**: `internal/cli/tui.go`, `internal/cli/tui_test.go`, `internal/cli/tui_lifecycle.go`, `internal/cli/tui_signals_unix.go`, `internal/cli/tui_signals_windows.go`, `internal/cli/tui_signals_other.go`, `internal/cli/tui_lifecycle_test.go`, `internal/cli/exit.go`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
 
-### Task 9 — Preserve detached demo state and usable recovery guidance
+### Task 9 — Preserve detached demo state and usable recovery guidance ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (temporary workspace ownership and cross-platform recovery-command formatting)
@@ -266,6 +266,16 @@
   - `TestDemoRetentionNotice` checks explicit retained-repository/state paths, absence of premature removed/done claims, one usable recovery command and instructions to retain evidence until recovery proves terminal with no live writer. Recovery never silently deletes evidence. Non-TUI demo output and Task1 captures remain unchanged.
 - **Test plan**: Inject run results and cleanup/review seams with invocation counters. Test every cleanup decision with actual temporary directory sentinels. Packaged proof and exact command execution are owned by Task10; operator cleanup is tested only after proven termination, on the test's owned fixture directories.
 - **Invariants touched**: I05/I06/I08/I09/I12/I18/I21 (v2 §§6.4,15.2: retain live workspace and evidence, correct recovery destination, explicit cleanup authority).
+
+- **Status**: ✅ Completed — retained live/uncertain demo resources and printed one validated recovery command bound to the actual state root; PR #518.
+- **Implementation**: Commits `231ee1b`, `fe2f6a2` and `2d50b10` provide conservative demo lifetime, validated shell guidance, scoped native capture and coherent temporary fixture identity. Final full race gate passed (230.3s); named race suite passed (14.226s), with exact-head native Windows/macOS CI required. Both independent source reviewers returned Ready.
+- **Spec deviations**:
+  - Coordinator-approved narrow `internal/cli/tui_lifecycle.go` edit factors the existing recovery hint through the shared formatter and removes formatting-only imports; no lifecycle ownership changes.
+  - Coordinator-approved live-TUI-only paced scenario and matching `greeting.txt` seeded task support Task 10's active-worker detach proof. The retained admitted-task assertion rejected the initial `demo.txt` mismatch; default seeding and non-TUI bytes remain unchanged. No adapter or new pacing flag/environment hook was added.
+  - Review round 1: restricted the test capture hook to the named native fixture/exact recovery argv and added real inherited-environment/no-recursion regressions plus malformed-argv controls; consistent with design §3 and test-evidence integrity. Runtime source unchanged.
+  - Review round 2: resolve fixture temporary parents before environment assignment to align canonical admission and exact owned-path assertions on symlink/short-name roots. Retained real alias and wrong-directory counterfactuals reject the original oracle defect; only the standalone Windows alias fixture may skip on native missing-symlink-privilege evidence. Consistent with design §3; production output and native PowerShell tests are unchanged.
+  - Own `tasks.md`, `handoff.md` and `scratchpad.md` record completion, downstream inputs, red-first controls and validation history as required by the completion convention.
+- **Files modified**: `internal/cli/demo.go`, `internal/cli/demo_test.go`, `internal/cli/demo_lifecycle.go`, `internal/cli/demo_lifecycle_test.go`, `internal/cli/tui.go`, `internal/cli/tui_lifecycle_test.go`, `internal/cli/tui_lifecycle.go`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
 
 ### Task 10 — Prove lifecycle through the packaged binary
 

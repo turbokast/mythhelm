@@ -6,12 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"regexp"
 	"runtime"
-	"strings"
 	"sync"
-	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/turbokast/mythhelm/internal/journal"
@@ -172,17 +168,7 @@ func tuiDetachQualified(ctx context.Context, stateDir, runID string) bool {
 // tuiRecoveryHint binds the actual state root. Task 9 also consumes this
 // formatting boundary for retained demo resources.
 func tuiRecoveryHint(stateDir, runID string) string {
-	if !filepath.IsAbs(stateDir) || !regexp.MustCompile(`^run_[A-Za-z0-9_]{1,128}$`).MatchString(runID) || strings.ContainsFunc(stateDir, unicode.IsControl) {
-		return "recovery command unavailable: invalid state directory or run ID"
-	}
-	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
-	if runtime.GOOS == "windows" {
-		quote = func(s string) string {
-			return "'" + strings.NewReplacer("'", "''", "‘", "‘‘", "’", "’’", "‚", "‚‚", "‛", "‛‛").Replace(s) + "'"
-		}
-		return fmt.Sprintf("PowerShell: $env:MYTHHELM_HOME = %s; mythhelm recover %s", quote(stateDir), quote(runID))
-	}
-	return fmt.Sprintf("POSIX sh/bash/zsh: env %s mythhelm recover %s", quote("MYTHHELM_HOME="+stateDir), quote(runID))
+	return recoveryHint(stateDir, runID, runtime.GOOS)
 }
 
 // canonicalTUIOutcome reads run and latest-attempt projections after the owner

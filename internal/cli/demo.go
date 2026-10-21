@@ -45,7 +45,17 @@ func DemoCheckMain(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
+type demoDeps struct {
+	tui       tuiDeps
+	supervise func(context.Context, admission.Decision, supervisor.Hooks) (supervisor.Outcome, error)
+	review    func(io.Writer, string, string) error
+}
+
 func runDemo(args []string, stdio Stdio) error {
+	return runDemoWithDeps(args, stdio, demoDeps{tui: prodTUIDeps, supervise: supervisor.Run, review: demoReview})
+}
+
+func runDemoWithDeps(args []string, stdio Stdio, deps demoDeps) error {
 	fs := newFlagSet("demo")
 	check := fs.String("check", "pass", "demo check outcome: pass or fail (fail ends the run at exit 5)")
 	tuiFlags := addTUIFlags(fs)
@@ -75,21 +85,40 @@ func runDemo(args []string, stdio Stdio) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = os.RemoveAll(repo) }()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.RemoveAll(repo)
+		}
+	}()
 	state, err := os.MkdirTemp("", "mythhelm-demo-state-")
 	if err != nil {
 		return err
 	}
-	defer func() { _ = os.RemoveAll(state) }()
+	defer func() {
+		if cleanup {
+			_ = os.RemoveAll(state)
+		}
+	}()
 
 	banner := func(screen string) {
 		_, _ = fmt.Fprintf(stdio.Out, "\n=== %s: %s ===\n", demoLabel, screen)
 	}
+	mode := selectLaunch("plain", false, opts.accessible, stdio.Out, deps.tui, os.Getenv)
 	banner("example repository")
-	if _, err := fmt.Fprintf(stdio.Out, "working in %s (removed afterwards)\n", cell(repo)); err != nil {
+	lifetime := "removed afterwards"
+	if mode == launchTUI {
+		lifetime = "temporary files removed only after confirmed completion"
+	}
+	if _, err := fmt.Fprintf(stdio.Out, "working in %s (%s)\n", cell(repo), lifetime); err != nil {
 		return err
 	}
-	task, digest, err := seedDemoRepo(repo, exe, *check)
+	var task, digest string
+	if mode == launchTUI {
+		task, digest, err = seedDemoRepoTarget(repo, exe, *check, "greeting.txt")
+	} else {
+		task, digest, err = seedDemoRepo(repo, exe, *check)
+	}
 	if err != nil {
 		return err
 	}
@@ -106,22 +135,29 @@ func runDemo(args []string, stdio Stdio) error {
 	var out supervisor.Outcome
 	var resultErr error
 	reviewOK := true
-	switch selectLaunch("plain", false, opts.accessible, stdio.Out, prodTUIDeps, os.Getenv) {
+	var liveRunID string
+	switch mode {
 	case launchTUI:
+		req.Scenario = "paced"
 		d, derr := admission.Decide(context.Background(), req)
 		if derr != nil {
 			resultErr = finish(newRenderer("plain", stdio), out, derr)
 			break
 		}
+		// Once supervision may start, deletion requires joined, certain terminal evidence.
+		cleanup = false
+		liveRunID = d.RunID
+		liveDeps := deps.tui
+		liveDeps.deferRecoveryGuidance = true
 		var runErr error
-		out, runErr = runLiveTUI(stdio, prodTUIDeps, state, d.RunID, opts,
+		out, runErr = runLiveTUI(stdio, liveDeps, state, d.RunID, opts,
 			func(ctx context.Context, hooks supervisor.Hooks) (supervisor.Outcome, error) {
-				return supervisor.Run(ctx, d, hooks)
+				return deps.supervise(ctx, d, hooks)
 			})
 		// finish writes the run's terminal result line and surfaces any
 		// streaming write error; the review screen follows it.
 		resultErr = finish(newRenderer("plain", stdio), out, runErr)
-		reviewOK = !out.Detached
+		reviewOK = demoCleanupSafe(out, resultErr)
 	case launchAccessible:
 		d, derr := admission.Decide(context.Background(), req)
 		if derr != nil {
@@ -145,14 +181,22 @@ func runDemo(args []string, stdio Stdio) error {
 		resultErr = finish(r, out, runErr)
 	}
 
+	if mode == launchTUI && !cleanup && !reviewOK {
+		return errors.Join(resultErr, demoRetentionNotice(stdio.Out, repo, state, liveRunID))
+	}
+
 	// A run that never recorded has nothing to review, and a detached run
 	// has no receipt to review.
 	if out.RunID != "" && reviewOK {
 		banner("review")
-		if rerr := demoReview(stdio.Out, state, out.RunID); rerr != nil {
+		if rerr := deps.review(stdio.Out, state, out.RunID); rerr != nil {
+			if mode == launchTUI && !cleanup {
+				return errors.Join(resultErr, rerr, demoRetentionNotice(stdio.Out, repo, state, liveRunID))
+			}
 			return errors.Join(resultErr, rerr)
 		}
 	}
+	cleanup = true
 	banner("done")
 	if _, err := fmt.Fprintf(stdio.Out, "state in %s was removed afterwards\n", cell(state)); err != nil {
 		return err
@@ -164,6 +208,10 @@ func runDemo(args []string, stdio Stdio) error {
 // and a mythhelm.toml whose check re-executes this binary. It returns the
 // task path and the admitted config digest the run must trust.
 func seedDemoRepo(repo, exe, mode string) (task, digest string, err error) {
+	return seedDemoRepoTarget(repo, exe, mode, "demo.txt")
+}
+
+func seedDemoRepoTarget(repo, exe, mode, target string) (task, digest string, err error) {
 	ctx := context.Background()
 	git := func(args ...string) error {
 		_, err := workspace.Git(ctx, repo, false, args...)
@@ -184,7 +232,7 @@ func seedDemoRepo(repo, exe, mode string) (task, digest string, err error) {
 		return "", "", err
 	}
 	task = filepath.Join(repo, "task.md")
-	if err := os.WriteFile(task, []byte("# Demo task\n\nWrite demo.txt.\n"), 0o600); err != nil {
+	if err := os.WriteFile(task, fmt.Appendf(nil, "# Demo task\n\nWrite %s.\n", target), 0o600); err != nil {
 		return "", "", err
 	}
 	config := "schema_version = 1\n[[checks]]\nname = \"demo\"\nargv = [" +
