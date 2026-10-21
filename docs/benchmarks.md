@@ -39,9 +39,12 @@ record](dogfood/0001-first-run.md) demonstrates one recorded workflow, not curre
 qualification or comparative performance.
 
 The new measurement tools have credential-free synthetic tests for recording,
-comparison matching and analysis. These are not native benchmark scores. No new
-controlled native comparison has completed under this protocol yet. Renderer
-targets and CI durations cannot substitute for task-quality comparisons.
+comparison matching and analysis. These are not native benchmark scores. A [measured self-hosting pilot](dogfood/0003-measured-self-hosting.md)
+now records a native-authored maintenance change and one completed development
+pair. Direct execution was shorter on that pair; coordinator scheduling confounds
+the end-to-end comparison. One dependent component and pending defect observation
+establish no advantage. Renderer targets and CI durations cannot substitute for
+task-quality comparisons.
 
 ## Publication criteria
 

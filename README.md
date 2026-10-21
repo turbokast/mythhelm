@@ -82,6 +82,9 @@ We measure backlog delivery and require admitted MYTHHELM dogfooding where
 available, with explicit fallback records when blocked. We have **not yet
 established a comparative performance advantage**. See [benchmarks and
 dogfooding](docs/benchmarks.md) for the evidence, metrics and publication criteria.
+A [measured native run](docs/dogfood/0003-measured-self-hosting.md) has authored and
+verified a repository maintenance change through MYTHHELM; its small comparison
+does not establish a speed or quality advantage.
 
 - **Native harnesses preserved.** MYTHHELM drives each agent through its own supported surface. It does not replace or impersonate it.
 - **Your subscriptions, no billing surprises.** Work runs against the allowances you already have. Metered spend is never started silently.

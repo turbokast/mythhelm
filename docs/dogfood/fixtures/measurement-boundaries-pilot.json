@@ -1,0 +1,36 @@
+{
+  "alpha": 0.05,
+  "assignments": [
+    {
+      "checks_sha256": "a352efcfd43f0cab3189b8774901ec69ecc73326a4532f3d5dc580d383d6b081",
+      "contract_sha256": "03e0b625ec145e09dce079d0abb2cd36276ef91d6b7f8a4bac1f93d48a920493",
+      "family": "harness-private-ledger",
+      "first": "mythhelm",
+      "mythhelm_id": "matched-boundary-mythhelm-20261021",
+      "native_id": "matched-boundary-native-20261021",
+      "pair_id": "matched-boundary-pair-20261021",
+      "repository_id": "mythhelm",
+      "source_revision": "955e2c564cfe319073748b7a51f2d0472e7146d3",
+      "task_id": "measurement-filesystem-boundaries-replication"
+    }
+  ],
+  "cap_seconds": 180,
+  "cohort": "development",
+  "design": null,
+  "experiment_id": "matched-boundary-feasibility-20261021",
+  "max_started_attempts": 2,
+  "minimum_gain_seconds": 10,
+  "native": {
+    "configuration_sha256": "c4bc0d62a4a3a831ddf5feec28abe55775b2f1b24da07f3745dbe6d163bd5e4b",
+    "effort": "xhigh",
+    "environment_sha256": "2a716d195bcc6dcababf8883cad13d8919372a0b6b312aee722eb6438122a2ab",
+    "harness": "claudecode",
+    "model": "claude-opus-5-5",
+    "native_version": "2.1.305"
+  },
+  "observation_window_days": 7,
+  "phase": "pilot",
+  "population": "mythhelm-harness-development",
+  "registered_at": "2026-10-21T09:49:30.937206+00:00",
+  "seed": 20261021
+}
