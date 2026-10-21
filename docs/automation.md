@@ -57,8 +57,9 @@ Tools run with `go run <module>@<version>` or `go install <module>@<version>` (a
 The workflow-lint job installs its pinned licence tool with at most three
 attempts, retaining Go module checksum verification, then generates notices
 once. Installation exhaustion or a notice-generation failure fails the job.
-The docs ffprobe archive keeps its pinned URL, SHA-256 check and three download
-retries; transient HTTP errors are retryable too. Validation and tests are not
+The docs ffprobe archive uses a checksum-pinned month-end build, which upstream
+retains for two years; daily builds expire after 14 builds. Keep the pinned URL,
+SHA-256 check and three download retries; transient HTTP errors are retryable too. Validation and tests are not
 retried by either setup step.
 
 The checks marked required above (including those to be made required) are listed in `.claude/data/required-checks.json`. The harness compares the live ruleset with that file to notice a weakened gate, and its lint fails when the two lists differ, so change both together.
