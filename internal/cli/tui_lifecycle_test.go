@@ -34,7 +34,8 @@ func TestTUIStartupFailureJoinsWithoutStop(t *testing.T) {
 		close(finished)
 		return fault
 	})
-	out, err := runLiveTUI(stdio, deps, t.TempDir(), "run_startup", resolveTUIFlags(t, bareGetenv), func(_ context.Context, h supervisor.Hooks) (supervisor.Outcome, error) {
+	dir := t.TempDir()
+	out, err := runLiveTUI(stdio, deps, dir, "run_startup", resolveTUIFlags(t, bareGetenv), func(_ context.Context, h supervisor.Hooks) (supervisor.Outcome, error) {
 		<-finished
 		select {
 		case <-h.Interrupt:
@@ -51,7 +52,7 @@ func TestTUIStartupFailureJoinsWithoutStop(t *testing.T) {
 	if !errors.Is(err, fault) || out.State != supervisor.RunCompleted {
 		t.Fatalf("joined result = %+v, %v", out, err)
 	}
-	want := "run run_startup continues in this process; inspect with: mythhelm review run_startup\n"
+	want := "run run_startup continues in this process; inspect with " + strings.Replace(literalRecoveryHintForTest(runtime.GOOS, dir, "run_startup"), "mythhelm recover", "mythhelm review", 1) + "\n"
 	if stderr.String() != want {
 		t.Errorf("notice = %q, want %q", stderr.String(), want)
 	}
@@ -87,15 +88,15 @@ func TestLiveTUIIntentOutcomes(t *testing.T) {
 				t.Fatalf("outcome %+v, %v", out, err)
 			}
 			text := stdout.String()
-			want := "detached from run run_detach; run is not complete; worker keeps running; reattach with: mythhelm recover run_detach"
+			want := "detached from run run_detach; run is not complete; worker keeps running"
 			if pending {
-				want = "stop not yet confirmed; run 'mythhelm recover run_detach'"
+				want = "stop not yet confirmed"
 			}
 			want += "; " + literalRecoveryHintForTest(runtime.GOOS, dir, "run_detach") + "; not qualified on this platform\n"
 			if text != want {
 				t.Errorf("notice = %q, want %q", text, want)
 			}
-			if strings.Count(text, "\n") != 1 || strings.Contains(text, "review") || !strings.Contains(text, "mythhelm recover") || !strings.Contains(text, "not qualified on this platform") {
+			if strings.Count(text, "mythhelm recover") != 1 || strings.Count(text, "\n") != 1 || strings.Contains(text, "review") || !strings.Contains(text, "mythhelm recover") || !strings.Contains(text, "not qualified on this platform") {
 				t.Fatalf("detach notice %q", text)
 			}
 			if strings.Contains(text, "stop not yet confirmed") != pending {

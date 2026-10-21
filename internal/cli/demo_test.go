@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,26 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if capture := os.Getenv("MYTHHELM_TEST_RECOVERY_CAPTURE"); capture != "" {
+		data, err := json.Marshal(struct {
+			State string
+			Args  []string
+		}{os.Getenv("MYTHHELM_HOME"), os.Args[1:]})
+		if err != nil {
+			os.Exit(10)
+		}
+		root, err := os.OpenRoot(filepath.Dir(capture))
+		if err != nil {
+			os.Exit(11)
+		}
+		if err := root.WriteFile(filepath.Base(capture), data, 0o600); err != nil {
+			os.Exit(12)
+		}
+		if err := root.Close(); err != nil {
+			os.Exit(13)
+		}
+		os.Exit(0)
+	}
 	// The test binary plays every process of a demo run: the demo check
 	// helper, the worker and the fake agent. Checks replay the demo
 	// helper, mirroring the supervisor suite's __check dispatch.

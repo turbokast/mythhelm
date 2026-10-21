@@ -31,10 +31,12 @@ import (
 // entry without a PTY. It is threaded explicitly, never mutable package
 // state.
 type tuiDeps struct {
-	isTerminal       func(w io.Writer) bool
-	runTUI           func(ctx context.Context, cfg tui.Config) error
-	lifecycle        func() *tuiLifecycle
-	canonicalOutcome func(context.Context, string, string) (supervisor.Outcome, error)
+	// A demo caller emits recovery guidance alongside its retained resource paths.
+	deferRecoveryGuidance bool
+	isTerminal            func(w io.Writer) bool
+	runTUI                func(ctx context.Context, cfg tui.Config) error
+	lifecycle             func() *tuiLifecycle
+	canonicalOutcome      func(context.Context, string, string) (supervisor.Outcome, error)
 }
 
 // prodTUIDeps is the production seam value.
@@ -238,7 +240,7 @@ func runLiveTUI(stdio Stdio, deps tuiDeps, stateDir, runID string, opts tuiOptio
 	owner.endView()
 	state := owner.snapshot()
 	if viewErr != nil && !state.hasIntent {
-		_, noticeErr := fmt.Fprintf(stdio.Err, "run %s continues in this process; inspect with: mythhelm review %s\n", cell(runID), cell(runID))
+		_, noticeErr := fmt.Fprintf(stdio.Err, "run %s continues in this process; inspect with %s\n", cell(runID), tuiReviewHint(stateDir, runID))
 		viewErr = errors.Join(viewErr, noticeErr)
 	}
 	res := <-done
@@ -278,7 +280,7 @@ func runLiveTUI(stdio Stdio, deps tuiDeps, stateDir, runID string, opts tuiOptio
 		}
 	}
 	mapped = lifecycleExit(mapped, state)
-	if (exitCode(mapped) == ExitOwnership || projectionUnavailable) && !res.out.Detached && !res.out.DetachedRunning {
+	if !deps.deferRecoveryGuidance && (exitCode(mapped) == ExitOwnership || projectionUnavailable) && !res.out.Detached && !res.out.DetachedRunning {
 		mapped = &outcomeError{code: exitCode(mapped), category: errorCategory(mapped), err: fmt.Errorf("%w; %s", mapped, tuiRecoveryHint(stateDir, runID))}
 	}
 	detachIntent := state.detach && state.lost || state.hasIntent && state.intent.Kind == tui.ExitDetach
@@ -288,11 +290,13 @@ func runLiveTUI(stdio Stdio, deps tuiDeps, stateDir, runID string, opts tuiOptio
 		mapped = errors.Join(mapped, writeErr)
 	}
 	if res.out.Detached || res.out.DetachedRunning {
-		text := fmt.Sprintf(supervisor.RunningDetachedNotice, cell(runID), cell(runID))
+		text := fmt.Sprintf("detached from run %s; run is not complete; worker keeps running", cell(runID))
 		if res.out.Detached {
-			text = fmt.Sprintf(supervisor.DetachedNotice, cell(runID))
+			text = "stop not yet confirmed"
 		}
-		text += "; " + tuiRecoveryHint(stateDir, runID)
+		if !deps.deferRecoveryGuidance {
+			text += "; " + tuiRecoveryHint(stateDir, runID)
+		}
 		if unqualified {
 			text += "; not qualified on this platform"
 		}
