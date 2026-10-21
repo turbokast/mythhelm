@@ -183,8 +183,13 @@ func startService(t *testing.T, e env, runtimeDir string) {
 		close(exited)
 	}()
 	t.Cleanup(func() {
-		_ = cmd.Process.Signal(syscall.SIGTERM)
-		<-exited
+		killed, err := joinOwned(exited, func() { _ = cmd.Process.Signal(syscall.SIGTERM) }, func() { _ = cmd.Process.Kill() }, ownedJoinGrace)
+		switch {
+		case err != nil:
+			t.Errorf("supervisor %d was never joined: %v", cmd.Process.Pid, err)
+		case killed:
+			t.Errorf("supervisor ignored SIGTERM and was killed: %s", out.String())
+		}
 	})
 	socket := filepath.Join(runtimeDir, "mythhelm-uid"+strconv.Itoa(os.Getuid()), "control.sock")
 	deadline := time.Now().Add(time.Minute)

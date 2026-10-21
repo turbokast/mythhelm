@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
+	"sync"
 	"testing"
 	"time"
 
@@ -743,10 +742,64 @@ type ptyReply struct {
 type ptyClient struct {
 	t      *testing.T
 	cmd    *exec.Cmd
-	in     io.WriteCloser
+	in     *os.File // driver stdin; writes carry a deadline
+	outF   *os.File // driver stdout; reads carry a deadline
 	out    *bufio.Reader
-	stderr *bytes.Buffer
+	stderr *lockedBuffer
+	done   chan struct{} // closed by the one goroutine that calls cmd.Wait
 	pid    int
+	start  time.Time // the packaged process's start time, its identity with pid
+}
+
+// ptyReplyLimit bounds one driver reply line; the exit reply carries the
+// whole visible output.
+const ptyReplyLimit = 8 << 20
+
+// ptyReplySlack is how long a reply may lag the driver-side timeout it was
+// asked to honour; a request without one must answer within it.
+const ptyReplySlack = 30 * time.Second
+
+// ownedJoinGrace bounds each step of an owned child's shutdown: the polite
+// request, then the kill.
+const ownedJoinGrace = 30 * time.Second
+
+// lockedBuffer is the driver's stderr: exec copies into it while a failing
+// read reports it.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// joinOwned stops a child this test started and whose single waiter closes
+// done: ask politely, wait grace, then kill and wait grace again. It returns
+// whether the kill was needed, and an error only when the child outlived
+// both steps — the caller reports it rather than hanging.
+func joinOwned(done <-chan struct{}, ask, kill func(), grace time.Duration) (killed bool, err error) {
+	ask()
+	select {
+	case <-done:
+		return false, nil
+	case <-time.After(grace):
+	}
+	kill()
+	select {
+	case <-done:
+		return true, nil
+	case <-time.After(grace):
+		return true, errors.New("owned child survived its kill")
+	}
 }
 
 // startPTY runs the packaged binary with args on a 160x40 terminal in dir.
@@ -764,32 +817,60 @@ func startPTY(t *testing.T, environ []string, dir string, args ...string) *ptyCl
 	}
 	cmd := exec.Command(python, append([]string{"-I", "-B", driver, "160", "40", dir, mythhelmBin}, args...)...)
 	cmd.Env = environ
-	c := &ptyClient{t: t, cmd: cmd, stderr: &bytes.Buffer{}}
+	c := &ptyClient{t: t, cmd: cmd, stderr: &lockedBuffer{}, done: make(chan struct{})}
 	cmd.Stderr = c.stderr
-	if c.in, err = cmd.StdinPipe(); err != nil {
-		t.Fatal(err)
-	}
-	out, err := cmd.StdoutPipe()
+	inR, inW, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.out = bufio.NewReaderSize(out, 1<<20)
+	outR, outW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.Stdin, cmd.Stdout = inR, outW
+	c.in, c.outF, c.out = inW, outR, bufio.NewReaderSize(outR, ptyReplyLimit)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		_ = c.in.Close()
-		_ = c.cmd.Wait()
-	})
-	c.pid = c.read().PID
+	_, _ = inR.Close(), outW.Close()
+	go func() {
+		_ = cmd.Wait()
+		close(c.done)
+	}()
+	t.Cleanup(c.close)
+	r := c.readWithin(ptyReplySlack)
+	c.pid = r.PID
+	if c.start, err = workers.ProcessStartTime(c.pid); err != nil {
+		t.Fatalf("packaged process %d has no start time to bind its identity: %v", c.pid, err)
+	}
 	return c
 }
 
-func (c *ptyClient) read() ptyReply {
-	c.t.Helper()
-	line, err := c.out.ReadBytes('\n')
+// close ends the driver: end of input asks it to kill and reap the packaged
+// process; a driver that does not exit is killed, and so is the packaged
+// process it leaves, but only while that is still the same process.
+func (c *ptyClient) close() {
+	_ = c.in.Close()
+	killed, err := joinOwned(c.done, func() {}, func() { _ = c.cmd.Process.Kill() }, ownedJoinGrace)
+	if killed && !c.start.IsZero() {
+		killIdentified(c.pid, c.start)
+	}
+	_ = c.outF.Close()
 	if err != nil {
-		c.t.Fatalf("PTY driver ended: %v; stderr %q", err, c.stderr.String())
+		c.t.Errorf("PTY driver %d: %v; stderr %q", c.cmd.Process.Pid, err, c.stderr.String())
+	} else if killed {
+		c.t.Errorf("PTY driver %d ignored end of input and was killed; stderr %q", c.cmd.Process.Pid, c.stderr.String())
+	}
+}
+
+func (c *ptyClient) readWithin(limit time.Duration) ptyReply {
+	c.t.Helper()
+	if err := c.outF.SetReadDeadline(time.Now().Add(limit)); err != nil {
+		c.t.Fatal(err)
+	}
+	line, err := c.out.ReadSlice('\n')
+	if err != nil {
+		c.t.Fatalf("PTY driver reply within %v: %v; stderr %q", limit, err, c.stderr.String())
 	}
 	var r ptyReply
 	if err := json.Unmarshal(line, &r); err != nil {
@@ -807,10 +888,19 @@ func (c *ptyClient) call(req map[string]any) ptyReply {
 	if err != nil {
 		c.t.Fatal(err)
 	}
-	if _, err := c.in.Write(append(line, '\n')); err != nil {
-		c.t.Fatalf("PTY driver input: %v", err)
+	if err := c.in.SetWriteDeadline(time.Now().Add(ptyReplySlack)); err != nil {
+		c.t.Fatal(err)
 	}
-	return c.read()
+	if _, err := c.in.Write(append(line, '\n')); err != nil {
+		c.t.Fatalf("PTY driver input: %v; stderr %q", err, c.stderr.String())
+	}
+	limit := ptyReplySlack
+	if timeout, ok := req["timeout"].(float64); ok {
+		limit += time.Duration(timeout * float64(time.Second))
+	} else if timeout, ok := req["timeout"].(int); ok {
+		limit += time.Duration(timeout) * time.Second
+	}
+	return c.readWithin(limit)
 }
 
 // send writes keys to the terminal as typed input.
@@ -854,6 +944,9 @@ func (c *ptyClient) alive() bool {
 // signal delivers sig to the packaged process exactly once.
 func (c *ptyClient) signal(sig os.Signal) {
 	c.t.Helper()
+	if !sameProcess(c.pid, c.start) {
+		c.t.Fatalf("packaged process %d is no longer the one started; no signal sent", c.pid)
+	}
 	p, err := os.FindProcess(c.pid)
 	if err != nil {
 		c.t.Fatal(err)
@@ -985,7 +1078,7 @@ func spoolHasStop(events []journal.Event) bool {
 
 // liveAttempt is the attempt a detached client left: its directory and the
 // recorded worker, which the test reaps if it is still running at the end.
-func liveAttempt(t *testing.T, state, runID string) (string, workers.Identity) {
+func liveAttempt(t *testing.T, state, runID string) (string, attemptProcs) {
 	t.Helper()
 	_, a, _ := runSnapshot(t, state, runID)
 	id := workerOf(t, state, runID, a.AttemptID)
@@ -1140,8 +1233,19 @@ func stopRequesters(t *testing.T, events []journal.Event) []string {
 	return out
 }
 
-// workerOf reads the attempt's recorded worker identity.
-func workerOf(t *testing.T, state, runID, attemptID string) workers.Identity {
+// attemptProcs is the attempt's recorded worker identity plus the native's
+// start time, observed while worker.json links that native PID to a live
+// worker. worker.json carries no native start time on Unix, so this
+// observation is the native's only identity beyond its reusable PID.
+type attemptProcs struct {
+	workers.Identity
+	NativeStart time.Time
+}
+
+// workerOf reads the attempt's recorded worker identity and binds the native
+// PID to the process that holds it now. A native whose start time cannot be
+// read is unknown, never assumed: the test fails rather than guess.
+func workerOf(t *testing.T, state, runID, attemptID string) attemptProcs {
 	t.Helper()
 	id, err := workers.ReadIdentity(workers.AttemptDir(state, runID, attemptID))
 	if err != nil {
@@ -1150,29 +1254,47 @@ func workerOf(t *testing.T, state, runID, attemptID string) workers.Identity {
 	if id.NativePID == nil {
 		t.Fatal("worker.json records no native PID")
 	}
-	return id
+	if !sameProcess(id.PID, id.StartTime) {
+		t.Fatalf("recorded worker %d is not running; its native %d cannot be bound", id.PID, *id.NativePID)
+	}
+	start, err := workers.ProcessStartTime(*id.NativePID)
+	if err != nil {
+		t.Fatalf("native %d start time unknown: %v", *id.NativePID, err)
+	}
+	return attemptProcs{Identity: id, NativeStart: start}
 }
 
-// workerAlive reports whether the recorded worker process is the one still
-// running: same PID and same start time, so a reused PID never counts.
-func workerAlive(id workers.Identity) bool {
-	start, err := workers.ProcessStartTime(id.PID)
-	return err == nil && start.Equal(id.StartTime)
+// sameProcess reports whether pid is still the process that started at
+// start: a reused PID never counts, and an unreadable start time is not
+// evidence of this process.
+func sameProcess(pid int, start time.Time) bool {
+	got, err := workers.ProcessStartTime(pid)
+	return err == nil && got.Equal(start)
 }
 
-// nativeAlive reports whether the recorded native PID still exists.
-func nativeAlive(id workers.Identity) bool {
-	p, err := os.FindProcess(*id.NativePID)
-	return err == nil && p.Signal(syscall.Signal(0)) == nil
+func workerAlive(p attemptProcs) bool { return sameProcess(p.PID, p.StartTime) }
+
+func nativeAlive(p attemptProcs) bool { return sameProcess(*p.NativePID, p.NativeStart) }
+
+// killIdentified kills pid only while it is still the process that started
+// at start; any other process holding a reused PID is left alone.
+func killIdentified(pid int, start time.Time) {
+	if !sameProcess(pid, start) {
+		return
+	}
+	if p, err := os.FindProcess(pid); err == nil {
+		_ = p.Kill()
+	}
 }
 
-// waitProcessesGone waits until neither the worker nor its native runs.
-func waitProcessesGone(t *testing.T, id workers.Identity) {
+// waitProcessesGone waits until neither the identified worker nor its
+// identified native runs.
+func waitProcessesGone(t *testing.T, p attemptProcs) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Minute)
-	for workerAlive(id) || nativeAlive(id) {
+	for workerAlive(p) || nativeAlive(p) {
 		if time.Now().After(deadline) {
-			t.Fatalf("worker %d / native %d still running", id.PID, *id.NativePID)
+			t.Fatalf("worker %d / native %d still running", p.PID, *p.NativePID)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -1181,19 +1303,11 @@ func waitProcessesGone(t *testing.T, id workers.Identity) {
 // reapDetached registers the finite cleanup for a worker the test may leave
 // running: kill the identified worker and native, then wait until both are
 // gone.
-func reapDetached(t *testing.T, id workers.Identity) {
+func reapDetached(t *testing.T, p attemptProcs) {
 	t.Helper()
 	t.Cleanup(func() {
-		if workerAlive(id) {
-			if p, err := os.FindProcess(id.PID); err == nil {
-				_ = p.Kill()
-			}
-		}
-		if nativeAlive(id) {
-			if p, err := os.FindProcess(*id.NativePID); err == nil {
-				_ = p.Kill()
-			}
-		}
-		waitProcessesGone(t, id)
+		killIdentified(p.PID, p.StartTime)
+		killIdentified(*p.NativePID, p.NativeStart)
+		waitProcessesGone(t, p)
 	})
 }

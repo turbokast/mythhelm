@@ -96,15 +96,19 @@ func holdAtGate(dir string) error {
 	}
 }
 
-// checkGateMain is a passing project check that first holds at the gate
-// directory named by its only argument.
+// checkGateMain is a project check that first holds at the gate directory
+// named by its first argument and then passes or fails as its second says.
 func checkGateMain(args []string) int {
-	if len(args) != 1 {
-		fmt.Fprintln(os.Stderr, "usage: e2e-check-gate <gate-dir>")
+	if len(args) != 2 || (args[1] != "pass" && args[1] != "fail") {
+		fmt.Fprintln(os.Stderr, "usage: e2e-check-gate <gate-dir> pass|fail")
 		return 2
 	}
 	if err := holdAtGate(args[0]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if args[1] == "fail" {
+		fmt.Fprintln(os.Stderr, "e2e check gate: failing as configured")
 		return 1
 	}
 	return 0

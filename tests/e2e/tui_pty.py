@@ -26,7 +26,8 @@ object per stdout line. The first stdout line is {"ok": true, "pid": N}.
                                                  view last closed
 
 Every reply carries "ok"; a failure carries "error" and the visible tail.
-End of stdin kills a still-running child and reaps it before exiting.
+End of stdin, an exception or a failed reply kills a still-running child and
+reaps it before the driver exits.
 """
 
 import codecs
@@ -236,7 +237,18 @@ def wait_exit(term, cmd):
 def main():
     cols, rows, workdir, argv = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3], sys.argv[4:]
     term = Terminal(cols, rows, workdir, argv)
-    reply(ok=True, pid=term.pid)
+    # Every exit path, an exception or a broken pipe included, kills and
+    # reaps the child it started before the driver itself exits.
+    try:
+        reply(ok=True, pid=term.pid)
+        serve(term)
+    finally:
+        if not term.reap(False):
+            os.kill(term.pid, signal.SIGKILL)
+            term.reap(True)
+
+
+def serve(term):
     for line in sys.stdin:
         cmd = json.loads(line)
         op = cmd["op"]
@@ -256,9 +268,6 @@ def main():
             reply(**wait_exit(term, cmd))
         else:
             reply(ok=False, error="unknown op %r" % op)
-    if not term.reap(False):
-        os.kill(term.pid, signal.SIGKILL)
-        term.reap(True)
 
 
 def reply(**fields):
