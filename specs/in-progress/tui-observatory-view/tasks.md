@@ -268,10 +268,11 @@
 - **Invariants touched**: I05/I06/I08/I09/I12/I18/I21 (v2 §§6.4,15.2: retain live workspace and evidence, correct recovery destination, explicit cleanup authority).
 
 - **Status**: ✅ Completed — retained live/uncertain demo resources and printed one validated recovery command bound to the actual state root; PR #518.
-- **Implementation**: Commit `231ee1b` adds fail-closed cleanup after owner/action join and confirmed run/attempt evidence, shared platform quoting and native command probes. Final full race gate passed (306.1s); named race suite passed (14.017s), with native PowerShell execution required in Windows CI. Both independent source reviewers returned Ready.
+- **Implementation**: Commit `231ee1b` adds fail-closed cleanup, shared platform quoting and native command probes; review fix `fe2f6a2` confines test capture to the exact native fixture. Final review-source full race gate passed (173.1s); named race suite passed (14.777s), with native PowerShell execution required in Windows CI. Both independent source reviewers returned Ready.
 - **Spec deviations**:
   - Coordinator-approved narrow `internal/cli/tui_lifecycle.go` edit factors the existing recovery hint through the shared formatter and removes formatting-only imports; no lifecycle ownership changes.
   - Coordinator-approved live-TUI-only paced scenario and matching `greeting.txt` seeded task support Task 10's active-worker detach proof. The retained admitted-task assertion rejected the initial `demo.txt` mismatch; default seeding and non-TUI bytes remain unchanged. No adapter or new pacing flag/environment hook was added.
+  - Review round 1: restricted the test capture hook to the named native fixture/exact recovery argv and added real inherited-environment/no-recursion regressions plus malformed-argv controls; consistent with design §3 and test-evidence integrity. Runtime source unchanged.
   - Own `tasks.md`, `handoff.md` and `scratchpad.md` record completion, downstream inputs, red-first controls and validation history as required by the completion convention.
 - **Files modified**: `internal/cli/demo.go`, `internal/cli/demo_test.go`, `internal/cli/demo_lifecycle.go`, `internal/cli/demo_lifecycle_test.go`, `internal/cli/tui.go`, `internal/cli/tui_lifecycle_test.go`, `internal/cli/tui_lifecycle.go`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
 
