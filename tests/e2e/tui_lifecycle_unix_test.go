@@ -650,22 +650,30 @@ func TestDemoDetachRecoverBinary(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			e := canonicalEnv(t)
-			tmp := filepath.Join(canonicalDir(t, t.TempDir()), "demo tmp's root")
+			// The demo's directories live under an owned root, not t.TempDir:
+			// it is removed only once the client, worker and native are
+			// proven gone, never while a writer is live or unknown.
+			root := newOwnedRoot(t, workers.ProcessStartTime, 2*time.Minute, func(err error) { t.Error(err) })
+			tmp := filepath.Join(root.dir, "demo tmp's root")
 			unrelated := filepath.Join(tmp, "unrelated")
-			if err := os.MkdirAll(unrelated, 0o700); err != nil {
-				t.Fatal(err)
+			runtimeDir, cwd := filepath.Join(root.dir, "runtime"), filepath.Join(root.dir, "cwd")
+			for _, dir := range []string{unrelated, runtimeDir, cwd} {
+				if err := os.MkdirAll(dir, 0o700); err != nil {
+					t.Fatal(err)
+				}
 			}
 			if err := os.WriteFile(filepath.Join(unrelated, "keep"), []byte("unrelated\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			environ := append(e.withParent(t), "XDG_RUNTIME_DIR="+canonicalDir(t, t.TempDir()), "TERM=xterm-256color",
+			environ := append(e.withParent(t), "XDG_RUNTIME_DIR="+runtimeDir, "TERM=xterm-256color",
 				"TMPDIR="+tmp, "TMP="+tmp, "TEMP="+tmp)
-			c := startPTY(t, environ, canonicalDir(t, t.TempDir()), "demo")
+			c := startPTY(t, environ, cwd, "demo")
 			state := waitDemoDir(t, tmp, "mythhelm-demo-state-")
 			repo := waitDemoDir(t, tmp, "mythhelm-demo-repo-")
 			runID := onlyRun(t, state)
 			waitAttemptState(t, state, runID, "running")
 			dir, worker := liveAttempt(t, state, runID)
+			root.track(procID{c.pid, c.start}, worker.worker(), worker.native())
 			_, a, _ := runSnapshot(t, state, runID)
 
 			tc.detach(c)
@@ -943,7 +951,73 @@ func TestUnknownIdentityIsNeitherLiveNorGone(t *testing.T) {
 	}
 }
 
-// hostileChild is a direct packaged-child stand-in with no descendants: it
+// TestOwnedRootSurvivesUnknownWriter runs the owned root's registered
+// cleanup, as the demo test registers it, at the end of a subtest: with a
+// writer whose identity cannot be read, and with no identified writer, the
+// root and its evidence survive and the reason is reported; once the same
+// writer is killed, joined and proven gone by the real lookup, the
+// registered release removes the root. No writer is killed by the release.
+func TestOwnedRootSurvivesUnknownWriter(t *testing.T) {
+	t.Parallel()
+	writer, done := ownedSleeper(t)
+	unreadable := errors.New("synthetic: start time unreadable")
+	failing := func(int) (time.Time, error) { return time.Time{}, unreadable }
+	ended := func(name string, lookup startLookup, ids ...procID) (string, []error) {
+		t.Helper()
+		var root *ownedRoot
+		var reported []error
+		t.Run(name, func(t *testing.T) {
+			root = newOwnedRoot(t, lookup, 300*time.Millisecond, func(err error) { reported = append(reported, err) })
+			if err := os.WriteFile(filepath.Join(root.dir, "evidence"), []byte("retained\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			root.track(ids...)
+		})
+		return root.dir, reported
+	}
+	preserved := func(dir string) {
+		t.Helper()
+		t.Cleanup(func() { _ = os.RemoveAll(dir) })
+		body, err := os.ReadFile(filepath.Join(dir, "evidence")) //nolint:gosec // G304: fixed name in the test's own root
+		if err != nil || string(body) != "retained\n" {
+			t.Fatalf("owned root %s lost its evidence: %q, %v", dir, body, err)
+		}
+	}
+
+	dir, reported := ended("unknown writer", failing, writer)
+	preserved(dir)
+	if len(reported) != 1 || !errors.Is(reported[0], unreadable) {
+		t.Fatalf("release with an unknown writer reported %v, want the unknown identity", reported)
+	}
+	select {
+	case <-done:
+		t.Fatal("the release killed a writer whose identity was unknown")
+	default:
+	}
+	dir, reported = ended("no identified writer", workers.ProcessStartTime)
+	preserved(dir)
+	if len(reported) != 1 || !strings.Contains(reported[0].Error(), "never identified") {
+		t.Fatalf("release with no identified writer reported %v, want it preserved", reported)
+	}
+
+	if err := killIdentified(workers.ProcessStartTime, writer); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(ownedJoinGrace):
+		t.Fatal("the writer survived its kill")
+	}
+	dir, reported = ended("writer proven gone", workers.ProcessStartTime, writer)
+	if len(reported) != 0 {
+		t.Fatalf("release after proven absence reported %v", reported)
+	}
+	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a root whose writers are proven gone was not removed: %v", err)
+	}
+}
+
+// hostileChild is a hostile direct child with no descendants: it
 // ignores SIGHUP (the terminal closing) and SIGTERM, so only an explicit kill
 // ends it, and it prints hostileReady once both are ignored.
 const (
@@ -967,32 +1041,94 @@ const eofIgnoringDriver = "import signal, sys, threading\n" +
 	"tui_pty.serve(term)\n" +
 	"threading.Event().wait()\n"
 
+// reapProbingDriver runs the real tui_pty.main as the PTY driver. Once main
+// has raised, the still-living owner probes the child main started with a
+// non-blocking waitpid: only ECHILD proves main killed and reaped it. A probe
+// that finds the child unreaped records the failure before it reaps it (and
+// kills it first if it still runs), so no mutant leaves a child behind.
+const reapProbingDriver = `import os, signal, sys, traceback
+sys.path.insert(0, sys.argv[1])
+import tui_pty
+started = []
+class Recorded(tui_pty.Terminal):
+    def __init__(self, *args):
+        super().__init__(*args)
+        started.append(self.pid)
+tui_pty.Terminal = Recorded
+sys.argv = sys.argv[1:]
+try:
+    tui_pty.main()
+    verdict = "FAILURE: main returned without an exception"
+except Exception:
+    traceback.print_exc()
+    verdict = "reaped"
+pid = started[0]
+try:
+    got, _ = os.waitpid(pid, os.WNOHANG)
+except ChildProcessError:
+    pass
+else:
+    verdict = "FAILURE: child %d left %s" % (pid, "running" if got == 0 else "unreaped")
+    if got == 0:
+        os.kill(pid, signal.SIGKILL)
+        os.waitpid(pid, 0)
+sys.stderr.write("reap-probe: " + verdict + "\n")
+`
+
+// readyReview is a finished run (ready_for_review) on the packaged binary
+// and the argv that inspects it in the live view: the packaged child of the
+// cleanup rows, reading the journal only and launching no work.
+func readyReview(t *testing.T) (environ, argv []string, ready string) {
+	t.Helper()
+	f := newLifecycleFixture(t, "")
+	code, out, stderr := run(t, f.e, f.repo, baseRunArgs(f.digest)...)
+	if code != 0 {
+		t.Fatalf("linear run exit %d, stderr %q", code, stderr)
+	}
+	first, _, _ := strings.Cut(out, "\n")
+	runID := strings.TrimSuffix(strings.TrimPrefix(first, "run "), ": created")
+	if runID == "" || runID == first {
+		t.Fatalf("linear output's first line %q names no run ID", first)
+	}
+	return f.environ(t, ""), []string{mythhelmBin, "review", runID}, runID
+}
+
 // TestPTYClientCleanupBinary drives the actual ptyClient shutdown and the
-// actual tui_pty.py exit path with a packaged child that only a kill ends.
-// A driver that ignores end of input is escalated within its bounded grace
-// and the identified child it leaves is killed; a malformed request makes
-// tui_pty.py itself kill and reap its child before it exits. Each case
-// proves the driver joined and the recorded child no longer runs.
+// actual tui_pty.py exit path, with a hostile direct child that only a kill
+// ends and with the real packaged mythhelm inspecting a finished run. A
+// driver that ignores end of input is escalated within its bounded grace
+// and the identified child it leaves is ended; a malformed request makes
+// tui_pty.main itself kill and reap its child, which its still-living owner
+// then proves by waitpid. Each case proves the driver joined and the
+// recorded child no longer runs. I07/I09/I18 (v2 §2).
 func TestPTYClientCleanupBinary(t *testing.T) {
 	t.Parallel()
 	const grace = 2 * time.Second
+	hostile := func(t *testing.T) ([]string, []string, string) {
+		return []string{"PATH=" + os.Getenv("PATH")}, []string{python3(t), "-I", "-c", hostileChild}, hostileReady
+	}
+	eofIgnoring := func(t *testing.T, dir string, child []string) []string {
+		return append([]string{"-I", "-B", "-c", eofIgnoringDriver, filepath.Dir(ptyDriver(t)), dir}, child...)
+	}
+	probing := func(t *testing.T, dir string, child []string) []string {
+		return append([]string{"-I", "-B", "-c", reapProbingDriver, filepath.Dir(ptyDriver(t)), "160", "40", dir}, child...)
+	}
 	for _, tc := range []struct {
 		name       string
-		args       func(t *testing.T, dir, python string) []string
+		child      func(t *testing.T) (environ, argv []string, ready string)
+		driver     func(t *testing.T, dir string, child []string) []string
 		malformed  bool
 		wantKilled bool
 	}{
-		{"driver ignoring end of input is killed with its child", func(t *testing.T, dir, python string) []string {
-			return []string{"-I", "-B", "-c", eofIgnoringDriver, filepath.Dir(ptyDriver(t)), dir, python, "-I", "-c", hostileChild}
-		}, false, true},
-		{"malformed request makes the driver kill and reap its child", func(t *testing.T, dir, python string) []string {
-			return []string{"-I", "-B", ptyDriver(t), "160", "40", dir, python, "-I", "-c", hostileChild}
-		}, true, false},
+		{"driver ignoring end of input is killed with its hostile direct child", hostile, eofIgnoring, false, true},
+		{"driver ignoring end of input is killed with its packaged mythhelm child", readyReview, eofIgnoring, false, true},
+		{"malformed request makes tui_pty.main kill and reap its hostile direct child", hostile, probing, true, false},
+		{"malformed request makes tui_pty.main kill and reap its packaged mythhelm child", readyReview, probing, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			python := python3(t)
-			c := startDriver(t, []string{"PATH=" + os.Getenv("PATH")}, grace, tc.args(t, t.TempDir(), python)...)
+			environ, argv, ready := tc.child(t)
+			c := startDriver(t, environ, grace, tc.driver(t, t.TempDir(), argv)...)
 			c.selfChecked = true
 			child := procID{c.pid, c.start}
 			// Finite cleanup under any mutant: kill the driver and the
@@ -1011,7 +1147,7 @@ func TestPTYClientCleanupBinary(t *testing.T) {
 					t.Errorf("leaked packaged child: %v", err)
 				}
 			})
-			c.waitText(hostileReady, 0, "")
+			c.waitText(ready, 0, "")
 			began := time.Now()
 			if tc.malformed {
 				if _, err := c.in.Write([]byte("{not json\n")); err != nil {
@@ -1022,10 +1158,15 @@ func TestPTYClientCleanupBinary(t *testing.T) {
 				case <-time.After(grace):
 					t.Fatalf("tui_pty.py did not exit after a malformed request; stderr %q", c.stderr.String())
 				}
-				if !strings.Contains(c.stderr.String(), "JSONDecodeError") {
-					t.Fatalf("the driver exited without the malformed-request exception; stderr %q", c.stderr.String())
+				stderr := c.stderr.String()
+				if !strings.Contains(stderr, "JSONDecodeError") {
+					t.Fatalf("the driver exited without the malformed-request exception; stderr %q", stderr)
 				}
-				// The driver reaped its own child: the PID is free at once.
+				// I07/I18: the owner, still alive, found its child already
+				// reaped; a kill without a reap leaves it unreaped.
+				if !hasExactLine(stderr, "reap-probe: reaped") {
+					t.Fatalf("tui_pty.main did not kill and reap its child; stderr %q", stderr)
+				}
 				if err := waitGone(workers.ProcessStartTime, 0, child); err != nil {
 					t.Fatalf("tui_pty.py exited without killing and reaping its child: %v", err)
 				}

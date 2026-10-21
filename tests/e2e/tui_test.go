@@ -1434,6 +1434,50 @@ func removeAfterGone(lookup startLookup, limit time.Duration, ids []procID, dirs
 	return nil
 }
 
+// ownedRoot is a test-owned directory with no automatically removing
+// ancestor: t.TempDir's RemoveAll runs after every other cleanup, even one
+// that failed to prove its writers gone. Its registered release removes it
+// only once every tracked writer is proven gone; an unknown or live writer,
+// or a test that ended before its writers were identified, leaves it in
+// place and reports it. No writer is killed here.
+type ownedRoot struct {
+	dir    string
+	lookup startLookup
+	limit  time.Duration
+	ids    []procID
+}
+
+// newOwnedRoot creates a canonical root under the test process's temporary
+// directory and registers its release; report receives the reason a root
+// was preserved.
+func newOwnedRoot(t *testing.T, lookup startLookup, limit time.Duration, report func(error)) *ownedRoot {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "mythhelm-e2e-owned-") //nolint:usetesting // t.TempDir would remove it while a writer is unknown
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &ownedRoot{dir: canonicalDir(t, dir), lookup: lookup, limit: limit}
+	t.Cleanup(func() {
+		if err := r.release(); err != nil {
+			report(err)
+		}
+	})
+	return r
+}
+
+// track binds writers whose proven absence releases the root.
+func (r *ownedRoot) track(ids ...procID) { r.ids = append(r.ids, ids...) }
+
+func (r *ownedRoot) release() error {
+	if len(r.ids) == 0 {
+		return fmt.Errorf("owned root %s preserved: its writers were never identified", r.dir)
+	}
+	if err := waitGone(r.lookup, r.limit, r.ids...); err != nil {
+		return fmt.Errorf("owned root %s preserved: %w", r.dir, err)
+	}
+	return os.RemoveAll(r.dir)
+}
+
 // reapDetached registers the finite cleanup for a worker the test may leave
 // running: kill the identified worker and native, then wait until both are
 // gone.
