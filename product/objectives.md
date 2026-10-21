@@ -8,6 +8,26 @@ This is the current delivery focus, not a claim that every earlier boundary proo
 
 The current-stage line is read by `scripts/pm/pm.py`; card urgency follows its distance from that stage. A later stage advance is an `objective-change` decision paired with a tool-generated rescore. Stage numbers express dependencies rather than calendar promises: optional S6 delivery can proceed after its S1 prerequisites without waiting for S4/S5 learning.
 
+## Bounded validation focus
+
+The selected feasibility focus is dependable single-agent delivery on one
+explicitly described Claude Code/Linux route, following the [validation plan](../docs/validation-plan.md).
+The proposed ten-working-day window is 22 October–4 November 2026, including
+readiness, recruitment and reporting. Its finite prospective budgets, strong
+direct-native baseline, 20% descriptive component-weighted delivery-time target,
+acceptance/safety floor and external repeat-use criterion govern a continue,
+simplify, stop or blocked recommendation. Targets are not measured results.
+
+Select only route/evidence readiness, required correctness/CI repairs and the
+smallest separately approved continuity/context work needed to test that hypothesis.
+Defer new UI/theme, platform/harness, plugin, parallel-construction, learning and
+Herdr expansion during the cycle. Preserve existing candidates and public evidence.
+The current stage, card statuses/scores, prerequisites and all release gates remain
+unchanged. A planning budget grants no inference/spending, configuration trust,
+publication or external outreach authority; experiments require current admission
+and a prospectively reviewed protocol. A useful pilot advances only to a separate
+powered holdout design, never directly to superiority claims.
+
 ## Stages
 
 | Stage | Name | Complete outcome | Exit gate |
