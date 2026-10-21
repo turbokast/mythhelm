@@ -73,9 +73,8 @@ func TestDemoRecoveryCommand(t *testing.T) {
 
 // The test binary is the native mythhelm stub: no script or second parser can
 // hide argument/environment corruption by the generated command.
-func recoveryCommandProbe(t *testing.T, shell string) {
+func recoveryCaptureExecutable(t *testing.T, dir string) string {
 	t.Helper()
-	dir := t.TempDir()
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -91,6 +90,14 @@ func recoveryCommandProbe(t *testing.T, shell string) {
 	if err := os.WriteFile(filepath.Join(dir, name), data, 0o700); err != nil { //nolint:gosec // The owned native stub must be executable.
 		t.Fatal(err)
 	}
+
+	return filepath.Join(dir, name)
+}
+
+func recoveryCommandProbe(t *testing.T, shell string) {
+	t.Helper()
+	dir := t.TempDir()
+	recoveryCaptureExecutable(t, dir)
 	sentinel := filepath.Join(dir, "injected")
 	variants := []string{"'", "‘", "’", "‚", "‛", "'‘’‚‛"}
 	if shell == "pwsh" {
@@ -368,5 +375,94 @@ func TestDemoReviewFailureRetainsEvidence(t *testing.T) {
 	combined := stdout.String() + stderr.String() + err.Error()
 	if strings.Count(combined, "mythhelm recover") != 1 || strings.Contains(combined, ": done ===") || strings.Contains(combined, "was removed afterwards") {
 		t.Errorf("invalid retention output: %s", combined)
+	}
+}
+
+func TestRecoveryCaptureEnvironmentIsolation(t *testing.T) {
+	t.Parallel()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stub := recoveryCaptureExecutable(t, t.TempDir())
+	for _, tc := range []struct{ name, exe string }{{"real test executable", exe}, {"native stub named executable", stub}} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			capture := filepath.Join(dir, "unexpected-capture.json")
+			marker := filepath.Join(dir, "probe-ran")
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			// Select only the leaf probe: it never starts another subprocess.
+			cmd := exec.CommandContext(ctx, tc.exe, "-test.run=^TestRecoveryCaptureInheritedEnvProbe$", "-test.v")
+			cmd.Env = append(os.Environ(), "MYTHHELM_TEST_RECOVERY_CAPTURE="+capture, "MYTHHELM_TEST_RECOVERY_PROBE_MARKER="+marker)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("leaf probe failed: %v: %s", err, out)
+			}
+			root, err := os.OpenRoot(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if err := root.Close(); err != nil {
+					t.Error(err)
+				}
+			}()
+			got, err := root.ReadFile("probe-ran")
+			if err != nil || string(got) != "test body executed" {
+				t.Fatalf("inherited capture environment bypassed selected test: marker %q, %v; output %s", got, err, out)
+			}
+			if !strings.Contains(string(out), "--- PASS: TestRecoveryCaptureInheritedEnvProbe") {
+				t.Fatalf("selected test did not report PASS: %s", out)
+			}
+			if _, err := os.Stat(capture); !os.IsNotExist(err) {
+				t.Fatalf("real test invocation wrote native capture: %v", err)
+			}
+		})
+	}
+}
+
+func TestRecoveryCaptureInheritedEnvProbe(t *testing.T) {
+	t.Parallel()
+	marker := os.Getenv("MYTHHELM_TEST_RECOVERY_PROBE_MARKER")
+	if marker == "" {
+		t.Skip("leaf probe runs only in the explicitly selected child test process")
+	}
+	root, err := os.OpenRoot(filepath.Dir(marker))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := root.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	if err := root.WriteFile(filepath.Base(marker), []byte("test body executed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRecoveryCaptureRejectsMalformedStub(t *testing.T) {
+	t.Parallel()
+	exe := recoveryCaptureExecutable(t, t.TempDir())
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{{"missing argv", nil}, {"wrong verb", []string{"review", "run_probe_42"}}, {"wrong run", []string{"recover", "run_other"}}, {"extra argument", []string{"recover", "run_probe_42", "extra"}}} {
+		t.Run(tc.name, func(t *testing.T) {
+			capture := filepath.Join(t.TempDir(), "unexpected-capture.json")
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, exe, tc.args...)
+			cmd.Env = append(os.Environ(), "MYTHHELM_TEST_RECOVERY_CAPTURE="+capture)
+			out, err := cmd.CombinedOutput()
+			var exited *exec.ExitError
+			if !errors.As(err, &exited) || exited.ExitCode() == 0 {
+				t.Fatalf("invalid native stub invocation returned success or failed to execute: %v: %s", err, out)
+			}
+			if _, err := os.Stat(capture); !os.IsNotExist(err) {
+				t.Fatalf("invalid native invocation wrote capture: %v", err)
+			}
+		})
 	}
 }

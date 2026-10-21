@@ -15,7 +15,18 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	if capture := os.Getenv("MYTHHELM_TEST_RECOVERY_CAPTURE"); capture != "" {
+	capture := os.Getenv("MYTHHELM_TEST_RECOVERY_CAPTURE")
+	stubName := "mythhelm"
+	if runtime.GOOS == "windows" {
+		stubName += ".exe"
+	}
+	testInvocation := len(os.Args) > 1 && strings.HasPrefix(os.Args[1], "-test.")
+	// Inherited capture configuration must never bypass ordinary test execution.
+	if capture != "" && filepath.Base(os.Args[0]) == stubName && !testInvocation {
+		// Reject malformed fixture commands instead of entering the whole test suite.
+		if len(os.Args) != 3 || os.Args[1] != "recover" || os.Args[2] != "run_probe_42" {
+			os.Exit(14)
+		}
 		data, err := json.Marshal(struct {
 			State string
 			Args  []string
