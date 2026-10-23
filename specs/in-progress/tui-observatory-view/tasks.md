@@ -277,7 +277,7 @@
   - Own `tasks.md`, `handoff.md` and `scratchpad.md` record completion, downstream inputs, red-first controls and validation history as required by the completion convention.
 - **Files modified**: `internal/cli/demo.go`, `internal/cli/demo_test.go`, `internal/cli/demo_lifecycle.go`, `internal/cli/demo_lifecycle_test.go`, `internal/cli/tui.go`, `internal/cli/tui_lifecycle_test.go`, `internal/cli/tui_lifecycle.go`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
 
-### Task 10 — Prove lifecycle through the packaged binary
+### Task 10 — Prove lifecycle through the packaged binary ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (PTY, real processes, signals and recovery)
@@ -298,6 +298,14 @@
   - `TestDemoDetachRecoverBinary` runs a paced demo through the PTY under a temporary root containing spaces and an apostrophe; detaches, observes client6, live native/worker and intact repository, state, journal and spool, with no stop or premature review. Extract and execute the exact printed recovery command in a controlled environment with an unrelated MYTHHELM_HOME; assert it recovers the same run without a second native launch and leaves terminal evidence available. Then the test, acting as the explicit operator and only after proving no live writer, removes its own two retained directories and asserts only those directories were removed. A missing state prefix or unconditional demo cleanup fails before recovery.
 - **Test plan**: Build cmd/mythhelm through the existing e2e harness, synthetic repo with spaces, paced fake and slow verifier helper; poll named journal/process conditions, keep finite cleanup. Unsupported Unix-only tests are explicitly platform-tagged; Windows runs portable state-machine tests and never claims qualified detach.
 - **Invariants touched**: I05/I06/I08/I12/I14/I18/I21 (v2 §§6.4,15.2: real owner continuity and finite execution, no source mutation).
+
+- **Status**: ✅ Completed — packaged-binary lifecycle tests prove detach/recovery, stop, terminal loss, pinned deadlines and safe retained-demo cleanup; PR #521.
+- **Implementation**: Commits `01a21cd`, `b247d2d`, `f945fd7` and `7f3fd4e` add the test-only PTY driver, paced fixtures, real process/owner-lock evidence and retained cleanup controls. Full race gate passed (297.9s; e2e 128.918s); Windows and Darwin vet passed. Fresh independent code and architecture reviews returned Ready.
+- **Spec deviations**:
+  - Review corrections (consistent with design §3): distinguish unknown process identity from gone, preserve retained roots through registered cleanup, exercise actual packaged review children, and prove Python reaping with owner-side `waitpid`; add guarded applying-conflict rows for both signals and exact owner-lock/effect/receipt assertions.
+  - Required lifecycle bookkeeping adds this task’s completion entry, handoff and scratchpad evidence outside the original test-file list. Production code and the immutable Task 1 capture remain unchanged.
+- **Files modified**: `tests/e2e/main_test.go`, `tests/e2e/tui_test.go`, `tests/e2e/tui_lifecycle_unix_test.go`, `tests/e2e/tui_deadline_test.go`, `tests/e2e/tui_pty.py`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
+- **Red-first**: unknown-identity deletion, automatic ancestor cleanup, inert driver escalation, missing Python kill and missing Python reap each failed behaviorally; restored checks passed with retained countercontrols. Apply success/conflict and both terminal-loss signals remain real packaged-binary cases.
 
 ### Task 11 — Migrate theme tokens and contrast validation
 
