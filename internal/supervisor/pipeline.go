@@ -127,10 +127,7 @@ func Run(ctx context.Context, d admission.Decision, h Hooks) (Outcome, error) {
 	if err != nil {
 		return Outcome{}, fmt.Errorf("locating mythhelm for the worker: %w", err)
 	}
-	unavailable := func(err error) error {
-		return errors.Join(&admission.BlockedError{Code: "persistence_unavailable", Field: d.StateDir,
-			Action: "the state directory cannot be written; no run was admitted"}, err)
-	}
+	unavailable := func(err error) error { return persistenceUnavailable(d.StateDir, err) }
 	if err := statedir.Ensure(d.StateDir); err != nil {
 		return Outcome{}, unavailable(err)
 	}
@@ -179,16 +176,26 @@ func Run(ctx context.Context, d admission.Decision, h Hooks) (Outcome, error) {
 		return Outcome{}, err
 	}
 	defer release()
+	return runLocked(ctx, j, exe, d, h)
+}
 
+// runLocked is the pipeline body shared by Run and RunOwned. The caller holds
+// the run's owner lock and has defaulted h's callbacks.
+func runLocked(ctx context.Context, j *journal.Journal, exe string, d admission.Decision, h Hooks) (Outcome, error) {
 	p := &pipeline{d: d, h: h, j: j, exe: exe, prod: NewProducer(ids.New("sup"), 1),
 		out: Outcome{RunID: d.RunID, AttemptID: d.AttemptID}}
-	err = p.run(ctx)
+	err := p.run(ctx)
 	if err != nil && p.out.State == "" {
 		// A failed initial journal append admits nothing and starts no
 		// worker. Report the persistence admission refusal (exit 3).
-		err = unavailable(err)
+		err = persistenceUnavailable(d.StateDir, err)
 	}
 	return p.out, err
+}
+
+func persistenceUnavailable(stateDir string, err error) error {
+	return errors.Join(&admission.BlockedError{Code: "persistence_unavailable", Field: stateDir,
+		Action: "the state directory cannot be written; no run was admitted"}, err)
 }
 
 // checkMigrationClear refuses new supervised work while migration owns the
