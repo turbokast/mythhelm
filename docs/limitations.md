@@ -56,20 +56,29 @@ TUI behaviour is qualified by the G09 evidence record in the repository
     back. A live run that has not ended offers detach (leave running), request
     stop and back; a disabled row shows its reason and does nothing, and request
     stop opens a confirmation that rechecks the current state.
-  - Deliberate detach (the row or `d`) is enabled only while the worker is
-    running and the admission record reports `worker_detachment` as
-    `supported`; otherwise it says `detach is not qualified on this platform`.
+  - Deliberate detach (the row or `d`) is disabled with a state-specific
+    reason (for example `no worker yet`, `waiting for the worker` or a busy
+    phase) unless a live run is executing or stopping with its worker running.
+    Only then does a missing `supported` value for `worker_detachment` in the
+    admission record disable it with `detach is not qualified on this
+    platform`, and detach also needs the owner's detach control wired.
   - In a live view, the first Ctrl-C before verifying sends one stop request
-    and shows `stop requested — waiting for worker confirmation`. The request
-    is not a confirmed stop: only the worker's confirmation is. A second Ctrl-C
-    while the worker runs detaches even when detachment is not qualified, says
+    only when none is pending and the stop gate allows it, then shows
+    `stop requested — waiting for worker confirmation`; with a request already
+    pending it shows `stop already requested`, and in other disallowed states
+    it shows the reason and sends nothing. The request is not a confirmed stop:
+    only the worker's confirmation is. A second Ctrl-C while the worker runs
+    detaches even when detachment is not qualified, saying
     `not qualified on this platform`, and exits 6; before the worker runs it
-    waits. During verifying or applying the second Ctrl-C leaves the view and
-    the phase finishes without it. A run that has ended exits on the first.
-  - A stop, recover or apply action confirmed in the dialog that is still in
-    flight needs a second
-    Ctrl-C to quit, and quitting then cancels it and exits 6 (action
-    unresolved); an inspect view that leaves a stop unconfirmed also exits 6.
+    shows a waiting notice and stays. During verifying or applying the second
+    Ctrl-C leaves the view and the phase finishes without it. A run that has
+    ended exits on the first.
+  - An asynchronous inspect stop, recover or apply action confirmed in the
+    dialog that is still in flight needs a second Ctrl-C to quit, and quitting
+    then cancels it and exits 6 (action unresolved); an inspect view that
+    leaves a stop unconfirmed also exits 6. A live stop confirmed in the dialog
+    starts no asynchronous action: it sends the stop request, which stays
+    pending, and Ctrl-C then follows the live interrupt and detach path above.
 
 ## Acceptance limits
 
