@@ -138,6 +138,27 @@ func newSeededFixture(t *testing.T) fixture {
 func TestSeededFixtureRunsThroughChildCLI(t *testing.T) {
 	t.Parallel()
 	f := newSeededFixture(t)
+	db := filepath.Join(f.state, journal.DBName)
+	fi, err := os.Lstat(db)
+	if err != nil || !fi.Mode().IsRegular() || fi.Size() == 0 {
+		t.Fatalf("seeded fixture has no regular nonempty database before its first run: %v", err)
+	}
+	p := filepath.ToSlash(db)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	ro, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: p, RawQuery: "mode=ro"}).String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ro.Close() }()
+	var version int
+	if err := ro.QueryRowContext(t.Context(), "PRAGMA user_version").Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != journal.SchemaVersion {
+		t.Fatalf("seeded user_version %d before the first run, want %d", version, journal.SchemaVersion)
+	}
 	if got := f.runs(t); len(got) != 0 {
 		t.Fatalf("seeded state holds %d runs before the first run, want 0", len(got))
 	}
