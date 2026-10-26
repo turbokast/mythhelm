@@ -6,14 +6,18 @@ title: Focused validation plan
 # Focused validation plan
 
 **Decision: validate dependable native-agent delivery before expanding the platform.**
-This is a feasibility plan, not evidence of a performance advantage. The proposed
+This is a feasibility plan, not evidence of a performance advantage. The adopted
 window is **22 October–4 November 2026: ten working days**, including readiness,
 recruitment and reporting. Missing prerequisites do not move the end date silently.
 The final decision is continue to a separately designed study, simplify, stop, or
 report blocked/inconclusive with the missing evidence.
 
-The operator selected this delivery focus. Formal changes to product objectives
-and backlog selection are separate signed proposals. This plan does not advance
+The operator selected this delivery focus, and it is formally adopted: decision
+[D-111](https://github.com/turbokast/mythhelm/blob/main/product/decisions.md)
+(2026-10-21, PR #524, `main` 34b89ab) applied the signed product objectives and
+backlog selection changes, leaving card scores, statuses, stages, prerequisites and
+safeguards unchanged. Adoption is not comparative-performance evidence, and
+observational work is not a controlled comparison. This plan does not advance
 the current product stage, qualify a route, change an invariant, or authorize
 inference, publication, outreach or spending beyond an existing applicable grant.
 

@@ -73,8 +73,7 @@ Experimental until recorded in the G09 record:
 
 Known limitations (G09 findings, see the record §5):
 
-- The `q` exit-options dialog renders its rows but key selection is unwired; Esc closes it, Ctrl-C quits.
-- Mid-run Ctrl-C cancels the run (exit 130) instead of detaching; the detach path needs a slow-adapter retest.
+- The G09 findings (unwired `q` exit rows, mid-run Ctrl-C cancelling) describe its recorded build. Current source wires selectable, mode- and phase-dependent exit controls and distinguishes a worker-confirmed stop from detachment, saying so where detachment is not qualified. Its source tests do not establish completed Task 10 packaged lifecycle qualification (#521 is still open) and qualify no terminal or platform; see [TUI limits](docs/limitations.md#tui-limits).
 
 ## Principles
 
