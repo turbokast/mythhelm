@@ -203,7 +203,7 @@ func Load(ctx context.Context, dir, runID string) (Snapshot, error) {
 		}
 		return snap, nil
 	}
-	goal, err := taskGoal(dir, runID, run.TaskSHA256)
+	goal, err := taskGoal(ctx, systemTaskReader(), dir, runID, run.TaskSHA256)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -284,8 +284,8 @@ func receiptTitle(r supervisor.Receipt) string {
 // taskGoal resolves the goal from the digest-checked task file: the title on
 // a digest match, "unknown" when no file was recorded, an error on a digest
 // mismatch (I07: the title is never unverified).
-func taskGoal(dir, runID, wantSHA string) (string, error) {
-	b, err := os.ReadFile(filepath.Join(dir, "runs", runID, "task.md")) // #nosec G304 -- fixed name under the state dir and journaled run ID
+func taskGoal(ctx context.Context, r taskReader, dir, runID, wantSHA string) (string, error) {
+	b, err := r.readFile(ctx, filepath.Join(dir, "runs", runID, "task.md"))
 	if errors.Is(err, os.ErrNotExist) {
 		return "unknown", nil
 	}
