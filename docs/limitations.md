@@ -46,9 +46,30 @@ TUI behaviour is qualified by the G09 evidence record in the repository
   (VTE 0.76) + zsh 5.9 on Ubuntu 24.04, 190x45. Interactive use in any other
   terminal/shell is experimental until recorded.
 - Screen-reader support is experimental: no human session recorded yet.
-- The `q` exit-options dialog renders its rows but key selection is unwired;
-  Esc closes it, Ctrl-C quits.
-- Mid-run Ctrl-C cancels the run (exit 130) instead of detaching.
+- Exit and interrupt behaviour depends on mode, phase and the admitted
+  capability. The G09 findings (unwired `q` rows, mid-run Ctrl-C cancelling)
+  describe the build G09 recorded; the behaviour below is covered by source
+  tests only. Its packaged-binary proof (tui-observatory-view Task 10, #521) is
+  open, and no terminal, platform or native route is qualified for it.
+  - `q` opens selectable exit options (arrows, Tab or `j`/`k`, then Enter; Esc
+    goes back). An inspect view or a live run that has ended offers quit and
+    back. A live run that has not ended offers detach (leave running), request
+    stop and back; a disabled row shows its reason and does nothing, and request
+    stop opens a confirmation that rechecks the current state.
+  - Deliberate detach (the row or `d`) is enabled only while the worker is
+    running and the admission record reports `worker_detachment` as
+    `supported`; otherwise it says `detach is not qualified on this platform`.
+  - In a live view, the first Ctrl-C before verifying sends one stop request
+    and shows `stop requested — waiting for worker confirmation`. The request
+    is not a confirmed stop: only the worker's confirmation is. A second Ctrl-C
+    while the worker runs detaches even when detachment is not qualified, says
+    `not qualified on this platform`, and exits 6; before the worker runs it
+    waits. During verifying or applying the second Ctrl-C leaves the view and
+    the phase finishes without it. A run that has ended exits on the first.
+  - A stop, recover or apply action confirmed in the dialog that is still in
+    flight needs a second
+    Ctrl-C to quit, and quitting then cancels it and exits 6 (action
+    unresolved); an inspect view that leaves a stop unconfirmed also exits 6.
 
 ## Acceptance limits
 
