@@ -39,7 +39,12 @@
 
 ## Task 4 — Extract lock-held lifecycle entrypoints
 
-<!-- pending -->
+- **Produces**: PR #527, signed source `00fe03b`: `control.AcquireInstanceLease`, lease generation/root/hold/close methods, and `supervisor.AcquireServiceOwner`, `RunOwned`, `RecoverOwned` and `ApplyOwned`. The service entrypoints reuse the existing lock-held pipeline/recovery/apply implementations without re-acquiring their run lock; legacy entrypoints retain their guards.
+- **Lifetime**: Copies of either capability share one lifetime. Lease close refuses new holds and waits for active holds; service-owner close refuses new entries, waits for active work and releases both the run lock and lease hold before concurrent closers return. Zero, closed, wrong-root, wrong-generation and wrong-run capabilities refuse ownership.
+- **For dependents**: Acquire the instance lease before the service owner, use an adopted root and pass the matching run to owned entrypoints. Each owner admits one ingestion path; owned entrypoints refuse terminal detach/interrupt hooks. Tasks 5–7 still own migration/runtime/adoption integration; these internal APIs do not establish a public attachment service.
+- **Evidence**: Independent production and repair reviews returned Ready. The three named Task 4 acceptance tests pass under the race detector; the concurrent-close test also passes 20 race repetitions. The final canonical formatting, vet, full race, module-tidy, lint (zero issues) and public-hygiene gates pass.
+- **Review correction**: Concurrent post-close test probes are serialized so they cannot contend with one another; concurrent close and active-entry barriers remain intact. A later explicit bound and terminating return make the positive generation assertion visible to the lint analyzer; this was a lint finding, not a demonstrated runtime overflow. The original candidate and later repairs are distinct measured attempts, so this is not first-pass delivery.
+- **Completion boundary**: Own records use WORKFLOW's required pre-merge completion convention. The task PR remains pending until its actual merge; dependent implementation must wait for that merge. No native, host, platform or packaged-process qualification is claimed.
 
 ## Task 5 — Close root migration and legacy writer fences
 
