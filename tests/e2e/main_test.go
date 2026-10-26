@@ -80,6 +80,7 @@ const (
 )
 
 // holdAtGate announces arrival in dir and waits, bounded, for the release.
+// A removed gate directory ends the wait: its test has finished.
 func holdAtGate(dir string) error {
 	if err := os.WriteFile(filepath.Join(dir, gateEntered), nil, 0o600); err != nil { //nolint:gosec // G703: dir is the gate directory the test fixture created and passed to its own helper
 		return err
@@ -88,6 +89,9 @@ func holdAtGate(dir string) error {
 	for {
 		if _, err := os.Stat(filepath.Join(dir, gateRelease)); err == nil { //nolint:gosec // G703: fixed barrier name in the fixture-owned gate directory
 			return nil
+		}
+		if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) { //nolint:gosec // G703: the fixture-owned gate directory
+			return errors.New("e2e gate directory was removed before release")
 		}
 		if time.Now().After(deadline) {
 			return errors.New("e2e gate was never released")

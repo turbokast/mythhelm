@@ -50,6 +50,7 @@ func newLifecycleFixture(t *testing.T, gatedCheck string) *lifecycleFixture {
 	e := canonicalEnv(t)
 	e.vars = append(e.vars, "XDG_RUNTIME_DIR="+canonicalDir(t, t.TempDir()), "TERM=xterm-256color")
 	f := &lifecycleFixture{e: e, gate: canonicalDir(t, t.TempDir()), bin: canonicalDir(t, t.TempDir())}
+	releaseGateAtCleanup(t, f.gate)
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -65,6 +66,20 @@ func newLifecycleFixture(t *testing.T, gatedCheck string) *lifecycleFixture {
 	}
 	f.repo, f.digest = seedCheckRepo(t, e, canonicalDir(t, t.TempDir()), check)
 	return f
+}
+
+// releaseGateAtCleanup releases the gate in dir when t ends, so a test that
+// ends before its explicit release (t.Fatal included) never leaves a helper
+// polling. Cleanups run last-in first-out: registered after dir exists, it
+// runs after the cleanups of processes started later and before dir's
+// removal. A helper that misses the release still ends when dir goes.
+func releaseGateAtCleanup(t *testing.T, dir string) {
+	t.Helper()
+	t.Cleanup(func() {
+		if err := os.WriteFile(filepath.Join(dir, gateRelease), nil, 0o600); err != nil {
+			t.Errorf("releasing the gate at cleanup: %v", err)
+		}
+	})
 }
 
 // seedCheckRepo is mkRepo with an explicit check argv.
@@ -1244,5 +1259,118 @@ func TestJoinOwnedEscalatesIgnoredStop(t *testing.T) {
 				t.Fatalf("join took %v, beyond its two bounded steps", elapsed)
 			}
 		})
+	}
+}
+
+// TestGateHelperEndsWithItsTest holds a real check-gate helper and ends its
+// test before any explicit release. SkipNow ends the test through
+// runtime.Goexit and the same cleanups as t.Fatal without failing the parent.
+// The test that starts the helper owns it and reaps it far inside the
+// helper's own five-minute bound. Built by newLifecycleFixture, the gate is
+// released when the test ends; with no release, removing the gate directory
+// ends the helper failing.
+func TestGateHelperEndsWithItsTest(t *testing.T) {
+	t.Parallel()
+	t.Run("fixture cleanup releases the gate", func(t *testing.T) {
+		t.Parallel()
+		var cmd *exec.Cmd
+		var stderr strings.Builder
+		done := make(chan error, 1)
+		released := false
+		t.Run("ends before release", func(t *testing.T) {
+			// The first TempDir registers the removal of every later one, so
+			// the cleanup below runs after the fixture's cleanups and before
+			// the gate directory is removed. A helper reaped there ended
+			// through the release, never through the removal.
+			t.TempDir()
+			var f *lifecycleFixture
+			t.Cleanup(func() {
+				if f == nil || cmd == nil || cmd.Process == nil {
+					return
+				}
+				if _, err := os.Stat(filepath.Join(f.gate, gateRelease)); err != nil {
+					return
+				}
+				released = true
+				reapGateHelper(t, cmd, done)
+			})
+			f = newLifecycleFixture(t, "pass")
+			cmd = exec.Command(filepath.Join(f.bin, checkGateName), f.gate, "pass")
+			cmd.Stderr = &stderr
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			go func() { done <- cmd.Wait() }()
+			f.waitGate(t)
+			t.SkipNow()
+		})
+		if cmd == nil || cmd.Process == nil {
+			t.Fatal("the helper was never started")
+		}
+		if !released {
+			reapGateHelper(t, cmd, done)
+			t.Fatalf("the fixture's gate held no release when its test ended; helper stderr %q", stderr.String())
+		}
+		if got := cmd.ProcessState.ExitCode(); got != 0 {
+			t.Fatalf("helper exit = %d, want 0; stderr %q", got, stderr.String())
+		}
+		if got := strings.TrimSpace(stderr.String()); got != "" {
+			t.Fatalf("helper stderr = %q, want empty", got)
+		}
+	})
+	t.Run("removed gate directory ends the wait", func(t *testing.T) {
+		t.Parallel()
+		self, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		helper := filepath.Join(t.TempDir(), checkGateName)
+		if err := os.Symlink(self, helper); err != nil {
+			t.Fatal(err)
+		}
+		var cmd *exec.Cmd
+		var stderr strings.Builder
+		done := make(chan error, 1)
+		t.Run("ends before release", func(t *testing.T) {
+			gate := t.TempDir()
+			cmd = exec.Command(helper, gate, "pass")
+			cmd.Stderr = &stderr
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			go func() { done <- cmd.Wait() }()
+			for deadline := time.Now().Add(time.Minute); ; time.Sleep(20 * time.Millisecond) {
+				if _, err := os.Stat(filepath.Join(gate, gateEntered)); err == nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("the helper never reached its gate")
+				}
+			}
+			t.SkipNow()
+		})
+		if cmd == nil || cmd.Process == nil {
+			t.Fatal("the helper was never started")
+		}
+		reapGateHelper(t, cmd, done)
+		if got := cmd.ProcessState.ExitCode(); got != 1 {
+			t.Fatalf("helper exit = %d, want 1; stderr %q", got, stderr.String())
+		}
+		if got, want := strings.TrimSpace(stderr.String()), "e2e gate directory was removed before release"; got != want {
+			t.Fatalf("helper stderr = %q, want %q", got, want)
+		}
+	})
+}
+
+// reapGateHelper joins a started gate helper whose Wait result arrives on
+// done, killing it if it is still polling 30s after its test ended.
+func reapGateHelper(t *testing.T, cmd *exec.Cmd, done <-chan error) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		_ = cmd.Process.Kill()
+		<-done
+		t.Errorf("the helper was still polling 30s after its test ended")
 	}
 }
