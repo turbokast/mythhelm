@@ -451,3 +451,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: The architect review showed Docs checks is not a required check, so checks outside CI OK would be advisory (B1), and a Node browser driver breaks the harness-scripts rule without a carve-out (B2). The maintainer decided both on 2026-10-12 as recorded in the spec Decisions; D-104 was filed before that decision landed and still says they stay open. Tasks 9 and 10 of docs-site-restyle stay blocked until this entry is approved.
 - **Cards**: MH-33
 - **Evidence**: specs/refined/docs-site-restyle/requirements.md Decisions OQ-5, OQ-10; PR #450
+
+### D-111 — 2026-10-21: Bound delivery work to a focused validation cycle
+- **Type**: objective-change
+- **Decision**: Select one native workflow and a ten-working-day feasibility cycle; defer broad expansion until a continue/simplify/stop/blocked decision.
+- **Rationale**: Operator adopted the evidence-led assessment: comparative speed/token/quality gains and external repeat use remain unproven. Preserve existing stage, prerequisites, safeguards and work; require prospective comparable outcomes before funding expansion.
+- **Cards**: MH-12,MH-15,MH-24
+- **Evidence**: docs/validation-plan.md

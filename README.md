@@ -86,6 +86,10 @@ A [measured native run](docs/dogfood/0003-measured-self-hosting.md) has authored
 verified a repository maintenance change through MYTHHELM; its small comparison
 does not establish a speed or quality advantage.
 
+The next delivery focus is a [bounded validation cycle](docs/validation-plan.md)
+for dependable single-agent delivery, with external repeat use and predefined
+continue/simplify/stop criteria. Broader expansion waits for that evidence.
+
 - **Native harnesses preserved.** MYTHHELM drives each agent through its own supported surface. It does not replace or impersonate it.
 - **Your subscriptions, no billing surprises.** Work runs against the allowances you already have. Metered spend is never started silently.
 - **Honest state.** Estimated, reported, observed and unknown values stay distinguishable everywhere.
