@@ -6,12 +6,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/control"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/qualify"
+	"github.com/turbokast/mythhelm/internal/workers"
+	"github.com/turbokast/mythhelm/internal/workspace"
 )
 
 // ServiceOwner is the service's proof that it owns one run: a held instance
@@ -19,6 +24,14 @@ import (
 // lock (supervisor-attachment-control design §2). Its fields are private, so
 // a zero or foreign value proves nothing; it is never a boolean bypass of the
 // legacy migration guard. Copies share one lifetime.
+//
+// Hooks.Event and Hooks.Notice run synchronously on the owned entry while it
+// is busy and holds the run lock and the lease hold. They must not block
+// unboundedly and are not reentrant: a callback must never call Close on its
+// own owner (or on the lease), which would wait for the entry it runs inside.
+// The service's actor delivers bounded copies to clients; to end ownership
+// the caller cancels the active entry's context and calls Close outside the
+// callback.
 type ServiceOwner struct {
 	s *ownerState
 }
@@ -51,7 +64,7 @@ func ownershipRefused(format string, args ...any) error {
 // identifier and the adopted migration phase, then takes the run's
 // compatibility owner lock. The lease stays held until Close.
 func AcquireServiceOwner(ctx context.Context, j *journal.Journal, lease *control.InstanceLease, runID string) (*ServiceOwner, error) {
-	if runID == "" || filepath.Base(runID) != runID || !filepath.IsLocal(runID) {
+	if !workers.ValidID(runID) {
 		return nil, ownershipRefused("invalid run id %q", runID)
 	}
 	releaseHold, err := lease.Hold()
@@ -118,7 +131,8 @@ func sameRoot(root, stateDir string) error {
 
 // Close refuses new entries, waits for the active one, then releases the run
 // lock and the lease hold. It is idempotent across every copy; concurrent
-// calls all return only once the releases are done.
+// calls all return only once the releases are done. Calling it from the
+// active entry's own Hooks.Event or Hooks.Notice never returns.
 func (o *ServiceOwner) Close() error {
 	if o == nil || o.s == nil {
 		return ownershipRefused("not a service owner")
@@ -180,7 +194,10 @@ func (o *ServiceOwner) enter(j *journal.Journal, runID string, h Hooks) (func(),
 }
 
 // RunOwned runs the admitted decision's pipeline under owner's held run lock,
-// without the legacy migration guard or a second lock acquisition.
+// without the legacy migration guard or a second lock acquisition. Before
+// any ledger or worker effect it binds the decision's workspace to the owned
+// run and its project configuration to the admitted committed revision. This
+// is not a sealed decision: the remaining fields are trusted as admitted.
 func RunOwned(ctx context.Context, j *journal.Journal, owner *ServiceOwner, d admission.Decision, h Hooks) (Outcome, error) {
 	exit, err := owner.enter(j, d.RunID, h)
 	if err != nil {
@@ -192,6 +209,12 @@ func RunOwned(ctx context.Context, j *journal.Journal, owner *ServiceOwner, d ad
 	}
 	if filepath.Clean(d.RunDir) != owner.s.runDir {
 		return Outcome{}, ownershipRefused("run directory %s is not the owned %s", d.RunDir, owner.s.runDir)
+	}
+	if workdir := filepath.Join(owner.s.runDir, "workspace"); filepath.Clean(d.Workdir) != workdir {
+		return Outcome{}, ownershipRefused("workspace %s is not the owned %s", d.Workdir, workdir)
+	}
+	if err := admittedProjectConfig(ctx, d); err != nil {
+		return Outcome{}, err
 	}
 	if h.Event == nil {
 		h.Event = func(journal.Event) {}
@@ -207,6 +230,50 @@ func RunOwned(ctx context.Context, j *journal.Journal, owner *ServiceOwner, d ad
 		return Outcome{}, persistenceUnavailable(d.StateDir, err)
 	}
 	return runLocked(ctx, j, exe, d, h)
+}
+
+// commitOID is a full SHA-1 or SHA-256 object ID as rev-parse prints it.
+var commitOID = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
+
+// admittedProjectConfig refuses a decision whose project configuration or
+// digest differs from what admission reads: nothing under NoChecks, otherwise
+// the exact mythhelm.toml bytes committed at the admitted base revision. The
+// revision is resolved as Snapshot resolves it, and only the returned commit
+// object ID reaches later git arguments, so a revision is never an option.
+func admittedProjectConfig(ctx context.Context, d admission.Decision) error {
+	if d.NoChecks {
+		if d.ConfigDigest != "" || !reflect.DeepEqual(d.ProjectConfig, admission.ProjectConfig{}) {
+			return fmt.Errorf("%w: a run without checks carries project configuration", admission.ErrProjectConfig)
+		}
+		return nil
+	}
+	out, err := workspace.Git(ctx, d.Snapshot.SourceRepo, true, "rev-parse", "--verify", "--end-of-options", d.Snapshot.BaseRev+"^{commit}")
+	if err != nil {
+		return fmt.Errorf("%w: resolve admitted revision %q: %w", admission.ErrProjectConfig, d.Snapshot.BaseRev, err)
+	}
+	oid := strings.TrimSpace(string(out))
+	if !commitOID.MatchString(oid) {
+		return fmt.Errorf("%w: admitted revision %q resolved to %q, not a commit object ID", admission.ErrProjectConfig, d.Snapshot.BaseRev, oid)
+	}
+	entry, err := workspace.Git(ctx, d.Snapshot.SourceRepo, true, "ls-tree", oid, "--", admission.ProjectConfigFile)
+	if err != nil {
+		return fmt.Errorf("%w: locate config in admitted revision: %w", admission.ErrProjectConfig, err)
+	}
+	if !strings.HasPrefix(string(entry), "100644 blob ") && !strings.HasPrefix(string(entry), "100755 blob ") {
+		return fmt.Errorf("%w: mythhelm.toml must be a regular committed file", admission.ErrProjectConfig)
+	}
+	raw, err := workspace.Git(ctx, d.Snapshot.SourceRepo, true, "show", oid+":"+admission.ProjectConfigFile)
+	if err != nil {
+		return fmt.Errorf("%w: read admitted config: %w", admission.ErrProjectConfig, err)
+	}
+	cfg, digest, err := admission.ParseProjectConfig(raw)
+	if err != nil {
+		return err
+	}
+	if digest != d.ConfigDigest || !reflect.DeepEqual(cfg, d.ProjectConfig) {
+		return fmt.Errorf("%w: decision does not match the config committed at %s", admission.ErrProjectConfig, d.Snapshot.BaseRev)
+	}
+	return nil
 }
 
 // RecoverOwned reconciles runID's durable observations and carries the full

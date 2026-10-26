@@ -101,6 +101,9 @@ func (l *InstanceLease) Hold() (func(), error) {
 
 // Close refuses new holds, waits for outstanding ones, then releases the
 // instance lock. It is idempotent; concurrent calls all return once closed.
+// It blocks while any hold is outstanding, so a holder (such as a service
+// owner's hook callback) must never call it: cancel the holder's work and
+// call Close from outside.
 func (l *InstanceLease) Close() error {
 	if l == nil || l.s == nil {
 		return ErrLeaseClosed

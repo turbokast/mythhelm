@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -115,6 +116,12 @@ func acquireInstance(dir string) (func(), lockMetadata, error) {
 	var gen uint64 = 1
 	// Read without waiting: this process holds the flock, so no writer is mid-record.
 	if meta, err := parseMetadata(path); err == nil {
+		// A generation past int64 would wrap or alias an earlier authority;
+		// refuse before the record changes (I18).
+		if meta.Generation >= math.MaxInt64 {
+			release()
+			return nil, lockMetadata{}, fmt.Errorf("control: instance generation %d is exhausted", meta.Generation)
+		}
 		gen = meta.Generation + 1
 	}
 	meta := lockMetadata{

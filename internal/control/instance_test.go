@@ -1,8 +1,12 @@
 package control
 
 import (
+	"bytes"
 	"errors"
 	"math"
+	"os"
+	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -161,4 +165,85 @@ func TestInstanceLeaseCloseWaitsForHolds(t *testing.T) {
 		t.Fatalf("closed lease reports generation %d", lease.Generation())
 	}
 	requireInstanceFree(t, dir)
+}
+
+// seedGeneration records a synthetic previous holder with generation gen and
+// returns the exact lock-file bytes.
+func seedGeneration(t *testing.T, gen string) []byte {
+	t.Helper()
+	path, err := LockPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureLockDir(path); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	raw := []byte(`{"root":"/tmp/synthetic-root","pid":1,"started_at":"2026-01-01T00:00:00Z","generation":` + gen + "}\n")
+	if err := root.WriteFile(filepath.Base(path), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// TestInstanceGenerationExhaustionRefuses: the last int64 generation is still
+// minted, but a recorded generation at or past MaxInt64 refuses every
+// acquisition with the metadata bytes unchanged and the OS lock released:
+// no wrap, reset or second authority (I18 (v2 §3)).
+func TestInstanceGenerationExhaustionRefuses(t *testing.T) {
+	dir := leaseRuntime(t)
+	seedGeneration(t, strconv.FormatInt(math.MaxInt64-1, 10))
+	lease, err := AcquireInstanceLease(dir)
+	if err != nil {
+		t.Fatalf("AcquireInstanceLease after generation MaxInt64-1: %v", err)
+	}
+	if lease.Generation() != math.MaxInt64 {
+		t.Fatalf("Generation() = %d; want MaxInt64", lease.Generation())
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := LockPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+	for _, gen := range []string{strconv.FormatInt(math.MaxInt64, 10), strconv.FormatUint(math.MaxUint64, 10)} {
+		want := seedGeneration(t, gen)
+		if minted, err := AcquireInstanceLease(dir); err == nil {
+			got := minted.Generation()
+			_ = minted.Close()
+			t.Fatalf("AcquireInstanceLease after generation %s minted generation %d; want a refusal", gen, got)
+		}
+		if release, err := AcquireInstance(dir); err == nil {
+			release()
+			t.Fatalf("AcquireInstance after generation %s succeeded; want a refusal", gen)
+		}
+		got, err := root.ReadFile(filepath.Base(path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("generation %s: lock metadata changed to %q; want unchanged %q", gen, got, want)
+		}
+		f, err := root.OpenFile(filepath.Base(path), os.O_RDWR, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := lockFile(f); err != nil {
+			_ = f.Close()
+			t.Fatalf("generation %s: OS lock still held after the refusal: %v", gen, err)
+		}
+		_ = unlockFile(f)
+		_ = f.Close()
+	}
 }

@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -594,4 +596,205 @@ func TestLegacyDetachContractPreserved(t *testing.T) {
 	if counts["attempt.launched"] != 1 || counts["attempt.launch_intent_recorded"] != 1 {
 		t.Fatalf("launch counts %v; want the one original launch", counts)
 	} // I12/I18 (v2 §2)
+}
+
+// TestServiceOwnerRejectsInvalidRunIDs: only a workers.ValidID run id mints a
+// capability. Dots, non-ASCII, separators and over-long ids are refused
+// before any run directory exists; ASCII underscore ids up to 64 characters
+// still acquire (I18 (v2 §3)).
+func TestServiceOwnerRejectsInvalidRunIDs(t *testing.T) {
+	// Sequential: the instance lock follows XDG_RUNTIME_DIR.
+	f := newFixture(t)
+	lease := ownedLease(t, f)
+	j := f.journal(t)
+	setMigrationPhase(t, j, "adopted")
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	runs := filepath.Join(f.state, "runs")
+	listRuns := func() []string {
+		entries, err := os.ReadDir(runs)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			t.Fatal(err)
+		}
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		return names
+	}
+
+	before := listRuns()
+	for _, id := range []string{"", ".", "..", "run.1", "run-1", "rün", "run 1", "run/1", `run\1`, strings.Repeat("a", 65)} {
+		owner, err := supervisor.AcquireServiceOwner(ctx, j, lease, id)
+		if err == nil {
+			_ = owner.Close()
+		}
+		if !errors.Is(err, supervisor.ErrOwnership) {
+			t.Errorf("AcquireServiceOwner(%q) = %v; want an ownership refusal", id, err)
+		}
+	}
+	if after := listRuns(); !slices.Equal(after, before) {
+		t.Fatalf("refused run ids changed the run directories from %v to %v", before, after)
+	}
+	for _, id := range []string{"run_ok_1", strings.Repeat("A", 64)} {
+		owner, err := supervisor.AcquireServiceOwner(ctx, j, lease, id)
+		if err != nil {
+			t.Fatalf("AcquireServiceOwner(%q): %v; want a capability", id, err)
+		}
+		if !runLockHeld(t, filepath.Join(runs, id)) {
+			t.Fatalf("capability for %q holds no run lock", id)
+		}
+		if err := owner.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestServiceOwnerRunBindsAdmittedWorkspaceAndConfig: RunOwned refuses a
+// decision whose workspace is not the owned run's or whose checks, envelopes
+// or config digest differ from the config committed at the admitted base
+// revision, before any ledger row, worker or workspace exists. The unmutated
+// admitted decision, and a no-checks decision without configuration, still
+// run (I02/I18 (v2 §§2, 3)).
+func TestServiceOwnerRunBindsAdmittedWorkspaceAndConfig(t *testing.T) {
+	// Sequential: the instance lock follows XDG_RUNTIME_DIR.
+	f := newFixture(t)
+	digest := f.envelopeConfig(t)
+	lease := ownedLease(t, f)
+	j := f.journal(t)
+	setMigrationPhase(t, j, "adopted")
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	d := f.decideEnvelope(t, digest, nil)
+	owner := acquireOwned(ctx, t, j, lease, d.RunID)
+	outside := t.TempDir()
+
+	mutants := []struct {
+		name   string
+		want   error
+		mutate func(*admission.Decision)
+	}{
+		{"workdir outside the owned run", supervisor.ErrOwnership, func(m *admission.Decision) { m.Workdir = outside }},
+		{"workdir is the run directory", supervisor.ErrOwnership, func(m *admission.Decision) { m.Workdir = m.RunDir }},
+		{"check argv replaced", admission.ErrProjectConfig, func(m *admission.Decision) {
+			m.ProjectConfig.Checks = slices.Clone(m.ProjectConfig.Checks)
+			m.ProjectConfig.Checks[0].Argv = []string{"true"}
+		}},
+		{"check dropped", admission.ErrProjectConfig, func(m *admission.Decision) { m.ProjectConfig.Checks = nil }},
+		{"repairs envelope raised", admission.ErrProjectConfig, func(m *admission.Decision) {
+			repairs := 9
+			m.ProjectConfig.Envelopes.Repairs = &repairs
+		}},
+		{"execution envelope removed", admission.ErrProjectConfig, func(m *admission.Decision) { m.ProjectConfig.Envelopes.Execution = "" }},
+		{"config digest replaced", admission.ErrProjectConfig, func(m *admission.Decision) { m.ConfigDigest = strings.Repeat("0", 64) }},
+		{"no checks with admitted config", admission.ErrProjectConfig, func(m *admission.Decision) { m.NoChecks = true }},
+	}
+	for _, mc := range mutants {
+		m := d
+		mc.mutate(&m)
+		if _, err := supervisor.RunOwned(ctx, j, owner, m, supervisor.Hooks{}); !errors.Is(err, mc.want) {
+			t.Errorf("%s: RunOwned = %v; want %v", mc.name, err, mc.want)
+		}
+		if !noRunEffects(t, f, j, d.RunID) {
+			t.Fatalf("%s: refusal left a ledger row or worker for %s", mc.name, d.RunID)
+		} // I18 (v2 §3)
+		if entries, err := os.ReadDir(outside); err != nil || len(entries) != 0 {
+			t.Fatalf("%s: outside directory has %d entries (%v); want untouched", mc.name, len(entries), err)
+		}
+		if _, err := os.Stat(d.Workdir); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s: refusal created the owned workspace: %v", mc.name, err)
+		}
+	}
+
+	out, err := supervisor.RunOwned(ctx, j, owner, d, supervisor.Hooks{})
+	if err != nil || out.State != supervisor.RunReadyForReview {
+		t.Fatalf("RunOwned of the admitted decision = %+v, %v; want ready_for_review", out, err)
+	}
+	if n := eventTypeCounts(t, f, d.RunID)["attempt.launched"]; n != 1 {
+		t.Fatalf("native launches %d, want 1", n)
+	}
+
+	nc := deadlineDecision(t, f, 2*time.Second)
+	ncOwner := acquireOwned(ctx, t, j, lease, nc.RunID)
+	forged := nc
+	forged.ConfigDigest = digest
+	if _, err := supervisor.RunOwned(ctx, j, ncOwner, forged, supervisor.Hooks{}); !errors.Is(err, admission.ErrProjectConfig) {
+		t.Fatalf("no-checks decision carrying a config digest = %v; want a config refusal", err)
+	}
+	if !noRunEffects(t, f, j, nc.RunID) {
+		t.Fatal("no-checks config refusal left a ledger row or worker")
+	}
+	out, err = supervisor.RunOwned(ctx, j, ncOwner, nc, supervisor.Hooks{})
+	if err != nil || out.State != supervisor.RunBlocked || out.Reason != workers.DeadlineReason {
+		t.Fatalf("RunOwned of the no-checks decision = %+v, %v; want blocked by its deadline", out, err)
+	}
+}
+
+// mktree commits a single-entry root tree built from line and returns the
+// commit's object ID, without moving any branch.
+func mktree(t *testing.T, f fixture, line string) string {
+	t.Helper()
+	cmd := exec.Command("git", "mktree")
+	cmd.Dir = f.repo
+	cmd.Env = append(os.Environ(), "HOME="+f.home, "XDG_CONFIG_HOME="+f.home, "GIT_CONFIG_NOSYSTEM=1")
+	cmd.Stdin = strings.NewReader(line + "\n")
+	tree, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git mktree: %v", err)
+	}
+	return f.git(t, "commit-tree", strings.TrimSpace(string(tree)), "-m", "forged config entry")
+}
+
+// TestServiceOwnerRunResolvesAdmittedRevisionSafely: the config check resolves
+// the decision's base revision with --end-of-options before any other git
+// call, so an option-like revision never runs as a git option (here one that
+// would write an outside file), an unresolvable revision refuses, and a
+// committed mythhelm.toml that is not a regular blob refuses before parsing,
+// all before any ledger row, worker or workspace exists. The admitted
+// decision still runs (I02/I18 (v2 §§2, 3)).
+func TestServiceOwnerRunResolvesAdmittedRevisionSafely(t *testing.T) {
+	// Sequential: the instance lock follows XDG_RUNTIME_DIR.
+	f := newFixture(t)
+	digest := f.envelopeConfig(t)
+	lease := ownedLease(t, f)
+	j := f.journal(t)
+	setMigrationPhase(t, j, "adopted")
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	d := f.decideEnvelope(t, digest, nil)
+	owner := acquireOwned(ctx, t, j, lease, d.RunID)
+	outside := t.TempDir()
+	leak := filepath.Join(outside, "leak")
+
+	blob := f.git(t, "rev-parse", "HEAD:mythhelm.toml")
+	revisions := []struct{ name, rev string }{
+		{"option-like revision writing an outside file", "--output=" + leak},
+		{"option-like revision with a commit suffix", "--output=" + leak + "^{commit}"},
+		{"unresolvable revision", "refs/heads/does-not-exist"},
+		{"unknown object ID", strings.Repeat("0", len(d.Snapshot.BaseRev))},
+		{"config committed as a symlink to the admitted bytes", mktree(t, f, "120000 blob "+blob+"\tmythhelm.toml")},
+		{"config committed as a tree", mktree(t, f, "040000 tree "+f.git(t, "rev-parse", "HEAD^{tree}")+"\tmythhelm.toml")},
+		{"config absent at the revision", mktree(t, f, "100644 blob "+blob+"\tother.toml")},
+	}
+	for _, rc := range revisions {
+		m := d
+		m.Snapshot.BaseRev = rc.rev
+		if _, err := supervisor.RunOwned(ctx, j, owner, m, supervisor.Hooks{}); !errors.Is(err, admission.ErrProjectConfig) {
+			t.Errorf("%s: RunOwned = %v; want %v", rc.name, err, admission.ErrProjectConfig)
+		}
+		if entries, err := os.ReadDir(outside); err != nil || len(entries) != 0 {
+			t.Fatalf("%s: outside directory has %d entries (%v); want untouched", rc.name, len(entries), err)
+		}
+		if !noRunEffects(t, f, j, d.RunID) {
+			t.Fatalf("%s: refusal left a ledger row or worker for %s", rc.name, d.RunID)
+		} // I18 (v2 §3)
+		if _, err := os.Stat(d.Workdir); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s: refusal created the owned workspace: %v", rc.name, err)
+		}
+	}
+
+	out, err := supervisor.RunOwned(ctx, j, owner, d, supervisor.Hooks{})
+	if err != nil || out.State != supervisor.RunReadyForReview {
+		t.Fatalf("RunOwned of the admitted decision = %+v, %v; want ready_for_review", out, err)
+	}
 }
