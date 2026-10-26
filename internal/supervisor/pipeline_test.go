@@ -126,6 +126,58 @@ func newFixture(t *testing.T) fixture {
 	return f
 }
 
+// newSeededFixture is newFixture with the state root already holding a
+// freshly migrated journal, for tests that do not exercise first open.
+func newSeededFixture(t *testing.T) fixture {
+	t.Helper()
+	f := newFixture(t)
+	supervisor.SeedJournalState(t, f.state)
+	return f
+}
+
+func TestSeededFixtureRunsThroughChildCLI(t *testing.T) {
+	t.Parallel()
+	f := newSeededFixture(t)
+	if got := f.runs(t); len(got) != 0 {
+		t.Fatalf("seeded state holds %d runs before the first run, want 0", len(got))
+	}
+	code, _, stderr := f.run(t, f.fakeRun()...)
+	if code != 5 {
+		t.Fatalf("exit %d: %s", code, stderr)
+	}
+	if run := f.onlyRun(t); run.State != "ready_for_review" || run.Reason != "unverified" {
+		t.Fatalf("run %s/%s", run.State, run.Reason)
+	}
+	if _, err := os.Stat(filepath.Join(f.state, journal.DBName+".bak-v"+strconv.Itoa(journal.SchemaVersion))); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("seeded state was upgraded with a backup: %v", err)
+	}
+}
+
+func TestFreshFixtureHasNoDatabaseUntilFirstRunMigrates(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	db := filepath.Join(f.state, journal.DBName)
+	if _, err := os.Stat(db); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("fresh fixture has a database before its first run: %v", err)
+	}
+	code, _, stderr := f.run(t, f.fakeRun()...)
+	if code != 5 {
+		t.Fatalf("exit %d: %s", code, stderr)
+	}
+	j, err := journal.OpenReadOnly(t.Context(), f.state)
+	if err != nil {
+		t.Fatalf("first run left no readable journal: %v", err)
+	}
+	_ = j.Close()
+	var version int
+	if err := rawDB(t, f.state).QueryRowContext(t.Context(), "PRAGMA user_version").Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != journal.SchemaVersion {
+		t.Fatalf("first run left user_version %d, want %d", version, journal.SchemaVersion)
+	}
+}
+
 // releaseWorkers ends every worker the fixture's runs left behind before
 // the temp directories go. A fenced worker whose supervisor is gone (the
 // run exited 6, or was detached) finishes its episode and then waits for
@@ -365,7 +417,7 @@ func TestProjectConfigTrustBoundToDigest(t *testing.T) {
 }
 
 func TestNativeSuccessChecksPassExit0ReadyForReview(t *testing.T) {
-	f := newFixture(t)
+	f := newSeededFixture(t)
 	digest := f.config(t, "pass")
 	code, _, stderr := f.run(t, f.checkedRun(digest)...)
 	if code != 0 {
@@ -381,7 +433,7 @@ func TestNativeSuccessChecksPassExit0ReadyForReview(t *testing.T) {
 }
 
 func TestNativeSuccessChecksFailExit5(t *testing.T) {
-	f := newFixture(t)
+	f := newSeededFixture(t)
 	digest := f.config(t, "fail")
 	code, _, stderr := f.run(t, f.checkedRun(digest)...)
 	if code != 5 {
@@ -747,7 +799,7 @@ func TestRunOutcomeExitCodes(t *testing.T) {
 	} {
 		t.Run(tt.scenario, func(t *testing.T) {
 			t.Parallel()
-			f := newFixture(t)
+			f := newSeededFixture(t)
 			code, stdout, stderr := f.run(t, f.fakeRun("--scenario", tt.scenario, "--format", "jsonl")...)
 			if code != tt.code {
 				t.Fatalf("exit %d, stderr %q; want %d", code, stderr, tt.code)
