@@ -303,6 +303,9 @@ func runProgram(ctx context.Context, m *Model, options ...tea.ProgramOption) err
 	if m.action != nil && !m.terminalLoss {
 		m.action.cancel()
 	}
+	// A filesystem read may not respond to cancellation. Do not let joining
+	// the snapshot worker delay cancellation of an unrelated active action.
+	m.stopReload()
 	if m.viewDone != nil {
 		close(m.viewDone)
 	}

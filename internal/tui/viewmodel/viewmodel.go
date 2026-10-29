@@ -78,20 +78,55 @@ type Snapshot struct {
 // database reports journal.ErrNoDatabase. The database is opened read-only:
 // this package never writes the journal (I18).
 func Load(ctx context.Context, dir, runID string) (Snapshot, error) {
-	snap := Snapshot{Goal: "unknown", Model: "unknown", Supervision: "unknown", At: time.Now().UTC()}
+	return load(ctx, systemTaskReader(), dir, runID)
+}
+
+// load is Load over the task reader seam. A receipt-backed run never reads
+// the task file. Otherwise the title comes from the task file, digest-checked
+// against the run projection the snapshot finally carries.
+func load(ctx context.Context, r taskReader, dir, runID string) (Snapshot, error) {
 	j, err := journal.OpenReadOnly(ctx, dir)
 	if err != nil {
 		return Snapshot{}, err
 	}
 	defer func() { _ = j.Close() }()
-	run, err := j.Run(ctx, runID)
+	snap, receipt, err := assemble(ctx, j, dir, runID)
+	if err != nil || receipt {
+		return snap, err
+	}
+	b, waited, readErr := r.readFile(ctx, filepath.Join(dir, "runs", runID, "task.md"))
+	if errors.Is(readErr, context.Canceled) || errors.Is(readErr, context.DeadlineExceeded) {
+		return Snapshot{}, readErr
+	}
+	if waited {
+		// The run may have moved on while the read waited: rebuild once, so
+		// the snapshot and the digest check reflect the journal after it.
+		snap, receipt, err = assemble(ctx, j, dir, runID)
+		if err != nil || receipt {
+			return snap, err
+		}
+	}
+	goal, err := verifiedTaskGoal(runID, snap.Run.TaskSHA256, b, readErr)
 	if err != nil {
 		return Snapshot{}, err
+	}
+	snap.Goal = goal
+	return snap, nil
+}
+
+// assemble builds runID's snapshot from the projections, the event scan and,
+// when the scan saw receipt.written, the receipt; receipt reports that the
+// goal came from it.
+func assemble(ctx context.Context, j *journal.Journal, dir, runID string) (Snapshot, bool, error) {
+	snap := Snapshot{Goal: "unknown", Model: "unknown", Supervision: "unknown", At: time.Now().UTC()}
+	run, err := j.Run(ctx, runID)
+	if err != nil {
+		return Snapshot{}, false, err
 	}
 	snap.Run = run
 	snap.Usage, err = j.UsageObservations(ctx, runID)
 	if err != nil {
-		return Snapshot{}, err
+		return Snapshot{}, false, err
 	}
 	if attempt, err := j.LatestAttempt(ctx, runID); err == nil {
 		snap.Attempt = &attempt
@@ -101,19 +136,19 @@ func Load(ctx context.Context, dir, runID string) (Snapshot, error) {
 		if candidate, err := j.Candidate(ctx, attempt.AttemptID); err == nil {
 			snap.Candidate = &candidate
 		} else if !errors.Is(err, journal.ErrNotFound) {
-			return Snapshot{}, err
+			return Snapshot{}, false, err
 		}
 	} else if !errors.Is(err, journal.ErrNotFound) {
-		return Snapshot{}, err
+		return Snapshot{}, false, err
 	}
 	if verification, err := j.LatestVerification(ctx, runID); err == nil {
 		snap.Verification = &verification
 	} else if !errors.Is(err, journal.ErrNotFound) {
-		return Snapshot{}, err
+		return Snapshot{}, false, err
 	}
 	events, err := j.Events(ctx, runID, 0)
 	if err != nil {
-		return Snapshot{}, err
+		return Snapshot{}, false, err
 	}
 	// Attempt evidence belongs to the latest attempt only: a retry must not
 	// inherit its predecessor's progress or result as launch evidence.
@@ -153,7 +188,7 @@ func Load(ctx context.Context, dir, runID string) (Snapshot, error) {
 				Model string `json:"model"`
 			}
 			if err := json.Unmarshal(ev.Payload, &session); err != nil {
-				return Snapshot{}, fmt.Errorf("viewmodel: event %s at run_sequence %d is malformed: %w", ev.Type, ev.RunSequence, err)
+				return Snapshot{}, false, fmt.Errorf("viewmodel: event %s at run_sequence %d is malformed: %w", ev.Type, ev.RunSequence, err)
 			}
 			snap.Model = session.Model
 			if snap.Model == "" {
@@ -174,13 +209,13 @@ func Load(ctx context.Context, dir, runID string) (Snapshot, error) {
 			}
 			native, err := decodeNativeExit(ev)
 			if err != nil {
-				return Snapshot{}, err
+				return Snapshot{}, false, err
 			}
 			snap.NativeExit = native
 		case "admission.decided":
 			adm, err := decodeAdmission(ev)
 			if err != nil {
-				return Snapshot{}, err
+				return Snapshot{}, false, err
 			}
 			snap.Admission = adm
 		case "receipt.written":
@@ -192,23 +227,18 @@ func Load(ctx context.Context, dir, runID string) (Snapshot, error) {
 	if receiptWritten {
 		r, _, err := supervisor.ReadReceipt(ctx, j, runID)
 		if err != nil {
-			return Snapshot{}, err
+			return Snapshot{}, false, err
 		}
 		if r["state"] != run.State {
-			return Snapshot{}, fmt.Errorf("receipt for %s does not match its run projection", runID)
+			return Snapshot{}, false, fmt.Errorf("receipt for %s does not match its run projection", runID)
 		}
 		snap.Receipt = r
 		if title := receiptTitle(r); title != "" {
 			snap.Goal = title
 		}
-		return snap, nil
+		return snap, true, nil
 	}
-	goal, err := taskGoal(ctx, systemTaskReader(), dir, runID, run.TaskSHA256)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	snap.Goal = goal
-	return snap, nil
+	return snap, false, nil
 }
 
 // EventsSince returns runID's events after after, in run_sequence order,
@@ -281,11 +311,11 @@ func receiptTitle(r supervisor.Receipt) string {
 	return title
 }
 
-// taskGoal resolves the goal from the digest-checked task file: the title on
-// a digest match, "unknown" when no file was recorded, an error on a digest
-// mismatch (I07: the title is never unverified).
-func taskGoal(ctx context.Context, r taskReader, dir, runID, wantSHA string) (string, error) {
-	b, err := r.readFile(ctx, filepath.Join(dir, "runs", runID, "task.md"))
+// verifiedTaskGoal resolves the goal from the task file read for runID: the
+// title when its digest matches wantSHA, "unknown" when no file was
+// recorded, an error on a read failure or a digest mismatch (I07: the title
+// is never unverified).
+func verifiedTaskGoal(runID, wantSHA string, b []byte, err error) (string, error) {
 	if errors.Is(err, os.ErrNotExist) {
 		return "unknown", nil
 	}

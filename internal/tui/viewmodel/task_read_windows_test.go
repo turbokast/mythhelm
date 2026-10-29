@@ -86,16 +86,16 @@ func TestTaskGoalRecoversWhenRealShareDenyingHandleReleases(t *testing.T) {
 	dir, release := holdDenyingShare(t)
 	reads := 0
 	r := systemTaskReader()
-	r.read = func(name string) ([]byte, error) {
+	r.read = func(ctx context.Context, name string) ([]byte, error) {
 		reads++
-		return os.ReadFile(name) // #nosec G304 -- test temp dir
+		return readOSFile(ctx, name)
 	}
 	r.wait = func(ctx context.Context, d time.Duration) error {
 		release()
 		return waitCtx(ctx, d)
 	}
 
-	goal, err := taskGoal(context.Background(), r, dir, "run-1", taskDigest(taskBody))
+	goal, err := readGoal(context.Background(), r, dir, "run-1", taskDigest(taskBody))
 	if err != nil {
 		t.Fatalf("taskGoal: %v", err)
 	}
@@ -112,12 +112,12 @@ func TestTaskGoalRefusesWhileRealHandleStaysHeld(t *testing.T) {
 	dir, _ := holdDenyingShare(t)
 	reads := 0
 	r := systemTaskReader()
-	r.read = func(name string) ([]byte, error) {
+	r.read = func(ctx context.Context, name string) ([]byte, error) {
 		reads++
-		return os.ReadFile(name) // #nosec G304 -- test temp dir
+		return readOSFile(ctx, name)
 	}
 
-	_, err := taskGoal(context.Background(), r, dir, "run-1", taskDigest(taskBody))
+	_, err := readGoal(context.Background(), r, dir, "run-1", taskDigest(taskBody))
 	if !errors.Is(err, windows.ERROR_SHARING_VIOLATION) {
 		t.Fatalf("err = %v, want wrapped ERROR_SHARING_VIOLATION", err)
 	}
