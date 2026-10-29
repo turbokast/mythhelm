@@ -1,6 +1,7 @@
 package viewmodel
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -17,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/supervisor"
@@ -372,6 +374,35 @@ func (h *heldTaskRead) read(ctx context.Context, name string) ([]byte, error) {
 		return nil, transientPathErr()
 	}
 	return readOSFile(ctx, name)
+}
+
+func TestTaskReadEnforcesAdmissionSizeLimit(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		size    int
+		wantErr bool
+	}{
+		{"at limit", admission.MaxTaskBytes, false},
+		{"over limit", admission.MaxTaskBytes + 1, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "task.md")
+			body := bytes.Repeat([]byte("x"), tc.size)
+			if err := os.WriteFile(path, body, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			got, err := readOSFile(t.Context(), path)
+			if tc.wantErr {
+				if err == nil || got != nil {
+					t.Fatalf("oversized read = %d bytes, %v", len(got), err)
+				}
+			} else if err != nil || !bytes.Equal(got, body) {
+				t.Fatalf("valid read = %d bytes, %v", len(got), err)
+			}
+		})
+	}
 }
 
 func TestTaskReadDoesNotReturnBytesAfterCancellation(t *testing.T) {

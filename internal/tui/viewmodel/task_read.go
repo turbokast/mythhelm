@@ -3,8 +3,11 @@ package viewmodel
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"time"
+
+	"github.com/turbokast/mythhelm/internal/admission"
 )
 
 // At most taskReadAttempts reads with taskReadWait between them: 9 waits,
@@ -16,7 +19,7 @@ const (
 
 // taskReader reads the admitted task file, retrying only errors transient
 // classifies as a momentary denial by another handle. read takes ctx so
-// cancellation is checked around it; os.ReadFile itself is not interruptible.
+// cancellation is checked around it; the operating-system read is not interruptible.
 type taskReader struct {
 	read      func(ctx context.Context, name string) ([]byte, error)
 	wait      func(ctx context.Context, d time.Duration) error
@@ -28,7 +31,19 @@ func systemTaskReader() taskReader {
 }
 
 func readOSFile(_ context.Context, name string) ([]byte, error) {
-	return os.ReadFile(name) // #nosec G304 -- the state dir's own run path
+	f, err := os.Open(name) // #nosec G304 -- the state dir's own run path
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	b, err := io.ReadAll(io.LimitReader(f, admission.MaxTaskBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > admission.MaxTaskBytes {
+		return nil, fmt.Errorf("admitted task exceeds %d bytes", admission.MaxTaskBytes)
+	}
+	return b, nil
 }
 
 // readFile returns the file's bytes and whether any retry wait elapsed, so

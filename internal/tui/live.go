@@ -174,12 +174,14 @@ func (m *Model) noticeRows(limit int) []line {
 // seq and gen record the model's live-fold sequence and state generation at
 // dispatch, so applyReload can tell a result that newer state superseded.
 type reloadCall struct {
-	done   chan struct{}
-	cancel context.CancelFunc
-	seq    int64
-	gen    uint64
-	snap   viewmodel.Snapshot
-	err    error
+	done    chan struct{}
+	cancel  context.CancelFunc
+	seq     int64
+	gen     uint64
+	snap    viewmodel.Snapshot
+	err     error
+	diff    Diff
+	diffErr error
 }
 
 type reloadResultMsg struct{ call *reloadCall }
@@ -203,9 +205,13 @@ func (m *Model) startReload() tea.Cmd {
 	r := &reloadCall{done: make(chan struct{}), cancel: cancel, seq: m.snap.LastRunSeq, gen: m.reloadGen}
 	m.reload = r
 	dir, runID := m.cfg.StateDir, m.cfg.RunID
+	loadDiff := m.loadDiff
 	go func() {
 		defer close(r.done)
 		r.snap, r.err = load(ctx, dir, runID)
+		if r.err == nil && r.snap.Attempt != nil && r.snap.Candidate != nil {
+			r.diff, r.diffErr = loadDiff(ctx, r.snap.Attempt.WorkspacePath, r.snap.Candidate.BaseRev, r.snap.Candidate.Commit)
+		}
 	}()
 	return func() tea.Msg {
 		<-r.done
@@ -246,12 +252,8 @@ func (m *Model) applyReload(r *reloadCall) {
 	if m.snap.LastRunSeq > r.seq && r.snap.LastRunSeq < m.snap.LastRunSeq {
 		return
 	}
-	ctx := m.runCtx
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	m.empty = false
-	m.setSnapshot(ctx, r.snap)
+	m.installSnapshot(r.snap, r.diff, r.diffErr)
 }
 
 // stopReload cancels the in-flight load, if any, and waits for its worker.

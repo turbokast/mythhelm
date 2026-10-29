@@ -509,8 +509,40 @@ func checkNewerFoldKept(t *testing.T, m *Model) {
 	}
 }
 
-// TestReloadErrorKeepsTheSnapshot surfaces a reload failure with the
-// previous snapshot retained, and the next good reload clears it.
+// TestReloadComputesDiffBeforeReturningToUpdate holds the diff load and
+// verifies it completes off the update loop before the snapshot is installed.
+func TestReloadComputesDiffBeforeReturningToUpdate(t *testing.T) {
+	t.Parallel()
+	m := newModel(testConfig(fullCaps, t))
+	snap := richSnapshot()
+	m.loadSnapshot = func(context.Context, string, string) (viewmodel.Snapshot, error) { return snap, nil }
+	started, release := make(chan struct{}), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(unblock)
+	m.loadDiff = func(context.Context, string, string, string) (Diff, error) {
+		close(started)
+		<-release
+		return Diff{Lines: []DiffLine{{Text: "prepared diff"}}}, nil
+	}
+	cmd := m.startReload()
+	result := make(chan tea.Msg, 1)
+	go func() { result <- cmd() }()
+	select {
+	case <-started:
+	case <-result:
+		t.Fatal("reload returned before preparing the candidate diff")
+	case <-time.After(5 * time.Second):
+		t.Fatal("reload did not reach the candidate diff")
+	}
+	m, _ = updateWithin(t, m, tea.WindowSizeMsg{Width: 120, Height: 24})
+	unblock()
+	msg := <-result
+	m, _ = updateWithin(t, m, msg)
+	if len(m.diff.Lines) != 1 || m.diff.Lines[0].Text != "prepared diff" {
+		t.Fatalf("installed diff = %+v", m.diff)
+	}
+}
+
 func TestCorruptJournalReloadRemainsVisibleDuringProgress(t *testing.T) {
 	t.Parallel()
 	b := newJournalBuilder(t)
@@ -574,9 +606,8 @@ func TestReloadErrorKeepsTheSnapshot(t *testing.T) {
 	}
 }
 
-// TestQuitCancelsAndJoinsHeldReload quits while a reload is held: the
-// interrupt still lands, Run cancels the load, waits for the worker, and
-// nothing applies the result after Run returns.
+// TestQuitCancelsActionBeforeWaitingForHeldReload verifies that a held read
+// cannot delay the cancellation of an unrelated active action.
 func TestQuitCancelsActionBeforeWaitingForHeldReload(t *testing.T) {
 	t.Parallel()
 	m := lifecycleModel(t, ModeInspect, "executing", "running")

@@ -176,6 +176,16 @@ func Run(ctx context.Context, cfg Config) error {
 // moves focus on the failure-transition edge (motion.go); it never arms
 // animation frames, which only Update can schedule beside their tick.
 func (m *Model) setSnapshot(ctx context.Context, snap viewmodel.Snapshot) {
+	var diff Diff
+	var diffErr error
+	if snap.Attempt != nil && snap.Candidate != nil {
+		diff, diffErr = m.loadDiff(ctx, snap.Attempt.WorkspacePath, snap.Candidate.BaseRev, snap.Candidate.Commit)
+	}
+	m.installSnapshot(snap, diff, diffErr)
+}
+
+// installSnapshot applies a snapshot and its already-loaded diff to the model.
+func (m *Model) installSnapshot(snap viewmodel.Snapshot, diff Diff, diffErr error) {
 	wasReady := m.ready
 	prevAttempt, nextAttempt := "", ""
 	if m.snap.Attempt != nil {
@@ -224,15 +234,7 @@ func (m *Model) setSnapshot(ctx context.Context, snap viewmodel.Snapshot) {
 			m.selectedLane = snap.Attempt.AttemptID
 		}
 	}
-	m.diff, m.diffErr = Diff{}, nil
-	if snap.Attempt != nil && snap.Candidate != nil {
-		d, err := m.loadDiff(ctx, snap.Attempt.WorkspacePath, snap.Candidate.BaseRev, snap.Candidate.Commit)
-		if err != nil {
-			m.diffErr = err
-		} else {
-			m.diff = d
-		}
-	}
+	m.diff, m.diffErr = diff, diffErr
 }
 
 // revisionRE accepts the 40–64 hex revisions the review diff uses.
