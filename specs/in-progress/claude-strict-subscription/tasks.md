@@ -194,3 +194,21 @@
   - A strict run against the recorded live state admits (observed by the maintainer; receipt attached to the completion entry).
 - **Test plan**: Maintainer-executed; the run hands this task over when ready and continues with everything not depending on it.
 - **Invariants touched**: I04 (explicit allowance grant for the run); I15 (v2 §7.3: the earned strict pass); I19 (no secret extraction — sanitized record only).
+
+### Task 8 — Synthetic policy observation contract (proposal only)
+
+- **Domain/agent**: go-implementer
+- **Budget**: standard
+- **Depends on**: Task 1
+- **Change**: Add disconnected typed source-observation schema and injectable synthetic reader without changing admission or invoking a native.
+- **Files**:
+  - `adapters/claudecode/policy_observation.go`
+  - `adapters/claudecode/policy_observation_test.go`
+- **Produces**: `PolicySourceKind`, `PolicySourceState`, `PolicySourceObservation`, `PolicySourceReader`, and `ObservePolicySources` with the signatures and failure behavior in design proposal FR-5.
+- **Acceptance**:
+  - `TestPolicyObservationStates`: synthetic readers return each documented state and source in canonical order; invalid or duplicate kinds, invalid returned kind/state, and a valid kind swapped for another requested kind return an error wrapping `ErrPolicyObservation` without partial observations.
+  - `TestPolicyObservationUnknownDefault`: a nil reader yields unknown for every requested source, including remote cache, platform policy, helper and parent; an empty request yields no claim of complete inventory.
+  - `TestPolicyObservationCancellation`: cancellation before reading and cancellation by a fake reader just before its final successful return each produce no partial observations and an error recognized by `errors.Is` for both `ErrPolicyObservation` and the context error; an injected reader error also wraps `ErrPolicyObservation` with no partial observations. The fake executes no external program and touches no credentials or network.
+  - `TestPolicyObservationDoesNotAlterAdmission`: observation types have no production admission/worker wiring; existing Q1 gap and Windows-refusal tests remain unchanged and pass.
+- **Test plan**: table-driven fake readers with synthetic names and no filesystem/native access; red-first controls omit a state and forge an unknown kind. Inspect dependencies to ensure no production source reader is introduced.
+- **Invariants touched**: I02 (v2 §2: unknown stays unknown), I09 (v2 §2: distinct observations), I15 (v2 §2: no entitlement claim).

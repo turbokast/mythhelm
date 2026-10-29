@@ -407,3 +407,33 @@ admission flip prove nothing end to end; the flip without the evidence has
 nothing to admit; the live suite without both has nowhere to record. The
 maintainer live run and the docs consume the same contract but deliver
 nothing alone (`/spec-scope`: single spec, recorded with this rationale).
+
+## Proposal: managed-source observations (FR-5; not approved)
+
+Current-source correction: Task 3 shipped the admission consult; the Claude missing-source check runs only when a registry is available and billing is subscription-only (`internal/admission/admission.go`, search `missing-source:`). `LiveRecord` independently rejects gaps and unknown funding (`adapters/claudecode/auxiliary.go`, search `ErrEvidenceIncomplete`). Windows native probe and prepare refuse pending qualification (`adapters/claudecode/probe.go`, search `Windows native-harness qualification missing`). The worker rehashes admitted keys and its Claude path skips a full source-set reinventory, including newly appeared sources (`internal/workers/contain.go`, search `verifyUserConfig`). That observation is a design premise to test in a later core-domain task, not a promise of atomic pre-exec protection.
+
+Task 8 adds a disconnected schema and injectable synthetic source reader in `adapters/claudecode` only; no production reader or existing admission/launch wiring. Proposed contract:
+
+```go
+var ErrPolicyObservation = errors.New("policy observation unavailable")
+type PolicySourceKind string
+type PolicySourceState string
+type PolicySourceObservation struct { Kind PolicySourceKind; State PolicySourceState }
+type PolicySourceReader interface { Observe(context.Context, PolicySourceKind) (PolicySourceObservation, error) }
+func ObservePolicySources(context.Context, PolicySourceReader, []PolicySourceKind) ([]PolicySourceObservation, error)
+```
+
+Closed source kinds are `remote-cache`, `macos-managed-preferences`, `windows-machine-policy`, `windows-user-policy`, `managed-files`, `managed-mcp`, `policy-helper`, and `host-parent-settings`; states are `present`, `absent`, `unreadable`, `unsupported`, `unknown`. Input kinds must be unique and follow that canonical order; unknown or duplicate kinds return an error wrapping `ErrPolicyObservation` and no partial result. A reader error, invalid returned kind or invalid state, or a returned kind that does not exactly match the individual requested kind, fails the observation with an error wrapping `ErrPolicyObservation` and no partial observations; a valid kind returned for a different request is still a mismatch. Nil reader returns all requested kinds as `unknown`. Empty request yields no observations and is never evidence that a complete source set was checked. The result has no payload, paths, secrets, content digests, effective-policy verdict or qualification state; nil context is not supported. Check cancellation before reading and immediately after every reader return, including the final return; cancellation returns no partial observations and wraps both `ErrPolicyObservation` and the context cancellation error so `errors.Is` recognizes each. Bounded source count is the eight enumerated kinds. An observed `absent` is only a test-reader report, not independent proof of absence.
+
+Official reference: [managed settings](https://code.claude.com/docs/en/managed-settings) describes remote cache, platform policy, WSL inheritance, source precedence and changes during a session. Source selection and timing vary with native version; documentation is not runtime or entitlement proof.
+
+Later work requires separate design and approval: adapter-domain qualified OS/source readers and privacy-preserving source-set identity; core-domain pre-exec full-set re-observation including appeared sources, without claiming a closed check/use race; core-domain runtime-change and confirmed-stop semantics; finally independent exact-route qualification and any admission change, with separate docs as needed. No dependency, approval or acceptance is inferred from these outlines, and none changes completed Tasks 1–4 or 6.
+
+### Proposal honesty register
+
+| Demand | Position |
+|---|---|
+| Complete effective managed-policy inventory | Blocked: no authoritative remote-cache or platform/WSL source proof. |
+| Runtime policy stability and in-flight billing protection | Blocked: polling/rechecks do not establish a continuous boundary. |
+| Strict included-only admission | Blocked by Q1 and independent entitlement/stop evidence; unchanged. |
+| Windows native route | Unsupported pending independent qualification; unchanged. |

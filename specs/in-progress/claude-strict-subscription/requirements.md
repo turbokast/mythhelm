@@ -92,3 +92,9 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 
 - Touched: `internal/admission/` (remove/condition the `Decide` early return: `admission.go:189-191`; extend `ResolveBilling` in `billing.go`; consume MH-10's qualification resolution in `internal/qualify/` once it ships), `adapters/claudecode/` (effective-config inventory and evidence: `probe.go`, `settings.go`, new qualification evidence), `internal/qualify/` (MH-10's registry, consumed read/write).
 - Tests: adapter fixtures plus authorised-live tests behind the `live` build tag only (never in CI); no live credentials in contributor tests (I13).
+
+### FR-5 — Observation-only managed-source schema (v2 §7.3, I02, I09, I15)
+
+- **AC-5.1** [I09 (v2 §2), I15 (v2 §2)] When a synthetic source reader returns an observation, the adapter shall retain its source kind and distinguish present, absent, unreadable, unsupported and unknown without claiming effective-policy or entitlement proof.
+- **AC-5.2** [I02 (v2 §2), I03 (v2 §2)] If an input kind or returned state is invalid, or a reader returns a kind different from the requested kind, then the observation shall return an error wrapping `ErrPolicyObservation` and no partial observations; it shall not invoke a native, helper, network or credential source.
+- **AC-5.3** [I02 (v2 §2), I15 (v2 §2)] While Q1 remains unresolved, the observation shall not remove existing gap checks, change strict or declared admission, or qualify a Windows native route.
