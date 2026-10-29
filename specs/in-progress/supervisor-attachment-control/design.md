@@ -10,7 +10,7 @@ Grounded at `61d18e2`. The original requirements are HOLDS; the claim that the p
 
 `internal/workers/envelope.go:62` (`rg -n 'func CheckEnvelope' internal/workers/envelope.go`) rejects changed nonzero generation, while zero is legacy unfenced. `internal/workers/worker.go:326` (`rg -n 'func RequestStop' internal/workers/worker.go`) creates one first-wins stop.request per attempt, not one per operation. `internal/journal/journal.go:37` declares schema version 8; additive migration 0009 is currently free and must be revalidated before implementation.
 
-This child completes ADR 0014's ordinary production lifecycle and scoped core contract. Its 21 bounded tasks stay in the approved three-stream epic because a partially rewired owner/dispatch/ingest/control path cannot be advertised as an attach-ready service; each task remains independently reviewable. No per-run recover-enrollment mode, second service or recovered-only FR-1 claim is introduced.
+This child completes ADR 0014's ordinary production lifecycle and scoped core contract. Its original 21 bounded tasks and the proposed Task 22 design gate stay in the approved three-stream epic because a partially rewired owner/dispatch/ingest/control path cannot be advertised as an attach-ready service; each task remains independently reviewable. No per-run recover-enrollment mode, second service or recovered-only FR-1 claim is introduced.
 
 ## 2. Composition and ownership (v2 §§3, 5.2, 6)
 
@@ -39,7 +39,7 @@ func ApplyOwned(ctx context.Context, j *journal.Journal, owner *ServiceOwner, ru
 
 Implementation staging is explicit: Task6 produces the singleton composition shell and its production entrypoint, authenticated existing status/root-conflict behavior and service-owned root context. At that stage, new run/attachment methods whose producers have not landed return capability_unsupported with zero mutation; no placeholder handler is advertised as complete composition. Actual admission/dispatch/adoption arrives in Tasks7–9, observation in Task10, public attachment in Task12 and durable stop in Tasks13–15. Full production registry/continued-worker-ingestion evidence is deferred to Task20 after those producers and public clients. Task6 tests do not seed or inject a worker and call that production execution evidence.
 
-Until Task 9 lands, `RunOwned` is a trusted internal ownership primitive, not proof of admission. Task 4 may exercise it with fixtures but must not wire it to a production request. Task 6 keeps run methods unsupported. No production dispatch may rely on a supplied mutable `admission.Decision` merely because its paths or configuration agree with itself. Task 9 must close this boundary before exposing start. The synchronous hook callbacks and close waits require a non-reentrant, bounded delivery design. Task 6 defines a bounded, nonblocking observer queue: owner hooks enqueue copies without calling observer code; full queues drop observation and surface an explicit gap requiring durable journal resynchronization. Cancellation or disconnect does not wait for a stalled observer, and consumer lifetime and concurrent observers are bounded. The owner retains its locks until its active owned entry exits; the runtime cancels that entry and closes the owner outside the hook. Task 7 proves these properties through the actual adoption path. Task 4 tests do not establish this runtime property.
+Until Task 9 lands, `RunOwned` is a trusted internal ownership primitive, not proof of admission. Task 4 may exercise it with fixtures but must not wire it to a production request. Task 6 keeps run methods unsupported. No production dispatch may rely on a supplied mutable `admission.Decision` merely because its paths or configuration agree with itself. Task 9 must close this boundary before exposing start. Task 22 must resolve the synchronous callback and close hazards before Tasks 6 and 7: observer behavior must not deadlock ownership or compromise durable evidence, and shutdown must preserve ownership until active work has exited. The chosen delivery, overflow, cancellation and shutdown mechanism and its executable acceptance tests require a reviewed follow-on spec update before those tasks start. Task 4 tests do not establish this runtime property.
 
 `ServiceOwner` has private identity/generation/lifetime fields; each entry verifies root/run/held capability. It is not a boolean migration bypass. Existing Run/RecoverWithHooks retain legacy guards during the explicit migration period and call extracted lock-held bodies. Service entries never reacquire their held run lock. Hook delivery from the actor uses bounded copies, never the terminal's blocking callback. Apply remains explicit and executes existing guarded candidate/ref rules, not a host action. RecoverOwned owns the full continuation of observation/verification/receipt repair, not a parallel `control.Reconcile` task.
 
@@ -269,7 +269,7 @@ Windows ownership work may change worker/transport files; serialize those tasks 
 
 ## 9. Decisions
 
-ADR 0021 records the existing D1–D8 composition decisions. Proposed ADR 0022 is the separate Task 22 decision for D9 and remains unaccepted until its exact revision is reviewed.
+ADR 0021 records the existing D1–D8 composition decisions. Task 22 will draft a separate ADR for the unresolved admission-binding and observer-lifecycle design; no ADR 0022 is claimed to exist or be accepted yet.
 
 | ID | Decision | Rationale |
 |---|---|---|
@@ -281,7 +281,6 @@ ADR 0021 records the existing D1–D8 composition decisions. Proposed ADR 0022 i
 | D6 | Immutable accepted acknowledgment plus mutable reconciled result/outbox. | ExecuteLong blocks acknowledgment; editing immutable operations.result breaks durable replay. |
 | D7 | First-wins per-attempt stop with explicit coalescing. | One stop.request cannot represent independent repeated physical effects. |
 | D8 | Root migration and canonical same-launch service adoption. | The worker launch generation stays immutable; presence alone cannot grant authority. |
-| D9 | Require committed admission binding before production dispatch; Task 22 records the precise contract in a reviewed ADR before dependent implementation. | Ownership alone and a caller-supplied decision cannot establish admission; the decision changes persistence and process authority. |
 
 Accepted ADR `docs/decisions/0021-service-attachment-composition.md` records D1–D8. Task 1's exact-revision architecture and code review and delegated acceptance are recorded in PR #501; this acceptance does not establish runtime or platform qualification.
 

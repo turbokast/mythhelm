@@ -142,8 +142,6 @@
 - **Files**:
   - `internal/service/runtime.go`
   - `internal/service/runtime_test.go`
-  - `internal/service/observers.go`
-  - `internal/service/observers_test.go`
   - `internal/control/client.go`
   - `internal/control/server.go`
   - `internal/cli/supervisor.go`
@@ -153,7 +151,7 @@
   - TestServiceEntrypointShell exercises the real hidden-supervisor entry, root lock and authenticated status transport; root/status reflect the held singleton. Calling not-yet-implemented run.start or attachment.open returns capability_unsupported and writes no ledger/native state.
   - TestServiceRootContextSurvivesClientExit disconnects the status client, reconnects and observes the same service PID/generation; no native worker is launched or claimed as ingestion evidence in this shell test.
   - TestServiceRootConflict creates a conflicting root and observes refusal, no second listener/writer and zero native launches.
-  - TestServiceObserverQueueBounded blocks a real observer while filling the bounded queue, confirms owned hooks return without waiting, records an explicit gap for durable resynchronization, and proves disconnect/cancel cannot wait on that observer. It verifies the configured observer and goroutine bounds; an unbounded blocking-delivery fixture must fail.
+  - After the Task 22 ADR design is reviewed, a separately reviewed and merged spec update must add exact observer delivery, overflow, cancellation and shutdown acceptance checks and implementation paths before Task 22 completes and this task starts. Those checks must exercise stalled observers and prove that delivery cannot deadlock ownership or compromise durable evidence.
 - **Test plan**: Synthetic fixtures and deterministic barriers for the named cases; pair negative assertions with a deliberately violating fixture. Public process behavior uses the packaged binary in the integration task, not helper-only evidence.
 - **Invariants touched**: I03/I06/I18/I23 (v2 §3: one authenticated durable owner).
 
@@ -179,7 +177,7 @@
   - `TestCompletedWorkerWaitGrantsNothing` releases the already-spooled wait using fresh/changed-generation presence and observes zero launch, token mint, effect approval or deadline extension; CheckEnvelope still rejects an authority-bearing generation mismatch.
   - `TestZeroGenerationNeedsMigration` permits legacy observation only after explicit root migration evidence; a fixture trusting heartbeat/file contents alone fails.
   - TestCanonicalAdoptionV2Transaction rejects envelope/payload1 and future critical schema, refuses pre-adoption phase, preserves v1 historical bytes through migration, and commits v2 event plus assignment together; projection failure rolls back both and duplicate event replay reapplies neither.
-  - TestAdoptionObserverShutdown holds an observer callback while the adopted worker reports events, then cancels runtime delivery and shuts down from outside the owned hook. It proves bounded observer delivery and explicit gap handling, continued ownership until active ingestion exits, owner/lease lock release only afterward, and no duplicate launch. A synchronous callback that closes its own owner must be rejected by the test.
+  - After the Task 22 ADR design is reviewed, a separately reviewed and merged spec update must add exact adoption-path observer and shutdown tests before Task 22 completes and this task starts. Those checks must exercise a stalled observer during actual adoption, prove ownership remains held until active ingestion exits, and verify no duplicate launch.
 - **Test plan**: Instrumented fake worker, deterministic commit barriers and a violating heartbeat-as-authority fixture; no native account.
 - **Invariants touched**: I03/I06/I12/I18/I21 (v2 §§3/6/8: same-launch observation never grants a new episode).
 
@@ -485,7 +483,7 @@
 - **Domain/agent**: go-implementer
 - **Budget**: complex
 - **Depends on**: Task 3, Task 4
-- **Change**: Resolve D9 and callback delivery as an architecture-reviewed ADR before runtime, admission or dispatch work resumes. Keep the Task 4 signature as a trusted internal primitive unless the review explicitly changes it.
+- **Change**: Resolve the admission-binding and callback delivery gaps as an architecture-reviewed ADR before runtime, admission or dispatch work resumes. Keep the Task 4 signature as a trusted internal primitive unless the review explicitly changes it.
 - **Files**:
   - `docs/decisions/0022-service-admission-binding.md` (verify number is free on origin/main before drafting)
   - `docs/decisions/README.md`
@@ -493,6 +491,6 @@
 - **Acceptance**:
   - Architecture review checks a field-by-field inventory of every execution-relevant `admission.Decision` and `RunSpec` value against the representation, including no-checks, repo/revision, task, config/trust, route, billing/envelopes and launch inputs; each field is persisted, re-derived and revalidated, or explicitly rejected with rationale. A digest paired with independently mutable values is not a passing design.
   - The ADR traces a confirmed request through crash-before-commit, commit-before-spawn, ambiguous spawn and restart, showing one canonical run/attempt and fail-closed handling of absent, changed or non-reconstructable evidence. It describes integration with existing `runLocked` initial insertions and schema 9, and exact mutation/bypass controls for Tasks 8 and 9.
-  - The ADR specifies bounded observer queues, overflow/gap semantics, disconnected or stalled client handling, cancel/close ordering and resource bounds; its review maps these to Task 6 and Task 7 tests. Independent architecture and maintainer review name the exact accepted revision. Until that review is accepted, Tasks 6–9 do not proceed.
+  - The ADR specifies the chosen observer delivery mechanism, overflow and evidence semantics, disconnected or stalled client handling, cancel/close ordering and resource bounds. After the ADR design receives independent architecture and maintainer review, a separate spec update defines the exact Task 6 and Task 7 implementation paths and executable acceptance tests, and receives independent review before it is merged. Task 22 is not complete until that follow-on spec update is merged and its exact revision is recorded in the Task 22 handoff. Independent architecture and maintainer review name the exact accepted ADR revision. Until both the ADR and follow-on spec update are reviewed and merged, Tasks 6–9 do not proceed. Task 22's own pull request remains limited to its listed docs files and its completion records; the spec update is a separate pull request.
 - **Test plan**: Inspect the actual decision fields, schema and pipeline, trace both happy path and counterexample designs; no runtime or platform qualification is claimed by this documentation task.
 - **Invariants touched**: I02/I03/I05/I06/I12/I18/I20/I21/I23 (v2 §§2/3/6/8: bound authority, one owner and durable recovery).
