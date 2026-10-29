@@ -46,6 +46,8 @@
 - **Review correction**: Concurrent post-close test probes are serialized so they cannot contend with one another; concurrent close and active-entry barriers remain intact. A later explicit bound and terminating return make the positive generation assertion visible to the lint analyzer; this was a lint finding, not a demonstrated runtime overflow. The original candidate and later repairs are distinct measured attempts, so this is not first-pass delivery.
 - **Completion boundary**: Own records use WORKFLOW's required pre-merge completion convention. The task PR remains pending until its actual merge; dependent implementation must wait for that merge. No native, host, platform or packaged-process qualification is claimed.
 
+Draft dependent constraint: Task 4's proposed owner is ownership evidence only; `RunOwned` accepts a mutable in-process decision and is not independently an admission boundary. No production run handler may invoke it until Task 9 supplies the reviewed committed admission binding. Task 4 fixture acceptance alone does not establish AC-6.4; bounded callback delivery and shutdown need runtime evidence. This note is a proposed amendment, not evidence that Task 4 has merged or passed review.
+
 ## Task 5 — Close root migration and legacy writer fences
 
 <!-- pending -->
@@ -111,5 +113,10 @@
 <!-- pending -->
 
 ## Task 21 — Document production ownership and migration
+
+<!-- pending -->
+
+
+## Task 22 — Review the durable admission and delivery contract
 
 <!-- pending -->

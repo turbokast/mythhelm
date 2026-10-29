@@ -144,7 +144,7 @@
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
-- **Depends on**: Task 5
+- **Depends on**: Task 5, Task 22
 - **Change**: Build the singleton composition shell and own its root lifetime context without introducing a control→supervisor import cycle; new methods return explicit unsupported until their later producer tasks land.
 - **Files**:
   - `internal/service/runtime.go`
@@ -158,6 +158,7 @@
   - TestServiceEntrypointShell exercises the real hidden-supervisor entry, root lock and authenticated status transport; root/status reflect the held singleton. Calling not-yet-implemented run.start or attachment.open returns capability_unsupported and writes no ledger/native state.
   - TestServiceRootContextSurvivesClientExit disconnects the status client, reconnects and observes the same service PID/generation; no native worker is launched or claimed as ingestion evidence in this shell test.
   - TestServiceRootConflict creates a conflicting root and observes refusal, no second listener/writer and zero native launches.
+  - After the Task 22 ADR design is reviewed, a separately reviewed and merged spec update must add exact observer delivery, overflow, cancellation and shutdown acceptance checks and implementation paths before Task 22 completes and this task starts. Those checks must exercise stalled observers and prove that delivery cannot deadlock ownership or compromise durable evidence.
 - **Test plan**: Synthetic fixtures and deterministic barriers for the named cases; pair negative assertions with a deliberately violating fixture. Public process behavior uses the packaged binary in the integration task, not helper-only evidence.
 - **Invariants touched**: I03/I06/I18/I23 (v2 §3: one authenticated durable owner).
 
@@ -183,6 +184,7 @@
   - `TestCompletedWorkerWaitGrantsNothing` releases the already-spooled wait using fresh/changed-generation presence and observes zero launch, token mint, effect approval or deadline extension; CheckEnvelope still rejects an authority-bearing generation mismatch.
   - `TestZeroGenerationNeedsMigration` permits legacy observation only after explicit root migration evidence; a fixture trusting heartbeat/file contents alone fails.
   - TestCanonicalAdoptionV2Transaction rejects envelope/payload1 and future critical schema, refuses pre-adoption phase, preserves v1 historical bytes through migration, and commits v2 event plus assignment together; projection failure rolls back both and duplicate event replay reapplies neither.
+  - After the Task 22 ADR design is reviewed, a separately reviewed and merged spec update must add exact adoption-path observer and shutdown tests before Task 22 completes and this task starts. Those checks must exercise a stalled observer during actual adoption, prove ownership remains held until active ingestion exits, and verify no duplicate launch.
 - **Test plan**: Instrumented fake worker, deterministic commit barriers and a violating heartbeat-as-authority fixture; no native account.
 - **Invariants touched**: I03/I06/I12/I18/I21 (v2 §§3/6/8: same-launch observation never grants a new episode).
 
@@ -198,11 +200,12 @@
   - `internal/admission/admission.go`
   - `internal/service/admission.go`
   - `internal/service/admission_test.go`
-- **Produces**: run.prepare/run.confirm closed wire results PreparedRun and RunConfirmation from design §3; service-owned preparation store.
+- **Produces**: run.prepare/run.confirm closed wire results PreparedRun and RunConfirmation from design §3; service-owned preparation store. Task 22 must first specify the exact versioned, durable, non-secret binding representation, producer and consumer APIs, canonical digest/encoding, revalidation and expiry rules; this task must implement and test that exact approved contract and may not use a mutable decision or a digest alone as authorization.
 - **Acceptance**:
   - TestServiceAdmissionBinding invalidates task/config/repository/native-evidence drift between preparation and confirmation/start; native launch count stays zero.
   - TestServiceAdmissionAuthority rejects host/attachment token, foreign challenge and changed confirmation binding; noninteractive missing decisions retain actionable refusal.
   - TestServiceEnvironmentIsolation proves credential/PATH sentinels from caller maps are rejected and native policies remain pinned without serializing callbacks or full environment.
+  - TestServiceAdmissionBindingAllInputs changes repository, revision, task bytes/digest, no-checks, project/native configuration and trust, route/profile, billing/envelopes and confirmation separately after prepare and at a deterministic pre-commit barrier. Each changed input invalidates the preparation with zero native launches; an unchanged control remains ready without launching; Task 9 owns the successful start control. Dropping any binding must fail its corresponding case.
 - **Test plan**: Synthetic fixtures and deterministic barriers for the named cases; pair negative assertions with a deliberately violating fixture. Public process behavior uses the packaged binary in the integration task, not helper-only evidence.
 - **Invariants touched**: I02/I03/I04/I15/I19 (v2 §§6/7/8: admission and route authority precede launch).
 
@@ -218,13 +221,20 @@
   - `internal/service/runtime.go`
   - `internal/supervisor/pipeline.go`
   - `internal/supervisor/dispatch_test.go`
+  - `internal/supervisor/service_owner.go`
+  - `internal/supervisor/service_owner_test.go`
+  - `internal/journal/dispatch_binding.go`
+  - `internal/journal/dispatch_binding_test.go`
+  - `internal/journal/migrations/0010_dispatch_binding.sql` (only if schema 9 cannot safely store and reconstruct the reviewed binding; re-check the next migration number before implementation)
 - **Produces**: run.start(StartRun) returns immutable RunAccepted; run.operation returns the persisted accepted identity/outcome under standalone authorization.
 - **Acceptance**:
   - TestDispatchDuplicateLaunchOnce replays concurrent start operations and observes one run, attempt, launch and assignment.
   - TestDispatchCrashWindows covers before commit, after commit before spawn, after spawn before acknowledgment and after worker identity; only proven unconsumed original launch proceeds, ambiguity quarantines.
   - TestOrdinaryServicePipeline concludes candidate/verification/receipt through existing protected semantics; native completion alone remains candidate.
+  - TestDispatchCommittedDecisionBinding changes each stored or reconstructed execution input after preparation/commit, including no-checks, repository/revision, task, configuration/trust, route/profile, billing/envelopes and launch inputs. Each mismatch refuses before worker launch; the unchanged accepted control launches once. Missing and unrecognizable committed evidence refuse without launch. A fixture that bypasses the committed binding fails the matching assertion.
+  - TestProductionRunCannotBypassAdmission invokes each registered start path without a committed accepted preparation and with foreign peer, stale generation or mismatched binding. Each refuses with zero native launches; a valid confirmed control starts once. Concurrent duplicate starts and crash recovery preserve one canonical run/attempt and never reconstruct execution authority from mutable caller input.
 - **Test plan**: Synthetic fixtures and deterministic barriers for the named cases; pair negative assertions with a deliberately violating fixture. Public process behavior uses the packaged binary in the integration task, not helper-only evidence.
-- **Invariants touched**: I02/I06/I07/I12/I18/I23 (v2 §§3/6/11: durable one-launch dispatch).
+- **Invariants touched**: I02/I03/I06/I07/I12/I18/I20/I23 (v2 §§3/6/11: immutable admission binding and durable one-launch dispatch).
 
 ### Task 10 — Serve typed operation status and bounded observation
 
@@ -473,3 +483,21 @@
   - Limitations identify live legacy-owner migration boundary, Windows unqualified rows, no whole MH-3/G11 and no host/native route upgrade.
 - **Test plan**: Synthetic fixtures and deterministic barriers for the named cases; pair negative assertions with a deliberately violating fixture. Public process behavior uses the packaged binary in the integration task, not helper-only evidence.
 - **Invariants touched**: I06/I09/I14 (v2 §§14/15/18: evidence-bounded claims).
+
+
+### Task 22 — Review the durable admission and delivery contract
+
+- **Domain/agent**: go-implementer
+- **Budget**: complex
+- **Depends on**: Task 3, Task 4
+- **Change**: Resolve the admission-binding and callback delivery gaps as an architecture-reviewed ADR before runtime, admission or dispatch work resumes. Keep the Task 4 signature as a trusted internal primitive unless the review explicitly changes it.
+- **Files**:
+  - `docs/decisions/0022-service-admission-binding.md` (verify number is free on origin/main before drafting)
+  - `docs/decisions/README.md`
+- **Produces**: Reviewed ADR defining exact versioned non-secret durable binding fields, canonical serialization/hash, Task 8 producer and Task 9 consumer interfaces with failure cases, peer/generation/expiry/confirmation binding, recovery and one-use transaction rules, service-to-supervisor proof interface, and the bounded observer delivery and shutdown lifecycle. Name every required additive migration and implementation path. Secrets and full environments are excluded; reconstruct them using qualified service identity and revalidate evidence.
+- **Acceptance**:
+  - Architecture review checks a field-by-field inventory of every execution-relevant `admission.Decision` and `RunSpec` value against the representation, including no-checks, repo/revision, task, config/trust, route, billing/envelopes and launch inputs; each field is persisted, re-derived and revalidated, or explicitly rejected with rationale. A digest paired with independently mutable values is not a passing design.
+  - The ADR traces a confirmed request through crash-before-commit, commit-before-spawn, ambiguous spawn and restart, showing one canonical run/attempt and fail-closed handling of absent, changed or non-reconstructable evidence. It describes integration with existing `runLocked` initial insertions and schema 9, and exact mutation/bypass controls for Tasks 8 and 9.
+  - The ADR specifies the chosen observer delivery mechanism, overflow and evidence semantics, disconnected or stalled client handling, cancel/close ordering and resource bounds. After the ADR design receives independent architecture and maintainer review, a separate spec update defines the exact Task 6 and Task 7 implementation paths and executable acceptance tests, and receives independent review before it is merged. Task 22 is not complete until that follow-on spec update is merged and its exact revision is recorded in the Task 22 handoff. Independent architecture and maintainer review name the exact accepted ADR revision. Until both the ADR and follow-on spec update are reviewed and merged, Tasks 6–9 do not proceed. Task 22's own pull request remains limited to its listed docs files and its completion records; the spec update is a separate pull request.
+- **Test plan**: Inspect the actual decision fields, schema and pipeline, trace both happy path and counterexample designs; no runtime or platform qualification is claimed by this documentation task.
+- **Invariants touched**: I02/I03/I05/I06/I12/I18/I20/I21/I23 (v2 §§2/3/6/8: bound authority, one owner and durable recovery).

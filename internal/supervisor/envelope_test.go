@@ -28,11 +28,7 @@ type envelopeWorld struct {
 // transport retries.
 func blockedRun(t *testing.T, reason string) envelopeWorld {
 	t.Helper()
-	j, err := journal.Open(t.Context(), t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = j.Close() })
+	j := openSeededJournal(t)
 	w := envelopeWorld{j: j, runID: ids.New("run"), prod: NewProducer(ids.New("sup"), 1)}
 	run := journal.RunRow{RunID: w.runID, AdapterID: "builtin/fake", SourceRepo: "/tmp/repo", TaskSHA256: "t",
 		BillingPosture: "local-scripted", ExecutionProfile: "trusted-host"}
@@ -229,11 +225,7 @@ type gateWorld struct {
 
 func newGateWorld(t *testing.T, env journal.EnvelopeRow, attempts int64) *gateWorld {
 	t.Helper()
-	j, err := journal.Open(t.Context(), t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = j.Close() })
+	j := openSeededJournal(t)
 	w := &gateWorld{sent: map[string]int64{}}
 	w.j, w.runID, w.prod = j, ids.New("run"), NewProducer(ids.New("sup"), 1)
 	run := journal.RunRow{RunID: w.runID, AdapterID: "builtin/fake", SourceRepo: "/tmp/repo", TaskSHA256: "t",
