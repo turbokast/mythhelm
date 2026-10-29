@@ -484,7 +484,7 @@
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
-- **Depends on**: Task 3
+- **Depends on**: Task 3, Task 4
 - **Change**: Resolve D9 and callback delivery as an architecture-reviewed ADR before runtime, admission or dispatch work resumes. Keep the Task 4 signature as a trusted internal primitive unless the review explicitly changes it.
 - **Files**:
   - `docs/decisions/0022-service-admission-binding.md` (verify number is free on origin/main before drafting)

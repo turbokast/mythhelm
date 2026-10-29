@@ -283,7 +283,7 @@ ADR 0021 records the existing D1–D8 composition decisions. Proposed ADR 0022 i
 | D8 | Root migration and canonical same-launch service adoption. | The worker launch generation stays immutable; presence alone cannot grant authority. |
 | D9 | Require committed admission binding before production dispatch; Task 22 records the precise contract in a reviewed ADR before dependent implementation. | Ownership alone and a caller-supplied decision cannot establish admission; the decision changes persistence and process authority. |
 
-Proposed ADR `docs/decisions/0021-service-attachment-composition.md` records D1–D8; review it before implementation. Its status is proposed until actual review accepts it. No product approval signature is fabricated.
+Accepted ADR `docs/decisions/0021-service-attachment-composition.md` records D1–D8. Task 1's exact-revision architecture and code review and delegated acceptance are recorded in PR #501; this acceptance does not establish runtime or platform qualification.
 
 ## 10. Honesty register
 
