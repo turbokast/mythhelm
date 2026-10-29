@@ -39,9 +39,11 @@
 
 ## Task 4 — Extract lock-held lifecycle entrypoints
 
-<!-- pending -->
-
-Draft dependent constraint: Task 4's proposed owner is ownership evidence only; `RunOwned` accepts a mutable in-process decision and is not independently an admission boundary. No production run handler may invoke it until Task 9 supplies the reviewed committed admission binding. Task 4 fixture acceptance alone does not establish AC-6.4; bounded callback delivery and shutdown need runtime evidence. This note is a proposed amendment, not evidence that Task 4 has merged or passed review.
+- **Produces**: PR #527, signed sources `00fe03b` and `ec120ee`: `control.AcquireInstanceLease`, lease generation/root/hold/close methods, and `supervisor.AcquireServiceOwner`, `RunOwned`, `RecoverOwned` and `ApplyOwned`. The service entrypoints reuse the lock-held pipeline/recovery/apply implementations without re-acquiring their run lock; legacy entrypoints retain their guards. Run IDs are validated before the run directory is used; exhausted instance generations refuse before metadata changes.
+- **Lifetime**: Copies of either capability share one lifetime. Lease close refuses new holds and waits for active holds; service-owner close refuses new entries, waits for active work and releases both the run lock and lease hold before concurrent closers return. Zero, closed, wrong-root, wrong-generation and wrong-run capabilities refuse ownership. A callback synchronously closing its own owner or lease waits on itself; close waits and OS file operations are not generally cancellable.
+- **For dependents**: Acquire the instance lease before the service owner, use an adopted root and pass the matching run to owned entrypoints. Each owner admits one ingestion path; owned entrypoints refuse terminal detach/interrupt hooks. `RunOwned` accepts a mutable in-process decision and proves ownership, not admission. No production run handler may invoke it until Task 9 supplies the reviewed committed admission binding. Task 22 must resolve observer delivery and shutdown before Tasks 6 and 7; Task 4 fixture acceptance does not establish AC-6.4 or a public attachment service.
+- **Evidence**: The earlier candidate received independent production and repair reviews, passed the named Task 4 race tests and 20 concurrent-close race repetitions, and passed formatting, vet, full race, module-tidy, lint and public-hygiene gates. That evidence predates integration with current main and does not certify the integrated tree; fresh independent review and gates are required.
+- **Completion boundary**: The pre-merge completion entry and this handoff record implementation state, not a merged task. Dependents must wait for PR #527 to merge. No native, host, platform or packaged-process qualification is claimed.
 
 ## Task 5 — Close root migration and legacy writer fences
 

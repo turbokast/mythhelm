@@ -88,7 +88,7 @@
   - Review corrections consistent with design §5: cover INSERT/UPDATE replacement through every declared unique key and physical row alias; retain unreferenced-victim counterexamples so foreign keys cannot mask omitted guards. Completed-operation duplicate insertion is ignored with zero affected rows, preserving concurrent claim semantics and the entire immutable acknowledgment row; existing completed UPDATE/DELETE guards remain intact.
 - **Files modified**: `docs/user-guide.md`, `internal/cli/migrate_test.go`, `internal/control/assign_revision_test.go`, `internal/journal/acceptance_test.go`, `internal/journal/attachment_revision.go`, `internal/journal/attachment_revision_test.go`, `internal/journal/evaluator_test.go`, `internal/journal/journal.go`, `internal/journal/journal_test.go`, `internal/journal/migrate_tables_test.go`, `internal/journal/migrations/0009_attachments.sql`, `internal/journal/qualification_test.go`, `internal/migrate/SUPPORT.md`, `internal/migrate/backup.go`, `internal/migrate/preview/plan.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
-### Task 4 — Extract lock-held lifecycle entrypoints
+### Task 4 — Extract lock-held lifecycle entrypoints ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -110,6 +110,13 @@
   - TestLegacyDetachContractPreserved retains the merged MH-23 worker deadline and stop-less legacy detach behavior.
 - **Test plan**: Synthetic fixtures and deterministic barriers for the named cases; pair negative assertions with a deliberately violating fixture. Public process behavior uses the packaged binary in the integration task, not helper-only evidence.
 - **Invariants touched**: I05/I06/I12/I18/I21 (v2 §§3/6: exclusive owner and bounded worker).
+
+- **Status**: ✅ Completed — implementation is recorded in PR #527; the pull request is pending review and has not merged. Dependent tasks must wait for its actual merge.
+- **Implementation**: Commit `00fe03b` adds proof-bearing instance leases and service owners and lock-held run/recover/apply entrypoints while preserving legacy guards; `ec120ee` validates run identifiers and guards generation exhaustion. Copies share a lifetime; close waits for active entries before releasing ownership. `RunOwned` is a trusted internal ownership primitive, not proof of admission: its decision remains mutable and is not sealed to committed admission. Callbacks must not synchronously close their own owner or lease; close waits and OS file operations are not generally cancellable. Task 22 owns the unresolved observer and shutdown design, and Task 9 owns the committed admission binding. The earlier candidate passed independent review, named race acceptance and all six gates; the current integrated tree requires fresh independent review and gates.
+- **Spec deviations**:
+  - Review corrections consistent with design §2 preserve concurrent close and active-entry barriers while serialising post-close test probes; an explicit generation bound and terminating return retain the exact positive-generation assertion, and current Go syntax satisfies the repository lint rules without changing ownership behavior.
+  - `specs/in-progress/supervisor-attachment-control/tasks.md` records this task's completion evidence and `specs/in-progress/supervisor-attachment-control/handoff.md` records constraints for dependent tasks. These lifecycle records are outside the task Files list and follow WORKFLOW/shared task-completion's pre-merge convention; they do not claim a merged task or public attachment-service qualification.
+- **Files modified**: `internal/control/instance.go`, `internal/control/instance_test.go`, `internal/control/lock.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/recover.go`, `internal/supervisor/service_owner.go`, `internal/supervisor/service_owner_test.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`.
 
 ### Task 5 — Close root migration and legacy writer fences
 
