@@ -96,5 +96,5 @@ Acceptance criteria use EARS. Tags in brackets name the invariants, gates and se
 ### FR-5 — Observation-only managed-source schema (v2 §7.3, I02, I09, I15)
 
 - **AC-5.1** [I09 (v2 §2), I15 (v2 §2)] When a synthetic source reader returns an observation, the adapter shall retain its source kind and distinguish present, absent, unreadable, unsupported and unknown without claiming effective-policy or entitlement proof.
-- **AC-5.2** [I02 (v2 §2), I03 (v2 §2)] If an input kind or returned state is invalid, or a reader returns a kind different from the requested kind, then the observation shall return an error wrapping `ErrPolicyObservation` and no partial observations; it shall not invoke a native, helper, network or credential source.
+- **AC-5.2** [I02 (v2 §2), I03 (v2 §2)] If the request includes an unknown kind, a duplicate kind or kinds in non-canonical order, or a reader returns a state outside the five specified states or a kind different from the requested kind, then the observation shall return an error wrapping `ErrPolicyObservation` and no partial observations; it shall not invoke a native, helper, network or credential source.
 - **AC-5.3** [I02 (v2 §2), I15 (v2 §2)] While Q1 remains unresolved, the observation shall not remove existing gap checks, change strict or declared admission, or qualify a Windows native route.
