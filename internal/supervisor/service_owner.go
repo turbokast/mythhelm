@@ -193,11 +193,14 @@ func (o *ServiceOwner) enter(j *journal.Journal, runID string, h Hooks) (func(),
 	}, nil
 }
 
-// RunOwned runs the admitted decision's pipeline under owner's held run lock,
-// without the legacy migration guard or a second lock acquisition. Before
-// any ledger or worker effect it binds the decision's workspace to the owned
-// run and its project configuration to the admitted committed revision. This
-// is not a sealed decision: the remaining fields are trusted as admitted.
+// RunOwned runs a trusted caller's decision under owner's held run lock,
+// without the legacy migration guard or a second lock acquisition. Before any
+// ledger or worker effect it checks the workspace against the owned run and
+// when checks are enabled, the project configuration against the
+// caller-provided repository and revision. These consistency checks do not
+// seal the decision or establish
+// admission: there is no preexisting journal admission record checked here.
+// The caller must ensure the decision was admitted.
 func RunOwned(ctx context.Context, j *journal.Journal, owner *ServiceOwner, d admission.Decision, h Hooks) (Outcome, error) {
 	exit, err := owner.enter(j, d.RunID, h)
 	if err != nil {
@@ -235,11 +238,12 @@ func RunOwned(ctx context.Context, j *journal.Journal, owner *ServiceOwner, d ad
 // commitOID is a full SHA-1 or SHA-256 object ID as rev-parse prints it.
 var commitOID = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 
-// admittedProjectConfig refuses a decision whose project configuration or
-// digest differs from what admission reads: nothing under NoChecks, otherwise
-// the exact mythhelm.toml bytes committed at the admitted base revision. The
-// revision is resolved as Snapshot resolves it, and only the returned commit
-// object ID reaches later git arguments, so a revision is never an option.
+// admittedProjectConfig checks that a caller-supplied decision has empty
+// project configuration under NoChecks, or otherwise matches the committed
+// mythhelm.toml in the decision's repository and revision. It does not verify
+// those inputs against an admission record. The revision is resolved as
+// Snapshot resolves it, and only the returned commit object ID reaches later
+// git arguments, so a revision is never an option.
 func admittedProjectConfig(ctx context.Context, d admission.Decision) error {
 	if d.NoChecks {
 		if d.ConfigDigest != "" || !reflect.DeepEqual(d.ProjectConfig, admission.ProjectConfig{}) {
