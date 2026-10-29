@@ -10,7 +10,7 @@ Grounded at `61d18e2`. The original requirements are HOLDS; the claim that the p
 
 `internal/workers/envelope.go:62` (`rg -n 'func CheckEnvelope' internal/workers/envelope.go`) rejects changed nonzero generation, while zero is legacy unfenced. `internal/workers/worker.go:326` (`rg -n 'func RequestStop' internal/workers/worker.go`) creates one first-wins stop.request per attempt, not one per operation. `internal/journal/journal.go:37` declares schema version 8; additive migration 0009 is currently free and must be revalidated before implementation.
 
-This child completes ADR 0014's ordinary production lifecycle and scoped core contract. Its 21 bounded tasks stay in the approved three-stream epic because a partially rewired owner/dispatch/ingest/control path cannot be advertised as an attach-ready service; each task remains independently reviewable. No per-run recover-enrollment mode, second service or recovered-only FR-1 claim is introduced.
+This child completes ADR 0014's ordinary production lifecycle and scoped core contract. Its original 21 bounded tasks and the proposed Task 22 design gate stay in the approved three-stream epic because a partially rewired owner/dispatch/ingest/control path cannot be advertised as an attach-ready service; each task remains independently reviewable. No per-run recover-enrollment mode, second service or recovered-only FR-1 claim is introduced.
 
 ## 2. Composition and ownership (v2 §§3, 5.2, 6)
 
@@ -38,6 +38,8 @@ func ApplyOwned(ctx context.Context, j *journal.Journal, owner *ServiceOwner, ru
 ```
 
 Implementation staging is explicit: Task6 produces the singleton composition shell and its production entrypoint, authenticated existing status/root-conflict behavior and service-owned root context. At that stage, new run/attachment methods whose producers have not landed return capability_unsupported with zero mutation; no placeholder handler is advertised as complete composition. Actual admission/dispatch/adoption arrives in Tasks7–9, observation in Task10, public attachment in Task12 and durable stop in Tasks13–15. Full production registry/continued-worker-ingestion evidence is deferred to Task20 after those producers and public clients. Task6 tests do not seed or inject a worker and call that production execution evidence.
+
+Until Task 9 lands, `RunOwned` is a trusted internal ownership primitive, not proof of admission. Task 4 may exercise it with fixtures but must not wire it to a production request. Task 6 keeps run methods unsupported. No production dispatch may rely on a supplied mutable `admission.Decision` merely because its paths or configuration agree with itself. Task 9 must close this boundary before exposing start. Task 22 must resolve the synchronous callback and close hazards before Tasks 6 and 7: observer behavior must not deadlock ownership or compromise durable evidence, and shutdown must preserve ownership until active work has exited. The chosen delivery, overflow, cancellation and shutdown mechanism and its executable acceptance tests require a reviewed follow-on spec update before those tasks start. Task 4 tests do not establish this runtime property.
 
 `ServiceOwner` has private identity/generation/lifetime fields; each entry verifies root/run/held capability. It is not a boolean migration bypass. Existing Run/RecoverWithHooks retain legacy guards during the explicit migration period and call extracted lock-held bodies. Service entries never reacquire their held run lock. Hook delivery from the actor uses bounded copies, never the terminal's blocking callback. Apply remains explicit and executes existing guarded candidate/ref rules, not a host action. RecoverOwned owns the full continuation of observation/verification/receipt repair, not a parallel `control.Reconcile` task.
 
@@ -86,7 +88,9 @@ Preparation state is service-owned and generation-bound. A challenge has a stabl
 
 Environment is built service-side through the existing qualified adapter policy, from the service execution identity and native store. Caller environment is not serialized or copied to a durable preparation. Only command flags above express policy; a changed required native environment must cause explicit re-admission/restart guidance rather than borrowing another client's credentials. Tests cover PATH/native-configuration changes, credential-route sentinels and existing route qualification fixtures. Task content and native secrets never enter projected metadata or operations' public result.
 
-Start validates preparation in one transaction, records the immutable admitted bundle, assignment, operation acknowledgment and dispatch intent. Worker spawn remains the existing durable one-use launch protocol. A dispatcher crash before/after launch reconciles identity/spool evidence before deciding whether the same committed unconsumed launch may proceed; ambiguous launch is quarantined, never blindly replayed. New replacement/continuation launches require a new explicit admitted operation. The service calls RunOwned with its own lifetime context. Client death after acceptance does not cancel it.
+Task 8 binds the complete execution-relevant admission inputs and evidence in the service-owned preparation: source repository and revision, task bytes and digest, checks and no-checks, project and native configuration/trust, route and profile, billing and envelopes, confirmations and launch-relevant values. Revalidation covers the entire binding and peer, generation and expiry. Secret values and a caller environment do not enter durable state; later execution reconstructs sensitive native material through the qualified service identity, and refuses if required evidence no longer matches. A digest supplied beside an independently mutable decision is not authority.
+
+Start validates preparation in one transaction, records the immutable admitted bundle, assignment, operation acknowledgment and dispatch intent. Task 9 must execute only a decision reconstructed from, and verified against, that immutable committed binding; missing, stale, altered or mismatched data refuses before worker spawn. Integrate the current pipeline's initial run/attempt insertion with the precommitted records so a duplicate insert, retry or recovery cannot open an alternate admission path. Where schema 9's stored binding and digest cannot reconstruct or verify a required field, add a reviewed additive migration, never modify a released migration. The exact representation, Task 8 producer-to-Task 9 consumer contract and service-to-supervisor proof-bearing API are resolved and recorded by Task 22 before Tasks 6–9 proceed; until then the production start remains unsupported. Worker spawn remains the existing durable one-use launch protocol. A dispatcher crash before/after launch reconciles identity/spool evidence before deciding whether the same committed unconsumed launch may proceed; ambiguous launch is quarantined, never blindly replayed. New replacement/continuation launches require a new explicit admitted operation. The service calls RunOwned with its own lifetime context. Client death after acceptance does not cancel it.
 
 Public run/plain/JSONL/accessible/TUI and demo are clients of these methods and the exact operation/observation contract below and observe service-owned outcomes. Preserve established linear bytes/exit semantics where applicable; any new accepted-operation status is explicit and tested. Demo temporary data survives a live detached worker. Trusted CLI stop/recover/apply use the same run actor. No hidden local fallback after a service error. Legacy paths remain usable only before migration with explicit compatibility diagnostics, never while service owns the root.
 
@@ -265,6 +269,8 @@ Windows ownership work may change worker/transport files; serialize those tasks 
 
 ## 9. Decisions
 
+ADR 0021 records the existing D1–D8 composition decisions. Task 22 will draft a separate ADR for the unresolved admission-binding and observer-lifecycle design; no ADR 0022 is claimed to exist or be accepted yet.
+
 | ID | Decision | Rationale |
 |---|---|---|
 | D1 | Finish production singleton composition under ADR 0014. | Recovery-only per-run enrollment would narrow FR-1 and bypass current root migration. |
@@ -276,9 +282,12 @@ Windows ownership work may change worker/transport files; serialize those tasks 
 | D7 | First-wins per-attempt stop with explicit coalescing. | One stop.request cannot represent independent repeated physical effects. |
 | D8 | Root migration and canonical same-launch service adoption. | The worker launch generation stays immutable; presence alone cannot grant authority. |
 
-Proposed ADR `docs/decisions/0021-service-attachment-composition.md` records D1–D8; review it before implementation. Its status is proposed until actual review accepts it. No product approval signature is fabricated.
+Accepted ADR `docs/decisions/0021-service-attachment-composition.md` records D1–D8. Task 1's exact-revision architecture and code review and delegated acceptance are recorded in PR #501; this acceptance does not establish runtime or platform qualification.
 
 ## 10. Honesty register
+
+Until Task 22 resolves the precise Task 8→9 contract and Task 9 implements it, service start is unsupported and Task 4 alone does not establish AC-6.4.
+
 
 | Spec demand | Position |
 |---|---|
