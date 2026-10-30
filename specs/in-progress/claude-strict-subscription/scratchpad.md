@@ -27,3 +27,7 @@
 ## Proposed observation-only extension (unapproved)
 
 Task 8 is a local proposal, not maintainer approval, Q1 resolution, a qualification grant or permission to run a native. Q1's conservative default remains the existing gap. Open decisions for later reviewed tasks: exact supported native version and policy semantics, remote-cache and platform reader authority, WSL inheritance, safe source-set binding, runtime mutation boundary, and independent entitlement/stop evidence. Maintainer decides; unknown remains blocked. Do not expand completed task scope or infer later task approval.
+
+## Synthetic Task 8 execution approval
+
+The maintainer authorized continued autonomous delivery after the observation proposal merged in PR #533. Task 8 may implement the disconnected synthetic contract and its acceptance tests within the existing finite attempt and review limits. This does not resolve Q1 or authorize live source readers, native qualification, admission changes, or later tasks. The earlier proposal-only status above records the decision before this approval.
