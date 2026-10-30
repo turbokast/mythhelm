@@ -412,7 +412,7 @@ nothing alone (`/spec-scope`: single spec, recorded with this rationale).
 
 Current-source correction: Task 3 shipped the admission consult; the Claude missing-source check runs only when a registry is available and billing is subscription-only (`internal/admission/admission.go:479-489`). `LiveRecord` independently rejects gaps and unknown funding (`adapters/claudecode/auxiliary.go:77-83`, `:134-152`). Windows native probe and prepare refuse pending qualification (`adapters/claudecode/probe.go:54-56`; `adapters/claudecode/launch.go:73-75`). The worker rehashes admitted keys and its Claude path skips a full source-set reinventory, including newly appeared sources (`internal/workers/contain.go:159-192`). That observation is a design premise to test in a later core-domain task, not a promise of atomic pre-exec protection.
 
-Task 8 adds a disconnected schema and injectable synthetic source reader in `adapters/claudecode` only; no production reader or existing admission/launch wiring. Proposed contract:
+Task 8 adds a disconnected schema and injectable synthetic source reader in `adapters/claudecode` only; no production reader or production references outside its implementation file. The Task 8 AST check scans all repository non-test Go files, a conservative syntactic restriction rather than a reachable-graph or runtime proof. Proposed contract:
 
 ```go
 var ErrPolicyObservation = errors.New("policy observation unavailable")
