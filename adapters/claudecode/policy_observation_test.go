@@ -201,6 +201,10 @@ func TestPolicyObservationDoesNotAlterAdmission(t *testing.T) {
 		{"implementation shadowed context", "adapters/claudecode/policy_observation.go", `package claudecode; func ObservePolicySources() { ctx := hostContext; ctx.Err() }`, true},
 		{"implementation shadowed injection", "adapters/claudecode/policy_observation.go", `package claudecode; func ObservePolicySources() { reader := hostReader; reader.Observe() }`, true},
 		{"implementation directive", "adapters/claudecode/policy_observation.go", "package claudecode\n//go:linkname read synthetic.read\nfunc read()", true},
+		{"implementation line directive", "adapters/claudecode/policy_observation.go", "package claudecode\n//line synthetic.go:1\nfunc local() {}", true},
+		{"implementation aliased allowed import", "adapters/claudecode/policy_observation.go", `package claudecode; import f "fmt"; var ErrPolicyObservation=f.Errorf("synthetic")`, true},
+		{"implementation initializer", "adapters/claudecode/policy_observation.go", `package claudecode; func init() {}`, true},
+		{"implementation function literal call", "adapters/claudecode/policy_observation.go", `package claudecode; func ObservePolicySources() { func() {}() }`, true},
 		{"implementation injection", "adapters/claudecode/policy_observation.go", `package claudecode; import "context"; type PolicySourceReader interface { Observe(context.Context) }; func ObservePolicySources(ctx context.Context,reader PolicySourceReader) { reader.Observe(ctx) }`, false},
 	}
 	fixtureBytes := 0

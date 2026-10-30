@@ -214,5 +214,5 @@
 - **Invariants touched**: I02 (v2 §2: unknown stays unknown), I09 (v2 §2: distinct observations), I15 (v2 §2: no entitlement claim).
 - **Status**: ✅ Completed — disconnected synthetic policy observations and retained source-boundary checks implemented; PR #535.
 - **Implementation**: Closed source/state validation, a bounded request snapshot, unknown nil-reader defaults and fail-closed cancellation/error handling. The syntactic source guard retains rejected caller, reader, direct-read and shadowing fixtures. Commit c8265d8.
-- **Spec deviations**: Added request-mutation and late-failure regressions in independent review, and trimpath-safe source location plus retained scan-resource-limit cases in PR review round 1 (consistent with FR-5 and its syntactic guard). The observation contract is unchanged.
+- **Spec deviations**: Added request-mutation and late-failure regressions in independent review, and trimpath-safe source location plus retained scan-resource-limit and guard-branch cases in PR review round 1 (consistent with FR-5 and its syntactic guard). The observation contract is unchanged.
 - **Files modified**: `adapters/claudecode/policy_observation.go`, `adapters/claudecode/policy_observation_test.go`, `specs/in-progress/claude-strict-subscription/tasks.md`, `specs/in-progress/claude-strict-subscription/handoff.md`.
