@@ -51,4 +51,8 @@
 
 ## Task 8 — Synthetic policy observation contract
 
-<!-- pending -->
+- **Produces**: `PolicySourceKind`, `PolicySourceState`, `PolicySourceObservation`, `PolicySourceReader`, `ErrPolicyObservation` and `ObservePolicySources` in `adapters/claudecode/policy_observation.go`.
+- **For dependents**: requests are bounded to the eight reviewed kinds, unique and canonical; the validated request is snapshotted before calling the reader. Invalid or incomplete operations return no partial observations.
+- **For dependents**: nil reader reports unknown; empty requests assert no completeness. No production source reader, qualification evidence or admission wiring is supplied.
+- **For dependents**: context must be non-nil. Cancellation is checked before reads and immediately after returns; readers must themselves return promptly. Cancellation errors match both the sentinel and the context error through `errors.Is`.
+- **Boundary**: retained source guards use a cwd/module locator, rooted reads and finite scan/parse budgets. Deadlines are checked between operations and do not interrupt operating-system I/O. These are syntactic checks, not runtime isolation or effective-policy proof. Q1 and the existing strict-gap and Windows refusals remain unchanged.

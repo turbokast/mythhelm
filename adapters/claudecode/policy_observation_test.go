@@ -7,14 +7,16 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/turbokast/mythhelm/adapters/claudecode"
 )
@@ -60,9 +62,17 @@ func TestPolicyObservationStates(t *testing.T) {
 		{name: "invalid state", kinds: []claudecode.PolicySourceKind{"remote-cache"}, kind: "remote-cache", state: "unexpected"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := claudecode.ObservePolicySources(context.Background(), syntheticPolicyReader(func(_ context.Context, _ claudecode.PolicySourceKind) (claudecode.PolicySourceObservation, error) {
+			calls := 0
+			got, err := claudecode.ObservePolicySources(context.Background(), syntheticPolicyReader(func(_ context.Context, requested claudecode.PolicySourceKind) (claudecode.PolicySourceObservation, error) {
+				calls++
+				if tc.state == "" {
+					return claudecode.PolicySourceObservation{Kind: requested, State: "present"}, nil
+				}
 				return claudecode.PolicySourceObservation{Kind: tc.kind, State: tc.state}, nil
 			}), tc.kinds)
+			if tc.state == "" && calls != 0 {
+				t.Fatalf("invalid request reached reader %d times", calls)
+			}
 			if len(got) != 0 || !errors.Is(err, claudecode.ErrPolicyObservation) {
 				t.Fatalf("invalid observation = %#v, %v", got, err)
 			}
@@ -176,7 +186,7 @@ func TestPolicyObservationCancellation(t *testing.T) {
 
 func TestPolicyObservationDoesNotAlterAdmission(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct {
+	fixtures := []struct {
 		name, path, source string
 		reject             bool
 	}{
@@ -192,7 +202,18 @@ func TestPolicyObservationDoesNotAlterAdmission(t *testing.T) {
 		{"implementation shadowed injection", "adapters/claudecode/policy_observation.go", `package claudecode; func ObservePolicySources() { reader := hostReader; reader.Observe() }`, true},
 		{"implementation directive", "adapters/claudecode/policy_observation.go", "package claudecode\n//go:linkname read synthetic.read\nfunc read()", true},
 		{"implementation injection", "adapters/claudecode/policy_observation.go", `package claudecode; import "context"; type PolicySourceReader interface { Observe(context.Context) }; func ObservePolicySources(ctx context.Context,reader PolicySourceReader) { reader.Observe(ctx) }`, false},
-	} {
+	}
+	fixtureBytes := 0
+	if len(fixtures) > 64 {
+		t.Fatal("source fixture count limit")
+	}
+	for _, fixture := range fixtures {
+		fixtureBytes += len(fixture.source)
+	}
+	if fixtureBytes > 1024*1024 {
+		t.Fatal("source fixture parse bytes limit")
+	}
+	for _, tc := range fixtures {
 		t.Run(tc.name, func(t *testing.T) {
 			err := checkPolicyObservationSource(tc.path, []byte(tc.source))
 			// I02/I15 (v2 §2): proposed observations cannot become admission proof.
@@ -201,53 +222,25 @@ func TestPolicyObservationDoesNotAlterAdmission(t *testing.T) {
 			}
 		})
 	}
-	_, current, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("locate repository")
-	}
-	root := filepath.Clean(filepath.Join(filepath.Dir(current), "..", ".."))
-	sourceRoot, err := os.OpenRoot(root)
+	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := sourceRoot.Close(); err != nil {
-			t.Error(err)
-		}
-	})
-	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
-		if entry.IsDir() {
-			if entry.Name() == ".git" || entry.Name() == "node_modules" || rel == ".claude/data" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("source guard refuses symlink: %s", rel)
-		}
-		source, err := sourceRoot.ReadFile(rel)
-		if err != nil {
-			return err
-		}
-		return checkPolicyObservationSource(rel, source)
-	})
+	root, err := policyObservationSourceRoot(cwd)
 	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := scanPolicyObservationTree(ctx, root, defaultPolicyScanLimits()); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func checkPolicyObservationSource(path string, source []byte) error {
+	if len(source) > 512*1024 {
+		return errors.New("file bytes limit")
+	}
 	file, err := parser.ParseFile(token.NewFileSet(), path, source, parser.ParseComments)
 	if err != nil {
 		return err
@@ -368,4 +361,271 @@ func policyContextParameter(id *ast.Ident) bool {
 	}
 	pkg, ok := kind.X.(*ast.Ident)
 	return ok && pkg.Name == "context" && pkg.Obj == nil
+}
+
+type policyScanLimits struct{ entries, sources, depth, fileBytes, totalBytes int }
+
+func defaultPolicyScanLimits() policyScanLimits {
+	return policyScanLimits{entries: 40000, sources: 2048, depth: 64, fileBytes: 512 * 1024, totalBytes: 16 * 1024 * 1024}
+}
+func policyObservationSourceRoot(start string) (string, error) {
+	dir, err := filepath.Abs(start)
+	if err != nil {
+		return "", err
+	}
+	for range 64 {
+		root, err := os.OpenRoot(dir)
+		if err != nil {
+			return "", err
+		}
+		data, readErr := readPolicySource(root, "go.mod", 64*1024)
+		closeErr := root.Close()
+		if closeErr != nil {
+			return "", closeErr
+		}
+		if readErr == nil {
+			for line := range strings.SplitSeq(string(data), "\n") {
+				fields := strings.Fields(line)
+				if len(fields) == 2 && fields[0] == "module" && fields[1] == "github.com/turbokast/mythhelm" {
+					return dir, nil
+				}
+			}
+		} else if !errors.Is(readErr, fs.ErrNotExist) {
+			return "", readErr
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return "", errors.New("MYTHHELM source root not found within ancestor bound")
+}
+
+func readPolicySource(root *os.Root, name string, maxBytes int) ([]byte, error) {
+	file, err := root.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	data, readErr := io.ReadAll(io.LimitReader(file, int64(maxBytes)+1))
+	closeErr := file.Close()
+	if readErr != nil {
+		return nil, readErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	if len(data) > maxBytes {
+		return nil, errors.New("file bytes limit")
+	}
+	return data, nil
+}
+
+func policySourceEntries(ctx context.Context, root *os.Root, dir string, remaining int) (entries []fs.DirEntry, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	file, err := root.Open(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, file.Close()) }()
+	return readPolicyEntries(ctx, file, remaining)
+}
+
+type policyDirectoryBatchReader interface {
+	ReadDir(int) ([]fs.DirEntry, error)
+}
+
+func readPolicyEntries(ctx context.Context, file policyDirectoryBatchReader, remaining int) (entries []fs.DirEntry, err error) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		batch, readErr := file.ReadDir(64)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if len(entries)+len(batch) > remaining {
+			return nil, errors.New("traversal entries limit")
+		}
+		entries = append(entries, batch...)
+		if errors.Is(readErr, io.EOF) {
+			break
+		}
+		if readErr != nil {
+			return nil, readErr
+		}
+	}
+	slices.SortFunc(entries, func(a, b fs.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
+	return entries, nil
+}
+
+func scanPolicyObservationTree(ctx context.Context, path string, limits policyScanLimits) (err error) {
+	if limits.entries <= 0 || limits.sources <= 0 || limits.depth <= 0 || limits.fileBytes <= 0 || limits.totalBytes <= 0 {
+		return errors.New("invalid scan limits")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, root.Close()) }()
+	type directory struct {
+		path  string
+		depth int
+	}
+	pending := []directory{{path: ".", depth: 0}}
+	entriesSeen, sourcesSeen, bytesParsed := 0, 0, 0
+	for len(pending) > 0 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		current := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		entries, err := policySourceEntries(ctx, root, current.path, limits.entries-entriesSeen)
+		if err != nil {
+			return err
+		}
+		entriesSeen += len(entries)
+		for _, entry := range entries {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			rel := filepath.Join(current.path, entry.Name())
+			slash := filepath.ToSlash(rel)
+			if entry.IsDir() {
+				if entry.Name() == ".git" || entry.Name() == "node_modules" || slash == ".claude/data" {
+					continue
+				}
+				if current.depth+1 > limits.depth {
+					return errors.New("directory depth limit")
+				}
+				pending = append(pending, directory{path: rel, depth: current.depth + 1})
+				continue
+			}
+			if !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+				continue
+			}
+			if !entry.Type().IsRegular() {
+				return fmt.Errorf("source guard refuses symlink: %s", slash)
+			}
+			sourcesSeen++
+			if sourcesSeen > limits.sources {
+				return errors.New("source count limit")
+			}
+			source, err := readPolicySource(root, rel, limits.fileBytes)
+			if err != nil {
+				return err
+			}
+			bytesParsed += len(source)
+			if bytesParsed > limits.totalBytes {
+				return errors.New("total parse bytes limit")
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if err := checkPolicyObservationSource(slash, source); err != nil {
+				return err
+			}
+		}
+	}
+	return ctx.Err()
+}
+
+func TestPolicyObservationSourceRoot(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	nested := filepath.Join(root, "adapters", "claudecode")
+	if err := os.MkdirAll(nested, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module github.com/turbokast/mythhelm\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := policyObservationSourceRoot(nested)
+	if err != nil || got != root {
+		t.Fatalf("cwd source root = %q, %v; want %q", got, err, root)
+	}
+	if _, err := policyObservationSourceRoot(t.TempDir()); err == nil {
+		t.Fatal("missing module accepted")
+	}
+}
+
+func TestPolicyObservationScanBounds(t *testing.T) {
+	t.Parallel()
+	source := "package fixture\n"
+	for _, tc := range []struct {
+		name   string
+		files  map[string]string
+		alter  func(*policyScanLimits)
+		reason string
+	}{
+		{"clean", map[string]string{"one.go": source}, func(*policyScanLimits) {}, ""},
+		{"entry count", map[string]string{"one.txt": "", "two.txt": ""}, func(l *policyScanLimits) { l.entries = 1 }, "traversal entries limit"},
+		{"source count", map[string]string{"one.go": source, "two.go": source}, func(l *policyScanLimits) { l.sources = 1 }, "source count limit"},
+		{"file bytes", map[string]string{"one.go": source + strings.Repeat(" ", 64)}, func(l *policyScanLimits) { l.fileBytes = 64 }, "file bytes limit"},
+		{"total bytes", map[string]string{"one.go": source, "two.go": source}, func(l *policyScanLimits) { l.totalBytes = len(source)*2 - 1 }, "total parse bytes limit"},
+		{"depth", map[string]string{"one/two/file.go": source}, func(l *policyScanLimits) { l.depth = 1 }, "directory depth limit"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			for name, data := range tc.files {
+				path := filepath.Join(root, filepath.FromSlash(name))
+				if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			limits := defaultPolicyScanLimits()
+			tc.alter(&limits)
+			err := scanPolicyObservationTree(context.Background(), root, limits)
+			if tc.reason == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.reason) {
+				t.Fatalf("scan = %v; want %s", err, tc.reason)
+			}
+		})
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := scanPolicyObservationTree(ctx, t.TempDir(), defaultPolicyScanLimits()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled scan = %v", err)
+	}
+}
+
+func TestPolicyObservationParserBounds(t *testing.T) {
+	t.Parallel()
+	source := []byte("package fixture\n" + strings.Repeat(" ", 512*1024))
+	if err := checkPolicyObservationSource("fixture.go", source); err == nil || !strings.Contains(err.Error(), "file bytes limit") {
+		t.Fatalf("oversized fixture = %v", err)
+	}
+}
+
+type syntheticPolicyDirectoryBatch func(int) ([]fs.DirEntry, error)
+
+func (f syntheticPolicyDirectoryBatch) ReadDir(n int) ([]fs.DirEntry, error) { return f(n) }
+func TestPolicyObservationDirectoryBatchCancellation(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	calls := 0
+	reader := syntheticPolicyDirectoryBatch(func(int) ([]fs.DirEntry, error) {
+		calls++
+		if calls == 1 {
+			cancel()
+			return nil, nil
+		}
+		return nil, io.EOF
+	})
+	entries, err := readPolicyEntries(ctx, reader, 64)
+	if len(entries) != 0 || !errors.Is(err, context.Canceled) || calls != 1 {
+		t.Fatalf("cancelled batch = %v, %v; reads=%d", entries, err, calls)
+	}
 }
