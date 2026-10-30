@@ -408,7 +408,7 @@ nothing to admit; the live suite without both has nowhere to record. The
 maintainer live run and the docs consume the same contract but deliver
 nothing alone (`/spec-scope`: single spec, recorded with this rationale).
 
-## Proposal: managed-source observations (FR-5; not approved)
+## Managed-source observations (FR-5; synthetic Task 8 approved)
 
 Current-source correction: Task 3 shipped the admission consult; the Claude missing-source check runs only when a registry is available and billing is subscription-only (`internal/admission/admission.go:479-489`). `LiveRecord` independently rejects gaps and unknown funding (`adapters/claudecode/auxiliary.go:77-83`, `:134-152`). Windows native probe and prepare refuse pending qualification (`adapters/claudecode/probe.go:54-56`; `adapters/claudecode/launch.go:73-75`). The worker rehashes admitted keys and its Claude path skips a full source-set reinventory, including newly appeared sources (`internal/workers/contain.go:159-192`). That observation is a design premise to test in a later core-domain task, not a promise of atomic pre-exec protection.
 

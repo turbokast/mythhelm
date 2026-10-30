@@ -195,7 +195,7 @@
 - **Test plan**: Maintainer-executed; the run hands this task over when ready and continues with everything not depending on it.
 - **Invariants touched**: I04 (explicit allowance grant for the run); I15 (v2 §7.3: the earned strict pass); I19 (no secret extraction — sanitized record only).
 
-### Task 8 — Synthetic policy observation contract (proposal only)
+### Task 8 — Synthetic policy observation contract
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard

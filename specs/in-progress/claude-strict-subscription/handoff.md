@@ -48,3 +48,7 @@
 ## Task 7 — Maintainer live qualification run
 
 <!-- pending -->
+
+## Task 8 — Synthetic policy observation contract
+
+<!-- pending -->
