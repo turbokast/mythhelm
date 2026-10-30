@@ -281,6 +281,7 @@ ADR 0021 records the existing D1–D8 composition decisions. Task 22 will draft 
 | D6 | Immutable accepted acknowledgment plus mutable reconciled result/outbox. | ExecuteLong blocks acknowledgment; editing immutable operations.result breaks durable replay. |
 | D7 | First-wins per-attempt stop with explicit coalescing. | One stop.request cannot represent independent repeated physical effects. |
 | D8 | Root migration and canonical same-launch service adoption. | The worker launch generation stays immutable; presence alone cannot grant authority. |
+| D9 | Permit design-only Task 22 review after Task 3 using a pinned Task 4 candidate. | Waiting for Task 4 to merge delays the design needed to assess that candidate. Inspection and re-grounding enable review without consuming an unmerged interface or relaxing runtime gates. |
 
 Accepted ADR `docs/decisions/0021-service-attachment-composition.md` records D1–D8. Task 1's exact-revision architecture and code review and delegated acceptance are recorded in PR #501; this acceptance does not establish runtime or platform qualification.
 
