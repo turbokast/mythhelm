@@ -281,6 +281,7 @@ ADR 0021 records the existing D1–D8 composition decisions. Task 22 will draft 
 | D6 | Immutable accepted acknowledgment plus mutable reconciled result/outbox. | ExecuteLong blocks acknowledgment; editing immutable operations.result breaks durable replay. |
 | D7 | First-wins per-attempt stop with explicit coalescing. | One stop.request cannot represent independent repeated physical effects. |
 | D8 | Root migration and canonical same-launch service adoption. | The worker launch generation stays immutable; presence alone cannot grant authority. |
+| D9 | Permit design-only Task 22 review after Task 3 using a pinned Task 4 candidate. | Waiting for Task 4 to merge delays the design needed to assess that candidate. Inspection and re-grounding enable review without consuming an unmerged interface or relaxing runtime gates. |
 
 Accepted ADR `docs/decisions/0021-service-attachment-composition.md` records D1–D8. Task 1's exact-revision architecture and code review and delegated acceptance are recorded in PR #501; this acceptance does not establish runtime or platform qualification.
 
@@ -304,3 +305,7 @@ Core Task21 documentation serializes after both `specs/*/docs-site-restyle/` Tas
 ## Cross-Spec References
 
 Epic: `specs/*/herdr-embedded-client/plan.md`. Dependants: `specs/*/existing-run-client/` and `specs/*/herdr-scoped-projection/`. Source: `specs/*/herdr-bridge/requirements.md`. Prerequisite lifecycle: `specs/*/tui-observatory-view/` Tasks4–9 before shared lifecycle extraction, Task18 before core Tasks16–19 public-client edits, and Task19 before core Task21 shared documentation; Windows process tasks before Windows claims. ADRs 0014, 0016, 0017, 0019 remain binding.
+
+### Design-review sequencing
+
+Task 22 may design and review against merged Task 3 and a pinned, inspected Task 4 PR candidate before Task 4 merges. This separates identifying the missing contract from consuming it in runtime code. The ADR records the exact inspected revision and re-grounds affected evidence if it changes; an unmerged candidate supplies no admission or ownership authority. Task 4 retains its own implementation and review obligations, Task 5 still requires Task 4, and Tasks 6–9 retain their Task 22 ADR and separately reviewed follow-on spec gates. No unresolved PR finding is resolved by this sequencing change.
