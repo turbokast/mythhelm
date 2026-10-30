@@ -23,3 +23,7 @@
 
 - Task 1: the manifest carries `managed*` digests only for sources actually present on disk, so `PolicySummary.Sources` is empty on a bare host and `Gaps` still lists the unresolved sources; gap assessment never depends on the manifest.
 - Task 4: with the gap open (Q-15), a registry-present strict run returns a plain `*BlockedError` at the gap gate (`decideClaudeCode`, `GapSources(claudecode.UnresolvedSources)`) before `ResolveQualification`, and with no registry there is no record to drift, so no `*DriftError` reaches `executeRun` through `cli.Main`. The drift legs are proven at the seam with the real `*DriftError` from a consult; the `cli.Main` legs wait for Q1.
+
+## Proposed observation-only extension (unapproved)
+
+Task 8 is a local proposal, not maintainer approval, Q1 resolution, a qualification grant or permission to run a native. Q1's conservative default remains the existing gap. Open decisions for later reviewed tasks: exact supported native version and policy semantics, remote-cache and platform reader authority, WSL inheritance, safe source-set binding, runtime mutation boundary, and independent entitlement/stop evidence. Maintainer decides; unknown remains blocked. Do not expand completed task scope or infer later task approval.
