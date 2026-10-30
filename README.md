@@ -12,7 +12,11 @@
 
 **The open-source command deck for native coding agents.**
 
-MYTHHELM orchestrates the coding agents you already use and trust, such as Claude Code, Codex and others, with their native harnesses intact. It gives them a shared mission, safe working boundaries, an honest control plane and a terminal experience worth opening.
+MYTHHELM is a pre-alpha project for coordinating native coding agents while preserving their harnesses. The implemented single-agent workflow and its limits are listed below; the broader multi-agent product and qualified Codex support remain unfinished.
+
+> **Delivery target: at least 20× faster full-product delivery. Result: not demonstrated.** We have no defensible full-product speedup baseline or completed comparison establishing that target. Specifications, PR counts and a scripted demo are not finished-product delivery.
+>
+> **Self-building status: partial, with a blocked current native route.** On 2026-10-30, MYTHHELM refused the Codex attempt to author this status update before launch; the update was then edited in a direct Codex session. The offline demo passed verification/review, while `doctor` reported qualification unavailable. A separate design attempt exceeded its 45-minute authoring limit and produced no draft. These are limitations and failed delivery, not evidence of full self-hosting or a speed advantage. See the [dated self-building report](docs/dogfood/0004-self-building-status.md) and [measurement and acceleration plan](docs/benchmarks.md).
 
 > **Status: pre-alpha.** The only release so far, v0.0.1, is a source tag with no binary archives, so you build from source. The headless dogfood slice (`run`, `review`, `apply`, `recover`) plus an offline `demo` and a read-only `doctor` are implemented on `main` and covered by a packaged-binary end-to-end suite. `stop` and `runs list`, a budget ledger with finite run envelopes, execution profiles, a per-user supervisor and a one-way `migrate` have landed since, with the limits listed below and in the [limitations register](docs/limitations.md). The TUI is also implemented, with the evidence and limitations below. The broader adaptive product remains a design contract, not an implemented or benchmarked capability.
 
