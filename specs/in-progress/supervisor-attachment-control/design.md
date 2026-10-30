@@ -304,3 +304,7 @@ Core Task21 documentation serializes after both `specs/*/docs-site-restyle/` Tas
 ## Cross-Spec References
 
 Epic: `specs/*/herdr-embedded-client/plan.md`. Dependants: `specs/*/existing-run-client/` and `specs/*/herdr-scoped-projection/`. Source: `specs/*/herdr-bridge/requirements.md`. Prerequisite lifecycle: `specs/*/tui-observatory-view/` Tasks4–9 before shared lifecycle extraction, Task18 before core Tasks16–19 public-client edits, and Task19 before core Task21 shared documentation; Windows process tasks before Windows claims. ADRs 0014, 0016, 0017, 0019 remain binding.
+
+### Design-review sequencing
+
+Task 22 may design and review against merged Task 3 and a pinned, inspected Task 4 PR candidate before Task 4 merges. This separates identifying the missing contract from consuming it in runtime code. The ADR records the exact inspected revision and re-grounds affected evidence if it changes; an unmerged candidate supplies no admission or ownership authority. Task 4 retains its own implementation and review obligations, Task 5 still requires Task 4, and Tasks 6–9 retain their Task 22 ADR and separately reviewed follow-on spec gates. No unresolved PR finding is resolved by this sequencing change.

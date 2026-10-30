@@ -3,7 +3,7 @@
 ### Dependencies
 
 - Epic: `specs/*/herdr-embedded-client/plan.md`. Prerequisites: reviewed ADR 0021; completed supervisor-service/migration/stop-recover and protected-acceptance building blocks. Ownership extraction, migration/runtime and public-client tasks wait for the relevant merged `specs/*/tui-observatory-view/` Tasks4–9; isolated protocol/persistence tasks may proceed independently. Task7 serializes with Windows worker-boundary tests. Admission and worker adoption may proceed independently after runtime if file lists remain disjoint; scoped-read producers may progress alongside admission. Public stop consumers follow completed stop persistence/delivery/reconciliation producers. Core Tasks16–19 additionally wait for MH-23 Task18 (shared run/demo/TUI launch branches); Task21 waits for MH-23 Task19 and docs-site-restyle Task11 (shared user-guide). Each re-grounds the merged contract before editing; unrelated core tasks remain independently dispatchable.
-- Tasks sharing a Files path serialize. No task may consume proposed/unmerged interfaces; re-ground exact dependency contracts before starting. All tasks require independent code review; persistence/process/public interfaces also require architecture review.
+- Tasks sharing a Files path serialize. No task may consume proposed/unmerged interfaces; re-ground exact dependency contracts before starting. Task 22 may inspect a pinned unmerged Task 4 candidate to identify design gaps; inspection neither consumes that interface nor completes Task 4 or authorizes runtime work. All tasks require independent code review; persistence/process/public interfaces also require architecture review.
 - **Gates for every task**: format changed Go with gofmt first (go mod tidy when needed), then `scripts/harness/gate.sh go` for Go tasks, `scripts/harness/gate.sh harness` for harness changes and `scripts/ci/check-public-hygiene.sh` for all changes; spec bookkeeping also runs `scripts/ci/lint-agent-harness.sh --only specs`. Docs tasks run public hygiene and applicable harness lint. Files existing or an agent reporting success is not completion.
 - **Completion convention**: append ✅ COMPLETED to the task heading only after merged evidence; add Status (PR), Implementation (SHAs), Spec deviations and Files modified; retain original fields and update scratchpad discoveries.
 - **Commits**: signed off with named paths; each implementation task uses an isolated worktree and PR. Decision records are reviewed before dependent implementation; never invent a maintainer/product signature.
@@ -482,7 +482,8 @@
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
-- **Depends on**: Task 3, Task 4
+- **Depends on**: Task 3
+- **Also inspects**: Task 4 PR #527 at `3b3c5f5e80a3e0d87a944b43a0fde0881177e36a`, an unmerged candidate only. Pin the inspected revision in the ADR and re-ground every relevant change before ADR acceptance; a changed candidate invalidates affected design evidence. Task 4 implementation and review remain independently required.
 - **Change**: Resolve the admission-binding and callback delivery gaps as an architecture-reviewed ADR before runtime, admission or dispatch work resumes. Keep the Task 4 signature as a trusted internal primitive unless the review explicitly changes it.
 - **Files**:
   - `docs/decisions/0022-service-admission-binding.md` (verify number is free on origin/main before drafting)
