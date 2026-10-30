@@ -166,11 +166,13 @@ def required_gates(root, changed):
     """The gates a change set needs, in run order."""
     out = []
     if any(in_scope(p, "go") for p in changed):
-        out += ["go-fmt", "go-vet", "go-test", "go-mod-tidy"]
+        out += ["go-fmt", "go-mod-tidy", "go-vet"]
         if os.path.exists(os.path.join(root, ".golangci.yml")):
             out.append("golangci-lint")
         if any(p in ("go.mod", "go.sum") for p in changed):
             out.append("govulncheck")
+        # Fail deterministic preflight checks before spending time on the race suite.
+        out.append("go-test")
     if any(in_scope(p, "harness") for p in changed):
         out += ["harness-lint", "harness-tests"]
         if any(p.endswith(".sh") for p in changed):

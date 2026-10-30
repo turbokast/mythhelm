@@ -19,6 +19,8 @@ for tool in go gofmt shellcheck; do
 [[ -z "${FAKE_TOUCH:-}" ]] || echo "// touched" >> "$FAKE_TOUCH"
 [[ "$(basename "$0")" != gofmt || -z "${FAKE_GOFMT_OUT:-}" ]] || echo "$FAKE_GOFMT_OUT"
 echo "$(basename "$0") $*" >&2
+[[ -z "${FAKE_LOG:-}" ]] || echo "$(basename "$0") $*" >> "$FAKE_LOG"
+if [[ "${FAKE_FAIL_LINT:-}" == 1 && "$*" == *golangci-lint* ]]; then exit 9; fi
 exit "${FAKE_RC:-0}"
 EOF
   chmod +x "$BIN/$tool"
@@ -96,11 +98,11 @@ lib required
 check "a spec-only change needs hygiene only" [ "$OUT" == "hygiene" ]
 echo "// y" >> "$R/internal/x/x.go"
 lib required
-check "a Go change needs the Go gates" [ "$OUT" == "go-fmt go-vet go-test go-mod-tidy hygiene" ]
+check "a Go change needs the Go gates" [ "$OUT" == "go-fmt go-mod-tidy go-vet go-test hygiene" ]
 echo "version: 2" > "$R/.golangci.yml"
 echo "go 1.27" >> "$R/go.mod"
 lib required
-check "a lint config adds golangci-lint; go.mod adds govulncheck" [ "$OUT" == "go-fmt go-vet go-test go-mod-tidy golangci-lint govulncheck hygiene" ]
+check "a lint config adds golangci-lint; go.mod adds govulncheck" [ "$OUT" == "go-fmt go-mod-tidy go-vet golangci-lint govulncheck go-test hygiene" ]
 repo req-sh
 printf '#!/usr/bin/env bash\n' > "$R/scripts/harness/new.sh"
 lib required
@@ -123,7 +125,7 @@ check "the marker names its tree" [ "$(marker go-vet tree)" == "$(cd "$R" && pwd
 check "the marker records exit 0" [ "$(marker go-vet exit_code)" == 0 ]
 gate go
 expect 0 "the go group runs the Go gates the change set needs"
-has "gate: 4 passed and recorded: go-fmt go-vet go-test go-mod-tidy" "the group summary"
+has "gate: 4 passed and recorded: go-fmt go-mod-tidy go-vet go-test" "the group summary"
 gate hygiene
 expect 0 "hygiene passes on a clean fixture"
 lib status
@@ -189,5 +191,41 @@ mkdir -p "$R/.claude/data"
 cp "$A/.claude/data/gate-marker-go-vet.json" "$R/.claude/data/"
 lib status
 has "go-vet         stale" "a marker copied from another tree with identical content is stale"
+
+echo "== go groups fail before expensive tests =="
+repo fail-fast
+echo "go 1.27" >> "$R/go.mod"
+printf 'version: 2\n' > "$R/.golangci.yml"
+echo "// baseline" >> "$R/internal/x/x.go"
+gate go
+expect 0 "baseline group passes"
+# Keep a real prior test pass, then change a Go-scoped input. An early failure
+# must neither execute the race suite nor make its old marker fresh again.
+echo "// changed" >> "$R/internal/x/x.go"
+TRACE="$TEST_TMP/fail-fast-tools.log"
+: > "$TRACE"
+FAKE_LOG="$TRACE" FAKE_FAIL_LINT=1 gate go
+expect 1 "lint failure keeps the public failure exit"
+has "FAIL (exit 9" "the failing tool status remains visible"
+check "lint ran" grep -q 'golangci-lint' "$TRACE"
+CHECKS=$((CHECKS + 1))
+! grep -q '^go test ' "$TRACE" || fail "[race suite did not run after lint failure] $(cat "$TRACE")"
+check "failed lint marker is absent" [ ! -e "$R/.claude/data/gate-marker-golangci-lint.json" ]
+lib status
+expect 1 "an early failure cannot satisfy all required gates"
+has "go-test        stale" "unexecuted test marker stays stale"
+: > "$TRACE"
+FAKE_LOG="$TRACE" gate go
+expect 0 "success still runs every required Go gate"
+check "success runs race tests" grep -q '^go test -race ./...' "$TRACE"
+check "success runs module consistency" grep -q '^go mod tidy -diff' "$TRACE"
+check "success runs vet" grep -q '^go vet ./...' "$TRACE"
+check "success runs formatting" grep -q '^gofmt -l .' "$TRACE"
+check "success runs lint" grep -q 'golangci-lint' "$TRACE"
+check "success runs dependency vulnerability check" grep -q 'govulncheck' "$TRACE"
+gate hygiene
+expect 0 "hygiene remains required and passes"
+lib status
+expect 0 "success leaves all required markers fresh"
 
 finish
