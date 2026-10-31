@@ -30,5 +30,5 @@ Install only with the committed lockfile and `npm ci`. The browser fixtures run
 only in the `ci.yml` site-build job after installation (Task 10 wires that job),
 not the portable harness suite. The colocated `test_check_layout.sh` enumerates
 the rest of `scripts/` and rejects any expansion of this exception. The resolved
-tree contains `playwright-core` 1.64.0 (Apache-2.0), checked against the existing
+tree contains `playwright-core` 1.64.1 (Apache-2.0), checked against the existing
 dependency-review allow-list before implementation; no transitive packages.
