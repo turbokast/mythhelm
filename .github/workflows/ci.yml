@@ -118,6 +118,27 @@ jobs:
       - if: matrix.os == 'windows-11-arm'
         run: python .github/scripts/go-test-shard.py supervisor
 
+  windows-cli:
+    name: Windows CLI (${{ matrix.os }})
+    needs: detect
+    if: needs.detect.outputs.go == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - if: matrix.os == 'windows-latest'
+        run: python .github/scripts/go-test-shard.py cli --race
+      - if: matrix.os == 'windows-11-arm'
+        run: python .github/scripts/go-test-shard.py cli
+
   lint:
     name: golangci-lint
     needs: detect
@@ -219,8 +240,8 @@ jobs:
   ci-ok:
     name: CI OK
     if: always()
-    needs: [workflows, detect, go, windows-supervisor, lint, govulncheck, licenses, harness, site-build]
+    needs: [workflows, detect, go, windows-supervisor, windows-cli, lint, govulncheck, licenses, harness, site-build]
     runs-on: ubuntu-latest
     steps:
-      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || needs.site-build.result != 'success' || (needs.detect.outputs.go == 'true' && (needs.go.result != 'success' || needs.windows-supervisor.result != 'success'))
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || needs.site-build.result != 'success' || (needs.detect.outputs.go == 'true' && (needs.go.result != 'success' || needs.windows-supervisor.result != 'success' || needs.windows-cli.result != 'success'))
         run: exit 1
