@@ -223,6 +223,40 @@ check "success runs vet" grep -q '^go vet ./...' "$TRACE"
 check "success runs formatting" grep -q '^gofmt -l .' "$TRACE"
 check "success runs lint" grep -q 'golangci-lint' "$TRACE"
 check "success runs dependency vulnerability check" grep -q 'govulncheck' "$TRACE"
+# Check execution order, not only required-gate selection or command presence.
+preflights_before_race() {
+  python3 - "$1" <<'PYTRACE'
+import pathlib
+import sys
+lines = pathlib.Path(sys.argv[1]).read_text().splitlines()
+race = [i for i, line in enumerate(lines) if line.startswith("go test -race ")]
+preflights = ("gofmt -l .", "go mod tidy -diff", "go vet ./...", "golangci-lint", "govulncheck")
+if len(race) != 1:
+    sys.exit(1)
+for command in preflights:
+    positions = [i for i, line in enumerate(lines) if command in line]
+    if len(positions) != 1 or positions[0] >= race[0]:
+        sys.exit(1)
+PYTRACE
+}
+check "every required preflight executes before race tests" preflights_before_race "$TRACE"
+# Retain one broken trace for each late preflight. These control the assertion
+# itself, while the real success trace above checks the actual gate runner.
+for preflight in 'gofmt -l .' 'go mod tidy -diff' 'go vet ./...' 'golangci-lint' 'govulncheck'; do
+  LATE="$TEST_TMP/late-preflight.log"
+  python3 - "$TRACE" "$LATE" "$preflight" <<'PYLATE'
+import pathlib
+import sys
+lines = pathlib.Path(sys.argv[1]).read_text().splitlines()
+late = [line for line in lines if sys.argv[3] in line]
+assert len(late) == 1
+pathlib.Path(sys.argv[2]).write_text("\n".join([line for line in lines if line not in late] + late) + "\n")
+PYLATE
+  CHECKS=$((CHECKS + 1))
+  if preflights_before_race "$LATE"; then
+    fail "[late $preflight is rejected] broken order passed"
+  fi
+done
 gate hygiene
 expect 0 "hygiene remains required and passes"
 lib status

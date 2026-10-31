@@ -12,10 +12,15 @@ on disk now" from "this gate passed once, on something else".
 
 scripts/harness/gate.sh is the entry point for `run`. Gates and groups:
 
-    go-fmt go-vet go-test go-mod-tidy golangci-lint govulncheck    scope go
+    go-fmt go-mod-tidy go-vet golangci-lint govulncheck go-test    scope go
     harness-lint harness-tests shellcheck                          scope harness
     hygiene                                                        scope all
     go | harness | all                                             the gates the change set needs
+
+Go groups run required preflights before the race suite: formatting, module
+consistency, vet, lint when configured, and vulnerability checks on module changes.
+Explicitly named gates retain caller order; group selection does not add optional
+checks when their existing conditions are absent.
 
 Only a verifiably successful run records. `run` computes the scope's fingerprint,
 runs the gate's fixed command unpiped from the tree root, and writes
