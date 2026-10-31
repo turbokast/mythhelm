@@ -11,7 +11,7 @@ PACKAGE = re.compile(r"[A-Za-z0-9_~.+-]+(?:/[A-Za-z0-9_~.+-]+)*\Z")
 
 def select_packages(raw, shard):
     packages = raw.splitlines()
-    if not packages or any(not PACKAGE.fullmatch(p) for p in packages):
+    if not packages or any(p.startswith("-") or not PACKAGE.fullmatch(p) for p in packages):
         raise ValueError("empty or malformed package list")
     if len(packages) != len(set(packages)) or packages.count(SUPERVISOR) != 1:
         raise ValueError("duplicate packages or missing supervisor")
@@ -31,7 +31,12 @@ def main(argv=None):
         packages = select_packages(result.stdout, args.shard)
         command = ["go", "test"] + (["-race"] if args.race else []) + ["-p", "1", *packages]
         return subprocess.run(command, check=False).returncode
-    except (OSError, subprocess.CalledProcessError, ValueError) as exc:
+    except subprocess.CalledProcessError as exc:
+        print(f"go test shard: go list failed: {exc}", file=sys.stderr)
+        if exc.stderr:
+            print(exc.stderr, file=sys.stderr, end="" if exc.stderr.endswith("\n") else "\n")
+        return 1
+    except (OSError, ValueError) as exc:
         print(f"go test shard: {exc}", file=sys.stderr)
         return 1
 

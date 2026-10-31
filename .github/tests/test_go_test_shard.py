@@ -1,5 +1,7 @@
 """Offline tests for the Windows package partition and failure propagation."""
 import importlib.util
+import contextlib
+import io
 from pathlib import Path
 import subprocess
 import unittest
@@ -16,17 +18,20 @@ class ShardTests(unittest.TestCase):
         raw = "\n".join(packages) + "\n"
         left, right = s.select_packages(raw, "supervisor"), s.select_packages(raw, "rest")
         self.assertFalse(set(left) & set(right))
-        self.assertEqual(set(left + right), set(packages))
+        self.assertCountEqual(left + right, packages)
 
     def test_bad_lists_refuse(self):
-        for raw in ("", "\n", "a\na\n", "a\n", s.SUPERVISOR + "\n", s.SUPERVISOR + "\na\na\n", s.SUPERVISOR + "\ninvalid name\n", s.SUPERVISOR + "\n\na\n"):
+        for raw in ("", "\n", "a\na\n", "a\n", s.SUPERVISOR + "\n", s.SUPERVISOR + "\na\na\n", s.SUPERVISOR + "\n-race\n", s.SUPERVISOR + "\n-exec\n", s.SUPERVISOR + "\ninvalid name\n", s.SUPERVISOR + "\n\na\n"):
             with self.subTest(raw=raw), self.assertRaises(ValueError):
                 s.select_packages(raw, "rest")
 
     def test_go_list_failure_prevents_tests(self):
-        with mock.patch.object(s.subprocess, "run", side_effect=subprocess.CalledProcessError(2, ["go", "list"])) as run:
+        failure = subprocess.CalledProcessError(2, ["go", "list"], stderr="synthetic list diagnostic\n")
+        captured = io.StringIO()
+        with mock.patch.object(s.subprocess, "run", side_effect=failure) as run, contextlib.redirect_stderr(captured):
             self.assertNotEqual(s.main(["rest"]), 0)
             self.assertEqual(run.call_count, 1)
+        self.assertIn("synthetic list diagnostic", captured.getvalue())
 
     def test_malformed_list_never_runs_go_test(self):
         listing = subprocess.CompletedProcess([], 0, stdout="example.test/project/a\n")
