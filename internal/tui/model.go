@@ -57,7 +57,9 @@ type Config struct {
 // session-observed truthful-motion state (motion.go); notices holds the
 // drained ui.notice events (live.go); loadSnapshot is the poll-tick reload
 // seam; liveQuit/liveDone join the channel pump; recoverEvents and
-// recoverNotices feed the in-flight recover action live (live.go).
+// recoverNotices feed the in-flight recover action live; reload is the one
+// owned in-flight snapshot load and reloadGen counts the action results a
+// load must not predate (live.go).
 type Model struct {
 	viewDone            chan struct{}
 	cfg                 Config
@@ -114,6 +116,8 @@ type Model struct {
 	liveMu              sync.Mutex
 	recoverEvents       chan journal.Event
 	recoverNotices      *NoticeBacklog
+	reload              *reloadCall
+	reloadGen           uint64
 }
 
 // newModel builds the program state with default dimensions; the first
@@ -143,8 +147,9 @@ func newModel(cfg Config) *Model {
 // dir with no database shows the empty state; any other load failure (an
 // unknown run ID included) is returned before the program starts. In live
 // mode the channel pump forwards Events until the program exits, and the
-// 200 ms poll chain (live.go) reloads in both modes; quitting joins the
-// pump with no goroutine left behind.
+// 200 ms poll chain (live.go) reloads off the Update loop in both modes;
+// quitting joins the pump and cancels and joins any in-flight reload, with
+// no goroutine left behind.
 func Run(ctx context.Context, cfg Config) error {
 	m := newModel(cfg)
 	m.runCtx = ctx
@@ -171,6 +176,16 @@ func Run(ctx context.Context, cfg Config) error {
 // moves focus on the failure-transition edge (motion.go); it never arms
 // animation frames, which only Update can schedule beside their tick.
 func (m *Model) setSnapshot(ctx context.Context, snap viewmodel.Snapshot) {
+	var diff Diff
+	var diffErr error
+	if snap.Attempt != nil && snap.Candidate != nil {
+		diff, diffErr = m.loadDiff(ctx, snap.Attempt.WorkspacePath, snap.Candidate.BaseRev, snap.Candidate.Commit)
+	}
+	m.installSnapshot(snap, diff, diffErr)
+}
+
+// installSnapshot applies a snapshot and its already-loaded diff to the model.
+func (m *Model) installSnapshot(snap viewmodel.Snapshot, diff Diff, diffErr error) {
 	wasReady := m.ready
 	prevAttempt, nextAttempt := "", ""
 	if m.snap.Attempt != nil {
@@ -219,15 +234,7 @@ func (m *Model) setSnapshot(ctx context.Context, snap viewmodel.Snapshot) {
 			m.selectedLane = snap.Attempt.AttemptID
 		}
 	}
-	m.diff, m.diffErr = Diff{}, nil
-	if snap.Attempt != nil && snap.Candidate != nil {
-		d, err := m.loadDiff(ctx, snap.Attempt.WorkspacePath, snap.Candidate.BaseRev, snap.Candidate.Commit)
-		if err != nil {
-			m.diffErr = err
-		} else {
-			m.diff = d
-		}
-	}
+	m.diff, m.diffErr = diff, diffErr
 }
 
 // revisionRE accepts the 40–64 hex revisions the review diff uses.
@@ -282,12 +289,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cancelAction()
 		return m, m.exit(ExitUnresolvedAction)
 	case pollTickMsg:
-		m.onPollTick()
+		reload := m.onPollTick()
 		if m.managedPoll {
-			return m, m.scheduleMotion()
+			return m, tea.Batch(reload, m.scheduleMotion())
 		}
-		return m, tea.Batch(m.pollCmd(), m.scheduleMotion())
+		return m, tea.Batch(m.pollCmd(), reload, m.scheduleMotion())
+	case reloadResultMsg:
+		m.applyReload(msg.call)
+		return m, m.scheduleMotion()
 	case actionResultMsg:
+		// A load in flight may have read the journal before this action.
+		m.reloadGen++
 		m.applyActionResult(msg)
 		return m, nil
 	case motionFrameMsg:
