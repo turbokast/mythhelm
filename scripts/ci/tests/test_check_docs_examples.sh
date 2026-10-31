@@ -5,6 +5,8 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 python3 - "$root" <<'PY'
 import html
+import ast
+import itertools
 import json
 import re
 from pathlib import Path
@@ -102,12 +104,48 @@ class Examples(unittest.TestCase):
         self.assertIn('    uses: ./.github/workflows/docs.yml', site)
         self.assertIn('    name: CI OK', gate)
         self.assertIn('    if: always()', gate)
+        self.assertFalse(any(line.strip().startswith('continue-on-error:') for line in gate))
         needs = [line for line in gate if line.startswith('    needs: ')]
         self.assertEqual(1, len(needs))
-        self.assertRegex(needs[0], r'^    needs: \[.*\bsite-build\b.*\]$')
+        match = re.fullmatch(r'    needs: \[([a-z0-9, -]+)\]', needs[0])
+        self.assertIsNotNone(match)
+        dependencies = [item.strip() for item in match[1].split(',')]
+        self.assertEqual(len(dependencies), len(set(dependencies)))
+        self.assertTrue({'detect', 'go', 'windows-supervisor', 'site-build'} <= set(dependencies))
         conditions = [line for line in gate if line.startswith('      - if: ')]
-        self.assertEqual(["      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || needs.site-build.result != 'success'"], conditions)
-        self.assertIn('        run: exit 1', gate)
+        self.assertEqual(1, len(conditions))
+        position = gate.index(conditions[0]) + 1
+        self.assertLess(position, len(gate))
+        self.assertEqual('        run: exit 1', gate[position])
+        expression = conditions[0].split(': ', 1)[1]
+        expression = expression.replace("contains(needs.*.result, 'failure')", "('failure' in results)")
+        expression = expression.replace("contains(needs.*.result, 'cancelled')", "('cancelled' in results)")
+        for source, name in (('needs.site-build.result', 'site'), ('needs.windows-supervisor.result', 'supervisor'),
+                             ('needs.detect.outputs.go', 'detected'), ('needs.go.result', 'go')):
+            expression = expression.replace(source, name)
+        expression = expression.replace('||', ' or ').replace('&&', ' and ')
+        expression = re.sub(r'\bfalse\b', 'False', expression)
+        try:
+            tree = ast.parse(expression, mode='eval')
+        except SyntaxError as exc:
+            self.fail(f'unsupported CI condition: {exc}')
+        allowed = (ast.Expression, ast.BoolOp, ast.Or, ast.And, ast.Compare, ast.Eq, ast.NotEq,
+                   ast.In, ast.Name, ast.Load, ast.Constant)
+        self.assertTrue(all(isinstance(node, allowed) for node in ast.walk(tree)))
+        self.assertTrue({node.id for node in ast.walk(tree) if isinstance(node, ast.Name)} <=
+                        {'results', 'site', 'supervisor', 'detected', 'go'})
+        compiled = compile(tree, '<ci-condition>', 'eval')
+        for detected, go, supervisor, site, other in itertools.product(
+                ('true', 'false'), ('success', 'failure', 'cancelled', 'skipped'),
+                ('success', 'failure', 'cancelled', 'skipped'),
+                ('success', 'failure', 'cancelled', 'skipped'),
+                ('success', 'failure', 'cancelled')):
+            values = dict(detected=detected, go=go, supervisor=supervisor, site=site,
+                          results=[go, supervisor, site, other])
+            expected = ('failure' in values['results'] or 'cancelled' in values['results'] or
+                        site != 'success' or (detected == 'true' and
+                        (go != 'success' or supervisor != 'success')))
+            self.assertEqual(expected, eval(compiled, {'__builtins__': {}}, values), values)
 
     def test_workflow_build_and_gate_contract(self):
         ci = (repository / '.github/workflows/ci.yml').read_text()
@@ -132,12 +170,24 @@ class Examples(unittest.TestCase):
 
     def test_gate_contract_rejects_comments_and_other_jobs(self):
         ci = (repository / '.github/workflows/ci.yml').read_text()
-        for line in ("    needs: [workflows, detect, go, lint, govulncheck, licenses, harness, site-build]",
-                     "      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || needs.site-build.result != 'success'"):
+        lines = ci.splitlines()
+        needs = next(line for line in lines if line.startswith('    needs: [workflows,'))
+        condition = next(line for line in lines if line.startswith('      - if: contains(needs.*.result'))
+        for line in (needs, condition, '        run: exit 1'):
             for replacement in ('    # ' + line.strip(), ''):
-                mutant = ci.replace(line, replacement) + '\n  unrelated:\n' + line + '\n'
+                self.assertEqual(1, ci.count(line))
+                mutant = ci.replace(line, replacement, 1) + '\n  unrelated:\n' + line + '\n'
                 with self.subTest(line=line, replacement=replacement), self.assertRaises(AssertionError):
                     self.assert_ci_contract(mutant)
+        for old, new in (('site-build]', ']'),
+                         ("needs.site-build.result != 'success'", 'false'),
+                         ("needs.go.result != 'success'", 'false'),
+                         ("needs.windows-supervisor.result != 'success'", 'false'),
+                         (condition.strip()[6:], '(' + condition.strip()[6:] + ') && false'),
+                         ('        run: exit 1', '        run: exit 1\n        continue-on-error: true')):
+            self.assertEqual(1, ci.count(old))
+            with self.subTest(old=old), self.assertRaises(AssertionError):
+                self.assert_ci_contract(ci.replace(old, new, 1))
 
     def test_exclusive_modes(self):
         self.fixture()
