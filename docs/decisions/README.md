@@ -10,7 +10,7 @@ Significant decisions (see [GOVERNANCE.md](../../GOVERNANCE.md)) are recorded he
 
 - [0021. Production singleton composition and scoped attachment control](0021-service-attachment-composition.md): ordinary production dispatch, root-wide migration, coherent scoped reads and durable stop acknowledgment; accepted under the exact-revision review and delegated maintainer decision recorded in Task 1.
 
-- [0022. Durable service admission binding and bounded observer delivery](0022-service-admission-binding.md): proposed field-level admission proof, one-use dispatch and bounded observation contract; not accepted and does not unblock runtime Tasks 6–9.
+- [0022. Durable service admission binding and bounded observer delivery](0022-service-admission-binding.md): exact design `d8975b35b342bc7f5be34c43bcdbcc39e64ecf52` accepted after independent review and maintainer adoption, with follow-on spec PR #543 merged at `d35073de4e496ac264f17c2833aff094d88a7c81`; runtime Tasks 6–9 retain their independent implementation and Task 4 gates.
 
 ## Template
 
