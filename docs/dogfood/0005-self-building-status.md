@@ -10,7 +10,8 @@ not been demonstrated. MYTHHELM is only partially self-hosting.**
 
 This is a dated coordinator observation at main revision
 `bb9c99fd2a9582e1e703eb9234291cf577d5dc74`, with the separately identified
-specification candidate below. It records failures as well as accepted changes.
+specification candidate below, followed by the fixture-repair merge identified
+separately below. It records failures as well as accepted changes.
 Subsequent fixes do not turn these failed attempts into first-pass successes.
 Raw private ledgers, account/configuration data and native output are excluded.
 
@@ -54,6 +55,15 @@ and missing links from the docs landing and measurement pages. The first draft
 was not accepted; this correction fixes those documentation defects. They remain
 part of this delivery's failed first-pass record.
 
+After that snapshot, [fixture repair #545](https://github.com/turbokast/mythhelm/pull/545)
+merged at `7b4429a45369d2a4baa8bcf4981d062bc4dfecd9`. It avoids writing a new
+Unix executable for the recovery fixture, retains the real Windows executable
+copy and strengthens the malformed-argument check. Required platform CI passed,
+and the merged tree matched the tested candidate. The earlier failure remains
+recorded; its underlying writer or kernel cause was not established, and local
+repetitions of the old fixture passed. The updated spec still requires its own
+fresh CI and merge.
+
 At this snapshot, the separately merged follow-on spec and the ADR acceptance
 record required for Task 22 are still outstanding. Task 4's ownership review also
 remains separate. An architecture document, passing helper tests or a proposed
@@ -83,7 +93,7 @@ not measure accepted full-product output.
 
 ## What must improve
 
-The immediate work is to resolve the fixture failure, merge the separately
+The immediate work is to validate the integrated spec, merge the separately
 reviewed contracts and implement their independent producer tasks while retaining
 the ownership and admission gates. More accepted native-authored changes through
 an admitted route are needed to establish dependable self-use.
