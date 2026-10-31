@@ -23,7 +23,7 @@ Raw private ledgers, account/configuration data and native output are excluded.
 | [Pinned browser driver update, #542](https://github.com/turbokast/mythhelm/pull/542) | The independently signed maintenance update passed checks and merged. Main CI at the revision above succeeded. A dependency update does not deliver the broader multi-agent product. |
 
 The implemented CLI/TUI slice and its unsupported cases remain listed in the
-[README](../../README.md#dogfood-slice-status) and
+[README at this source revision](https://github.com/turbokast/mythhelm/blob/bb9c99fd2a9582e1e703eb9234291cf577d5dc74/README.md#dogfood-slice-status) and
 [limitations register](../limitations.md). Service-owned ordinary dispatch,
 qualified Codex execution and the broader adaptive product remain unfinished at
 this snapshot.
@@ -48,6 +48,11 @@ That result blocked the spec merge. A separate fixture repair was prepared for
 independent review and fresh CI; the failed check was neither waived nor manually
 rerun. The failure does not establish which process or kernel mechanism made the
 file busy.
+
+Publication review of this report also found a broken published-site README link
+and missing links from the docs landing and measurement pages. The first draft
+was not accepted; this correction fixes those documentation defects. They remain
+part of this delivery's failed first-pass record.
 
 At this snapshot, the separately merged follow-on spec and the ADR acceptance
 record required for Task 22 are still outstanding. Task 4's ownership review also
