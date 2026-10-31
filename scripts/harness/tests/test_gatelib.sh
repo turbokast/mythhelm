@@ -274,17 +274,27 @@ REVIEW_COMMAND="$(python3 - "$REPO_ROOT/.claude/agents/code-reviewer.md" <<'PYCO
 import pathlib
 import sys
 lines = pathlib.Path(sys.argv[1]).read_text().splitlines()
-for prefix in (': "${REVIEW_BASE:', 'REVIEW_BASE="$(git rev-parse', 'scripts/harness/gate.sh '):
+for prefix in (': "${REVIEW_BASE:', 'REVIEW_BASE="$(git rev-parse', 'REVIEW_BASE="$(git merge-base', 'scripts/harness/gate.sh '):
     line = next(line for line in lines if line.startswith(prefix))
     print(line.replace('scripts/harness/gate.sh', '"$GATE"', 1))
 PYCOMMAND
 )"
+# A divergent target has the same tree as HEAD but a different child commit.
+# Direct target-to-HEAD comparison is empty; the actual review merge base is not.
+REVIEW_TARGET="$(git -C "$R" commit-tree "$(git -C "$R" rev-parse 'HEAD^{tree}')" -p "$REVIEW_BASE" -m 'synthetic divergent target')"
 TRACE="$TEST_TMP/review-base-tools.log"
 : > "$TRACE"
-OUT="$(cd "$R" && REVIEW_BASE="$REVIEW_BASE" GATE="$GATE" FAKE_LOG="$TRACE" bash -c "$REVIEW_COMMAND" 2>&1)"; RC=$?
+OUT="$(cd "$R" && REVIEW_BASE="$REVIEW_TARGET" GATE="$GATE" FAKE_LOG="$TRACE" bash -c "$REVIEW_COMMAND" 2>&1)"; RC=$?
 expect 0 "explicit reviewed base runs the committed Go changes"
 check "all reviewed preflights execute before race" preflights_before_race "$TRACE"
 check "review race marker exists" test -f "$R/.claude/data/gate-marker-go-test.json"
+DIRECT_COMMAND="$(printf '%s\n' "$REVIEW_COMMAND" | grep -v '^REVIEW_BASE=.*git merge-base')"
+: > "$TRACE"
+OUT="$(cd "$R" && REVIEW_BASE="$REVIEW_TARGET" GATE="$GATE" FAKE_LOG="$TRACE" bash -c "$DIRECT_COMMAND" 2>&1)"; RC=$?
+expect 0 "the unnormalized target counterfactual exposes an empty direct diff"
+CHECKS=$((CHECKS + 1))
+if preflights_before_race "$TRACE"; then fail "[target tip must not satisfy merge-base acceptance]"; fi
+
 # Keep the omission counterfactual: the old group invocation returns success but
 # cannot satisfy the required execution trace on this clean committed checkout.
 OMITTED_COMMAND="${REVIEW_COMMAND/--base \"\$REVIEW_BASE\" /}"
@@ -302,10 +312,21 @@ OUT="$(cd "$R" && REVIEW_BASE=missing-synthetic-base GATE="$GATE" FAKE_LOG="$TRA
 CHECKS=$((CHECKS + 1))
 [[ "$RC" != 0 ]] || fail "[invalid review base must fail closed]"
 check "invalid base executes no Go commands" test ! -s "$TRACE"
+check "domain commands live in separate blocks" python3 - "$REPO_ROOT/.claude/agents/code-reviewer.md" <<'PYBLOCKS'
+import pathlib
+import sys
+blocks = [part.split("```", 1)[0] for part in pathlib.Path(sys.argv[1]).read_text().split("```bash")[1:]]
+go = next(block for block in blocks if 'scripts/harness/gate.sh --base' in block)
+assert 'scripts/ci/lint-agent-harness.sh' not in go
+assert 'actionlint' not in go
+PYBLOCKS
+gate harness-lint
+expect 0 "independent harness gate remains runnable after unavailable Go base"
+
 
 gate hygiene
 expect 0 "hygiene remains required and passes"
-lib status
+lib status --base "$REVIEW_BASE"
 expect 0 "success leaves all required markers fresh"
 
 finish
