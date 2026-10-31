@@ -257,6 +257,52 @@ PYLATE
     fail "[late $preflight is rejected] broken order passed"
   fi
 done
+
+echo "== reviewer groups use an explicit base without origin/main =="
+repo review-base
+REVIEW_BASE="$(git -C "$R" rev-parse HEAD)"
+echo "go 1.27" >> "$R/go.mod"
+printf 'version: 2\n' > "$R/.golangci.yml"
+echo "// committed review change" >> "$R/internal/x/x.go"
+git -C "$R" add go.mod .golangci.yml internal/x/x.go
+git -C "$R" commit -q -s -m "synthetic committed review change"
+check "review fixture is clean" test -z "$(git -C "$R" status --porcelain)"
+check "review fixture has no origin/main" test -z "$(git -C "$R" for-each-ref refs/remotes/origin/main)"
+# Exercise the actual runbook commands, substituting only the wrapper's location
+# because the synthetic repository does not contain the real harness source.
+REVIEW_COMMAND="$(python3 - "$REPO_ROOT/.claude/agents/code-reviewer.md" <<'PYCOMMAND'
+import pathlib
+import sys
+lines = pathlib.Path(sys.argv[1]).read_text().splitlines()
+for prefix in (': "${REVIEW_BASE:', 'REVIEW_BASE="$(git rev-parse', 'scripts/harness/gate.sh '):
+    line = next(line for line in lines if line.startswith(prefix))
+    print(line.replace('scripts/harness/gate.sh', '"$GATE"', 1))
+PYCOMMAND
+)"
+TRACE="$TEST_TMP/review-base-tools.log"
+: > "$TRACE"
+OUT="$(cd "$R" && REVIEW_BASE="$REVIEW_BASE" GATE="$GATE" FAKE_LOG="$TRACE" bash -c "$REVIEW_COMMAND" 2>&1)"; RC=$?
+expect 0 "explicit reviewed base runs the committed Go changes"
+check "all reviewed preflights execute before race" preflights_before_race "$TRACE"
+check "review race marker exists" test -f "$R/.claude/data/gate-marker-go-test.json"
+# Keep the omission counterfactual: the old group invocation returns success but
+# cannot satisfy the required execution trace on this clean committed checkout.
+OMITTED_COMMAND="${REVIEW_COMMAND/--base \"\$REVIEW_BASE\" /}"
+: > "$TRACE"
+OUT="$(cd "$R" && REVIEW_BASE="$REVIEW_BASE" GATE="$GATE" FAKE_LOG="$TRACE" bash -c "$OMITTED_COMMAND" 2>&1)"; RC=$?
+expect 0 "the omitted-base counterfactual exposes the old no-op"
+CHECKS=$((CHECKS + 1))
+if preflights_before_race "$TRACE"; then fail "[omitted base must not satisfy review acceptance]"; fi
+: > "$TRACE"
+OUT="$(cd "$R" && env -u REVIEW_BASE GATE="$GATE" FAKE_LOG="$TRACE" bash -c "$REVIEW_COMMAND" 2>&1)"; RC=$?
+CHECKS=$((CHECKS + 1))
+[[ "$RC" != 0 ]] || fail "[missing review base must fail closed]"
+check "missing base executes no Go commands" test ! -s "$TRACE"
+OUT="$(cd "$R" && REVIEW_BASE=missing-synthetic-base GATE="$GATE" FAKE_LOG="$TRACE" bash -c "$REVIEW_COMMAND" 2>&1)"; RC=$?
+CHECKS=$((CHECKS + 1))
+[[ "$RC" != 0 ]] || fail "[invalid review base must fail closed]"
+check "invalid base executes no Go commands" test ! -s "$TRACE"
+
 gate hygiene
 expect 0 "hygiene remains required and passes"
 lib status

@@ -58,11 +58,15 @@ When a verdict is uncertain, keep the finding and mark it low confidence. Findin
 Run the gates for the touched domains and report the observed results, never a summary:
 
 ```bash
-scripts/harness/gate.sh go                                          # Go: required preflights, then race suite
+: "${REVIEW_BASE:?Supply the exact review base, or report Go gates unavailable}"
+REVIEW_BASE="$(git rev-parse --verify "$REVIEW_BASE^{commit}")" || exit 1
+scripts/harness/gate.sh --base "$REVIEW_BASE" go                     # Go: required preflights, then race suite
 scripts/ci/lint-agent-harness.sh && .claude/hooks/tests/run-tests.sh     # harness
 go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12                # workflows
 ```
 
+Use the exact review base supplied with the task; if it is unavailable, report
+Go gates unavailable rather than falling back to HEAD or claiming a pass.
 The Go group selects formatting, module consistency and vet, then lint when
 configured and vulnerability checking on module changes, before the race suite.
 Keep the quality-gates matrix's additional module-change `CGO_ENABLED=0 go build ./...`
