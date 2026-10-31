@@ -20,6 +20,46 @@ fallbacks. Blocked launches, errors, retries, missing usage and unfinished work
 remain visible. A blocked launch is not a completed native attempt. See the
 [measured delivery procedure](harness/measured-delivery.md).
 
+## Delivery target and current gap
+
+The project target is **at least 20× faster accepted delivery of the full product**.
+This is a target, not an observed result, forecast or guarantee. A defensible
+full-product baseline has not been established and the product is unfinished.
+We cannot currently report a measured speedup against this target.
+
+A valid comparison must freeze the product scope, acceptance revision and quality
+floor, and include planning, implementation, failed attempts, verification,
+review, CI, integration, human intervention and time blocked. For the same accepted
+scope, the target is elapsed delivery time no greater than baseline time divided
+by 20. Shipping a smaller scope, counting more PRs, or excluding failures and waits
+does not establish it. The controlled-comparison requirements below still apply.
+
+The [2026-10-30 self-building report](dogfood/0004-self-building-status.md) records
+an admitted scripted demo, a refused native documentation attempt, direct-session
+fallback and an incomplete design attempt. It is observational evidence of current
+use and failures, not a benchmark. The older successful maintenance pilot below
+remains historical evidence; it does not qualify today's route.
+
+## How delivery must improve
+
+The immediate work is to make one real native task-to-accepted-candidate route
+reliably usable for MYTHHELM's own changes, then measure repeat delivery against a
+strong direct-native baseline. Until that route is admitted, record the refusal
+and fallback rather than describing direct execution as self-hosting.
+
+Track time to accepted product behavior, unfinished attempts, rework and blocked
+critical-path tasks. Parallelize ready work with disjoint files and merged
+contracts. Batch a review round's corrections before rechecking the final tree,
+reuse only gate evidence whose fingerprint is still fresh, and stop unsuccessful
+work at its declared budget with a useful artifact or a concrete failure record.
+Check failures cheaply before spending time on expensive validation where the
+required check order permits it; changes to that order need tests and review.
+
+CI waiting and repeated verification are delivery costs. Reducing them must retain
+required checks, independent acceptance, authority boundaries and error visibility.
+An acceleration claim requires measured outcomes; changing an execution policy,
+writing this plan or adding another specification is not the claimed improvement.
+
 ## What we measure
 
 | Outcome | Measurement |
