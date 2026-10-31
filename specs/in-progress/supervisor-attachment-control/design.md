@@ -10,7 +10,13 @@ Grounded at `61d18e2`. The original requirements are HOLDS; the claim that the p
 
 `internal/workers/envelope.go:62` (`rg -n 'func CheckEnvelope' internal/workers/envelope.go`) rejects changed nonzero generation, while zero is legacy unfenced. `internal/workers/worker.go:326` (`rg -n 'func RequestStop' internal/workers/worker.go`) creates one first-wins stop.request per attempt, not one per operation. `internal/journal/journal.go:37` declares schema version 8; additive migration 0009 is currently free and must be revalidated before implementation.
 
-This child completes ADR 0014's ordinary production lifecycle and scoped core contract. Its original 21 bounded tasks and the proposed Task 22 design gate stay in the approved three-stream epic because a partially rewired owner/dispatch/ingest/control path cannot be advertised as an attach-ready service; each task remains independently reviewable. No per-run recover-enrollment mode, second service or recovered-only FR-1 claim is introduced.
+This child completes ADR 0014's ordinary production lifecycle and scoped core contract. Its original published Task1–22 IDs and the mandatory producer Tasks23–31 stay in the approved three-stream epic because a partially rewired owner/dispatch/ingest/control path cannot be advertised as an attach-ready service; each task remains independently reviewable. No per-run recover-enrollment mode, second service or recovered-only FR-1 claim is introduced.
+
+### Current admission-binding amendment baseline
+
+This amendment is grounded at main `1fdcc43a0b0cbe1d9946826f0e6d16ba9a82a7f3`, plus inspected unmerged Task4 candidate `3b3c5f5e80a3e0d87a944b43a0fde0881177e36a`. Historical grounding above describes its original revision, not today's schema. `rg -n 'SchemaVersion|loadMigrations' internal/journal/journal.go` and `rg -n 'CREATE TABLE prepared_runs|CREATE TABLE dispatch_outbox|attempt_id TEXT' internal/journal/migrations/0009_attachments.sql` establish schema9 and the existing attempts foreign key. `rg -n 'func .*run|CreateRun|appendAdmission|snapshot|recordLaunchIntent|planAttempt' internal/supervisor/{pipeline,state}.go` establishes admission → snapshot → launch-intent accounting. `git show 3b3c5f5e80a3e0d87a944b43a0fde0881177e36a:internal/supervisor/service_owner.go | rg -n 'func RunOwned|return runLocked'` establishes the candidate's trusted mutable-Decision seam; it is not merged proof.
+
+The exact reviewed/adopted ADR design is [ADR0022 candidate d8975b3](https://github.com/turbokast/mythhelm/blob/d8975b35b342bc7f5be34c43bcdbcc39e64ecf52/docs/decisions/0022-service-admission-binding.md). PR541 is still a merge prerequisite, not a file asserted to exist on this baseline. This separately reviewed amendment may merge first; Task22 completion and runtime Tasks6–9 remain held until both merge and the exact merged follow-on revision is recorded in Task22's handoff. The accepted content is not native/platform qualification or acceptance of PR527.
 
 ## 2. Composition and ownership (v2 §§3, 5.2, 6)
 
@@ -39,9 +45,9 @@ func ApplyOwned(ctx context.Context, j *journal.Journal, owner *ServiceOwner, ru
 
 Implementation staging is explicit: Task6 produces the singleton composition shell and its production entrypoint, authenticated existing status/root-conflict behavior and service-owned root context. At that stage, new run/attachment methods whose producers have not landed return capability_unsupported with zero mutation; no placeholder handler is advertised as complete composition. Actual admission/dispatch/adoption arrives in Tasks7–9, observation in Task10, public attachment in Task12 and durable stop in Tasks13–15. Full production registry/continued-worker-ingestion evidence is deferred to Task20 after those producers and public clients. Task6 tests do not seed or inject a worker and call that production execution evidence.
 
-Until Task 9 lands, `RunOwned` is a trusted internal ownership primitive, not proof of admission. Task 4 may exercise it with fixtures but must not wire it to a production request. Task 6 keeps run methods unsupported. No production dispatch may rely on a supplied mutable `admission.Decision` merely because its paths or configuration agree with itself. Task 9 must close this boundary before exposing start. Task 22 must resolve the synchronous callback and close hazards before Tasks 6 and 7: observer behavior must not deadlock ownership or compromise durable evidence, and shutdown must preserve ownership until active work has exited. The chosen delivery, overflow, cancellation and shutdown mechanism and its executable acceptance tests require a reviewed follow-on spec update before those tasks start. Task 4 tests do not establish this runtime property.
+Until Task 9 lands, `RunOwned` is a trusted internal ownership primitive, not proof of admission. Task 4 may exercise it with fixtures but must not wire it to a production request. Task 6 keeps run methods unsupported. No production dispatch may rely on a supplied mutable `admission.Decision` merely because its paths or configuration agree with itself. Task 9 must close this boundary before exposing start. ADR0022 and this amendment define the synchronous callback and close contract before Tasks 6 and 7: observer behavior must not deadlock ownership or compromise durable evidence, and shutdown must preserve ownership until active work has exited. The exact delivery, overflow, cancellation and shutdown mechanism and its executable acceptance tests are in §3.2 and Tasks6/7/10/27 below; their reviewed merges and Task22 handoff remain start gates. Task 4 tests do not establish this runtime property.
 
-`ServiceOwner` has private identity/generation/lifetime fields; each entry verifies root/run/held capability. It is not a boolean migration bypass. Existing Run/RecoverWithHooks retain legacy guards during the explicit migration period and call extracted lock-held bodies. Service entries never reacquire their held run lock. Hook delivery from the actor uses bounded copies, never the terminal's blocking callback. Apply remains explicit and executes existing guarded candidate/ref rules, not a host action. RecoverOwned owns the full continuation of observation/verification/receipt repair, not a parallel `control.Reconcile` task.
+`ServiceOwner` has private identity/generation/lifetime fields; each entry verifies root/run/held capability. It is not a boolean migration bypass. Existing Run/RecoverWithHooks retain legacy guards during the explicit migration period and call extracted lock-held bodies. Service entries never reacquire their held run lock. Hook adapters issue only nonblocking capacity-1 journal wakeups and bounded typed informational hints; canonical event bodies are pulled, never pushed through a terminal callback. Apply remains explicit and executes existing guarded candidate/ref rules, not a host action. RecoverOwned owns the full continuation of observation/verification/receipt repair, not a parallel `control.Reconcile` task.
 
 On a fresh empty root, initialize the root migration phase through the same locked migration path before opening the writer service. On an existing unadopted root, service status may report migration_required but must not admit/assign/stop/apply against that root; public mutation commands direct the operator to explicit preview/apply migration. Do not automatically migrate existing work on attach. Migration holds the instance lock and excludes an already-running writer; coordinate shutdown of a status-only listener before explicit migration without stopping workers. No service process owns a writable ledger concurrently with migration. Adopted roots refuse every legacy writer. Failed/partially imported migrations remain unavailable until the existing resumable migration finishes, including verification that the imported→adopted shortcut cannot evade the required ownership fence.
 
@@ -88,9 +94,9 @@ Preparation state is service-owned and generation-bound. A challenge has a stabl
 
 Environment is built service-side through the existing qualified adapter policy, from the service execution identity and native store. Caller environment is not serialized or copied to a durable preparation. Only command flags above express policy; a changed required native environment must cause explicit re-admission/restart guidance rather than borrowing another client's credentials. Tests cover PATH/native-configuration changes, credential-route sentinels and existing route qualification fixtures. Task content and native secrets never enter projected metadata or operations' public result.
 
-Task 8 binds the complete execution-relevant admission inputs and evidence in the service-owned preparation: source repository and revision, task bytes and digest, checks and no-checks, project and native configuration/trust, route and profile, billing and envelopes, confirmations and launch-relevant values. Revalidation covers the entire binding and peer, generation and expiry. Secret values and a caller environment do not enter durable state; later execution reconstructs sensitive native material through the qualified service identity, and refuses if required evidence no longer matches. A digest supplied beside an independently mutable decision is not authority.
+Task 8 binds the complete execution-relevant admission inputs and evidence in the service-owned preparation: source repository and revision, task bytes and digest, checks and no-checks, project and native configuration/trust, route and profile, billing and envelopes, confirmations and launch-relevant values. Revalidation covers the entire binding and peer, generation and expiry. Secret values and a caller environment do not enter durable state; later execution reconstructs only policy-permitted service-owned inputs and leaves native authentication to the native surface; MYTHHELM never extracts/copies/replays native subscription material and refuses missing/non-reconstructable required evidence. A digest supplied beside an independently mutable decision is not authority.
 
-Start validates preparation in one transaction, records the immutable admitted bundle, assignment, operation acknowledgment and dispatch intent. Task 9 must execute only a decision reconstructed from, and verified against, that immutable committed binding; missing, stale, altered or mismatched data refuses before worker spawn. Integrate the current pipeline's initial run/attempt insertion with the precommitted records so a duplicate insert, retry or recovery cannot open an alternate admission path. Where schema 9's stored binding and digest cannot reconstruct or verify a required field, add a reviewed additive migration, never modify a released migration. The exact representation, Task 8 producer-to-Task 9 consumer contract and service-to-supervisor proof-bearing API are resolved and recorded by Task 22 before Tasks 6–9 proceed; until then the production start remains unsupported. Worker spawn remains the existing durable one-use launch protocol. A dispatcher crash before/after launch reconciles identity/spool evidence before deciding whether the same committed unconsumed launch may proceed; ambiguous launch is quarantined, never blindly replayed. New replacement/continuation launches require a new explicit admitted operation. The service calls RunOwned with its own lifetime context. Client death after acceptance does not cancel it.
+Start validates preparation in one transaction, records the immutable admitted bundle, assignment, operation acknowledgment and dispatch intent. Task 9 must execute only a decision reconstructed from, and verified against, that immutable committed binding; missing, stale, altered or mismatched data refuses before worker spawn. Integrate the current pipeline's initial run/attempt insertion with the precommitted records so a duplicate insert, retry or recovery cannot open an alternate admission path. Where schema 9's stored binding and digest cannot reconstruct or verify a required field, add a reviewed additive migration, never modify a released migration. The exact representation, Task8 producer-to-Task9 consumer contract and service-to-supervisor opaque proof APIs are ADR0022 and §3.2 below, implemented by producer Tasks23–31 before their consumers; until then the production start remains unsupported. Worker spawn remains the existing durable one-use launch protocol. A dispatcher crash before/after launch reconciles identity/spool evidence before deciding whether the same committed unconsumed launch may proceed; ambiguous launch is quarantined, never blindly replayed. New replacement/continuation launches require a new explicit admitted operation. The production service calls supervisor.RunAdmittedOwned with its own lifetime context and opaque supervisor permit; RunOwned remains a trusted internal primitive, not a transport dispatch path. Client death after acceptance does not cancel it.
 
 Public run/plain/JSONL/accessible/TUI and demo are clients of these methods and the exact operation/observation contract below and observe service-owned outcomes. Preserve established linear bytes/exit semantics where applicable; any new accepted-operation status is explicit and tested. Demo temporary data survives a live detached worker. Trusted CLI stop/recover/apply use the same run actor. No hidden local fallback after a service error. Legacy paths remain usable only before migration with explicit compatibility diagnostics, never while service owns the root.
 
@@ -151,20 +157,360 @@ type RunClient interface {
     Operation(ctx context.Context, query OperationQuery) (OperationStatus, error)
     Observe(ctx context.Context, request ObserveRun) (RunObservation, error)
 }
-func NewRunClient(conn Conn) RunClient
+func NewRunClient(conn Conn) RunClient // existing constructor remains; no duplicate definition
+// Go-only metadata, never a new schema2 JSON body.
+type PreparedReply struct { Run PreparedRun; Revision uint64 }
+type PreparedRunClient interface {
+    RunClient
+    PrepareRevisioned(ctx context.Context, operationID string, spec RunSpec) (PreparedReply, error)
+    ConfirmRevisioned(ctx context.Context, operationID string, expectedPreparationRevision uint64,
+        confirmation RunConfirmation) (PreparedReply, error)
+}
+func NewPreparedRunClient(conn Conn) PreparedRunClient
+// Private fields/copy getter; client-created only after authenticated reply validation.
+type PreparationConflictError struct { current PreparedReply; cause *Error; hasCurrent bool }
+func (e *PreparationConflictError) Error() string
+func (e *PreparationConflictError) Unwrap() error
+func (e *PreparationConflictError) Current() (PreparedReply, bool)
 ```
 
-Add `SchemaVersion int` to RunSpec, RunConfirmation, StartRun, PreparedRun, RunAccepted, RecoverRun and ApplyRun; all require2. Generation for Start/Confirm/Prepare is the current root service generation in the outer control envelope (Prepare first resolves authenticated status); Prepare returns it and subsequent requests must match. Confirmation operation IDs are generated per answer; mutation preconditions remain in control.Intent. Start's expected_revision addresses its preparation revision, initially0, and is consumed exactly once with operation acknowledgment; RunAccepted.Revision is the resulting run revision. RecoverRun/ApplyRun already carry exact run revision/generation; a request cannot substitute a projection revision.
+Add `SchemaVersion int` to RunSpec, RunConfirmation, StartRun, PreparedRun, RunAccepted, RecoverRun and ApplyRun; all require2. Generation for Start/Confirm/Prepare is the current root service generation in the outer control envelope (Prepare first resolves authenticated status); Prepare returns it and subsequent requests must match. Revisioned preparation/confirmation callers allocate one explicit operation ID per logical intent and retain it with exact arguments for retries; mutation preconditions remain in control.Intent. ConfirmRevisioned and Start expected_revision address the actual server-reported preparation revision, initially0, and is consumed exactly once at Start with operation acknowledgment; RunAccepted.Revision is the resulting run revision. RecoverRun/ApplyRun already carry exact run revision/generation; a request cannot substitute a projection revision.
 
-Wire method mapping: run.prepare→PreparedRun; run.confirm→PreparedRun after revalidation; run.start→immutable RunAccepted; run.recover/run.apply→immutable ActionAccepted; run.operation(OperationQuery)→OperationStatus; run.observe(ObserveRun)→RunObservation. Prepare, Confirm, Start, Recover and Apply pass their typed bodies through control.Intent; Operation and Observe are read handlers and never allocate an operations row or advance a run revision. Mutations require an outer operation ID and immutable digest of exact typed arguments. Failed preconditions return a typed control error and no effect. Accepted recover/apply reconcile asynchronously under the actor; they do not hold a request open until terminal. Client death never cancels accepted work.
+The existing outer control.Result.Revision is the sole preparation-revision source; PreparedRun has no Revision and schema2 body fields remain unchanged. Task31 modifies the actual typedConnection.invoke in internal/control/client.go to add private invokeResult(ctx context.Context, method,operationID,object string, rev uint64,gen *int64,token string,params any,limit int) (Result,error) after frame/operation/nonnegative-revision validation. For a wire-valid reply invokeResult returns the full Result even when Result.Error is non-nil; transport/frame/operation/revision failures return no usable envelope. Existing invoke delegates and retains its prior body/error behavior for other methods; revisioned calls inspect the verified outer envelope before decoding PreparedRun. Revision must be explicitly present (including numeric0), not null or inferred from an absent int64 field. invokeResult uses a private closed envelope decode with a *int64 revision-presence field, rejects duplicate/unknown keys, then converts to existing Result only after presence/range/operation checks. Transport/protocol failures return no usable revision. NewPreparedRunClient uses the same existing runClient implementation, not a shadow constructor/type. Legacy RunClient.Prepare/Confirm fail closed with capability_unsupported/revisioned_preparation_required and zero request/state; their old signatures remain for source compatibility. Existing RunClient.Start already takes an explicit revision and remains guarded server-side. All new production consumers in Tasks16–19 use PreparedRunClient and the revisioned methods; they never estimate a counter or use a hardcoded0 after a reply.
+
+A successful PrepareRevisioned returns revision0 from its volatile server acknowledgement. Retention confirmation returns the verified stored outer revision1; each later changed confirmation returns the actual committed revision, and a consistent duplicate may return the unchanged current revision. Consumers pass only the latest validated server revision with the same preparation/binding/generation. They retain original operation ID, expected revision and exact request across transport uncertainty; same-op replay authenticates scope, verifies the immutable argument digest and returns the exact original acknowledgement/revision before stale-precondition rejection. A replayed acknowledgement is historical evidence, not a claim of current freshness; the next mutation may legitimately conflict after another client advanced state.
+
+For a new stale mutation to an otherwise authenticated same-generation, same-binding unconsumed preparation, the service returns revision_conflict with its coherent current PreparedRun in Result.Body and current preparation revision in Result.Revision, with zero mutation. The revisioned client validates body identity/binding/generation and outer revision before constructing PreparationConflictError; Current returns a deep copy. A consumer may use that server-authoritative reply to reconcile an unchanged intended answer and issue a fresh logical operation, never increment a counter. Foreign/unknown scope, changed binding/generation, consumed preparation, operation-ID argument conflict or missing current evidence releases no current body/revision hint; it returns the ordinary typed error. Service restart invalidates volatile plans/old context epochs; reconnect reads current service generation and refuses old preparation with dependency_stale, never guesses a revision. Accepted-run operation query/replay retains its separate fresh-authority contract.
+
+Task31 updates actual control/client.go, client_test.go, run_contract.go, run_contract_test.go and existing attachment_contract_test.go helper/call sites. Test framed outer replies through the real exported client, including retention plus multiple confirmations then Start, lost-ack same-op replay, concurrent stale callers, historical ack followed by authoritative conflict refresh, conflicting reuse, negative/missing metadata and reconnect. Preserve Task2 completion as historical; this amendment adds Go metadata/API behavior rather than retroactively claiming it existed.
+
+Wire method mapping: run.prepare→PreparedRun; run.confirm→PreparedRun after revalidation; run.start→immutable RunAccepted; run.recover/run.apply→immutable ActionAccepted; run.operation(OperationQuery)→OperationStatus; run.observe(ObserveRun)→RunObservation. Prepare/Confirm carry typed control.Intent bodies through the dedicated prepared-admission dispatcher described below; Start, Recover and Apply use their checked durable execution paths; Operation and Observe are read handlers and never allocate an operations row or advance a run revision. Mutations require an outer operation ID and immutable digest of exact typed arguments. Failed preconditions return a typed control error and no effect. Accepted recover/apply reconcile asynchronously under the actor; they do not hold a request open until terminal. Client death never cancels accepted work.
 
 OperationStatus.State is accepted, running, completed, failed or unconfirmed. Exactly one immutable acknowledgment arm matches Method: Start for run.start, Action for run.recover/run.apply, or Stop.Ack for an accepted stop. Outcome is populated for run.start/recover once observed, Apply for run.apply once reconciled, Stop for stop; incompatible arms are invalid_contract. Failure is populated only for a known failed/unconfirmed operation with a bounded canonical reason code. Running/accepted is not completion; unconfirmed is not failure or successful stop. RunOutcome.State/AttemptState use the existing supervisor state vocabulary without adding synthetic terminal states; Reason/AttemptReason retain bounded documented reason codes. CLI derives existing runExit semantics from this typed outcome; no daemon imports CLI renderer code. ApplyOutcome mirrors the existing guarded apply's exact branch and candidate commit. On replay/query, validate same-user/root/run authority before revealing the acknowledgment/result. Query of a prior-generation accepted operation is allowed under fresh authenticated current authority; it never resubmits or mutates that operation. Unknown/foreign operation returns permission_denied without cross-run existence disclosure.
 
-Observation is bounded pull/long-poll, not a server-owned persistent subscription. A client subscribes by repeating run.observe with its returned NextSequence. Limit is1..128 (default64); WaitMillis is0..1000; AfterSequence is a nonnegative committed per-run journal sequence (0 is beginning). The handler first authenticates root/current generation/run, then reads outcome, revision and the event page from one SQL snapshot. It releases the snapshot before an optional wait, and takes a fresh authenticated snapshot on wakeup. It never waits while holding a transaction or actor lock. One response is at most1MiB on this standalone method using the existing core frame ceiling; attachment/host traffic retains the stricter64KiB ceiling. Return only the bounded prefix fitting that response, with NextSequence equal to the last returned event; if none fits because an individual supported historical event exceeds the frame limit, return capability_unsupported with the safe reason event_too_large and do not advance the cursor. More means committed events remain after that cursor. Empty successful page retains the input cursor; terminal outcome is separate and may be returned with an empty page.
+Observation is bounded pull/long-poll, not a server-owned persistent subscription. Historical Task2 planning used default64/capability_unsupported for oversize; this reviewed ADR0022 amendment intentionally changes the future producer/consumer behavior to default128/protocol_mismatch. Task2 completion evidence is preserved as historical, not rewritten as evidence that this new runtime behavior exists. A client subscribes by repeating run.observe with its returned NextSequence. Limit is0..128; zero means default128; WaitMillis is0..1000; AfterSequence is a nonnegative committed per-run journal sequence (0 is beginning). The handler first authenticates root/current generation/run, then reads outcome, revision and the event page from one SQL snapshot. It releases the snapshot before an optional wait, and takes a fresh authenticated snapshot on wakeup. It never waits while holding a transaction or actor lock. One response is at most1MiB on this standalone method using the existing core frame ceiling; attachment/host traffic retains the stricter64KiB ceiling. Return only the bounded prefix fitting that response, with NextSequence equal to the last returned event; if none fits because an individual supported historical event exceeds the frame limit, return protocol_mismatch with the safe reason event_too_large and do not advance the cursor. More means committed events remain after that cursor. Empty successful page retains the input cursor; terminal outcome is separate and may be returned with an empty page.
 
 Events retain their original journal.Event fields/schema_version/payload and only the named run's committed sequence. The decoder selects the existing v1 event contract or v2contract.Envelope according to schema_version; unknown critical/newer versions fail capability_unsupported, malformed/gapped events fail invalid_contract, with no cursor advance. These ordinary operator events are not the host projection: clients apply the existing supervisor.IsStreamEvent output allowlist and current renderer sanitization; internal service.adopted is consumed for continuity but is not emitted as an undocumented JSONL stream event. No event is ever forwarded to hosts. A supported internal event may advance the scanned cursor after the caller has processed its control meaning; the accessible next-after trailer is the last actually consumed sequence, never a skipped unread page. Unknown/foreign run is permission_denied or ownership_unresolved per canonical visibility policy; future cursor/generation is revision_conflict; history missing under an otherwise valid cursor is capability_unsupported with history_unavailable, never a silent jump. Database/transport timeout is persistence_unavailable and does not advance a cursor. Retention is unchanged by this spec.
 
 Each Observe/Operation call has an end-to-end2second timeout including a maximum1second long poll; cancel affects only that read. Allow at most one outstanding observation per client/run connection, no unbounded push queue, and back off empty polls to the existing500ms cadence. CLI accessible history retains its1000-event per-invocation bound by paging at most128 at a time; only consumed events determine its trailer. TUI clients maintain a bounded latest-state cache and may coalesce display refreshes but cannot skip event processing required for an outcome. Native stdout/spool ingestion never waits for observation clients. Frame boundaries, snapshots, cursor continuity, mixed historical/new event versions and each typed failure are owned by the observation producer task before the public client tasks.
+
+### 3.2 Exact ADR0022 implementation contract and producer order
+
+The closed DTO declarations/field order, per-field dispositions and source-specific validation at ADR candidate d8975b3 are normative input to Task23, not a runtime import from an unmerged file. Canonical JSON has case-sensitive DTO identifiers, every field present, ordered executable arrays, sorted unique source/name sets, explicit nulls, no whitespace/newline/HTML escaping and SHA-256 over `MYTHHELM:service-admission-binding:v1\n` plus bytes. The strict 1 MiB decoder rejects duplicate/unknown/missing fields and noncanonical re-encoding. Per-field raw TaskSHA256 spelling may retain accepted prefix/uppercase; derived hashes are lowercase/unprefixed; native/project trust flags preserve exact admitted `sha256:<lowercase hex>` or empty, and NoChecks requires empty ConfigDigest plus complete zero config. The full numeric/string/count/expiry limits and nested DTO inventory are copied exactly from that candidate and pinned by independent golden/mutation fixtures.
+
+Task23 is a standard-library-only `internal/admissionbinding` producer: `EncodeV1(BindingV1) ([]byte,error)`, `DecodeV1([]byte) (BindingV1,error)`, `DigestV1(BindingV1) ([32]byte,error)`, plus strict cross-field `ValidateV1`. It imports no admission, control, journal, supervisor or service package. It may follow Task22 without Task4 because these existing source structs are all on main and its new leaf package consumes no owner capability. Task31 independently produces the revision-aware Go client contract after Task22 without consuming a Task4 owner; Task24 adds field-specific retention checking with the conservative policy below; Task25 adds atomic durable schema/mirrors, Task29 extracts pure quota/storage behavior and Task30 produces the closed journal transaction APIs; Task26 activates exact worker config source mapping after Task4; Task27 adds isolated nonblocking observer primitives. All runtime consumers retain Task22 and Task4-derived dependencies.
+
+#### Retention and staged preparation
+
+Task24 defines closed RetentionPolicyV1/RetentionApprovalV1 data in internal/admissionbinding/retention.go and aliases/checking in internal/admission/retention.go. A static policy rule identifies exact BindingV1 field path, classification (`non_secret` or `forbidden`) and provenance, with root/purpose/execution-policy scope in its content-addressed artifact; candidate value hashes are derived separately from the bound data; unknown/missing rows reject. Approval binds the exact canonical candidate digest, classified field/value set, authenticated standalone peer, root, generation/context epoch, expiry and affirmative `retain-local-binding` challenge. No wildcard, broad host permission or repository text grants retention. Native subscription material and full environment are always forbidden; provenance from auth stores/transcripts or credential-valued environment/argv refuses even with generic approval. These are finite typed-field/provenance controls, not a claim to recognize every possible secret in arbitrary text.
+
+Task8 holds the unapproved request/plan/task artifact in bounded service RAM (at most32 preparations total/8 per authenticated peer, each bounded by the1MiB canonical binding and1MiB task input caps, with the ADR5minute expiry; these count/byte limits are not a hard process-memory claim) and emits the exact retention challenge only over the authenticated standalone channel; no preparation JSON, binding bytes, GitEmail/title/path/check-argv/challenge text or grant is durably stored before approval. Pre-approval restart forgets that RAM preparation and returns dependency_stale; it cannot recover approval from a digest. After affirmative exact retention consent, Task30 atomically persists the approved preparation/retention answer and recomputes Ready from the entire immutable required-answer set in that same transaction. Retention-only consent has zero remaining answers and is Ready=true immediately; Ready=false applies only while another required answer is missing. Subsequent applicable confirmations are durably bound there and recompute the same predicate. No trust/admission/native effect follows from retention consent alone. The trusted CLI renders approved values; attachment/host methods cannot prepare, confirm or retrieve them. If actual policy/approval is unavailable, native service preparation remains unsupported; synthetic fixture approval is not a real operator grant. The first default policy denies every unclassified value; this spec neither provisions live retention authority nor infers native-account facts.
+
+#### Exact retention data types and authority distinction
+
+The following are new closed structural records in `internal/admissionbinding/retention.go`, not runtime grants; canonical keys use the same case-sensitive Go identifiers as BindingV1. Every slice is copied on validation; sorted Rules and derived field rows are unique by exact DTO field path, at most256 entries, with ordinary strings<=4096bytes and existing ID/hash/expiry rules.
+
+```go
+// package admissionbinding
+type RetentionClassV1 string
+const RetentionNonSecret RetentionClassV1 = "non_secret"
+const RetentionForbidden RetentionClassV1 = "forbidden"
+type RetentionProvenanceV1 string
+const RetentionOperatorInput RetentionProvenanceV1 = "operator_input"
+const RetentionServiceConfig RetentionProvenanceV1 = "service_config"
+const RetentionNativeStatus RetentionProvenanceV1 = "native_status_nonsecret"
+const RetentionNativeAuth RetentionProvenanceV1 = "native_auth_store"
+const RetentionTranscript RetentionProvenanceV1 = "native_transcript"
+const RetentionCredentialEnv RetentionProvenanceV1 = "credential_environment"
+type RetentionFieldV1 struct {
+    FieldPath, ValueSHA256 string
+    Classification RetentionClassV1
+    Provenance RetentionProvenanceV1
+}
+type RetentionRuleV1 struct {
+    FieldPath string
+    Classification RetentionClassV1
+    Provenance RetentionProvenanceV1
+}
+type RetentionPolicyContentV1 struct {
+    SchemaVersion int64 // exactly1
+    RootID, Purpose, ExecutionPolicyRevision string // Purpose local_run_binding
+    Rules []RetentionRuleV1 // complete sorted unique exact paths; no values/hashes
+}
+type RetentionPolicyV1 struct {
+    Revision string // sha256:<lowercase digest of Content>, verified, never a label
+    Content RetentionPolicyContentV1
+}
+type RetentionDecisionV1 string
+const RetentionApprove RetentionDecisionV1 = "approve"
+const RetentionReject RetentionDecisionV1 = "reject"
+type RetentionApprovalV1 struct {
+    SchemaVersion int64 // exactly1
+    PreparationID, ChallengeID, BindingSHA256, FieldSetSHA256 string
+    PolicyRevision, PeerID, RootID, ContextEpoch string
+    Generation int64
+    ExpiresAt, ObservedAt string
+    Decision RetentionDecisionV1
+}
+func (p RetentionPolicyV1) Validate() error
+func (a RetentionApprovalV1) Validate() error
+func RetentionPolicyDigestV1(RetentionPolicyContentV1) ([32]byte, error)
+func DeriveRetentionFieldsV1(BindingV1, RetentionPolicyV1) ([]RetentionFieldV1, error)
+func RetentionFieldSetSHA256([]RetentionFieldV1) ([32]byte, error)
+func EncodeRetentionPolicyV1(RetentionPolicyV1) ([]byte, error)
+func DecodeRetentionPolicyV1([]byte) (RetentionPolicyV1, error)
+func EncodeRetentionApprovalV1(RetentionApprovalV1) ([]byte, error)
+func DecodeRetentionApprovalV1([]byte) (RetentionApprovalV1, error)
+// package admission; aliases preserve these declarations without a dependency cycle.
+type RetentionPolicyV1 = admissionbinding.RetentionPolicyV1
+type RetentionApprovalV1 = admissionbinding.RetentionApprovalV1
+func CheckRetentionV1(binding admissionbinding.BindingV1,
+    policy RetentionPolicyV1, approval *RetentionApprovalV1, now time.Time) error
+```
+
+No field-set or policy object is added to AdmissionChallenge or RunConfirmation: their schema2 fields remain exactly those already implemented. The compatible commitment is internal and deterministic:
+
+1. Canonically encode the complete RetentionPolicyContentV1 using the exact declarations, sorted unique Rules, strict duplicate/unknown/missing-field rejection and1MiB cap. Its domain-separated digest is SHA-256 of `MYTHHELM:retention-policy:v1\n` plus those bytes. RetentionPolicyV1.Revision must equal `sha256:` plus that lowercase digest, and BindingV1.PolicyRevision/Decision.Environment.PolicyRevision must equal that exact reference. ExecutionPolicyRevision separately pins the full existing execution/acceptance policy by verified content digest, checked against the known policy passed to admission commit; no bare friendly label is accepted.
+2. The trusted service loads the complete immutable policy content by that reference, verifies its bytes/digest and root/purpose, then resolves the exact canonical BindingV1 field paths covered by Rules. FieldPath uses the declared case-sensitive DTO paths and explicit decimal array indices (no wildcards); each retained field must be covered exactly once, unknown/unclassified/forbidden/missing/extra rules refuse. For each covered value, derive RetentionFieldV1 with ValueSHA256 over its exact canonical JSON value and the rule's classification/provenance. These resolved value rows are **not** part of the policy Content or BindingV1; their sorted canonical encoding yields the internal RetentionFieldSetSHA256 under the separate retention-fields:v1 domain.
+3. Challenge.Text discloses the actual local retention root/purpose and field/value categories requiring consent, using the existing bounded Text field. It embeds neither its containing binding digest nor field-set digest. The existing wire BindingSHA256 commits the complete binding, including the policy content-address reference, challenge ID/kind/Text and candidate values. Existing RunConfirmation echoes only preparation/challenge/binding/Approved; the authenticated service checks those exact values. No imagined wire metadata or independent field-set authority is used.
+4. The service derives the internal RetentionApprovalV1 from that authenticated answer and recomputed policy/field-set, then the confirmation transaction reloads/verifies the pinned full policy and binding and recomputes the same rows/digest before storing. CheckRetentionV1 compares the internal record against this derived metadata, never a field-set hash supplied by a client. Tampering policy bytes under a retained reference, changing any value/rule/provenance/root/purpose, using a missing policy, changing challenge text or copying approval across binding rejects with zero mutation/launch. A hash-only consent fixture with no policy content must fail.
+
+The dependency order avoids a hash cycle: static policy content contains rule paths/classifications/provenance and the separate execution-policy reference, never BindingSHA256/FieldSetSHA256, candidate values or challenge text. Its digest is fixed first; challenge text and canonical binding are fixed next; resolved field-set and internal approval are computed last outside the binding. Retention codecs use distinct retention-policy:v1/retention-approval:v1 domains and exact copied records. Forbidden native-auth/transcript/credential-env provenance always refuses; absence/unknown remains unavailable. This finite typed-field/provenance design is not universal secret detection.
+
+CheckRetentionV1 and record constructors check shape/consistency, not whether a human authorized anything. A caller-constructed RetentionApprove string, Approved bool, policy or digest is never authority. The only production approval source is the ordinary authenticated standalone run.confirm handler, which matches its OS-transport-derived peer/root/generation and the live pending preparation/challenge. It maps the existing RunConfirmation.Approved answer to the closed decision after those checks; it never accepts a RetentionApprovalV1 or policy blob from a new wire method, host, plugin or repository. Service stores that answer in its private volatile preparation until retention checks pass, then writes the exact confirmation through the Task30 journal APIs below. Missing configured policy/real approval remains unavailable; test fixture construction grants no live authority. Trusted Go code/same-user administrators are not adversarially isolated by these types.
+
+The exact order is: (1) bounded RAM request/plan and challenge, no durable sensitive preparation; (2) authenticate and verify retention answer against that live binding/field-set/policy; (3) StoreRetainedPreparation writes approved bytes plus retention confirmation and computes Ready from the complete required set (true immediately for retention-only); (4) ConfirmPreparation records each remaining authenticated bound answer and recomputes Ready by the same rule; (5) ReadConfirmedPreparation validates that durable ready/not-consumed record; (6) supervisor.RevalidateService freshly resolves and seals it; (7) Start's admission transaction rechecks/consumes it. Rejection/expiry/context drift invalidates the preparation, never auto-approves it. Each write rechecks current identity/revision and rolls back on failure. Retention consent alone does not grant project/native trust, admit, reserve quota or launch.
+
+#### Atomic readiness, including zero remaining answers
+
+Readiness is derived state, never a caller-set bool or a later repair write. Both StoreRetainedPreparation and ConfirmPreparation, within their confirmation/ack transaction, load the exact nonempty required challenge set from the immutable canonical binding, validate unique recognized IDs/kinds and exactly one mandatory retain-local-binding challenge, then validate answers against that preparation/peer/root/context/generation/binding and applicable expiry/policy. Unknown/conflicting/rejected answers refuse/invalidate; no Ready=true is produced from them. Retention must be approved before any binding persistence. Only after those guards is Ready the conjunction that each required ID has one accepted affirmative answer. Missing additional answers mean false; no remaining IDs means true. Existing explicit authority can remove a non-retention challenge from the required set at preparation time, but cannot change that set after binding/confirmation.
+
+The first durable transaction inserts the retention answer, computes this predicate against all required IDs and writes row revision1, Ready and the matching immutable PreparedRun acknowledgement/outer Result.Revision together. For one required challenge (retention only), revision1 is already Ready=true and ReadConfirmedPreparation may succeed immediately; no synthetic extra confirmation is required. For retention plus additional required answers, revision1 is false until the final valid answer, whose own acknowledgement reports true. A consistent replay returns the exact originally committed readiness/revision; a new stale mutation follows the existing conflict/current-metadata rules, not a local increment. All row/ack/readiness effects roll back together on any failure. Final fresh RevalidateService and the Start transaction's consumed/root/generation/policy rechecks remain mandatory even when Ready is true.
+
+Zero remaining and zero total are deliberately different. This protocol always requires its bound retention challenge; a zero-total set lacks that mandatory authority path and fails closed with policy_ineligible/missing_retention_authority, persisting neither preparation nor grant. There is no new standing-retention-grant mechanism or vacuous empty-set success. Test zero-total refusal, retention-only success, additional-answer progression, rejection/conflict and all failure barriers separately.
+
+#### Private prepared-admission dispatch and durable confirmation replay
+
+Current `Server.Dispatch` sends normal handlers through `Execute` (`rg -n 'func .*Dispatch|return Execute' internal/control/server.go`); Execute stores the handler's result. Persisting a pre-retention PreparedRun challenge there would violate the volatile stage. Task8 therefore adds only this closed private dispatch seam:
+
+```go
+// package control; trusted internal registration, no new wire methods.
+func (s *Server) RegisterPreparedAdmission(prepare Handler, confirm Handler) error
+func PreparedAdmissionDigest(intent Intent) (string, error)
+```
+
+Registration binds exactly run.prepare/run.confirm, rejects nil/duplicate handlers and never exposes a general caller-selected bypass. Dispatch first validates the envelope and same-user standalone peer and refuses a capability token; the service handler then checks the current held root/generation and exact typed body before any lookup/replay/data release. These two methods bypass generic Execute/ExecuteLong: prepare and pre-retention confirmation use bounded volatile operation-ID/digest replay only; restart loses them and returns dependency_stale. The other methods' authentication/durable semantics remain unchanged. No raw challenge/plan is smuggled into operations.result before retention approval.
+
+After retention approval, Task30 StoreRetainedPreparation/ConfirmPreparation own their durable confirmation transaction and immutable operation acknowledgement together. PreparationOperation contains the actual outer operation ID and PreparedAdmissionDigest computed by the trusted dispatch from the validated original intent; that helper reuses the exact current intentDigest algorithm (including compact params/object/generation) and rejects methods other than prepare/confirm. It is metadata/idempotency, not a permission grant. Journal checks matching preparation/root/peer/generation/revision and bound answer before mutation, stores the schema2 PreparedRun acknowledgement derived from the same canonical binding/state in operations.result, and returns that exact result on a consistent duplicate only after current authenticated scope validation. It never imports control: its closed internal acknowledgement serialization is independently golden-compared with the existing control.PreparedRun/Result codec. Different arguments under one operation ID conflict. Initial retention confirmation advances RAM preparation revision0 to stored revision1; its immutable acknowledgement carries the Ready value computed in that same transaction (true for retention-only, false if additional answers remain). Remaining distinct confirmations advance revision when their state changes and compute Ready before recording their immutable acknowledgement. A consistent duplicate answer under a new operation ID may record an acknowledgement of current state without changing the confirmation; a conflicting answer refuses. No claimed row or partial ack survives a failed confirmation transaction.
+
+Task8 integration must prove generic operation persistence is never entered for an unapproved preparation, that scopes are checked before RAM/durable replay, and that post-retention confirmation plus ack roll back together on either write failure. Structural policy/constructor data alone cannot invoke this handler or mint a supervisor permit.
+
+#### Package/API ownership and transactions
+
+Task8 owns staged resolution in `internal/admission/service.go` and private sealing in `internal/supervisor/service_admission.go`: `supervisor.PrepareService(ctx, ServiceInputs) (*ServicePlan,error)` and `supervisor.RevalidateService(ctx,journal.ConfirmedPreparation,ServiceInputs) (*LaunchPermit,error)`. `ServiceInputs`, exact closed source mapping, context and expiry are ADR0022's inventory. Plan/permit private fields and their one-use state live wholly in supervisor; service gets only opaque handles/copy-only canonical metadata, never a Decision getter. Admission remains a reusable trusted resolver and imports no supervisor/service. This is a production registration and type/wiring control, not isolation from hostile same-process Go code.
+
+Task30 owns typed records/transactions after Task25 schema and Task29 quota producers in `internal/journal/admission_bindings.go`: `ReadConfirmedPreparation(ctx,PreparationLookup) (ConfirmedPreparation,error)`, `CommitServiceAdmission(ctx,AdmissionCommit) (CommittedAdmission,error)` and `ArmServiceDispatch(ctx,DispatchArm) (CommittedDispatch,error)`. Closed constructor fields are exactly ADR0022's preparation/root/peer/generation/context/binding/policy/ID/snapshot/deadline/nonce inventory; no arbitrary projection callback or serialized Decision/env. Journal imports the DTO leaf and existing pure billing/acceptance/v2contract vocabulary, never admission/supervisor/service. Its fixed transaction helpers extract the current declaration/trust/envelope/quota/policy operations without reversing that dependency; legacy admission retains its existing evaluator seam while sharing checked duplicate/insert storage helpers. The fixed service policy uses pure billing.EvaluateQuotaSchedule; supervisor.EvaluateBucket delegates after mapping BucketRow fields, and malformed inputs refuse. Tests compare both production paths. No callback is passed into the new service APIs to evade validation. Fault/mutation tests prove the same current quota/refusal behavior and transaction rollback rather than accepting a caller-computed reservation result.
+
+The mandatory additive migration is `internal/journal/migrations/0010_service_admission_bindings.sql`, recheck free number before implementation. It adds ADR0022's immutable bindings/consumptions, pending dispatch and evolving dispatch claims. The service_admission_bindings row also has distinct immutable canonical retention-policy and retention-approval bytes/digests, written only after exact consent; these do not alter the BindingV1 digest or expand closed RunSpec/RunConfirmation JSON. Old schema9 records lack them and refuse. It adds their source relations, unique/rowid/replace guards and run-revision triggers. Schema9 legacy preparations lacking those records cannot start. Update current pragma, migration list, backup/preview/import/version mirrors and their independent tests together in Task25; do not edit 0009. Task28 first replaces the existing hardcoded public backup-version example with the source-grounded version-parameterized naming contract; Task25 depends on that docs producer and updates all actual current source mirrors together. This four-file spec amendment changes no schema/version mirror and claims no schema10 runtime implementation.
+
+#### Exact opaque metadata and journal construction seam
+
+All following declarations are planned, not existing APIs. NewExecutionContext validates the held adopted root/OS principal/generation, captures service-owned policy-permitted context and creates a fresh unpredictable epoch; it has no caller Env/config-value overlay, performs no unapproved native startup/probe and grants no retention/trust authority. Options come from trusted service composition, not RunSpec/host/repository fields; absent actual retention policy keeps the route unavailable. Close invalidates the epoch, exposes no environment getter and waits for no owned pipeline from a callback. Private state types below are unexported concrete structs owned by their declaring package; no private field is accessed from another package. Getter return values are copies; later source/slice/map mutations cannot alter a stored plan/permit/record. A nil, closed or invalid handle returns a typed invalid_contract; stale/consumed handles are rechecked at every effectful operation.
+
+```go
+// package supervisor
+type ServiceInputs struct {
+    RootID, PeerID, ContextEpoch, PrincipalRef, PolicyRevision string
+    Generation int64
+    Request admissionbinding.RunSpecV2
+    TaskArtifactRef string
+    Context *ExecutionContext
+}
+type ExecutionContextOptions struct {
+    PolicyRevision string
+    RetentionPolicy admissionbinding.RetentionPolicyV1
+}
+type ExecutionContextMetadata struct {
+    RootID, ContextEpoch, PrincipalRef, PolicyRevision, NativeConfigIdentity string
+    Generation int64
+}
+type ExecutionContext struct { state *executionContextState }
+func NewExecutionContext(context.Context, *journal.Journal,
+    *control.InstanceLease, ExecutionContextOptions) (*ExecutionContext, error)
+func (c *ExecutionContext) Metadata() (ExecutionContextMetadata, error)
+func (c *ExecutionContext) Close() error
+type PlanMetadata struct {
+    PreparationID, BindingSHA256, RootID, PeerID, ContextEpoch, PolicyRevision string
+    RunID, TaskID, AttemptID string
+    Generation int64
+    ExpiresAt time.Time
+    Challenges []admissionbinding.ChallengeV1
+}
+type PermitMetadata struct {
+    Plan PlanMetadata
+    PermitNonceSHA256 string
+}
+func (p *ServicePlan) Metadata() (PlanMetadata, error)
+func (p *ServicePlan) CanonicalBinding() ([]byte, error)
+func (p *LaunchPermit) Metadata() (PermitMetadata, error)
+// No method returns admission.Decision, ProcSpec, a full Env or mutable private state.
+
+// package journal; imports admissionbinding, acceptance and v2contract,
+// never admission, supervisor, service or control.
+type PreparationLookup struct {
+    PreparationID, PeerID, RootID, BindingSHA256, ContextEpoch string
+    Generation int64
+    ExpectedRevision uint64
+    ObservedAt time.Time
+}
+type PreparationState struct {
+    PreparationID, BindingSHA256 string
+    Revision uint64
+    Ready, Consumed bool
+}
+type PreparationOperation struct { OperationID, ParamsSHA256 string }
+type ConfirmationV1 struct {
+    Operation PreparationOperation
+    ChallengeID, BindingSHA256, PeerID, RootID, ContextEpoch string
+    Generation int64
+    Decision admissionbinding.RetentionDecisionV1 // approve/reject; structural answer
+    ObservedAt time.Time
+}
+type RetainedPreparationInput struct {
+    Operation PreparationOperation
+    CanonicalBinding []byte
+    Policy admissionbinding.RetentionPolicyV1
+    Retention admissionbinding.RetentionApprovalV1
+    Lookup PreparationLookup
+}
+func (j *Journal) StoreRetainedPreparation(context.Context,
+    RetainedPreparationInput) (PreparationState, error)
+func (j *Journal) ConfirmPreparation(context.Context,
+    PreparationLookup, ConfirmationV1) (PreparationState, error)
+type ConfirmedPreparation struct { state *confirmedPreparationState }
+func (p ConfirmedPreparation) Metadata() (PreparationState, error)
+func (p ConfirmedPreparation) CanonicalBinding() ([]byte, error)
+func (j *Journal) ReadConfirmedPreparation(context.Context,
+    PreparationLookup) (ConfirmedPreparation, error)
+type AdmissionCommitInput struct {
+    Preparation ConfirmedPreparation
+    Lookup PreparationLookup
+    OperationID string
+    CanonicalBinding []byte
+    AcceptancePin acceptance.Pin
+    Policy v2contract.PolicyVersion
+}
+type AdmissionCommit struct { state *admissionCommitState }
+func NewAdmissionCommit(AdmissionCommitInput) (AdmissionCommit, error)
+func (c AdmissionCommit) Snapshot() (AdmissionCommitInput, error)
+type AdmissionMetadata struct {
+    OperationID, PreparationID, RootID, PeerID, ContextEpoch, BindingSHA256 string
+    RunID, TaskID, AttemptID string
+    Generation int64
+    Revision uint64
+}
+type CommittedAdmission struct { state *committedAdmissionState }
+func (c CommittedAdmission) Metadata() (AdmissionMetadata, error)
+func (j *Journal) CommitServiceAdmission(context.Context,
+    AdmissionCommit) (CommittedAdmission, error)
+type DispatchArmInput struct {
+    Admission CommittedAdmission
+    ExpectedPendingRevision uint64
+    SnapshotEventID, BindingSHA256, LaunchTokenSHA256, NonceSHA256 string
+    LadderVersion, PolicyRevision string
+    Generation int64
+    ExecutionDeadline, ObservedAt time.Time
+}
+type DispatchArm struct { state *dispatchArmState }
+func NewDispatchArm(DispatchArmInput) (DispatchArm, error)
+func (a DispatchArm) Snapshot() (DispatchArmInput, error)
+type DispatchMetadata struct {
+    Admission AdmissionMetadata
+    SnapshotEventID, LaunchTokenSHA256, NonceSHA256, LadderVersion string
+    ExecutionDeadline time.Time
+    Revision uint64
+}
+type CommittedDispatch struct { state *committedDispatchState }
+func (c CommittedDispatch) Metadata() (DispatchMetadata, error)
+func (j *Journal) ArmServiceDispatch(context.Context,
+    DispatchArm) (CommittedDispatch, error)
+```
+
+NewAdmissionCommit/NewDispatchArm deep-copy their closed inputs and validate canonical identity/hash/pin/policy/snapshot/deadline shapes; Snapshot returns another copy. They do not authenticate a peer, mint supervisor LaunchPermit, mark a preparation ready, reserve quota or authorize execution. Confirmed/Committed handles are produced only by successful checked journal operations, not JSON decoding or a public row-shaped constructor. Journal uses actual current rows in its transaction, never trust in an old handle/Ready bool. The service's authenticated ordinary handler supplies Lookup from OS transport/current root context rather than accepting its claimed peer/root from untrusted params. Supervisor independently requires held ServiceOwner plus its own freshly resolved one-use LaunchPermit before any execution. Typed storage handles identify validated storage effects; they do not isolate hostile Go code or replace that authority chain.
+
+CommitServiceAdmission derives run IDs, route/identity/bucket/ceilings and the canonical admission record from the verified binding and its fixed source mapping; AcceptancePin/Policy must equal the pinned definitions and derived check evaluator/timeouts, never an arbitrary caller choice. It uses fixed quota logic from Task29, not a supplied success result/evaluator callback. ArmServiceDispatch verifies SnapshotEventID belongs to the same committed run/config/task and the exact pending intent, checks deadline/counter policy against current envelope and commits all arming effects together. Unknown, extra or internally inconsistent constructor fields refuse.
+
+Typed failure mapping is closed: invalid_contract for shape/unknown field/constructor inconsistency or invalid handle; permission_denied for unauthenticated/foreign scope (uniform non-disclosure); revision_conflict for expected-revision/generation/consumption conflict; dependency_stale for expiry/context or required-evidence drift; policy_ineligible for forbidden/unclassified retention or ineligible pinned policy; capability_unsupported for future codec/missing mandatory capability/capacity; persistence_unavailable for database/transport failure; allowance_exhausted for quota refusal; ownership_unresolved for absent/stale owner; protocol_mismatch/event_too_large for the oversized observation case. Internal producers return errors discoverable by errors.As as *v2contract.ControlError with bounded namespaced diagnostic detail and no raw values. The service maps those codes to the existing control wire Error; no raw native/error text leaves it. Constructors' valid structural controls must be paired with unauthorized public-start fixtures proving no native/state effect without the authenticated confirmation+fresh-permit+owner chain.
+
+Task9 calls `supervisor.RunAdmittedOwned(ctx,j,owner,permit,committedAdmission,sink)`; no client Decision, caller Hooks, test BindStep or unapproved extension enters it. Admission transaction creates one run/admission/acceptance pin, reservation/envelope/declaration/native trust, canonical assignment plus schema2 `service.run_assigned`, pending intent and immutable operation acknowledgement, then consumes preparation. Planned AttemptID is not an attempts row. Snapshot/task/config validation and `workspace.snapshot_created` plus project trust occur next outside that transaction. Post-snapshot arming atomically creates exactly one attempt/launch-intent/counter/deadline/worker pin and schema9 outbox/claim. Existing `runLocked` initial insertions cannot execute again. Extract shared fixed helpers in pipeline/state/acceptance/budget/worker-pin code, retaining legacy behavior. Crash before commit rolls back; lost response replays the exact acknowledgement; missing live permit/environment epoch after restart or ambiguous spawn becomes unconfirmed/interrupted, never a fresh launch. Worker identity/token/nonce persistence remains existing worker.json behavior; only journal records are hash-only.
+
+Task26 makes the current `admittedConfigPaths` mapping strict: derive the available source→path inventory through the pinned adapter's existing inventory API, select only exact admitted manifest sources, reject missing/unknown sources, and bind final payload keys one-to-one with digests. Worker rederives expected source paths under its pinned adapter/home/environment before hashing, rejects extra/missing/swapped payload sources even if two files have equal bytes, and still rechecks digests. Static available inventories may contain unadmitted candidate paths; they must not leak into the final launch. No auth-store bytes or subscriptions are copied and no new adapter qualification follows. Core paths suffice; if an adapter API must change, implementation stops for a separately scoped adapter producer rather than widening Task26.
+
+#### Independent quota producer (Task29)
+
+```go
+// package billing; standard-library-only policy input, no journal type.
+func EvaluateQuotaSchedule(exhaustedAt string, resetAt *string,
+    retriesUsed int64, now time.Time) (admit bool, wait time.Duration, giveUp bool)
+// package journal; trusted storage input, not a permission grant.
+type QuotaReservationInput struct {
+    RunID, Bucket string
+    ExecutionNanos int64
+    ObservedAt time.Time
+}
+type QuotaRefusal struct { Bucket string; Wait time.Duration; GiveUp bool }
+func (e *QuotaRefusal) Error() string
+func (e *QuotaRefusal) Unwrap() error // billing.ErrAllowanceExhausted
+var ErrDuplicateQuotaHold = errors.New("duplicate quota hold")
+func ReserveRunQuota(context.Context, *sql.Tx, QuotaReservationInput) (string, error)
+func InsertRunQuotaHold(context.Context, *sql.Tx, QuotaReservationInput) (string, error)
+```
+
+ReserveRunQuota validates current bucket scheduling via the pure policy then calls the common checked duplicate/insert helper; owner/scope are derived from RunID/Bucket, quantity is unknown, expiry is the exact existing execution-plus-one-hour rule. Input time is internal observed clock data, never a wire timestamp; production CommitServiceAdmission takes a fresh service/journal clock observation inside its transaction. Legacy admission retains its custom evaluator seam, performs that check first and shares only InsertRunQuotaHold; production EvaluateBucket delegates to the same pure schedule. Legacy adapters translate the new duplicate/refusal errors to their existing public errors without erasing causes. Task30 maps low-level quota refusal to allowance_exhausted. Tests compare both actual production paths and rollback before any new service writer is exposed. Task25's remaining migration/guard/current-version/import mirrors are an atomic compatibility unit; Task29 policy extraction and Task30 typed APIs are independently tested producers, not an unbounded sizing exception.
+
+#### Observer lifecycle contract for Tasks6/7/10/27
+
+Task27 defines `supervisor.ObserverSink` with private shared state, `NewObserverSink() *ObserverSink`, `Committed(runID string,sequence int64)`, `Hint(NoticeCode)` and idempotent nonblocking `RequestClose()`. Committed only wakes a capacity-1 channel; authoritative payloads stay in the journal. Hint uses a 16-code ring, replaces oldest on overflow and saturates hints_dropped; no outcome depends on a hint. NoticeCode has only reservation_held, worker_reattached and render_refresh informational values; Hint rejects every other value without cursor/outcome effects. A separate DiagnosticCode has quota_unavailable, worker_identity_unresolved, worker_exited_early, spool_ingestion_failed, candidate_freeze_failed, verification_unavailable, verification_binding_unavailable, stop_requested, deadline_reached and recovery_ownership_unresolved. Unknown DiagnosticCode refuses persistence as invalid_contract. These require durable evidence for quota/worker-identity/spool/early-exit/freeze/verification/stop/deadline/recovery failures. Required evidence is journaled as an existing typed state/event, or a strict schema2 service.diagnostic containing only code and matching run/attempt/generation/evidence refs, before hinting. Persistence failure remains unavailable/unconfirmed. No raw errors, paths, account/native text or unknown notice category may enter diagnostic/hint storage. The actor owns its callback sink; public observers own separate service view contexts/slots. Cancelling one public view never calls RequestClose on the actor sink or cancels another view. A callback may request closure of its own delivery lifetime; public pull reads remain journal-based and actor ownership is unchanged. The coordinator joins/closes the actor sink only outside its callbacks.
+
+The exact consumer API is also in package supervisor; the service cannot inspect private sink fields:
+
+```go
+type NoticeCode string
+const NoticeReservationHeld NoticeCode = "reservation_held"
+const NoticeWorkerReattached NoticeCode = "worker_reattached"
+const NoticeRenderRefresh NoticeCode = "render_refresh"
+type HintBatch struct {
+    Codes []NoticeCode
+    Dropped, Rejected uint64 // cumulative saturating display-only counters
+    Closed bool
+}
+type ObserverReader struct { state *observerReaderState }
+func (s *ObserverSink) OpenReader() (*ObserverReader, error)
+func (r *ObserverReader) Wakeups() <-chan struct{}
+func (r *ObserverReader) Done() <-chan struct{}
+func (r *ObserverReader) DrainHints(limit int) (HintBatch, error)
+func (r *ObserverReader) Close() error
+```
+
+One service adapter reader lease exists per actor sink; a second OpenReader returns revision_conflict/observer_reader_active until the first closes. Public Observe handlers do not acquire this reader or drain its hints: they use canonical journal pages and independent view slots. Wakeups exposes the capacity1 read-only channel, never closes it, and callers select with Done; this prevents send-on-closed-channel races. Done is closed once when that reader closes or the sink RequestClose is processed. DrainHints is nonblocking, deep-copies/removes up to16 oldest hints under a short mutex (limit0 means16; negative/>16 is invalid_contract), returns cumulative counters and Closed, and never advances an event cursor. Unknown/authority-bearing Hint input increments Rejected and stores no code; closed-sink Hint/Committed calls are no-ops. A sink-closed reader may drain its remaining bounded hints once/again to empty; after Reader.Close, DrainHints is invalid_contract. Reader.Close is idempotent, releases only its lease/signals Done, and neither closes the sink nor waits for/joins the actor; a new reader may open while sink remains live. RequestClose makes the sink closed atomically, signals its active reader and refuses future OpenReader with dependency_stale/observer_closed, without closing Wakeups or touching ownership. Concurrent calls/copies share one synchronized state. Nil sink producers are no-ops; nil OpenReader/DrainHints/Close report invalid_contract where an error return exists. A nil Reader.Wakeups returns nil and nil Reader.Done returns an already-closed channel, so consumers can exit without panic. No errorless method invents a success/error record. Reader lease identity prevents an old copied reader from draining a later reopened lease; all close/drain/counter operations are linearized under the short mutex. The service adapter owns and closes the reader outside callbacks and uses only these exported methods; no function-field callback or Go friend access is assumed.
+
+Task6 wires that primitive in `internal/service/observer_adapter.go`, tracks view/slot state in `internal/service/observe.go`, classifies current pipeline/recover/acceptance Notice call sites and supplies no client callback, terminal Detach or Interrupt to owned execution. Source-completeness tests require every Notice producer to declare durable evidence or bounded hint treatment. Callback/transport close only signals RequestClose; the coordinator cancels that view's waits and releases its resources outside callback execution. Last-view close does not stop native work or release ownership. Whole-service shutdown refuses new requests, reconciles outstanding accepted work, cancels the owning context when required, joins active ingestion/callbacks outside those callbacks and only then closes ServiceOwner/lease. A blocked OS operation or active owned entry reports incomplete shutdown and cannot be treated as cancelled merely because a deadline expired. Task6's shell tests prove wiring/lifetime with deterministic synthetic callback barriers, not ordinary native ingestion; Task7 tests actual adoption/ingestion under a stalled observer.
+
+Task10 modifies the actual existing runClient.Observe in internal/control/client.go (rg for its method and the r.Limit=64 rewrite), changing zero to128 and checking through NewRunClient and NewPreparedRunClient; it does not create control/run_client.go or redefine NewRunClient. It implements `Service.Observe(ctx,Peer,control.ObserveRun) (control.RunObservation,error)` in `observe.go`, leaving operation-status logic in existing planned `observation.go`. One pending Observe per peer/run connection, 64 total slots/16 per peer/8 read handlers; refuse exhausted capacity with capability_unsupported/observer_capacity and zero mutation. Pages are a consistent authenticated root/generation/cursor snapshot, <=128 events and <=1 MiB, requested wait<=1000ms, default limit128 and empty-poll backoff>=500ms. Oversized single event returns protocol_mismatch without cursor advance; no truncation or silent skip. Wakeups may coalesce, journal consumption may not. Client disconnect releases only view resources. Stalled response writes never block actor ingestion or acknowledgement. The existing two-second attachment/64KiB projection contract is separate. Neither context nor requested wait establishes forcible cancellation of arbitrary OS/database calls.
+
+### 3.3 Integration task sizing and finite work envelopes
+
+Tasks6–10 remain complex integration units after independent codec/retention/schema/quota/observer/client producers23–31 were split out. Their file counts below are derived from each current task's Files field (`scripts/harness/runspec.py tasks <tasks.md>` or an anchored TaskN/Files parser), not repository-wide search counts. This is a reviewed sizing decision, not permission to widen files or omit acceptance.
+
+| Task | Listed files | Coupled acceptance boundary and why one integration PR remains useful |
+|---|---:|---|
+| 6 | 15 | Runtime root context, callback adapter/notice evidence, transport entry and join-before-owner-close must pass one shell/lifetime contract. Primitive queue behavior is already independent Task27; this task does not claim ordinary dispatch/worker qualification. A partial adapter/close path could otherwise look like a working production shell while deadlocking/releasing its owner. |
+| 7 | 9 | One actual same-worker adoption/assignment transaction must agree with canonical append, recovery ingestion, immutable worker generation/deadline and observer-close barriers. Splitting the observed identity from its committed adoption would lose the same-launch crash control; storage/client primitives remain prerequisites. |
+| 8 | 12 | Staged fresh resolution, supervisor-private sealing and dedicated prepare/confirm dispatch form one retention-before-persistence integration contract. Retention rules, journal transactions and Go revisioned client APIs already land separately in24/30/31. This task must show the real registered handler/SQLite stages together, not call a data constructor successful admission. |
+| 9 | 14 | The production Start wrapper must integrate one admission transaction, out-of-transaction snapshot, one post-snapshot arming transaction and the extracted legacy pipeline without duplicate insertion/launch. Typed storage/quota/config mapping are separate25/29/30/26 producers; the remaining coupled crash trace and legacy regression is the integration unit. |
+| 10 | 11 | Authenticated SQL snapshot/cursor selection, bounded handler slots and actual exported client/frame consumption must agree on the same page/default/error contract. Client metadata and sink primitives already land in31/27; a helper-only page or new shadow client cannot satisfy this producer. |
+
+For each of these five tasks, dispatch records one initial total execution/work envelope of at most45minutes with a concrete15minute artifact checkpoint and at most2 repair passes, each at most15minutes, **inside the same total envelope**. Format/check/review work performed by that worker counts in its envelope. Independent acceptance and CI waiting are separately measured coordination phases with a60minute observation checkpoint; pending external checks then remain pending/parked while independent work continues, never silently passed or automatically rerun. A new native attempt or budget extension requires the existing workflow/authority path; the complex label does not authorize endless retries. Qualified MYTHHELM enforcement must be established before calling a limit hard; direct fallback uses recorded coordinator checkpoints and discloses their enforcement limits. If the first checkpoint shows another independently testable producer or files outside the listed scope, freeze a concrete partial result and propose the smallest split before dispatching it. These budgets bound future work; they are not measured duration, throughput or a claim that this integration has shipped.
 
 ## 4. Attachment protocol (v2 §§3, 8, 14–15)
 
@@ -269,7 +615,7 @@ Windows ownership work may change worker/transport files; serialize those tasks 
 
 ## 9. Decisions
 
-ADR 0021 records the existing D1–D8 composition decisions. Task 22 will draft a separate ADR for the unresolved admission-binding and observer-lifecycle design; no ADR 0022 is claimed to exist or be accepted yet.
+ADR0021 records D1–D8. ADR0022 content at the exact reviewed/adopted candidate d8975b3 records D10–D13 below; its PR541 merge, this separate amendment merge and Task22 exact handoff remain outstanding gates until independently verified.
 
 | ID | Decision | Rationale |
 |---|---|---|
@@ -282,12 +628,17 @@ ADR 0021 records the existing D1–D8 composition decisions. Task 22 will draft 
 | D7 | First-wins per-attempt stop with explicit coalescing. | One stop.request cannot represent independent repeated physical effects. |
 | D8 | Root migration and canonical same-launch service adoption. | The worker launch generation stays immutable; presence alone cannot grant authority. |
 | D9 | Permit design-only Task 22 review after Task 3 using a pinned Task 4 candidate. | Waiting for Task 4 to merge delays the design needed to assess that candidate. Inspection and re-grounding enable review without consuming an unmerged interface or relaxing runtime gates. |
+| D10 | Closed immutable V1 binding and supervisor-owned private permit/Decision. | A digest beside mutable input or cross-package private-field access cannot authorize execution. |
+| D11 | Pending admission intent, then post-snapshot arming. | Schema9 outbox needs an attempt; creating it early would start execution accounting during snapshot. |
+| D12 | Journal pull with capacity-1 wakeups and 16 informational hints. | Client stalls and callback self-close must not block ingestion or certify an outcome. |
+| D13 | Explicit fail-closed retention and strict config source mapping. | Unknown classification/source identity cannot be inferred safe from a hash or generic consent. |
 
 Accepted ADR `docs/decisions/0021-service-attachment-composition.md` records D1–D8. Task 1's exact-revision architecture and code review and delegated acceptance are recorded in PR #501; this acceptance does not establish runtime or platform qualification.
 
+
 ## 10. Honesty register
 
-Until Task 22 resolves the precise Task 8→9 contract and Task 9 implements it, service start is unsupported and Task 4 alone does not establish AC-6.4.
+Until the ADR/follow-on/Task22 gates merge and Tasks23–31 plus Task9 implement the precise contract, service start is unsupported and Task 4 alone does not establish AC-6.4.
 
 
 | Spec demand | Position |
