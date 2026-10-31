@@ -34,9 +34,14 @@ scope, the target is elapsed delivery time no greater than baseline time divided
 by 20. Shipping a smaller scope, counting more PRs, or excluding failures and waits
 does not establish it. The controlled-comparison requirements below still apply.
 
-The [2026-10-30 self-building report](dogfood/0004-self-building-status.md) records
+The [2026-10-31 self-building report](dogfood/0005-self-building-status.md) records
+merged maintenance, three failed spec reviews, a required CI failure and repeated
+native admission refusals with direct fallbacks. The product remains unfinished;
+these outcomes do not demonstrate the delivery target or full self-hosting.
+
+The earlier [2026-10-30 report](dogfood/0004-self-building-status.md) records
 an admitted scripted demo, a refused native documentation attempt, direct-session
-fallback and an incomplete design attempt. It is observational evidence of current
+fallback and an incomplete design attempt. It is observational evidence of then-current
 use and failures, not a benchmark. The older successful maintenance pilot below
 remains historical evidence; it does not qualify today's route.
 
