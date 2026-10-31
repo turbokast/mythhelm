@@ -28,12 +28,17 @@ Optional `$ARGUMENTS`: the changed paths or a domain (`go`, `harness`, `workflow
 
 | Changed paths | Gates (from the repository root) |
 |---|---|
-| `*.go`, `go.mod`, `go.sum` | `gofmt -l .` (must print nothing) · `go vet ./...` · `go test -race ./...` · `go mod tidy -diff` (must print nothing) · `golangci-lint run` once `.golangci.yml` exists |
+| `*.go`, `go.mod`, `go.sum` | `gofmt -l .` (must print nothing) · `go mod tidy -diff` (must print nothing) · `go vet ./...` · `golangci-lint run` once `.golangci.yml` exists · `govulncheck ./...` on module changes · `go test -race ./...` |
 | `go.mod`, `go.sum` | also `govulncheck ./...` and `CGO_ENABLED=0 go build ./...` |
 | OS-specific files (`*_windows.go`, `*_unix.go`, build tags) | also `GOOS=windows go vet ./...` and `GOOS=darwin go vet ./...` |
 | `.agents/`, `.grok/`, `.claude/`, `knowledge/`, `scripts/`, `CLAUDE.md`, `AGENTS.md` | `scripts/ci/lint-agent-harness.sh` (its `evals` check runs the config-regression cases) · `.claude/hooks/tests/run-tests.sh` · `shellcheck <changed .sh>` |
 | `.github/workflows/` | `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12`; `zizmor` runs in CI |
 | any change | `scripts/ci/check-public-hygiene.sh` |
+
+The canonical Go group runs required preflights before the race suite in the order
+above. `govulncheck` remains conditional on `go.mod`/`go.sum`; the additional
+`CGO_ENABLED=0 go build ./...` module-change requirement remains unchanged. Use
+the wrapper for selection and markers; explicitly named gates retain caller order.
 
 ## Which tests a change needs
 
@@ -51,9 +56,11 @@ Optional `$ARGUMENTS`: the changed paths or a domain (`go`, `harness`, `workflow
 
 ```text
 gofmt -l .           pass (no output)
-go vet ./...         pass
-go test -race ./...  pass (ok: 12 packages)
 go mod tidy -diff    pass (no output)
+go vet ./...         pass
+golangci-lint run    pass (configured)
+govulncheck ./...    skipped (no module changes)
+go test -race ./...  pass (ok: 12 packages)
 harness lint         skipped (no harness paths changed)
 ```
 

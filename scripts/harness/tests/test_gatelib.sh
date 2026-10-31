@@ -19,6 +19,8 @@ for tool in go gofmt shellcheck; do
 [[ -z "${FAKE_TOUCH:-}" ]] || echo "// touched" >> "$FAKE_TOUCH"
 [[ "$(basename "$0")" != gofmt || -z "${FAKE_GOFMT_OUT:-}" ]] || echo "$FAKE_GOFMT_OUT"
 echo "$(basename "$0") $*" >&2
+[[ -z "${FAKE_LOG:-}" ]] || echo "$(basename "$0") $*" >> "$FAKE_LOG"
+if [[ "${FAKE_FAIL_LINT:-}" == 1 && "$*" == *golangci-lint* ]]; then exit 9; fi
 exit "${FAKE_RC:-0}"
 EOF
   chmod +x "$BIN/$tool"
@@ -96,11 +98,11 @@ lib required
 check "a spec-only change needs hygiene only" [ "$OUT" == "hygiene" ]
 echo "// y" >> "$R/internal/x/x.go"
 lib required
-check "a Go change needs the Go gates" [ "$OUT" == "go-fmt go-vet go-test go-mod-tidy hygiene" ]
+check "a Go change needs the Go gates" [ "$OUT" == "go-fmt go-mod-tidy go-vet go-test hygiene" ]
 echo "version: 2" > "$R/.golangci.yml"
 echo "go 1.27" >> "$R/go.mod"
 lib required
-check "a lint config adds golangci-lint; go.mod adds govulncheck" [ "$OUT" == "go-fmt go-vet go-test go-mod-tidy golangci-lint govulncheck hygiene" ]
+check "a lint config adds golangci-lint; go.mod adds govulncheck" [ "$OUT" == "go-fmt go-mod-tidy go-vet golangci-lint govulncheck go-test hygiene" ]
 repo req-sh
 printf '#!/usr/bin/env bash\n' > "$R/scripts/harness/new.sh"
 lib required
@@ -123,7 +125,7 @@ check "the marker names its tree" [ "$(marker go-vet tree)" == "$(cd "$R" && pwd
 check "the marker records exit 0" [ "$(marker go-vet exit_code)" == 0 ]
 gate go
 expect 0 "the go group runs the Go gates the change set needs"
-has "gate: 4 passed and recorded: go-fmt go-vet go-test go-mod-tidy" "the group summary"
+has "gate: 4 passed and recorded: go-fmt go-mod-tidy go-vet go-test" "the group summary"
 gate hygiene
 expect 0 "hygiene passes on a clean fixture"
 lib status
@@ -189,5 +191,142 @@ mkdir -p "$R/.claude/data"
 cp "$A/.claude/data/gate-marker-go-vet.json" "$R/.claude/data/"
 lib status
 has "go-vet         stale" "a marker copied from another tree with identical content is stale"
+
+echo "== go groups fail before expensive tests =="
+repo fail-fast
+echo "go 1.27" >> "$R/go.mod"
+printf 'version: 2\n' > "$R/.golangci.yml"
+echo "// baseline" >> "$R/internal/x/x.go"
+gate go
+expect 0 "baseline group passes"
+# Keep a real prior test pass, then change a Go-scoped input. An early failure
+# must neither execute the race suite nor make its old marker fresh again.
+echo "// changed" >> "$R/internal/x/x.go"
+TRACE="$TEST_TMP/fail-fast-tools.log"
+: > "$TRACE"
+FAKE_LOG="$TRACE" FAKE_FAIL_LINT=1 gate go
+expect 1 "lint failure keeps the public failure exit"
+has "FAIL (exit 9" "the failing tool status remains visible"
+check "lint ran" grep -q 'golangci-lint' "$TRACE"
+CHECKS=$((CHECKS + 1))
+! grep -q '^go test ' "$TRACE" || fail "[race suite did not run after lint failure] $(cat "$TRACE")"
+check "failed lint marker is absent" [ ! -e "$R/.claude/data/gate-marker-golangci-lint.json" ]
+lib status
+expect 1 "an early failure cannot satisfy all required gates"
+has "go-test        stale" "unexecuted test marker stays stale"
+: > "$TRACE"
+FAKE_LOG="$TRACE" gate go
+expect 0 "success still runs every required Go gate"
+check "success runs race tests" grep -q '^go test -race ./...' "$TRACE"
+check "success runs module consistency" grep -q '^go mod tidy -diff' "$TRACE"
+check "success runs vet" grep -q '^go vet ./...' "$TRACE"
+check "success runs formatting" grep -q '^gofmt -l .' "$TRACE"
+check "success runs lint" grep -q 'golangci-lint' "$TRACE"
+check "success runs dependency vulnerability check" grep -q 'govulncheck' "$TRACE"
+# Check execution order, not only required-gate selection or command presence.
+preflights_before_race() {
+  python3 - "$1" <<'PYTRACE'
+import pathlib
+import sys
+lines = pathlib.Path(sys.argv[1]).read_text().splitlines()
+race = [i for i, line in enumerate(lines) if line.startswith("go test -race ")]
+preflights = ("gofmt -l .", "go mod tidy -diff", "go vet ./...", "golangci-lint", "govulncheck")
+if len(race) != 1:
+    sys.exit(1)
+for command in preflights:
+    positions = [i for i, line in enumerate(lines) if command in line]
+    if len(positions) != 1 or positions[0] >= race[0]:
+        sys.exit(1)
+PYTRACE
+}
+check "every required preflight executes before race tests" preflights_before_race "$TRACE"
+# Retain one broken trace for each late preflight. These control the assertion
+# itself, while the real success trace above checks the actual gate runner.
+for preflight in 'gofmt -l .' 'go mod tidy -diff' 'go vet ./...' 'golangci-lint' 'govulncheck'; do
+  LATE="$TEST_TMP/late-preflight.log"
+  python3 - "$TRACE" "$LATE" "$preflight" <<'PYLATE'
+import pathlib
+import sys
+lines = pathlib.Path(sys.argv[1]).read_text().splitlines()
+late = [line for line in lines if sys.argv[3] in line]
+assert len(late) == 1
+pathlib.Path(sys.argv[2]).write_text("\n".join([line for line in lines if line not in late] + late) + "\n")
+PYLATE
+  CHECKS=$((CHECKS + 1))
+  if preflights_before_race "$LATE"; then
+    fail "[late $preflight is rejected] broken order passed"
+  fi
+done
+
+echo "== reviewer groups use an explicit base without origin/main =="
+repo review-base
+REVIEW_BASE="$(git -C "$R" rev-parse HEAD)"
+echo "go 1.27" >> "$R/go.mod"
+printf 'version: 2\n' > "$R/.golangci.yml"
+echo "// committed review change" >> "$R/internal/x/x.go"
+git -C "$R" add go.mod .golangci.yml internal/x/x.go
+git -C "$R" commit -q -s -m "synthetic committed review change"
+check "review fixture is clean" test -z "$(git -C "$R" status --porcelain)"
+check "review fixture has no origin/main" test -z "$(git -C "$R" for-each-ref refs/remotes/origin/main)"
+# Exercise the actual runbook commands, substituting only the wrapper's location
+# because the synthetic repository does not contain the real harness source.
+REVIEW_COMMAND="$(python3 - "$REPO_ROOT/.claude/agents/code-reviewer.md" <<'PYCOMMAND'
+import pathlib
+import sys
+lines = pathlib.Path(sys.argv[1]).read_text().splitlines()
+for prefix in (': "${REVIEW_BASE:', 'REVIEW_BASE="$(git rev-parse', 'REVIEW_BASE="$(git merge-base', 'scripts/harness/gate.sh '):
+    line = next(line for line in lines if line.startswith(prefix))
+    print(line.replace('scripts/harness/gate.sh', '"$GATE"', 1))
+PYCOMMAND
+)"
+# A divergent target has the same tree as HEAD but a different child commit.
+# Direct target-to-HEAD comparison is empty; the actual review merge base is not.
+REVIEW_TARGET="$(git -C "$R" commit-tree "$(git -C "$R" rev-parse 'HEAD^{tree}')" -p "$REVIEW_BASE" -m 'synthetic divergent target')"
+TRACE="$TEST_TMP/review-base-tools.log"
+: > "$TRACE"
+OUT="$(cd "$R" && REVIEW_BASE="$REVIEW_TARGET" GATE="$GATE" FAKE_LOG="$TRACE" bash -c "$REVIEW_COMMAND" 2>&1)"; RC=$?
+expect 0 "explicit reviewed base runs the committed Go changes"
+check "all reviewed preflights execute before race" preflights_before_race "$TRACE"
+check "review race marker exists" test -f "$R/.claude/data/gate-marker-go-test.json"
+DIRECT_COMMAND="$(printf '%s\n' "$REVIEW_COMMAND" | grep -v '^REVIEW_BASE=.*git merge-base')"
+: > "$TRACE"
+OUT="$(cd "$R" && REVIEW_BASE="$REVIEW_TARGET" GATE="$GATE" FAKE_LOG="$TRACE" bash -c "$DIRECT_COMMAND" 2>&1)"; RC=$?
+expect 0 "the unnormalized target counterfactual exposes an empty direct diff"
+CHECKS=$((CHECKS + 1))
+if preflights_before_race "$TRACE"; then fail "[target tip must not satisfy merge-base acceptance]"; fi
+
+# Keep the omission counterfactual: the old group invocation returns success but
+# cannot satisfy the required execution trace on this clean committed checkout.
+OMITTED_COMMAND="${REVIEW_COMMAND/--base \"\$REVIEW_BASE\" /}"
+: > "$TRACE"
+OUT="$(cd "$R" && REVIEW_BASE="$REVIEW_BASE" GATE="$GATE" FAKE_LOG="$TRACE" bash -c "$OMITTED_COMMAND" 2>&1)"; RC=$?
+expect 0 "the omitted-base counterfactual exposes the old no-op"
+CHECKS=$((CHECKS + 1))
+if preflights_before_race "$TRACE"; then fail "[omitted base must not satisfy review acceptance]"; fi
+: > "$TRACE"
+OUT="$(cd "$R" && env -u REVIEW_BASE GATE="$GATE" FAKE_LOG="$TRACE" bash -c "$REVIEW_COMMAND" 2>&1)"; RC=$?
+CHECKS=$((CHECKS + 1))
+[[ "$RC" != 0 ]] || fail "[missing review base must fail closed]"
+check "missing base executes no Go commands" test ! -s "$TRACE"
+OUT="$(cd "$R" && REVIEW_BASE=missing-synthetic-base GATE="$GATE" FAKE_LOG="$TRACE" bash -c "$REVIEW_COMMAND" 2>&1)"; RC=$?
+CHECKS=$((CHECKS + 1))
+[[ "$RC" != 0 ]] || fail "[invalid review base must fail closed]"
+check "invalid base executes no Go commands" test ! -s "$TRACE"
+check "domain commands live in separate blocks" python3 - "$REPO_ROOT/.claude/agents/code-reviewer.md" <<'PYBLOCKS'
+import pathlib
+import sys
+blocks = [part.split("```", 1)[0] for part in pathlib.Path(sys.argv[1]).read_text().split("```bash")[1:]]
+go = next(block for block in blocks if 'scripts/harness/gate.sh --base' in block)
+assert 'scripts/ci/lint-agent-harness.sh' not in go
+assert 'actionlint' not in go
+PYBLOCKS
+gate harness-lint
+expect 0 "independent harness gate remains runnable after unavailable Go base"
+
+
+gate hygiene
+expect 0 "hygiene remains required and passes"
+lib status --base "$REVIEW_BASE"
+expect 0 "success leaves all required markers fresh"
 
 finish

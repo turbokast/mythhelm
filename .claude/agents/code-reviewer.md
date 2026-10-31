@@ -55,13 +55,32 @@ When a verdict is uncertain, keep the finding and mark it low confidence. Findin
 
 ## Gates
 
-Run the gates for the touched domains and report the observed results, never a summary:
+Run each applicable domain block separately and report its observed results. A
+failed or unavailable Go block remains a finding, but does not prevent running
+the independent harness and workflow blocks:
 
 ```bash
-gofmt -l . && go vet ./... && go test -race ./... && go mod tidy -diff   # Go
+: "${REVIEW_BASE:?Supply the exact review base, or report Go gates unavailable}"
+REVIEW_BASE="$(git rev-parse --verify "$REVIEW_BASE^{commit}")" || exit 1
+REVIEW_BASE="$(git merge-base "$REVIEW_BASE" HEAD)" || exit 1
+scripts/harness/gate.sh --base "$REVIEW_BASE" go                     # Go: required preflights, then race suite
+```
+
+```bash
 scripts/ci/lint-agent-harness.sh && .claude/hooks/tests/run-tests.sh     # harness
+```
+
+```bash
 go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12                # workflows
 ```
+
+Resolve the supplied review target to its merge base with HEAD; this prevents a
+diverged target tip from hiding changes in a direct diff. If no base is available, report
+Go gates unavailable rather than falling back to HEAD or claiming a pass.
+The Go group selects formatting, module consistency and vet, then lint when
+configured and vulnerability checking on module changes, before the race suite.
+Keep the quality-gates matrix's additional module-change `CGO_ENABLED=0 go build ./...`
+check; explicitly named gates still run in caller order.
 
 Building or testing code executes it. Run these only on the local branch under review in this session, or on a maintainer's branch. For a pull request from anyone else, read its CI results (`gh pr checks <n>`) instead, and report local gates as skipped.
 
