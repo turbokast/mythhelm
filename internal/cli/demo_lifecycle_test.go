@@ -84,15 +84,64 @@ func recoveryCaptureExecutable(t *testing.T, dir string) string {
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
-	data, err := os.ReadFile(exe) //nolint:gosec // The trusted running test executable is copied as the native fixture.
+	stub := filepath.Join(dir, name)
+	if runtime.GOOS != "windows" {
+		// Preserve argv0 for TestMain without writing a new executable inode
+		// immediately before exec. The running test binary stays immutable.
+		if err := os.Symlink(exe, stub); err != nil {
+			t.Fatal(err)
+		}
+		return stub
+	}
+	data, err := os.ReadFile(exe) //nolint:gosec // Windows needs a real executable copy, not a privileged symlink.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, name), data, 0o700); err != nil { //nolint:gosec // The owned native stub must be executable.
+	if err := os.WriteFile(stub, data, 0o700); err != nil { //nolint:gosec // The owned native stub must be executable.
 		t.Fatal(err)
 	}
 
-	return filepath.Join(dir, name)
+	return stub
+}
+
+func TestRecoveryCaptureExecutableIdentity(t *testing.T) {
+	t.Parallel()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exeInfo, err := os.Stat(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stub := recoveryCaptureExecutable(t, t.TempDir())
+	stubInfo, err := os.Stat(stub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aliasInfo, err := os.Lstat(stub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS == "windows" {
+		if filepath.Base(stub) != "mythhelm.exe" || !aliasInfo.Mode().IsRegular() || os.SameFile(exeInfo, stubInfo) {
+			t.Fatalf("Windows capture stub must be a separate executable copy: path %q, mode %s, same file %v", stub, aliasInfo.Mode(), os.SameFile(exeInfo, stubInfo))
+		}
+		return
+	}
+	if !os.SameFile(exeInfo, stubInfo) {
+		t.Fatal("Unix capture stub created a new executable inode instead of aliasing the already-running executable")
+	}
+	if filepath.Base(stub) != "mythhelm" || aliasInfo.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("Unix capture stub must preserve the mythhelm argv0 through a symlink: path %q, mode %s", stub, aliasInfo.Mode())
+	}
+	target, err := os.Readlink(stub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !filepath.IsAbs(target) || target != exe {
+		t.Fatalf("capture alias target = %q; want absolute current executable %q", target, exe)
+	}
 }
 
 func recoveryCommandProbe(t *testing.T, shell string) {
@@ -446,8 +495,8 @@ func TestRecoveryCaptureRejectsMalformedStub(t *testing.T) {
 			cmd.Env = append(os.Environ(), "MYTHHELM_TEST_RECOVERY_CAPTURE="+capture)
 			out, err := cmd.CombinedOutput()
 			var exited *exec.ExitError
-			if !errors.As(err, &exited) || exited.ExitCode() == 0 {
-				t.Fatalf("invalid native stub invocation returned success or failed to execute: %v: %s", err, out)
+			if !errors.As(err, &exited) || exited.ExitCode() != 14 {
+				t.Fatalf("invalid native stub invocation did not exit 14: %v: %s", err, out)
 			}
 			if _, err := os.Stat(capture); !os.IsNotExist(err) {
 				t.Fatalf("invalid native invocation wrote capture: %v", err)
