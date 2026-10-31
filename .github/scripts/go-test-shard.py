@@ -29,8 +29,8 @@ def main(argv=None):
     try:
         result = subprocess.run(["go", "list", "./..."], check=True, text=True, capture_output=True)
         packages = select_packages(result.stdout, args.shard)
-        command = ["go", "test"] + (["-race"] if args.race else []) + ["-p", "1", *packages]
-        return subprocess.run(command, check=False).returncode
+        return subprocess.run(["go", "test", *(["-race"] if args.race else []), "-p", "1", *packages],
+                              check=False).returncode
     except subprocess.CalledProcessError as exc:
         print(f"go test shard: go list failed: {exc}", file=sys.stderr)
         if exc.stderr:
