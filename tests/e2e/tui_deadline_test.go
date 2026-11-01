@@ -3,19 +3,17 @@
 package e2e
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
-	"github.com/turbokast/mythhelm/internal/control"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/workers"
 )
@@ -29,8 +27,9 @@ import (
 // the spool records the deadline request and reason, the worker actually
 // exits, and recovery from the journal concludes blocked /
 // envelope_deadline_exceeded with no second launch. The fenced case runs a
-// per-user supervisor for the state root, so the worker is pinned to its
-// boot generation and must still exit rather than await reconnection. A
+// real instance lease in an owned generation-only test helper, so the worker
+// is pinned to a positive boot generation and must still exit rather than
+// await reconnection. This does not qualify service-owned native execution. A
 // user stop requested before the deadline stays cancelled. I21 (v2 §2).
 func TestDetachedDeadlineRecoveryBinary(t *testing.T) {
 	for _, tc := range []struct {
@@ -54,8 +53,9 @@ func TestDetachedDeadlineRecoveryBinary(t *testing.T) {
 			e := canonicalEnv(t)
 			runtimeDir := shortRuntimeDir(t)
 			e.vars = append(e.vars, "XDG_RUNTIME_DIR="+runtimeDir)
+			var heldGeneration int64
 			if tc.fenced {
-				startService(t, e, runtimeDir)
+				heldGeneration = startGenerationHolder(t, e)
 			}
 			repo, digest := mkRepo(t, e, canonicalDir(t, t.TempDir()), "pass")
 			r := startLive(t, e, repo, append(baseRunArgs(digest), "--format", "jsonl",
@@ -71,7 +71,7 @@ func TestDetachedDeadlineRecoveryBinary(t *testing.T) {
 			worker := workerOf(t, state, runID, launched.AttemptID)
 			reapDetached(t, worker)
 			generation := waitBeat(t, dir)
-			if tc.fenced != (generation > 0) {
+			if tc.fenced != (generation > 0) || generation != heldGeneration {
 				t.Fatalf("launch generation %d, fenced %v", generation, tc.fenced)
 			}
 			if tc.userFirst {
@@ -166,45 +166,65 @@ func shortRuntimeDir(t *testing.T) string {
 	return canonicalDir(t, dir)
 }
 
-// startService runs the per-user supervisor for e's state root and waits
-// for its control socket; cleanup terminates and joins it.
-func startService(t *testing.T, e env, runtimeDir string) {
+// startGenerationHolder holds only real control lock metadata for this fixture.
+// The packaged run and worker remain the processes whose deadline is tested.
+func startGenerationHolder(t *testing.T, e env) int64 {
 	t.Helper()
-	cmd := exec.Command(mythhelmBin, control.SupervisorCommand)
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(executable, generationHolderCommand, e.state)
 	cmd.Env = e.withParent(t)
-	var out bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &out
+	input, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := cmd.StdoutPipe()
+	if err != nil {
+		_ = input.Close()
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
+		_ = input.Close()
 		t.Fatal(err)
 	}
 	exited := make(chan struct{})
-	go func() {
-		_ = cmd.Wait()
-		close(exited)
-	}()
+	var exitErr error
+	go func() { exitErr = cmd.Wait(); close(exited) }()
 	t.Cleanup(func() {
-		killed, err := joinOwned(exited, func() { _ = cmd.Process.Signal(syscall.SIGTERM) }, func() { _ = cmd.Process.Kill() }, ownedJoinGrace)
+		killed, err := joinOwned(exited, func() { _ = input.Close() }, func() { _ = cmd.Process.Kill() }, ownedJoinGrace)
 		switch {
 		case err != nil:
-			t.Errorf("supervisor %d was never joined: %v", cmd.Process.Pid, err)
+			t.Errorf("generation holder %d was never joined: %v", cmd.Process.Pid, err)
 		case killed:
-			t.Errorf("supervisor ignored SIGTERM and was killed: %s", out.String())
+			t.Errorf("generation holder ignored parent EOF and was killed: %s", stderr.String())
+		case exitErr != nil:
+			t.Errorf("generation holder failed: %v: %s", exitErr, stderr.String())
 		}
 	})
-	socket := filepath.Join(runtimeDir, "mythhelm-uid"+strconv.Itoa(os.Getuid()), "control.sock")
-	deadline := time.Now().Add(time.Minute)
-	for {
-		if _, err := os.Stat(socket); err == nil {
-			return
+	ready := make(chan string, 1)
+	go func() {
+		scanner := bufio.NewScanner(output)
+		if scanner.Scan() {
+			ready <- scanner.Text()
+		} else {
+			ready <- ""
 		}
-		select {
-		case <-exited:
-			t.Fatalf("supervisor exited before serving: %s", out.String())
-		default:
+	}()
+	select {
+	case line := <-ready:
+		generation, err := strconv.ParseInt(line, 10, 64)
+		if err != nil || generation <= 0 {
+			t.Fatalf("invalid generation holder readiness %q: %v", line, err)
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("supervisor never served %s: %s", socket, out.String())
-		}
-		time.Sleep(10 * time.Millisecond)
+		return generation
+	case <-exited:
+		t.Fatalf("generation holder exited before readiness: %v: %s", exitErr, stderr.String())
+	case <-time.After(ownedJoinGrace):
+		t.Fatal("generation holder never reported its lease")
 	}
+	return 0
 }
