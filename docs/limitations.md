@@ -70,8 +70,10 @@ TUI behaviour is qualified by the G09 evidence record in the repository
 - Exit and interrupt behaviour depends on mode, phase and the admitted
   capability. The G09 findings (unwired `q` rows, mid-run Ctrl-C cancelling)
   describe the build G09 recorded; the behaviour below is covered by source
-  tests only. Its packaged-binary proof (tui-observatory-view Task 10, #521) is
-  open, and no terminal, platform or native route is qualified for it.
+  tests only. Packaged-binary lifecycle tests were merged in
+  [PR #521](https://github.com/turbokast/mythhelm/pull/521)
+  (tui-observatory-view Task 10); no terminal, platform or native route is
+  qualified by those tests.
   - `q` opens selectable exit options (arrows, Tab or `j`/`k`, then Enter; Esc
     goes back). An inspect view or a live run that has ended offers quit and
     back. A live run that has not ended offers detach (leave running), request
