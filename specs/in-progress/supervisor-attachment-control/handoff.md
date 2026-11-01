@@ -122,6 +122,13 @@ Draft dependent constraint: Task 4's proposed owner is ownership evidence only; 
 - **Evidence boundary**: Design acceptance and spec merge are documentation evidence, not implemented runtime/native/billing/host/platform qualification, successful MYTHHELM-owned execution or a native configuration grant. Prior blocked/time-limited Task22 attempts retain their original outcomes; this is a separate measured closeout attempt.
 - **Deviations**: Required own-task records accompany the two listed docs paths; no follow-on normative spec edit or other task completion is included in this PR.
 
+## Task 28 — Describe the existing versioned backup naming contract
+
+- **Produces**: PR #549 describes `mythhelm.db.bak-migration-v<N>` and its `.json` sidecar in the migration guide and limitations register.
+- **For dependents**: Backup reads `PRAGMA user_version` when copying and records that actual value in `schema_version`; preview independently names its planned target using the binary's supported schema. Preserve this distinction when Task25 updates the schema/version mirrors.
+- **Scope**: Only the guide's migration section and one limitations bullet change; unrelated TUI examples are byte-for-byte preserved. The `docs:user-guide:migration` advisory lane coordinates this section; later writers still need independent diff checks.
+- **Evidence boundary**: No migration apply was run and no service/native/platform qualification is added. Existing synthetic backup tests pass; runtime ownership restrictions remain in the guide and limitations register.
+
 ## Task 27 — Produce nonblocking observer wakeups and typed hints
 
 - **Produces**: PR #551, source `ed4e085`: `supervisor.NewObserverSink`, `ObserverSink.Committed/Hint/RequestClose/OpenReader`, `ObserverReader.Wakeups/Done/DrainHints/Close`, the three informational `NoticeCode` constants and copied `HintBatch` values, matching design §3.2. One shared lifetime supports copied sink/reader handles, one reader lease, a capacity-one wakeup and a fixed sixteen-code FIFO ring with cumulative saturating display counters.
