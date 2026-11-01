@@ -1,6 +1,7 @@
 package control
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -263,57 +264,70 @@ func (c *typedConnection) enter(ctx context.Context) (context.Context, func(), e
 	}
 }
 func (c *typedConnection) invoke(ctx context.Context, method, operationID, object string, rev uint64, gen *int64, token string, params any, limit int) (json.RawMessage, error) {
+	result, err := c.invokeResult(ctx, method, operationID, object, rev, gen, token, params, limit)
+	if err != nil {
+		return nil, err
+	}
+	return result.Body, nil
+}
+func (c *typedConnection) invokeResult(ctx context.Context, method, operationID, object string, rev uint64, gen *int64, token string, params any, limit int) (Result, error) {
 	if c.conn == nil || !c.conn.Peer().SameUser {
-		return nil, newError(CodePermissionDenied, "authenticated same-user connection required")
+		return Result{}, newError(CodePermissionDenied, "authenticated same-user connection required")
 	}
 	if rev > math.MaxInt64 {
-		return nil, contractError("revision exceeds ledger range")
+		return Result{}, contractError("revision exceeds ledger range")
 	}
 	if p, ok := params.(v2contract.Validator); ok {
 		if err := p.Validate(); err != nil {
-			return nil, err
+			return Result{}, err
 		}
 	}
 	body, err := json.Marshal(params)
 	if err != nil {
-		return nil, contractError("invalid typed parameters")
+		return Result{}, contractError("invalid typed parameters")
 	}
 	intent := Intent{OperationID: operationID, Object: object, ExpectedRevision: int64(rev), Generation: gen, Method: method, Params: body, CapabilityToken: token}
 	if err := intent.Validate(); err != nil {
-		return nil, contractError("invalid request envelope")
+		return Result{}, contractError("invalid request envelope")
 	}
 	frame, err := Encode(intent)
 	if err != nil {
-		return nil, err
+		return Result{}, err
 	}
 	if len(frame) > limit {
-		return nil, contractError("request exceeds frame limit")
+		return Result{}, contractError("request exceeds frame limit")
 	}
 	reply, err := c.conn.Request(ctx, frame)
 	if err != nil {
-		return nil, err
+		return Result{}, err
 	}
 	if len(reply) > limit {
-		return nil, contractError("response exceeds frame limit")
+		return Result{}, contractError("response exceeds frame limit")
 	}
 	payload, err := splitPrefix(reply)
 	if err != nil {
-		return nil, contractError("invalid response frame")
+		return Result{}, contractError("invalid response frame")
 	}
-	result, err := decodeWire[Result](payload)
+	envelope, err := decodeWire[struct {
+		OperationID string          `json:"operation_id"`
+		Revision    *int64          `json:"revision"`
+		Body        json.RawMessage `json:"body,omitempty"`
+		Error       *Error          `json:"error,omitempty"`
+	}](payload)
 	if err != nil {
-		return nil, err
+		return Result{}, err
 	}
-	if result.OperationID != operationID || result.Revision < 0 {
-		return nil, contractError("response operation mismatch")
+	if envelope.OperationID != operationID || envelope.Revision == nil || *envelope.Revision < 0 {
+		return Result{}, contractError("response operation or revision mismatch")
 	}
+	result := Result{OperationID: envelope.OperationID, Revision: *envelope.Revision, Body: envelope.Body, Error: envelope.Error}
 	if result.Error != nil {
 		if !v2contract.Code(result.Error.Code).Valid() {
-			return nil, contractError("unknown response error")
+			return Result{}, contractError("unknown response error")
 		}
-		return nil, result.Error
+		return result, result.Error
 	}
-	return result.Body, nil
+	return result, nil
 }
 func typedResult[T v2contract.Validator](body []byte) (T, error) {
 	var zero T
@@ -357,31 +371,8 @@ func (c *runClient) serviceGeneration(ctx context.Context) (int64, error) {
 	}
 	return s.Generation, nil
 }
-func (c *runClient) Prepare(ctx context.Context, spec RunSpec) (PreparedRun, error) {
-	ctx, done, err := c.wire.enter(ctx)
-	if err != nil {
-		return PreparedRun{}, err
-	}
-	defer done()
-	if err := spec.Validate(); err != nil {
-		return PreparedRun{}, err
-	}
-	gen, err := c.serviceGeneration(ctx)
-	if err != nil {
-		return PreparedRun{}, err
-	}
-	body, err := c.wire.invoke(ctx, "run.prepare", ids.New("op"), "", 0, &gen, "", spec, v2contract.MaxFrameBytes)
-	if err != nil {
-		return PreparedRun{}, err
-	}
-	out, err := typedResult[PreparedRun](body)
-	if err == nil && out.Generation != gen {
-		return PreparedRun{}, contractError("preparation generation mismatch")
-	}
-	if err == nil {
-		c.generation = gen
-	}
-	return out, err
+func (c *runClient) Prepare(context.Context, RunSpec) (PreparedRun, error) {
+	return PreparedRun{}, newError(CodeCapabilityUnsupported, "revisioned_preparation_required")
 }
 func (c *runClient) preparedCall(ctx context.Context, method, operationID string, rev uint64, request any) (json.RawMessage, error) {
 	if c.generation == 0 {
@@ -400,21 +391,8 @@ func (c *runClient) preparedCall(ctx context.Context, method, operationID string
 	}
 	return c.wire.invoke(ctx, method, operationID, object, rev, &c.generation, "", request, v2contract.MaxFrameBytes)
 }
-func (c *runClient) Confirm(ctx context.Context, r RunConfirmation) (PreparedRun, error) {
-	ctx, done, err := c.wire.enter(ctx)
-	if err != nil {
-		return PreparedRun{}, err
-	}
-	defer done()
-	body, err := c.preparedCall(ctx, "run.confirm", ids.New("op"), 0, r)
-	if err != nil {
-		return PreparedRun{}, err
-	}
-	out, err := typedResult[PreparedRun](body)
-	if err == nil && (out.Generation != c.generation || out.PreparationID != r.PreparationID || out.BindingSHA256 != r.BindingSHA256) {
-		return PreparedRun{}, contractError("confirmation binding mismatch")
-	}
-	return out, err
+func (c *runClient) Confirm(context.Context, RunConfirmation) (PreparedRun, error) {
+	return PreparedRun{}, newError(CodeCapabilityUnsupported, "revisioned_preparation_required")
 }
 func (c *runClient) Start(ctx context.Context, op string, rev uint64, r StartRun) (RunAccepted, error) {
 	ctx, done, err := c.wire.enter(ctx)
@@ -575,4 +553,75 @@ func (c *attachmentClient) Close(ctx context.Context, g AttachmentGrant) error {
 	}
 	_, err = decodeWire[struct{}](body)
 	return err
+}
+
+// NewPreparedRunClient uses the same implementation as NewRunClient.
+func NewPreparedRunClient(conn Conn) PreparedRunClient {
+	return &runClient{wire: newTypedConnection(conn)}
+}
+func (c *runClient) PrepareRevisioned(ctx context.Context, op string, spec RunSpec) (PreparedReply, error) {
+	ctx, done, err := c.wire.enter(ctx)
+	if err != nil {
+		return PreparedReply{}, err
+	}
+	defer done()
+	if err := spec.Validate(); err != nil {
+		return PreparedReply{}, err
+	}
+	gen, err := c.serviceGeneration(ctx)
+	if err != nil {
+		return PreparedReply{}, err
+	}
+	result, err := c.wire.invokeResult(ctx, "run.prepare", op, "", 0, &gen, "", spec, v2contract.MaxFrameBytes)
+	if err != nil {
+		return PreparedReply{}, err
+	}
+	out, err := preparedReply(result, gen, "", "")
+	if err != nil {
+		return PreparedReply{}, err
+	}
+	if out.Revision != 0 {
+		return PreparedReply{}, contractError("new preparation revision must be zero")
+	}
+	c.generation = gen
+	return out, nil
+}
+func (c *runClient) ConfirmRevisioned(ctx context.Context, op string, rev uint64, request RunConfirmation) (PreparedReply, error) {
+	ctx, done, err := c.wire.enter(ctx)
+	if err != nil {
+		return PreparedReply{}, err
+	}
+	defer done()
+	if err := request.Validate(); err != nil {
+		return PreparedReply{}, err
+	}
+	if c.generation == 0 {
+		gen, err := c.serviceGeneration(ctx)
+		if err != nil {
+			return PreparedReply{}, err
+		}
+		c.generation = gen
+	}
+	result, err := c.wire.invokeResult(ctx, "run.confirm", op, request.PreparationID, rev, &c.generation, "", request, v2contract.MaxFrameBytes)
+	if err != nil {
+		if result.Error != nil && result.Error.Code == CodeRevisionConflict && len(result.Body) > 0 && !bytes.Equal(bytes.TrimSpace(result.Body), []byte("null")) {
+			current, decodeErr := preparedReply(result, c.generation, request.PreparationID, request.BindingSHA256)
+			if decodeErr != nil {
+				return PreparedReply{}, decodeErr
+			}
+			return PreparedReply{}, &PreparationConflictError{current: current, cause: result.Error, hasCurrent: true}
+		}
+		return PreparedReply{}, err
+	}
+	return preparedReply(result, c.generation, request.PreparationID, request.BindingSHA256)
+}
+func preparedReply(result Result, gen int64, id, binding string) (PreparedReply, error) {
+	out, err := typedResult[PreparedRun](result.Body)
+	if err != nil {
+		return PreparedReply{}, err
+	}
+	if result.Revision < 0 || out.Generation != gen || (id != "" && out.PreparationID != id) || (binding != "" && out.BindingSHA256 != binding) {
+		return PreparedReply{}, contractError("preparation binding mismatch")
+	}
+	return PreparedReply{Run: out, Revision: uint64(result.Revision)}, nil
 }
