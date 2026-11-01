@@ -27,8 +27,11 @@ import (
 func requireOwnership(t *testing.T, err error) {
 	t.Helper()
 	var ce *v2contract.ControlError
-	if !errors.As(err, &ce) || ce.Code != v2contract.CodeOwnershipUnresolved {
+	if !errors.As(err, &ce) {
 		t.Fatalf("error = %v; want typed ownership_unresolved", err)
+	}
+	if ce.Code != v2contract.CodeOwnershipUnresolved {
+		t.Fatalf("error = %v; control fields = %+v; want typed ownership_unresolved", err, *ce)
 	}
 }
 
@@ -51,7 +54,9 @@ func TestMigrationHeldOwnerRefuses(t *testing.T) {
 			}
 			defer release()
 			before := ledgerHash(t, db)
-			ctx, cancel := context.WithTimeout(t.Context(), 80*time.Millisecond)
+			// This full API budget includes SQLite and root/instance setup.
+			// The critical80ms owner deadline is isolated below after setup.
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 			defer cancel()
 			report, err := Apply(ctx, db, preview.Plan{})
 			requireOwnership(t, err)
@@ -63,6 +68,61 @@ func TestMigrationHeldOwnerRefuses(t *testing.T) {
 			}
 			if backups, _ := filepath.Glob(filepath.Join(dir, "*.bak*")); len(backups) != 0 {
 				t.Fatalf("timeout created backup: %v", backups)
+			}
+		})
+	}
+}
+
+// The primitive's critical owner deadline starts only after filesystem and
+// lock fixture setup. No SQLite/instance preparation spends this80ms budget.
+func TestMigrationQuiesceOwnerDeadline(t *testing.T) {
+	t.Parallel()
+	for _, held := range []bool{true, false} {
+		name := "free owner acquired"
+		if held {
+			name = "held owner deadline"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			const runID = "run_deadline"
+			runDir := filepath.Join(dir, "runs", runID)
+			if err := os.MkdirAll(runDir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if held {
+				release, err := supervisor.AcquireOwner(runDir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer release()
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 80*time.Millisecond)
+			defer cancel()
+			deadline := drainDeadline(ctx)
+			release, err := quiesceRun(ctx, dir, runID, deadline)
+			if held {
+				if release != nil {
+					release()
+				}
+				requireOwnership(t, err)
+				if time.Now().Before(deadline) {
+					t.Fatal("held owner refused before actual deadline")
+				}
+				<-ctx.Done()
+				if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+					t.Fatalf("owner deadline context = %v", ctx.Err())
+				}
+				return
+			}
+			if err != nil || release == nil {
+				t.Fatalf("free owner not acquired: release=%v err=%v", release != nil, err)
+			}
+			defer release()
+			if other, err := supervisor.AcquireOwner(runDir); !errors.Is(err, supervisor.ErrOwnerHeld) {
+				if other != nil {
+					other()
+				}
+				t.Fatalf("quiesce did not hold owner: %v", err)
 			}
 		})
 	}
