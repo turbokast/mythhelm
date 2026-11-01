@@ -18,7 +18,7 @@ func verified(snap viewmodel.Snapshot) bool {
 	if snap.Verification == nil || snap.Verification.Result != "passed" {
 		return false
 	}
-	return snap.Candidate != nil && snap.Verification.CandidateCommit == snap.Candidate.Commit
+	return snap.Candidate != nil && snap.Candidate.Commit != "" && snap.Verification.CandidateCommit == snap.Candidate.Commit
 }
 
 // nextAction maps the run state to its design §7 next-action string. Stopping
@@ -91,26 +91,6 @@ func (m *Model) nextActionText() string {
 	return nextAction(m.snap, m.cfg.Caps)
 }
 
-// stateChip maps a run state to its §15.3 text chip.
-func stateChip(state string) string {
-	switch state {
-	case "executing", "verifying", "recovering", "applying":
-		return "[run ]"
-	case "created", "admission", "interrupted":
-		return "[wait]"
-	case "ready_for_review", "stopping":
-		return "[req ]"
-	case "blocked", "failed":
-		return "[fail]"
-	case "completed":
-		return "[done]"
-	case "cancelled":
-		return "[stop]"
-	default:
-		return "[????]"
-	}
-}
-
 // shortRev abbreviates a revision for pairing labels; short inputs pass
 // through rather than panicking.
 func shortRev(rev string) string {
@@ -139,45 +119,42 @@ func laneAdapter(snap viewmodel.Snapshot) string {
 
 // headerLines renders the mission header: run, lane label, state and goal.
 func (m *Model) headerLines() []line {
-	snap := m.snap
-	c := m.cfg.Caps
-	title := strings.Join([]string{
-		"MYTHHELM",
-		cellOrUnknown(snap.Run.RunID),
-		laneAdapter(snap) + " / " + cellOrUnknown(snap.Run.ExecutionProfile),
-		dotGlyph(c) + " " + cellOrUnknown(snap.Run.State),
-	}, "  ")
-	return []line{
-		{text: title, colour: m.cfg.Tokens.Text},
-		{text: "Goal: " + cellOrUnknown(snap.Goal), colour: m.cfg.Tokens.Text},
+	snap, t, c := m.snap, m.cfg.Tokens, m.cfg.Caps
+	spans := []span{
+		{text: missionGlyph(c), colour: t.Focus},
+		{text: " MYTHHELM", colour: t.Text, bold: true},
+		{text: "  " + cellOrUnknown(snap.Run.RunID) + "  " + laneAdapter(snap) + " / " + cellOrUnknown(snap.Run.ExecutionProfile) + "  ", colour: t.Text},
 	}
+	spans = append(spans, m.stateSpans()...)
+	return []line{lineFromSpans(spans...), lineFromSpans(span{text: "Goal: " + cellOrUnknown(snap.Goal), colour: t.Text})}
 }
 
-// paneHeader renders one pane title with its focus marker.
+// paneHeader keeps focus on one marker cell; its label is bold Text with an
+// inherited-text-colour underline, never a longer focus-coloured run.
 func (m *Model) paneHeader(id, title string) line {
-	c := m.cfg.Caps
-	marker := "  "
-	colour := m.cfg.Tokens.TextMuted
-	if m.focusPane == id {
-		marker = focusGlyph(c) + " "
-		colour = m.cfg.Tokens.Focus
+	if m.focusPane != id {
+		return line{text: "  " + title, colour: m.cfg.Tokens.TextMuted}
 	}
-	return line{text: marker + title, colour: colour}
+	return lineFromSpans(span{text: focusGlyph(m.cfg.Caps), colour: m.cfg.Tokens.Focus}, span{text: " " + title, colour: m.cfg.Tokens.Text, bold: true, underline: true})
 }
 
-// tasksLines renders the tasks pane: the run's task row with its state chip.
+// tasksLines preserves the plain text mirror used by filtering. Failed task
+// rows retain the static Err emphasis also applied by the motion wrapper.
 func (m *Model) tasksLines(width int) []line {
-	c := m.cfg.Caps
-	row := focusGlyph(c) + " " + stateChip(m.snap.Run.State) + " " +
-		cellOrUnknown(m.snap.Goal) + " (" + cellOrUnknown(m.snap.Run.State) + ")"
+	t, c := m.cfg.Tokens, m.cfg.Caps
+	spans := []span{{text: focusGlyph(c), colour: t.Focus}, {text: " ", colour: t.Text}}
+	spans = append(spans, m.stateSpans()...)
+	tail := " " + cellOrUnknown(m.snap.Goal)
 	if m.snap.Run.Reason != "" {
-		row += " " + dashGlyph(c) + " " + cell(m.snap.Run.Reason)
+		tail += " " + dashGlyph(c) + " " + cell(m.snap.Run.Reason)
 	}
-	return []line{
-		m.paneHeader(paneTasks, "TASKS"),
-		{text: m.ruleLine(width)},
-		{text: row, colour: m.cfg.Tokens.Text},
+	spans = append(spans, span{text: tail, colour: t.Text})
+	if isFailureState(m.snap.Run.State) {
+		for i := range spans {
+			spans[i].colour = t.Err
+		}
 	}
+	return []line{m.paneHeader(paneTasks, "TASKS"), {text: m.ruleLine(width)}, lineFromSpans(spans...)}
 }
 
 // agentsLines renders the agents pane: one lane per attempt with its runtime
@@ -401,14 +378,11 @@ const compactOfferRows = 5
 // when the height allows.
 func (m *Model) compactLines() []line {
 	c := m.cfg.Caps
-	snap := m.snap
-	lines := []line{
-		{text: "MYTHHELM  " + cellOrUnknown(snap.Run.RunID) + "  " + cellOrUnknown(snap.Run.State), colour: m.cfg.Tokens.Text},
-		{text: "Goal: " + cellOrUnknown(snap.Goal), colour: m.cfg.Tokens.Text},
-		{text: "state: " + stateChip(snap.Run.State) + " " + cellOrUnknown(snap.Run.State)},
+	lines := append(m.headerLines(), lineFromSpans(append([]span{{text: "state: ", colour: m.cfg.Tokens.Text}}, m.stateSpans()...)...))
+	lines = append(lines, []line{
 		{text: "next action: " + m.nextActionText()},
 		{text: "compact view " + dashGlyph(c) + " small terminal (--accessible for linear)"},
-	}
+	}...)
 	lines = append(lines, line{text: "activity: " + m.activityText()})
 	if v := m.verificationLines(); len(v) > 0 {
 		lines = append(lines, v[0])
@@ -451,4 +425,44 @@ func (m *Model) criticalStatusLine() line {
 		text:   cellOrUnknown(m.snap.Run.State) + " " + dashGlyph(m.cfg.Caps) + " " + m.nextActionText(),
 		colour: m.cfg.Tokens.Attention,
 	}
+}
+
+// stateSpans is the closed Observatory vocabulary. Native success alone is
+// never verification: ready_for_review gets an OK marker only for a matching
+// passed check of a nonempty frozen candidate commit.
+func (m *Model) stateSpans() []span {
+	c, t := m.cfg.Caps, m.cfg.Tokens
+	marker, word, colour := unknownGlyph(c), "unknown", t.TextMuted
+	switch m.snap.Run.State {
+	case "created":
+		marker, word = pendingGlyph(c), "starting"
+	case "admission":
+		marker, word = pendingGlyph(c), "admitting"
+	case "executing":
+		marker, word, colour = dotGlyph(c), "working", t.Focus
+	case "verifying":
+		marker, word, colour = dotGlyph(c), "checking", t.Focus
+	case "ready_for_review":
+		word = "ready, unverified"
+		if verified(m.snap) {
+			marker, word, colour = dotGlyph(c), "ready for review", t.OK
+		}
+	case "applying":
+		marker, word, colour = dotGlyph(c), "applying", t.Focus
+	case "completed":
+		marker, word = checkGlyph(c), "done"
+	case "stopping":
+		marker, word = pendingGlyph(c), "stop requested"
+	case "cancelled":
+		marker, word = checkGlyph(c), "stopped"
+	case "interrupted":
+		word = "interrupted"
+	case "recovering":
+		marker, word, colour = dotGlyph(c), "recovering", t.Focus
+	case "blocked":
+		marker, word, colour = "[fail]", "blocked", t.Err
+	case "failed":
+		marker, word, colour = "[fail]", "failed", t.Err
+	}
+	return []span{{text: marker, colour: colour}, {text: " " + word, colour: t.Text}}
 }

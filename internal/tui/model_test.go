@@ -6,11 +6,16 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -681,6 +686,12 @@ func TestNoFontDependentGlyphs(t *testing.T) {
 		return updated.(*Model).View()
 	}
 	ascii, uni := mk(asciiCaps), mk(fullCaps)
+	if err := checkGoldenGlyphs(ascii, true); err != nil {
+		t.Error(err)
+	}
+	if err := checkGoldenGlyphs(uni, false); err != nil {
+		t.Error(err)
+	}
 
 	for i := 0; i < len(ascii); i++ {
 		if ascii[i] >= 0x80 {
@@ -739,7 +750,7 @@ func inPrivateUseOrEmoji(r rune) bool {
 		return true
 	case r >= 0x1F000 && r <= 0x1FAFF:
 		return true
-	case r >= 0x2600 && r <= 0x27BF:
+	case r >= 0x2600 && r <= 0x27BF && r != '✓':
 		return true
 	case r >= 0x2B00 && r <= 0x2BFF:
 		return true
@@ -760,7 +771,7 @@ func inGeometricScope(r rune) bool {
 		return true
 	case r >= 0x25A0 && r <= 0x25FF:
 		return true
-	case r == '·' || r == '…' || r == '—':
+	case r == '·' || r == '…' || r == '—' || r == '✓':
 		return true
 	default:
 		return false
@@ -809,4 +820,220 @@ func TestLayeringNoCliImport(t *testing.T) {
 			t.Errorf("%s references the CLI package", f)
 		}
 	}
+}
+
+func TestObservatoryStateVocabulary(t *testing.T) {
+	t.Parallel()
+	words := map[string]string{
+		"created": "○ starting", "admission": "○ admitting", "executing": "● working", "verifying": "● checking",
+		"ready_for_review": "● ready for review", "applying": "● applying", "completed": "✓ done", "stopping": "○ stop requested",
+		"cancelled": "✓ stopped", "interrupted": "◌ interrupted", "recovering": "● recovering", "blocked": "[fail] blocked", "failed": "[fail] failed",
+	}
+	raw, err := os.ReadFile(filepath.Join("..", "supervisor", "state.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := checkRunStateInventory(raw, words); err != nil {
+		t.Fatal(err)
+	}
+	// A new producer enum omitted from the presentation table must fail the
+	// same inventory check, not silently become an untested default.
+	future := append(append([]byte(nil), raw...), []byte("\nconst RunFuture RunState = \"future\"\n")...)
+	if err := checkRunStateInventory(future, words); err == nil || !strings.Contains(err.Error(), "future") {
+		t.Fatalf("extra state inventory = %v", err)
+	}
+	seen := make(map[string]string)
+	for state, want := range words {
+		m := newModel(testConfig(caps.Caps{Colour: caps.ColourNever, Icons: caps.IconsUnicode}, t))
+		m.snap = richSnapshot()
+		m.snap.Run.State = state
+		got := renderSpans(m.cfg.Caps, m.stateSpans(), 100, "")
+		if got != want {
+			t.Errorf("state %s = %q, want %q", state, got, want)
+		}
+		if previous, ok := seen[got]; ok {
+			t.Errorf("%s and %s share state text %q", previous, state, got)
+		}
+		seen[got] = state
+		if header := stripANSI(m.finaliseRows(m.headerLines(), 500)[0]); !strings.Contains(header, want) {
+			t.Errorf("header state %s lacks %q: %q", state, want, header)
+		}
+	}
+	for _, tt := range []struct {
+		name   string
+		change func(*viewmodel.Snapshot)
+	}{
+		{"no verification", func(s *viewmodel.Snapshot) { s.Verification = nil }},
+		{"no candidate", func(s *viewmodel.Snapshot) { s.Candidate = nil }},
+		{"failed", func(s *viewmodel.Snapshot) { s.Verification.Result = "failed" }},
+		{"not run", func(s *viewmodel.Snapshot) { s.Verification.Result = "not_run" }},
+		{"mismatch", func(s *viewmodel.Snapshot) { s.Verification.CandidateCommit = strings.Repeat("a", 40) }},
+		{"missing commits", func(s *viewmodel.Snapshot) { s.Candidate.Commit = ""; s.Verification.CandidateCommit = "" }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := newModel(testConfig(fullCaps, t))
+			m.snap = richSnapshot()
+			tt.change(&m.snap)
+			spans := m.stateSpans()
+			if got := stripANSI(renderSpans(fullCaps, spans, 100, "")); got != "◌ ready, unverified" {
+				t.Errorf("unverified state = %q", got)
+			}
+			for _, s := range spans {
+				if s.colour == m.cfg.Tokens.OK {
+					t.Errorf("unproven state uses OK: %+v", spans)
+				}
+			}
+		})
+	}
+	m := newModel(testConfig(fullCaps, t))
+	m.snap = richSnapshot()
+	if spans := m.stateSpans(); len(spans) < 2 || spans[0].text != "●" || spans[0].colour != m.cfg.Tokens.OK {
+		t.Errorf("matched proof lacks OK marker: %+v", spans)
+	}
+	m.snap.Run.State = "\x1b[31mnew-state"
+	if got := stripANSI(renderSpans(fullCaps, m.stateSpans(), 100, "")); got != "◌ unknown" {
+		t.Errorf("unknown state = %q", got)
+	}
+}
+
+func checkRunStateInventory(raw []byte, vocabulary map[string]string) error {
+	file, err := parser.ParseFile(token.NewFileSet(), "state.go", raw, 0)
+	if err != nil {
+		return err
+	}
+	seen := make(map[string]bool)
+	for _, decl := range file.Decls {
+		group, ok := decl.(*ast.GenDecl)
+		if !ok || group.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range group.Specs {
+			value, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			typ, ok := value.Type.(*ast.Ident)
+			if !ok || typ.Name != "RunState" {
+				continue
+			}
+			for _, expr := range value.Values {
+				literal, ok := expr.(*ast.BasicLit)
+				if !ok || literal.Kind != token.STRING {
+					return errors.New("nonliteral RunState value")
+				}
+				state, err := strconv.Unquote(literal.Value)
+				if err != nil {
+					return err
+				}
+				if _, ok := vocabulary[state]; !ok {
+					return fmt.Errorf("unmapped RunState %s", state)
+				}
+				seen[state] = true
+			}
+		}
+	}
+	for state := range vocabulary {
+		if !seen[state] {
+			return fmt.Errorf("presentation has no producer state %s", state)
+		}
+	}
+	return nil
+}
+
+func TestSpanProducersAndMirrors(t *testing.T) {
+	t.Parallel()
+	m := newModel(testConfig(fullCaps, t))
+	m.snap = richSnapshot()
+	m.snap.Run.State = "executing"
+	m.focusPane = paneTasks
+	// Exercise arbitrary valid focus hex: no renderer may hardcode built-ins.
+	m.cfg.Tokens.Focus = "#123abc"
+	m.snap.Goal = "\x1b[31mgoal\x1b[0m\t\n\x1b]0;hidden-title\a"
+	m.snap.Run.Reason = "\x1b[2Jreason"
+	rows := append(m.headerLines(), m.tasksLines(100)...)
+	focused := 0
+	for _, row := range rows {
+		if len(row.spans) == 0 {
+			continue
+		}
+		var plain strings.Builder
+		for _, s := range row.spans {
+			plain.WriteString(s.text)
+			if strings.Contains(s.text, "\x1b") {
+				t.Errorf("unsanitized producer span: %+v", s)
+			}
+			if s.colour == m.cfg.Tokens.Focus {
+				focused++
+				if lipgloss.Width(s.text) != 1 {
+					t.Errorf("focus run is not one cell: %+v", s)
+				}
+			}
+		}
+		if plain.String() != row.text {
+			t.Errorf("text mirror %q differs from spans %q", row.text, plain.String())
+		}
+	}
+	if focused == 0 {
+		t.Fatal("no focus span exercised")
+	}
+	pane := m.paneHeader(paneTasks, "TASKS")
+	if len(pane.spans) != 2 || pane.spans[1].colour != m.cfg.Tokens.Text || !pane.spans[1].bold || !pane.spans[1].underline {
+		t.Errorf("focused title lacks Text/bold/underline: %+v", pane.spans)
+	}
+	for _, state := range []string{"failed", "blocked"} {
+		m.snap.Run.State = state
+		row := m.tasksRows(100)[2]
+		for _, s := range row.spans {
+			if s.colour != m.cfg.Tokens.Err {
+				t.Errorf("%s task row lost Err emphasis: %+v", state, row.spans)
+			}
+		}
+	}
+	m.snap.Run.State = "executing"
+
+	if got := stripANSI(m.render(rows)); !strings.Contains(got, `goal\t\n`) || !strings.Contains(got, "reason") || strings.Contains(got, "hidden-title") {
+		t.Errorf("unsafe or lost stored text: %q", got)
+	}
+	m.filterText = "goal"
+	filtered := m.applyFilter(m.tasksLines(100))
+	if len(filtered) < 3 || strings.Contains(filtered[2].text, "no matches") {
+		t.Errorf("plain mirror lost filter match: %+v", filtered)
+	}
+}
+
+func TestObservatoryGlyphRejections(t *testing.T) {
+	t.Parallel()
+	for _, s := range []string{"✔", "✅", "\ue000", "😀"} {
+		if err := checkGoldenGlyphs(s, false); err == nil {
+			t.Errorf("forbidden glyph accepted: %q", s)
+		}
+	}
+	if err := checkGoldenGlyphs("◆○◌✓", false); err != nil {
+		t.Errorf("adopted new glyphs rejected: %v", err)
+	}
+	for _, size := range []struct{ w, h int }{{160, 40}, {120, 30}, {88, 24}, {72, 24}, {160, 9}} {
+		for _, c := range []caps.Caps{fullCaps, asciiCaps} {
+			m := newModel(testConfig(c, t))
+			m.snap = richSnapshot()
+			m.loadDiff = stubDiff(mustParseDiff(t, smallDiffInput))
+			m.setSnapshot(t.Context(), m.snap)
+			updated, _ := m.Update(tea.WindowSizeMsg{Width: size.w, Height: size.h})
+			if err := checkGoldenGlyphs(updated.(*Model).View(), c.Icons == caps.IconsASCII); err != nil {
+				t.Errorf("%dx%d caps %+v: %v", size.w, size.h, c, err)
+			}
+		}
+	}
+}
+
+func checkGoldenGlyphs(text string, ascii bool) error {
+	for _, r := range stripANSI(text) {
+		if r < 128 {
+			continue
+		}
+		if ascii || inPrivateUseOrEmoji(r) || !inGeometricScope(r) || !strings.ContainsRune(geometricShapes, r) {
+			return fmt.Errorf("forbidden golden rune U+%04X", r)
+		}
+	}
+	return nil
 }

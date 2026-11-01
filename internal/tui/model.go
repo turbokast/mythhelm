@@ -372,7 +372,7 @@ func (m *Model) View() string {
 func (m *Model) render(rows []line) string {
 	out := make([]string, 0, len(rows))
 	for _, ln := range rows {
-		out = append(out, styleText(m.cfg.Caps, fitLine(m.cfg.Caps, ln.text, m.width), ln.colour))
+		out = append(out, renderLine(m.cfg.Caps, ln, m.width))
 	}
 	if m.height > 0 && len(out) > m.height {
 		out = out[:m.height]
@@ -384,7 +384,7 @@ func (m *Model) render(rows []line) string {
 func (m *Model) finaliseRows(rows []line, width int) []string {
 	out := make([]string, 0, len(rows))
 	for _, ln := range rows {
-		out = append(out, styleText(m.cfg.Caps, fitLine(m.cfg.Caps, ln.text, width), ln.colour))
+		out = append(out, renderLine(m.cfg.Caps, ln, width))
 	}
 	return out
 }
@@ -531,7 +531,11 @@ func joinColumns(c caps.Caps, cols []column, sep string) []string {
 			if i < len(col.rows) {
 				ln = col.rows[i]
 			}
-			parts = append(parts, styleText(c, padCells(fitLine(c, ln.text, col.width), col.width), ln.colour))
+			if len(ln.spans) > 0 {
+				parts = append(parts, padCells(renderLine(c, ln, col.width), col.width))
+			} else {
+				parts = append(parts, styleText(c, padCells(fitLine(c, ln.text, col.width), col.width), ln.colour))
+			}
 		}
 		out = append(out, strings.Join(parts, sep))
 	}
