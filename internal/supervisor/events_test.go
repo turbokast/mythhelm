@@ -204,24 +204,22 @@ func sourceEmissions(t *testing.T, filename string, src any, catalog map[string]
 		return -1
 	}
 	var found []emission
-	// Preserve deterministic source order for historical public collector fixtures.
-	for _, decl := range file.Decls {
-		if gen, ok := decl.(*ast.GenDecl); ok {
-			for _, spec := range gen.Specs {
-				if v, ok := spec.(*ast.ValueSpec); ok {
-					for i, name := range v.Names {
-						if eventTypeName(name.Name) && i < len(v.Values) {
-							typ, ok := stringValue(v.Values[i], 0)
-							if !ok {
-								typ = "<unresolved>"
-							}
-							found = append(found, emission{typ, "declaration", 0})
-						}
+	// Preserve the original all-scope declaration walk, including local
+	// constants, while keeping source domain/schema on each use.
+	ast.Inspect(file, func(n ast.Node) bool {
+		if v, ok := n.(*ast.ValueSpec); ok {
+			for i, name := range v.Names {
+				if eventTypeName(name.Name) && i < len(v.Values) {
+					typ, ok := stringValue(v.Values[i], 0)
+					if !ok {
+						typ = "<unresolved>"
 					}
+					found = append(found, emission{typ, "declaration", 0})
 				}
 			}
 		}
-	}
+		return true
+	})
 	scan := func(node ast.Node, parameters map[string]bool) {
 		ast.Inspect(node, func(n ast.Node) bool {
 			forwarded := func(e ast.Expr) bool {
@@ -595,6 +593,7 @@ func emit(){_=journal.Event{SchemaVersion:2,Type:serviceEventType}}
 		}
 	}
 	cases := []struct{ name, body string }{
+		{"local unknown declaration", `func emit(){const surpriseEvent="attempt.surprise";_ = surpriseEvent}`},
 		{"unrecognised record form", `func emit(){_=other.Record{SchemaVersion:2,Type:"service.adopted"}}`},
 		{"unqualified event form", `func emit(){_=Event{SchemaVersion:2,Type:"service.diagnostic"}}`},
 		{"internal via public", `func emit(){_,_=newEvent(r,"","","service.diagnostic",nil,now)}`},
