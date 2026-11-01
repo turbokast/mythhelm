@@ -62,7 +62,7 @@ local gates had passed:
   output. It now connects a real sink/reader to a synthetic blocked consumer,
   checks producer and dispatch acknowledgments within two seconds, and closes the
   view before joining. A blocking callback control fails the intended assertion.
-  This is a synthetic ownership test, not public observation or native ingestion.
+  This is a synthetic observer test, not public observation or native ingestion.
 
 The first error-cause test also let an ingestion mutant survive because the
 secondary diagnostic already wrapped two errors. The repaired assertion checks
@@ -78,7 +78,7 @@ source revisions; they do not retroactively qualify earlier ones.
 
 The coordinator initially demanded a fresh CodeRabbit `SUCCESS`, although the
 unchanged canonical policy accepts `NEUTRAL`. That extra condition caused waiting
-and was corrected without changing settings or weakening a gate. Neutral means
+and was corrected without changing settings or weakening a gate. The rate-limited neutral result meant
 no new automated review ran; it is not substantive approval. An earlier actual
 external review produced the findings above, and independent review still mattered.
 
