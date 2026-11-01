@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -308,5 +310,135 @@ func TestCanceledStartupHasNoStateEffects(t *testing.T) {
 	}
 	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("cancelled startup created root: %v", err)
+	}
+}
+
+// blockedStatusConn models a response writer that does not observe root
+// cancellation. Its owning fixture always releases and joins it explicitly.
+type blockedStatusConn struct {
+	frame   []byte
+	used    bool
+	writing chan struct{}
+	release chan struct{}
+}
+
+func (c *blockedStatusConn) Peer() control.Peer                              { return control.Peer{SameUser: true} }
+func (c *blockedStatusConn) Request(context.Context, []byte) ([]byte, error) { return nil, io.EOF }
+func (c *blockedStatusConn) Receive(ctx context.Context) ([]byte, error) {
+	if c.used {
+		return nil, io.EOF
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	c.used = true
+	return c.frame, nil
+}
+func (c *blockedStatusConn) Respond([]byte) error { close(c.writing); <-c.release; return nil }
+func (c *blockedStatusConn) Close() error         { return nil }
+
+type singleStatusListener struct {
+	conn   control.Conn
+	once   sync.Once
+	closed chan struct{}
+}
+
+func (l *singleStatusListener) Accept() (control.Conn, error) {
+	if l.conn != nil {
+		c := l.conn
+		l.conn = nil
+		return c, nil
+	}
+	<-l.closed
+	return nil, io.EOF
+}
+func (l *singleStatusListener) Close() error { l.once.Do(func() { close(l.closed) }); return nil }
+func (l *singleStatusListener) Addr() string { return "synthetic-status" }
+
+func TestRootCancellationStartsShutdownBeforeTransportJoin(t *testing.T) {
+	r := testRuntime(t)
+	owner, err := supervisor.AcquireServiceOwner(t.Context(), r.journal, r.lease, "run_root_cancel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedVerifying(t, r, "run_root_cancel")
+	entered, cancelled, releaseEntry := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var first sync.Once
+	a, err := r.startEntry(t.Context(), owner, func(ctx context.Context, h supervisor.Hooks) error {
+		h.Event = func(journal.Event) {
+			first.Do(func() { close(entered); <-ctx.Done(); close(cancelled); <-releaseEntry })
+		}
+		_, err := supervisor.RecoverOwned(ctx, r.journal, owner, "run_root_cancel", h)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame, err := control.Encode(control.Intent{OperationID: "op_status", Method: "status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &blockedStatusConn{frame: frame, writing: make(chan struct{}), release: make(chan struct{})}
+	l := &singleStatusListener{conn: c, closed: make(chan struct{})}
+	rootCtx, cancel := context.WithCancel(t.Context())
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- serveRuntime(rootCtx, r, l) }()
+	var entryOnce, writerOnce sync.Once
+	cleanup := func() {
+		cancel()
+		writerOnce.Do(func() { close(c.release) })
+		entryOnce.Do(func() { close(releaseEntry) })
+		<-a.done
+		err := <-serveDone
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Error(err)
+		}
+	}
+	defer cleanup()
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("owned callback was not reached")
+	}
+	select {
+	case <-c.writing:
+	case <-time.After(2 * time.Second):
+		t.Fatal("status writer was not reached")
+	}
+	cancel()
+	select {
+	case <-cancelled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("root cancellation waited for stalled transport before cancelling owned entry")
+	}
+	r.mu.Lock()
+	closing := r.closing
+	r.mu.Unlock()
+	if !closing {
+		t.Fatal("root cancellation did not refuse new work")
+	}
+	select {
+	case <-r.joined:
+		t.Fatal("shutdown released ownership before callback joined")
+	default:
+	}
+	if r.lease.Generation() == 0 {
+		t.Fatal("stalled owned callback lost its lease")
+	}
+	entryOnce.Do(func() { close(releaseEntry) })
+	<-a.done
+	select {
+	case <-r.joined:
+	case <-time.After(2 * time.Second):
+		t.Fatal("joined entry did not finish ownership cleanup")
+	}
+	if r.lease.Generation() != 0 {
+		t.Fatal("joined ownership remained held")
+	}
+	// The writer is still held: execution cleanup never waits for a view.
+	select {
+	case <-c.release:
+		t.Fatal("fixture writer unexpectedly released")
+	default:
 	}
 }

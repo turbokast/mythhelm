@@ -62,8 +62,28 @@ func Run(ctx context.Context, stateDir string) error {
 	if err != nil {
 		return errors.Join(err, r.shutdown(context.WithoutCancel(ctx)))
 	}
-	err = control.Serve(ctx, listener, r.server, nil)
+	return serveRuntime(ctx, r, listener)
+}
+
+func serveRuntime(ctx context.Context, r *runtime, listener control.Listener) error {
+	defer func() { _ = listener.Close() }()
+	joinCancellation := r.watchCancellation(ctx)
+	defer joinCancellation()
+	err := control.Serve(ctx, listener, r.server, nil)
 	return errors.Join(err, r.shutdown(context.WithoutCancel(ctx)))
+}
+
+// Root cancellation initiates shutdown before transport handlers finish. The
+// callback only initiates cancellation; the separate ownership coordinator
+// still waits for actual entry joins, with no forced OS-I/O guarantee.
+func (r *runtime) watchCancellation(ctx context.Context) func() {
+	done := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() { defer close(done); _ = r.shutdown(ctx) })
+	return func() {
+		if !stop() {
+			<-done
+		}
+	}
 }
 
 func openRuntime(ctx context.Context, stateDir string) (*runtime, error) {
@@ -164,6 +184,11 @@ func (r *runtime) status(ctx context.Context, _ control.Peer, _ control.Intent) 
 	if closing {
 		return control.Result{}, &control.Error{Code: control.CodeCapabilityUnsupported, Message: "service is shutting down"}
 	}
+	hold, err := r.lease.Hold()
+	if err != nil {
+		return control.Result{}, err
+	}
+	defer hold()
 	if err := r.lease.CheckRootIdentity(ctx, r.lease.Root()); err != nil {
 		return control.Result{}, err
 	}
