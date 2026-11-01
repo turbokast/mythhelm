@@ -167,7 +167,11 @@
 
 ## Task 15 — Install all responsive ladder views
 
-<!-- pending -->
+- **Produces**: Source `e4151e0` composes the existing renderer APIs through model.go's base `observatoryView`. Logical IDs are tasks/agent/evidence/diff; existing internal identifiers remain compatible. Export filenames follow the selected logical ID. The shared key row is always final, with attention relocation merged into NEXT and compact linear offer retained. No public producer API changes.
+- **Layout**: Wide uses Tasks/Agent/Evidence with adopted proportions; Enter substitutes Diff into the originating slot. Two-pane uses Tasks with stage facts and the selected auxiliary pane; 80–99 uses four tabs. Settled80–139 uses candidate-bound Verdict unless Diff is explicitly inspected. Height independently selects compact below10. Compact mandatory rows are header/now/next/use/final keys; optional verification/billing/entitlement yield to capped notices/input. No row is emitted beyond terminal width/height.
+- **Identity and evidence**: selectedTask/selectedLane/pending dialog survive resize. `diffOrigin` restores the prior slot on Esc; `sidePane` remembers the two-pane auxiliary choice. The existing no-running-before-ack guard applies to NOW as well as Agent, while explicit inspect-unsupervised observation retains priority. Qualification/paid facts stay visible in Evidence, entitlement wraps without relabelling, and candidate/mismatch/unknown helpers retain their semantics. No timer, ownership probe or task-file lookup is added.
+- **For Task16**: Call the base compositor for the mission underneath overlays; current View still dispatches overlays as takeovers. Task16 owns “Draw raised cards over an updating dimmed mission” and `TestSemanticSGRRuns` final composed colour/overlay checks. Task15 does not claim that overlay delivery or human/platform/native/G09/G11 qualification. No approval/discard/per-action producer is invented.
+- **Validation checkpoint**: Twenty-two embedded literal captures cover all eleven required sizes in Unicode/ASCII, with100x24 Paper and blocked compact cases. Actual View height/hidden-key/four-tab/Diff-origin/notice/filter/virtualization guards and NoPermanentLoop remain. Whole TUI race passes6.501s at `e4151e0`; canonical final gates, independent source review, actual PR/CI and merge remain pending.
 
 ## Task 16 — Compose overlays with semantic colour checks
 
