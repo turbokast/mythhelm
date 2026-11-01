@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -89,6 +90,8 @@ func TestServiceShutdownWithBlockedEntry(t *testing.T) {
 	unlock()
 }
 
+const synchronousCloseEntered = "T6 observer callback entered before synchronous Close"
+
 func TestObserverCloseOrdering(t *testing.T) {
 	if fixture := os.Getenv("MYTHHELM_T6_CLOSE_FIXTURE"); fixture != "" {
 		observerCloseFixture(t, fixture == "sync")
@@ -105,13 +108,16 @@ func TestObserverCloseOrdering(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
-			cmd := exec.CommandContext(ctx, exe, "-test.run=^TestObserverCloseOrdering$", "-test.v")
+			cmd := exec.CommandContext(ctx, exe, "-test.run=^TestObserverCloseOrdering$", "-test.v", "-test.timeout=30s")
 			cmd.Env = []string{"MYTHHELM_T6_CLOSE_FIXTURE=" + c.fixture, "MYTHHELM_T6_FIXTURE_PARENT=" + t.TempDir(), "SystemRoot=" + os.Getenv("SystemRoot"), "USERNAME=" + os.Getenv("USERNAME"), "TEMP=" + os.TempDir(), "TMP=" + os.TempDir()}
 			var out bytes.Buffer
 			cmd.Stdout = &out
 			cmd.Stderr = &out
 			err := cmd.Run()
 			blocked := errors.Is(ctx.Err(), context.DeadlineExceeded)
+			if blocked && !bytes.Contains(out.Bytes(), []byte("\n"+synchronousCloseEntered+"\n")) {
+				t.Fatalf("child blocked before the actual synchronous Close callback: %v %s", err, out.String())
+			}
 			if blocked != c.blocked {
 				t.Fatalf("callback close blocked=%v want%v: %v %s", blocked, c.blocked, err, out.String())
 			}
@@ -135,6 +141,7 @@ func observerCloseFixture(t *testing.T, synchronous bool) {
 	a, err := r.startEntry(t.Context(), owner, func(ctx context.Context, h supervisor.Hooks) error {
 		h.Event = func(journal.Event) {
 			if synchronous {
+				_, _ = fmt.Fprintln(os.Stdout, synchronousCloseEntered)
 				_ = owner.Close()
 			} else {
 				h.Observer.RequestClose()
