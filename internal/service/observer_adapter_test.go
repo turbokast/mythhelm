@@ -55,8 +55,7 @@ func TestObserverDeliveryNeverWaitsForClient(t *testing.T) {
 	prompt := func(name string, call func() error) {
 		t.Helper()
 		ack := make(chan error, 1)
-		producers.Add(1)
-		go func() { defer producers.Done(); ack <- call() }()
+		producers.Go(func() { ack <- call() })
 		select {
 		case err := <-ack:
 			if err != nil {
@@ -102,7 +101,7 @@ func TestObserverDeliveryNeverWaitsForClient(t *testing.T) {
 			_, err := r.server.Dispatch(ctx, control.Peer{SameUser: true}, control.Intent{OperationID: ids.New("op"), Method: "stop"})
 			var ce *control.Error
 			if !errors.As(err, &ce) || ce.Code != control.CodeCapabilityUnsupported {
-				return fmt.Errorf("stop rejection=%v", err)
+				return fmt.Errorf("stop rejection=%w", err)
 			}
 			return nil
 		})
