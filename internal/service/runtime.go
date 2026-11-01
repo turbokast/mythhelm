@@ -71,6 +71,9 @@ func openRuntime(ctx context.Context, stateDir string) (*runtime, error) {
 }
 
 func openRuntimePrepared(ctx context.Context, stateDir string, prepare func(context.Context, string) error) (*runtime, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := statedir.Ensure(stateDir); err != nil {
 		return nil, err
 	}

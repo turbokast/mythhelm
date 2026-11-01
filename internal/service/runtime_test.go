@@ -297,3 +297,16 @@ func TestViewSlotsReleaseOnlyDisplayResources(t *testing.T) {
 		t.Fatal("closed view registry accepted observer")
 	}
 }
+
+func TestCanceledStartupHasNoStateEffects(t *testing.T) {
+	root := isolatedRoot(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := openRuntime(ctx, root)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled startup=%v", err)
+	}
+	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("cancelled startup created root: %v", err)
+	}
+}
