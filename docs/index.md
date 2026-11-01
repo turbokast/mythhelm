@@ -26,7 +26,6 @@ cells:
   <h1 id="landing-title">Run the agents you already trust.<br> Know what they actually did.</h1>
   <p><a href="#status">What works, what’s in progress, what’s not yet</a></p>
   <p><strong>Delivery target: at least 20× faster full-product delivery. Not demonstrated.</strong> Self-building remains partial: eight reported PRs were merged at the 2026-11-01 02:48:50 UTC snapshot, including lifecycle tests and internal ownership entrypoints. MYTHHELM admission still refused native launches; authoring used direct-session fallbacks. The existing focused mission TUI is implemented; production service dispatch and planned Observatory rendering remain unfinished. Read the <a href="{{ '/dogfood/0007-integration-delivery.html' | relative_url }}">latest integration report, failures and limits</a>, the <a href="{{ '/dogfood/0006-self-building-delivery-wave.html' | relative_url }}">earlier delivery wave</a> and the <a href="{{ '/benchmarks.html' | relative_url }}">measurement and acceleration plan</a>.</p>
-  <p><strong>Service shell staging: a first status lookup can change the root.</strong> Successful supervisor startup on a fresh root initialises and adopts it. The existing local <code>run</code>, <code>recover</code> and <code>apply</code> paths then refuse that root until their service clients land. The shell serves authenticated status; <code>run.start</code> and <code>attachment.open</code> remain unsupported. Read the <a href="{{ '/limitations.html#service-shell-staging' | relative_url }}">startup and migration limits</a>.</p>
 </section>
 
 <section id="quickstart" aria-labelledby="try-the-scripted-demo" markdown="1">
@@ -43,6 +42,8 @@ go run ./cmd/mythhelm demo
 
   <p class="quickstart-note">The first build needs the Go module cache populated. <a href="{{ '/user-guide.html#installation' | relative_url }}">Build from source</a>.</p>
 </section>
+
+  <p><strong>Service shell staging: a first status lookup can change the root.</strong> Successful supervisor startup on a fresh root initialises and adopts it. The existing local <code>run</code>, <code>recover</code> and <code>apply</code> paths then refuse that root until their service clients land. The shell serves authenticated status; <code>run.start</code> and <code>attachment.open</code> remain unsupported. Read the <a href="{{ '/limitations.html#service-shell-staging' | relative_url }}">startup and migration limits</a>.</p>
 
 <figure class="hero-recording" aria-labelledby="hero-caption">
   <video id="hero-player" controls preload="none" poster="{{ '/demos/hero-poster.png' | relative_url }}" width="1280" height="650" aria-describedby="hero-caption">
