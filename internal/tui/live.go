@@ -126,7 +126,7 @@ func (m *Model) drainNotices(at time.Time) {
 	}
 }
 
-// noticeRows renders the synthetic notice events as attention lines,
+// noticeRows renders the synthetic notice events as labelled neutral lines,
 // virtualised to a tail of at most limit rows: the most recent notices stay
 // visible with a leading marker counting the dropped older ones. Only the
 // shown tail is decoded, so a render costs O(limit) however many notices the
@@ -144,7 +144,7 @@ func (m *Model) noticeRows(limit int) []line {
 		if err := json.Unmarshal(ev.Payload, &p); err == nil {
 			text = p.Text
 		}
-		return line{text: "notice: " + cell(text), colour: m.cfg.Tokens.Attention}
+		return line{text: "notice: " + cell(text), colour: m.cfg.Tokens.TextMuted}
 	}
 	if len(m.notices) <= limit {
 		all := make([]line, 0, len(m.notices))

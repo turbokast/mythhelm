@@ -345,7 +345,7 @@ func (m *Model) tasksRows(width int) []line {
 		rows = append(rows, ln)
 	}
 	if m.motion.deliveryFrames > 0 {
-		rows = append(rows, line{text: "outcome: " + m.deliveryOutcome(), colour: m.cfg.Tokens.Attention})
+		rows = append(rows, line{text: "outcome: " + m.deliveryOutcome(), colour: m.cfg.Tokens.TextMuted})
 	}
 	if isFailureState(m.snap.Run.State) && m.snap.Attempt != nil && m.snap.Attempt.WorkspacePath != "" {
 		rows = append(rows, line{text: "preserved: " + cell(m.snap.Attempt.WorkspacePath)})
