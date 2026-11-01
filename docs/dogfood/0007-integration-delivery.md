@@ -30,7 +30,7 @@ against GitHub and independent acceptance records.
 | Bounded nonblocking observer, Task 27 | [#551](https://github.com/turbokast/mythhelm/pull/551), `c71053625fd9` | Primitive; production observer wiring remains separate. |
 | Revision-aware standalone client, Task 31, and earlier delivery report | [#553](https://github.com/turbokast/mythhelm/pull/553), `cbf28be8fe33` | Preserves server preparation revisions; client fixtures do not prove service delivery. Code and report shared one PR. |
 | Task-file reload cancellation repair | [#528](https://github.com/turbokast/mythhelm/pull/528), `74a049aef400` | Preserves cancellation during asynchronous reload; no native qualification. |
-| Packaged lifecycle proof, TUI Task 10 | [#521](https://github.com/turbokast/mythhelm/pull/521), `b31009a5490d` | Synthetic agents with real processes/PTYs test ownership, detach and recovery; no live-native qualification or completed full TUI. |
+| Packaged lifecycle proof, TUI Task 10 | [#521](https://github.com/turbokast/mythhelm/pull/521), `b31009a5490d` | Synthetic agents with real processes/PTYs test ownership, detach and recovery; no live-native qualification or completed Observatory renderer. |
 | Owned lifecycle entrypoints, service Task 4 | [#527](https://github.com/turbokast/mythhelm/pull/527), `4cc5315a6005` | Trusted internal ownership extraction; no production owned caller or sealed admission. |
 
 Required checks passed on the final PR heads before merge. That does not establish
@@ -69,14 +69,16 @@ historical cleanup mutants. It was corrected. Five **current** deliberate test
 violations produced assertion failures, and restored controls passed; the five
 historical outcomes remain **unknown**.
 
-The admission-binding codec, Task 23, remains unmerged pending the exact challenge
-contract in [issue #550](https://github.com/turbokast/mythhelm/issues/550).
+The admission-binding codec, Task 23, remains unmerged: its shape-only candidate
+fails the adopted exact-challenge contract. A proposed boundary clarification
+awaits approval; [issue #550](https://github.com/turbokast/mythhelm/issues/550)
+tracks the gap and is not a waiver or an amendment to the adopted contract.
 Passing shape checks did not establish semantic consent validation. Task 4's
 mutable `admission.Decision` is not sealed admission. Calling an owner's `Close`
 from its own callback really deadlocks; close/filesystem operations may wait
 without forced cancellation. These are retained production-runtime constraints
-for Tasks 6/7/9, not fixed or qualified behavior. Production service dispatch and
-the full TUI renderer remain incomplete; see the [limits](../limitations.md).
+for Tasks 6/7/9, not fixed or qualified behavior. The existing focused mission TUI is implemented. Production service dispatch and
+the planned Observatory renderer remain incomplete; see the [limits](../limitations.md).
 
 ## Measurements and what they mean
 

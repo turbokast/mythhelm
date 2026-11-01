@@ -38,8 +38,8 @@ The [latest integration report](dogfood/0007-integration-delivery.md) fixes the
 snapshot at **2026-11-01 02:48:50 UTC**, main `4cc5315a60055e239db7fb2fec5edfa4330cfb25`.
 Eight reported PRs were merged, including packaged lifecycle tests and internal
 ownership entrypoints. Native admission still refused before launch; work used
-direct-session fallbacks. Production service dispatch and the full TUI remain
-unfinished. A stale PR base caused DCO and scope failures before correction.
+direct-session fallbacks. The existing focused mission TUI is implemented;
+production service dispatch and planned Observatory rendering remain unfinished. A stale PR base caused DCO and scope failures before correction.
 
 Two accepted integration records observed **1,796.336 seconds** (TUI Task 10) and
 **2,155.621 seconds** (service Task 4), including coordination, verification,
