@@ -197,19 +197,32 @@ func TestServiceOwnerChangedRoot(t *testing.T) {
 
 // lockError converts the sentinel into a catalogue record; require the exact
 // root/cause rather than retrying other ownership or instance refusals.
-func migrationProbeRefusal(err error, dir string) bool {
+func migrationProbeRefusal(ctx context.Context, err error, dir string) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	// SQLite reports the database's physical directory, which can differ
+	// from t.TempDir's spelling (for example macOS /var -> /private/var).
+	physicalRoot, resolveErr := filepath.EvalSymlinks(dir)
 	var ce *v2contract.ControlError
-	return errors.As(err, &ce) && ce.Code == v2contract.CodeOwnershipUnresolved &&
+	return resolveErr == nil && errors.As(err, &ce) && ce.Code == v2contract.CodeOwnershipUnresolved &&
 		ce.Owner == "migrate" && ce.Object == "" &&
 		ce.NextAction == "another migration holds the state directory; retry after it finishes" &&
-		ce.Detail["migrate/cause"] == fmt.Sprintf("%s: %s", supervisor.ErrOwnerHeld, dir)
+		ce.Detail["migrate/cause"] == fmt.Sprintf("%s: %s", supervisor.ErrOwnerHeld, physicalRoot)
 }
 
 func TestMigrationProbeRefusalIsRootOnly(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	const next = "another migration holds the state directory; retry after it finishes"
-	correct := lockError("apply", fmt.Errorf("%w: %s", supervisor.ErrOwnerHeld, dir), next)
+	physicalRoot, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	correct := lockError("apply", fmt.Errorf("%w: %s", supervisor.ErrOwnerHeld, physicalRoot), next)
+	if !migrationProbeRefusal(t.Context(), correct, dir) {
+		t.Fatal("valid root refusal rejected before negative controls")
+	}
 	wrongOwner, wrongObject, wrongCode, wrongNext := *correct, *correct, *correct, *correct
 	wrongOwner.Owner = "other"
 	wrongObject.Object = "run_live"
@@ -231,10 +244,50 @@ func TestMigrationProbeRefusalIsRootOnly(t *testing.T) {
 		{"wrong lock stage", &wrongNext},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if migrationProbeRefusal(tc.err, dir) {
+			if migrationProbeRefusal(t.Context(), tc.err, dir) {
 				t.Fatal("unrelated early error was retryable")
 			}
 		})
+	}
+}
+
+// SQLite's VFS may report a physical path for a symlinked state directory
+// (including macOS /var -> /private/var). Exercise the actual Apply refusal.
+// This fixture changes XDG_RUNTIME_DIR, so it cannot run in parallel.
+func TestMigrationProbeRefusalPhysicalRoot(t *testing.T) {
+	isolateInstanceLock(t)
+	physical := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "state-alias")
+	if err := os.Symlink(physical, alias); err != nil {
+		if errors.Is(err, errors.ErrUnsupported) || (runtime.GOOS == "windows" && errors.Is(err, os.ErrPermission)) {
+			t.Skipf("directory symlink fixture unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	db := openDrainDB(t, alias)
+	held, err := supervisor.AcquireOwner(physical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held()
+	_, applyErr := Apply(t.Context(), db, preview.Plan{})
+	requireOwnership(t, applyErr)
+	var ce *v2contract.ControlError
+	if !errors.As(applyErr, &ce) {
+		t.Fatal(applyErr)
+	}
+	t.Logf("input root=%q actual held-root cause=%q", alias, ce.Detail["migrate/cause"])
+	if !migrationProbeRefusal(t.Context(), applyErr, alias) {
+		t.Fatalf("actual physical-root refusal rejected for legitimate alias %q: %+v", alias, ce)
+	}
+	if migrationProbeRefusal(t.Context(), applyErr, t.TempDir()) {
+		t.Fatal("different physical root accepted")
+	}
+	if err := os.Remove(alias); err != nil {
+		t.Fatal(err)
+	}
+	if migrationProbeRefusal(t.Context(), applyErr, alias) {
+		t.Fatal("unresolvable alias accepted")
 	}
 }
 
@@ -313,7 +366,7 @@ func TestServiceRootMigration(t *testing.T) {
 			select {
 			case <-done:
 				observer()
-				if !migrationProbeRefusal(applyErr, dir) {
+				if !migrationProbeRefusal(ctx, applyErr, dir) {
 					t.Fatalf("held observer produced unrelated refusal: %v", applyErr)
 				}
 			case <-deadline.C:
@@ -370,7 +423,7 @@ func TestServiceRootMigration(t *testing.T) {
 						<-done
 						t.Fatal("migration never acquired root")
 					case <-done:
-						if migrationProbeRefusal(applyErr, dir) {
+						if migrationProbeRefusal(ctx, applyErr, dir) {
 							continue attempts
 						}
 						held()
