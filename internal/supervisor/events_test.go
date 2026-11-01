@@ -83,6 +83,7 @@ func TestStreamEventSetPinned(t *testing.T) {
 type emission struct {
 	typ, form string
 	schema    int
+	forwarded bool
 }
 
 func internalCanonicalType(typ string) bool {
@@ -93,7 +94,7 @@ func internalCanonicalType(typ string) bool {
 func emissionProblems(records []emission) []string {
 	var out []string
 	for _, r := range records {
-		known := supervisor.IsStreamEvent(r.typ)
+		known := r.forwarded || supervisor.IsStreamEvent(r.typ)
 		internal := internalCanonicalType(r.typ)
 		valid := false
 		switch r.form {
@@ -214,7 +215,7 @@ func sourceEmissions(t *testing.T, filename string, src any, catalog map[string]
 					if !ok {
 						typ = "<unresolved>"
 					}
-					found = append(found, emission{typ, "declaration", 0})
+					found = append(found, emission{typ, "declaration", 0, false})
 				}
 			}
 		}
@@ -256,13 +257,16 @@ func sourceEmissions(t *testing.T, filename string, src any, catalog map[string]
 				}
 				if position >= 0 && position < len(n.Args) {
 					typ, ok := stringValue(n.Args[position], 0)
-					if ok {
-						found = append(found, emission{typ, "public", 1})
-					} else if !forwarded(n.Args[position]) {
+					switch {
+					case ok:
+						found = append(found, emission{typ, "public", 1, false})
+					case forwarded(n.Args[position]):
+						found = append(found, emission{"<forwarded>", "public", 1, true})
+					default:
 						// append(ctx,journal,event,projection) is a journal transport, not
 						// a type-string emitter. Other unresolved public helper inputs fail.
 						if fn, ok := n.Fun.(*ast.SelectorExpr); !ok || fn.Sel.Name != "append" || len(n.Args) != 4 {
-							found = append(found, emission{"<unresolved>", "public", 1})
+							found = append(found, emission{"<unresolved>", "public", 1, false})
 						}
 					}
 				}
@@ -299,18 +303,18 @@ func sourceEmissions(t *testing.T, filename string, src any, catalog map[string]
 				}
 				if !eventForm {
 					name, known := stringValue(typExpr, 0)
-					if typExpr == nil || (schemaExpr == nil && (!known || !internalCanonicalType(name))) {
+					if typExpr == nil || (schemaExpr == nil && !forwarded(typExpr) && (!known || !internalCanonicalType(name))) {
 						break
 					}
 				}
 				typ, ok := stringValue(typExpr, 0)
-				if !ok && forwarded(typExpr) {
-					break
-				}
-				if !ok {
+				isForwarded := !ok && forwarded(typExpr)
+				if isForwarded {
+					typ = "<forwarded>"
+				} else if !ok {
 					typ = "<unresolved>"
 				}
-				found = append(found, emission{typ, form, schemaValue(schemaExpr, 0)})
+				found = append(found, emission{typ, form, schemaValue(schemaExpr, 0), isForwarded})
 			}
 			return true
 		})
@@ -339,7 +343,9 @@ func emittedTypes(t *testing.T, filename string, src any) []string {
 	t.Helper()
 	var out []string
 	for _, r := range sourceEmissions(t, filename, src, nil) {
-		out = append(out, r.typ)
+		if !r.forwarded {
+			out = append(out, r.typ)
+		}
 	}
 	return out
 }
@@ -518,7 +524,9 @@ func TestEveryEmittedEventTypeIsDocumented(t *testing.T) {
 				t.Fatalf("%s: invalid event source forms: %v", file, bad)
 			}
 			for _, record := range records {
-				seen[record.typ] = true
+				if !record.forwarded {
+					seen[record.typ] = true
+				}
 			}
 		}
 	}
@@ -620,6 +628,41 @@ func emit(){_=journal.Event{SchemaVersion:2,Type:serviceEventType}}
 			}
 			if bad := emissionProblems(records); len(bad) == 0 {
 				t.Fatalf("violating source accepted: %v", records)
+			}
+		})
+	}
+}
+
+func TestForwardedCanonicalSourceForms(t *testing.T) {
+	t.Parallel()
+	for _, expr := range []string{
+		`journal.Event{SchemaVersion:journal.EnvelopeVersion,Type:typ}`,
+		`journal.Event{SchemaVersion:canonical.SchemaVersion,Type:typ}`,
+		`canonical.Envelope{SchemaVersion:canonical.SchemaVersion,Type:typ}`,
+	} {
+		src := `package fixture;import "github.com/turbokast/mythhelm/internal/journal";import canonical "github.com/turbokast/mythhelm/internal/v2contract";func emit(typ string){_=` + expr + `}`
+		records := sourceEmissions(t, "fixture.go", src, nil)
+		if len(records) != 1 || !records[0].forwarded || len(emissionProblems(records)) != 0 {
+			t.Fatalf("valid forwarded constructor rejected: %v", records)
+		}
+	}
+	for _, tc := range []struct{ name, expr string }{
+		{"future schema", `journal.Event{SchemaVersion:3,Type:typ}`},
+		{"v2 wrong schema", `canonical.Envelope{SchemaVersion:1,Type:typ}`},
+		{"unknown form", `other.Event{SchemaVersion:2,Type:typ}`},
+		{"unknown record", `other.Record{SchemaVersion:2,Type:typ}`},
+		{"missing schema", `journal.Event{Type:typ}`},
+		{"v2 missing schema", `canonical.Envelope{Type:typ}`},
+		{"unknown missing schema", `other.Record{Type:typ}`},
+		{"unqualified form", `Event{SchemaVersion:2,Type:typ}`},
+		{"unresolved schema", `journal.Event{SchemaVersion:future(),Type:typ}`},
+		{"spoofed forwarding sentinel", `journal.Event{SchemaVersion:2,Type:"<forwarded>"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := `package fixture;import "github.com/turbokast/mythhelm/internal/journal";import canonical "github.com/turbokast/mythhelm/internal/v2contract";func emit(typ string){_=` + tc.expr + `}`
+			records := sourceEmissions(t, "fixture.go", src, nil)
+			if len(records) == 0 || len(emissionProblems(records)) == 0 {
+				t.Fatalf("forwarded form/schema escaped validation: %v", records)
 			}
 		})
 	}
