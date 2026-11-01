@@ -203,32 +203,34 @@ func matrixProblems(rows []matrixRow, tests map[string]string) []string {
 // shippedMigrationDeliverables are the matrix row IDs, sorted. A new
 // deliverable adds its row here and to SUPPORT.md together.
 var shippedMigrationDeliverables = []string{
-	"backup-restore", "drain", "import", "migrate-cli", "nfr2-proof", "v2-tables",
+	"backup-restore", "drain", "import", "migrate-cli", "nfr2-proof", "service-root", "v2-tables",
 }
 
 // migrationRowExports maps every exported declaration of internal/migrate and
 // its preview subpackage to the matrix row covering it, so adding behaviour
 // without a row fails the matrix check.
 var migrationRowExports = map[string]string{
-	"Apply":           "migrate-cli",
-	"Backup":          "backup-restore",
-	"BackupInfo":      "backup-restore",
-	"Restore":         "backup-restore",
-	"Drain":           "drain",
-	"DrainReport":     "drain",
-	"ImportOptions":   "import",
-	"ImportResult":    "import",
-	"ImportRun":       "import",
-	"Phase":           "v2-tables",
-	"PhaseNotStarted": "v2-tables",
-	"PhasePreviewed":  "v2-tables",
-	"PhaseDrained":    "v2-tables",
-	"PhaseImported":   "v2-tables",
-	"PhaseAdopted":    "v2-tables",
-	"Owners":          "drain",
-	"Plan":            "migrate-cli",
-	"PreviewPlan":     "migrate-cli",
-	"Run":             "migrate-cli",
+	"ApplyRoot":          "service-root",
+	"PrepareServiceRoot": "service-root",
+	"Apply":              "migrate-cli",
+	"Backup":             "backup-restore",
+	"BackupInfo":         "backup-restore",
+	"Restore":            "backup-restore",
+	"Drain":              "drain",
+	"DrainReport":        "drain",
+	"ImportOptions":      "import",
+	"ImportResult":       "import",
+	"ImportRun":          "import",
+	"Phase":              "v2-tables",
+	"PhaseNotStarted":    "v2-tables",
+	"PhasePreviewed":     "v2-tables",
+	"PhaseDrained":       "v2-tables",
+	"PhaseImported":      "v2-tables",
+	"PhaseAdopted":       "v2-tables",
+	"Owners":             "drain",
+	"Plan":               "migrate-cli",
+	"PreviewPlan":        "migrate-cli",
+	"Run":                "migrate-cli",
 }
 
 // exportedDecls lists the exported top-level functions (these types carry no

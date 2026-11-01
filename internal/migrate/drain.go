@@ -222,27 +222,25 @@ func enumerateRuns(ctx context.Context, db *sql.DB, stateDir string) ([]drainRun
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='runs'`).Scan(&hasRuns); err != nil {
 		return nil, persistenceError("drain", fmt.Sprintf("checking runs table: %v", err))
 	}
-	query := "SELECT run_id, state FROM runs ORDER BY run_id"
-	if hasRuns == 0 {
-		query = "SELECT '' AS run_id, '' AS state WHERE 0"
-	}
-	rows, err := db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, persistenceError("drain", fmt.Sprintf("listing runs: %v", err))
-	}
-	for rows.Next() {
-		var r drainRun
-		if err := rows.Scan(&r.id, &r.state); err != nil {
+	if hasRuns > 0 {
+		rows, err := db.QueryContext(ctx, "SELECT run_id, state FROM runs ORDER BY run_id")
+		if err != nil {
+			return nil, persistenceError("drain", fmt.Sprintf("listing runs: %v", err))
+		}
+		for rows.Next() {
+			var r drainRun
+			if err := rows.Scan(&r.id, &r.state); err != nil {
+				_ = rows.Close()
+				return nil, persistenceError("drain", fmt.Sprintf("reading runs: %v", err))
+			}
+			byID[r.id] = r
+		}
+		if err := rows.Err(); err != nil {
 			_ = rows.Close()
 			return nil, persistenceError("drain", fmt.Sprintf("reading runs: %v", err))
 		}
-		byID[r.id] = r
-	}
-	if err := rows.Err(); err != nil {
 		_ = rows.Close()
-		return nil, persistenceError("drain", fmt.Sprintf("reading runs: %v", err))
 	}
-	_ = rows.Close()
 	entries, err := os.ReadDir(filepath.Join(stateDir, "runs"))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, persistenceError("drain", fmt.Sprintf("listing run directories: %v", err))
@@ -376,7 +374,15 @@ func adoptable(ctx context.Context, db *sql.DB, stateDir, runID string) (bool, e
 // Only complete lines have a schema; a worker's torn tail is left for its
 // normal owner. Missing spool retains the legacy no-events-yet behaviour.
 func supportedSpool(ctx context.Context, stateDir, runID, attemptID string) bool {
-	f, err := os.Open(filepath.Join(workers.AttemptDir(stateDir, runID, attemptID), supervisor.SpoolFile))
+	path := filepath.Join(workers.AttemptDir(stateDir, runID, attemptID), supervisor.SpoolFile)
+	before, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+	if err != nil || !before.Mode().IsRegular() {
+		return false
+	}
+	f, err := os.Open(path) // #nosec G304 -- fixed spool under held root/run locks; Lstat validates the named file before open
 	if errors.Is(err, os.ErrNotExist) {
 		return true
 	}
@@ -385,7 +391,7 @@ func supportedSpool(ctx context.Context, stateDir, runID, attemptID string) bool
 	}
 	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
-	if err != nil || !info.Mode().IsRegular() {
+	if err != nil || !info.Mode().IsRegular() || !os.SameFile(before, info) {
 		return false
 	}
 	r := bufio.NewReaderSize(io.LimitReader(f, info.Size()), (1<<20)+1)

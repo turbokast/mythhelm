@@ -1,9 +1,11 @@
 package control
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"sync"
 )
 
@@ -23,6 +25,7 @@ type InstanceLease struct {
 // closed; root and generation are immutable after minting.
 type leaseState struct {
 	root       string
+	rootInfo   os.FileInfo
 	generation int64
 	release    func()
 
@@ -36,6 +39,10 @@ type leaseState struct {
 // AcquireInstanceLease takes the instance lock for stateDir as
 // AcquireInstance does and mints the only proof of holding it.
 func AcquireInstanceLease(stateDir string) (*InstanceLease, error) {
+	rootInfo, err := os.Stat(stateDir)
+	if err != nil {
+		return nil, fmt.Errorf("control: reading instance root identity: %w", err)
+	}
 	release, meta, err := acquireInstance(stateDir)
 	if err != nil {
 		return nil, err
@@ -44,9 +51,35 @@ func AcquireInstanceLease(stateDir string) (*InstanceLease, error) {
 		release()
 		return nil, fmt.Errorf("control: instance generation %d is out of range", meta.Generation)
 	}
-	s := &leaseState{root: meta.Root, generation: int64(meta.Generation), release: release}
+	current, err := os.Stat(meta.Root)
+	if err != nil || !os.SameFile(rootInfo, current) {
+		release()
+		return nil, errors.Join(ErrRootConflict, err)
+	}
+	s := &leaseState{root: meta.Root, rootInfo: rootInfo, generation: int64(meta.Generation), release: release}
 	s.drained = sync.NewCond(&s.mu)
 	return &InstanceLease{s: s}, nil
+}
+
+// CheckRootIdentity verifies the physical root retained at lease acquisition.
+// A current pathname alone cannot prove that an old lease owns a replacement.
+func (l *InstanceLease) CheckRootIdentity(ctx context.Context, stateDir string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	release, err := l.Hold()
+	if err != nil {
+		return err
+	}
+	defer release()
+	current, err := os.Stat(stateDir)
+	if err != nil {
+		return errors.Join(ErrRootConflict, err)
+	}
+	if l.s.rootInfo == nil || !os.SameFile(l.s.rootInfo, current) {
+		return ErrRootConflict
+	}
+	return ctx.Err()
 }
 
 // Generation is the held boot generation, or 0 for a closed or forged lease.

@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 
@@ -537,5 +539,194 @@ func TestApplyRootIdentityBeforeSchemaOpen(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("changed root was opened writable: %v", entries)
+	}
+}
+
+func TestServiceOwnerPreMintIdentity(t *testing.T) {
+	for _, kind := range []string{"old-journal-old-lease", "old-journal-new-lease", "new-journal-old-lease", "readonly-journal", "database-only"} {
+		t.Run(kind, func(t *testing.T) {
+			isolateInstanceLock(t)
+			dir := t.TempDir()
+			j, err := journal.Open(t.Context(), dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = j.Close() }()
+			adopt := func(j *journal.Journal) {
+				if err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+					_, err := tx.Exec(`UPDATE migration_state SET phase='adopted' WHERE id=1`)
+					return err
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			adopt(j)
+			lease, err := control.AcquireInstanceLease(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = lease.Close() }()
+			selected := j
+			if kind == "readonly-journal" {
+				selected, err = journal.OpenReadOnly(t.Context(), dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = selected.Close() }()
+			}
+			if kind == "database-only" {
+				for _, suffix := range []string{"", "-wal", "-shm"} {
+					file := filepath.Join(dir, dbName) + suffix
+					if err := os.Rename(file, file+".moved"); err != nil && !errors.Is(err, os.ErrNotExist) {
+						t.Skipf("open file rename unavailable: %v", err)
+					}
+				}
+			} else {
+				moved := dir + "-moved"
+				if err := os.Rename(dir, moved); err != nil {
+					t.Skipf("open root rename unavailable: %v", err)
+				}
+				t.Cleanup(func() { _ = os.RemoveAll(dir); _ = os.Rename(moved, dir) })
+				if err := os.Mkdir(dir, 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			replacement, err := journal.Open(t.Context(), dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = replacement.Close() }()
+			adopt(replacement)
+			if kind == "new-journal-old-lease" {
+				selected = replacement
+			}
+			if kind == "old-journal-new-lease" {
+				if err := lease.Close(); err != nil {
+					t.Fatal(err)
+				}
+				lease, err = control.AcquireInstanceLease(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			owner, err := supervisor.AcquireServiceOwner(t.Context(), selected, lease, "run_identity")
+			if owner != nil {
+				_ = owner.Close()
+			}
+			if !errors.Is(err, supervisor.ErrOwnership) {
+				t.Fatalf("stale provenance minted owner: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "runs", "run_identity")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("identity refusal created run state: %v", err)
+			}
+		})
+	}
+}
+
+func TestSpoolNonregularRefuses(t *testing.T) {
+	for _, kind := range []string{"directory", "fifo"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			attempt := workers.AttemptDir(dir, "run_fifo", "att_fifo")
+			if err := os.MkdirAll(attempt, 0700); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(attempt, supervisor.SpoolFile)
+			if kind == "directory" {
+				if err := os.Mkdir(path, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if supportedSpool(t.Context(), dir, "run_fifo", "att_fifo") {
+					t.Fatal("directory accepted as spool")
+				}
+				return
+			}
+			if runtime.GOOS == "windows" {
+				t.Skip("FIFO fixture requires Unix; directory refusal remains portable")
+			}
+			binary, err := exec.LookPath("mkfifo")
+			if err != nil {
+				t.Skip("FIFO fixture tool unavailable; directory refusal remains portable")
+			}
+			if err := exec.CommandContext(t.Context(), binary, path).Run(); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+			defer cancel()
+			done := make(chan bool, 1)
+			go func() { done <- supportedSpool(ctx, dir, "run_fifo", "att_fifo") }()
+			timer := time.NewTimer(150 * time.Millisecond)
+			defer timer.Stop()
+			select {
+			case accepted := <-done:
+				if accepted {
+					t.Fatal("FIFO accepted as spool")
+				}
+			case <-timer.C:
+				// Own and join the blocked reader before failing the counterfactual.
+				writer, err := os.OpenFile(path, os.O_RDWR, 0600) // #nosec G304 -- owned synthetic FIFO; unblocks and joins only this test's reader
+				if err != nil {
+					t.Fatal(err)
+				}
+				_ = writer.Close()
+				<-done
+				t.Fatal("FIFO open blocked past context deadline before file type validation")
+			}
+		})
+	}
+}
+
+func TestServiceOwnerIdentityAliasControl(t *testing.T) {
+	isolateInstanceLock(t)
+	dir := t.TempDir()
+	j, err := journal.Open(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = j.Close() }()
+	if err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+		_, err := tx.Exec(`UPDATE migration_state SET phase='adopted' WHERE id=1`)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := control.AcquireInstanceLease(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = lease.Close() }()
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(dir, alias); err != nil {
+		t.Skipf("same-inode alias fixture unavailable: %v", err)
+	}
+	readonly, err := journal.OpenReadOnly(t.Context(), alias)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = readonly.Close() }()
+	if err := lease.CheckRootIdentity(t.Context(), alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := readonly.CheckStateIdentity(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := supervisor.AcquireServiceOwner(t.Context(), readonly, lease, "run_alias")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.Close(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(dir, "runs", "run_alias"))
+	if err != nil || !info.IsDir() {
+		t.Fatalf("valid capability control had no run lock effect: %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := lease.CheckRootIdentity(ctx, dir); !errors.Is(err, context.Canceled) {
+		t.Fatalf("lease cancellation=%v", err)
+	}
+	if err := readonly.CheckStateIdentity(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("journal cancellation=%v", err)
 	}
 }
