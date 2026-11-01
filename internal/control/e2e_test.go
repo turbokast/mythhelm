@@ -92,7 +92,10 @@ func (h *e2eHost) env() []string {
 	return []string{"MYTHHELM_HOME=" + h.home, "XDG_RUNTIME_DIR=" + h.rt, "HOME=" + h.home, "TMPDIR=" + h.rt}
 }
 
-func (h *e2eHost) lockState() (lockMetadata, string, error) {
+func (h *e2eHost) lockState(ctx context.Context) (lockMetadata, string, error) {
+	if err := ctx.Err(); err != nil {
+		return lockMetadata{}, "", err
+	}
 	paths, err := filepath.Glob(filepath.Join(h.rt, "mythhelm-*", "supervisor.lock"))
 	if err != nil {
 		return lockMetadata{}, "", err
@@ -106,18 +109,21 @@ func (h *e2eHost) lockState() (lockMetadata, string, error) {
 
 // primeInstance acquires ONLY in the existing helper subprocess with this
 // host's isolated environment. The parent never acquires a global instance.
-func (h *e2eHost) primeInstance() lockMetadata {
+func (h *e2eHost) primeInstance(ctx context.Context) (lockMetadata, error) {
 	h.t.Helper()
-	ctx, cancel := context.WithTimeout(h.t.Context(), 10*time.Second)
+	if err := ctx.Err(); err != nil {
+		return lockMetadata{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	self, err := os.Executable()
 	if err != nil {
-		h.t.Fatal(err)
+		return lockMetadata{}, err
 	}
 	cmd := exec.CommandContext(ctx, self)
 	cmd.Env = append(h.env(), "MYTHHELM_TEST_HELPER=lockholder", "MYTHHELM_TEST_HELPER_DIR="+h.home)
 	if err := cmd.Start(); err != nil {
-		h.t.Fatal(err)
+		return lockMetadata{}, err
 	}
 	waited := false
 	defer func() {
@@ -129,21 +135,21 @@ func (h *e2eHost) primeInstance() lockMetadata {
 	tick := time.NewTicker(time.Millisecond)
 	defer tick.Stop()
 	for {
-		meta, _, err := h.lockState()
+		meta, _, err := h.lockState(ctx)
 		if err == nil && meta.PID == cmd.Process.Pid {
 			if meta.Root != canonicalRoot(h.home) {
-				h.t.Fatalf("helper root=%q", meta.Root)
+				return lockMetadata{}, fmt.Errorf("helper root=%q", meta.Root)
 			}
 			if err := cmd.Process.Kill(); err != nil {
-				h.t.Fatal(err)
+				return lockMetadata{}, err
 			}
 			_ = cmd.Wait()
 			waited = true
-			return meta
+			return meta, nil
 		}
 		select {
 		case <-ctx.Done():
-			h.t.Fatalf("isolated helper never acquired: %v", ctx.Err())
+			return lockMetadata{}, fmt.Errorf("isolated helper never acquired: %w", ctx.Err())
 		case <-tick.C:
 		}
 	}
@@ -215,7 +221,9 @@ func TestLazySpawnThenStatus(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			h := newE2EHost(t)
 			if prior {
-				h.primeInstance()
+				if _, err := h.primeInstance(t.Context()); err != nil {
+					t.Fatal(err)
+				}
 			}
 			out, stderr, code := h.run("supervisor", "status")
 			if code != 0 {
@@ -226,7 +234,7 @@ func TestLazySpawnThenStatus(t *testing.T) {
 				t.Fatal(err)
 			}
 			st := h.status() // a client of the supervisor the first call started
-			meta, endpoint, err := h.lockState()
+			meta, endpoint, err := h.lockState(t.Context())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -402,5 +410,24 @@ func TestRootsRacingOneWinnerNeverBothAttach(t *testing.T) { // AC-5.4, I23 (v2 
 	if ok != 1 {
 		t.Fatalf("%d of the two roots attached (A: exit %d %q, B: exit %d %q), want exactly the winner", ok,
 			res[0].code, res[0].stderr, res[1].code, res[1].stderr)
+	}
+}
+
+func TestCancelledE2EInstanceHelpers(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	parent := t.TempDir()
+	h := &e2eHost{t: t, home: filepath.Join(parent, "uncreated-home"), rt: filepath.Join(parent, "uncreated-runtime")}
+	if _, _, err := h.lockState(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("lockState cancelled = %v", err)
+	}
+	if _, err := h.primeInstance(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("primeInstance cancelled = %v", err)
+	}
+	for _, path := range []string{h.home, h.rt} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("cancelled helper created %s: %v", path, err)
+		}
 	}
 }
