@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/turbokast/mythhelm/internal/control"
 )
@@ -294,5 +296,98 @@ func TestPreparedClientConflictWithoutCurrentPreservesError(t *testing.T) {
 				t.Fatalf("missing current changed ordinary error: %+v,%v", out, err)
 			}
 		})
+	}
+}
+
+// Two actual exported clients make new requests against the same synthetic
+// preparation revision. Server effects remain a Task8 obligation; this checks
+// each client's framing and validated conflict metadata under concurrent calls.
+func TestPreparedClientLostAckAndConflictConcurrentCallers(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	p := preparationFixture()
+	arrived := make(chan string, 2)
+	proceed := make(chan struct{})
+	committed := make(chan struct{})
+	released := false
+	defer func() {
+		if !released {
+			close(proceed)
+		}
+	}()
+	var writes atomic.Int64
+	handler := func(in control.Intent) ([]byte, error) {
+		if in.Method == "status" {
+			return statusFrame(in, 7), nil
+		}
+		if in.ExpectedRevision != 0 || in.Object != p.PreparationID {
+			return nil, fmt.Errorf("changed stale precondition: %+v", in)
+		}
+		arrived <- in.OperationID
+		select {
+		case <-proceed:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		if in.OperationID == "winner" {
+			writes.Add(1)
+			close(committed)
+			return revisionFrame(in, 1, p, nil), nil
+		}
+		if in.OperationID != "stale" {
+			return nil, fmt.Errorf("changed operation ID %q", in.OperationID)
+		}
+		select {
+		case <-committed:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		return revisionFrame(in, 1, p, &control.Error{Code: control.CodeRevisionConflict, Message: "stale"}), nil
+	}
+	type answer struct {
+		op    string
+		reply control.PreparedReply
+		err   error
+	}
+	results := make(chan answer, 2)
+	for _, op := range []string{"winner", "stale"} {
+		go func() {
+			c := control.NewPreparedRunClient(newRevisionConn(handler))
+			reply, err := c.ConfirmRevisioned(ctx, op, 0, confirmationFixture())
+			results <- answer{op, reply, err}
+		}()
+	}
+	for range 2 {
+		select {
+		case <-arrived:
+		case <-ctx.Done():
+			t.Fatal("concurrent requests did not reach framed server")
+		}
+	}
+	close(proceed)
+	released = true
+	for range 2 {
+		select {
+		case out := <-results:
+			if out.op == "winner" {
+				if out.err != nil || out.reply.Revision != 1 {
+					t.Fatalf("winner=%+v", out)
+				}
+			} else {
+				var conflict *control.PreparationConflictError
+				if !errors.As(out.err, &conflict) {
+					t.Fatalf("stale client=%+v", out)
+				}
+				current, ok := conflict.Current()
+				if !ok || current.Revision != 1 || current.Run.BindingSHA256 != p.BindingSHA256 {
+					t.Fatalf("current=%+v,%v", current, ok)
+				}
+			}
+		case <-ctx.Done():
+			t.Fatal("concurrent reply did not complete")
+		}
+	}
+	if writes.Load() != 1 {
+		t.Fatalf("synthetic server writes=%d", writes.Load())
 	}
 }
