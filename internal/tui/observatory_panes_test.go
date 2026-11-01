@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/turbokast/mythhelm/internal/journal"
+	"github.com/turbokast/mythhelm/internal/tui/caps"
 	"github.com/turbokast/mythhelm/internal/tui/viewmodel"
 )
 
@@ -93,9 +94,9 @@ func TestAgentSummaryAndRaw(t *testing.T) {
 		}
 	}
 	m.agentRaw = false
-	m.snap.AgentEvents = []journal.Event{{Type: "attempt.state_changed", Payload: json.RawMessage(`{"state":"running"}`)}, {Type: "attempt.permission_denied", Payload: json.RawMessage(`{"permission":"denied"}`)}, {Type: "future.event", Payload: json.RawMessage(`broken`)}}
+	m.snap.AgentEvents = []journal.Event{{Type: "attempt.state_changed", Payload: json.RawMessage(`{"state":"running"}`)}, {Type: "attempt.permission_denied", Payload: json.RawMessage(`{"tool_name":"Bash"}`)}, {Type: "attempt.native_error", Payload: json.RawMessage(`{"class":"rate_limit"}`)}, {Type: "future.event", Payload: json.RawMessage(`{"message":"future","retained":"raw"}`)}, {Type: "malformed.event", Payload: json.RawMessage(`broken`)}}
 	got := observatoryPlain(m.observatoryAgent(200))
-	for _, want := range []string{"state: running", "permission: denied", "future.event broken", "native-reported", "target: unknown"} {
+	for _, want := range []string{"state: running", "permission denied: Bash", "native error: rate_limit", `future.event {"message":"future","retained":"raw"}`, "malformed.event broken", "native-reported", "target: unknown"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("summary lacks %q: %q", want, got)
 		}
@@ -235,6 +236,24 @@ func TestVerdictMissingAndKnownFacts(t *testing.T) {
 		m.snap.Candidate.Commit = commit
 		if got := observatoryPlain(m.observatoryVerdict(300)); strings.Contains(got, "✓ build") || !strings.Contains(got, "current candidate proof unavailable") {
 			t.Fatalf("unbound check proved: %q", got)
+		}
+	}
+}
+
+func TestObservatoryPaneASCII(t *testing.T) {
+	t.Parallel()
+	m := observatoryFixture(t)
+	m.cfg.Caps.Icons = caps.IconsASCII
+	for _, raw := range []bool{false, true} {
+		m.agentRaw = raw
+		for _, producer := range []func(int) []line{m.observatoryAgent, m.observatoryEvidence, m.observatoryVerdict} {
+			for _, row := range producer(200) {
+				for _, r := range row.text {
+					if r > 127 {
+						t.Fatalf("ASCII pane emits decoration %q in %q", r, row.text)
+					}
+				}
+			}
 		}
 	}
 }

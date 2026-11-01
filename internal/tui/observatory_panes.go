@@ -28,7 +28,8 @@ func (m *Model) paneFact(text string, width int) line {
 func (m *Model) observatoryAgent(width int) []line {
 	var out []line
 	add := func(s string) { out = append(out, m.paneFact(s, width)) }
-	add("agent: " + observatoryValue(laneAdapter(m.snap)) + " · " + observatoryValue(m.snap.Model) + " · " + observatoryValue(m.snap.Run.ExecutionProfile))
+	sep := " " + sepDotGlyph(m.cfg.Caps) + " "
+	add("agent: " + observatoryValue(laneAdapter(m.snap)) + sep + observatoryValue(m.snap.Model) + sep + observatoryValue(m.snap.Run.ExecutionProfile))
 	if a := m.snap.Attempt; a != nil {
 		state := observatoryValue(a.State)
 		if m.dispatchWaiting() {
@@ -52,9 +53,9 @@ func (m *Model) observatoryAgent(width int) []line {
 		add("native progress: unknown; target: unknown")
 	}
 	if m.agentRaw {
-		add("[v] summary · raw journal stream")
+		add("[v] summary" + sep + "raw journal stream")
 	} else {
-		add("[v] full stream · summary")
+		add("[v] full stream" + sep + "summary")
 	}
 	events := m.snap.AgentEvents
 	dropped := max(0, len(events)-200)
@@ -68,15 +69,31 @@ func (m *Model) observatoryAgent(width int) []line {
 			stamp = ev.ObservedAt.Format("15:04:05")
 		}
 		body := string(ev.Payload)
-		if !m.agentRaw {
+		var keys []string
+		switch ev.Type {
+		case "attempt.state_changed":
+			keys = []string{"state", "reason"}
+		case "attempt.permission_denied":
+			keys = []string{"tool_name", "reason"}
+		case "attempt.native_error":
+			keys = []string{"class", "message", "error", "reason"}
+		}
+		if !m.agentRaw && len(keys) > 0 {
 			var fields map[string]json.RawMessage
 			if json.Unmarshal(ev.Payload, &fields) == nil {
 				var facts []string
-				for _, key := range []string{"state", "permission", "message", "error", "reason"} {
+				for _, key := range keys {
 					if raw, ok := fields[key]; ok {
 						var value string
 						if json.Unmarshal(raw, &value) == nil {
-							facts = append(facts, key+": "+value)
+							label := key
+							if key == "tool_name" {
+								label = "permission denied"
+							}
+							if key == "class" {
+								label = "native error"
+							}
+							facts = append(facts, label+": "+value)
 						}
 					}
 				}
