@@ -114,4 +114,10 @@ Draft dependent constraint: Task 4's proposed owner is ownership evidence only; 
 
 ## Task 22 — Review the durable admission and delivery contract
 
-<!-- pending -->
+- **Produces**: ADR 0022 and its index acceptance metadata in PR #541; exact independently reviewed/adopted technical proposal `d8975b35b342bc7f5be34c43bcdbcc39e64ecf52`, original-file SHA-256 `8a5ba89975044132af27362778529087f6b88a1b949c9441e0a4bce291ea8f2d`. No normative technical decision bytes change.
+- **Follow-on spec**: Separately reviewed PR #543 actually merged as `d35073de4e496ac264f17c2833aff094d88a7c81`. Its merged requirements/design/tasks/scratchpad are the implementation contract, including producer Tasks23–31 and amended Tasks6–10; preserve all original task IDs and completed records.
+- **Review/adoption**: Independent architecture and source review returned Ready on the exact proposal; maintainer continuation after its presentation authorized adoption of that content as the design direction. Configuration, billing and runtime/platform qualification remain separate gates. Closeout review/checks remain bound to the final PR #541 head.
+- **For dependents**: Use the closed standard-library-only binding codec, exact retention and revision-aware client producers, opaque supervisor-owned plan/permit boundary, schema10 pending-intent/post-snapshot arming and bounded observer lifecycle from the merged follow-on contract. A digest or structurally valid record alone grants no authority.
+- **Gates**: PR #541 must merge before dependent work consumes this acceptance. Task4 PR #527 at `3b3c5f5e80a3e0d87a944b43a0fde0881177e36a` remains unmerged and independently unresolved; runtime Tasks6–9 keep every exact dependency. Re-ground candidate/source drift before implementation.
+- **Evidence boundary**: Design acceptance and spec merge are documentation evidence, not implemented runtime/native/billing/host/platform qualification, successful MYTHHELM-owned execution or a native configuration grant. Prior blocked/time-limited Task22 attempts retain their original outcomes; this is a separate measured closeout attempt.
+- **Deviations**: Required own-task records accompany the two listed docs paths; no follow-on normative spec edit or other task completion is included in this PR.

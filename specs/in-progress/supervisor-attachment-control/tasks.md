@@ -88,7 +88,7 @@
   - Review corrections consistent with design §5: cover INSERT/UPDATE replacement through every declared unique key and physical row alias; retain unreferenced-victim counterexamples so foreign keys cannot mask omitted guards. Completed-operation duplicate insertion is ignored with zero affected rows, preserving concurrent claim semantics and the entire immutable acknowledgment row; existing completed UPDATE/DELETE guards remain intact.
 - **Files modified**: `docs/user-guide.md`, `internal/cli/migrate_test.go`, `internal/control/assign_revision_test.go`, `internal/journal/acceptance_test.go`, `internal/journal/attachment_revision.go`, `internal/journal/attachment_revision_test.go`, `internal/journal/evaluator_test.go`, `internal/journal/journal.go`, `internal/journal/journal_test.go`, `internal/journal/migrate_tables_test.go`, `internal/journal/migrations/0009_attachments.sql`, `internal/journal/qualification_test.go`, `internal/migrate/SUPPORT.md`, `internal/migrate/backup.go`, `internal/migrate/preview/plan.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
-### Task 22 — Review the durable admission and delivery contract
+### Task 22 — Review the durable admission and delivery contract ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -105,6 +105,11 @@
   - The ADR specifies the chosen observer delivery mechanism, overflow and evidence semantics, disconnected or stalled client handling, cancel/close ordering and resource bounds. After the ADR design receives independent architecture and maintainer review, a separate spec update defines the exact Task 6 and Task 7 implementation paths and executable acceptance tests, and receives independent review before it is merged. Task 22 is not complete until that follow-on spec update is merged and its exact revision is recorded in the Task 22 handoff. Independent architecture and maintainer review name the exact accepted ADR revision. Until both the ADR and follow-on spec update are reviewed and merged, Tasks 6–9 do not proceed. Task 22's own pull request remains limited to its listed docs files and its completion records; the spec update is a separate pull request.
 - **Test plan**: Inspect the actual decision fields, schema and pipeline, trace both happy path and counterexample designs; no runtime or platform qualification is claimed by this documentation task.
 - **Invariants touched**: I02/I03/I05/I06/I12/I18/I20/I21/I23 (v2 §§2/3/6/8: bound authority, one owner and durable recovery).
+
+- **Status**: ✅ Completed — recorded exact-revision ADR 0022 design acceptance and the separately reviewed follow-on spec's actual merged revision; PR #541.
+- **Implementation**: Accepted proposal `d8975b35b342bc7f5be34c43bcdbcc39e64ecf52`, original-file SHA-256 `8a5ba89975044132af27362778529087f6b88a1b949c9441e0a4bce291ea8f2d`, independently reviewed and adopted under the recorded maintainer continuation; follow-on spec PR #543 merged as `d35073de4e496ac264f17c2833aff094d88a7c81`. Technical decision bytes are unchanged; only acceptance/status metadata changes. PR #541 remains subject to independent closeout review, exact-head checks and merge before dependent work consumes this handoff.
+- **Spec deviations**: Own completion, handoff and scratchpad paths record required lifecycle evidence beyond the two listed docs paths. The pre-merge completion entry follows WORKFLOW/task-completion and does not claim PR #541 is merged. Follow-on spec implementation contracts remain confined to separate PR #543; no normative design change.
+- **Files modified**: `docs/decisions/0022-service-admission-binding.md`, `docs/decisions/README.md`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
 ### Task 23 — Produce the closed canonical admission binding codec
 
