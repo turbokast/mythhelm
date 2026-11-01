@@ -161,8 +161,14 @@ class TimingTests(unittest.TestCase):
         script = str(Path(s.__file__).resolve())
         # Only the unavailable Go executable/listing is substituted. The parent
         # interpreter, main, text streams and collector child are real processes.
-        parent = """import importlib.util, subprocess, sys
+        for label, newline in [('native', None), ('forced-crlf', '\r\n')]:
+            with self.subTest(newline=label):
+                parent = """import importlib.util, subprocess, sys
 assert sys.stdout.encoding.lower() == 'cp1252', sys.stdout.encoding
+newline = %r
+if newline is not None:
+    sys.stdout.reconfigure(newline=newline)
+    sys.stderr.reconfigure(newline=newline)
 spec = importlib.util.spec_from_file_location('shard', %r)
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
@@ -178,12 +184,13 @@ m.subprocess.Popen = producer
 status = m.main(['cli', '--race'])
 sys.stderr.write(%r)
 raise SystemExit(status)
-""" % (script, producer, message)
-        result = subprocess.run([sys.executable, '-c', parent], capture_output=True,
-                                env={**os.environ, 'PYTHONIOENCODING': 'cp1252'}, timeout=10)
-        self.assertEqual(result.stdout, message.encode('utf-8'))
-        self.assertEqual(result.stderr, message.encode('utf-8'))
-        self.assertEqual(result.returncode, 7)
+""" % (newline, script, producer, message)
+                result = subprocess.run([sys.executable, '-c', parent], capture_output=True,
+                                        env={**os.environ, 'PYTHONIOENCODING': 'cp1252'}, timeout=10)
+                expected = message.replace('\n', os.linesep if newline is None else newline).encode('utf-8')
+                self.assertEqual(result.stdout, expected)
+                self.assertEqual(result.stderr, expected)
+                self.assertEqual(result.returncode, 7)
 
     def test_real_child_output_failure_and_deterministic_summary(self):
         events = [
