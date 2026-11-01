@@ -271,3 +271,46 @@ func TestObservatoryPaneASCII(t *testing.T) {
 		}
 	}
 }
+
+func TestPaneViewportKeepsFilterAndFooter(t *testing.T) {
+	t.Parallel()
+	for _, width := range []int{90, 120, 160} {
+		for _, height := range []int{10, 24, 30} {
+			t.Run(fmt.Sprintf("%dx%d", width, height), func(t *testing.T) {
+				t.Parallel()
+				m := observatoryFixture(t)
+				m.width, m.height = width, height
+				m.focusPane = paneDetail
+				for i := range 220 {
+					m.snap.AgentEvents = append(m.snap.AgentEvents, journal.Event{Type: "attempt.native_error", Payload: json.RawMessage(`{"class":"rate_limit"}`)})
+					m.snap.Usage = append(m.snap.Usage, journal.UsageRow{Scope: "tokens", Unit: "input", Quantity: fmt.Sprint(i), Label: "reported", Source: "synthetic receipt"})
+				}
+				if len(m.agentsRows(width)) < 200 || len(m.detailRows(width)) < 200 {
+					t.Fatal("long pane fixture detached from producers")
+				}
+				m.handleKey(runeMsg("/"))
+				m.handleKey(runeMsg("x"))
+				task, lane, index := m.selectedTask, m.selectedLane, m.focusIndex
+				view := stripANSISequences(m.View())
+				if !strings.Contains(view, "filter /x_") {
+					t.Fatalf("long pane hides active filter\n%s", view)
+				}
+				if !strings.Contains(view, "q exit options") {
+					t.Fatalf("long pane hides footer\n%s", view)
+				}
+				rows := strings.Split(view, "\n")
+				if len(rows) > height {
+					t.Fatalf("view has %d rows, height %d", len(rows), height)
+				}
+				for _, row := range rows {
+					if lipgloss.Width(row) > width {
+						t.Fatalf("row exceeds width: %q", row)
+					}
+				}
+				if m.focusPane != paneDetail || m.selectedTask != task || m.selectedLane != lane || m.focusIndex != index {
+					t.Fatal("render changed selection")
+				}
+			})
+		}
+	}
+}

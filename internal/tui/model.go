@@ -397,7 +397,11 @@ func (m *Model) viewSingle() string {
 	var rows []line
 	rows = append(rows, m.tabsLine())
 	notices := m.noticeRows(maxNoticeRows)
+	filter, showFilter := m.filterLine()
 	bodyH := m.height - 4 - len(notices)
+	if showFilter {
+		bodyH--
+	}
 	if m.showNotice(layoutSingle) {
 		bodyH -= 2
 	}
@@ -407,8 +411,8 @@ func (m *Model) viewSingle() string {
 	}
 	rows = append(rows, notices...)
 	rows = append(rows, m.criticalStatusLine(), line{text: m.entitlementText(), colour: m.cfg.Tokens.TextMuted}, m.footerLine())
-	if ln, ok := m.filterLine(); ok {
-		rows = append(rows, ln)
+	if showFilter {
+		rows = append(rows, filter)
 	}
 	return m.render(rows)
 }
@@ -473,7 +477,11 @@ func (m *Model) viewColumns(l layout, cols []column) string {
 	widths := columnWidths(m.width, len(cols))
 	sep := " " + vBarGlyph(m.cfg.Caps) + " "
 	notices := m.noticeRows(maxNoticeRows)
+	filter, showFilter := m.filterLine()
 	chrome := 2 + len(m.statusLines()) + 1 + len(notices) // header, status strip, footer, notices
+	if showFilter {
+		chrome++
+	}
 	if m.showNotice(l) {
 		chrome += 2
 	}
@@ -493,8 +501,8 @@ func (m *Model) viewColumns(l layout, cols []column) string {
 	out = append(out, m.finaliseRows(notices, m.width)...)
 	out = append(out, m.finaliseRows(m.statusLines(), m.width)...)
 	out = append(out, m.finaliseRows([]line{m.footerLine()}, m.width)...)
-	if ln, ok := m.filterLine(); ok {
-		out = append(out, m.finaliseRows([]line{ln}, m.width)...)
+	if showFilter {
+		out = append(out, m.finaliseRows([]line{filter}, m.width)...)
 	}
 	if m.height > 0 && len(out) > m.height {
 		out = out[:m.height]
