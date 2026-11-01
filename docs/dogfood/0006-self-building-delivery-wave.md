@@ -26,7 +26,7 @@ reviews and a required CI failure, remains the historical record.
 | Nonblocking observer primitive, Task 27 | [PR #551](https://github.com/turbokast/mythhelm/pull/551), candidate `58766aa0972aaa122ac4606fcd8afa1661ba69ce`, was open with CI pending. A primitive is not integrated service delivery. |
 | Fixed quota policy/storage extraction, Task 29 | [PR #552](https://github.com/turbokast/mythhelm/pull/552), candidate `19139e673493241df1d84ec6ded1923a343d3454`, was open; required CI and merge were outstanding. It is a policy/storage refactor, not evidence of provider quota availability. |
 | Revision-aware standalone client, Task 31 | Local candidate independently reviewed; final full-suite validation was still running, with no PR or merge at the snapshot. Client fixtures do not establish registered-service behavior or a successful native launch. |
-| Canonical admission-binding codec, Task 23 | Local gates passed, but independent acceptance remained blocked on exact challenge semantics. [Issue #550](https://github.com/turbokast/mythhelm/issues/550) records the missing producer and comparison obligation. No completed task or semantic consent validation is claimed. |
+| Canonical admission-binding codec, Task 23 | Final local gates passed after earlier failed runs, but independent acceptance remained blocked on exact challenge semantics. [Issue #550](https://github.com/turbokast/mythhelm/issues/550) records the missing producer and comparison obligation. No completed task or semantic consent validation is claimed. |
 
 The exact [task contracts at this source revision](https://github.com/turbokast/mythhelm/blob/9c6b05e40c3002e054bedc9fbc4b3fcc492600ab/specs/in-progress/supervisor-attachment-control/tasks.md)
 separate these producers from their later service consumers. Service-owned ordinary
@@ -70,6 +70,12 @@ The underlying cause of the watchdog failures is unproven; concurrent validation
 and contention are observations, not a demonstrated diagnosis or a reason to
 label failures flaky. Validation was then scheduled with less contention while
 retaining required checks.
+
+After the snapshot, at **01:13 UTC**, the coordinator corrected a missing
+sign-off on PR #551's conflict-resolution merge commit. Its source tree was
+unchanged, but the corrected head required fresh CI. The earlier passing head
+was not merged. This procedural error added delivery delay; it is part of the
+record rather than evidence of a product speed advantage.
 
 One observed serial validation retry completed in **182.5 seconds**, following a
 failed concurrent run observed for **581.4 seconds**. These are local validation

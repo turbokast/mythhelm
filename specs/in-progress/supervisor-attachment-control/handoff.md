@@ -112,6 +112,14 @@ Draft dependent constraint: Task 4's proposed owner is ownership evidence only; 
 <!-- pending -->
 
 
+## Task 31 — Produce revision-aware standalone client metadata
+
+- **Produces**: PR #553 adds `PreparedReply`, `PreparedRunClient`, `NewPreparedRunClient` and `PreparationConflictError.Current` while retaining the existing `runClient` implementation and closed schema2 wire bodies.
+- **For dependents**: Tasks16–19 must use explicit stable logical operation IDs and exact `PreparedReply.Revision` values. `typedConnection.invokeResult` rejects absent/null/negative revisions and operation mismatches before metadata is usable. Legacy Prepare/Confirm return `capability_unsupported`/`revisioned_preparation_required` with no request.
+- **Replay/conflict**: Retain the original operation ID, arguments and expected revision after transport uncertainty. A replay acknowledgement may be historical; a new stale intent may return a validated same-preparation/binding/generation current reply. Current deep-copies challenges; absent/null current evidence preserves the ordinary typed error without a current-state hint. Never infer an increment.
+- **Generation**: A fresh preparation resolves current authenticated status; reconnect cannot reuse a preparation from another generation. Existing Start/run revision behavior remains explicit.
+- **Evidence boundary**: This is a client producer with synthetic real-framing tests. Task8 owns actual staged server/SQLite revisions, exact challenge semantics and effectful confirmation; Task9 owns successful registered launch. Client tests and the separate dated delivery report establish no native/service qualification.
+
 ## Task 22 — Review the durable admission and delivery contract
 
 - **Produces**: ADR 0022 and its index acceptance metadata in PR #541; exact independently reviewed/adopted technical proposal `d8975b35b342bc7f5be34c43bcdbcc39e64ecf52`, original-file SHA-256 `8a5ba89975044132af27362778529087f6b88a1b949c9441e0a4bce291ea8f2d`. No normative technical decision bytes change.
