@@ -192,10 +192,16 @@ func startGenerationHolder(t *testing.T, e env) int64 {
 		t.Fatal(err)
 	}
 	exited := make(chan struct{})
+	scannerDone := make(chan struct{})
 	var exitErr error
 	go func() { exitErr = cmd.Wait(); close(exited) }()
 	t.Cleanup(func() {
 		killed, err := joinOwned(exited, func() { _ = input.Close() }, func() { _ = cmd.Process.Kill() }, ownedJoinGrace)
+		if err != nil {
+			// A failed child join cannot leave our pipe reader blocked.
+			_ = output.Close()
+		}
+		<-scannerDone
 		switch {
 		case err != nil:
 			t.Errorf("generation holder %d was never joined: %v", cmd.Process.Pid, err)
@@ -207,6 +213,7 @@ func startGenerationHolder(t *testing.T, e env) int64 {
 	})
 	ready := make(chan string, 1)
 	go func() {
+		defer close(scannerDone)
 		scanner := bufio.NewScanner(output)
 		if scanner.Scan() {
 			ready <- scanner.Text()
