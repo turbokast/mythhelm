@@ -354,11 +354,10 @@ func (m *Model) View() string {
 		if len(body) > compactOfferRows {
 			offer, detail = body[:compactOfferRows], body[compactOfferRows:]
 		}
-		rows := append([]line{}, offer...)
+		rows := append(append([]line{}, offer...), m.noticeRows(maxNoticeRows)...)
 		if ln, ok := m.filterLine(); ok {
 			rows = append(rows, ln)
 		}
-		rows = append(rows, m.noticeRows(maxNoticeRows)...)
 		rows = append(rows, detail...)
 		return m.render(rows)
 	case layoutSingle:

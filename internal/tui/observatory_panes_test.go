@@ -350,3 +350,50 @@ func TestCompactFilterPrecedesOptionalDetail(t *testing.T) {
 		})
 	}
 }
+
+func TestCompactNoticeKeepsPriorityOverFilter(t *testing.T) {
+	t.Parallel()
+	for _, height := range []int{6, 7, 9, 24} {
+		t.Run(strconv.Itoa(height), func(t *testing.T) {
+			t.Parallel()
+			m := observatoryFixture(t)
+			m.width, m.height = 72, height
+			m.notices = []journal.Event{noticeEvent("important recorded notice", m.snap.At)}
+			before := strings.Split(stripANSISequences(m.View()), "\n")
+			m.handleKey(runeMsg("/"))
+			m.handleKey(runeMsg("x"))
+			rows := strings.Split(stripANSISequences(m.View()), "\n")
+			if len(rows) < 6 || rows[5] != "notice: important recorded notice" {
+				t.Fatalf("filter displaced mandatory notice: %q", rows)
+			}
+			for i := range 5 {
+				if rows[i] != before[i] {
+					t.Fatalf("mandatory offer row %d changed: %q", i, rows)
+				}
+			}
+			if height >= 7 && (len(rows) < 7 || rows[6] != "filter /x_") {
+				t.Fatalf("filter missing despite sufficient space: %q", rows)
+			}
+			if len(rows) > height {
+				t.Fatalf("viewport exceeded: %d > %d", len(rows), height)
+			}
+		})
+	}
+	m := observatoryFixture(t)
+	m.width = 72
+	for i := range maxNoticeRows + 4 {
+		m.notices = append(m.notices, noticeEvent("recorded "+strconv.Itoa(i), m.snap.At))
+	}
+	expected := m.noticeRows(maxNoticeRows)
+	m.height = compactOfferRows + len(expected) + 1
+	m.handleKey(runeMsg("/"))
+	rows := strings.Split(stripANSISequences(m.View()), "\n")
+	for i, notice := range expected {
+		if rows[compactOfferRows+i] != notice.text {
+			t.Fatalf("capped notice %d lost before filter: %q", i, rows)
+		}
+	}
+	if rows[len(rows)-1] != "filter /_" {
+		t.Fatalf("filter not retained after capped notices: %q", rows)
+	}
+}
