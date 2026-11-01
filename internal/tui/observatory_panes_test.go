@@ -3,13 +3,13 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/turbokast/mythhelm/internal/tui/viewmodel"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/turbokast/mythhelm/internal/journal"
+	"github.com/turbokast/mythhelm/internal/tui/viewmodel"
 )
 
 func TestAgentSummaryAndRaw(t *testing.T) {
@@ -22,12 +22,13 @@ func TestAgentSummaryAndRaw(t *testing.T) {
 	}
 	before := observatoryPlain(m.observatoryAgent(180))
 	focus, index := m.focusPane, m.focusIndex
+	task, lane := m.selectedTask, m.selectedLane
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	if got := observatoryPlain(m.observatoryAgent(180)); !strings.Contains(got, `"message"`) {
 		t.Fatalf("raw toggle missing: %q", got)
 	}
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
-	if got := observatoryPlain(m.observatoryAgent(180)); got != before || m.focusPane != focus || m.focusIndex != index {
+	if got := observatoryPlain(m.observatoryAgent(180)); got != before || m.focusPane != focus || m.focusIndex != index || m.selectedTask != task || m.selectedLane != lane {
 		t.Fatalf("toggle lost view identity: %q", got)
 	}
 	m.filterOn = true
@@ -54,6 +55,15 @@ func TestAgentSummaryAndRaw(t *testing.T) {
 		t.Fatal("v escaped dialog")
 	}
 	m.dialog = ""
+	t.Run("literal_raw_controls", func(t *testing.T) {
+		rawModel := observatoryFixture(t)
+		rawModel.agentRaw = true
+		rawModel.snap.AgentEvents = []journal.Event{{Type: "attempt.native_error", Payload: json.RawMessage("broken\x1b[31m\r\nraw")}}
+		got := observatoryPlain(rawModel.observatoryAgent(200))
+		if strings.ContainsAny(got, "\x1b\r") || strings.Contains(got, "\nraw") || !strings.Contains(got, "broken") {
+			t.Fatalf("raw controls active or fallback lost: %q", got)
+		}
+	})
 	m.snap.AgentEvents = make([]journal.Event, 205)
 	for i := range m.snap.AgentEvents {
 		m.snap.AgentEvents[i] = journal.Event{Type: "attempt.native_error", Payload: json.RawMessage(fmt.Sprintf(`{"message":"row-%03d\u001b[31m"}`, i)), ObservedAt: m.snap.At}
@@ -73,11 +83,11 @@ func TestAgentSummaryAndRaw(t *testing.T) {
 			if lipgloss.Width(row.text) > 200 {
 				t.Fatal("unbounded row")
 			}
-			var mirror string
+			var mirror strings.Builder
 			for _, sp := range row.spans {
-				mirror += sp.text
+				mirror.WriteString(sp.text)
 			}
-			if row.text != mirror {
+			if row.text != mirror.String() {
 				t.Fatal("styled/plain divergence")
 			}
 		}
@@ -113,6 +123,21 @@ func TestUsageProvenanceRows(t *testing.T) {
 	}
 	if strings.Count(got, "tokens / input:") != 5 {
 		t.Fatal("repeated observations aggregated")
+	}
+
+	unknownUnderlined := false
+	for _, row := range m.observatoryEvidence(400) {
+		for _, sp := range row.spans {
+			if sp.text == "unknown" {
+				if !sp.underline {
+					t.Fatal("unknown lacks underline")
+				}
+				unknownUnderlined = true
+			}
+		}
+	}
+	if !unknownUnderlined {
+		t.Fatal("unknown provenance lost")
 	}
 	m.snap.Usage = nil
 	if got := observatoryPlain(m.observatoryEvidence(200)); !strings.Contains(got, "unknown (no usage recorded)") || strings.Contains(got, "0 (reported)") {
