@@ -303,6 +303,10 @@ func runProgram(ctx context.Context, m *Model, options ...tea.ProgramOption) err
 	if m.action != nil && !m.terminalLoss {
 		m.action.cancel()
 	}
+	// A filesystem read may not respond to cancellation. Cancel it now, but
+	// keep headless action completion and parent cancellation independently live.
+	m.cancelReload()
+	defer m.joinReload()
 	if m.viewDone != nil {
 		close(m.viewDone)
 	}

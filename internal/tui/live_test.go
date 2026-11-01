@@ -3,14 +3,19 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/turbokast/mythhelm/internal/journal"
+	"github.com/turbokast/mythhelm/internal/tui/caps"
 	"github.com/turbokast/mythhelm/internal/tui/viewmodel"
 )
 
@@ -155,7 +160,7 @@ func TestNoticeBacklogDrainsToNoticeLines(t *testing.T) {
 		if !ok {
 			t.Fatalf("Update returned %T, want *Model", updated)
 		}
-		m = mm
+		m = deliverReload(t, mm)
 		if cmd == nil {
 			t.Error("poll tick scheduled no follow-up tick")
 		}
@@ -201,12 +206,12 @@ func TestCoalescedReload(t *testing.T) {
 	m.setSnapshot(t.Context(), dispatchSnapshot())
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 30})
 	m = updated.(*Model)
-	reloads := 0
 	reloaded := dispatchSnapshot()
 	progress := &viewmodel.Progress{AssistantTurns: 7, ToolUses: map[string]int{"read": 3}, Retries: 1, RunSeq: 99}
 	reloaded.LatestProgress = progress
+	var reloads atomic.Int32
 	m.loadSnapshot = func(context.Context, string, string) (viewmodel.Snapshot, error) {
-		reloads++
+		reloads.Add(1)
 		return reloaded, nil
 	}
 	const bursts = 50
@@ -214,8 +219,8 @@ func TestCoalescedReload(t *testing.T) {
 		var cmd tea.Cmd
 		m, cmd = motionFeed(t, m, liveEvent("attempt.progress", liveProgressPayload, "att_1", int64(100+i)))
 		_ = cmd
-		if reloads != 0 {
-			t.Fatalf("reloads = %d after %d events, want 0 (events must not rebuild)", reloads, i+1)
+		if got := reloads.Load(); got != 0 {
+			t.Fatalf("reloads = %d after %d events, want 0 (events must not rebuild)", got, i+1)
 		}
 	}
 	if p := m.snap.LatestProgress; p == nil || p.AssistantTurns != 7 {
@@ -226,25 +231,484 @@ func TestCoalescedReload(t *testing.T) {
 	if !ok {
 		t.Fatalf("Update returned %T, want *Model", updated)
 	}
-	m = mm
+	m = deliverReload(t, mm)
 	if cmd == nil {
 		t.Error("poll tick scheduled no follow-up tick")
 	}
-	if reloads != 1 {
-		t.Fatalf("reloads = %d after %d events and one tick, want exactly 1", reloads, bursts)
+	if got := reloads.Load(); got != 1 {
+		t.Fatalf("reloads = %d after %d events and one tick, want exactly 1", got, bursts)
 	}
 	if p := m.snap.LatestProgress; p == nil || p.AssistantTurns != 7 {
 		t.Errorf("reloaded progress = %+v, want the converged 7 turns", p)
 	}
 	updated, cmd = m.Update(pollTickMsg{})
-	if _, ok := updated.(*Model); !ok {
+	mm, ok = updated.(*Model)
+	if !ok {
 		t.Fatalf("Update returned %T, want *Model", updated)
 	}
+	deliverReload(t, mm)
 	if cmd == nil {
 		t.Error("second poll tick scheduled no follow-up tick")
 	}
-	if reloads != 2 {
-		t.Errorf("reloads = %d after two ticks, want exactly one rebuild per tick", reloads)
+	if got := reloads.Load(); got != 2 {
+		t.Errorf("reloads = %d after two ticks, want exactly one rebuild per tick", got)
+	}
+}
+
+// deliverReload waits for the in-flight reload and feeds its result through
+// Update, as the Tea runtime delivers the reload command's message.
+func deliverReload(t *testing.T, m *Model) *Model {
+	t.Helper()
+	r := m.reload
+	if r == nil {
+		t.Fatal("no reload in flight after the poll tick")
+	}
+	select {
+	case <-r.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("reload worker never finished")
+	}
+	updated, _ := m.Update(reloadResultMsg{call: r})
+	mm, ok := updated.(*Model)
+	if !ok {
+		t.Fatalf("Update returned %T, want *Model", updated)
+	}
+	return mm
+}
+
+// heldLoader blocks every load on release, reporting each start on started.
+type heldLoader struct {
+	started chan struct{}
+	release chan struct{}
+	snap    viewmodel.Snapshot
+	err     error
+	loads   atomic.Int32
+}
+
+func newHeldLoader(t *testing.T, snap viewmodel.Snapshot, err error) *heldLoader {
+	t.Helper()
+	h := &heldLoader{started: make(chan struct{}, 16), release: make(chan struct{}), snap: snap, err: err}
+	t.Cleanup(h.unblock)
+	return h
+}
+
+func (h *heldLoader) unblock() {
+	select {
+	case <-h.release:
+	default:
+		close(h.release)
+	}
+}
+
+func (h *heldLoader) load(context.Context, string, string) (viewmodel.Snapshot, error) {
+	h.loads.Add(1)
+	h.started <- struct{}{}
+	<-h.release
+	return h.snap, h.err
+}
+
+func (h *heldLoader) awaitStart(t *testing.T) {
+	t.Helper()
+	select {
+	case <-h.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("reload never started")
+	}
+}
+
+// updateWithin runs one Update and fails when it does not return while the
+// loader stays held: a synchronous reload would block here.
+func updateWithin(t *testing.T, m *Model, msg tea.Msg) (*Model, tea.Cmd) {
+	t.Helper()
+	type out struct {
+		m   tea.Model
+		cmd tea.Cmd
+	}
+	done := make(chan out, 1)
+	go func() {
+		updated, cmd := m.Update(msg)
+		done <- out{updated, cmd}
+	}()
+	select {
+	case o := <-done:
+		mm, ok := o.m.(*Model)
+		if !ok {
+			t.Fatalf("Update returned %T, want *Model", o.m)
+		}
+		return mm, o.cmd
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Update(%T) blocked while the reload was held", msg)
+		return nil, nil
+	}
+}
+
+// TestPollReloadRunsOffTheUpdateLoop holds the loader: the tick returns,
+// keys, resizes and live events still apply, and repeated ticks admit no
+// second load until the held one lands.
+func TestPollReloadRunsOffTheUpdateLoop(t *testing.T) {
+	t.Parallel()
+	m := newModel(testConfig(fullCaps, t))
+	m.setSnapshot(t.Context(), dispatchSnapshot())
+	m, _ = updateWithin(t, m, tea.WindowSizeMsg{Width: 160, Height: 30})
+	reloaded := dispatchSnapshot()
+	reloaded.LatestProgress = &viewmodel.Progress{AssistantTurns: 3, RunSeq: 20}
+	reloaded.LastRunSeq = 20
+	loader := newHeldLoader(t, reloaded, nil)
+	m.loadSnapshot = loader.load
+
+	m, cmd := updateWithin(t, m, pollTickMsg{})
+	if cmd == nil {
+		t.Fatal("poll tick returned no command")
+	}
+	loader.awaitStart(t)
+	focus := m.focusPane
+	m, _ = updateWithin(t, m, specialMsg(tea.KeyTab))
+	if m.focusPane == focus {
+		t.Errorf("focus = %q after Tab, want it moved while the reload is held", m.focusPane)
+	}
+	m, _ = updateWithin(t, m, tea.WindowSizeMsg{Width: 120, Height: 24})
+	if m.width != 120 || m.height != 24 {
+		t.Errorf("size = %dx%d, want 120x24 while the reload is held", m.width, m.height)
+	}
+	m, _ = updateWithin(t, m, eventMsg{Event: liveEvent("attempt.progress", `{"assistant_turns":5}`, "att_1", 13)})
+	if p := m.snap.LatestProgress; p == nil || p.AssistantTurns != 5 {
+		t.Errorf("folded progress = %+v, want 5 turns while the reload is held", p)
+	}
+	held := m.reload
+	for range 3 {
+		m, _ = updateWithin(t, m, pollTickMsg{})
+	}
+	if got := loader.loads.Load(); got != 1 {
+		t.Errorf("loads = %d after four ticks with one held, want 1", got)
+	}
+	if m.reload != held {
+		t.Error("a held reload was replaced by a later tick")
+	}
+
+	loader.unblock()
+	m = deliverReload(t, m)
+	if m.reload != nil {
+		t.Error("reload still in flight after its result landed")
+	}
+	if p := m.snap.LatestProgress; p == nil || p.AssistantTurns != 3 || m.snap.LastRunSeq != 20 {
+		t.Errorf("snapshot = progress %+v seq %d, want the newer reload (3 turns, seq 20)", p, m.snap.LastRunSeq)
+	}
+	m, _ = updateWithin(t, m, pollTickMsg{})
+	loader.awaitStart(t)
+	if got := loader.loads.Load(); got != 2 {
+		t.Errorf("loads = %d after the next tick, want 2", got)
+	}
+	deliverReload(t, m)
+}
+
+// TestStaleReloadCannotRollBackNewerState releases a load dispatched before a
+// newer live fold or action result and asserts the newer state survives.
+func TestStaleReloadCannotRollBackNewerState(t *testing.T) {
+	t.Parallel()
+	older := dispatchSnapshot()
+	older.Run.State = "admission"
+	older.Attempt.AttemptID = "att_0"
+	older.LatestProgress = &viewmodel.Progress{AssistantTurns: 1, RunSeq: 10}
+	older.LastRunSeq = 12
+	cases := []struct {
+		name    string
+		snap    viewmodel.Snapshot
+		err     error
+		between tea.Msg
+		check   func(t *testing.T, m *Model)
+	}{
+		{
+			name:    "newer live fold keeps its progress sequence and attempt",
+			snap:    older,
+			between: eventMsg{Event: liveEvent("attempt.progress", `{"assistant_turns":5}`, "att_1", 30)},
+			check: func(t *testing.T, m *Model) {
+				if p := m.snap.LatestProgress; p == nil || p.AssistantTurns != 5 || m.snap.LastRunSeq != 30 {
+					t.Errorf("progress = %+v seq %d, want the folded 5 turns at 30", p, m.snap.LastRunSeq)
+				}
+				if m.snap.Attempt == nil || m.snap.Attempt.AttemptID != "att_1" || m.snap.Run.State != "executing" {
+					t.Errorf("attempt/state = %+v/%q, want att_1 executing", m.snap.Attempt, m.snap.Run.State)
+				}
+			},
+		},
+		{
+			name:    "action result keeps its outcome and the snapshot",
+			snap:    older,
+			between: actionResultMsg{action: actionApply, applyBranch: "approved"},
+			check: func(t *testing.T, m *Model) {
+				if m.resultTitle != "Apply candidate" {
+					t.Errorf("result title = %q, want the apply outcome", m.resultTitle)
+				}
+				if m.snap.Run.State != "executing" || m.snap.Attempt.AttemptID != "att_1" {
+					t.Errorf("state/attempt = %q/%s, want executing/att_1", m.snap.Run.State, m.snap.Attempt.AttemptID)
+				}
+			},
+		},
+		{
+			name:    "load error after an action result is surfaced",
+			err:     errors.New("journal read failed"),
+			between: actionResultMsg{action: actionApply, applyBranch: "approved"},
+			check: func(t *testing.T, m *Model) {
+				if m.loadErr == nil || m.loadErr.Error() != "journal read failed" {
+					t.Errorf("loadErr = %v, want journal failure surfaced", m.loadErr)
+				}
+			},
+		},
+		{
+			name:    "older missing database after a newer live fold is dropped",
+			err:     journal.ErrNoDatabase,
+			between: eventMsg{Event: liveEvent("attempt.progress", `{"assistant_turns":5}`, "att_1", 30)},
+			check:   checkNewerFoldKept,
+		},
+		{
+			name:    "persistent load error is reported after a newer live fold",
+			err:     errors.New("journal read failed"),
+			between: eventMsg{Event: liveEvent("attempt.progress", `{"assistant_turns":5}`, "att_1", 30)},
+			check: func(t *testing.T, m *Model) {
+				if m.loadErr == nil || m.loadErr.Error() != "journal read failed" {
+					t.Errorf("loadErr = %v, want journal failure reported", m.loadErr)
+				}
+				if m.snap.LastRunSeq != 30 || m.empty {
+					t.Errorf("seq = %d empty = %v, want newer fold retained", m.snap.LastRunSeq, m.empty)
+				}
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m := newModel(testConfig(fullCaps, t))
+			m.setSnapshot(t.Context(), dispatchSnapshot())
+			m, _ = updateWithin(t, m, tea.WindowSizeMsg{Width: 160, Height: 30})
+			loader := newHeldLoader(t, tc.snap, tc.err)
+			m.loadSnapshot = loader.load
+			m, _ = updateWithin(t, m, pollTickMsg{})
+			loader.awaitStart(t)
+			m, _ = updateWithin(t, m, tc.between)
+			loader.unblock()
+			m = deliverReload(t, m)
+			tc.check(t, m)
+			if m.reload != nil {
+				t.Error("stale reload left in flight")
+			}
+		})
+	}
+}
+
+// checkNewerFoldKept asserts the live fold at sequence 30 survived a stale
+// reload error: its progress and attempt stay, with no empty or error state.
+func checkNewerFoldKept(t *testing.T, m *Model) {
+	t.Helper()
+	if p := m.snap.LatestProgress; p == nil || p.AssistantTurns != 5 || m.snap.LastRunSeq != 30 {
+		t.Errorf("progress = %+v seq %d, want the folded 5 turns at 30", p, m.snap.LastRunSeq)
+	}
+	if m.snap.Attempt == nil || m.snap.Attempt.AttemptID != "att_1" || m.snap.Run.State != "executing" {
+		t.Errorf("attempt/state = %+v/%q, want att_1 executing", m.snap.Attempt, m.snap.Run.State)
+	}
+	if m.empty || m.loadErr != nil {
+		t.Errorf("empty = %v loadErr = %v, want the stale error dropped", m.empty, m.loadErr)
+	}
+}
+
+// TestReloadComputesDiffBeforeReturningToUpdate holds the diff load and
+// verifies it completes off the update loop before the snapshot is installed.
+func TestReloadComputesDiffBeforeReturningToUpdate(t *testing.T) {
+	t.Parallel()
+	m := newModel(testConfig(fullCaps, t))
+	snap := richSnapshot()
+	m.loadSnapshot = func(context.Context, string, string) (viewmodel.Snapshot, error) { return snap, nil }
+	started, release := make(chan struct{}), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(unblock)
+	m.loadDiff = func(context.Context, string, string, string) (Diff, error) {
+		close(started)
+		<-release
+		return Diff{Lines: []DiffLine{{Text: "prepared diff"}}}, nil
+	}
+	cmd := m.startReload()
+	result := make(chan tea.Msg, 1)
+	go func() { result <- cmd() }()
+	select {
+	case <-started:
+	case <-result:
+		t.Fatal("reload returned before preparing the candidate diff")
+	case <-time.After(5 * time.Second):
+		t.Fatal("reload did not reach the candidate diff")
+	}
+	m, _ = updateWithin(t, m, tea.WindowSizeMsg{Width: 120, Height: 24})
+	unblock()
+	msg := <-result
+	m, _ = updateWithin(t, m, msg)
+	if len(m.diff.Lines) != 1 || m.diff.Lines[0].Text != "prepared diff" {
+		t.Fatalf("installed diff = %+v", m.diff)
+	}
+}
+
+func TestCorruptJournalReloadRemainsVisibleDuringProgress(t *testing.T) {
+	t.Parallel()
+	b := newJournalBuilder(t)
+	taskSHA := b.writeTask("run_t6", []byte("# task\n"))
+	b.addRun("run_t6", "executing", taskSHA)
+	b.append("run_t6", "attempt.native_result", `{"exit_code":"invalid"}`, nil)
+	b.close()
+	m := newModel(testConfig(fullCaps, t))
+	m.cfg.StateDir = b.dir
+	m.setSnapshot(t.Context(), dispatchSnapshot())
+	for i := range 2 {
+		started, release := make(chan struct{}), make(chan struct{})
+		m.loadSnapshot = func(ctx context.Context, dir, id string) (viewmodel.Snapshot, error) {
+			snap, err := viewmodel.Load(ctx, dir, id)
+			close(started)
+			<-release
+			return snap, err
+		}
+		m, _ = updateWithin(t, m, pollTickMsg{})
+		awaitClosed(t, started)
+		if i == 0 {
+			m, _ = updateWithin(t, m, eventMsg{Event: liveEvent("attempt.progress", `{"assistant_turns":5}`, "att_1", 50)})
+		} else {
+			m, _ = updateWithin(t, m, actionResultMsg{action: actionApply, applyBranch: "approved"})
+		}
+		close(release)
+		m = deliverReload(t, m)
+		if m.loadErr == nil || !strings.Contains(m.loadErr.Error(), "attempt.native_result") {
+			t.Fatalf("iteration %d: loadErr = %v, want malformed event surfaced", i, m.loadErr)
+		}
+	}
+}
+
+func TestReloadErrorKeepsTheSnapshot(t *testing.T) {
+	t.Parallel()
+	m := newModel(testConfig(fullCaps, t))
+	m.setSnapshot(t.Context(), dispatchSnapshot())
+	m, _ = updateWithin(t, m, tea.WindowSizeMsg{Width: 160, Height: 30})
+	failing := newHeldLoader(t, viewmodel.Snapshot{}, errors.New("journal read failed"))
+	m.loadSnapshot = failing.load
+	m, _ = updateWithin(t, m, pollTickMsg{})
+	failing.awaitStart(t)
+	failing.unblock()
+	m = deliverReload(t, m)
+	if m.loadErr == nil || !strings.Contains(m.View(), "journal read failed") {
+		t.Errorf("loadErr = %v, want the failure surfaced in the view", m.loadErr)
+	}
+	if m.snap.Goal != dispatchSnapshot().Goal || m.snap.Attempt == nil || m.snap.Attempt.AttemptID != "att_1" {
+		t.Errorf("snapshot = %q/%+v, want the previous snapshot kept", m.snap.Goal, m.snap.Attempt)
+	}
+	next := dispatchSnapshot()
+	next.LastRunSeq = 40
+	good := newHeldLoader(t, next, nil)
+	m.loadSnapshot = good.load
+	m, _ = updateWithin(t, m, pollTickMsg{})
+	good.awaitStart(t)
+	good.unblock()
+	m = deliverReload(t, m)
+	if m.loadErr != nil || m.snap.LastRunSeq != 40 {
+		t.Errorf("loadErr = %v seq = %d, want the next good reload applied", m.loadErr, m.snap.LastRunSeq)
+	}
+}
+
+// TestQuitCancelsActionBeforeWaitingForHeldReload verifies that a held read
+// cannot delay the cancellation of an unrelated active action.
+func TestQuitCancelsActionBeforeWaitingForHeldReload(t *testing.T) {
+	t.Parallel()
+	m := lifecycleModel(t, ModeInspect, "executing", "running")
+	m.cfg.Caps.Motion = caps.MotionOff
+	signals := make(chan ClientSignal, 1)
+	m.cfg.Signals = signals
+	started, release := make(chan struct{}), make(chan struct{})
+	m.loadSnapshot = func(context.Context, string, string) (viewmodel.Snapshot, error) {
+		close(started)
+		<-release
+		return viewmodel.Snapshot{}, nil
+	}
+	actionDone, actionCancelled := make(chan struct{}), make(chan struct{})
+	m.action = &actionCall{done: actionDone, cancel: func() { close(actionCancelled); close(actionDone) }}
+	result := make(chan error, 1)
+	go func() {
+		result <- runProgram(t.Context(), m, tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithoutRenderer())
+	}()
+	unblock := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(unblock)
+	awaitClosed(t, started)
+	signals <- SignalInterrupt
+	select {
+	case <-actionCancelled:
+	case <-time.After(2 * time.Second):
+		unblock()
+		<-result
+		t.Fatal("action cancellation waited for the held snapshot read")
+	}
+	unblock()
+	if err := awaitResult(t, result); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestQuitCancelsAndJoinsHeldReload(t *testing.T) {
+	t.Parallel()
+	m := lifecycleModel(t, ModeInspect, "executing", "running")
+	m.cfg.Caps.Motion = caps.MotionOff
+	signals := make(chan ClientSignal, 1)
+	m.cfg.Signals = signals
+	completed := withState("completed", "succeeded_native")
+	started, cancelled, release := make(chan struct{}, 4), make(chan struct{}), make(chan struct{})
+	returned := make(chan struct{})
+	var loads atomic.Int32
+	m.loadSnapshot = func(ctx context.Context, _, _ string) (viewmodel.Snapshot, error) {
+		defer close(returned)
+		loads.Add(1)
+		started <- struct{}{}
+		select {
+		case <-ctx.Done():
+			close(cancelled)
+		case <-release:
+		}
+		<-release
+		return completed, nil
+	}
+	result := make(chan error, 1)
+	go func() {
+		result <- runProgram(t.Context(), m, tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithoutRenderer())
+	}()
+	joined := false
+	unblock := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(func() {
+		unblock()
+		if !joined {
+			<-result
+		}
+	})
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no reload started")
+	}
+	signals <- SignalInterrupt
+	awaitClosed(t, cancelled)
+	select {
+	case err := <-result:
+		joined = true
+		t.Fatalf("Run returned with its reload worker still held: %v", err)
+	default:
+	}
+	unblock()
+	err := awaitResult(t, result)
+	joined = true
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.exitIntent.Kind != ExitView {
+		t.Errorf("exit = %+v, want the interrupt's view exit", m.exitIntent)
+	}
+	select {
+	case <-returned:
+	default:
+		t.Error("Run returned before its reload worker finished")
+	}
+	if got := loads.Load(); got != 1 {
+		t.Errorf("loads = %d, want the one held load", got)
+	}
+	if m.snap.Run.State != "executing" {
+		t.Errorf("state = %q after Run returned, want the held result never applied", m.snap.Run.State)
 	}
 }
 
