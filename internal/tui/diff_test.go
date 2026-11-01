@@ -439,3 +439,34 @@ func TestRenderEmptyLabelsAbsence(t *testing.T) {
 		t.Fatalf("zero Diff Render = %q, want the lone %q label", zero, emptyDiffLabel)
 	}
 }
+
+func TestDiffSemanticColours(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"dark", "light"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			tokens, err := theme.BuiltIn(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			d := mustParseDiff(t, smallDiffInput)
+			d.Truncated, d.TruncateCap, d.total = true, truncateLines, 99
+			rows := d.Render(200, fullCaps, tokens)
+			for i, ln := range d.Lines {
+				if ln.Kind == DiffHunkHeader || ln.Kind == DiffFileBoundary {
+					assertThemeRow(t, rows[i], ln.Text, tokens.TextMuted, caps.ColourFull)
+				}
+				if strings.Contains(rows[i], fg("", tokens.Attention)[:len(fg("", tokens.Attention))-4]) {
+					t.Errorf("diff attention row %d: %q", i, rows[i])
+				}
+			}
+			assertThemeRow(t, rows[len(rows)-1], "showing "+strconv.Itoa(len(d.Lines))+" of 99 lines (50,000-line limit)", tokens.TextMuted, caps.ColourFull)
+			m := newModel(testConfig(fullCaps, t))
+			m.cfg.Tokens = tokens
+			m.snap = richSnapshot()
+			m.snap.Verification.CandidateCommit = strings.Repeat("a", 40)
+			verification := m.finaliseRows(m.verificationLines(), 200)
+			assertThemeRow(t, verification[0], "mismatch: checks ran against aaaaaaa — candidate is ccccccc", tokens.Err, caps.ColourFull)
+		})
+	}
+}
