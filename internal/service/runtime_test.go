@@ -23,13 +23,13 @@ import (
 // Endpoint discovery is process-wide, so these fixtures are not parallel.
 func isolatedRoot(t *testing.T) string {
 	t.Helper()
-	base, err := os.MkdirTemp(os.Getenv("MYTHHELM_T6_FIXTURE_PARENT"), "mh-runtime-")
+	base, err := os.MkdirTemp(os.Getenv("MYTHHELM_T6_FIXTURE_PARENT"), "mh-runtime-") //nolint:usetesting // Short socket paths and parent-owned subprocess cleanup require this fresh child directory.
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(base) })
+	t.Cleanup(func() { _ = os.RemoveAll(base) }) // #nosec G703 -- MkdirTemp created this fresh owned child; cleanup never removes the supplied parent.
 	rt := filepath.Join(base, "rt")
-	if err := os.Mkdir(rt, 0700); err != nil {
+	if err := os.Mkdir(rt, 0700); err != nil { // #nosec G703 -- rt is a fixed child of the fresh owned fixture directory.
 		t.Fatal(err)
 	}
 	t.Setenv("XDG_RUNTIME_DIR", rt)
@@ -162,7 +162,7 @@ func TestServiceUnadoptedStatusDoesNotMutate(t *testing.T) {
 	if err := j.Close(); err != nil {
 		t.Fatal(err)
 	}
-	before, err := os.ReadFile(filepath.Join(root, journal.DBName))
+	before, err := os.ReadFile(filepath.Join(root, journal.DBName)) // #nosec G304 -- Fixed database name in this fixture's freshly created root.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestServiceUnadoptedStatusDoesNotMutate(t *testing.T) {
 			t.Fatalf("%s=%v", method, err)
 		}
 	}
-	after, err := os.ReadFile(filepath.Join(root, journal.DBName))
+	after, err := os.ReadFile(filepath.Join(root, journal.DBName)) // #nosec G304 -- Same fixed database in the owned root; compares refusal effects.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestPreparedReplacementNeverOpensWriter(t *testing.T) {
 				t.Fatal(err)
 			}
 			_ = j.Close()
-			replacement, err := os.ReadFile(filepath.Join(other, journal.DBName))
+			replacement, err := os.ReadFile(filepath.Join(other, journal.DBName)) // #nosec G304 -- Fixed synthetic database created in t.TempDir above.
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -250,13 +250,13 @@ func TestPreparedReplacementNeverOpensWriter(t *testing.T) {
 					}
 				}
 				replacementPath = filepath.Join(dir, journal.DBName)
-				return os.WriteFile(replacementPath, replacement, 0600)
+				return os.WriteFile(replacementPath, replacement, 0600) // #nosec G703 -- Intentional replacement uses a fixed database name in the fresh owned test root.
 			})
 			if err == nil {
 				_ = admitted.shutdown(context.Background())
 				t.Fatal("unprepared replacement reached writable runtime")
 			}
-			after, readErr := os.ReadFile(replacementPath)
+			after, readErr := os.ReadFile(replacementPath) // #nosec G304 -- Read only the intentional replacement database in the fresh owned test root.
 			if readErr != nil {
 				t.Fatal(readErr)
 			}

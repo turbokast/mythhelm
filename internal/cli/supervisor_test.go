@@ -21,7 +21,7 @@ import (
 
 // This fixture changes process-wide endpoint discovery; it is not parallel.
 func TestServiceEntrypointShell(t *testing.T) {
-	base, err := os.MkdirTemp("", "mh-shell-")
+	base, err := os.MkdirTemp("", "mh-shell-") //nolint:usetesting // Keep the real Unix control socket path below sockaddr_un limits.
 	if err != nil {
 		t.Fatal(err)
 	}

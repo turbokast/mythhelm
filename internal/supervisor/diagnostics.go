@@ -16,6 +16,7 @@ import (
 // display hint, public stream type, raw error or native transcript.
 type DiagnosticCode string
 
+// Diagnostic codes identify durable operational evidence, never display hints.
 const (
 	DiagnosticQuotaUnavailable               DiagnosticCode = "quota_unavailable"
 	DiagnosticWorkerIdentityUnresolved       DiagnosticCode = "worker_identity_unresolved"
