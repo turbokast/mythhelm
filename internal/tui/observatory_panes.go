@@ -153,7 +153,14 @@ func (m *Model) observatoryEvidence(width int) []line {
 		add("candidate: " + observatoryValue(c.Commit) + "; base: " + observatoryValue(c.BaseRev))
 	}
 	for _, row := range m.verificationLines() {
-		add(row.text)
+		bounded := m.paneFact(row.text, width)
+		if row.colour != "" {
+			bounded.colour = row.colour
+			for i := range bounded.spans {
+				bounded.spans[i].colour = row.colour
+			}
+		}
+		out = append(out, bounded)
 	}
 	return out
 }

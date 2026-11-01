@@ -167,6 +167,20 @@ func TestEvidenceStageProof(t *testing.T) {
 	if strings.Contains(got, "✓ checked") || !strings.Contains(got, "mismatch:") || !strings.Contains(got, "candidate:") {
 		t.Fatalf("candidate mismatch lost: %q", got)
 	}
+	mismatchErr := false
+	for _, row := range m.observatoryEvidence(200) {
+		if strings.HasPrefix(row.text, "mismatch:") {
+			for _, sp := range row.spans {
+				if sp.colour != m.cfg.Tokens.Err {
+					t.Fatalf("mismatch lost Err colour: %+v", sp)
+				}
+				mismatchErr = true
+			}
+		}
+	}
+	if !mismatchErr {
+		t.Fatal("mismatch Err spans absent")
+	}
 	m.snap.Verification.CandidateCommit = ""
 	m.snap.Candidate.Commit = ""
 	if strings.Contains(observatoryPlain(m.observatoryEvidence(200)), "✓ checked") {
