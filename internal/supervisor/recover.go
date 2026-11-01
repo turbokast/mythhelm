@@ -65,9 +65,18 @@ func RecoverWithHooks(ctx context.Context, j *journal.Journal, runID string, h H
 		return out, err
 	}
 	defer release()
+	return recoverLocked(ctx, j, runID, h, out)
+}
+
+// recoverLocked is the recovery continuation shared by RecoverWithHooks and
+// RecoverOwned: reconcile, watch and ingest, then freeze, conclude or repair.
+// The caller holds the run's owner lock; out reports the pre-lock state if
+// the fresh projection cannot be read.
+func recoverLocked(ctx context.Context, j *journal.Journal, runID string, h Hooks, out RecoveryOutcome) (RecoveryOutcome, error) {
+	dir := filepath.Join(j.StateDir(), "runs", runID)
 	// The previous owner may have finished between our lookup and lock
 	// acquisition. All decisions use a fresh projection under this lock.
-	row, err = j.Run(ctx, runID)
+	row, err := j.Run(ctx, runID)
 	if err != nil {
 		return out, err
 	}
