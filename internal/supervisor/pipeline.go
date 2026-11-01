@@ -80,6 +80,8 @@ type Hooks struct {
 	Event func(journal.Event)
 	// Notice receives status the user must see that is not an event.
 	Notice func(string)
+	// Observer is the service-owned bounded sink; legacy terminal callbacks never receive internal diagnostics.
+	Observer *ObserverSink
 	// Extension is the operator's decision, on recovering a run blocked at
 	// an envelope ceiling, to raise that ceiling (AC-4.2).
 	Extension *ExtensionGrant
@@ -400,7 +402,7 @@ func (p *pipeline) appendAdmission(ctx context.Context) error {
 		}
 		return err
 	}
-	p.h.Notice(admission.ReservationText(admission.QuotaBucket(rec, identityRef)))
+	p.inform(NoticeReservationHeld, admission.ReservationText(admission.QuotaBucket(rec, identityRef)))
 	return p.flush(ctx)
 }
 
@@ -422,7 +424,9 @@ func (p *pipeline) exhausted(ctx context.Context) error {
 		return err
 	}
 	if len(held) == 0 {
-		p.h.Notice("allowance exhausted with no held reservation; the bucket could not be recorded")
+		if err := p.diagnostic(ctx, DiagnosticQuotaUnavailable, "allowance exhausted with no held reservation; the bucket could not be recorded"); err != nil {
+			return err
+		}
 		return p.runTo(ctx, RunBlocked, "allowance_exhausted")
 	}
 	if err := HandleExhaustion(ctx, p.j, p.prod, p.d.RunID, held[0], nil); err != nil {
@@ -570,7 +574,9 @@ func (p *pipeline) attempt(ctx context.Context) error {
 	if err := acceptWorker(ctx, ref.Dir(), proc.Pid, sum, exited); err != nil {
 		// A worker that cannot be identified is lost and never signalled
 		// (AC-10.3).
-		p.h.Notice(fmt.Sprintf("worker not accepted: %v", err))
+		if derr := p.diagnostic(ctx, DiagnosticWorkerIdentityUnresolved, fmt.Sprintf("worker not accepted: %v", err)); derr != nil {
+			return errors.Join(err, derr)
+		}
 		return p.lose(ctx)
 	}
 	// A detached run stays stopping; a lost worker's run, or one whose
@@ -590,7 +596,9 @@ func (p *pipeline) attempt(ctx context.Context) error {
 	select {
 	case <-exited:
 	case <-time.After(reapTimeout):
-		p.h.Notice(fmt.Sprintf("worker pid %d has not exited %s after its attempt ended", proc.Pid, reapTimeout))
+		if err := p.diagnostic(ctx, DiagnosticWorkerIdentityUnresolved, fmt.Sprintf("worker pid %d has not exited %s after its attempt ended", proc.Pid, reapTimeout)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -782,7 +790,9 @@ func (p *pipeline) freezeCandidate(ctx context.Context) error {
 		Partial: p.out.AttemptState != AttemptSucceededNative || p.out.State == RunStopping,
 	})
 	if err != nil {
-		p.h.Notice(fmt.Sprintf("candidate freeze failed: %v", err))
+		if derr := p.diagnostic(ctx, DiagnosticCandidateFreezeFailed, fmt.Sprintf("candidate freeze failed: %v", err)); derr != nil {
+			return errors.Join(err, derr)
+		}
 		if p.out.State == RunStopping {
 			return p.runTo(ctx, RunInterrupted, "freeze_failed")
 		}
@@ -820,7 +830,9 @@ func (p *pipeline) freezeCandidate(ctx context.Context) error {
 func (p *pipeline) stopBeforeSpawn(ctx context.Context) (bool, error) {
 	select {
 	case <-p.h.Interrupt:
-		p.h.Notice("stop requested before worker launch; no native started")
+		if err := p.diagnostic(ctx, DiagnosticStopRequested, "stop requested before worker launch; no native started"); err != nil {
+			return true, err
+		}
 		if p.out.AttemptState == AttemptLaunchIntentRecorded {
 			if err := p.attemptTo(ctx, AttemptInterrupted, "cancelled_before_spawn"); err != nil {
 				return true, err
@@ -1008,7 +1020,9 @@ func (p *pipeline) watch(ctx context.Context, ref AttemptRef, exited <-chan stru
 		if _, err := Ingest(ctx, p.j, ref); err != nil {
 			// The worker still owns the attempt; only this supervisor's view
 			// of it is broken. The run is left for recover, not active.
-			p.h.Notice(fmt.Sprintf("spool ingestion failed: %v; run 'mythhelm recover %s'", err, p.d.RunID))
+			if derr := p.diagnostic(ctx, DiagnosticSpoolIngestionFailed, fmt.Sprintf("spool ingestion failed: %v; run 'mythhelm recover %s'", err, p.d.RunID)); derr != nil {
+				return errors.Join(err, derr)
+			}
 			// Lines before the failing one were journaled; report the attempt
 			// as recorded.
 			a, aerr := p.j.Attempt(ctx, ref.AttemptID)
@@ -1038,7 +1052,9 @@ func (p *pipeline) watch(ctx context.Context, ref AttemptRef, exited <-chan stru
 			return nil
 		}
 		if gone {
-			p.h.Notice("the worker exited before the attempt ended")
+			if err := p.diagnostic(ctx, DiagnosticWorkerExitedEarly, "the worker exited before the attempt ended"); err != nil {
+				return err
+			}
 			return p.lose(ctx)
 		}
 		// A queued detach waits until the accepted worker is running.
@@ -1053,7 +1069,7 @@ func (p *pipeline) watch(ctx context.Context, ref AttemptRef, exited <-chan stru
 			select {
 			case <-detach:
 				p.out.Detached = true
-				p.h.Notice(fmt.Sprintf(DetachedNotice, p.d.RunID))
+				p.inform(NoticeRenderRefresh, fmt.Sprintf(DetachedNotice, p.d.RunID))
 				return nil
 			default:
 			}
@@ -1075,10 +1091,10 @@ func (p *pipeline) watch(ctx context.Context, ref AttemptRef, exited <-chan stru
 			}
 			if p.out.State == RunStopping || p.out.AttemptState == AttemptStopRequested {
 				p.out.Detached = true
-				p.h.Notice(fmt.Sprintf(DetachedNotice, p.d.RunID))
+				p.inform(NoticeRenderRefresh, fmt.Sprintf(DetachedNotice, p.d.RunID))
 			} else {
 				p.out.DetachedRunning = true
-				p.h.Notice(fmt.Sprintf(RunningDetachedNotice, p.d.RunID, p.d.RunID))
+				p.inform(NoticeRenderRefresh, fmt.Sprintf(RunningDetachedNotice, p.d.RunID, p.d.RunID))
 			}
 			return nil
 		case <-exited:
@@ -1096,12 +1112,14 @@ func (p *pipeline) watch(ctx context.Context, ref AttemptRef, exited <-chan stru
 					return err
 				}
 			}
-			p.h.Notice("execution deadline reached; stopping the attempt")
+			if err := p.diagnostic(ctx, DiagnosticDeadlineReached, "execution deadline reached; stopping the attempt"); err != nil {
+				return err
+			}
 		case <-p.h.Interrupt:
 			interrupts++
 			if interrupts > 1 {
 				p.out.Detached = true
-				p.h.Notice(fmt.Sprintf(DetachedNotice, p.d.RunID))
+				p.inform(NoticeRenderRefresh, fmt.Sprintf(DetachedNotice, p.d.RunID))
 				return nil
 			}
 			if err := p.requestUserStop(ctx, ref); err != nil {
@@ -1122,7 +1140,9 @@ func (p *pipeline) requestUserStop(ctx context.Context, ref AttemptRef) error {
 			return err
 		}
 	}
-	p.h.Notice(StopRequestedNotice)
+	if err := p.diagnostic(ctx, DiagnosticStopRequested, StopRequestedNotice); err != nil {
+		return err
+	}
 	return nil
 }
 

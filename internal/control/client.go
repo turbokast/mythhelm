@@ -164,44 +164,14 @@ func Call(ctx context.Context, conn Conn, intent Intent) (Result, error) {
 	return res, nil
 }
 
-// RunSupervisor serves the control protocol for the state root in dir until
-// ctx ends. If another supervisor already serves this root it returns nil:
-// the caller was only racing to start one.
-func RunSupervisor(ctx context.Context, dir string) error {
-	if err := statedir.Ensure(dir); err != nil {
+// RunSupervisor is the disabled legacy writer entry. Production enters the
+// service composition through the hidden CLI command; this compatibility
+// symbol cannot create a second registry or bypass root adoption.
+func RunSupervisor(ctx context.Context, _ string) error {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-	release, err := AcquireInstance(dir)
-	if errors.Is(err, ErrInstanceHeld) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	defer release()
-	db, err := OpenLedger(ctx, dir)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = db.Close() }()
-	t, err := DefaultTransport()
-	if err != nil {
-		return err
-	}
-	endpoint, err := EndpointPath()
-	if err != nil {
-		return err
-	}
-	// Holding the instance lock means no other supervisor serves this
-	// socket, so a file left at its path is stale.
-	if err := os.Remove(endpoint); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("control: removing a stale socket: %w", err)
-	}
-	l, err := t.Listen(endpoint)
-	if err != nil {
-		return err
-	}
-	return Serve(ctx, l, NewSupervisorServer(db), db)
+	return newError(CodeCapabilityUnsupported, "use the production hidden-supervisor service entrypoint")
 }
 
 // DialExisting connects only to an existing authenticated endpoint. It never

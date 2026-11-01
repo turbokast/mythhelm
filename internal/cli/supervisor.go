@@ -14,6 +14,7 @@ import (
 
 	"github.com/turbokast/mythhelm/internal/control"
 	"github.com/turbokast/mythhelm/internal/ids"
+	"github.com/turbokast/mythhelm/internal/service"
 	"github.com/turbokast/mythhelm/internal/statedir"
 )
 
@@ -67,19 +68,26 @@ func runSupervisorStatus(args []string, stdio Stdio) error {
 		return err
 	}
 	var st struct {
-		PID        int    `json:"pid"`
-		Generation uint64 `json:"generation"`
-		Root       string `json:"root"`
-		Endpoint   string `json:"endpoint"`
+		PID               int    `json:"pid"`
+		Generation        uint64 `json:"generation"`
+		Root              string `json:"root"`
+		Endpoint          string `json:"endpoint"`
+		MigrationRequired bool   `json:"migration_required"`
 	}
 	if err := json.Unmarshal(res.Body, &st); err != nil {
 		return fmt.Errorf("decoding the supervisor status: %w", err)
+	}
+	if *format == "jsonl" && st.MigrationRequired {
+		return json.NewEncoder(stdio.Out).Encode(map[string]any{"type": "supervisor.status", "pid": st.PID, "generation": st.Generation, "root": st.Root, "endpoint": st.Endpoint, "migration_required": true})
 	}
 	if *format == "jsonl" {
 		return json.NewEncoder(stdio.Out).Encode(map[string]any{"type": "supervisor.status", "pid": st.PID,
 			"generation": st.Generation, "root": st.Root, "endpoint": st.Endpoint})
 	}
 	_, err = fmt.Fprintf(stdio.Out, "pid:        %d\ngeneration: %d\nroot:       %s\nendpoint:   %s\n", st.PID, st.Generation, st.Root, st.Endpoint)
+	if err == nil && st.MigrationRequired {
+		_, err = io.WriteString(stdio.Out, "migration_required: true\n")
+	}
 	return err
 }
 
@@ -90,7 +98,7 @@ func SupervisorMain(stderr io.Writer) int {
 	defer stop()
 	dir, err := statedir.Resolve()
 	if err == nil {
-		err = control.RunSupervisor(ctx, dir)
+		err = service.Run(ctx, dir)
 	}
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "mythhelm supervisor: %v\n", err)
