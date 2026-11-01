@@ -121,7 +121,12 @@
 
 ## Task 11 — Migrate theme tokens and contrast validation
 
-<!-- pending -->
+- **Pending merge/acceptance**: source `eceaae1` is implemented; coordinator publication, full race verification and independent acceptance remain separate obligations. This handoff is not proof the dependency has merged.
+- **Produces**: exact Observatory/Paper palettes with nine hex-colour keys; Border is a colour and warning is rejected as unknown. BuiltIn/Load signatures, dark/light IDs, error sentinels and bounded file reading remain unchanged. Validate checks the eleven FR-1 pairs and names failing key/background, ratio and minimum.
+- **Consumers**: verification mismatch uses Err and literal `mismatch` while retaining checked/candidate revisions; mission truncation rows and diff footer use TextMuted with original counts, cap and exact command. Adversarial controls retain their text assertions.
+- **For Tasks 12–16**: Paper OK is accepted on surface only; it remains below 4.5 on raised cards. Focus is validated at 3.0 as a one-cell nontext role. Borders are decorative, with no text-contrast minimum. This task does not implement or establish the later one-cell focus, overlay backgrounds, attention relocation, spans or responsive rendering checks.
+- **Docs contract**: both brand tables are unchanged. The new test reads the nine shared and nine TUI-only rows, checks all eighteen embedded values and rejects duplicate, missing, unknown or malformed mappings. Keep the tables separate; site CSS ownership is unchanged.
+- **Verification at source freeze**: all named palette/matrix/key/docs/former-warning tests and restored focused race controls pass; nineteen private overlay counterfactuals fail their specific assertions. Formatter, vet, tidy-diff and lint pass after one test-only modernization repair. Full race gate and independent review remain pending. No new dependency or aesthetic/spec decision was made.
 
 ## Task 12 — Add semantic spans and the closed glyph vocabulary
 
