@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/turbokast/mythhelm/internal/tui/caps"
 	"github.com/turbokast/mythhelm/internal/tui/viewmodel"
 )
 
@@ -19,36 +18,6 @@ func verified(snap viewmodel.Snapshot) bool {
 		return false
 	}
 	return snap.Candidate != nil && snap.Candidate.Commit != "" && snap.Verification.CandidateCommit == snap.Candidate.Commit
-}
-
-// nextAction maps the run state to its design §7 next-action string. Stopping
-// stays "waiting for worker confirmation" — requested is never labelled
-// stopped (I06).
-func nextAction(snap viewmodel.Snapshot, c caps.Caps) string {
-	d := " " + dashGlyph(c) + " "
-	switch snap.Run.State {
-	case "created", "admission":
-		return "admitting" + d + "no action"
-	case "executing", "verifying":
-		return "none" + d + "agent working (stop available)"
-	case "stopping":
-		return "waiting for worker confirmation" + d + "stop requested, not confirmed"
-	case "ready_for_review":
-		if verified(snap) {
-			return "review the candidate, then apply or close"
-		}
-		return "verification unavailable" + d + "apply needs explicit unverified acceptance"
-	case "blocked", "failed":
-		return "read the reason; recover or start a new run"
-	case "interrupted":
-		return "recover the run"
-	case "recovering":
-		return "recovery running" + d + "no action"
-	case "applying", "completed", "cancelled":
-		return "none" + d + "run is terminal"
-	default:
-		return "unknown"
-	}
 }
 
 // stopPending reports whether a confirmed stop still awaits worker
@@ -119,7 +88,7 @@ func laneAdapter(snap viewmodel.Snapshot) string {
 
 // headerLines renders the mission header: run, lane label, state and goal.
 func (m *Model) headerLines() []line {
-	return []line{m.observatoryHeader(m.width), lineFromSpans(span{text: "Goal: " + cellOrUnknown(m.snap.Goal), colour: m.cfg.Tokens.Text})}
+	return []line{m.observatoryHeader(m.width)}
 }
 
 // paneHeader keeps focus on one marker cell; its label is bold Text with an
@@ -147,23 +116,20 @@ func (m *Model) tasksLines(width int) []line {
 			spans[i].colour = t.Err
 		}
 	}
-	return []line{m.paneHeader(paneTasks, "TASKS"), {text: m.ruleLine(width)}, lineFromSpans(spans...)}
+	rows := []line{m.paneHeader(paneTasks, "TASKS"), {text: m.ruleLine(width), colour: t.Border}, lineFromSpans(spans...)}
+	if m.snap.Run.Reason != "" {
+		rows = append(rows, line{text: "reason: " + cell(m.snap.Run.Reason), colour: t.Text})
+	}
+	return rows
 }
 
 // agentsLines renders the agents pane: one lane per attempt with its runtime
 // label, activity and workspace — never a vendor logo (AC-1.3).
 func (m *Model) agentsLines(width int) []line {
-	out := []line{m.paneHeader(paneAgents, "AGENTS"), {text: m.ruleLine(width)}}
-	if m.snap.Attempt == nil {
-		return append(out, line{text: "no attempts yet"})
+	out := []line{m.paneHeader(paneAgents, "AGENT"), {text: m.ruleLine(width), colour: m.cfg.Tokens.Border}}
+	if m.motion.pulseFrames > 0 || m.dispatchWaiting() {
+		out = append(out, line{text: "  " + m.activityText()})
 	}
-	c := m.cfg.Caps
-	n := m.snap.Attempt.AttemptNumber
-	head := laneLetter(n) + " " + laneDotGlyph(c) + " attempt " + strconv.FormatInt(n, 10) + "  " +
-		laneAdapter(m.snap) + " / " + cellOrUnknown(m.snap.Run.ExecutionProfile)
-	out = append(out, line{text: head, colour: m.cfg.Tokens.Text})
-	out = append(out, line{text: "  " + m.activityText()})
-	out = append(out, line{text: "  workspace: " + cellOrUnknown(m.snap.Attempt.WorkspacePath)})
 	return append(out, m.observatoryAgent(width)...)
 }
 
@@ -186,7 +152,7 @@ func (m *Model) activityText() string {
 // detailLines renders the selected-change pane: the candidate diff or its
 // labelled absence, plus verification against its checked revision (I07).
 func (m *Model) detailLines(width int) []line {
-	out := []line{m.paneHeader(paneDetail, "SELECTED CHANGE"), {text: m.ruleLine(width)}}
+	out := []line{m.paneHeader(paneDetail, "DIFF"), {text: m.ruleLine(width)}}
 	switch {
 	case m.snap.Candidate == nil:
 		out = append(out, line{text: "no candidate frozen yet"})
@@ -316,15 +282,6 @@ func (m *Model) nativeExitText() string {
 	return "unknown"
 }
 
-// footerLine is the §15.3 key line.
-func (m *Model) footerLine() line {
-	sep := " " + sepDotGlyph(m.cfg.Caps) + " "
-	return line{
-		text:   strings.Join([]string{"Tab focus", "/ filter", ": commands", "? help", "Enter inspect", "q exit options"}, sep),
-		colour: m.cfg.Tokens.TextMuted,
-	}
-}
-
 // truncationNotice is the full-width provenance notice for a truncated diff:
 // retained over total line counts, the cap that fired, and the exact fallback
 // command with base and commit from the candidate row. It spans the full
@@ -345,63 +302,21 @@ func (m *Model) truncationNotice() []line {
 	}
 }
 
-// showNotice reports whether the truncation notice applies to the current
-// view: a truncated diff behind a visible selected-change pane.
-func (m *Model) showNotice(l layout) bool {
-	if !m.diff.Truncated || m.snap.Attempt == nil || m.snap.Candidate == nil {
-		return false
-	}
-	switch l {
-	case layoutThreePane:
-		return true
-	case layoutTwoPane, layoutSingle:
-		return m.focusPane == paneDetail
-	default:
-		return false
-	}
-}
-
-// compactOfferRows is the leading run of compactLines rows the five-row
-// offer occupies; notice reservation splits the body here.
-const compactOfferRows = 5
-
-// compactLines renders the compact task/status view with its linear-mode
-// offer (AC-2.4). The first five rows carry the offer, so even a 5-row
-// terminal sees it; later rows add activity, verification and billing detail
-// when the height allows.
-func (m *Model) compactLines() []line {
-	c := m.cfg.Caps
-	lines := append(m.headerLines(), lineFromSpans(append([]span{{text: "state: ", colour: m.cfg.Tokens.Text}}, m.stateSpans()...)...))
-	lines = append(lines, []line{
-		{text: "next action: " + m.nextActionText()},
-		{text: "compact view " + dashGlyph(c) + " small terminal (--accessible for linear)"},
-	}...)
-	lines = append(lines, line{text: "activity: " + m.activityText()})
-	if v := m.verificationLines(); len(v) > 0 {
-		lines = append(lines, v[0])
-	}
-	return append(lines, m.statusLines()[:2]...)
-}
-
 // tabsLine renders the single-pane tab bar with the focused tab bracketed.
 func (m *Model) tabsLine() line {
-	tabs := []struct {
-		id    string
-		title string
-	}{
-		{paneTasks, "Tasks"},
-		{paneAgents, "Agents"},
-		{paneDetail, "Selected change"},
-	}
-	parts := make([]string, 0, len(tabs))
-	for _, t := range tabs {
-		if m.focusPane == t.id {
-			parts = append(parts, "["+t.title+"]")
+	t := m.cfg.Tokens
+	var spans []span
+	for i, tab := range []struct{ id, title string }{{paneTasks, "Tasks"}, {paneAgents, "Agent"}, {paneEvidence, "Evidence"}, {paneDetail, "Diff"}} {
+		if i > 0 {
+			spans = append(spans, span{text: "  ", colour: t.TextMuted})
+		}
+		if tab.id == m.focusPane {
+			spans = append(spans, span{text: focusGlyph(m.cfg.Caps), colour: t.Focus}, span{text: " " + tab.title, colour: t.Text, bold: true})
 		} else {
-			parts = append(parts, t.title)
+			spans = append(spans, span{text: tab.title, colour: t.TextMuted})
 		}
 	}
-	return line{text: strings.Join(parts, "  "), colour: m.cfg.Tokens.Text}
+	return lineFromSpans(spans...)
 }
 
 // ruleLine is the horizontal rule under a pane title, width cells wide.
@@ -458,4 +373,20 @@ func (m *Model) stateSpans() []span {
 		marker, word, colour = "[fail]", "failed", t.Err
 	}
 	return []span{{text: marker, colour: colour}, {text: " " + word, colour: t.Text}}
+}
+
+func (m *Model) compactUsage(width int) line {
+	var values []string
+	for _, u := range m.snap.Usage {
+		text := observatoryValue(u.Scope) + "/" + observatoryValue(u.Unit) + " " + observatoryValue(u.Quantity) + " (" + observatoryValue(u.Label) + ")"
+		if u.Scope == "retail-equivalent" {
+			text += " estimate, not a charge"
+		}
+		values = append(values, text)
+	}
+	text := "unknown (no usage recorded)"
+	if len(values) > 0 {
+		text = strings.Join(values, "; ")
+	}
+	return m.observatoryLabel("use", text, width)
 }
