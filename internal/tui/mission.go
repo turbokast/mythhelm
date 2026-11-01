@@ -88,7 +88,7 @@ func (m *Model) nextActionText() string {
 	if m.stopPending() {
 		return "stop requested " + dashGlyph(m.cfg.Caps) + " waiting for worker confirmation"
 	}
-	return nextAction(m.snap, m.cfg.Caps)
+	return m.observatoryNext()
 }
 
 // shortRev abbreviates a revision for pairing labels; short inputs pass
@@ -119,14 +119,7 @@ func laneAdapter(snap viewmodel.Snapshot) string {
 
 // headerLines renders the mission header: run, lane label, state and goal.
 func (m *Model) headerLines() []line {
-	snap, t, c := m.snap, m.cfg.Tokens, m.cfg.Caps
-	spans := []span{
-		{text: missionGlyph(c), colour: t.Focus},
-		{text: " MYTHHELM", colour: t.Text, bold: true},
-		{text: "  " + cellOrUnknown(snap.Run.RunID) + "  " + laneAdapter(snap) + " / " + cellOrUnknown(snap.Run.ExecutionProfile) + "  ", colour: t.Text},
-	}
-	spans = append(spans, m.stateSpans()...)
-	return []line{lineFromSpans(spans...), lineFromSpans(span{text: "Goal: " + cellOrUnknown(snap.Goal), colour: t.Text})}
+	return []line{m.observatoryHeader(m.width), lineFromSpans(span{text: "Goal: " + cellOrUnknown(m.snap.Goal), colour: m.cfg.Tokens.Text})}
 }
 
 // paneHeader keeps focus on one marker cell; its label is bold Text with an
@@ -142,7 +135,7 @@ func (m *Model) paneHeader(id, title string) line {
 // rows retain the static Err emphasis also applied by the motion wrapper.
 func (m *Model) tasksLines(width int) []line {
 	t, c := m.cfg.Tokens, m.cfg.Caps
-	spans := []span{{text: focusGlyph(c), colour: t.Focus}, {text: " ", colour: t.Text}}
+	spans := []span{{text: focusGlyph(c), colour: t.Focus}, {text: " " + cellOrUnknown(m.snap.Run.RunID) + " ", colour: t.Text}}
 	spans = append(spans, m.stateSpans()...)
 	tail := " " + cellOrUnknown(m.snap.Goal)
 	if m.snap.Run.Reason != "" {
@@ -423,7 +416,7 @@ func (m *Model) ruleLine(width int) string {
 func (m *Model) criticalStatusLine() line {
 	return line{
 		text:   cellOrUnknown(m.snap.Run.State) + " " + dashGlyph(m.cfg.Caps) + " " + m.nextActionText(),
-		colour: m.cfg.Tokens.Attention,
+		colour: m.cfg.Tokens.Text,
 	}
 }
 
