@@ -3,6 +3,7 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -283,7 +284,7 @@ func TestPaneViewportKeepsFilterAndFooter(t *testing.T) {
 				m.focusPane = paneDetail
 				for i := range 220 {
 					m.snap.AgentEvents = append(m.snap.AgentEvents, journal.Event{Type: "attempt.native_error", Payload: json.RawMessage(`{"class":"rate_limit"}`)})
-					m.snap.Usage = append(m.snap.Usage, journal.UsageRow{Scope: "tokens", Unit: "input", Quantity: fmt.Sprint(i), Label: "reported", Source: "synthetic receipt"})
+					m.snap.Usage = append(m.snap.Usage, journal.UsageRow{Scope: "tokens", Unit: "input", Quantity: strconv.Itoa(i), Label: "reported", Source: "synthetic receipt"})
 				}
 				if len(m.agentsRows(width)) < 200 || len(m.detailRows(width)) < 200 {
 					t.Fatal("long pane fixture detached from producers")
@@ -312,5 +313,40 @@ func TestPaneViewportKeepsFilterAndFooter(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestCompactFilterPrecedesOptionalDetail(t *testing.T) {
+	t.Parallel()
+	for _, size := range [][2]int{{72, 6}, {72, 9}, {72, 24}, {160, 9}} {
+		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
+			t.Parallel()
+			m := observatoryFixture(t)
+			m.width, m.height = size[0], size[1]
+			before := strings.Split(stripANSISequences(m.View()), "\n")
+			m.handleKey(runeMsg("/"))
+			m.handleKey(runeMsg("x"))
+			view := stripANSISequences(m.View())
+			rows := strings.Split(view, "\n")
+			if len(rows) < 6 || rows[5] != "filter /x_" {
+				t.Fatalf("compact optional detail hides filter: %q", view)
+			}
+			for i := range 5 {
+				if rows[i] != before[i] {
+					t.Fatalf("filter changed mandatory compact offer row%d: %q", i, rows[i])
+				}
+			}
+			if !strings.Contains(view, "--accessible for linear") {
+				t.Fatal("compact linear offer lost")
+			}
+			if len(rows) > m.height {
+				t.Fatal("compact over height")
+			}
+			for _, row := range rows {
+				if lipgloss.Width(row) > m.width {
+					t.Fatal("compact over width")
+				}
+			}
+		})
 	}
 }

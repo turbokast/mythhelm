@@ -354,10 +354,12 @@ func (m *Model) View() string {
 		if len(body) > compactOfferRows {
 			offer, detail = body[:compactOfferRows], body[compactOfferRows:]
 		}
-		rows := append(append(append([]line{}, offer...), m.noticeRows(maxNoticeRows)...), detail...)
+		rows := append([]line{}, offer...)
 		if ln, ok := m.filterLine(); ok {
 			rows = append(rows, ln)
 		}
+		rows = append(rows, m.noticeRows(maxNoticeRows)...)
+		rows = append(rows, detail...)
 		return m.render(rows)
 	case layoutSingle:
 		return m.viewSingle()
@@ -478,7 +480,8 @@ func (m *Model) viewColumns(l layout, cols []column) string {
 	sep := " " + vBarGlyph(m.cfg.Caps) + " "
 	notices := m.noticeRows(maxNoticeRows)
 	filter, showFilter := m.filterLine()
-	chrome := 2 + len(m.statusLines()) + 1 + len(notices) // header, status strip, footer, notices
+	header, status := m.headerLines(), m.statusLines()
+	chrome := len(header) + len(status) + 1 + len(notices) // header, status strip, footer, notices
 	if showFilter {
 		chrome++
 	}
@@ -493,13 +496,13 @@ func (m *Model) viewColumns(l layout, cols []column) string {
 		cols[i].rows = capLines(cols[i].rows, bodyH, m.cfg.Caps, m.cfg.Tokens.TextMuted)
 	}
 	var out []string
-	out = append(out, m.finaliseRows(m.headerLines(), m.width)...)
+	out = append(out, m.finaliseRows(header, m.width)...)
 	out = append(out, joinColumns(m.cfg.Caps, cols, sep)...)
 	if m.showNotice(l) {
 		out = append(out, m.finaliseRows(m.truncationNotice(), m.width)...)
 	}
 	out = append(out, m.finaliseRows(notices, m.width)...)
-	out = append(out, m.finaliseRows(m.statusLines(), m.width)...)
+	out = append(out, m.finaliseRows(status, m.width)...)
 	out = append(out, m.finaliseRows([]line{m.footerLine()}, m.width)...)
 	if showFilter {
 		out = append(out, m.finaliseRows([]line{filter}, m.width)...)
