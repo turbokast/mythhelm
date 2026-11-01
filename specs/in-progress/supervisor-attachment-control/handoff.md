@@ -121,3 +121,10 @@ Draft dependent constraint: Task 4's proposed owner is ownership evidence only; 
 - **Gates**: PR #541 must merge before dependent work consumes this acceptance. Task4 PR #527 at `3b3c5f5e80a3e0d87a944b43a0fde0881177e36a` remains unmerged and independently unresolved; runtime Tasks6–9 keep every exact dependency. Re-ground candidate/source drift before implementation.
 - **Evidence boundary**: Design acceptance and spec merge are documentation evidence, not implemented runtime/native/billing/host/platform qualification, successful MYTHHELM-owned execution or a native configuration grant. Prior blocked/time-limited Task22 attempts retain their original outcomes; this is a separate measured closeout attempt.
 - **Deviations**: Required own-task records accompany the two listed docs paths; no follow-on normative spec edit or other task completion is included in this PR.
+
+## Task 28 — Describe the existing versioned backup naming contract
+
+- **Produces**: PR #549 describes `mythhelm.db.bak-migration-v<N>` and its `.json` sidecar in the migration guide and limitations register.
+- **For dependents**: Backup reads `PRAGMA user_version` when copying and records that actual value in `schema_version`; preview independently names its planned target using the binary's supported schema. Preserve this distinction when Task25 updates the schema/version mirrors.
+- **Scope**: Only the guide's migration section and one limitations bullet change; unrelated TUI examples are byte-for-byte preserved. The `docs:user-guide:migration` advisory lane coordinates this section; later writers still need independent diff checks.
+- **Evidence boundary**: No migration apply was run and no service/native/platform qualification is added. Existing synthetic backup tests pass; runtime ownership restrictions remain in the guide and limitations register.

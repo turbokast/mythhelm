@@ -195,7 +195,7 @@
 - **Test plan**: Deterministic channels/barriers and bounded queues, no timing-only sleep or fake native claim. This leaf changes no pipeline callback until Task6.
 - **Invariants touched**: I06/I09/I18/I21/I23 (v2 §§3/6/14: bounded display work and canonical evidence remain separate).
 
-### Task 28 — Describe the existing versioned backup naming contract
+### Task 28 — Describe the existing versioned backup naming contract ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: standard
@@ -211,6 +211,11 @@
   - Coordinate the migration-section reservation with any active MH23Task19 docs/user-guide edits using the shared docs:user-guide:migration lane and an explicit changed-section manifest. Preserve unrelated TUI examples byte-for-byte; re-ground this section on the actual merged base before edit/push/merge. If that section overlaps, serialize those edits only; do not wait for the entire unrelated TUI task to finish. Advisory lanes do not enforce arbitrary writers, so independent diff/review checks remain required.
 - **Test plan**: Source/section-anchored naming comparison and existing docs checks; quote existing passing backup/preview test evidence instead of executing operator-only commands. Task21 serializes after this bounded naming update before broader guide edits.
 - **Invariants touched**: I09/I14 (v2 §§14/18: accurate current migration and capability limits).
+
+- **Status**: ✅ Completed — documented the existing versioned backup and preview naming contracts; PR #549.
+- **Implementation**: Commit `c6caa02` replaces the fixed guide filename and distinguishes Backup's actual database version/sidecar from preview's supported-schema target. Independent source and section-preservation review returned Ready.
+- **Spec deviations**: Required own completion, handoff and scratchpad records accompany the two listed docs paths. Pre-merge completion metadata follows WORKFLOW/task-completion; PR #549 must merge before dependents consume it. No naming or runtime contract change.
+- **Files modified**: `docs/user-guide.md`, `docs/limitations.md`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
 ### Task 25 — Produce the additive binding schema and atomic version mirrors
 
