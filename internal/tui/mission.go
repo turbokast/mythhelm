@@ -164,7 +164,7 @@ func (m *Model) agentsLines(width int) []line {
 	out = append(out, line{text: head, colour: m.cfg.Tokens.Text})
 	out = append(out, line{text: "  " + m.activityText()})
 	out = append(out, line{text: "  workspace: " + cellOrUnknown(m.snap.Attempt.WorkspacePath)})
-	return out
+	return append(out, m.observatoryAgent(width)...)
 }
 
 // activityText is the lane's current activity: the latest native-reported

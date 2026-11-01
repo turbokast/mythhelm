@@ -90,6 +90,7 @@ type Model struct {
 	focusPrev           string
 	focusIndex          int
 	selectedTask        string
+	agentRaw            bool
 	selectedLane        string
 	dialog              string
 	dialogField         int
@@ -353,10 +354,11 @@ func (m *Model) View() string {
 		if len(body) > compactOfferRows {
 			offer, detail = body[:compactOfferRows], body[compactOfferRows:]
 		}
-		rows := append(append(append([]line{}, offer...), m.noticeRows(maxNoticeRows)...), detail...)
+		rows := append(append([]line{}, offer...), m.noticeRows(maxNoticeRows)...)
 		if ln, ok := m.filterLine(); ok {
 			rows = append(rows, ln)
 		}
+		rows = append(rows, detail...)
 		return m.render(rows)
 	case layoutSingle:
 		return m.viewSingle()
@@ -396,7 +398,11 @@ func (m *Model) viewSingle() string {
 	var rows []line
 	rows = append(rows, m.tabsLine())
 	notices := m.noticeRows(maxNoticeRows)
+	filter, showFilter := m.filterLine()
 	bodyH := m.height - 4 - len(notices)
+	if showFilter {
+		bodyH--
+	}
 	if m.showNotice(layoutSingle) {
 		bodyH -= 2
 	}
@@ -406,8 +412,8 @@ func (m *Model) viewSingle() string {
 	}
 	rows = append(rows, notices...)
 	rows = append(rows, m.criticalStatusLine(), line{text: m.entitlementText(), colour: m.cfg.Tokens.TextMuted}, m.footerLine())
-	if ln, ok := m.filterLine(); ok {
-		rows = append(rows, ln)
+	if showFilter {
+		rows = append(rows, filter)
 	}
 	return m.render(rows)
 }
@@ -472,7 +478,12 @@ func (m *Model) viewColumns(l layout, cols []column) string {
 	widths := columnWidths(m.width, len(cols))
 	sep := " " + vBarGlyph(m.cfg.Caps) + " "
 	notices := m.noticeRows(maxNoticeRows)
-	chrome := 2 + len(m.statusLines()) + 1 + len(notices) // header, status strip, footer, notices
+	filter, showFilter := m.filterLine()
+	header, status := m.headerLines(), m.statusLines()
+	chrome := len(header) + len(status) + 1 + len(notices) // header, status strip, footer, notices
+	if showFilter {
+		chrome++
+	}
 	if m.showNotice(l) {
 		chrome += 2
 	}
@@ -484,16 +495,16 @@ func (m *Model) viewColumns(l layout, cols []column) string {
 		cols[i].rows = capLines(cols[i].rows, bodyH, m.cfg.Caps, m.cfg.Tokens.TextMuted)
 	}
 	var out []string
-	out = append(out, m.finaliseRows(m.headerLines(), m.width)...)
+	out = append(out, m.finaliseRows(header, m.width)...)
 	out = append(out, joinColumns(m.cfg.Caps, cols, sep)...)
 	if m.showNotice(l) {
 		out = append(out, m.finaliseRows(m.truncationNotice(), m.width)...)
 	}
 	out = append(out, m.finaliseRows(notices, m.width)...)
-	out = append(out, m.finaliseRows(m.statusLines(), m.width)...)
+	out = append(out, m.finaliseRows(status, m.width)...)
 	out = append(out, m.finaliseRows([]line{m.footerLine()}, m.width)...)
-	if ln, ok := m.filterLine(); ok {
-		out = append(out, m.finaliseRows([]line{ln}, m.width)...)
+	if showFilter {
+		out = append(out, m.finaliseRows([]line{filter}, m.width)...)
 	}
 	if m.height > 0 && len(out) > m.height {
 		out = out[:m.height]

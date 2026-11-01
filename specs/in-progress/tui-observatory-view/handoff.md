@@ -159,7 +159,11 @@
 
 ## Task 14 — Render agent, evidence and verdict content
 
-<!-- pending -->
+- **Produces**: `observatoryAgent(width int) []line`, `observatoryEvidence(width int) []line` and `observatoryVerdict(width int) []line` in `observatory_panes.go`, signed source `6132c63`; model-local `agentRaw` is toggled by nav `v` after dialog/palette/help/filter guards, preserving focus/index/task/lane selection.
+- **Agent contract**: Each mode uses the same latest200 events, adds defensive omissions to AgentEventsOmitted and sanitizes before bounded spans/plain mirrors. Known state, permission-denial and native-error payloads become truthful sentences; unknown/malformed shapes retain type/raw fallback. Identity/counters stay recorded/native-reported, target stays unknown, and separators respect Unicode/ASCII caps. No file reads, worker calls or owner probes occur in a renderer.
+- **Evidence/verdict contract**: Usage observations remain separate, ordered and unaggregated, retaining exact quantity, scope/unit/source and all five labels; reported0 differs from unknown/no rows and retail-equivalent retains estimate-not-charge. Checked tick requires the existing overall `verified` predicate. Individual passed checks require the exact nonempty current candidate and may remain PROVEN in a mixed overall failure. Unproven rows consume VerificationRow.Reason; CheckRow has no Reason. Unknown groups contain only missing paid continuation/native exit/entitlement/billing plus checks:not run with run reason when verification is absent. Recorded exit0/off remain known. Existing verification/check/mismatch helper colours survive bounded sanitized spans.
+- **For Task15**: These producers have no pane IDs/layout decisions. Current agents/detail wrappers consume their rows while retaining incumbent label/row compatibility and corrected checked-stage semantics. Task15 owns all-rung composition, stable four-pane identities, responsive verdict selection, obsolete labels/strip removal, viewport clipping and key-bar-last checks. Task13 unfinished/unsupervised logic and TASKS failure row index2 are preserved.
+- **Evidence and limits**: Twelve selected current-source race checks pass1.159s. Initial lint rejection, real-shape/ASCII regressions and mismatch-colour failure remain retained, with current private controls source-bound separately. Final Root canonical gates, independent review, actual PR/CI/merge remain pending. Direct fallback followed actual native refusal; no native/platform/G09/G11/full-product/20× qualification follows.
 
 ## Task 15 — Install all responsive ladder views
 
@@ -184,3 +188,11 @@
 ## Task 20 — Re-record the synthetic TUI demonstration
 
 <!-- pending -->
+
+### Task14 viewport follow-up for Task15
+
+Source496da0a preserves the six producer paths and existing key/selection/evidence gates. Single/column view body budgets now reserve an active filter; column chrome derives cached actual header/status row counts. Compact retains five mandatory offer rows, capped must-see notices, then filter before optional detail. A filter cannot displace a notice at an impossible height. Existing compact footer remains absent until Task15 final composition. Real View regression fixtures cover nine long-pane sizes and compact notice priority; full race349.7s and all six gates pass. Prior a192 filter regression and a9 notice-priority regression remain rejected attempts; historical controls retain their original source bindings. Publication/CI/merge are still pending.
+
+### Task14 actual publication checkpoint
+
+PR #562 submits exact source496da0a with all-six local gates and independent code/architecture Ready. Actual final-head CI and merge are still required before Task15 implementation. The producer and viewport semantics above are unchanged; final publication bookkeeping introduces no additional source path.

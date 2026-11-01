@@ -303,7 +303,7 @@ func (m *Model) stagesLine() line {
 	if m.snap.Candidate != nil {
 		frozen = "[done]"
 	}
-	if m.snap.Verification != nil {
+	if verified(m.snap) {
 		checked = "[done]"
 	}
 	if m.snap.Run.State == "ready_for_review" {
@@ -377,7 +377,9 @@ func (m *Model) agentsRows(width int) []line {
 // detailRows renders the selected-change pane with the integration stages
 // appended after the verification block.
 func (m *Model) detailRows(width int) []line {
-	return append(m.detailLines(width), m.stagesLine())
+	rows := append(m.detailLines(width), m.stagesLine())
+	rows = append(rows, m.observatoryEvidence(width)...)
+	return append(rows, m.observatoryVerdict(width)...)
 }
 
 // gateCompactActivity withholds the compact view's running label under the
