@@ -71,6 +71,14 @@ var errDrainTimeout = errors.New("migrate: owner lock held past the drain deadli
 // returns a zero report: nothing is half-adopted. Apply does not call
 // Drain: it takes the same locks once and keeps them past the backup.
 func Drain(ctx context.Context, db *sql.DB) (DrainReport, error) {
+	return drainWithWaitDeadline(ctx, db, drainDeadline)
+}
+
+// drainWaitDeadline supplies the absolute owner-wait deadline. Production
+// entry points retain drainDeadline's caller/default policy.
+type drainWaitDeadline func(context.Context) time.Time
+
+func drainWithWaitDeadline(ctx context.Context, db *sql.DB, waitDeadline drainWaitDeadline) (DrainReport, error) {
 	if db == nil {
 		return DrainReport{}, persistenceError("drain", "the ledger handle is nil")
 	}
@@ -86,7 +94,7 @@ func Drain(ctx context.Context, db *sql.DB) (DrainReport, error) {
 		return DrainReport{}, err
 	}
 	defer releaseLocks()
-	report, releaseRuns, err := drainLocked(ctx, db, stateDir)
+	report, releaseRuns, err := drainLockedWithWaitDeadline(ctx, db, stateDir, waitDeadline)
 	if err != nil {
 		return DrainReport{}, err
 	}
@@ -121,7 +129,11 @@ func acquireMigrationLocks(operation, stateDir string) (func(), error) {
 // legacy recover or apply may touch those runs; on failure it has already
 // released them.
 func drainLocked(ctx context.Context, db *sql.DB, stateDir string) (DrainReport, func(), error) {
-	deadline := drainDeadline(ctx)
+	return drainLockedWithWaitDeadline(ctx, db, stateDir, drainDeadline)
+}
+
+func drainLockedWithWaitDeadline(ctx context.Context, db *sql.DB, stateDir string, waitDeadline drainWaitDeadline) (DrainReport, func(), error) {
+	deadline := waitDeadline(ctx)
 	var releases []func()
 	releaseAll := func() {
 		for _, release := range releases {

@@ -271,24 +271,78 @@ func TestDrainRefusesWhileLockHeld(t *testing.T) {
 	}
 	t.Cleanup(held)
 
-	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	before := ledgerHash(t, db)
+	// The shared Drain body keeps a valid caller context through SQL setup.
+	// Only the actual owner-wait deadline is 500ms; public Drain retains its
+	// existing caller-deadline/default policy and is covered by public tests.
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	got, err := Drain(ctx, db)
+	calls := 0
+	var ownerDeadline time.Time
+	got, err := drainWithWaitDeadline(ctx, db, func(caller context.Context) time.Time {
+		calls++
+		if caller != ctx || caller.Err() != nil {
+			t.Fatalf("deadline supplier caller = %v", caller.Err())
+		}
+		if release, probeErr := control.AcquireInstance(dir); !errors.Is(probeErr, control.ErrInstanceHeld) {
+			if release != nil {
+				release()
+			}
+			t.Fatalf("deadline calculated before instance acquisition: %v", probeErr)
+		}
+		if release, probeErr := supervisor.AcquireOwner(dir); !errors.Is(probeErr, supervisor.ErrOwnerHeld) {
+			if release != nil {
+				release()
+			}
+			t.Fatalf("deadline calculated before migration root acquisition: %v", probeErr)
+		}
+		ownerDeadline = time.Now().Add(500 * time.Millisecond)
+		return ownerDeadline
+	})
+	if calls != 1 {
+		t.Fatalf("deadline supplier called %d times; want 1", calls)
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("caller context expired during owner wait: %v", ctx.Err())
+	}
+	if time.Now().Before(ownerDeadline) {
+		t.Fatal("held owner refused before its actual deadline")
+	}
+	if !errors.Is(err, errDrainTimeout) {
+		t.Errorf("Drain error = %v; want owner deadline sentinel", err)
+	}
 	if err == nil {
 		t.Fatalf("Drain with a held lock = %+v, nil; want ownership_unresolved", got)
 	}
 	var ctrl *v2contract.ControlError
-	if !errors.As(err, &ctrl) || ctrl.Code != v2contract.CodeOwnershipUnresolved {
-		t.Fatalf("Drain error = %v; want code ownership_unresolved", err)
+	if !errors.As(err, &ctrl) {
+		t.Fatalf("Drain error = %v; want typed ownership_unresolved", err)
+	}
+	if ctrl.Code != v2contract.CodeOwnershipUnresolved || ctrl.Owner != "migrate" || ctrl.Object != "run_stuck" {
+		t.Fatalf("Drain error=%v; code=%s owner=%s object=%s detail=%v caller=%v; want migrate ownership_unresolved for run_stuck", err, ctrl.Code, ctrl.Owner, ctrl.Object, ctrl.Detail, ctx.Err())
 	}
 	if verr := ctrl.Validate(); verr != nil {
 		t.Errorf("refusal fails ControlError.Validate: %v", verr)
 	}
-	if !strings.Contains(ctrl.NextAction, "run_stuck") && ctrl.Object != "run_stuck" {
-		t.Errorf("refusal names neither run in %q (object %q); want run_stuck", ctrl.NextAction, ctrl.Object)
+	if ctrl.NextAction != "run run_stuck still holds its owner lock; retry the migration after it finishes" || ctrl.Detail["migrate/run_id"] != "run_stuck" {
+		t.Errorf("owner refusal next=%q detail=%v", ctrl.NextAction, ctrl.Detail)
 	}
-	if len(got.Adopted) != 0 || len(got.Drained) != 0 || len(got.Quarantined) != 0 {
+	if got.Adopted != nil || got.Drained != nil || got.Quarantined != nil {
 		t.Fatalf("Drain report on failure = %+v; want zero, nothing half-adopted", got)
+	}
+	if after := ledgerHash(t, db); after != before {
+		t.Fatal("failed Drain mutated ledger")
+	}
+	if release, probeErr := supervisor.AcquireOwner(filepath.Join(dir, "runs", "run_adoptable")); probeErr != nil {
+		t.Fatalf("prior adopted run owner leaked: %v", probeErr)
+	} else {
+		release()
+	}
+	if release, probeErr := supervisor.AcquireOwner(stuckDir); !errors.Is(probeErr, supervisor.ErrOwnerHeld) {
+		if release != nil {
+			release()
+		}
+		t.Fatalf("fixture's stuck owner lost: %v", probeErr)
 	}
 	if release, err := control.AcquireInstance(dir); err != nil {
 		t.Fatalf("instance lock after failed Drain: %v; want it free for migration", err)
@@ -805,3 +859,57 @@ func TestRecoverRefusedPastPreviewed(t *testing.T) {
 
 // runApplyMain and TestApplyRefusedDuringMigration moved to
 // internal/cli/migrate_test.go (see the package note above).
+
+// TestDrainOwnerDeadlinePhase keeps the critical 500ms separate from SQL
+// preparation: an alive caller and real locks exercise the explicit deadline.
+func TestDrainOwnerDeadlinePhase(t *testing.T) {
+	for _, held := range []bool{false, true} {
+		name := "free owner"
+		if held {
+			name = "held owner"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			const runID = "run_owner_deadline"
+			runDir := filepath.Join(dir, "runs", runID)
+			if err := os.MkdirAll(runDir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if held {
+				release, err := supervisor.AcquireOwner(runDir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer release()
+			}
+			deadline := time.Now().Add(500 * time.Millisecond)
+			release, err := quiesceRun(t.Context(), dir, runID, deadline)
+			if release != nil {
+				defer release()
+			}
+			if t.Context().Err() != nil {
+				t.Fatalf("caller context expired: %v", t.Context().Err())
+			}
+			if held {
+				var ctrl *v2contract.ControlError
+				if !errors.Is(err, errDrainTimeout) || !errors.As(err, &ctrl) || ctrl.Code != v2contract.CodeOwnershipUnresolved || ctrl.Object != runID {
+					t.Fatalf("held deadline error=%v control=%#v", err, ctrl)
+				}
+				if time.Now().Before(deadline) {
+					t.Fatal("held owner refused before actual deadline")
+				}
+				return
+			}
+			if err != nil || release == nil {
+				t.Fatalf("free owner: release=%v error=%v", release != nil, err)
+			}
+			other, probeErr := supervisor.AcquireOwner(runDir)
+			if other != nil {
+				other()
+			}
+			if !errors.Is(probeErr, supervisor.ErrOwnerHeld) {
+				t.Fatalf("free owner not acquired exclusively: %v", probeErr)
+			}
+		})
+	}
+}
