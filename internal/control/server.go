@@ -18,15 +18,28 @@ import (
 // Server owns the intent dispatch table as instance state, never a
 // package-level map.
 type Server struct {
-	mu      sync.RWMutex
-	methods map[string]Handler
-	long    map[string]bool
+	mu       sync.RWMutex
+	methods  map[string]Handler
+	long     map[string]bool
+	readOnly bool
 }
 
 // NewServer builds a Server with the given method bindings.
 func NewServer(handlers map[string]Handler) *Server {
 	s := &Server{methods: make(map[string]Handler, len(handlers)), long: map[string]bool{}}
 	maps.Copy(s.methods, handlers)
+	return s
+}
+
+// NewStatusServer serves only authenticated, validated read-only status.
+// No operation or ledger transaction is created, including refusals.
+func NewStatusServer(status Handler) *Server {
+	handlers := map[string]Handler{}
+	if status != nil {
+		handlers["status"] = status
+	}
+	s := NewServer(handlers)
+	s.readOnly = true
 	return s
 }
 
@@ -59,12 +72,23 @@ func (s *Server) RegisterLong(method string, h Handler) error {
 // ExecuteLong for a method bound with RegisterLong. An unregistered
 // method returns capability_unsupported without touching the ledger.
 func (s *Server) Dispatch(ctx context.Context, peer Peer, intent Intent) (Result, error) {
+	if s.readOnly {
+		if !peer.SameUser {
+			return Result{}, newError(CodePermissionDenied, "peer is not the supervisor user")
+		}
+		if err := intent.Validate(); err != nil {
+			return Result{}, newError(CodeInvalidContract, "invalid intent: %v", err)
+		}
+	}
 	s.mu.RLock()
 	h, ok := s.methods[intent.Method]
 	long := s.long[intent.Method]
 	s.mu.RUnlock()
 	if !ok {
 		return Result{}, newError(CodeCapabilityUnsupported, "method %q is not supported", intent.Method)
+	}
+	if s.readOnly {
+		return h(ctx, peer, intent)
 	}
 	if long {
 		return ExecuteLong(ctx, h, peer, intent)

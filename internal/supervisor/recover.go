@@ -206,7 +206,7 @@ func recoverLocked(ctx context.Context, j *journal.Journal, runID string, h Hook
 		var pidErr error
 		out.UnresolvedPIDs, pidErr = recoveryUnresolvedPIDs(runtime.GOOS, a.AttemptID, id, iderr)
 		err = errors.Join(err, pidErr)
-		h.Notice(recoveryOwnershipNotice(runtime.GOOS, a.AttemptID, out.UnresolvedPIDs, pidErr))
+		err = errors.Join(err, p.diagnostic(ctx, DiagnosticRecoveryOwnershipUnresolved, recoveryOwnershipNotice(runtime.GOOS, a.AttemptID, out.UnresolvedPIDs, pidErr)))
 		return out, errors.Join(err, ErrOwnership, iderr)
 	}
 	if p.out.State == RunRecovering {
@@ -217,7 +217,7 @@ func recoverLocked(ctx context.Context, j *journal.Journal, runID string, h Hook
 	out.Mode = "continued"
 	if alive {
 		out.Mode = "reattached"
-		h.Notice(fmt.Sprintf("reattached to worker pid %d", id.PID))
+		p.inform(NoticeWorkerReattached, fmt.Sprintf("reattached to worker pid %d", id.PID))
 	}
 	watchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -267,7 +267,7 @@ func recoverLocked(ctx context.Context, j *journal.Journal, runID string, h Hook
 		var pidErr error
 		out.UnresolvedPIDs, pidErr = recoveryUnresolvedPIDs(runtime.GOOS, a.AttemptID, id, iderr)
 		err = errors.Join(err, pidErr)
-		h.Notice(recoveryOwnershipNotice(runtime.GOOS, a.AttemptID, out.UnresolvedPIDs, pidErr))
+		err = errors.Join(err, p.diagnostic(ctx, DiagnosticRecoveryOwnershipUnresolved, recoveryOwnershipNotice(runtime.GOOS, a.AttemptID, out.UnresolvedPIDs, pidErr)))
 		err = errors.Join(err, ErrOwnership)
 		if oerr := orphanHeldReservations(ctx, j, runID); oerr != nil {
 			err = errors.Join(err, oerr)

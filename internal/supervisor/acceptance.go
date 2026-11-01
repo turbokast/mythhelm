@@ -204,7 +204,9 @@ func (p *pipeline) verifyChecks(ctx context.Context) error {
 		Commit: candidate.Commit, Workspace: p.d.Workdir,
 	}, p.d.ProjectConfig, p.d.Proposal.Spec.Env, checkOptions(p.d))
 	if runErr != nil {
-		p.h.Notice(fmt.Sprintf("verification could not complete: %v", runErr))
+		if err := p.diagnostic(ctx, DiagnosticVerificationUnavailable, fmt.Sprintf("verification could not complete: %v", runErr)); err != nil {
+			return errors.Join(runErr, err)
+		}
 	}
 	if errors.Is(runErr, context.Canceled) {
 		// The cancelled context could not commit the transition, leaving the
@@ -258,7 +260,9 @@ func (p *pipeline) verifyChecks(ctx context.Context) error {
 		if berr != nil {
 			// The checks ran; only the attestation could not be built, so a
 			// failure or an invalid evaluator stays and nothing else passes.
-			p.h.Notice(fmt.Sprintf("verification binding unavailable: %v", berr))
+			if err := p.diagnostic(ctx, DiagnosticVerificationBindingUnavailable, fmt.Sprintf("verification binding unavailable: %v", berr)); err != nil {
+				return errors.Join(berr, err)
+			}
 			attestation, attestationDigest = nil, ""
 			if verdict == acceptance.ResultPassed || verdict == acceptance.ResultUnavailable {
 				verdict, reason = acceptance.ResultUnavailable, "binding_unavailable"
