@@ -504,11 +504,11 @@ func styleRow(kind DiffLineKind, text string, c caps.Caps, t theme.Tokens) strin
 	}
 	switch kind {
 	case DiffFileBoundary:
-		return fg(text, t.Attention)
+		return fg(text, t.TextMuted)
 	case DiffFileMeta:
 		return fg(text, t.TextMuted)
 	case DiffHunkHeader:
-		return fg(text, t.Focus)
+		return fg(text, t.TextMuted)
 	case DiffAdd:
 		return fg(text, t.OK)
 	case DiffDel:

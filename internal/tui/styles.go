@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -15,7 +16,7 @@ import (
 // TestNoFontDependentGlyphs asserts goldens stay inside this table (unicode)
 // or byte-clean (ASCII), so adding a rune here is a deliberate
 // load-bearing-font decision, never casual decoration.
-const geometricShapes = "─│▶●·…—"
+const geometricShapes = "─│▶●·…—◆○◌✓"
 
 var tuiCellEscapes = strings.NewReplacer("\t", `\t`, "\n", `\n`)
 
@@ -73,6 +74,7 @@ func styleText(c caps.Caps, s, hex string) string {
 type line struct {
 	text   string
 	colour string
+	spans  []span
 }
 
 // fitLine fits one row's plain text to width cells.
@@ -89,4 +91,120 @@ func padCells(s string, width int) string {
 		return s + strings.Repeat(" ", width-w)
 	}
 	return s
+}
+
+// span carries plain terminal text and its declarative foreground/emphasis.
+type span struct {
+	text, colour    string
+	bold, underline bool
+}
+
+func missionGlyph(c caps.Caps) string { return glyph(c, "◆", "#") }
+func pendingGlyph(c caps.Caps) string { return glyph(c, "○", "o") }
+func unknownGlyph(c caps.Caps) string { return glyph(c, "◌", ".") }
+func checkGlyph(c caps.Caps) string   { return glyph(c, "✓", "v") }
+
+// lineFromSpans retains a plain mirror for filtering and legacy row inspection.
+// Callers sanitise stored values before constructing spans. No styled diff row
+// passes through this path: legacy rows may already contain trusted SGR.
+func lineFromSpans(spans ...span) line {
+	var text strings.Builder
+	for _, s := range spans {
+		text.WriteString(s.text)
+	}
+	return line{text: text.String(), spans: spans}
+}
+
+// renderSpans clips plain graphemes before adding trusted SGR. ColourNever
+// preserves the incumbent unstyled mode (the design also permits emphasis).
+// A valid background is restored at the next span after each reset, and the
+// final reset leaves the terminal's own background in place outside the row.
+func renderSpans(c caps.Caps, spans []span, width int, background string) string {
+	if width <= 0 {
+		return ""
+	}
+	clean := make([]span, len(spans))
+	var plain strings.Builder
+	for i, s := range spans {
+		clean[i] = s
+		// Defence in depth for the plain span boundary, never final styled SGR.
+		clean[i].text = cell(s.text)
+		plain.WriteString(clean[i].text)
+	}
+	remaining := plain.Len()
+	marker := ""
+	if lipgloss.Width(plain.String()) > width {
+		marker = ellGlyph(c)
+		prefix := ""
+		if budget := width - lipgloss.Width(marker); budget > 0 {
+			// Lipgloss truncates grapheme clusters, including combining marks
+			// across span boundaries, without adding a new dependency.
+			prefix = lipgloss.NewStyle().Inline(true).MaxWidth(budget).Render(plain.String())
+		}
+		remaining = len(prefix)
+	}
+	var out strings.Builder
+	bg := ""
+	if c.Colour != caps.ColourNever {
+		bg = colourSGR(background, true)
+	}
+	write := func(s span) {
+		if s.text == "" {
+			return
+		}
+		out.WriteString(bg)
+		styled := false
+		if c.Colour != caps.ColourNever {
+			var emphasis []string
+			if s.bold {
+				emphasis = append(emphasis, "1")
+			}
+			if s.underline {
+				emphasis = append(emphasis, "4")
+			}
+			if len(emphasis) > 0 {
+				out.WriteString("\x1b[" + strings.Join(emphasis, ";") + "m")
+				styled = true
+			}
+			if fg := colourSGR(s.colour, false); fg != "" {
+				out.WriteString(fg)
+				styled = true
+			}
+		}
+		out.WriteString(s.text)
+		if styled || bg != "" {
+			out.WriteString("\x1b[0m")
+		}
+	}
+	for _, s := range clean {
+		if remaining == 0 {
+			break
+		}
+		n := min(remaining, len(s.text))
+		s.text = s.text[:n]
+		write(s)
+		remaining -= n
+	}
+	write(span{text: marker})
+	return out.String()
+}
+
+func colourSGR(hex string, background bool) string {
+	r, g, b, ok := parseHexColour(hex)
+	if !ok {
+		return ""
+	}
+	channel := 38
+	if background {
+		channel = 48
+	}
+	return fmt.Sprintf("\x1b[%d;2;%d;%d;%dm", channel, r, g, b)
+}
+
+// renderLine preserves legacy pre-styled rows and gives spans precedence.
+func renderLine(c caps.Caps, ln line, width int) string {
+	if len(ln.spans) > 0 {
+		return renderSpans(c, ln.spans, width, "")
+	}
+	return styleText(c, fitLine(c, ln.text, width), ln.colour)
 }
