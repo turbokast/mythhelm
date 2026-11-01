@@ -152,7 +152,7 @@
 - **Test plan**: Pure closed-record fixtures with no real credentials or granted live policy; independently mutate one approval binding/classification at a time. Task8 owns volatile-before-confirmation integration.
 - **Invariants touched**: I02/I03/I19/I20 (v2 §§6/8: classification/authority before retention; no copied subscription secrets).
 
-### Task 29 — Extract the fixed pure quota policy and storage producer
+### Task 29 — Extract the fixed pure quota policy and storage producer ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -175,6 +175,17 @@
   - `TestQuotaStorageIsNotAuthority` proves that constructor/input data and a caller-computed success flag cannot bypass the fixed transaction schedule/duplicate rules. Task30 derives inputs from the confirmed binding and fresh clock; no new generic evaluator/projection callback is accepted.
 - **Test plan**: Independent schedule fixtures and actual SQLite transaction rows, existing legacy tests plus explicit violating controls. These are low-level trusted storage APIs, not a new wire method or claim of provider availability.
 - **Invariants touched**: I02/I09/I20/I21/I23 (v2 §§5/6/8: current fixed quota policy and honest one-hold effects).
+- **Status**: ✅ Completed — extracted the fixed quota schedule and closed transaction storage while preserving legacy evaluator and owner behavior; PR #552.
+- **Implementation**: Commit c0ee02a3e3585b8fc97123b6481b65799f47a331. Billing owns the pure schedule; journal owns checked service holds, duplicate detection and reset/retry storage, with runtime delegation and the legacy custom-owner branch preserved.
+  Task30 owns service transaction wiring: its acceptance requires “`TestServiceAdmissionAtomicStorage` injects each admission and arming statement/projection failure and observes complete rollback”. These storage producers grant no execution authority.
+- **Spec deviations**:
+  - Added `internal/datum/label.go` as a shared provenance leaf to break the existing billing→qualify→journal cycle required by journal→billing policy calls.
+  - Updated `internal/qualify/qualify.go` to retain DatumLabel and existing label constants through source-compatible aliases to that leaf.
+  - Updated `internal/billing/billing.go` to use the leaf label type without importing the qualification registry.
+  - Updated `internal/billing/normalize.go` to use the same provenance values from the leaf, preserving normalization behavior.
+  - Updated `internal/billing/normalize_test.go` imports to avoid recreating the cycle in in-package tests; existing fixtures and assertions remain unchanged.
+- **Files modified**: `internal/admission/reserve.go`, `internal/admission/reserve_test.go`, `internal/billing/billing.go`, `internal/billing/normalize.go`, `internal/billing/normalize_test.go`, `internal/billing/quota_schedule.go`, `internal/billing/quota_schedule_test.go`, `internal/datum/label.go`, `internal/journal/quota_reservation.go`, `internal/journal/quota_reservation_test.go`, `internal/qualify/qualify.go`, `internal/supervisor/exhaustion.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
+- **Validation**: Canonical formatter/tidy/vet/lint/full-race/hygiene markers are fresh; named schedule, real-SQLite service/legacy, closed storage and customization controls pass under race. Red-first: always-admit/zero-wait policy stub, empty-success storage stub, duplicate-check omission, fixed-policy bypass and invented-zero quantity each fail the named controls; restored code passes. The first full race run's unchanged CLI resume watchdog failure is retained; focused race count3 and unchanged canonical retry pass without test/deadline changes.
 
 ### Task 27 — Produce nonblocking observer wakeups and typed hints
 
