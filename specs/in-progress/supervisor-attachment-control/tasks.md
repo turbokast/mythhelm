@@ -214,7 +214,7 @@
 
 - **Status**: ✅ Completed — documented the existing versioned backup and preview naming contracts; PR #549.
 - **Implementation**: Commit `c6caa02` replaces the fixed guide filename and distinguishes Backup's actual database version/sidecar from preview's supported-schema target. Independent source and section-preservation review returned Ready.
-- **Spec deviations**: Required own completion, handoff and scratchpad records accompany the two listed docs paths. Pre-merge completion metadata follows WORKFLOW/task-completion; PR #549 must merge before dependents consume it. No naming or runtime contract change.
+- **Spec deviations**: `specs/in-progress/supervisor-attachment-control/tasks.md` records own completion, `specs/in-progress/supervisor-attachment-control/handoff.md` supplies dependent-task guidance, and `specs/in-progress/supervisor-attachment-control/scratchpad.md` records the source finding. Pre-merge completion metadata follows WORKFLOW/task-completion; PR #549 must merge before dependents consume it. No naming or runtime contract change.
 - **Files modified**: `docs/user-guide.md`, `docs/limitations.md`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
 ### Task 25 — Produce the additive binding schema and atomic version mirrors
