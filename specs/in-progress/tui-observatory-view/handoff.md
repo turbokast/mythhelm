@@ -142,6 +142,9 @@
 
 - **Integrated verification checkpoint**: The preliminary full race pass at `3dddae7` (392.7s) is historical. Latest canonical validation: all six gates passed on the integrated candidate (full repository race 370.9s; public hygiene 6.9s), with the actual prerequisite merge/byte-equivalence check still required before acceptance. Coordinator named acceptance: eleven selected named race checks passed (2.142s); the exact output is retained by the coordinator. The seven source files and four consumed assets match the reviewed attempt 2 manifest; own lifecycle checks are separate: entry-format, spec and hygiene checks are run separately against these lifecycle records before publication; exact-head CI and actual merge remain required. Final-head CI/review and actual merge remain pending. This establishes no native/platform, full G09/G11 or 20× comparative qualification; Tasks 13–16 retain their later integration obligations.
 
+
+- **Final baseline**: PR #557 merged as `e9fb98d`; signed merge `6f4f019` preserves the complete verified tree and all seven source/four asset hashes. Latest canonical gates pass (full race277.7s, hygiene7.7s, zero-issue lint). Earlier named race2.142s remains source-bound evidence on unchanged renderers. Own-record checks and exact-final-head PR #556 CI/review remain required; this handoff does not claim that Task12 has merged or that later Observatory integration/native/platform/G09/G11/20× gates passed.
+
 ## Task 13 — Render the header and gated NOW/NEXT actions
 
 <!-- pending -->
