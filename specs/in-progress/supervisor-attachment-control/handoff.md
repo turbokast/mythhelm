@@ -73,6 +73,8 @@
 
 - **Known next-step gaps**: Current preflight cannot establish Task7 readiness without original launch-epoch evidence and assignment-epoch storage; those producer proposals are not delivered by this shell. Attachment-grant preflight also found no retained current-run ownership handoff. These are recorded implementation gaps, not accepted new APIs, completed dependencies or permission to bypass ownership checks.
 
+- **Latest review repair**: Historical candidate7b5c152 and its checks remain historical. CI repair45511b21 in shutdown_test.go passed repaired-source gates at632844bc (217.4s), then signed actual-main1933a20 integration4107369 passed all six gates (346.1s) and actual CI. External review round1 subsequently found three issues and source14ef996 fixes them within the original15 paths. Exact final source/gates/CI and thread resolution are pending; no prerequisite may treat this still-open PR #558 as merged. Run now resolves platform/endpoint before root preparation; original operation errors survive diagnostic persistence failure; actual blocked-reader transport isolation replaces an unrelated synthetic view. No public Task10 observation/ordinary dispatch/attachment/native qualification is added.
+
 ## Task 7 — Adopt the same worker under a new service generation
 
 <!-- pending -->
