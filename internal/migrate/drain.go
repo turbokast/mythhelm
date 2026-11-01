@@ -1,6 +1,8 @@
 package migrate
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -8,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,6 +18,7 @@ import (
 
 	"github.com/turbokast/mythhelm/internal/control"
 	"github.com/turbokast/mythhelm/internal/ids"
+	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/supervisor"
 	"github.com/turbokast/mythhelm/internal/v2contract"
 	"github.com/turbokast/mythhelm/internal/workers"
@@ -211,23 +215,32 @@ func drainStateDir(ctx context.Context, db *sql.DB) (string, error) {
 // the migration lock and this query), in run ID order.
 func enumerateRuns(ctx context.Context, db *sql.DB, stateDir string) ([]drainRun, error) {
 	byID := map[string]drainRun{}
-	rows, err := db.QueryContext(ctx, "SELECT run_id, state FROM runs ORDER BY run_id")
-	if err != nil {
-		return nil, persistenceError("drain", fmt.Sprintf("listing runs: %v", err))
+	// Explicit migration may inspect a schema-zero database before the first
+	// writable OpenLedger. No runs table means no ledger runs, but orphan run
+	// directories are still enumerated and fenced below.
+	var hasRuns int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='runs'`).Scan(&hasRuns); err != nil {
+		return nil, persistenceError("drain", fmt.Sprintf("checking runs table: %v", err))
 	}
-	for rows.Next() {
-		var r drainRun
-		if err := rows.Scan(&r.id, &r.state); err != nil {
+	if hasRuns > 0 {
+		rows, err := db.QueryContext(ctx, "SELECT run_id, state FROM runs ORDER BY run_id")
+		if err != nil {
+			return nil, persistenceError("drain", fmt.Sprintf("listing runs: %v", err))
+		}
+		for rows.Next() {
+			var r drainRun
+			if err := rows.Scan(&r.id, &r.state); err != nil {
+				_ = rows.Close()
+				return nil, persistenceError("drain", fmt.Sprintf("reading runs: %v", err))
+			}
+			byID[r.id] = r
+		}
+		if err := rows.Err(); err != nil {
 			_ = rows.Close()
 			return nil, persistenceError("drain", fmt.Sprintf("reading runs: %v", err))
 		}
-		byID[r.id] = r
-	}
-	if err := rows.Err(); err != nil {
 		_ = rows.Close()
-		return nil, persistenceError("drain", fmt.Sprintf("reading runs: %v", err))
 	}
-	_ = rows.Close()
 	entries, err := os.ReadDir(filepath.Join(stateDir, "runs"))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, persistenceError("drain", fmt.Sprintf("listing run directories: %v", err))
@@ -351,7 +364,61 @@ func adoptable(ctx context.Context, db *sql.DB, stateDir, runID string) (bool, e
 	if err != nil {
 		return false, nil
 	}
-	return start.Equal(id.StartTime), nil
+	if !start.Equal(id.StartTime) {
+		return false, nil
+	}
+	return supportedSpool(ctx, stateDir, runID, attemptID), nil
+}
+
+// supportedSpool inspects a finite snapshot without ingesting or rewriting it.
+// Only complete lines have a schema; a worker's torn tail is left for its
+// normal owner. Missing spool retains the legacy no-events-yet behaviour.
+func supportedSpool(ctx context.Context, stateDir, runID, attemptID string) bool {
+	path := filepath.Join(workers.AttemptDir(stateDir, runID, attemptID), supervisor.SpoolFile)
+	before, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+	if err != nil || !before.Mode().IsRegular() {
+		return false
+	}
+	f, err := os.Open(path) // #nosec G304 -- fixed spool under held root/run locks; Lstat validates the named file before open
+	if errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() || !os.SameFile(before, info) {
+		return false
+	}
+	r := bufio.NewReaderSize(io.LimitReader(f, info.Size()), (1<<20)+1)
+	for {
+		if ctx.Err() != nil {
+			return false
+		}
+		line, err := r.ReadSlice('\n')
+		if errors.Is(err, io.EOF) {
+			return true
+		}
+		if err != nil || len(line) > 1<<20 {
+			return false
+		}
+		var event journal.Event
+		dec := json.NewDecoder(bytes.NewReader(line))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&event); err != nil {
+			return false
+		}
+		if err := dec.Decode(new(any)); !errors.Is(err, io.EOF) {
+			return false
+		}
+		if event.SchemaVersion != journal.EnvelopeVersion || event.RunID != runID || event.AttemptID != attemptID || event.ProducerID != "wrk_"+attemptID || event.ProducerSequence <= 0 || event.Generation != 1 {
+			return false
+		}
+	}
 }
 
 // launchedObservation is one journaled attempt.launched worker identity.

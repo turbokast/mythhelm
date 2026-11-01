@@ -96,8 +96,10 @@ type Event struct {
 
 // Journal is an open state database.
 type Journal struct {
-	db  *sql.DB
-	dir string
+	db           *sql.DB
+	dir          string
+	rootInfo     os.FileInfo
+	databaseInfo os.FileInfo
 }
 
 // StateDir is the directory this journal was opened from.
@@ -112,6 +114,14 @@ func Open(ctx context.Context, dir string) (*Journal, error) {
 
 func open(ctx context.Context, dir string, migs []string) (*Journal, error) {
 	path := filepath.Join(dir, DBName)
+	rootInfo, err := os.Stat(dir)
+	if err != nil {
+		return nil, fmt.Errorf("reading state root identity: %w", err)
+	}
+	databaseInfo, err := os.Stat(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("reading database identity: %w", err)
+	}
 	// Probe read-only first: the WAL pragma alone would rewrite the header
 	// of a rollback-journal database this binary must not touch.
 	if err := probeVersion(ctx, path, len(migs)); err != nil {
@@ -125,7 +135,44 @@ func open(ctx context.Context, dir string, migs []string) (*Journal, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	return &Journal{db: db, dir: dir}, nil
+	current, err := os.Stat(path)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("reading opened database identity: %w", err)
+	}
+	if databaseInfo != nil && !os.SameFile(databaseInfo, current) {
+		_ = db.Close()
+		return nil, fmt.Errorf("journal: database identity changed: %w", os.ErrInvalid)
+	}
+	j := &Journal{db: db, dir: dir, rootInfo: rootInfo, databaseInfo: current}
+	if err := j.CheckStateIdentity(ctx); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return j, nil
+}
+
+// CheckStateIdentity verifies the physical root and database retained when
+// this handle opened; it never treats a replacement pathname as the same ledger.
+func (j *Journal) CheckStateIdentity(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if j == nil || j.rootInfo == nil || j.databaseInfo == nil {
+		return fmt.Errorf("journal: state identity unavailable: %w", os.ErrInvalid)
+	}
+	root, err := os.Stat(j.dir)
+	if err != nil {
+		return fmt.Errorf("journal: reading state identity: %w", err)
+	}
+	db, err := os.Stat(filepath.Join(j.dir, DBName))
+	if err != nil {
+		return fmt.Errorf("journal: reading database identity: %w", err)
+	}
+	if !os.SameFile(j.rootInfo, root) || !os.SameFile(j.databaseInfo, db) {
+		return fmt.Errorf("journal: state identity changed: %w", os.ErrInvalid)
+	}
+	return ctx.Err()
 }
 
 // Close closes the database.

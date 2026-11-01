@@ -366,7 +366,7 @@
 - **Test plan**: Synthetic files/config inventories and fake launch counter; actual source APIs already exist. Re-ground Task4 pipeline changes before editing; if an adapter API change is needed, stop for a separately scoped adapter producer instead of editing adapters in this task.
 - **Invariants touched**: I02/I19/I20 (v2 §§6/8: exact config evidence and unchanged native credential ownership).
 
-### Task 5 — Close root migration and legacy writer fences
+### Task 5 — Close root migration and legacy writer fences ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -387,6 +387,23 @@
   - TestImportedResumeKeepsFence proves imported→adopted cannot race a legacy/service writer; changed-root/live-instance conflict refuses.
 - **Test plan**: Synthetic fixtures and deterministic barriers for the named cases; pair negative assertions with a deliberately violating fixture. Public process behavior uses the packaged binary in the integration task, not helper-only evidence.
 - **Invariants touched**: I05/I12/I18/I23 (v2 §5.2: one root authority and immutable import provenance).
+
+- **Status**: ✅ Completed — closed fresh-root preparation and root-wide migration/legacy writer fences; PR #555. This is the required pre-merge record, not evidence of merge.
+- **Implementation**: Source `cfef601` retains original lease/journal identity before service-owner mint, fences schema opening and every phase shortcut, preserves live launch/import provenance and rejects nonregular spools. Initial `eb6bf49` remains known-incomplete evidence; the bounded repair and initial failures remain recorded below and in the scratchpad.
+- **Spec deviations**:
+  - Added `internal/cli/apply.go` to retain the legacy root guard until run-lock acquisition and close the existing stale-phase writer race.
+  - Added `internal/cli/tui.go` to apply the same root-to-run guard handoff in the actual palette action.
+  - Added `internal/control/instance.go` to retain physical root identity at instance acquisition and expose ctx-first CheckRootIdentity to the existing owner boundary.
+  - Added `internal/journal/journal.go` to retain original root/database identity and expose ctx-first CheckStateIdentity without exporting a forgeable proof.
+  - Added `internal/journal/projections.go` so read-only journals carry and verify the same original identity.
+  - Added `internal/migrate/SUPPORT.md` to map the two new migration exports to precise fixture-tested evidence, with no qualification claim.
+  - Added `internal/migrate/support_test.go` to update the exact shipped row/export inventory; its enforcement and the SQL-mutation pin remain intact.
+  - Updated `specs/in-progress/supervisor-attachment-control/tasks.md` with the required completion/evidence entry. WORKFLOW and task-completion require this pre-merge record and take precedence over the child's heading-after-merge wording; it does not claim this PR merged.
+  - Updated `specs/in-progress/supervisor-attachment-control/handoff.md` with Task5's producer contracts, lock ordering and limits for dependents.
+  - Updated `specs/in-progress/supervisor-attachment-control/scratchpad.md` with Task5's original-handle/FIFO discoveries, initial failures and bounded repair history.
+- **Files modified**: `internal/cli/apply.go`, `internal/cli/migrate.go`, `internal/cli/migrate_test.go`, `internal/cli/tui.go`, `internal/control/instance.go`, `internal/journal/journal.go`, `internal/journal/projections.go`, `internal/migrate/SUPPORT.md`, `internal/migrate/apply.go`, `internal/migrate/drain.go`, `internal/migrate/service_transition.go`, `internal/migrate/service_transition_test.go`, `internal/migrate/support_test.go`, `internal/supervisor/service_owner.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
+- **Evidence**: Source `cfef6019abaeb24bb0eac7dffb0edb37d219bad0` passed the canonical full Go race gate (461.4s), zero-issue lint and the other required gates; all six source markers were fresh. The coordinator independently reran the three named race acceptances (10.847s); independent code and architecture review returned Ready on that source. PR #555 still needs final-head CI and merge before dependents consume it.
+- **Retained failures and limits**: Initial `eb6bf49` full race failed (447.3s) on the literal-SQL and export-inventory pins; pre-mint mixed-handle provenance and FIFO opening also failed their later retained regressions. One bounded repair closes those defects without weakening the checks. Pre-mint fixtures assert refusal/no run-directory creation; source early returns precede ledger mutation, with no direct ledger-hash claim for those fixtures. Physical identity checks are cooperative ownership evidence, not atomic protection against arbitrary filesystem replacement or forced cancellation of OS I/O. No native, platform, billing, full-product or performance qualification is claimed.
 
 ### Task 6 — Compose the production singleton runtime
 
