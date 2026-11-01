@@ -263,6 +263,121 @@ func TestMigrationProbeRefusalIsRootOnly(t *testing.T) {
 	}
 }
 
+// This predicate is separate from held-root retry admission: this refusal
+// occurs before ownership acquisition when the VFS retains a symlink root.
+func migrationSymlinkRootRefusal(err error) bool {
+	var ce *v2contract.ControlError
+	return errors.As(err, &ce) && ce.Code == v2contract.CodeOwnershipUnresolved &&
+		ce.Owner == "migrate" && ce.OperationID == "prepare-service-root" && ce.Object == "" &&
+		ce.Disposition == v2contract.DispositionAfterReconciliation && ce.Revision == nil && len(ce.Evidence) == 0 &&
+		ce.NextAction == "review mythhelm migrate --preview, then run mythhelm migrate --apply --yes with no service writer running" &&
+		len(ce.Detail) == 1 && ce.Detail["migrate/cause"] == "migration_required: state root is not a real directory"
+}
+
+func TestMigrationSymlinkRootRefusalIsExact(t *testing.T) {
+	t.Parallel()
+	good := &v2contract.ControlError{
+		Code: v2contract.CodeOwnershipUnresolved, Owner: "migrate", OperationID: "prepare-service-root",
+		Disposition: v2contract.DispositionAfterReconciliation,
+		NextAction:  "review mythhelm migrate --preview, then run mythhelm migrate --apply --yes with no service writer running",
+		Detail:      map[string]string{"migrate/cause": "migration_required: state root is not a real directory"},
+	}
+	if !migrationSymlinkRootRefusal(good) {
+		t.Fatal("literal valid symlink refusal rejected")
+	}
+	wrong := *good
+	wrong.Detail = map[string]string{"migrate/cause": "migration_required: different reason"}
+	if good.Error() != wrong.Error() {
+		t.Fatal("wrong-detail fixture must retain the same display error")
+	}
+	if migrationSymlinkRootRefusal(&wrong) {
+		t.Fatal("same display error concealed wrong migration_required detail")
+	}
+	for _, tc := range []struct {
+		name   string
+		change func(*v2contract.ControlError)
+	}{
+		{"code", func(e *v2contract.ControlError) { e.Code = v2contract.CodePersistenceUnavailable }},
+		{"owner", func(e *v2contract.ControlError) { e.Owner = "other" }},
+		{"operation", func(e *v2contract.ControlError) { e.OperationID = "apply" }},
+		{"object", func(e *v2contract.ControlError) { e.Object = "run_other" }},
+		{"disposition", func(e *v2contract.ControlError) { e.Disposition = v2contract.DispositionNever }},
+		{"next action", func(e *v2contract.ControlError) { e.NextAction = "retry" }},
+		{"missing detail", func(e *v2contract.ControlError) { e.Detail = nil }},
+		{"extra detail", func(e *v2contract.ControlError) {
+			e.Detail = map[string]string{"migrate/cause": "migration_required: state root is not a real directory", "migrate/extra": "unexpected"}
+		}},
+		{"revision", func(e *v2contract.ControlError) { v := 1; e.Revision = &v }},
+		{"evidence", func(e *v2contract.ControlError) { e.Evidence = []string{"unexpected"} }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate := *good
+			tc.change(&candidate)
+			if migrationSymlinkRootRefusal(&candidate) {
+				t.Fatal("wrong typed field accepted")
+			}
+		})
+	}
+	for _, err := range []error{nil, errors.New(good.Error()), errors.New("unknown")} {
+		if migrationSymlinkRootRefusal(err) {
+			t.Fatalf("untyped refusal accepted: %v", err)
+		}
+	}
+}
+
+// All identity negatives use a real held-root error from a non-symlink DB,
+// independently of the VFS branch used by the symlinked-database fixture.
+// XDG_RUNTIME_DIR mutation prevents parallel execution.
+func TestMigrationProbeRefusalRootIdentity(t *testing.T) {
+	isolateInstanceLock(t)
+	dir := t.TempDir()
+	db := openDrainDB(t, dir)
+	held, err := supervisor.AcquireOwner(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held()
+	_, heldErr := Apply(t.Context(), db, preview.Plan{})
+	if !migrationProbeRefusal(t.Context(), db, heldErr, dir) {
+		t.Fatalf("actual held-root baseline rejected: %v", heldErr)
+	}
+	if migrationProbeRefusal(t.Context(), db, heldErr, t.TempDir()) {
+		t.Fatal("different physical root accepted")
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if migrationProbeRefusal(ctx, db, heldErr, dir) {
+		t.Fatal("cancelled context accepted")
+	}
+	if migrationProbeRefusal(t.Context(), db, heldErr, filepath.Join(t.TempDir(), "missing")) {
+		t.Fatal("missing expected root accepted")
+	}
+	alias := filepath.Join(t.TempDir(), "root-alias")
+	if err := os.Symlink(dir, alias); err != nil {
+		if errors.Is(err, errors.ErrUnsupported) || (runtime.GOOS == "windows" && errors.Is(err, os.ErrPermission)) {
+			t.Logf("alias-only identity controls unavailable: %v", err)
+		} else {
+			t.Fatal(err)
+		}
+	} else {
+		if !migrationProbeRefusal(t.Context(), db, heldErr, alias) {
+			t.Fatal("same physical root alias rejected")
+		}
+		if err := os.Remove(alias); err != nil {
+			t.Fatal(err)
+		}
+		if migrationProbeRefusal(t.Context(), db, heldErr, alias) {
+			t.Fatal("removed alias accepted")
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if migrationProbeRefusal(t.Context(), db, heldErr, dir) {
+		t.Fatal("database root query failure accepted")
+	}
+}
+
 // SQLite's VFS may report a physical path for a symlinked state directory
 // (including macOS /var -> /private/var). Exercise the actual Apply refusal.
 // This fixture changes XDG_RUNTIME_DIR, so it cannot run in parallel.
@@ -292,7 +407,7 @@ func TestMigrationProbeRefusalPhysicalRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		if applyErr == nil || applyErr.Error() != migrationRequired("state root is not a real directory").Error() {
+		if !migrationSymlinkRootRefusal(applyErr) {
 			t.Fatalf("symlink root refusal = %v", applyErr)
 		}
 		if migrationProbeRefusal(t.Context(), db, applyErr, alias) {
