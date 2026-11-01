@@ -1,18 +1,14 @@
-# Built-in dark theme tokens for the TUI mission view.
-#
-# Keys are the exact theme schema: surface, surface_raised, text, text_muted,
-# focus, attention, ok, warning, err, border. Unknown keys are rejected, so a
-# typo here fails the theme tests rather than silently restyling. Colours are
-# #rrggbb; text and text_muted each hold at least 4.5:1 contrast on both
-# surfaces. The format carries no code paths (I11) and no font requirement
-# (I13): glyph choice stays in code, driven by caps.
-surface = "#1a1b26"
-surface_raised = "#24283b"
-text = "#c0caf5"
-text_muted = "#9aa5ce"
-focus = "#7aa2f7"
-attention = "#bb9af7"
-ok = "#9ece6a"
-warning = "#e0af68"
-err = "#f7768e"
-border = "rounded"
+# Built-in Observatory (dark) theme: nine #rrggbb tokens, no code paths (I11).
+# No custom font is needed (I13). Unknown and missing keys are rejected.
+# Text, text_muted, attention and err meet 4.5:1 on both surfaces;
+# ok meets 4.5:1 on surface only; focus meets 3:1 on both surfaces.
+# Border is decorative. Contrast assumes a matching terminal background.
+surface = "#090f1a"
+surface_raised = "#0f1a2b"
+text = "#ebeff5"
+text_muted = "#989fab"
+focus = "#4ddae9"
+attention = "#f0c27b"
+ok = "#7fd8a9"
+err = "#f4918a"
+border = "#4b5668"

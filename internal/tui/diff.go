@@ -523,7 +523,7 @@ func styleFooter(text string, c caps.Caps, t theme.Tokens) string {
 	if c.Colour == caps.ColourNever {
 		return text
 	}
-	return fg(text, t.Warning)
+	return fg(text, t.TextMuted)
 }
 
 // fg wraps text in an explicit truecolour sequence from a #rrggbb token.

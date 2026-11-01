@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -599,7 +601,7 @@ func TestRequiredControlsSurviveAdversarialTheme(t *testing.T) {
 	adv := theme.Tokens{
 		Surface: "#000000", SurfaceRaised: "#000000",
 		Text: "#000000", TextMuted: "#000000",
-		Focus: "bogus", Attention: "", OK: "#000000", Warning: "#00", Err: "#000000",
+		Focus: "bogus", Attention: "", OK: "#000000", Err: "#000000",
 		Border: "wavy",
 	}
 	if err := adv.Validate(); err == nil {
@@ -651,5 +653,69 @@ func TestRequiredControlsSurviveAdversarialTheme(t *testing.T) {
 		if !strings.Contains(stripANSI(view), want) {
 			t.Errorf("adversarial stripped approval prompt lacks %q\n%s", want, stripANSI(view))
 		}
+	}
+}
+
+// TestThemeWarningReplacements binds each former-warning row's colour to its
+// own words; an unrelated error or notice elsewhere cannot satisfy it.
+func TestThemeWarningReplacements(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"dark", "light"} {
+		for _, colour := range []caps.ColourLevel{caps.ColourFull, caps.ColourNever} {
+			t.Run(fmt.Sprintf("%s/%v", name, colour), func(t *testing.T) {
+				t.Parallel()
+				c := fullCaps
+				c.Colour = colour
+				cfg := testConfig(c, t)
+				var err error
+				cfg.Tokens, err = theme.BuiltIn(name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				m := newModel(cfg)
+				m.snap = richSnapshot()
+				m.snap.Verification.CandidateCommit = strings.Repeat("a", 40)
+				rows := m.finaliseRows(m.verificationLines(), 500)
+				want := "mismatch: checks ran against aaaaaaa — candidate is ccccccc"
+				if len(rows) != 1 {
+					t.Fatalf("mismatch rows = %q", rows)
+				}
+				assertThemeRow(t, rows[0], want, cfg.Tokens.Err, colour)
+				for _, cap := range []string{truncateLines, truncateBytes} {
+					m.diff = Diff{Lines: []DiffLine{{Kind: DiffContext, Text: " retained"}}, total: 12, Truncated: true, TruncateCap: cap}
+					label := "50,000-line limit"
+					if cap == truncateBytes {
+						label = "4 MiB byte limit"
+					}
+					rows = m.finaliseRows(m.truncationNotice(), 500)
+					if len(rows) != 2 {
+						t.Fatalf("notice rows = %q", rows)
+					}
+					assertThemeRow(t, rows[0], "showing 1 of 12 lines ("+label+") — full diff via:", cfg.Tokens.TextMuted, colour)
+					command := "`git -C \"/tmp/tui ws\" diff " + strings.Repeat("b", 40) + " " + strings.Repeat("c", 40) + "`"
+					assertThemeRow(t, rows[1], command, cfg.Tokens.TextMuted, colour)
+					rows = m.diff.Render(500, c, cfg.Tokens)
+					if len(rows) != 2 {
+						t.Fatalf("diff rows = %q", rows)
+					}
+					assertThemeRow(t, rows[1], "showing 1 of 12 lines ("+label+")", cfg.Tokens.TextMuted, colour)
+				}
+			})
+		}
+	}
+}
+
+func assertThemeRow(t *testing.T, got, text, hex string, colour caps.ColourLevel) {
+	t.Helper()
+	want := text
+	if colour != caps.ColourNever {
+		rgb, err := strconv.ParseUint(hex[1:], 16, 24)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want = fmt.Sprintf("\x1b[38;2;%d;%d;%dm%s\x1b[0m", rgb>>16, (rgb>>8)&255, rgb&255, text)
+	}
+	if got != want {
+		t.Errorf("rendered row = %q, want %q", got, want)
 	}
 }
