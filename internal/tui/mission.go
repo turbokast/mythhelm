@@ -226,14 +226,14 @@ func (m *Model) verificationLines() []line {
 	checks := v.CandidateCommit
 	if m.snap.Candidate != nil && v.CandidateCommit != m.snap.Candidate.Commit {
 		return []line{{
-			text:   "mismatch: checks ran against " + shortRev(cell(checks)) + " " + dashGlyph(m.cfg.Caps) + " candidate is " + shortRev(cell(m.snap.Candidate.Commit)),
+			text:   "mismatch: checks ran against " + shortRev(cellOrUnknown(checks)) + " " + dashGlyph(m.cfg.Caps) + " candidate is " + shortRev(cellOrUnknown(m.snap.Candidate.Commit)),
 			colour: t.Err,
 		}}
 	}
-	if m.snap.Candidate == nil {
+	if m.snap.Candidate == nil || (v.Result == "passed" && !verified(m.snap)) {
 		return []line{{text: "verification: " + cellOrUnknown(v.Result) + " (checked " + shortRev(cellOrUnknown(checks)) + ")"}}
 	}
-	short := shortRev(cell(v.CandidateCommit))
+	short := shortRev(cellOrUnknown(v.CandidateCommit))
 	switch v.Result {
 	case "passed":
 		out := []line{{text: "verified " + short, colour: t.OK}}

@@ -984,6 +984,9 @@ func TestSpanProducersAndMirrors(t *testing.T) {
 	for _, state := range []string{"failed", "blocked"} {
 		m.snap.Run.State = state
 		row := m.tasksRows(100)[2]
+		if len(row.spans) == 0 {
+			t.Fatalf("%s task row has no spans to check", state)
+		}
 		for _, s := range row.spans {
 			if s.colour != m.cfg.Tokens.Err {
 				t.Errorf("%s task row lost Err emphasis: %+v", state, row.spans)
@@ -1036,4 +1039,56 @@ func checkGoldenGlyphs(text string, ascii bool) error {
 		}
 	}
 	return nil
+}
+
+// TestVerificationProofPresentation binds the state marker and verification
+// summary to the same candidate proof. Equal unknown revisions are not proof.
+func TestVerificationProofPresentation(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name, want, colour, state string
+		change                    func(*viewmodel.Snapshot)
+	}{
+		{"both revisions unknown", "verification: passed (checked unknown)", "", "◌ ready, unverified", func(s *viewmodel.Snapshot) { s.Candidate.Commit = ""; s.Verification.CandidateCommit = "" }},
+		{"checked revision unknown", "mismatch: checks ran against unknown — candidate is ccccccc", "err", "◌ ready, unverified", func(s *viewmodel.Snapshot) { s.Verification.CandidateCommit = "" }},
+		{"candidate revision unknown", "mismatch: checks ran against ccccccc — candidate is unknown", "err", "◌ ready, unverified", func(s *viewmodel.Snapshot) { s.Candidate.Commit = "" }},
+		{"candidate absent", "verification: passed (checked ccccccc)", "", "◌ ready, unverified", func(s *viewmodel.Snapshot) { s.Candidate = nil }},
+		{"known mismatch", "mismatch: checks ran against aaaaaaa — candidate is ccccccc", "err", "◌ ready, unverified", func(s *viewmodel.Snapshot) { s.Verification.CandidateCommit = strings.Repeat("a", 40) }},
+		{"matching passed", "verified ccccccc", "ok", "● ready for review", func(*viewmodel.Snapshot) {}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := newModel(testConfig(fullCaps, t))
+			m.snap = richSnapshot()
+			tt.change(&m.snap)
+			rows := m.verificationLines()
+			if len(rows) == 0 {
+				t.Fatal("verification summary is absent")
+			}
+			wantColour := ""
+			switch tt.colour {
+			case "err":
+				wantColour = m.cfg.Tokens.Err
+			case "ok":
+				wantColour = m.cfg.Tokens.OK
+			}
+			if rows[0].text != tt.want || rows[0].colour != wantColour {
+				t.Errorf("verification summary = %+v, want %q colour %q", rows[0], tt.want, wantColour)
+			}
+			if got := stripANSI(renderSpans(fullCaps, m.stateSpans(), 100, "")); got != tt.state {
+				t.Errorf("state = %q, want %q", got, tt.state)
+			}
+			if tt.colour == "ok" {
+				if len(rows) != 2 || rows[1].text != "  build: passed" {
+					t.Errorf("verified check details lost: %+v", rows)
+				}
+			} else {
+				for _, row := range rows {
+					if row.colour == m.cfg.Tokens.OK || strings.HasPrefix(row.text, "verified ") {
+						t.Errorf("unproven summary claims verification: %+v", row)
+					}
+				}
+			}
+		})
+	}
 }
