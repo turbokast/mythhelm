@@ -953,3 +953,123 @@ func TestTerminalLossBeforeSnapshot(t *testing.T) {
 		})
 	}
 }
+
+// I06/I18: terminal loss preserves the action, while later parent cancellation
+// reaches it independently of an OS read that cannot yet return.
+func TestHeldReloadTerminalLossParentCancellation(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []ClientMode{ModeInspect, ModeLive} {
+		t.Run(fmt.Sprint(mode), func(t *testing.T) {
+			t.Parallel()
+			synctest.Test(t, func(t *testing.T) {
+				m := lifecycleModel(t, mode, "ready_for_review", "succeeded_native")
+				m.cfg.Caps.Motion = caps.MotionOff
+				held, reloadCancelled, reloadRelease := make(chan struct{}), make(chan struct{}), make(chan struct{})
+				releaseReload := sync.OnceFunc(func() { close(reloadRelease) })
+				m.loadSnapshot = func(ctx context.Context, _, _ string) (viewmodel.Snapshot, error) {
+					close(held)
+					<-ctx.Done()
+					close(reloadCancelled)
+					<-reloadRelease
+					return viewmodel.Snapshot{}, ctx.Err()
+				}
+				started := make(chan context.Context, 1)
+				actionCancelled, actionRelease, fallback := make(chan struct{}), make(chan struct{}), make(chan struct{})
+				releaseAction := sync.OnceFunc(func() { close(actionRelease); close(fallback) })
+				m.cfg.Actions.Apply = func(ctx context.Context, _, _ string, _, _ bool) (supervisor.Receipt, error) {
+					started <- ctx
+					select {
+					case <-ctx.Done():
+						close(actionCancelled)
+						<-actionRelease
+						return nil, ctx.Err()
+					case <-fallback:
+						return nil, nil
+					}
+				}
+				m.openDialog(dialogApply)
+				m.applyBranch = "approved"
+				cmd := m.confirmApply()
+				actCtx := <-started
+				signals := make(chan ClientSignal, 1)
+				m.cfg.Signals = signals
+				completed := make(chan ActionCompletion, 2)
+				m.cfg.OnHeadlessAction = func(x ActionCompletion) { completed <- x }
+				ctx, cancel := context.WithCancel(t.Context())
+				result := make(chan error, 1)
+				joined := false
+				go func() {
+					result <- runProgram(ctx, m, tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithoutRenderer())
+				}()
+				t.Cleanup(func() {
+					cancel()
+					releaseReload()
+					releaseAction()
+					if !joined {
+						<-result
+					}
+					cmd()
+				})
+				<-held
+				signals <- SignalTerminalLost
+				synctest.Wait()
+				select {
+				case <-m.viewDone:
+				default:
+					t.Error("held reload delayed logical view closure")
+				}
+				select {
+				case <-reloadCancelled:
+				default:
+					t.Error("terminal loss did not cancel the reload")
+				}
+				if actCtx.Err() != nil {
+					t.Error("terminal loss itself cancelled the action")
+				}
+				cancel()
+				synctest.Wait()
+				select {
+				case <-actionCancelled:
+				default:
+					t.Error("parent cancellation is blocked behind the held reload")
+				}
+				select {
+				case <-result:
+					joined = true
+					t.Error("Run returned before joining action and reload cleanup")
+				default:
+				}
+				releaseAction()
+				synctest.Wait()
+				select {
+				case out := <-completed:
+					if out.Kind != "apply" || !errors.Is(out.Err, context.Canceled) {
+						t.Errorf("completion=%+v", out)
+					}
+				default:
+					t.Error("held reload delayed headless action completion")
+				}
+				select {
+				case <-result:
+					joined = true
+					t.Error("Run abandoned the held reload after joining the action")
+				default:
+				}
+				releaseReload()
+				if !joined {
+					err := <-result
+					joined = true
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				if actual := cmd().(actionResultMsg); !errors.Is(actual.err, context.Canceled) {
+					t.Errorf("action result=%+v", actual)
+				}
+				if len(completed) != 0 {
+					t.Error("duplicate headless completion")
+				}
+			})
+		})
+	}
+}

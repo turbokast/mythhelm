@@ -169,31 +169,108 @@ func (m *Model) noticeRows(limit int) []line {
 	return rows
 }
 
-// reloadSnapshot rebuilds the snapshot once via the Load seam (a full scan
-// included), converging the advisory live fold. A missing database shows
-// the empty state as in Run; any other failure surfaces as the load error
-// with the previous snapshot kept.
-func (m *Model) reloadSnapshot() {
+// reloadCall is the one owned in-flight snapshot load. The worker publishes
+// snap and err before closing done, so it never blocks on a reader that quit.
+// seq and gen record the model's live-fold sequence and state generation at
+// dispatch, so applyReload can tell a result that newer state superseded.
+type reloadCall struct {
+	done    chan struct{}
+	cancel  context.CancelFunc
+	seq     int64
+	gen     uint64
+	snap    viewmodel.Snapshot
+	err     error
+	diff    Diff
+	diffErr error
+}
+
+type reloadResultMsg struct{ call *reloadCall }
+
+// startReload dispatches one snapshot load off the Update loop via the Load
+// seam (a full scan included). A tick while a load is in flight coalesces
+// into it: it starts nothing. The worker captures only immutable arguments.
+func (m *Model) startReload() tea.Cmd {
+	if m.reload != nil {
+		return nil
+	}
 	load := m.loadSnapshot
 	if load == nil {
 		load = viewmodel.Load
 	}
-	ctx := m.runCtx
-	if ctx == nil {
-		ctx = context.Background()
+	base := m.runCtx
+	if base == nil {
+		base = context.Background()
 	}
-	snap, err := load(ctx, m.cfg.StateDir, m.cfg.RunID)
-	if err != nil {
-		if errors.Is(err, journal.ErrNoDatabase) {
+	ctx, cancel := context.WithCancel(base)
+	r := &reloadCall{done: make(chan struct{}), cancel: cancel, seq: m.snap.LastRunSeq, gen: m.reloadGen}
+	m.reload = r
+	dir, runID := m.cfg.StateDir, m.cfg.RunID
+	loadDiff := m.loadDiff
+	go func() {
+		defer close(r.done)
+		r.snap, r.err = load(ctx, dir, runID)
+		if r.err == nil && r.snap.Attempt != nil && r.snap.Candidate != nil {
+			r.diff, r.diffErr = loadDiff(ctx, r.snap.Attempt.WorkspacePath, r.snap.Candidate.BaseRev, r.snap.Candidate.Commit)
+		}
+	}()
+	return func() tea.Msg {
+		<-r.done
+		return reloadResultMsg{call: r}
+	}
+}
+
+// applyReload lands a finished load on the Update loop, converging the
+// advisory live fold. A result is dropped when an action result landed
+// after its dispatch, or when a live fold advanced past what it read. A
+// stale missing-database result is dropped after a newer live event; other
+// errors remain visible because progress does not resolve corruption.
+func (m *Model) applyReload(r *reloadCall) {
+	if r != m.reload {
+		return
+	}
+	m.reload = nil
+	r.cancel()
+	if r.err != nil {
+		if errors.Is(r.err, journal.ErrNoDatabase) {
+			if r.gen != m.reloadGen || m.snap.LastRunSeq > r.seq {
+				return
+			}
 			m.empty = true
 			m.loadErr = nil
 			return
 		}
-		m.loadErr = err
+		m.loadErr = r.err
+		return
+	}
+	if r.gen != m.reloadGen {
+		return
+	}
+	if r.snap.Run.RunID != m.cfg.RunID {
+		m.loadErr = fmt.Errorf("tui: reload returned run %q, want %q", r.snap.Run.RunID, m.cfg.RunID)
+		return
+	}
+	if m.snap.LastRunSeq > r.seq && r.snap.LastRunSeq < m.snap.LastRunSeq {
 		return
 	}
 	m.empty = false
-	m.setSnapshot(ctx, snap)
+	m.installSnapshot(r.snap, r.diff, r.diffErr)
+}
+
+// cancelReload requests cancellation without waiting for filesystem I/O.
+// Run calls it after the program exits; it never runs inside Update.
+func (m *Model) cancelReload() {
+	if m.reload != nil {
+		m.reload.cancel()
+	}
+}
+
+// joinReload retains Run's ownership until the snapshot worker returns.
+// It runs after action cleanup, so an uninterruptible read cannot delay
+// parent cancellation or completion reporting for that independent operation.
+func (m *Model) joinReload() {
+	if m.reload != nil {
+		<-m.reload.done
+	}
 }
 
 // drainRecoverEvents folds any pending recover-feed events advisory, arming
@@ -215,11 +292,11 @@ func (m *Model) drainRecoverEvents() {
 }
 
 // onPollTick runs one coalesced tick: drain notices, fold recover events,
-// then rebuild the snapshot once.
-func (m *Model) onPollTick() {
+// then start one snapshot rebuild unless one is already in flight.
+func (m *Model) onPollTick() tea.Cmd {
 	m.drainNotices(time.Now().UTC())
 	m.drainRecoverEvents()
-	m.reloadSnapshot()
+	return m.startReload()
 }
 
 // finishRecoverFeed drains the recover feed remainder into the view and
