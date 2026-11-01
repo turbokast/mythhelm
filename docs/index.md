@@ -25,7 +25,7 @@ cells:
 <section class="landing-intro" aria-labelledby="landing-title">
   <h1 id="landing-title">Run the agents you already trust.<br> Know what they actually did.</h1>
   <p><a href="#status">What works, what’s in progress, what’s not yet</a></p>
-  <p><strong>Delivery target: at least 20× faster full-product delivery. Not demonstrated.</strong> Self-building is partial: requested Codex routes refused admission, and direct fallbacks, failed reviews and a CI failure delayed delivery. Read the <a href="{{ '/dogfood/0005-self-building-status.html' | relative_url }}">2026-10-31 self-building results and failures</a> and the <a href="{{ '/benchmarks.html' | relative_url }}">measurement and acceleration plan</a>.</p>
+  <p><strong>Delivery target: at least 20× faster full-product delivery. Not demonstrated.</strong> Self-building remains partial. The latest wave merged design and migration guidance, while implementation remained pending or blocked; five requested Codex routes refused before launch. Read the <a href="{{ '/dogfood/0006-self-building-delivery-wave.html' | relative_url }}">2026-11-01 delivery wave and failures</a>, the <a href="{{ '/dogfood/0005-self-building-status.html' | relative_url }}">earlier failed reviews</a> and the <a href="{{ '/benchmarks.html' | relative_url }}">measurement and acceleration plan</a>.</p>
 </section>
 
 <section id="quickstart" aria-labelledby="try-the-scripted-demo" markdown="1">
