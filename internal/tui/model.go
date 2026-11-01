@@ -387,7 +387,7 @@ func (m *Model) paneLines(id string, width int) []line {
 		rows := []line{m.paneHeader(paneEvidence, "EVIDENCE"), {text: m.ruleLine(width), colour: m.cfg.Tokens.Border}}
 		for _, row := range m.observatoryEvidence(width) {
 			if strings.HasPrefix(row.text, "entitlement:") {
-				for _, part := range strings.Split(lipgloss.NewStyle().Width(max(1, width)).Render(m.entitlementText()), "\n") {
+				for part := range strings.SplitSeq(lipgloss.NewStyle().Width(max(1, width)).Render(m.entitlementText()), "\n") {
 					rows = append(rows, m.paneFact(strings.TrimRight(part, " "), width))
 				}
 			} else {
@@ -414,7 +414,7 @@ func (m *Model) paneLines(id string, width int) []line {
 		var fitted []line
 		for _, row := range rows {
 			if len(row.spans) == 0 && lipgloss.Width(row.text) > width {
-				for _, part := range strings.Split(lipgloss.NewStyle().Width(max(1, width)).Render(row.text), "\n") {
+				for part := range strings.SplitSeq(lipgloss.NewStyle().Width(max(1, width)).Render(row.text), "\n") {
 					fitted = append(fitted, line{text: part, colour: row.colour})
 				}
 			} else {
@@ -436,15 +436,26 @@ func (m *Model) settledVerdict() bool {
 // missionNowNext retains the session's launch-acknowledgement guard when
 // composing the previously independent NOW producer.
 func (m *Model) missionNowNext(width int) []line {
-	if !m.dispatchWaiting() || m.snap.Run.State != "executing" {
+	ack := m.dispatchWaiting() && m.snap.Run.State == "executing"
+	cause := m.observatoryAttention() && m.snap.Run.Reason != ""
+	if !ack && !cause {
 		return m.nowNext(width)
 	}
+	current, next := m.observatoryNow(), m.observatoryNext()
+	if ack {
+		// Reuse the incumbent guard, so the new NOW cannot bypass the launch ack.
+		guarded := m.gateCompactActivity([]line{{text: "activity: " + m.activityText()}})
+		current = strings.TrimPrefix(guarded[0].text, "activity: ")
+	}
+	if cause {
+		next = "reason: " + cell(m.snap.Run.Reason) + "; " + next
+	}
 	if width < 80 || m.height < 10 {
-		return []line{m.observatoryLabel("now", dispatchWaitingText(m.cfg.Caps), width), m.observatoryLabel("next", m.observatoryNext(), width)}
+		return []line{m.observatoryLabel("now", current, width), m.observatoryLabel("next", next, width)}
 	}
 	leftWidth := (width - 2) / 2
-	left := m.observatoryLabel("NOW", dispatchWaitingText(m.cfg.Caps), leftWidth)
-	right := m.observatoryLabel("NEXT", m.observatoryNext(), width-leftWidth-2)
+	left := m.observatoryLabel("NOW", current, leftWidth)
+	right := m.observatoryLabel("NEXT", next, width-leftWidth-2)
 	left.spans = append(left.spans, span{text: strings.Repeat(" ", leftWidth-lipgloss.Width(left.text)+2), colour: m.cfg.Tokens.Text})
 	return []line{lineFromSpans(append(left.spans, right.spans...)...)}
 }
@@ -461,7 +472,7 @@ func (m *Model) observatoryView() string {
 		relocated := keys[0].spans
 		relocated[0].text = "next "
 		budget := max(0, m.width-lipgloss.Width(lineFromSpans(relocated...).text)-1)
-		relocated = append(relocated, span{text: " " + m.observatoryFit(m.observatoryNext(), budget), colour: m.cfg.Tokens.Text})
+		relocated = append(relocated, span{text: " " + m.observatoryFit(strings.TrimPrefix(now[1].text, "next "), budget), colour: m.cfg.Tokens.Text})
 		now[1] = lineFromSpans(relocated...)
 	}
 	notices := m.noticeRows(maxNoticeRows)
@@ -501,7 +512,7 @@ func (m *Model) observatoryView() string {
 		body = extras
 	} else {
 		var trunc []line
-		if m.focusPane == paneDetail && m.diff.Truncated && spare >= 2 {
+		if m.focusPane == paneDetail && m.diff.Truncated && m.snap.Attempt != nil && m.snap.Candidate != nil && spare >= 2 {
 			trunc = m.truncationNotice()
 			spare -= len(trunc)
 		}
