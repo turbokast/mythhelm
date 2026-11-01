@@ -10,6 +10,27 @@ binary archives. This register lists what is supported today and what is not,
 so expectations stay honest.
 Anything below marked experimental may change without notice.
 
+## Service shell staging
+
+`mythhelm supervisor status` starts the per-user service when needed. Successful
+startup on a fresh state root initialises its ledger and marks the root adopted.
+A first status lookup can therefore change that root, even though subsequent
+status requests are read-only and create no operation records.
+
+**The existing local `run`, `recover` and `apply` paths refuse an adopted root
+with `ownership_unresolved` (exit 6).** Their service clients have not landed yet.
+This also applies after explicit migration. The service shell currently exposes
+authenticated status; `run.start` and `attachment.open` remain unsupported.
+Existing unadopted data is not imported automatically: the shell can serve
+read-only `migration_required` status while explicit migration remains necessary.
+Migration is one-way; no command restores its backup.
+
+This is an incomplete product stage. The source-tested singleton, read-only
+status and observer/shutdown boundaries do not establish ordinary service-owned
+run dispatch or native ingestion. The self-building reports retain their dated
+snapshots: native admission refused before launch, authoring used direct agent
+sessions, and at least 20× faster full-product delivery remains unproven.
+
 ## Supported today
 
 - Headless `mythhelm run` with admission, supervision, verification, review,
@@ -174,7 +195,7 @@ not verified `NOT RUN`. What it does not cover is listed here; the
   sources; the settings inventory covers files only.
 - In S1, stop and recover run locally from the CLI; the supervisor service does not serve them. Routing them through journal ingest is a follow-up (#348).
 - Runs do not go through the supervisor service: `run`, `recover` and `apply` take a per-run owner lock, in the invoking process, and `mythhelm supervisor status` is the only production caller of the service's intents.
-- On a state root whose migration phase is `drained`, `imported` or `adopted` (that is, after `mythhelm migrate --apply --yes`), `run`, `recover` and `apply` are refused with `ownership_unresolved` (exit 6), so a migrated state directory cannot start or recover a run (#369). The migration is one-way: no command restores its backup (#320).
+- On a state root whose migration phase is `drained`, `imported` or `adopted` (including after explicit migration or successful fresh supervisor startup), `run`, `recover` and `apply` are refused with `ownership_unresolved` (exit 6), so a migrated state directory cannot start or recover a run (#369). The migration is one-way: no command restores its backup (#320).
 - Migration backups use `mythhelm.db.bak-migration-v<N>` plus a `.json` sidecar: `<N>` is the actual database schema at backup time. Preview reports its planned target for the binary's supported schema; it does not identify a backup already taken. See the [migration guide]({{ site.baseurl }}/user-guide.html#migrating-an-existing-state-directory) before applying or resuming a migration.
 - `stop` and `recover` rely on the owner-only (0700) state directory and do not authorise a caller further. A per-run capability token is a follow-up (#356).
 - `mythhelm recover` quarantines a run whose worker was killed outright (`worker_lost`, exit 6), and a quarantined run blocks every later run with `active_run_exists`; no command resolves it yet (#391).
