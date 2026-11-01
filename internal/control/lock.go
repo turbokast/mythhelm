@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -82,23 +83,30 @@ func runtimeBaseDir() string {
 // gates adoption (a live-but-released recorder under another root must not
 // veto, and pid reuse must not false-refuse). release is idempotent.
 func AcquireInstance(dir string) (func(), error) {
+	release, _, err := acquireInstance(dir)
+	return release, err
+}
+
+// acquireInstance is AcquireInstance returning the metadata it recorded, so
+// a lease carries the exact root and boot generation of its own flock.
+func acquireInstance(dir string) (func(), lockMetadata, error) {
 	path, err := LockPath()
 	if err != nil {
-		return nil, err
+		return nil, lockMetadata{}, err
 	}
 	if err := ensureLockDir(path); err != nil {
-		return nil, err
+		return nil, lockMetadata{}, err
 	}
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) //nolint:gosec // G304: path is built by LockPath, never from caller input
 	if err != nil {
-		return nil, fmt.Errorf("control: opening instance lock: %w", err)
+		return nil, lockMetadata{}, fmt.Errorf("control: opening instance lock: %w", err)
 	}
 	if err := lockFile(f); err != nil {
 		_ = f.Close()
 		if errors.Is(err, errLockHeld) {
-			return nil, classifyHeld(dir, path)
+			return nil, lockMetadata{}, classifyHeld(dir, path)
 		}
-		return nil, fmt.Errorf("control: taking instance lock: %w", err)
+		return nil, lockMetadata{}, fmt.Errorf("control: taking instance lock: %w", err)
 	}
 	release := sync.OnceFunc(func() {
 		_ = unlockFile(f)
@@ -108,18 +116,25 @@ func AcquireInstance(dir string) (func(), error) {
 	var gen uint64 = 1
 	// Read without waiting: this process holds the flock, so no writer is mid-record.
 	if meta, err := parseMetadata(path); err == nil {
+		// A generation past int64 would wrap or alias an earlier authority;
+		// refuse before the record changes (I18).
+		if meta.Generation >= math.MaxInt64 {
+			release()
+			return nil, lockMetadata{}, fmt.Errorf("control: instance generation %d is exhausted", meta.Generation)
+		}
 		gen = meta.Generation + 1
 	}
-	if err := writeMetadata(f, lockMetadata{
+	meta := lockMetadata{
 		Root:       root,
 		PID:        os.Getpid(),
 		StartedAt:  time.Now().UTC(),
 		Generation: gen,
-	}); err != nil {
-		release()
-		return nil, fmt.Errorf("control: recording instance lock: %w", err)
 	}
-	return release, nil
+	if err := writeMetadata(f, meta); err != nil {
+		release()
+		return nil, lockMetadata{}, fmt.Errorf("control: recording instance lock: %w", err)
+	}
+	return release, meta, nil
 }
 
 // classifyHeld reports why a lock held by a live supervisor refused dir:
