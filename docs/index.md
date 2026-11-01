@@ -25,7 +25,7 @@ cells:
 <section class="landing-intro" aria-labelledby="landing-title">
   <h1 id="landing-title">Run the agents you already trust.<br> Know what they actually did.</h1>
   <p><a href="#status">What works, what’s in progress, what’s not yet</a></p>
-  <p><strong>Delivery target: at least 20× faster full-product delivery. Not demonstrated.</strong> The product is unfinished. Native admission refused; authoring used direct fallbacks, not MYTHHELM-owned execution. Read the <a href="{{ '/dogfood/0009-service-shell-and-delivery-costs.html' | relative_url }}">self-use report: failed checks, missed defects, delivery waits and unknown measurements</a>.</p>
+  <p><strong>Delivery target: at least 20× faster full-product delivery. Not demonstrated.</strong> The product is unfinished. Native admission refused; authoring used direct fallbacks, not MYTHHELM-owned execution. Read the <a href="{{ '/dogfood/0010-observatory-and-ci-failures.html' | relative_url }}">self-use report: failed checks, missed defects, delivery waits and unknown measurements</a>.</p>
 </section>
 
 <section id="quickstart" aria-labelledby="try-the-scripted-demo" markdown="1">
