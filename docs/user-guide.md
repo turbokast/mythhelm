@@ -768,10 +768,20 @@ credentials and no network, and writes nothing. `mythhelm migrate --apply
 --yes` repeats the preview, then drains the legacy run owners (an owner
 still holding its lock at the deadline stops the migration with
 `ownership_unresolved`, exit 6), takes a backup next to the ledger as
-`mythhelm.db.bak-migration-v9` with a `.json` sidecar, and imports every
+`mythhelm.db.bak-migration-v<N>` with a `.json` sidecar, and imports every
 legacy run as a one-task run. Imported runs keep their IDs, billing
 posture and evidence, and stay unverified. Without `--yes`, `--apply`
 prints the preview and writes nothing.
+
+In the backup filename, `<N>` is the database's actual `PRAGMA user_version`
+read when the backup is taken; the sidecar records the same value as
+`schema_version`. For example, a database at schema 8 is backed up as
+`mythhelm.db.bak-migration-v8`, with sidecar
+`mythhelm.db.bak-migration-v8.json`. Preview's `backup_to` field reports its
+planned target using the schema supported by that binary. Read the recorded
+backup path and sidecar when resuming; do not infer the saved database's
+version from the preview target. This naming contract does not enable service
+run launch or qualify a native route.
 
 Preview, including `--apply` without `--yes`, takes no migration locks
 and writes nothing. Once `--apply --yes` starts the migration, it holds
