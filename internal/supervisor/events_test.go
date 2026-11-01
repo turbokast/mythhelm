@@ -283,7 +283,7 @@ func sourceEmissions(t *testing.T, filename string, src any, catalog map[string]
 						}
 					}
 				}
-				if !eventForm || len(n.Elts) == 0 {
+				if len(n.Elts) == 0 {
 					break
 				}
 				var typExpr, schemaExpr ast.Expr
@@ -297,6 +297,12 @@ func sourceEmissions(t *testing.T, filename string, src any, catalog map[string]
 								schemaExpr = kv.Value
 							}
 						}
+					}
+				}
+				if !eventForm {
+					name, known := stringValue(typExpr, 0)
+					if typExpr == nil || (schemaExpr == nil && (!known || !internalCanonicalType(name))) {
+						break
 					}
 				}
 				typ, ok := stringValue(typExpr, 0)
@@ -589,6 +595,8 @@ func emit(){_=journal.Event{SchemaVersion:2,Type:serviceEventType}}
 		}
 	}
 	cases := []struct{ name, body string }{
+		{"unrecognised record form", `func emit(){_=other.Record{SchemaVersion:2,Type:"service.adopted"}}`},
+		{"unqualified event form", `func emit(){_=Event{SchemaVersion:2,Type:"service.diagnostic"}}`},
 		{"internal via public", `func emit(){_,_=newEvent(r,"","","service.diagnostic",nil,now)}`},
 		{"internal alias via public", `const hiddenEventType="service.adopted";func emit(){_,_=newEvent(r,"","",hiddenEventType,nil,now)}`},
 		{"unknown internal", `func emit(){_=journal.Event{SchemaVersion:2,Type:"service.extra"}}`},
