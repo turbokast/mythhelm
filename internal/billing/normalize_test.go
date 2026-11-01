@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/adapter"
-	"github.com/turbokast/mythhelm/internal/qualify"
+	"github.com/turbokast/mythhelm/internal/datum"
 )
 
 var t0 = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
@@ -89,7 +89,7 @@ func TestNormalizeIdentityLessDeltaEstimated(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := totalOf(t, n, tokens)
-	if st.Label != qualify.Estimated {
+	if st.Label != datum.Estimated {
 		t.Fatalf("label = %q, want estimated", st.Label)
 	}
 	wantTotal(t, st, "14")
@@ -103,7 +103,7 @@ func TestNormalizeMissingScopeUnknown(t *testing.T) {
 	}
 	wantTotal(t, totalOf(t, n, tokens), "10")
 	st := totalOf(t, n, ScopeKey{Scope: "retail-equivalent"})
-	if st.Total != nil || st.Label != qualify.DatumUnknown {
+	if st.Total != nil || st.Label != datum.Unknown {
 		t.Fatalf("missing scope = %+v, want nil total and unknown label", st)
 	}
 }
@@ -197,11 +197,11 @@ func TestNormalizeLabelsDerive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for k, want := range map[ScopeKey]qualify.DatumLabel{
-		{"retail-equivalent", "USD", "native-reported"}: qualify.Estimated,
-		tokens:                             qualify.Reported,
-		{"x", "tokens", "native-reported"}: qualify.Estimated,
-		{Scope: "gone"}:                    qualify.DatumUnknown,
+	for k, want := range map[ScopeKey]datum.Label{
+		{"retail-equivalent", "USD", "native-reported"}: datum.Estimated,
+		tokens:                             datum.Reported,
+		{"x", "tokens", "native-reported"}: datum.Estimated,
+		{Scope: "gone"}:                    datum.Unknown,
 	} {
 		if got := totalOf(t, n, k).Label; got != want {
 			t.Errorf("%+v label = %q, want %q", k, got, want)
@@ -238,7 +238,7 @@ func TestSplitUsageFirstRouteSplits(t *testing.T) {
 
 func TestSplitUsageMissingFieldUnknown(t *testing.T) {
 	st := SplitUsage("claude-code", adapter.TokenUsage{Input: new(int64(1)), Output: new(int64(2))})
-	if st.Total != nil || st.Label != qualify.DatumUnknown {
+	if st.Total != nil || st.Label != datum.Unknown {
 		t.Fatalf("partial counts = %+v, want nil total and unknown label", st)
 	}
 	if c := st.Components["output"]; c == nil || *c != "2" {
@@ -270,7 +270,7 @@ func TestNormalizeRepeatedDeltaConflictRejected(t *testing.T) {
 
 func TestSplitUsageNegativeCountUnknown(t *testing.T) {
 	st := SplitUsage("claude-code", adapter.TokenUsage{Input: new(int64(-1)), Output: new(int64(1)), CacheRead: new(int64(0)), CacheCreation: new(int64(0))})
-	if st.Total != nil || st.Label != qualify.DatumUnknown {
+	if st.Total != nil || st.Label != datum.Unknown {
 		t.Fatalf("negative input = %+v, want nil total and unknown label", st)
 	}
 	neg := SplitUsage("claude-code", adapter.TokenUsage{Input: new(int64(1)), Output: new(int64(-2)), CacheRead: new(int64(0)), CacheCreation: new(int64(0))})

@@ -226,3 +226,59 @@ func TestHoldRollsBackWithItsTransaction(t *testing.T) {
 		t.Fatalf("hold after a rollback: %v", err)
 	}
 }
+
+// The legacy trusted API keeps its custom evaluator and owner behaviour;
+// the fixed service producer does not inherit either override.
+func TestLegacyQuotaCustomEvaluatorAndOwner(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		admit bool
+		owner string
+	}{
+		{"custom admits early", true, "custom_owner"},
+		{"custom refuses due", false, "custom_owner"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			j, runID := journalWithRun(t)
+			at := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339Nano)
+			if tc.admit {
+				at = time.Now().UTC().Format(time.RFC3339Nano)
+			}
+			if err := j.Transact(t.Context(), func(tx *sql.Tx) error { return journal.SetBucketExhausted(t.Context(), tx, "bucket", at, nil) }); err != nil {
+				t.Fatal(err)
+			}
+			called := false
+			r := admission.NewJournalReserver(billing.BuiltInCeilings(), func(row journal.BucketRow, now time.Time) (bool, time.Duration, bool) {
+				called = true
+				if row.Bucket != "bucket" || row.ExhaustedAt != at || now.IsZero() {
+					t.Fatalf("evaluator input %+v %v", row, now)
+				}
+				return tc.admit, 42 * time.Second, false
+			})
+			var id string
+			err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+				var err error
+				id, err = r.Reserve(t.Context(), tx, runID, "bucket", tc.owner)
+				return err
+			})
+			if !called {
+				t.Fatal("custom evaluator not called")
+			}
+			if !tc.admit {
+				var refusal *admission.ExhaustedError
+				if !errors.As(err, &refusal) || refusal.Wait != 42*time.Second || reservationRows(t, j, runID) != 0 {
+					t.Fatalf("custom refusal = %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			row, err := j.Reservation(t.Context(), id)
+			if err != nil || row.Owner != tc.owner || row.Quantity != "unknown" {
+				t.Fatalf("custom hold = %+v %v", row, err)
+			}
+		})
+	}
+}

@@ -18,10 +18,6 @@ import (
 // is a local claim, never a statement about the provider's quota (I10).
 const ReservationNote = "local coordination only — not provider availability"
 
-// reservationGrace is how long a hold outlives the execution ceiling before
-// it can be treated as abandoned.
-const reservationGrace = time.Hour
-
 // MaxBucketRetries is how many scheduled retries an exhausted bucket gets
 // before its schedule is spent (AC-6.2).
 const MaxBucketRetries = 3
@@ -104,26 +100,36 @@ func NewJournalReserver(c billing.Ceilings, evaluate BucketEvaluator) Reserver {
 
 func (r journalReserver) Reserve(ctx context.Context, tx *sql.Tx, runID, bucket, owner string) (string, error) {
 	now := time.Now().UTC()
-	id := ids.New("rsv")
 	if err := r.checkBucket(ctx, tx, bucket, now); err != nil {
 		return "", err
 	}
-	var held int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM reservations WHERE run_id = ? AND status = 'held'`, runID).Scan(&held); err != nil {
-		return "", fmt.Errorf("counting held reservations of %s: %w", runID, err)
+	// Preserve the trusted legacy owner seam. Fixed service storage always
+	// derives its owner; its closed input cannot carry this override.
+	if owner != runID {
+		var held int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM reservations WHERE run_id = ? AND status = 'held'`, runID).Scan(&held); err != nil {
+			return "", fmt.Errorf("counting held reservations of %s: %w", runID, err)
+		}
+		if held > 0 {
+			return "", fmt.Errorf("%w: %s", ErrDuplicateHold, runID)
+		}
+		id := ids.New("rsv")
+		if err := journal.InsertReservation(ctx, tx, journal.ReservationRow{
+			ReservationID: id, RunID: runID, Bucket: bucket, Scope: bucket, Owner: owner,
+			Quantity: "unknown", Status: "held", CreatedAt: now.Format(time.RFC3339Nano),
+			ExpiresAt: now.Add(r.c.Execution + time.Hour).Format(time.RFC3339Nano),
+		}); err != nil {
+			return "", err
+		}
+		return id, nil
 	}
-	if held > 0 {
-		return "", fmt.Errorf("%w: %s", ErrDuplicateHold, runID)
+	id, err := journal.InsertRunQuotaHold(ctx, tx, journal.QuotaReservationInput{
+		RunID: runID, Bucket: bucket, ExecutionNanos: int64(r.c.Execution), ObservedAt: now,
+	})
+	if errors.Is(err, journal.ErrDuplicateQuotaHold) {
+		return "", fmt.Errorf("%w: %w", ErrDuplicateHold, err)
 	}
-	if err := journal.InsertReservation(ctx, tx, journal.ReservationRow{
-		ReservationID: id, RunID: runID, Bucket: bucket, Scope: bucket, Owner: owner,
-		Quantity: "unknown", Status: "held",
-		ExpiresAt: now.Add(r.c.Execution + reservationGrace).Format(time.RFC3339Nano),
-		CreatedAt: now.Format(time.RFC3339Nano),
-	}); err != nil {
-		return "", err
-	}
-	return id, nil
+	return id, err
 }
 
 // checkBucket refuses new model work on a bucket that is live in

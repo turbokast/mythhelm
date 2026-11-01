@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/turbokast/mythhelm/internal/datum"
 )
 
 // Progress is the v2 §4.2 qualification scale (AC-2.2).
@@ -37,15 +39,15 @@ const (
 )
 
 // DatumLabel is the v2 §7.3 data provenance label (AC-5.2).
-type DatumLabel string
+type DatumLabel = datum.Label
 
 // Datum provenance labels.
 const (
-	Reported     DatumLabel = "reported"
-	Observed     DatumLabel = "observed"
-	Estimated    DatumLabel = "estimated"
-	UserDeclared DatumLabel = "user-declared"
-	DatumUnknown DatumLabel = "unknown"
+	Reported     DatumLabel = datum.Reported
+	Observed     DatumLabel = datum.Observed
+	Estimated    DatumLabel = datum.Estimated
+	UserDeclared DatumLabel = datum.UserDeclared
+	DatumUnknown DatumLabel = datum.Unknown
 )
 
 // unknownString marks unestablished string data (I09).
