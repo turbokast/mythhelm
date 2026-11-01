@@ -192,3 +192,7 @@
 ### Task14 viewport follow-up for Task15
 
 Source496da0a preserves the six producer paths and existing key/selection/evidence gates. Single/column view body budgets now reserve an active filter; column chrome derives cached actual header/status row counts. Compact retains five mandatory offer rows, capped must-see notices, then filter before optional detail. A filter cannot displace a notice at an impossible height. Existing compact footer remains absent until Task15 final composition. Real View regression fixtures cover nine long-pane sizes and compact notice priority; full race349.7s and all six gates pass. Prior a192 filter regression and a9 notice-priority regression remain rejected attempts; historical controls retain their original source bindings. Publication/CI/merge are still pending.
+
+### Task14 actual publication checkpoint
+
+PR #562 submits exact source496da0a with all-six local gates and independent code/architecture Ready. Actual final-head CI and merge are still required before Task15 implementation. The producer and viewport semantics above are unchanged; final publication bookkeeping introduces no additional source path.
