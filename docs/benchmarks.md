@@ -34,6 +34,20 @@ scope, the target is elapsed delivery time no greater than baseline time divided
 by 20. Shipping a smaller scope, counting more PRs, or excluding failures and waits
 does not establish it. The controlled-comparison requirements below still apply.
 
+The [latest integration report](dogfood/0007-integration-delivery.md) fixes the
+snapshot at **2026-11-01 02:48:50 UTC**, main `4cc5315a60055e239db7fb2fec5edfa4330cfb25`.
+Eight reported PRs were merged, including packaged lifecycle tests and internal
+ownership entrypoints. Native admission still refused before launch; work used
+direct-session fallbacks. Production service dispatch and the full TUI remain
+unfinished. A stale PR base caused DCO and scope failures before correction.
+
+Two accepted integration records observed **1,796.336 seconds** (TUI Task 10) and
+**2,155.621 seconds** (service Task 4), including coordination, verification,
+review, CI waiting and integration. They are two tasks in the same repository,
+not independent samples or a matched comparison. Native/review phase durations,
+model/version and token usage remain unknown; later defect observation is open.
+No causal speedup, token saving or 20× result follows from these observations.
+
 The [2026-11-01 delivery wave](dogfood/0006-self-building-delivery-wave.md)
 records the accepted design and migration guidance, pending implementation, a
 contract-blocked codec and five refused native task launches with direct fallbacks.
