@@ -249,8 +249,8 @@ func (m *Model) verificationLines() []line {
 	checks := v.CandidateCommit
 	if m.snap.Candidate != nil && v.CandidateCommit != m.snap.Candidate.Commit {
 		return []line{{
-			text:   "checks ran against " + shortRev(cell(checks)) + " " + dashGlyph(m.cfg.Caps) + " candidate is " + shortRev(cell(m.snap.Candidate.Commit)),
-			colour: t.Warning,
+			text:   "mismatch: checks ran against " + shortRev(cell(checks)) + " " + dashGlyph(m.cfg.Caps) + " candidate is " + shortRev(cell(m.snap.Candidate.Commit)),
+			colour: t.Err,
 		}}
 	}
 	if m.snap.Candidate == nil {
@@ -370,8 +370,8 @@ func (m *Model) truncationNotice() []line {
 	cmd := "git -C \"" + cell(m.snap.Attempt.WorkspacePath) + "\" diff " +
 		cell(m.snap.Candidate.BaseRev) + " " + cell(m.snap.Candidate.Commit)
 	return []line{
-		{text: first, colour: m.cfg.Tokens.Warning},
-		{text: "`" + cmd + "`", colour: m.cfg.Tokens.Warning},
+		{text: first, colour: m.cfg.Tokens.TextMuted},
+		{text: "`" + cmd + "`", colour: m.cfg.Tokens.TextMuted},
 	}
 }
 

@@ -24,7 +24,7 @@ var (
 // contrast in supported colour modes).
 const minContrast = 4.5
 
-// Tokens is the declarative theme format: hex colours plus a border style.
+// Tokens is the declarative theme format: nine hex colours.
 // It carries no code paths (I11) and no font requirement (I13).
 type Tokens struct {
 	Surface       string `toml:"surface"`
@@ -34,7 +34,6 @@ type Tokens struct {
 	Focus         string `toml:"focus"`
 	Attention     string `toml:"attention"`
 	OK            string `toml:"ok"`
-	Warning       string `toml:"warning"`
 	Err           string `toml:"err"`
 	Border        string `toml:"border"`
 }
@@ -54,7 +53,7 @@ func BuiltIn(name string) (Tokens, error) {
 	}
 }
 
-// maxThemeBytes bounds theme files: tokens are ten short lines, so anything
+// maxThemeBytes bounds theme files: tokens are nine short lines, so anything
 // larger is not a theme.
 const maxThemeBytes = 64 << 10
 
@@ -91,7 +90,7 @@ func parse(raw []byte) (Tokens, error) {
 	return t, nil
 }
 
-// Validate checks hex shape, border style and text/surface contrast.
+// Validate checks every hex colour and the required contrast pairs.
 // Every failure names the offending key.
 func (t Tokens) Validate() error {
 	colours := []struct {
@@ -105,30 +104,37 @@ func (t Tokens) Validate() error {
 		{"focus", t.Focus},
 		{"attention", t.Attention},
 		{"ok", t.OK},
-		{"warning", t.Warning},
 		{"err", t.Err},
+		{"border", t.Border},
 	}
 	for _, c := range colours {
 		if !isHexColour(c.value) {
 			return fmt.Errorf("%w: %s must be #rrggbb, got %q", ErrInvalidTheme, c.key, c.value)
 		}
 	}
-	if t.Border != "rounded" && t.Border != "ascii" {
-		return fmt.Errorf("%w: border must be rounded or ascii, got %q", ErrInvalidTheme, t.Border)
-	}
 	pairs := []struct {
 		fgKey, bgKey string
 		fg, bg       string
+		minimum      float64
 	}{
-		{"text", "surface", t.Text, t.Surface},
-		{"text", "surface_raised", t.Text, t.SurfaceRaised},
-		{"text_muted", "surface", t.TextMuted, t.Surface},
-		{"text_muted", "surface_raised", t.TextMuted, t.SurfaceRaised},
+		{"text", "surface", t.Text, t.Surface, minContrast},
+		{"text", "surface_raised", t.Text, t.SurfaceRaised, minContrast},
+		{"text_muted", "surface", t.TextMuted, t.Surface, minContrast},
+		{"text_muted", "surface_raised", t.TextMuted, t.SurfaceRaised, minContrast},
+		{"attention", "surface", t.Attention, t.Surface, minContrast},
+		{"attention", "surface_raised", t.Attention, t.SurfaceRaised, minContrast},
+		{"err", "surface", t.Err, t.Surface, minContrast},
+		{"err", "surface_raised", t.Err, t.SurfaceRaised, minContrast},
+		// Paper OK does not meet text contrast on raised cards; renderers must
+		// keep it on the base surface. Focus is a one-cell nontext marker.
+		{"ok", "surface", t.OK, t.Surface, minContrast},
+		{"focus", "surface", t.Focus, t.Surface, 3},
+		{"focus", "surface_raised", t.Focus, t.SurfaceRaised, 3},
 	}
 	for _, p := range pairs {
-		if r := contrastRatio(p.fg, p.bg); r < minContrast {
+		if r := contrastRatio(p.fg, p.bg); r < p.minimum {
 			return fmt.Errorf("%w: %s on %s contrast %.2f below %.1f",
-				ErrInvalidTheme, p.fgKey, p.bgKey, r, minContrast)
+				ErrInvalidTheme, p.fgKey, p.bgKey, r, p.minimum)
 		}
 	}
 	return nil
