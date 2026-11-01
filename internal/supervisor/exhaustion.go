@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/admission"
+	"github.com/turbokast/mythhelm/internal/billing"
 	"github.com/turbokast/mythhelm/internal/journal"
 )
 
@@ -36,32 +37,7 @@ func RetrySchedule(resetAt *time.Time, retriesUsed int) (wait time.Duration, giv
 // cannot read refuses, so a damaged row never admits (I02). It has no
 // effect on the row; the caller counts an admission.
 func EvaluateBucket(row journal.BucketRow, now time.Time) (admit bool, wait time.Duration, giveUp bool) {
-	var reset *time.Time
-	if row.ResetAt != nil {
-		t, err := time.Parse(time.RFC3339Nano, *row.ResetAt)
-		if err != nil {
-			return false, 0, false
-		}
-		reset = &t
-	}
-	backoff, giveUp := RetrySchedule(reset, int(row.RetriesUsed))
-	if giveUp {
-		return false, 0, true
-	}
-	next := time.Time{}
-	if reset != nil {
-		next = *reset
-	} else {
-		exhausted, err := time.Parse(time.RFC3339Nano, row.ExhaustedAt)
-		if err != nil {
-			return false, 0, false
-		}
-		next = exhausted.Add(backoff)
-	}
-	if now.Before(next) {
-		return false, next.Sub(now), false
-	}
-	return true, 0, false
+	return billing.EvaluateQuotaSchedule(row.ExhaustedAt, row.ResetAt, row.RetriesUsed, now)
 }
 
 // HandleExhaustion records the exhausted bucket, blocks the run with reason

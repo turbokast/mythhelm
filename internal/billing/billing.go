@@ -8,7 +8,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/turbokast/mythhelm/internal/qualify"
+	"github.com/turbokast/mythhelm/internal/datum"
 )
 
 // Reading is one ingested counter value. Exactly one of Cumulative or Delta
@@ -27,7 +27,7 @@ type Reading struct {
 // a nil Components member is unknown.
 type ScopeTotal struct {
 	Total      *string
-	Label      qualify.DatumLabel
+	Label      datum.Label
 	Components map[string]*string
 }
 

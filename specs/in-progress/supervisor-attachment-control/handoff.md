@@ -103,6 +103,16 @@ Draft dependent constraint: Task 4's proposed owner is ownership evidence only; 
 
 <!-- pending -->
 
+## Task 29 — Extract the fixed pure quota policy and storage producer
+
+- **Produces**: `billing.EvaluateQuotaSchedule`, closed `journal.QuotaReservationInput`, `QuotaRefusal`, `ErrDuplicateQuotaHold`, `ReserveRunQuota` and `InsertRunQuotaHold` with the exact design §3.2 signatures. No Task4 owner interface is consumed.
+- **Policy order**: The pure evaluator preserves the legacy evaluator's retry-ceiling precedence; the transaction producer, like legacy admission, clears a passed authoritative reset before evaluating the schedule, including after spent retries. Negative retry counts refuse without indexing; large int64 counts cannot wrap into a fresh schedule.
+- **Storage**: ReserveRunQuota reads the current bucket and atomically clears/counts scheduling plus checks duplicates/inserts. Inputs are trusted internal clock/envelope data, not authority or a wire contract; Task30 must derive them from the verified binding and a fresh clock inside its transaction. Failed storage or later admission failure must propagate out of the enclosing transaction so all effects roll back.
+- **Legacy seam**: Admission retains its custom evaluator and custom owner behavior. The ordinary RunID-owned path shares InsertRunQuotaHold; custom owners retain the legacy insert branch. Both paths keep unknown quantity and execution-plus-one-hour expiry; legacy duplicate errors preserve the checked-storage cause.
+- **Dependency correction**: Existing billing→qualify→journal imports made journal→billing cyclic. The shared `internal/datum` label leaf removes that edge, with `qualify.DatumLabel` retained as a source-compatible alias and existing provenance names/values unchanged. Normalization behavior remains covered by its existing tests.
+- **Evidence**: Named schedule/SQLite/authority acceptance tests include due/future reset, spent schedule, duplicate hold, exact row fields and rollback after insert/later failure. Always-admit policy, duplicate-check omission, fixed-policy bypass and invented-zero quantity mutants were each observed failing; restored code passes the targeted race suite.
+- **For Task30**: The producer is intentionally low-level. Its acceptance line “TestServiceAdmissionAtomicStorage injects each admission and arming statement/projection failure and observes complete rollback” owns wiring these effects into service admission. No provider availability, permission grant, wire method or process execution is established here.
+
 ## Task 20 — Prove ordinary production composition end to end
 
 <!-- pending -->

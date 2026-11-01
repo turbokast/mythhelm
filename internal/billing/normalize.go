@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/turbokast/mythhelm/internal/adapter"
-	"github.com/turbokast/mythhelm/internal/qualify"
+	"github.com/turbokast/mythhelm/internal/datum"
 )
 
 const retailEquivalentScope = "retail-equivalent"
@@ -44,7 +44,7 @@ func Normalize(rs []Reading, expected []string, applied map[EventID]bool) (Norma
 	}
 	for _, s := range expected {
 		if !scopes[s] {
-			out.Scopes[ScopeKey{Scope: s}] = ScopeTotal{Label: qualify.DatumUnknown}
+			out.Scopes[ScopeKey{Scope: s}] = ScopeTotal{Label: datum.Unknown}
 		}
 	}
 	return out, nil
@@ -111,7 +111,7 @@ func totalFor(k ScopeKey, g []Reading, applied map[EventID]bool) (ScopeTotal, er
 	var total string
 	switch {
 	case base == nil && len(deltas) == 0:
-		return ScopeTotal{Label: qualify.DatumUnknown}, nil
+		return ScopeTotal{Label: datum.Unknown}, nil
 	case base == nil:
 		total = sumDecimals(deltas)
 	case len(deltas) == 0:
@@ -120,9 +120,9 @@ func totalFor(k ScopeKey, g []Reading, applied map[EventID]bool) (ScopeTotal, er
 		total = sumDecimals(append([]string{*base.Cumulative}, deltas...))
 	}
 
-	label := qualify.Reported
+	label := datum.Reported
 	if estimated {
-		label = qualify.Estimated
+		label = datum.Estimated
 	}
 	return ScopeTotal{Total: &total, Label: label}, nil
 }
@@ -172,7 +172,7 @@ var splitRoutes = map[string]bool{"claude-code": true}
 // (v2 §7.3). A nil or negative count is unknown: the total is unknown unless
 // all four counts are reported.
 func SplitUsage(route string, u adapter.TokenUsage) ScopeTotal {
-	st := ScopeTotal{Label: qualify.DatumUnknown, Components: map[string]*string{
+	st := ScopeTotal{Label: datum.Unknown, Components: map[string]*string{
 		"output": nil, "cache_read": nil, "cache_creation": nil, "reasoning": nil,
 	}}
 	in, out, cr, cc := reported(u.Input), reported(u.Output), reported(u.CacheRead), reported(u.CacheCreation)
@@ -180,7 +180,7 @@ func SplitUsage(route string, u adapter.TokenUsage) ScopeTotal {
 		sum := new(big.Int).Add(big.NewInt(*in), big.NewInt(*out))
 		sum.Add(sum, big.NewInt(*cr)).Add(sum, big.NewInt(*cc))
 		text := sum.String()
-		st.Total, st.Label = &text, qualify.Reported
+		st.Total, st.Label = &text, datum.Reported
 	}
 	if splitRoutes[route] {
 		st.Components["output"] = countText(out)
