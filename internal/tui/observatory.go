@@ -78,7 +78,8 @@ func (m *Model) observatoryHeader(width int) line {
 		state = []span{{text: unknownGlyph(m.cfg.Caps), colour: t.TextMuted}, {text: " unsupervised", colour: t.Text}}
 	}
 	clock := m.observatoryElapsed()
-	suffix := append(state, span{text: " ", colour: t.Text}, span{text: clock, colour: t.Text, underline: clock == "unknown"})
+	state = append(state, span{text: " ", colour: t.Text}, span{text: clock, colour: t.Text, underline: clock == "unknown"})
+	suffix := state
 	var identity []span
 	if width >= 140 {
 		budget := max(1, (min(width/2, width-lipgloss.Width(lineFromSpans(prefix...).text)-lipgloss.Width(lineFromSpans(suffix...).text)-5)-6)/3)
@@ -98,7 +99,8 @@ func (m *Model) observatoryHeader(width int) line {
 		return lineFromSpans(span{text: m.observatoryFit(lineFromSpans(suffix...).text, width), colour: t.Text})
 	}
 	title := observatoryValue(m.snap.Goal)
-	spans := append(prefix, span{text: m.observatoryFit(title, width-fixed), colour: t.Text, bold: true, underline: title == "unknown"}, span{text: " ", colour: t.Text})
+	prefix = append(prefix, span{text: m.observatoryFit(title, width-fixed), colour: t.Text, bold: true, underline: title == "unknown"}, span{text: " ", colour: t.Text})
+	spans := prefix
 	spans = append(spans, suffix...)
 	if len(identity) > 0 {
 		gap := max(2, width-lipgloss.Width(lineFromSpans(spans...).text)-lipgloss.Width(lineFromSpans(identity...).text))
@@ -247,7 +249,8 @@ func (m *Model) nowNext(width int) []line {
 	leftWidth := (width - 2) / 2
 	left := m.observatoryLabel("NOW", m.observatoryNow(), leftWidth)
 	right := m.observatoryLabel("NEXT", m.observatoryNext(), width-leftWidth-2)
-	spans := append(left.spans, span{text: strings.Repeat(" ", leftWidth-lipgloss.Width(left.text)+2), colour: m.cfg.Tokens.Text})
+	left.spans = append(left.spans, span{text: strings.Repeat(" ", leftWidth-lipgloss.Width(left.text)+2), colour: m.cfg.Tokens.Text})
+	spans := left.spans
 	return []line{lineFromSpans(append(spans, right.spans...)...)}
 }
 
