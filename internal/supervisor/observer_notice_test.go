@@ -202,3 +202,51 @@ func TestObserverNoticeInventoryRefusesMissingEntry(t *testing.T) {
 		t.Fatal("deleting reservation inventory treatment was invisible")
 	}
 }
+
+func TestOperationCauseSurvivesDiagnosticFailure(t *testing.T) {
+	for _, operation := range []string{"freeze", "ingest"} {
+		t.Run(operation, func(t *testing.T) {
+			dir := t.TempDir()
+			j, err := journal.Open(t.Context(), dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := j.Close(); err != nil {
+				t.Fatal(err)
+			}
+			sink := NewObserverSink()
+			reader, err := sink.OpenReader()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = reader.Close() }()
+			p := &pipeline{j: j, d: admission.Decision{RunID: "run_notice", AttemptID: "att_notice", StateDir: dir}, prod: NewProducer("sup_notice", 7), h: Hooks{Observer: sink}}
+			switch operation {
+			case "freeze":
+				// Invalid admitted candidate metadata is the operation failure;
+				// the independently closed journal makes its diagnostic fail.
+				err = p.freezeCandidate(t.Context())
+			case "ingest":
+				// Attempt lookup and subsequent diagnostic append both fail on
+				// the closed journal; neither error may replace the other.
+				err = p.watch(t.Context(), AttemptRef{StateDir: dir, RunID: "run_notice", AttemptID: "att_notice"}, make(chan struct{}))
+			}
+			joined, ok := err.(interface{ Unwrap() []error })
+			if !ok || len(joined.Unwrap()) != 2 {
+				t.Fatalf("%s lost operation or diagnostic cause: %v", operation, err)
+			}
+			causes := joined.Unwrap()
+			if operation == "freeze" && !strings.Contains(causes[0].Error(), "invalid candidate metadata") {
+				t.Fatalf("freeze operation cause=%v", causes[0])
+			}
+			var diagnosticErr *v2contract.ControlError
+			if !errors.As(causes[1], &diagnosticErr) || diagnosticErr.Code != v2contract.CodePersistenceUnavailable || !strings.Contains(causes[1].Error(), "database is closed") {
+				t.Fatalf("diagnostic failure=%v", causes[1])
+			}
+			batch, err := reader.DrainHints(16)
+			if err != nil || len(batch.Codes) != 0 {
+				t.Fatalf("failed diagnostics hinted: %v %v", batch, err)
+			}
+		})
+	}
+}

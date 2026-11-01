@@ -442,3 +442,40 @@ func TestRootCancellationStartsShutdownBeforeTransportJoin(t *testing.T) {
 	default:
 	}
 }
+
+// Injected resolver failures exercise the same path Run uses with real platform
+// resolvers. They do not qualify an unavailable OS or native endpoint setup.
+func TestServiceResolverFailureHasNoStateEffects(t *testing.T) {
+	for _, failTransport := range []bool{true, false} {
+		t.Run(fmt.Sprintf("transport_%v", failTransport), func(t *testing.T) {
+			root := isolatedRoot(t)
+			sentinel := errors.New("resolver unavailable")
+			endpointCalled := false
+			err := runResolved(t.Context(), root, func() (control.Transport, error) {
+				if failTransport {
+					return nil, sentinel
+				}
+				return control.DefaultTransport()
+			}, func() (string, error) { endpointCalled = true; return "", sentinel })
+			if !errors.Is(err, sentinel) {
+				t.Fatalf("resolver failure=%v", err)
+			}
+			if endpointCalled == failTransport {
+				t.Fatal("resolver ordering changed")
+			}
+			if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("failed preflight created state root: %v", err)
+			}
+		})
+	}
+	root := isolatedRoot(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	err := runResolved(ctx, root, func() (control.Transport, error) { t.Fatal("cancelled startup resolved transport"); return nil, nil }, func() (string, error) { t.Fatal("cancelled startup resolved endpoint"); return "", nil })
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled preflight=%v", err)
+	}
+	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("cancelled preflight created root: %v", err)
+	}
+}

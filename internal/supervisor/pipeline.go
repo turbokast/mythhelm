@@ -575,7 +575,7 @@ func (p *pipeline) attempt(ctx context.Context) error {
 		// A worker that cannot be identified is lost and never signalled
 		// (AC-10.3).
 		if derr := p.diagnostic(ctx, DiagnosticWorkerIdentityUnresolved, fmt.Sprintf("worker not accepted: %v", err)); derr != nil {
-			return derr
+			return errors.Join(err, derr)
 		}
 		return p.lose(ctx)
 	}
@@ -791,7 +791,7 @@ func (p *pipeline) freezeCandidate(ctx context.Context) error {
 	})
 	if err != nil {
 		if derr := p.diagnostic(ctx, DiagnosticCandidateFreezeFailed, fmt.Sprintf("candidate freeze failed: %v", err)); derr != nil {
-			return derr
+			return errors.Join(err, derr)
 		}
 		if p.out.State == RunStopping {
 			return p.runTo(ctx, RunInterrupted, "freeze_failed")
@@ -1021,7 +1021,7 @@ func (p *pipeline) watch(ctx context.Context, ref AttemptRef, exited <-chan stru
 			// The worker still owns the attempt; only this supervisor's view
 			// of it is broken. The run is left for recover, not active.
 			if derr := p.diagnostic(ctx, DiagnosticSpoolIngestionFailed, fmt.Sprintf("spool ingestion failed: %v; run 'mythhelm recover %s'", err, p.d.RunID)); derr != nil {
-				return derr
+				return errors.Join(err, derr)
 			}
 			// Lines before the failing one were journaled; report the attempt
 			// as recorded.

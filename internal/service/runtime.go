@@ -42,17 +42,25 @@ type runtime struct {
 // Public legacy run/recover/apply then remain unavailable on adopted roots
 // until the later service clients land; this shell does not bypass that fence.
 func Run(ctx context.Context, stateDir string) error {
-	r, err := openRuntime(ctx, stateDir)
+	return runResolved(ctx, stateDir, control.DefaultTransport, control.EndpointPath)
+}
+
+// Resolve platform capability before preparation can adopt a fresh root.
+func runResolved(ctx context.Context, stateDir string, resolveTransport func() (control.Transport, error), resolveEndpoint func() (string, error)) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	transport, err := resolveTransport()
 	if err != nil {
 		return err
 	}
-	transport, err := control.DefaultTransport()
+	endpoint, err := resolveEndpoint()
 	if err != nil {
-		return errors.Join(err, r.shutdown(context.WithoutCancel(ctx)))
+		return err
 	}
-	endpoint, err := control.EndpointPath()
+	r, err := openRuntime(ctx, stateDir)
 	if err != nil {
-		return errors.Join(err, r.shutdown(context.WithoutCancel(ctx)))
+		return err
 	}
 	// A live lease proves this endpoint has no other owner; only stale paths go.
 	if err := os.Remove(endpoint); err != nil && !errors.Is(err, os.ErrNotExist) {

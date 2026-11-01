@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,30 +18,60 @@ import (
 
 func TestObserverDeliveryNeverWaitsForClient(t *testing.T) {
 	r := testRuntime(t)
-	a, err := newObserverAdapter()
+	sink := supervisor.NewObserverSink()
+	reader, err := sink.OpenReader()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = a.close() }()
+	// A literal adapter connects the real sink/reader to a synthetic writer;
+	// public observation delivery remains the later Task 10 producer.
+	a := &observerAdapter{sink: sink, reader: reader, done: make(chan struct{})}
+	entered := make(chan struct{})
 	stalled := make(chan struct{})
-	viewDone := make(chan struct{})
+	viewDone := a.done
 	view, err := r.views.open(t.Context(), "synthetic")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer view.close()
-	// A bounded synthetic view writer stays blocked for ten seconds. It has no
-	// reference to the actor callbacks or reader lease.
+	var producers sync.WaitGroup
+	t.Cleanup(func() { view.close(); <-stalled; <-viewDone; producers.Wait(); _ = reader.Close() })
 	go func() {
 		defer close(viewDone)
+		defer close(stalled)
+		select {
+		case <-reader.Wakeups():
+		case <-view.done:
+			return
+		}
+		_, _ = reader.DrainHints(16)
+		close(entered)
 		timer := time.NewTimer(10 * time.Second)
 		defer timer.Stop()
 		select {
 		case <-timer.C:
 		case <-view.done:
 		}
-		close(stalled)
 	}()
+	prompt := func(name string, call func() error) {
+		t.Helper()
+		ack := make(chan error, 1)
+		producers.Add(1)
+		go func() { defer producers.Done(); ack <- call() }()
+		select {
+		case err := <-ack:
+			if err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("blocked observer delayed %s", name)
+		}
+	}
+	prompt("initial committed", func() error { a.sink.Committed("run_observer", 0); return nil })
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("observer consumer never entered blocked writer")
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	now := time.Now().UTC()
@@ -59,18 +92,20 @@ func TestObserverDeliveryNeverWaitsForClient(t *testing.T) {
 			<-viewDone
 			t.Fatal(err)
 		}
-		a.hooks().Event(ev)
-		a.sink.Hint(supervisor.NoticeRenderRefresh)
-		if _, err := r.server.Dispatch(ctx, control.Peer{SameUser: true}, control.Intent{OperationID: ids.New("op"), Method: "status"}); err != nil {
-			view.close()
-			<-viewDone
-			t.Fatal(err)
-		}
-		if _, err := r.server.Dispatch(ctx, control.Peer{SameUser: true}, control.Intent{OperationID: ids.New("op"), Method: "stop"}); err == nil {
-			view.close()
-			<-viewDone
-			t.Fatal("shell accepted stop")
-		}
+		prompt("Committed", func() error { a.hooks().Event(ev); return nil })
+		prompt("Hint", func() error { a.sink.Hint(supervisor.NoticeRenderRefresh); return nil })
+		prompt("status Dispatch", func() error {
+			_, err := r.server.Dispatch(ctx, control.Peer{SameUser: true}, control.Intent{OperationID: ids.New("op"), Method: "status"})
+			return err
+		})
+		prompt("stop rejection Dispatch", func() error {
+			_, err := r.server.Dispatch(ctx, control.Peer{SameUser: true}, control.Intent{OperationID: ids.New("op"), Method: "stop"})
+			var ce *control.Error
+			if !errors.As(err, &ce) || ce.Code != control.CodeCapabilityUnsupported {
+				return fmt.Errorf("stop rejection=%v", err)
+			}
+			return nil
+		})
 	}
 	if ctx.Err() != nil {
 		view.close()
@@ -83,6 +118,7 @@ func TestObserverDeliveryNeverWaitsForClient(t *testing.T) {
 		<-viewDone
 		t.Fatalf("commits=%d err=%v", len(events), err)
 	}
+	view.close()
 	<-stalled
 	<-viewDone
 }
