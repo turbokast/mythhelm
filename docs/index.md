@@ -25,7 +25,7 @@ cells:
 <section class="landing-intro" aria-labelledby="landing-title">
   <h1 id="landing-title">Run the agents you already trust.<br> Know what they actually did.</h1>
   <p><a href="#status">What works, what’s in progress, what’s not yet</a></p>
-  <p><strong>Delivery target: at least 20× faster full-product delivery. Not demonstrated.</strong> Self-building remains partial and the full product is unfinished. MYTHHELM native admission was used but refused before launch; authoring used direct-session fallbacks, not MYTHHELM-owned execution. At the 2026-11-01 08:49 UTC observation, fixture repairs had merged in PR #557; the service shell in PR #558 remained unmerged with failing documentation, macOS and Windows ARM checks. Passing local gates also missed a scanner cleanup defect found in review. Read the <a href="{{ '/dogfood/0008-delivery-blockers-and-self-use.html' | relative_url }}">delivery blockers, self-use and measurement report</a> and the <a href="{{ '/benchmarks.html' | relative_url }}">measurement plan</a>. Production service dispatch and the planned Observatory renderer remain unfinished.</p>
+  <p><strong>Delivery target: at least 20× faster full-product delivery. Not demonstrated.</strong> The product is unfinished. Native admission refused; authoring used direct fallbacks, not MYTHHELM-owned execution. Read the <a href="{{ '/dogfood/0008-delivery-blockers-and-self-use.html' | relative_url }}">self-use report: failed checks, missed defects, delivery waits and unknown measurements</a>.</p>
 </section>
 
 <section id="quickstart" aria-labelledby="try-the-scripted-demo" markdown="1">
