@@ -3,6 +3,7 @@ import importlib.util
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -153,6 +154,37 @@ class TimingTests(unittest.TestCase):
             status = s.run_tests([sys.executable, "-u", "-c", code])
         return status, output.getvalue()
 
+    def test_real_main_forced_cp1252_preserves_unicode_and_child_status(self):
+        message = "punctuation \u201b and emoji \U0001f680\n"
+        record = json.dumps({'Action': 'output', 'Package': 'p', 'Output': message})
+        producer = 'import sys; print(' + repr(record) + '); sys.exit(7)'
+        script = str(Path(s.__file__).resolve())
+        # Only the unavailable Go executable/listing is substituted. The parent
+        # interpreter, main, text streams and collector child are real processes.
+        parent = """import importlib.util, subprocess, sys
+assert sys.stdout.encoding.lower() == 'cp1252', sys.stdout.encoding
+spec = importlib.util.spec_from_file_location('shard', %r)
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+popen = subprocess.Popen
+def listing(command, **kwargs):
+    assert command == ['go', 'list', './...'], command
+    return subprocess.CompletedProcess(command, 0, stdout=m.SUPERVISOR+'\\n'+m.CLI+'\\np\\n')
+def producer(command, **kwargs):
+    assert command == ['go','test','-json','-race','-p','1',m.CLI], command
+    return popen([sys.executable, '-c', %r], **kwargs)
+m.subprocess.run = listing
+m.subprocess.Popen = producer
+status = m.main(['cli', '--race'])
+sys.stderr.write(%r)
+raise SystemExit(status)
+""" % (script, producer, message)
+        result = subprocess.run([sys.executable, '-c', parent], capture_output=True,
+                                env={**os.environ, 'PYTHONIOENCODING': 'cp1252'}, timeout=10)
+        self.assertEqual(result.stdout, message.encode('utf-8'))
+        self.assertEqual(result.stderr, message.encode('utf-8'))
+        self.assertEqual(result.returncode, 7)
+
     def test_real_child_output_failure_and_deterministic_summary(self):
         events = [
             {"Action": "output", "Package": "p", "Output": "failure diagnostic\n"},
@@ -205,6 +237,7 @@ class TimingTests(unittest.TestCase):
             return result
 
         code = """import json
+import os
 print('x' * 150000)
 for i in range(10000):
     print(json.dumps({'Action':'pass','Package':'p','Test':'Test%05d' % i,'Elapsed':i/10}))

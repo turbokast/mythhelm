@@ -136,6 +136,12 @@ def run_tests(command):
 
 
 def main(argv=None):
+    # Go JSON is UTF-8; its decoded Output must not depend on a Windows runner's
+    # legacy console code page. StringIO redirects intentionally lack this API.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser()
     parser.add_argument("shard", choices=("supervisor", "cli", "rest"))
     parser.add_argument("--race", action="store_true")
