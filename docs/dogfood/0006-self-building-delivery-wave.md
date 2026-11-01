@@ -21,7 +21,7 @@ reviews and a required CI failure, remains the historical record.
 
 | Work | Evidence and result at the snapshot |
 |---|---|
-| Service-admission design, Task 22 | [PR #541](https://github.com/turbokast/mythhelm/pull/541) merged at `821a3d249e549ef09a74229cfe858522e412580c`; [main CI succeeded](https://github.com/turbokast/mythhelm/actions/runs/41256131370). This accepts a design and its follow-on specification, not implemented service dispatch. |
+| Service-admission design, Task 22 | [PR #541](https://github.com/turbokast/mythhelm/pull/541) merged at `821a3d249e549ef09a74229cfe858522e412580c`; [main CI succeeded](https://github.com/turbokast/mythhelm/actions/runs/41256131370). PR #541 records design acceptance; the follow-on specification merged separately in [PR #543](https://github.com/turbokast/mythhelm/pull/543). Neither implements service dispatch. |
 | Versioned migration backup guidance, Task 28 | [PR #549](https://github.com/turbokast/mythhelm/pull/549) merged at the snapshot main revision. It documents the existing backup/preview naming behavior; it adds no migration or native capability. |
 | Nonblocking observer primitive, Task 27 | [PR #551](https://github.com/turbokast/mythhelm/pull/551), candidate `58766aa0972aaa122ac4606fcd8afa1661ba69ce`, was open with CI pending. A primitive is not integrated service delivery. |
 | Fixed quota policy/storage extraction, Task 29 | [PR #552](https://github.com/turbokast/mythhelm/pull/552), candidate `19139e673493241df1d84ec6ded1923a343d3454`, was open; required CI and merge were outstanding. It is a policy/storage refactor, not evidence of provider quota availability. |
@@ -65,7 +65,7 @@ changed-text, swapped-ID and changed-authority challenges. A proposed boundary
 explanation is not adopted acceptance evidence; the task remains blocked.
 
 The direct implementation wave also encountered local compile/lint errors and
-watchdog-terminated validation runs. Those failures remain in delivery accounting.
+watchdog test failures in full validation runs. Those failures remain in delivery accounting.
 The underlying cause of the watchdog failures is unproven; concurrent validation
 and contention are observations, not a demonstrated diagnosis or a reason to
 label failures flaky. Validation was then scheduled with less contention while
