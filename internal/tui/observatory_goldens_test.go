@@ -734,3 +734,23 @@ func TestDiffWithoutCandidateHasNoTruncationNotice(t *testing.T) {
 		t.Fatalf("missing candidate fabricates a diff fallback: %s", view)
 	}
 }
+
+func TestMissionKeepsExplicitUnsupervisedNow(t *testing.T) {
+	t.Parallel()
+	for _, state := range []string{"launch_intent_recorded", "launching", "running", "stop_requested"} {
+		t.Run(state, func(t *testing.T) {
+			t.Parallel()
+			m := observatoryFixture(t)
+			m.cfg.Mode = ModeInspect
+			m.width, m.height = 160, 30
+			m.snap.Run.State = "executing"
+			m.snap.Attempt.State = state
+			m.snap.LatestProgress = nil
+			m.snap.Supervision = "unsupervised"
+			rows := strings.Split(stripANSISequences(m.View()), "\n")
+			if !strings.Contains(rows[2], "unsupervised") || strings.Contains(rows[2], "dispatching") || !strings.Contains(rows[2], "mythhelm recover") {
+				t.Fatalf("NOW lost explicit owner observation: %q", rows[2])
+			}
+		})
+	}
+}

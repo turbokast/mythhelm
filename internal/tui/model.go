@@ -436,7 +436,7 @@ func (m *Model) settledVerdict() bool {
 // missionNowNext retains the session's launch-acknowledgement guard when
 // composing the previously independent NOW producer.
 func (m *Model) missionNowNext(width int) []line {
-	ack := m.dispatchWaiting() && m.snap.Run.State == "executing"
+	ack := m.dispatchWaiting() && m.snap.Run.State == "executing" && !m.inspectUnsupervised()
 	cause := m.observatoryAttention() && m.snap.Run.Reason != ""
 	if !ack && !cause {
 		return m.nowNext(width)
