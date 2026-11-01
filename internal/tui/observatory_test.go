@@ -425,3 +425,42 @@ func TestClockAndAttentionTruth(t *testing.T) {
 		return true
 	})
 }
+
+func TestUnfinishedInspectObservation(t *testing.T) {
+	t.Parallel()
+	m := observatoryFixture(t)
+	for _, runState := range []string{"executing", "stopping"} {
+		for _, attemptState := range []string{"launch_intent_recorded", "launching", "running", "stop_requested"} {
+			m.snap.Run.State = runState
+			m.snap.Attempt.State = attemptState
+			m.snap.Supervision = "unsupervised"
+			m.cfg.Mode = ModeInspect
+			if m.observatoryElapsed() != "1:20" || !strings.Contains(m.observatoryNext(), "mythhelm recover "+m.snap.Run.RunID) || !m.observatoryAttention() || !strings.Contains(m.observatoryNow(), "unsupervised") {
+				t.Errorf("unfinished %s/%s lost proven inspect observation: elapsed=%q now=%q next=%q attention=%v", runState, attemptState, m.observatoryElapsed(), m.observatoryNow(), m.observatoryNext(), m.observatoryAttention())
+			}
+			m.cfg.Mode = ModeLive
+			if m.inspectUnsupervised() || m.observatoryElapsed() != "2:01" || strings.Contains(m.observatoryNow(), "unsupervised") {
+				t.Errorf("live interpreted inspect observation %s/%s", runState, attemptState)
+			}
+			m.cfg.Mode = ModeInspect
+			for _, observation := range []string{"", "unknown", "stale", "supervised"} {
+				m.snap.Supervision = observation
+				if m.inspectUnsupervised() || m.observatoryElapsed() != "2:01" || m.observatoryAttention() {
+					t.Errorf("unproved owner absence inferred %s/%s/%q", runState, attemptState, observation)
+				}
+			}
+		}
+		for _, attemptState := range []string{"", "future", "succeeded_native", "failed_native", "stopped"} {
+			m.cfg.Mode = ModeInspect
+			m.snap.Attempt.State = attemptState
+			m.snap.Supervision = "unsupervised"
+			if m.inspectUnsupervised() || m.observatoryElapsed() != "2:01" || strings.Contains(m.observatoryNext(), "mythhelm recover") {
+				t.Errorf("unknown/terminal attempt granted observation %s/%s", runState, attemptState)
+			}
+		}
+	}
+	m.snap.Attempt = nil
+	if m.inspectUnsupervised() || m.observatoryElapsed() != "2:01" || strings.Contains(m.observatoryNext(), "mythhelm recover") {
+		t.Fatal("nil attempt granted observation")
+	}
+}

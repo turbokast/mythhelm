@@ -8,10 +8,24 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// unfinishedObservatoryAttempt is deliberately separate from the narrower
+// workerRunning action gate: launch preparation is also unfinished evidence.
+func (m *Model) unfinishedObservatoryAttempt() bool {
+	if m.snap.Attempt == nil {
+		return false
+	}
+	switch m.snap.Attempt.State {
+	case "launch_intent_recorded", "launching", "running", "stop_requested":
+		return true
+	default:
+		return false
+	}
+}
+
 // inspectUnsupervised consumes only the snapshot's explicit observation. The
 // production observer leaves stale/missing beats unknown; rendering never probes.
 func (m *Model) inspectUnsupervised() bool {
-	return m.cfg.Mode == ModeInspect && (m.snap.Run.State == "executing" || m.snap.Run.State == "stopping") && m.workerRunning() && m.snap.Supervision == "unsupervised"
+	return m.cfg.Mode == ModeInspect && (m.snap.Run.State == "executing" || m.snap.Run.State == "stopping") && m.unfinishedObservatoryAttempt() && m.snap.Supervision == "unsupervised"
 }
 func (m *Model) observatoryElapsed() string {
 	start, end := m.snap.Run.CreatedAt, m.snap.Run.UpdatedAt
@@ -142,7 +156,7 @@ func (m *Model) observatoryNow() string {
 }
 
 func (m *Model) observatorySupervision(text string) string {
-	if m.cfg.Mode == ModeInspect && m.workerRunning() && m.snap.Supervision != "supervised" {
+	if m.cfg.Mode == ModeInspect && m.unfinishedObservatoryAttempt() && m.snap.Supervision != "supervised" {
 		return text + "; supervision unknown"
 	}
 	return text
