@@ -46,6 +46,8 @@ type ownerState struct {
 	root       string
 	runID      string
 	runDir     string
+	rootInfo   os.FileInfo
+	dbInfo     os.FileInfo
 
 	mu          sync.Mutex
 	idle        *sync.Cond
@@ -88,6 +90,14 @@ func acquireServiceOwner(ctx context.Context, j *journal.Journal, lease *control
 	if err := sameRoot(root, j.StateDir()); err != nil {
 		return nil, err
 	}
+	rootInfo, err := os.Stat(j.StateDir())
+	if err != nil {
+		return nil, ownershipRefused("root identity unavailable: %v", err)
+	}
+	dbInfo, err := os.Stat(filepath.Join(j.StateDir(), journal.DBName))
+	if err != nil {
+		return nil, ownershipRefused("database identity unavailable: %v", err)
+	}
 	phase, err := migrationPhase(ctx, j)
 	if err != nil {
 		return nil, err
@@ -105,7 +115,11 @@ func acquireServiceOwner(ctx context.Context, j *journal.Journal, lease *control
 	if err != nil {
 		return nil, err
 	}
-	s := &ownerState{lease: lease, generation: generation, root: root, runID: runID, runDir: runDir, releaseRun: releaseRun}
+	s := &ownerState{lease: lease, generation: generation, root: root, runID: runID, runDir: runDir, rootInfo: rootInfo, dbInfo: dbInfo, releaseRun: releaseRun}
+	if err := s.verifyIdentity(j.StateDir()); err != nil {
+		releaseRun()
+		return nil, err
+	}
 	s.idle = sync.NewCond(&s.mu)
 	return &ServiceOwner{s: s}, nil
 }
@@ -125,6 +139,23 @@ func sameRoot(root, stateDir string) error {
 	}
 	if !os.SameFile(a, b) {
 		return ownershipRefused("state directory %s is not the instance root %s", stateDir, root)
+	}
+	return nil
+}
+
+// verifyIdentity binds entries to the original physical root and database,
+// including when a different directory now occupies the same pathname.
+func (s *ownerState) verifyIdentity(dir string) error {
+	root, err := os.Stat(dir)
+	if err != nil {
+		return ownershipRefused("root identity unavailable: %v", err)
+	}
+	db, err := os.Stat(filepath.Join(dir, journal.DBName))
+	if err != nil {
+		return ownershipRefused("database identity unavailable: %v", err)
+	}
+	if !os.SameFile(s.rootInfo, root) || !os.SameFile(s.dbInfo, db) {
+		return ownershipRefused("root or database identity changed")
 	}
 	return nil
 }
@@ -182,6 +213,9 @@ func (o *ServiceOwner) enter(j *journal.Journal, runID string, h Hooks) (func(),
 		return nil, ownershipRefused("instance generation changed")
 	}
 	if err := sameRoot(s.root, j.StateDir()); err != nil {
+		return nil, err
+	}
+	if err := s.verifyIdentity(j.StateDir()); err != nil {
 		return nil, err
 	}
 	s.busy = true

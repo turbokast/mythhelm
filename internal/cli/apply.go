@@ -67,10 +67,13 @@ func runApply(args []string, stdio Stdio) (retErr error) {
 	}
 	// Interactive writes drain first: apply is refused while migration
 	// owns the state directory or the ledger has moved past previewed.
-	if err := checkMigrationClear(ctx, j, "apply the run"); err != nil {
+	releaseMigration, err := checkMigrationClear(ctx, j, "apply the run")
+	if err != nil {
 		return err
 	}
+	defer releaseMigration()
 	release, err := supervisor.AcquireOwner(filepath.Join(dir, "runs", runID))
+	releaseMigration()
 	if err != nil {
 		return err
 	}
@@ -102,20 +105,27 @@ func runApply(args []string, stdio Stdio) (retErr error) {
 // shared cross-package API for two call sites each. The refusal names the
 // v2 ownership_unresolved code and wraps supervisor.ErrOwnership, which
 // exitCode maps to exit 6.
-func checkMigrationClear(ctx context.Context, j *journal.Journal, action string) error {
+// The returned root guard stays held until the caller owns the run. This is
+// the same handoff as supervisor.Run/Recover; checking then dropping the root
+// lock would let a paused legacy apply resume after root adoption.
+func checkMigrationClear(ctx context.Context, j *journal.Journal, action string) (func(), error) {
+	release, err := supervisor.AcquireOwner(j.StateDir())
+	if err != nil {
+		if errors.Is(err, supervisor.ErrOwnerHeld) {
+			return nil, fmt.Errorf("cannot %s: ownership_unresolved: migration holds the state directory: %w", action, supervisor.ErrOwnership)
+		}
+		return nil, err
+	}
 	var phase string
-	err := j.Transact(ctx, func(tx *sql.Tx) error {
+	err = j.Transact(ctx, func(tx *sql.Tx) error {
 		var name string
-		tbl := tx.QueryRowContext(ctx, `SELECT name FROM sqlite_master
-			WHERE type = 'table' AND name = 'migration_state'`)
-		if err := tbl.Scan(&name); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'migration_state'`).Scan(&name); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil
 			}
 			return fmt.Errorf("cli: checking migration_state: %w", err)
 		}
-		if err := tx.QueryRowContext(ctx,
-			`SELECT phase FROM migration_state WHERE id = 1`).Scan(&phase); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT phase FROM migration_state WHERE id = 1`).Scan(&phase); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil
 			}
@@ -124,21 +134,13 @@ func checkMigrationClear(ctx context.Context, j *journal.Journal, action string)
 		return nil
 	})
 	if err != nil {
-		return err
+		release()
+		return nil, err
 	}
 	switch phase {
 	case "drained", "imported", "adopted":
-		return fmt.Errorf("cannot %s: ownership_unresolved: migration phase is %q: %w",
-			action, phase, supervisor.ErrOwnership)
+		release()
+		return nil, fmt.Errorf("cannot %s: ownership_unresolved: migration phase is %q: %w", action, phase, supervisor.ErrOwnership)
 	}
-	release, err := supervisor.AcquireOwner(j.StateDir())
-	if err != nil {
-		if errors.Is(err, supervisor.ErrOwnerHeld) {
-			return fmt.Errorf("cannot %s: ownership_unresolved: migration holds the state directory: %w",
-				action, supervisor.ErrOwnership)
-		}
-		return err
-	}
-	release()
-	return nil
+	return release, nil
 }
