@@ -298,6 +298,7 @@ func TestMigrationSymlinkRootRefusalIsExact(t *testing.T) {
 		change func(*v2contract.ControlError)
 	}{
 		{"code", func(e *v2contract.ControlError) { e.Code = v2contract.CodePersistenceUnavailable }},
+		{"unknown code", func(e *v2contract.ControlError) { e.Code = v2contract.Code("future_code") }},
 		{"owner", func(e *v2contract.ControlError) { e.Owner = "other" }},
 		{"operation", func(e *v2contract.ControlError) { e.OperationID = "apply" }},
 		{"object", func(e *v2contract.ControlError) { e.Object = "run_other" }},
