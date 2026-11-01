@@ -83,39 +83,23 @@ func Apply(ctx context.Context, db *sql.DB, plan preview.Plan) (DrainReport, err
 		return DrainReport{}, applyError(v2contract.CodePersistenceUnavailable, "apply", "",
 			"pass the open state database handle", "the ledger handle is nil")
 	}
-	phase, backupPath, err := readMigrationState(ctx, db)
-	if err != nil {
-		return DrainReport{}, err
-	}
-	switch phase {
-	case string(PhaseAdopted):
-		return DrainReport{}, nil
-	case string(PhaseImported):
-		if err := recordPhase(ctx, db, PhaseAdopted); err != nil {
-			return DrainReport{}, err
-		}
-		return DrainReport{}, nil
-	}
-	if phase == string(PhaseNotStarted) {
-		if err := markPreviewed(ctx, db); err != nil {
-			return DrainReport{}, err
-		}
-	}
-
 	stateDir, err := drainStateDir(ctx, db)
 	if err != nil {
 		return DrainReport{}, err
 	}
-	// The migration locks for the whole run (design §4): the instance
-	// lock, the state directory's owner lock and, from the drain, every
-	// run's owner lock stay held through backup, import and adoption, so
-	// no service writer starts and no legacy recover or apply passes its
-	// guard between any two steps.
+	identity, err := inspectMigrationRoot(stateDir)
+	if err != nil {
+		return DrainReport{}, err
+	}
 	releaseLocks, err := acquireMigrationLocks("apply", stateDir)
 	if err != nil {
 		return DrainReport{}, err
 	}
 	defer releaseLocks()
+	identity, err = identity.locked(stateDir)
+	if err != nil {
+		return DrainReport{}, err
+	}
 	report, releaseRuns, err := drainLocked(ctx, db, stateDir)
 	if err != nil {
 		return DrainReport{}, err
@@ -123,6 +107,32 @@ func Apply(ctx context.Context, db *sql.DB, plan preview.Plan) (DrainReport, err
 	defer releaseRuns()
 	if afterDrain != nil {
 		afterDrain()
+	}
+	return applyQuiesced(ctx, db, plan, stateDir, identity, report)
+}
+
+// applyQuiesced runs only with instance, root and every run owner lock held.
+// The phase is intentionally read here, after quiescence: even an imported
+// resume or an adopted no-op must not bypass a competing writer.
+func applyQuiesced(ctx context.Context, db *sql.DB, plan preview.Plan, stateDir string, identity migrationRoot, report DrainReport) (DrainReport, error) {
+	if err := identity.verify(stateDir); err != nil {
+		return DrainReport{}, err
+	}
+	phase, backupPath, err := readMigrationState(ctx, db)
+	if err != nil {
+		return DrainReport{}, err
+	}
+	switch Phase(phase) {
+	case PhaseAdopted:
+		return DrainReport{}, nil
+	case PhaseImported:
+		if err := recordPhase(ctx, db, PhaseAdopted); err != nil {
+			return DrainReport{}, err
+		}
+		return report, nil
+	case PhaseNotStarted, PhasePreviewed, PhaseDrained:
+	default:
+		return DrainReport{}, applyError(v2contract.CodeInvalidContract, "apply", "", "inspect the migration phase", "unknown migration phase")
 	}
 
 	current, err := currentRunIDs(ctx, db, stateDir)
@@ -133,6 +143,11 @@ func Apply(ctx context.Context, db *sql.DB, plan preview.Plan) (DrainReport, err
 	// taken and no phase advanced.
 	if err := checkPlanRuns(current, plan); err != nil {
 		return report, err
+	}
+	if phase == string(PhaseNotStarted) {
+		if err := markPreviewed(ctx, db); err != nil {
+			return DrainReport{}, err
+		}
 	}
 	info, err := backupOrReuse(ctx, db, stateDir, backupPath)
 	if err != nil {

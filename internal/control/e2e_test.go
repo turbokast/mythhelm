@@ -4,17 +4,19 @@ package control
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -86,10 +88,71 @@ func newE2EHostOn(t *testing.T, h *e2eHost) *e2eHost {
 	return &e2eHost{t: t, bin: h.bin, home: t.TempDir(), rt: h.rt}
 }
 
+func (h *e2eHost) env() []string {
+	return []string{"MYTHHELM_HOME=" + h.home, "XDG_RUNTIME_DIR=" + h.rt, "HOME=" + h.home, "TMPDIR=" + h.rt}
+}
+
+func (h *e2eHost) lockState() (lockMetadata, string, error) {
+	paths, err := filepath.Glob(filepath.Join(h.rt, "mythhelm-*", "supervisor.lock"))
+	if err != nil {
+		return lockMetadata{}, "", err
+	}
+	if len(paths) != 1 {
+		return lockMetadata{}, "", fmt.Errorf("isolated lock count %d", len(paths))
+	}
+	meta, err := parseMetadata(paths[0])
+	return meta, filepath.Join(filepath.Dir(paths[0]), "control.sock"), err
+}
+
+// primeInstance acquires ONLY in the existing helper subprocess with this
+// host's isolated environment. The parent never acquires a global instance.
+func (h *e2eHost) primeInstance() lockMetadata {
+	h.t.Helper()
+	ctx, cancel := context.WithTimeout(h.t.Context(), 10*time.Second)
+	defer cancel()
+	self, err := os.Executable()
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	cmd := exec.CommandContext(ctx, self)
+	cmd.Env = append(h.env(), "MYTHHELM_TEST_HELPER=lockholder", "MYTHHELM_TEST_HELPER_DIR="+h.home)
+	if err := cmd.Start(); err != nil {
+		h.t.Fatal(err)
+	}
+	waited := false
+	defer func() {
+		if !waited {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+		}
+	}()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for {
+		meta, _, err := h.lockState()
+		if err == nil && meta.PID == cmd.Process.Pid {
+			if meta.Root != canonicalRoot(h.home) {
+				h.t.Fatalf("helper root=%q", meta.Root)
+			}
+			if err := cmd.Process.Kill(); err != nil {
+				h.t.Fatal(err)
+			}
+			_ = cmd.Wait()
+			waited = true
+			return meta
+		}
+		select {
+		case <-ctx.Done():
+			h.t.Fatalf("isolated helper never acquired: %v", ctx.Err())
+		case <-tick.C:
+		}
+	}
+}
+
 func (h *e2eHost) run(args ...string) (stdout, stderr string, code int) {
 	h.t.Helper()
 	cmd := exec.Command(h.bin, args...)
-	cmd.Env = []string{"MYTHHELM_HOME=" + h.home, "XDG_RUNTIME_DIR=" + h.rt, "HOME=" + h.home, "TMPDIR=" + h.rt}
+	cmd.Env = h.env()
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()
@@ -138,25 +201,54 @@ func (h *e2eHost) killSupervisor() {
 
 func alive(pid int) bool { return syscall.Kill(pid, 0) == nil }
 
+func statusMatchesAuthority(st status, meta lockMetadata, endpoint string) bool {
+	return st.PID == meta.PID && st.Generation == meta.Generation && st.Root == meta.Root && st.Endpoint == endpoint
+}
+
 func TestLazySpawnThenStatus(t *testing.T) {
 	t.Parallel()
-	h := newE2EHost(t)
-	out, stderr, code := h.run("supervisor", "status")
-	if code != 0 {
-		t.Fatalf("supervisor status exited %d with no supervisor running: %s", code, stderr)
-	}
-	root, err := filepath.EvalSymlinks(h.home)
-	if err != nil {
-		t.Fatal(err)
-	}
-	st := h.status() // a client of the supervisor the first call started
-	if st.PID <= 0 || !alive(st.PID) || st.Generation != 1 || st.Root != root || filepath.Base(st.Endpoint) != "control.sock" {
-		t.Fatalf("status = %+v, want a live pid, generation 1, root %s and the control socket", st, root)
-	}
-	for _, want := range []string{"pid:        " + strconv.Itoa(st.PID), "generation: 1", "root:       " + root, "endpoint:   " + st.Endpoint} {
-		if !strings.Contains(out, want) {
-			t.Errorf("plain status %q lacks %q", out, want)
+	for _, prior := range []bool{false, true} {
+		name := "fresh"
+		if prior {
+			name = "prior-legitimate-acquisition"
 		}
+		t.Run(name, func(t *testing.T) {
+			h := newE2EHost(t)
+			if prior {
+				h.primeInstance()
+			}
+			out, stderr, code := h.run("supervisor", "status")
+			if code != 0 {
+				t.Fatalf("supervisor status exited %d with no supervisor running: %s", code, stderr)
+			}
+			root, err := filepath.EvalSymlinks(h.home)
+			if err != nil {
+				t.Fatal(err)
+			}
+			st := h.status() // a client of the supervisor the first call started
+			meta, endpoint, err := h.lockState()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if meta.PID <= 0 || !alive(meta.PID) || meta.Generation == 0 || meta.Root != root {
+				t.Fatalf("invalid isolated authority metadata: %+v", meta)
+			}
+			if !statusMatchesAuthority(st, meta, endpoint) {
+				t.Fatalf("status %+v differs from actual held metadata %+v endpoint=%s", st, meta, endpoint)
+			}
+			want := fmt.Sprintf("pid:        %d\ngeneration: %d\nroot:       %s\nendpoint:   %s\n", meta.PID, meta.Generation, meta.Root, endpoint)
+			if out != want {
+				t.Fatalf("plain status=%q; want exact observed authority %q", out, want)
+			}
+			if prior {
+				wrong := st
+				wrong.Generation = 1
+				if statusMatchesAuthority(wrong, meta, endpoint) {
+					t.Fatal("fixed generation1 fixture matched primed authority")
+				}
+			}
+
+		})
 	}
 }
 

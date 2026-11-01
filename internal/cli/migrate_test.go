@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -34,6 +35,7 @@ import (
 	"github.com/turbokast/mythhelm/internal/migrate/preview"
 	"github.com/turbokast/mythhelm/internal/supervisor"
 	"github.com/turbokast/mythhelm/internal/v2contract"
+	"github.com/turbokast/mythhelm/internal/workspace"
 )
 
 // isolateMigLock redirects the per-user instance lock into a temp dir,
@@ -1052,6 +1054,346 @@ func TestApplyRefusedDuringMigration(t *testing.T) {
 			}
 			if !tt.holdLock && !strings.Contains(stderr, string(tt.phase)) {
 				t.Errorf("apply stderr %q does not name phase %q", stderr, tt.phase)
+			}
+		})
+	}
+}
+
+// TestLegacyApplyGuardHoldsRoot closes the same CLI/TUI root-to-run handoff.
+// The retained early-release fixture demonstrates the exact stale-guard race.
+func TestLegacyApplyGuardHoldsRoot(t *testing.T) {
+	for _, earlyRelease := range []bool{false, true} {
+		name := "held"
+		if earlyRelease {
+			name = "violating-early-release"
+		}
+		t.Run(name, func(t *testing.T) {
+			isolateMigLock(t)
+			dir := t.TempDir()
+			j, err := journal.Open(t.Context(), dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = j.Close() }()
+			release, err := checkMigrationClear(t.Context(), j, "apply the run")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer release()
+			if earlyRelease {
+				release()
+			}
+			report, err := migrate.ApplyRoot(t.Context(), dir, preview.Plan{})
+			if earlyRelease {
+				if err != nil {
+					t.Fatalf("violating fixture did not reach adoption: %v", err)
+				}
+				if !reflect.DeepEqual(report, migrate.DrainReport{}) {
+					t.Fatalf("unexpected report %+v", report)
+				}
+				// This is the forbidden outcome: old callers still possess a successful
+				// guard result after migration adopted and may now acquire a run lock.
+				runDir := filepath.Join(dir, "runs", "run_stale")
+				if err := os.MkdirAll(runDir, 0700); err != nil {
+					t.Fatal(err)
+				}
+				unlock, err := supervisor.AcquireOwner(runDir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				unlock()
+				phase, _ := queryPhase(t, openMigRaw(t, dir))
+				if phase != "adopted" {
+					t.Fatalf("violating phase=%s", phase)
+				}
+			} else {
+				var ce *v2contract.ControlError
+				if !errors.As(err, &ce) || ce.Code != v2contract.CodeOwnershipUnresolved {
+					t.Fatalf("migration passed paused guard: %v", err)
+				}
+				phase, backup := queryPhase(t, openMigRaw(t, dir))
+				if phase != "not_started" || backup != "" {
+					t.Fatalf("paused guard mutation: %s %q", phase, backup)
+				}
+			}
+		})
+	}
+}
+
+// TestCLIMigrationFencesSchemaBeforeOpen uses true schema1 fixtures. A live
+// instance must refuse before even schema-upgrade backups or pragma changes.
+func TestCLIMigrationFencesSchemaBeforeOpen(t *testing.T) {
+	for _, violate := range []bool{false, true} {
+		name := "fenced"
+		if violate {
+			name = "violating-open-before-fence"
+		}
+		t.Run(name, func(t *testing.T) {
+			isolateMigLock(t)
+			dir := seedV1(t)
+			db := openMigRaw(t, dir)
+			insertMigRun(t, db, "run_schema", "completed")
+			useMigHome(t, dir)
+			release, err := control.AcquireInstance(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer release()
+			if violate {
+				unsafe, err := control.OpenLedger(t.Context(), dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := unsafe.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			code, _, stderr := runMain("migrate", "--apply", "--yes")
+			if code != 6 || !strings.Contains(stderr, "ownership_unresolved") {
+				t.Fatalf("live writer migration exit=%d stderr=%q", code, stderr)
+			}
+			var version int
+			if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+				t.Fatal(err)
+			}
+			want := 1
+			if violate {
+				want = journal.SchemaVersion
+			}
+			if version != want {
+				t.Fatalf("version=%d want=%d (schema opened before instance fence)", version, want)
+			}
+			files, err := filepath.Glob(filepath.Join(dir, "*.bak*"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if violate && len(files) == 0 {
+				t.Fatal("violating writable open did not create observable upgrade backup")
+			}
+			if !violate && len(files) != 0 {
+				t.Fatalf("refused migration created backup %v", files)
+			}
+		})
+	}
+}
+
+func TestApplyRootHeldOwnerDoesNotUpgradeSchema(t *testing.T) {
+	isolateMigLock(t)
+	dir := seedV1(t)
+	db := openMigRaw(t, dir)
+	insertMigRun(t, db, "run_schema", "completed")
+	runDir := filepath.Join(dir, "runs", "run_schema")
+	if err := os.MkdirAll(runDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	release, err := supervisor.AcquireOwner(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	ctx, cancel := context.WithTimeout(t.Context(), 80*time.Millisecond)
+	defer cancel()
+	_, err = migrate.ApplyRoot(ctx, dir, preview.Plan{})
+	var ce *v2contract.ControlError
+	if !errors.As(err, &ce) || ce.Code != v2contract.CodeOwnershipUnresolved {
+		t.Fatalf("held owner error=%v", err)
+	}
+	var version int
+	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != 1 {
+		t.Fatalf("held-owner timeout upgraded schema to %d", version)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name='migration_state'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("held-owner timeout created migration state")
+	}
+	if files, _ := filepath.Glob(filepath.Join(dir, "*.bak*")); len(files) != 0 {
+		t.Fatalf("held-owner timeout created backups %v", files)
+	}
+}
+
+func TestExplicitMigrationInitializesSchemaOnlyDatabase(t *testing.T) {
+	isolateMigLock(t)
+	dir := t.TempDir()
+	db := openMigRaw(t, dir)
+	if _, err := db.Exec(`PRAGMA user_version=0`); err != nil {
+		t.Fatal(err)
+	}
+	useMigHome(t, dir)
+	code, _, stderr := runMain("migrate", "--apply", "--yes")
+	if code != 0 {
+		t.Fatalf("explicit schema-only migration exit=%d stderr=%q", code, stderr)
+	}
+	phase, backup := queryPhase(t, db)
+	if phase != "adopted" || backup == "" {
+		t.Fatalf("explicit migration phase=%q backup=%q", phase, backup)
+	}
+}
+
+// A held SQLite writer pauses each real entrypoint's phase read. Because that
+// read is now inside the root guard, migration must refuse during the pause.
+// legacyApplyProbeRefusal recognises only checkMigrationClear's pre-phase root
+// acquisition refusal. CLI has a wire error; TUI also retains its sentinel.
+func legacyApplyProbeRefusal(entry string, code int, stderr string, err error) bool {
+	const message = "cannot apply the run: ownership_unresolved: migration holds the state directory: execution ownership is unresolved"
+	if code != int(ExitOwnership) {
+		return false
+	}
+	switch entry {
+	case "cli":
+		return err == nil && stderr == "mythhelm apply: "+message+"\n"
+	case "tui":
+		return errors.Is(err, supervisor.ErrOwnership) && err.Error() == message
+	default:
+		return false
+	}
+}
+
+func TestLegacyApplyProbeRefusalIsRootOnly(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, entry string
+		code        int
+		stderr      string
+		err         error
+	}{
+		{name: "unknown CLI error", entry: "cli", code: 6, stderr: "mythhelm apply: unknown error\n"},
+		{name: "CLI success", entry: "cli", code: 0},
+		{name: "CLI phase refusal", entry: "cli", code: int(ExitOwnership), stderr: "mythhelm apply: cannot apply the run: ownership_unresolved: migration phase is \"adopted\": execution ownership is unresolved\n"},
+		{name: "root message with wrong code", entry: "cli", code: int(ExitInvalid), stderr: "mythhelm apply: cannot apply the run: ownership_unresolved: migration holds the state directory: execution ownership is unresolved\n"},
+		{name: "untyped TUI root message", entry: "tui", code: 6, err: errors.New("cannot apply the run: ownership_unresolved: migration holds the state directory: execution ownership is unresolved")},
+		{name: "TUI ownership without root provenance", entry: "tui", code: 6, err: supervisor.ErrOwnership},
+		{name: "TUI invalid branch", entry: "tui", code: int(ExitInvalid), err: workspace.ErrInvalidBranch},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if legacyApplyProbeRefusal(tc.entry, tc.code, tc.stderr, tc.err) {
+				t.Fatal("unrelated early result was retryable")
+			}
+		})
+	}
+}
+
+func TestLegacyApplyEntrypointRootFence(t *testing.T) {
+	for _, entry := range []string{"cli", "tui"} {
+		t.Run(entry, func(t *testing.T) {
+			isolateMigLock(t)
+			dir := t.TempDir()
+			db, err := control.OpenLedger(t.Context(), dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = db.Close() }()
+			insertMigRun(t, db, "run_apply_fence", "created")
+			if _, err := db.Exec(`UPDATE runs SET source_repo=? WHERE run_id='run_apply_fence'`, t.TempDir()); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(dir, "runs", "run_apply_fence"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			useMigHome(t, dir)
+			tx, err := db.BeginTx(t.Context(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = tx.Rollback() }()
+			if _, err := tx.Exec(`UPDATE migration_state SET build_version='paused' WHERE id=1`); err != nil {
+				t.Fatal(err)
+			}
+			var done chan struct{}
+			var code int
+			var actionErr error
+			var stderr string
+			start := func() {
+				done = make(chan struct{})
+				go func() {
+					defer close(done)
+					if entry == "cli" {
+						code, _, stderr = runMain("apply", "run_apply_fence", "--to-branch", "invalid..branch")
+					} else {
+						_, actionErr = wireActions(dir).Apply(t.Context(), "run_apply_fence", "invalid..branch", false, false)
+						code = int(exitCode(actionErr))
+					}
+				}()
+			}
+			// Rollback unblocks the current owned action on every failure path.
+			defer func() {
+				_ = tx.Rollback()
+				if done != nil {
+					<-done
+				}
+			}()
+			timer := time.NewTimer(3 * time.Second)
+			defer timer.Stop()
+			ticker := time.NewTicker(time.Millisecond)
+			defer ticker.Stop()
+			// Force the observer collision once: it must be classified and joined,
+			// never accepted as evidence that the entrypoint owns the root.
+			observer, err := supervisor.AcquireOwner(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			start()
+			select {
+			case <-done:
+				observer()
+				if !legacyApplyProbeRefusal(entry, code, stderr, actionErr) {
+					t.Fatalf("held observer produced unrelated refusal: exit=%d stderr=%q err=%v", code, stderr, actionErr)
+				}
+			case <-timer.C:
+				observer()
+				t.Fatal("held observer did not produce pre-root refusal")
+			}
+		attempts:
+			for {
+				select {
+				case <-timer.C:
+					t.Fatal("entrypoint phase read does not hold root")
+				default:
+				}
+				start()
+				for {
+					unlock, err := supervisor.AcquireOwner(dir)
+					if errors.Is(err, supervisor.ErrOwnerHeld) {
+						break attempts
+					}
+					if err != nil {
+						_ = tx.Rollback()
+						<-done
+						t.Fatal(err)
+					}
+					unlock()
+					select {
+					case <-done:
+						if legacyApplyProbeRefusal(entry, code, stderr, actionErr) {
+							continue attempts
+						}
+						t.Fatalf("entrypoint returned before phase barrier: exit=%d stderr=%q err=%v", code, stderr, actionErr)
+					case <-timer.C:
+						_ = tx.Rollback()
+						<-done
+						t.Fatal("entrypoint phase read does not hold root")
+					case <-ticker.C:
+					}
+				}
+			}
+			_, err = migrate.ApplyRoot(t.Context(), dir, preview.Plan{})
+			var ce *v2contract.ControlError
+			if !errors.As(err, &ce) || ce.Code != v2contract.CodeOwnershipUnresolved {
+				_ = tx.Rollback()
+				<-done
+				t.Fatalf("migration bypassed actual %s root guard: %v", entry, err)
+			}
+			if err := tx.Rollback(); err != nil {
+				t.Fatal(err)
+			}
+			<-done
+			if (entry == "cli" && code != int(ExitInvalid)) || (entry == "tui" && !errors.Is(actionErr, workspace.ErrInvalidBranch)) {
+				t.Fatalf("post-barrier handoff did not reach branch validation: exit=%d err=%v", code, actionErr)
 			}
 		})
 	}

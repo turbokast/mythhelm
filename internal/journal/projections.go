@@ -406,10 +406,15 @@ func (j *Journal) Attempt(ctx context.Context, attemptID string) (AttemptRow, er
 // ErrSchemaTooNew for a database written by a newer MYTHHELM (AC-9.4).
 func OpenReadOnly(ctx context.Context, dir string) (*Journal, error) {
 	path := filepath.Join(dir, DBName)
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+	databaseInfo, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
 		return nil, ErrNoDatabase
 	} else if err != nil {
 		return nil, fmt.Errorf("inspecting %s: %w", path, err)
+	}
+	rootInfo, err := os.Stat(dir)
+	if err != nil {
+		return nil, fmt.Errorf("reading state root identity: %w", err)
 	}
 	db, err := sql.Open("sqlite", dsn(path, "mode=ro&_pragma=busy_timeout(5000)&_pragma=query_only(1)"))
 	if err != nil {
@@ -432,7 +437,12 @@ func OpenReadOnly(ctx context.Context, dir string) (*Journal, error) {
 		return nil, fmt.Errorf("%s has schema version %d, older than %d; a mythhelm command that records state migrates it",
 			path, version, SchemaVersion)
 	}
-	return &Journal{db: db, dir: dir}, nil
+	j := &Journal{db: db, dir: dir, rootInfo: rootInfo, databaseInfo: databaseInfo}
+	if err := j.CheckStateIdentity(ctx); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return j, nil
 }
 
 // RunsInStates returns every run projection whose state is one of states,

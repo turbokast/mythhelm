@@ -14,7 +14,6 @@ import (
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver for the read-only preview handle
 
-	"github.com/turbokast/mythhelm/internal/control"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/migrate"
 	"github.com/turbokast/mythhelm/internal/migrate/preview"
@@ -93,15 +92,15 @@ func previewState(ctx context.Context, dir string) (preview.Plan, error) {
 // the receipt. The plan printed above is the plan applied: Apply refuses
 // when the ledger no longer covers it.
 func applyState(ctx context.Context, stdio Stdio, format, dir string, plan preview.Plan) error {
-	db, err := control.OpenLedger(ctx, dir)
+	report, err := migrate.ApplyRoot(ctx, dir, plan)
+	if err != nil {
+		return mapControlError(err)
+	}
+	db, err := openStateReadOnly(dir)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = db.Close() }()
-	report, err := migrate.Apply(ctx, db, plan)
-	if err != nil {
-		return mapControlError(err)
-	}
 	receipt, err := readReceipt(ctx, db, report)
 	if err != nil {
 		return err

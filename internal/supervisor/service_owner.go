@@ -46,6 +46,8 @@ type ownerState struct {
 	root       string
 	runID      string
 	runDir     string
+	rootInfo   os.FileInfo
+	dbInfo     os.FileInfo
 
 	mu          sync.Mutex
 	idle        *sync.Cond
@@ -81,12 +83,26 @@ func AcquireServiceOwner(ctx context.Context, j *journal.Journal, lease *control
 }
 
 func acquireServiceOwner(ctx context.Context, j *journal.Journal, lease *control.InstanceLease, runID string) (*ServiceOwner, error) {
+	if err := lease.CheckRootIdentity(ctx, j.StateDir()); err != nil {
+		return nil, ownershipRefused("instance root identity: %v", err)
+	}
+	if err := j.CheckStateIdentity(ctx); err != nil {
+		return nil, ownershipRefused("journal state identity: %v", err)
+	}
 	generation, root := lease.Generation(), lease.Root()
 	if generation <= 0 {
 		return nil, ownershipRefused("instance lease has no current generation")
 	}
 	if err := sameRoot(root, j.StateDir()); err != nil {
 		return nil, err
+	}
+	rootInfo, err := os.Stat(j.StateDir())
+	if err != nil {
+		return nil, ownershipRefused("root identity unavailable: %v", err)
+	}
+	dbInfo, err := os.Stat(filepath.Join(j.StateDir(), journal.DBName))
+	if err != nil {
+		return nil, ownershipRefused("database identity unavailable: %v", err)
 	}
 	phase, err := migrationPhase(ctx, j)
 	if err != nil {
@@ -105,7 +121,11 @@ func acquireServiceOwner(ctx context.Context, j *journal.Journal, lease *control
 	if err != nil {
 		return nil, err
 	}
-	s := &ownerState{lease: lease, generation: generation, root: root, runID: runID, runDir: runDir, releaseRun: releaseRun}
+	s := &ownerState{lease: lease, generation: generation, root: root, runID: runID, runDir: runDir, rootInfo: rootInfo, dbInfo: dbInfo, releaseRun: releaseRun}
+	if err := s.verifyIdentity(ctx, j); err != nil {
+		releaseRun()
+		return nil, err
+	}
 	s.idle = sync.NewCond(&s.mu)
 	return &ServiceOwner{s: s}, nil
 }
@@ -125,6 +145,30 @@ func sameRoot(root, stateDir string) error {
 	}
 	if !os.SameFile(a, b) {
 		return ownershipRefused("state directory %s is not the instance root %s", stateDir, root)
+	}
+	return nil
+}
+
+// verifyIdentity binds entries to the original physical root and database,
+// including when a different directory now occupies the same pathname.
+func (s *ownerState) verifyIdentity(ctx context.Context, j *journal.Journal) error {
+	if err := s.lease.CheckRootIdentity(ctx, j.StateDir()); err != nil {
+		return ownershipRefused("instance root identity: %v", err)
+	}
+	if err := j.CheckStateIdentity(ctx); err != nil {
+		return ownershipRefused("journal state identity: %v", err)
+	}
+	dir := j.StateDir()
+	root, err := os.Stat(dir)
+	if err != nil {
+		return ownershipRefused("root identity unavailable: %v", err)
+	}
+	db, err := os.Stat(filepath.Join(dir, journal.DBName))
+	if err != nil {
+		return ownershipRefused("database identity unavailable: %v", err)
+	}
+	if !os.SameFile(s.rootInfo, root) || !os.SameFile(s.dbInfo, db) {
+		return ownershipRefused("root or database identity changed")
 	}
 	return nil
 }
@@ -159,7 +203,7 @@ func (o *ServiceOwner) Close() error {
 
 // enter verifies the capability for runID on j and marks it busy until the
 // returned exit runs. Every owned entry calls it before any effect.
-func (o *ServiceOwner) enter(j *journal.Journal, runID string, h Hooks) (func(), error) {
+func (o *ServiceOwner) enter(ctx context.Context, j *journal.Journal, runID string, h Hooks) (func(), error) {
 	if o == nil || o.s == nil {
 		return nil, ownershipRefused("not a service owner")
 	}
@@ -184,6 +228,9 @@ func (o *ServiceOwner) enter(j *journal.Journal, runID string, h Hooks) (func(),
 	if err := sameRoot(s.root, j.StateDir()); err != nil {
 		return nil, err
 	}
+	if err := s.verifyIdentity(ctx, j); err != nil {
+		return nil, err
+	}
 	s.busy = true
 	return func() {
 		s.mu.Lock()
@@ -202,7 +249,7 @@ func (o *ServiceOwner) enter(j *journal.Journal, runID string, h Hooks) (func(),
 // admission: there is no preexisting journal admission record checked here.
 // The caller must ensure the decision was admitted.
 func RunOwned(ctx context.Context, j *journal.Journal, owner *ServiceOwner, d admission.Decision, h Hooks) (Outcome, error) {
-	exit, err := owner.enter(j, d.RunID, h)
+	exit, err := owner.enter(ctx, j, d.RunID, h)
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -284,7 +331,7 @@ func admittedProjectConfig(ctx context.Context, d admission.Decision) error {
 // continuation (watch, ingest, freeze, conclude, receipt repair) under
 // owner's held run lock. It never runs a parallel reconciliation.
 func RecoverOwned(ctx context.Context, j *journal.Journal, owner *ServiceOwner, runID string, h Hooks) (RecoveryOutcome, error) {
-	exit, err := owner.enter(j, runID, h)
+	exit, err := owner.enter(ctx, j, runID, h)
 	if err != nil {
 		return RecoveryOutcome{}, err
 	}
@@ -295,7 +342,7 @@ func RecoverOwned(ctx context.Context, j *journal.Journal, owner *ServiceOwner, 
 // ApplyOwned runs the existing explicit, candidate- and ref-guarded apply
 // under owner's held run lock. It grants no authority beyond ApplyRun's.
 func ApplyOwned(ctx context.Context, j *journal.Journal, owner *ServiceOwner, runID, branch string, acceptFlags, acceptUnverified bool) (Receipt, error) {
-	exit, err := owner.enter(j, runID, Hooks{})
+	exit, err := owner.enter(ctx, j, runID, Hooks{})
 	if err != nil {
 		return nil, err
 	}
