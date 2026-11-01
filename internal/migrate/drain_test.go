@@ -271,6 +271,22 @@ func TestDrainRefusesWhileLockHeld(t *testing.T) {
 	}
 	t.Cleanup(held)
 
+	// Probe the spelling Drain actually acquires, including SQLite VFS aliases.
+	dbRoot, err := drainStateDir(t.Context(), db)
+	if err != nil {
+		t.Fatalf("resolve fixture database root: %v", err)
+	}
+	fixtureInfo, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	databaseInfo, err := os.Stat(dbRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(fixtureInfo, databaseInfo) {
+		t.Fatalf("database root %q differs from fixture %q", dbRoot, dir)
+	}
 	before := ledgerHash(t, db)
 	// The shared Drain body keeps a valid caller context through SQL setup.
 	// Only the actual owner-wait deadline is 500ms; public Drain retains its
@@ -284,13 +300,13 @@ func TestDrainRefusesWhileLockHeld(t *testing.T) {
 		if caller != ctx || caller.Err() != nil {
 			t.Fatalf("deadline supplier caller = %v", caller.Err())
 		}
-		if release, probeErr := control.AcquireInstance(dir); !errors.Is(probeErr, control.ErrInstanceHeld) {
+		if release, probeErr := control.AcquireInstance(dbRoot); !errors.Is(probeErr, control.ErrInstanceHeld) {
 			if release != nil {
 				release()
 			}
 			t.Fatalf("deadline calculated before instance acquisition: %v", probeErr)
 		}
-		if release, probeErr := supervisor.AcquireOwner(dir); !errors.Is(probeErr, supervisor.ErrOwnerHeld) {
+		if release, probeErr := supervisor.AcquireOwner(dbRoot); !errors.Is(probeErr, supervisor.ErrOwnerHeld) {
 			if release != nil {
 				release()
 			}
@@ -863,16 +879,18 @@ func TestRecoverRefusedPastPreviewed(t *testing.T) {
 // TestDrainOwnerDeadlinePhase keeps the critical 500ms separate from SQL
 // preparation: an alive caller and real locks exercise the explicit deadline.
 func TestDrainOwnerDeadlinePhase(t *testing.T) {
+	t.Parallel()
 	for _, held := range []bool{false, true} {
 		name := "free owner"
 		if held {
 			name = "held owner"
 		}
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			dir := t.TempDir()
 			const runID = "run_owner_deadline"
 			runDir := filepath.Join(dir, "runs", runID)
-			if err := os.MkdirAll(runDir, 0700); err != nil {
+			if err := os.MkdirAll(runDir, 0o700); err != nil {
 				t.Fatal(err)
 			}
 			if held {
