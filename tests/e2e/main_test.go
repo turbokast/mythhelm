@@ -7,6 +7,7 @@ package e2e
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,12 +17,18 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/contain"
+	"github.com/turbokast/mythhelm/internal/control"
 )
 
 // mythhelmBin is the packaged binary under test, built once by TestMain.
 var mythhelmBin string
 
 func TestMain(m *testing.M) {
+	// This owned test helper supplies only a real generation lease. It never
+	// starts the production service or adopts the legacy execution root.
+	if len(os.Args) > 1 && os.Args[1] == generationHolderCommand {
+		os.Exit(generationHolderMain(os.Args[2:]))
+	}
 	// The boundary probe re-executes this binary as `__contain`: dispatch
 	// it before the build so the probe child never rebuilds or runs the
 	// suite, and the availability gate reads an honest verdict.
@@ -152,4 +159,29 @@ func gitSubcommand(args []string) string {
 		}
 	}
 	return ""
+}
+
+// generationHolderCommand is private test-binary dispatch, not a product command.
+const generationHolderCommand = "__e2e-generation-holder"
+
+func generationHolderMain(args []string) int {
+	if len(args) != 1 || args[0] == "" || !filepath.IsAbs(args[0]) {
+		fmt.Fprintln(os.Stderr, "generation holder: expected one absolute state root")
+		return 2
+	}
+	lease, err := control.AcquireInstanceLease(args[0])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	// Parent EOF is the lifetime boundary, including unexpected parent exit.
+	// Release the real lease before the helper reports successful completion.
+	_, readyErr := fmt.Fprintln(os.Stdout, lease.Generation())
+	_, inputErr := io.Copy(io.Discard, os.Stdin)
+	closeErr := lease.Close()
+	if err := errors.Join(readyErr, inputErr, closeErr); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
 }

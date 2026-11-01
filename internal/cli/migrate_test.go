@@ -1237,6 +1237,47 @@ func TestExplicitMigrationInitializesSchemaOnlyDatabase(t *testing.T) {
 
 // A held SQLite writer pauses each real entrypoint's phase read. Because that
 // read is now inside the root guard, migration must refuse during the pause.
+// legacyApplyProbeRefusal recognises only checkMigrationClear's pre-phase root
+// acquisition refusal. CLI has a wire error; TUI also retains its sentinel.
+func legacyApplyProbeRefusal(entry string, code int, stderr string, err error) bool {
+	const message = "cannot apply the run: ownership_unresolved: migration holds the state directory: execution ownership is unresolved"
+	if code != int(ExitOwnership) {
+		return false
+	}
+	switch entry {
+	case "cli":
+		return err == nil && stderr == "mythhelm apply: "+message+"\n"
+	case "tui":
+		return errors.Is(err, supervisor.ErrOwnership) && err.Error() == message
+	default:
+		return false
+	}
+}
+
+func TestLegacyApplyProbeRefusalIsRootOnly(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, entry string
+		code        int
+		stderr      string
+		err         error
+	}{
+		{name: "unknown CLI error", entry: "cli", code: 6, stderr: "mythhelm apply: unknown error\n"},
+		{name: "CLI success", entry: "cli", code: 0},
+		{name: "CLI phase refusal", entry: "cli", code: int(ExitOwnership), stderr: "mythhelm apply: cannot apply the run: ownership_unresolved: migration phase is \"adopted\": execution ownership is unresolved\n"},
+		{name: "root message with wrong code", entry: "cli", code: int(ExitInvalid), stderr: "mythhelm apply: cannot apply the run: ownership_unresolved: migration holds the state directory: execution ownership is unresolved\n"},
+		{name: "untyped TUI root message", entry: "tui", code: 6, err: errors.New("cannot apply the run: ownership_unresolved: migration holds the state directory: execution ownership is unresolved")},
+		{name: "TUI ownership without root provenance", entry: "tui", code: 6, err: supervisor.ErrOwnership},
+		{name: "TUI invalid branch", entry: "tui", code: int(ExitInvalid), err: workspace.ErrInvalidBranch},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if legacyApplyProbeRefusal(tc.entry, tc.code, tc.stderr, tc.err) {
+				t.Fatal("unrelated early result was retryable")
+			}
+		})
+	}
+}
+
 func TestLegacyApplyEntrypointRootFence(t *testing.T) {
 	for _, entry := range []string{"cli", "tui"} {
 		t.Run(entry, func(t *testing.T) {
@@ -1263,41 +1304,81 @@ func TestLegacyApplyEntrypointRootFence(t *testing.T) {
 			if _, err := tx.Exec(`UPDATE migration_state SET build_version='paused' WHERE id=1`); err != nil {
 				t.Fatal(err)
 			}
-			done := make(chan struct{})
+			var done chan struct{}
 			var code int
 			var actionErr error
-			go func() {
-				defer close(done)
-				if entry == "cli" {
-					code, _, _ = runMain("apply", "run_apply_fence", "--to-branch", "invalid..branch")
-				} else {
-					_, actionErr = wireActions(dir).Apply(t.Context(), "run_apply_fence", "invalid..branch", false, false)
-					code = int(exitCode(actionErr))
+			var stderr string
+			start := func() {
+				done = make(chan struct{})
+				go func() {
+					defer close(done)
+					if entry == "cli" {
+						code, _, stderr = runMain("apply", "run_apply_fence", "--to-branch", "invalid..branch")
+					} else {
+						_, actionErr = wireActions(dir).Apply(t.Context(), "run_apply_fence", "invalid..branch", false, false)
+						code = int(exitCode(actionErr))
+					}
+				}()
+			}
+			// Rollback unblocks the current owned action on every failure path.
+			defer func() {
+				_ = tx.Rollback()
+				if done != nil {
+					<-done
 				}
 			}()
 			timer := time.NewTimer(3 * time.Second)
 			defer timer.Stop()
 			ticker := time.NewTicker(time.Millisecond)
 			defer ticker.Stop()
+			// Force the observer collision once: it must be classified and joined,
+			// never accepted as evidence that the entrypoint owns the root.
+			observer, err := supervisor.AcquireOwner(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			start()
+			select {
+			case <-done:
+				observer()
+				if !legacyApplyProbeRefusal(entry, code, stderr, actionErr) {
+					t.Fatalf("held observer produced unrelated refusal: exit=%d stderr=%q err=%v", code, stderr, actionErr)
+				}
+			case <-timer.C:
+				observer()
+				t.Fatal("held observer did not produce pre-root refusal")
+			}
+		attempts:
 			for {
-				unlock, err := supervisor.AcquireOwner(dir)
-				if errors.Is(err, supervisor.ErrOwnerHeld) {
-					break
-				}
-				if err != nil {
-					_ = tx.Rollback()
-					<-done
-					t.Fatal(err)
-				}
-				unlock()
 				select {
-				case <-done:
-					t.Fatalf("entrypoint returned before phase barrier: exit=%d err=%v", code, actionErr)
 				case <-timer.C:
-					_ = tx.Rollback()
-					<-done
 					t.Fatal("entrypoint phase read does not hold root")
-				case <-ticker.C:
+				default:
+				}
+				start()
+				for {
+					unlock, err := supervisor.AcquireOwner(dir)
+					if errors.Is(err, supervisor.ErrOwnerHeld) {
+						break attempts
+					}
+					if err != nil {
+						_ = tx.Rollback()
+						<-done
+						t.Fatal(err)
+					}
+					unlock()
+					select {
+					case <-done:
+						if legacyApplyProbeRefusal(entry, code, stderr, actionErr) {
+							continue attempts
+						}
+						t.Fatalf("entrypoint returned before phase barrier: exit=%d stderr=%q err=%v", code, stderr, actionErr)
+					case <-timer.C:
+						_ = tx.Rollback()
+						<-done
+						t.Fatal("entrypoint phase read does not hold root")
+					case <-ticker.C:
+					}
 				}
 			}
 			_, err = migrate.ApplyRoot(t.Context(), dir, preview.Plan{})

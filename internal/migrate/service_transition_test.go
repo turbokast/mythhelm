@@ -27,8 +27,11 @@ import (
 func requireOwnership(t *testing.T, err error) {
 	t.Helper()
 	var ce *v2contract.ControlError
-	if !errors.As(err, &ce) || ce.Code != v2contract.CodeOwnershipUnresolved {
+	if !errors.As(err, &ce) {
 		t.Fatalf("error = %v; want typed ownership_unresolved", err)
+	}
+	if ce.Code != v2contract.CodeOwnershipUnresolved {
+		t.Fatalf("error = %v; control fields = %+v; want typed ownership_unresolved", err, *ce)
 	}
 }
 
@@ -51,7 +54,9 @@ func TestMigrationHeldOwnerRefuses(t *testing.T) {
 			}
 			defer release()
 			before := ledgerHash(t, db)
-			ctx, cancel := context.WithTimeout(t.Context(), 80*time.Millisecond)
+			// This full API budget includes SQLite and root/instance setup.
+			// The critical80ms owner deadline is isolated below after setup.
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 			defer cancel()
 			report, err := Apply(ctx, db, preview.Plan{})
 			requireOwnership(t, err)
@@ -63,6 +68,61 @@ func TestMigrationHeldOwnerRefuses(t *testing.T) {
 			}
 			if backups, _ := filepath.Glob(filepath.Join(dir, "*.bak*")); len(backups) != 0 {
 				t.Fatalf("timeout created backup: %v", backups)
+			}
+		})
+	}
+}
+
+// The primitive's critical owner deadline starts only after filesystem and
+// lock fixture setup. No SQLite/instance preparation spends this80ms budget.
+func TestMigrationQuiesceOwnerDeadline(t *testing.T) {
+	t.Parallel()
+	for _, held := range []bool{true, false} {
+		name := "free owner acquired"
+		if held {
+			name = "held owner deadline"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			const runID = "run_deadline"
+			runDir := filepath.Join(dir, "runs", runID)
+			if err := os.MkdirAll(runDir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if held {
+				release, err := supervisor.AcquireOwner(runDir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer release()
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 80*time.Millisecond)
+			defer cancel()
+			deadline := drainDeadline(ctx)
+			release, err := quiesceRun(ctx, dir, runID, deadline)
+			if held {
+				if release != nil {
+					release()
+				}
+				requireOwnership(t, err)
+				if time.Now().Before(deadline) {
+					t.Fatal("held owner refused before actual deadline")
+				}
+				<-ctx.Done()
+				if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+					t.Fatalf("owner deadline context = %v", ctx.Err())
+				}
+				return
+			}
+			if err != nil || release == nil {
+				t.Fatalf("free owner not acquired: release=%v err=%v", release != nil, err)
+			}
+			defer release()
+			if other, err := supervisor.AcquireOwner(runDir); !errors.Is(err, supervisor.ErrOwnerHeld) {
+				if other != nil {
+					other()
+				}
+				t.Fatalf("quiesce did not hold owner: %v", err)
 			}
 		})
 	}
@@ -195,6 +255,247 @@ func TestServiceOwnerChangedRoot(t *testing.T) {
 	}
 }
 
+// lockError converts the sentinel into a catalogue record; require the exact
+// root/cause rather than retrying other ownership or instance refusals.
+func migrationProbeRefusal(ctx context.Context, db *sql.DB, err error, dir string) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	// Preserve SQLite's own spelling (including Windows short names), while
+	// binding that root to this fixture's physical directory.
+	reportedRoot, resolveErr := drainStateDir(ctx, db)
+	if resolveErr != nil {
+		return false
+	}
+	expected, statErr := os.Stat(dir)
+	if statErr != nil {
+		return false
+	}
+	actual, statErr := os.Stat(reportedRoot)
+	if statErr != nil || !os.SameFile(expected, actual) {
+		return false
+	}
+	var ce *v2contract.ControlError
+	return resolveErr == nil && errors.As(err, &ce) && ce.Code == v2contract.CodeOwnershipUnresolved &&
+		ce.Owner == "migrate" && ce.Object == "" &&
+		ce.NextAction == "another migration holds the state directory; retry after it finishes" &&
+		ce.Detail["migrate/cause"] == fmt.Sprintf("%s: %s", supervisor.ErrOwnerHeld, reportedRoot)
+}
+
+func TestMigrationProbeRefusalIsRootOnly(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	const next = "another migration holds the state directory; retry after it finishes"
+	db := openDrainDB(t, dir)
+	physicalRoot, err := drainStateDir(t.Context(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	correct := lockError("apply", fmt.Errorf("%w: %s", supervisor.ErrOwnerHeld, physicalRoot), next)
+	if !migrationProbeRefusal(t.Context(), db, correct, dir) {
+		t.Fatal("valid root refusal rejected before negative controls")
+	}
+	wrongOwner, wrongObject, wrongCode, wrongNext := *correct, *correct, *correct, *correct
+	wrongOwner.Owner = "other"
+	wrongObject.Object = "run_live"
+	wrongCode.Code = v2contract.CodePersistenceUnavailable
+	wrongNext.NextAction = "a supervisor is already running; stop it and retry the migration"
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"instance held", lockError("apply", control.ErrInstanceHeld, next)},
+		{"conflicting root", lockError("apply", control.ErrRootConflict, next)},
+		{"I/O", lockError("apply", os.ErrPermission, next)},
+		{"wrong root", lockError("apply", fmt.Errorf("%w: %s", supervisor.ErrOwnerHeld, filepath.Join(dir, "other")), next)},
+		{"run refusal", ownershipError("apply", "run_live", next)},
+		{"unknown", errors.New("unknown")},
+		{"wrong owner", &wrongOwner},
+		{"wrong object", &wrongObject},
+		{"wrong code", &wrongCode},
+		{"wrong lock stage", &wrongNext},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if migrationProbeRefusal(t.Context(), db, tc.err, dir) {
+				t.Fatal("unrelated early error was retryable")
+			}
+		})
+	}
+}
+
+// This predicate is separate from held-root retry admission: this refusal
+// occurs before ownership acquisition when the VFS retains a symlink root.
+func migrationSymlinkRootRefusal(err error) bool {
+	var ce *v2contract.ControlError
+	return errors.As(err, &ce) && ce.Code == v2contract.CodeOwnershipUnresolved &&
+		ce.Owner == "migrate" && ce.OperationID == "prepare-service-root" && ce.Object == "" &&
+		ce.Disposition == v2contract.DispositionAfterReconciliation && ce.Revision == nil && len(ce.Evidence) == 0 &&
+		ce.NextAction == "review mythhelm migrate --preview, then run mythhelm migrate --apply --yes with no service writer running" &&
+		len(ce.Detail) == 1 && ce.Detail["migrate/cause"] == "migration_required: state root is not a real directory"
+}
+
+func TestMigrationSymlinkRootRefusalIsExact(t *testing.T) {
+	t.Parallel()
+	good := &v2contract.ControlError{
+		Code: v2contract.CodeOwnershipUnresolved, Owner: "migrate", OperationID: "prepare-service-root",
+		Disposition: v2contract.DispositionAfterReconciliation,
+		NextAction:  "review mythhelm migrate --preview, then run mythhelm migrate --apply --yes with no service writer running",
+		Detail:      map[string]string{"migrate/cause": "migration_required: state root is not a real directory"},
+	}
+	if !migrationSymlinkRootRefusal(good) {
+		t.Fatal("literal valid symlink refusal rejected")
+	}
+	wrong := *good
+	wrong.Detail = map[string]string{"migrate/cause": "migration_required: different reason"}
+	if good.Error() != wrong.Error() {
+		t.Fatal("wrong-detail fixture must retain the same display error")
+	}
+	if migrationSymlinkRootRefusal(&wrong) {
+		t.Fatal("same display error concealed wrong migration_required detail")
+	}
+	for _, tc := range []struct {
+		name   string
+		change func(*v2contract.ControlError)
+	}{
+		{"code", func(e *v2contract.ControlError) { e.Code = v2contract.CodePersistenceUnavailable }},
+		{"unknown code", func(e *v2contract.ControlError) { e.Code = v2contract.Code("future_code") }},
+		{"owner", func(e *v2contract.ControlError) { e.Owner = "other" }},
+		{"operation", func(e *v2contract.ControlError) { e.OperationID = "apply" }},
+		{"object", func(e *v2contract.ControlError) { e.Object = "run_other" }},
+		{"disposition", func(e *v2contract.ControlError) { e.Disposition = v2contract.DispositionNever }},
+		{"next action", func(e *v2contract.ControlError) { e.NextAction = "retry" }},
+		{"missing detail", func(e *v2contract.ControlError) { e.Detail = nil }},
+		{"extra detail", func(e *v2contract.ControlError) {
+			e.Detail = map[string]string{"migrate/cause": "migration_required: state root is not a real directory", "migrate/extra": "unexpected"}
+		}},
+		{"revision", func(e *v2contract.ControlError) { v := 1; e.Revision = &v }},
+		{"evidence", func(e *v2contract.ControlError) { e.Evidence = []string{"unexpected"} }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate := *good
+			tc.change(&candidate)
+			if migrationSymlinkRootRefusal(&candidate) {
+				t.Fatal("wrong typed field accepted")
+			}
+		})
+	}
+	for _, err := range []error{nil, errors.New(good.Error()), errors.New("unknown")} {
+		if migrationSymlinkRootRefusal(err) {
+			t.Fatalf("untyped refusal accepted: %v", err)
+		}
+	}
+}
+
+// All identity negatives use a real held-root error from a non-symlink DB,
+// independently of the VFS branch used by the symlinked-database fixture.
+// XDG_RUNTIME_DIR mutation prevents parallel execution.
+func TestMigrationProbeRefusalRootIdentity(t *testing.T) {
+	isolateInstanceLock(t)
+	dir := t.TempDir()
+	db := openDrainDB(t, dir)
+	held, err := supervisor.AcquireOwner(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held()
+	_, heldErr := Apply(t.Context(), db, preview.Plan{})
+	if !migrationProbeRefusal(t.Context(), db, heldErr, dir) {
+		t.Fatalf("actual held-root baseline rejected: %v", heldErr)
+	}
+	if migrationProbeRefusal(t.Context(), db, heldErr, t.TempDir()) {
+		t.Fatal("different physical root accepted")
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if migrationProbeRefusal(ctx, db, heldErr, dir) {
+		t.Fatal("cancelled context accepted")
+	}
+	if migrationProbeRefusal(t.Context(), db, heldErr, filepath.Join(t.TempDir(), "missing")) {
+		t.Fatal("missing expected root accepted")
+	}
+	alias := filepath.Join(t.TempDir(), "root-alias")
+	if err := os.Symlink(dir, alias); err != nil {
+		if errors.Is(err, errors.ErrUnsupported) || (runtime.GOOS == "windows" && errors.Is(err, os.ErrPermission)) {
+			t.Logf("alias-only identity controls unavailable: %v", err)
+		} else {
+			t.Fatal(err)
+		}
+	} else {
+		if !migrationProbeRefusal(t.Context(), db, heldErr, alias) {
+			t.Fatal("same physical root alias rejected")
+		}
+		if err := os.Remove(alias); err != nil {
+			t.Fatal(err)
+		}
+		if migrationProbeRefusal(t.Context(), db, heldErr, alias) {
+			t.Fatal("removed alias accepted")
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if migrationProbeRefusal(t.Context(), db, heldErr, dir) {
+		t.Fatal("database root query failure accepted")
+	}
+}
+
+// SQLite's VFS may report a physical path for a symlinked state directory
+// (including macOS /var -> /private/var). Exercise the actual Apply refusal.
+// This fixture changes XDG_RUNTIME_DIR, so it cannot run in parallel.
+func TestMigrationProbeRefusalPhysicalRoot(t *testing.T) {
+	isolateInstanceLock(t)
+	physical := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "state-alias")
+	if err := os.Symlink(physical, alias); err != nil {
+		if errors.Is(err, errors.ErrUnsupported) || (runtime.GOOS == "windows" && errors.Is(err, os.ErrPermission)) {
+			t.Skipf("directory symlink fixture unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	db := openDrainDB(t, alias)
+	held, err := supervisor.AcquireOwner(physical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held()
+	_, applyErr := Apply(t.Context(), db, preview.Plan{})
+	reportedRoot, err := drainStateDir(t.Context(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(reportedRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		if !migrationSymlinkRootRefusal(applyErr) {
+			t.Fatalf("symlink root refusal = %v", applyErr)
+		}
+		if migrationProbeRefusal(t.Context(), db, applyErr, alias) {
+			t.Fatal("symlink pre-root refusal was retryable")
+		}
+		return
+	}
+	requireOwnership(t, applyErr)
+	var ce *v2contract.ControlError
+	if !errors.As(applyErr, &ce) {
+		t.Fatal(applyErr)
+	}
+	t.Logf("input root=%q actual held-root cause=%q", alias, ce.Detail["migrate/cause"])
+	if !migrationProbeRefusal(t.Context(), db, applyErr, alias) {
+		t.Fatalf("actual physical-root refusal rejected for legitimate alias %q: %+v", alias, ce)
+	}
+	if migrationProbeRefusal(t.Context(), db, applyErr, t.TempDir()) {
+		t.Fatal("different physical root accepted")
+	}
+	if err := os.Remove(alias); err != nil {
+		t.Fatal(err)
+	}
+	if migrationProbeRefusal(t.Context(), db, applyErr, alias) {
+		t.Fatal("unresolvable alias accepted")
+	}
+}
+
 func TestServiceRootMigration(t *testing.T) {
 	for _, schema := range []int{1, 99} {
 		t.Run(fmt.Sprintf("spool-schema-%d", schema), func(t *testing.T) {
@@ -239,35 +540,101 @@ func TestServiceRootMigration(t *testing.T) {
 			}
 			// A lock-probe barrier proves migration owns the root while it waits for
 			// legacy release; no sleep assumes the scheduler has run the migrator.
-			done := make(chan struct{})
+			var done chan struct{}
 			var report DrainReport
 			var applyErr error
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
-			go func() { defer close(done); report, applyErr = Apply(ctx, db, preview.Plan{}) }()
+			startApply := func() {
+				done = make(chan struct{})
+				go func() { defer close(done); report, applyErr = Apply(ctx, db, preview.Plan{}) }()
+			}
+			// Release the run before joining even when a barrier assertion fails.
+			defer func() {
+				held()
+				cancel()
+				if done != nil {
+					<-done
+				}
+			}()
 			deadline := time.NewTimer(3 * time.Second)
 			defer deadline.Stop()
 			ticker := time.NewTicker(time.Millisecond)
 			defer ticker.Stop()
+			// Deterministically retain the observer-induced early refusal. The
+			// original context/deadline and held run survive this joined attempt.
+			observer, err := supervisor.AcquireOwner(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			startApply()
+			select {
+			case <-done:
+				observer()
+				if !migrationProbeRefusal(ctx, db, applyErr, dir) {
+					t.Fatalf("held observer produced unrelated refusal: %v", applyErr)
+				}
+			case <-deadline.C:
+				observer()
+				t.Fatal("held observer did not produce pre-root refusal")
+			}
+			phaseBefore, backupBefore, err := readMigrationState(ctx, db)
+			if err != nil || phaseBefore != "not_started" || backupBefore != "" {
+				t.Fatalf("pre-root refusal changed migration: %s %q %v", phaseBefore, backupBefore, err)
+			}
+			if len(report.Adopted) != 0 || len(report.Quarantined) != 0 {
+				t.Fatalf("pre-root refusal reached drain: %+v", report)
+			}
+			beforeIdentity, err := os.ReadFile(filepath.Join(attemptDir, "worker.json")) // #nosec G304 -- fixed synthetic attempt identity
+			if err != nil || !bytes.Equal(identityBefore, beforeIdentity) {
+				t.Fatalf("pre-root refusal changed worker identity: %v", err)
+			}
+			beforeSpool, err := os.ReadFile(filepath.Join(attemptDir, supervisor.SpoolFile)) // #nosec G304 -- fixed synthetic attempt spool
+			if err != nil || !bytes.Equal(spool, beforeSpool) {
+				t.Fatalf("pre-root refusal changed spool: %v", err)
+			}
+			var runState, attemptState string
+			if err := db.QueryRow(`SELECT r.state,a.state FROM runs r JOIN attempts a USING(run_id) WHERE a.attempt_id='att_live'`).Scan(&runState, &attemptState); err != nil || runState != "executing" || attemptState != "running" {
+				t.Fatalf("pre-root refusal changed states: %s/%s %v", runState, attemptState, err)
+			}
+			// The refused migrator must already have released its isolated
+			// instance lock. This legitimate acquisition advances its epoch.
+			releaseInstance, err := control.AcquireInstance(dir)
+			if err != nil {
+				t.Fatalf("pre-root refusal leaked instance ownership: %v", err)
+			}
+			releaseInstance()
+		attempts:
 			for {
-				release, err := supervisor.AcquireOwner(dir)
-				if errors.Is(err, supervisor.ErrOwnerHeld) {
-					break
-				}
-				if err != nil {
-					held()
-					t.Fatal(err)
-				}
-				release()
 				select {
 				case <-deadline.C:
-					held()
-					<-done
 					t.Fatal("migration never acquired root")
-				case <-done:
-					held()
-					t.Fatalf("migration returned before owner release: %v", applyErr)
-				case <-ticker.C:
+				default:
+				}
+				startApply()
+				for {
+					release, err := supervisor.AcquireOwner(dir)
+					if errors.Is(err, supervisor.ErrOwnerHeld) {
+						break attempts
+					}
+					if err != nil {
+						held()
+						t.Fatal(err)
+					}
+					release()
+					select {
+					case <-deadline.C:
+						held()
+						<-done
+						t.Fatal("migration never acquired root")
+					case <-done:
+						if migrationProbeRefusal(ctx, db, applyErr, dir) {
+							continue attempts
+						}
+						held()
+						t.Fatalf("migration returned before owner release: %v", applyErr)
+					case <-ticker.C:
+					}
 				}
 			}
 			if release, err := supervisor.AcquireOwner(dir); err == nil {
