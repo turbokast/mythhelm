@@ -110,7 +110,14 @@
 
 ## Task 10 — Prove lifecycle through the packaged binary
 
-<!-- pending -->
+- **Produces**: real packaged-binary PTY tests for q/d detach, exact state-bound recovery, pending stop, single SIGINT, SIGHUP/SIGTERM across lifecycle phases, detached deadlines and retained demo cleanup; test-only standard-library Python driver.
+- **For dependents**: retain named journal/Git barriers and per-key navigation barriers. Applying success/conflict rows require one intent/effect, canonical final receipt and owner-lock continuity through joined completion.
+- **Ownership controls**: unknown identities authorize neither liveness, absence, kill nor deletion. Explicit demo-root ownership survives registered cleanup until every captured writer is proven gone. Actual packaged review children and owner-side `waitpid` distinguish reaping from zombie absence.
+- **Historical validation**: full race gate passed (297.9s; e2e 128.918s), formatter/vet/tidy/lint/hygiene passed, Windows and Darwin vet passed; independent code and architecture reviews returned Ready. Unix-only cases keep explicit build constraints; platform qualification remains separately evidenced.
+- **For visual tasks**: preserve Task 1’s immutable capture hash and these lifecycle tests while changing rendering. No production source or capture bytes changed in Task 10.
+
+
+- **Current integration**: `f287dfb` restores the five test assets onto merged prerequisite `74a049a`; 13-test race acceptance passed (66.153s), all five fresh cleanup counterfactuals failed and restored controls passed (4.521s). Historical mutant outcomes remain unknown. System Python is required ahead of shims that depend on HOME in deliberately isolated fixtures. Current canonical gates and independent review remain separate from historical evidence.
 
 ## Task 11 — Migrate theme tokens and contrast validation
 
