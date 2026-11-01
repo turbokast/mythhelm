@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -238,39 +239,135 @@ func assertRunSequences(t *testing.T, evs []Event, want ...int64) {
 	}
 }
 
+// concurrentAppendRound holds the first real write transaction while the other
+// handle owns a connection for its actual Append/BeginTx. No other SQL work
+// uses that handle during the witness. Both calls finish before the next pair.
+func concurrentAppendRound(ctx context.Context, t *testing.T, journals [2]*Journal, evs [2]Event) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(ctx)
+	start := make(chan struct{})
+	entered := make(chan int, 2)
+	type result struct {
+		handle int
+		err    error
+	}
+	results := make(chan result, 2)
+	unblock := make(chan struct{})
+	var releaseOnce, first sync.Once
+	release := func() { releaseOnce.Do(func() { close(unblock) }) }
+	var wg sync.WaitGroup
+	defer func() { release(); cancel(); wg.Wait() }()
+	timer := time.NewTimer(3 * time.Second)
+	defer timer.Stop()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for i, j := range journals {
+		wg.Go(func() {
+			<-start
+			err := j.Append(ctx, evs[i], func(tx *sql.Tx) error {
+				var count int
+				if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM journal WHERE event_id=?`, evs[i].EventID).Scan(&count); err != nil {
+					return err
+				}
+				if count != 1 {
+					return fmt.Errorf("projection sees %d rows for %s", count, evs[i].EventID)
+				}
+				entered <- i
+				first.Do(func() {
+					select {
+					case <-unblock:
+					case <-ctx.Done():
+					}
+				})
+				return ctx.Err()
+			})
+			results <- result{i, err}
+		})
+	}
+	close(start)
+	var holder int
+	select {
+	case holder = <-entered:
+	case r := <-results:
+		t.Fatalf("append %d returned before held projection: %v", r.handle, r.err)
+	case <-timer.C:
+		t.Fatal("no write projection reached the round barrier")
+	}
+	other := 1 - holder
+	if journals[holder].db.Stats().InUse == 0 {
+		t.Fatal("projection did not retain its real transaction connection")
+	}
+	for journals[other].db.Stats().InUse == 0 {
+		select {
+		case second := <-entered:
+			t.Fatalf("projection %d entered while first write transaction held", second)
+		case r := <-results:
+			t.Fatalf("append %d finished before concurrent SQL witness: %v", r.handle, r.err)
+		case <-timer.C:
+			t.Fatal("second Append never owned a SQL connection while first write held")
+		case <-tick.C:
+		}
+	}
+	select {
+	case second := <-entered:
+		t.Fatalf("projection %d bypassed held SQLite writer", second)
+	default:
+	}
+	select {
+	case r := <-results:
+		t.Fatalf("append %d returned while first write held: %v", r.handle, r.err)
+	default:
+	}
+	release()
+	wg.Wait()
+	for range 2 {
+		r := <-results
+		if r.err != nil {
+			t.Fatalf("concurrent Append handle %d: %v", r.handle, r.err)
+		}
+	}
+}
+
 func TestConcurrentAppendsFromTwoHandles(t *testing.T) {
-	// Two handles on one file stand in for two supervisor processes; SQLite's
-	// immediate transactions and busy timeout serialise them.
+	// SQLite serialises each concurrent pair; this does not require fairness
+	// across one writer's 25 repeated acquisitions ahead of its peer.
 	j1, dir := openTemp(t)
 	j2, err := Open(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = j2.Close() }()
-
 	const perProducer = 25
-	var wg sync.WaitGroup
-	errs := make(chan error, 2*perProducer)
-	for i, j := range []*Journal{j1, j2} {
-		producer := fmt.Sprintf("sup_%d", i)
-		wg.Go(func() {
-			for seq := int64(1); seq <= perProducer; seq++ {
-				if err := j.Append(t.Context(), event("run_a", producer, seq, 1), nil); err != nil {
-					errs <- err
-				}
-			}
-		})
-	}
-	wg.Wait()
-	close(errs)
-	for err := range errs {
-		t.Fatalf("concurrent Append: %v", err)
+	expected := make(map[string]Event, 2*perProducer)
+	for seq := int64(1); seq <= perProducer; seq++ {
+		var pair [2]Event
+		for i := range pair {
+			pair[i] = event("run_a", fmt.Sprintf("sup_%d", i), seq, 1)
+			pair[i].ObservedAt = pair[i].ObservedAt.UTC()
+			expected[pair[i].EventID] = pair[i]
+		}
+		concurrentAppendRound(t.Context(), t, [2]*Journal{j1, j2}, pair)
 	}
 	want := make([]int64, 2*perProducer)
 	for i := range want {
 		want[i] = int64(i + 1)
 	}
-	assertRunSequences(t, events(t, j1, "run_a", 0), want...)
+	got := events(t, j1, "run_a", 0)
+	assertRunSequences(t, got, want...)
+	for _, ev := range got {
+		want, ok := expected[ev.EventID]
+		if !ok {
+			t.Fatalf("unexpected event ID %s", ev.EventID)
+		}
+		ev.RunSequence = 0
+		if !reflect.DeepEqual(ev, want) {
+			t.Fatalf("persisted event = %+v; want %+v", ev, want)
+		}
+		delete(expected, ev.EventID)
+	}
+	if len(expected) != 0 {
+		t.Fatalf("missing %d expected events", len(expected))
+	}
 }
 
 func TestAppendProjectionErrorRollsBack(t *testing.T) {
