@@ -34,6 +34,13 @@ scope, the target is elapsed delivery time no greater than baseline time divided
 by 20. Shipping a smaller scope, counting more PRs, or excluding failures and waits
 does not establish it. The controlled-comparison requirements below still apply.
 
+The [2026-11-01 delivery wave](dogfood/0006-self-building-delivery-wave.md)
+records the accepted design and migration guidance, pending implementation, a
+contract-blocked codec and five refused native task launches with direct fallbacks.
+Observed local validation retries do not establish a speedup; native usage and
+full delivery durations are incomplete. The full product and 20× target remain
+unproven.
+
 The [2026-10-31 self-building report](dogfood/0005-self-building-status.md) records
 merged maintenance, three failed spec reviews, a required CI failure and repeated
 native admission refusals with direct fallbacks. The product remains unfinished;

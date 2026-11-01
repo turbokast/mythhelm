@@ -630,3 +630,36 @@ func validateObservedEvent(e journal.Event) error {
 	}
 	return nil
 }
+
+// PreparedReply carries verified outer metadata; it adds no wire-body fields.
+type PreparedReply struct {
+	Run      PreparedRun
+	Revision uint64
+}
+
+// PreparedRunClient uses explicit operation identities and server revisions.
+type PreparedRunClient interface {
+	RunClient
+	PrepareRevisioned(context.Context, string, RunSpec) (PreparedReply, error)
+	ConfirmRevisioned(context.Context, string, uint64, RunConfirmation) (PreparedReply, error)
+}
+
+// PreparationConflictError exposes only validated same-binding current metadata.
+type PreparationConflictError struct {
+	current    PreparedReply
+	cause      *Error
+	hasCurrent bool
+}
+
+func (e *PreparationConflictError) Error() string { return e.cause.Error() }
+func (e *PreparationConflictError) Unwrap() error { return e.cause }
+
+// Current returns an independent copy of validated current preparation metadata.
+func (e *PreparationConflictError) Current() (PreparedReply, bool) {
+	if e == nil || !e.hasCurrent {
+		return PreparedReply{}, false
+	}
+	out := e.current
+	out.Run.Challenges = append([]AdmissionChallenge{}, out.Run.Challenges...)
+	return out, true
+}

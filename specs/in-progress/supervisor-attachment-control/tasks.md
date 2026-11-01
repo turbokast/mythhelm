@@ -290,7 +290,7 @@
 - **Test plan**: Real SQLite plus deterministic transaction barriers, closed external-package constructor tests and guard/binding omission mutants. Compile imports and independently verify actual current-row rechecks rather than trusting a stale handle snapshot.
 - **Invariants touched**: I02/I03/I12/I20/I21/I23 (v2 §§5/6/8: checked immutable effects and authority separate from structure).
 
-### Task 31 — Produce revision-aware standalone client metadata
+### Task 31 — Produce revision-aware standalone client metadata ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -309,6 +309,11 @@
   - `TestPreparedReplyMetadataValidation` rejects mismatched operation/preparation/binding/generation, negative or missing usable revision, unsupported body schema and unsafe conflict metadata; Current/getters copy challenge slices. Existing control attachment/client tests still compile and retain their behavior.
 - **Test plan**: Real exported client/framing path and independent server response fixtures, no generic fake counter inferred by the client. Task8 owns registered-service/SQLite revision production and Task9 owns the actual successful launch control. This is an additive Go API amendment, not a new wire field or native qualification.
 - **Invariants touched**: I02/I09/I20/I23 (v2 §§3/6/8: server-authoritative preconditions and exact idempotent replay).
+- **Status**: ✅ Completed — added explicit preparation operation IDs and verified server revisions through the existing standalone client; PR #553.
+- **Implementation**: Source commit `94e7bbb` adds strict outer-envelope revision presence and revisioned methods on the actual runClient; `056f7eb` adds the independently reviewed concurrent-caller acceptance fixture. Independent code/architecture review and focused race validation returned Ready, including the null-conflict error-preservation correction. Reviewed delivery-wave docs accompany the code in commits `ba699e0` and `9d623a9`.
+- **Spec deviations**: `specs/in-progress/supervisor-attachment-control/tasks.md` records own completion; `specs/in-progress/supervisor-attachment-control/handoff.md` supplies the client seam; `specs/in-progress/supervisor-attachment-control/scratchpad.md` records the revision finding. The user's explicit self-building documentation request also updates `README.md` with the current evidence link, adds `docs/dogfood/0006-self-building-delivery-wave.md` as a fixed snapshot, links it from `docs/index.md`, and preserves benchmark limits in `docs/benchmarks.md`; these four separately reviewed docs paths share this PR's required CI. Pre-merge metadata follows WORKFLOW/task-completion; PR #553 must merge before dependents consume this producer. No wire-body, native-qualification or service-authority deviation.
+- **Validation**: All six canonical gates pass; final full repository race gate 332.1s includes the concurrent-caller fixture, with independent focused client race 1.875s, null-conflict regression review/race 1.166s and concurrent-caller review/race 1.096s. The earlier 353.1s pass predates that additional fixture and is retained separately. Actual framed fixtures cover nonsequential server revisions, lost acknowledgement, immutable historical replay, exact conflict identity/generation, missing/null/negative/duplicate outer metadata and zero-send legacy methods. Discarded-revision and aliased-Current mutants fail. Initial compile/lint/global-lock failures and the earlier source-changing unrecorded full pass remain in private accounting; they are not relabelled final-source passes. Rendered site/examples remain required GitHub CI.
+- **Files modified**: `internal/control/client.go`, `internal/control/client_test.go`, `internal/control/run_contract.go`, `internal/control/run_contract_test.go`, `README.md`, `docs/dogfood/0006-self-building-delivery-wave.md`, `docs/index.md`, `docs/benchmarks.md`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
 ### Task 4 — Extract lock-held lifecycle entrypoints
 

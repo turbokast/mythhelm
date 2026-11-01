@@ -240,12 +240,14 @@ func TestRunClientMethodEnvelopes(t *testing.T) {
 		}
 		return nil, errors.New("unexpected standalone method")
 	}}
-	client := control.NewRunClient(conn)
-	p, err := client.Prepare(context.Background(), runSpecFixture())
+	client := control.NewPreparedRunClient(conn)
+	reply, err := client.PrepareRevisioned(context.Background(), "prepare-op", runSpecFixture())
+	p := reply.Run
 	if err != nil || p.PreparationID != "prep" || !p.Ready {
 		t.Fatalf("prepare = %+v, %v", p, err)
 	}
-	p, err = client.Confirm(context.Background(), control.RunConfirmation{SchemaVersion: 2, PreparationID: "prep", ChallengeID: "challenge", BindingSHA256: binding, Approved: true})
+	reply, err = client.ConfirmRevisioned(context.Background(), "confirm-op", reply.Revision, control.RunConfirmation{SchemaVersion: 2, PreparationID: "prep", ChallengeID: "challenge", BindingSHA256: binding, Approved: true})
+	p = reply.Run
 	if err != nil || !p.Ready {
 		t.Fatalf("confirm = %+v, %v", p, err)
 	}
