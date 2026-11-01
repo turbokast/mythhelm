@@ -43,6 +43,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch key {
+	case "v":
+		m.agentRaw = !m.agentRaw
 	case "esc":
 		m.backOut()
 	case "tab", "right":

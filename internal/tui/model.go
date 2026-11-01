@@ -90,6 +90,7 @@ type Model struct {
 	focusPrev           string
 	focusIndex          int
 	selectedTask        string
+	agentRaw            bool
 	selectedLane        string
 	dialog              string
 	dialogField         int
