@@ -25,7 +25,7 @@ cells:
 <section class="landing-intro" aria-labelledby="landing-title">
   <h1 id="landing-title">Run the agents you already trust.<br> Know what they actually did.</h1>
   <p><a href="#status">What works, what’s in progress, what’s not yet</a></p>
-  <p><strong>Delivery target: at least 20× faster full-product delivery. Not demonstrated.</strong> Native self-use still had rejected candidates and acceptance gaps at the November 2 19:30 UTC snapshot. The full product is unfinished. Read the <a href="{{ '/dogfood/0013-acceptance-gaps.html' | relative_url }}">latest report and actual measures</a>.</p>
+  <p><strong>Target: build and ship MYTHHELM at least 20× faster. Not demonstrated.</strong> Native self-use still had rejected candidates and acceptance gaps at the November 2 19:30 UTC snapshot. The full product is unfinished. Read the <a href="{{ '/dogfood/0013-acceptance-gaps.html' | relative_url }}">latest report and actual measures</a>.</p>
 </section>
 
 <section id="quickstart" aria-labelledby="try-the-scripted-demo" markdown="1">
@@ -44,6 +44,8 @@ go run ./cmd/mythhelm demo
 </section>
 
 <p>At that fixed snapshot, formatting and independent review found defects after a successful native exit, recording counterfixtures exposed gaps after passing fake checks, and Windows CI blocked a service fixture. Documentation and watchdog repairs are merged. The <a href="{{ '/dogfood/0012-native-self-building-start.html' | relative_url }}">earlier native trial</a> and <a href="{{ '/dogfood/0003-measured-self-hosting.html' | relative_url }}">accepted maintenance pilot and matched pair</a> remain separate historical evidence; no comparative advantage is established.</p>
+
+<p>The 20× target concerns building and delivering MYTHHELM itself. The separate product goal is faster, cheaper and higher-quality delivery than vanilla native harnesses, with no assigned speedup factor. That advantage requires fair measurement and remains unproven; building and shipping can continue while comparisons are prepared.</p>
 
   <p><strong>Service shell staging: a first status lookup can change the root.</strong> Successful supervisor startup on a fresh root initialises and adopts it. The existing local <code>run</code>, <code>recover</code> and <code>apply</code> paths then refuse that root until their service clients land. The shell serves authenticated status; <code>run.start</code> and <code>attachment.open</code> remain unsupported. Read the <a href="{{ '/limitations.html#service-shell-staging' | relative_url }}">startup and migration limits</a>.</p>
 

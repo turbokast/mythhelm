@@ -7,8 +7,8 @@ title: Native self-use and acceptance gaps — 2026-11-02
 
 **MYTHHELM is doing real native self-use. Successful native exits and passing
 checks have still left rejected candidates and unresolved delivery defects.
-The full product is unfinished; at least 20× faster full-product delivery is
-not demonstrated.**
+The full product is unfinished; the target to build and ship MYTHHELM at least
+20× faster is not demonstrated.**
 
 This is a fixed **2026-11-02 19:30 UTC snapshot**, based on main `301a36e`.
 The [earlier native trial report](0012-native-self-building-start.html) and
@@ -86,8 +86,15 @@ observations are neither the first self-use nor the first comparison.
 No new paired comparison was launched for this report. A proposed controlled
 parser pilot remained unassigned, with budget, model and configuration parity
 unresolved. Routine native and direct fallback work cannot supply a missing
-same-contract arm or protected assignment. There is no current evidence of
-20×, faster, cheaper or higher-quality full-product delivery.
+same-contract arm or protected assignment.
+
+The target to build and deliver MYTHHELM itself at least 20× faster concerns
+its development and shipment. It is not a 20× product-runtime or native-harness
+performance claim. Separately, the product aims for faster, cheaper and
+higher-quality delivery than vanilla native harnesses, with no assigned speedup
+factor. Neither goal is demonstrated here. Building and shipping can continue
+while fair comparisons are prepared; comparative performance claims require
+evidence.
 
 This report itself used a recorded direct Codex fallback after restricted-route
 admission refusal. That documentation work is not MYTHHELM-owned execution.
