@@ -16,6 +16,8 @@ import (
 	"testing"
 
 	"github.com/turbokast/mythhelm/internal/journal"
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 // schemaImage is the bytes of a freshly migrated, fully checkpointed journal
@@ -246,10 +248,107 @@ func TestSeededJournalMatchesFreshJournal(t *testing.T) {
 	}
 }
 
+// seededRunWrite retains the original run and producer identity for one fixture write.
+type seededRunWrite struct {
+	j        *journal.Journal
+	row      journal.RunRow
+	producer *Producer
+	err      error
+}
+
+func seededWriteBusy(err error) bool {
+	e, ok := errors.AsType[*sqlite.Error](err)
+	return ok && e != nil && e.Code()&0xff == sqlite3.SQLITE_BUSY
+}
+
+func seededBusyHasNoEffects(ctx context.Context, w *seededRunWrite) error {
+	if !seededWriteBusy(w.err) {
+		return fmt.Errorf("fixture write was not a typed SQLITE_BUSY refusal: %w", w.err)
+	}
+	if _, err := w.j.Run(ctx, w.row.RunID); err == nil {
+		return errors.New("busy refusal left a run row")
+	} else if !errors.Is(err, journal.ErrNotFound) {
+		return fmt.Errorf("reading busy-refused run: %w", err)
+	}
+	events, err := w.j.Events(ctx, w.row.RunID, 0)
+	if err != nil {
+		return fmt.Errorf("reading busy-refused events: %w", err)
+	}
+	if len(events) != 0 {
+		return fmt.Errorf("busy refusal left %d events", len(events))
+	}
+	return nil
+}
+
+func finishSeededRunWrites(ctx context.Context, writes []*seededRunWrite) error {
+	for _, w := range writes {
+		if w.err == nil {
+			continue
+		}
+		if err := seededBusyHasNoEffects(ctx, w); err != nil {
+			return err
+		}
+		// One serial completion, not a production retry policy or a loop.
+		if err := CreateRun(ctx, w.j, w.row, w.producer); err != nil {
+			return fmt.Errorf("completing refused fixture write once: %w", err)
+		}
+	}
+	return nil
+}
+
+func TestSeededJournalBusyRefusalIsAtomic(t *testing.T) {
+	t.Parallel()
+	j := openSeededJournal(t)
+	db := rawOpen(t, filepath.Join(j.StateDir(), journal.DBName))
+	conn, err := db.Conn(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := conn.ExecContext(t.Context(), "BEGIN IMMEDIATE"); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _, _ = conn.ExecContext(context.Background(), "ROLLBACK") }()
+	w := &seededRunWrite{j: j, row: journal.RunRow{RunID: "run_busy", AdapterID: "builtin/fake", SourceRepo: "/tmp/repo", TaskSHA256: "t", BillingPosture: "local-scripted", ExecutionProfile: "trusted-host"}, producer: NewProducer("sup_busy", 1)}
+	w.err = CreateRun(t.Context(), j, w.row, w.producer)
+	if err := seededBusyHasNoEffects(t.Context(), w); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.ExecContext(t.Context(), "ROLLBACK"); err != nil {
+		t.Fatal(err)
+	}
+	if err := finishSeededRunWrites(t.Context(), []*seededRunWrite{w}); err != nil {
+		t.Fatal(err)
+	}
+	run, err := j.Run(t.Context(), w.row.RunID)
+	if err != nil || run.RunID != w.row.RunID {
+		t.Fatalf("completion row: %+v, %v", run, err)
+	}
+	events, err := j.Events(t.Context(), w.row.RunID, 0)
+	if err != nil || len(events) != 1 || events[0].ProducerID != "sup_busy" || events[0].ProducerSequence != 1 {
+		t.Fatalf("completion events: %+v, %v", events, err)
+	}
+}
+
+func TestSeededJournalCompletionRejectsUnknownError(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{name: "same text is not a typed busy refusal", err: errors.New("database is locked (5) (SQLITE_BUSY)")},
+		{name: "cancellation is not a busy refusal", err: context.Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := finishSeededRunWrites(t.Context(), []*seededRunWrite{{err: tc.err}}); got == nil {
+				t.Fatalf("accepted non-SQLite-BUSY error %v", tc.err)
+			}
+		})
+	}
+}
+
 func TestSeededJournalsAreIsolated(t *testing.T) {
-	// Isolate this fixture from unrelated parallel package work while retaining
-	// its four concurrent A writers and independent B writer below. Windows CI
-	// observed SQLITE_BUSY here; the underlying load/lock cause is unproven.
+	t.Parallel()
 	img, err := pristineSchema()
 	if err != nil {
 		t.Fatal(err)
@@ -271,24 +370,26 @@ func TestSeededJournalsAreIsolated(t *testing.T) {
 	}
 	_, _, emptyRows := dumpDB(t, pathB)
 
-	createRuns := func(j *journal.Journal, prefix string, n int) error {
+	createRuns := func(j *journal.Journal, prefix string, n int) []*seededRunWrite {
+		writes := make([]*seededRunWrite, n)
 		var wg sync.WaitGroup
-		errs := make([]error, n)
 		for i := range n {
-			wg.Go(func() {
-				errs[i] = CreateRun(t.Context(), j, journal.RunRow{RunID: fmt.Sprintf("run_%s_%d", prefix, i), AdapterID: "builtin/fake", SourceRepo: "/tmp/repo",
-					TaskSHA256: "t", BillingPosture: "local-scripted", ExecutionProfile: "trusted-host"}, NewProducer(fmt.Sprintf("sup_%s_%d", prefix, i), 1))
-			})
+			w := &seededRunWrite{j: j, row: journal.RunRow{RunID: fmt.Sprintf("run_%s_%d", prefix, i), AdapterID: "builtin/fake", SourceRepo: "/tmp/repo",
+				TaskSHA256: "t", BillingPosture: "local-scripted", ExecutionProfile: "trusted-host"}, producer: NewProducer(fmt.Sprintf("sup_%s_%d", prefix, i), 1)}
+			writes[i] = w
+			wg.Go(func() { w.err = CreateRun(t.Context(), w.j, w.row, w.producer) })
 		}
 		wg.Wait()
-		return errors.Join(errs...)
+		return writes
 	}
 	var wg sync.WaitGroup
-	var errA, errB error
-	wg.Go(func() { errA = createRuns(a, "a", 4) })
-	wg.Go(func() { errB = createRuns(b, "b", 1) })
+	var writesA, writesB []*seededRunWrite
+	wg.Go(func() { writesA = createRuns(a, "a", 4) })
+	wg.Go(func() { writesB = createRuns(b, "b", 1) })
 	wg.Wait()
-	if err := errors.Join(errA, errB); err != nil {
+	// ADR 0003 permits a bounded SQLITE_BUSY refusal. Only after every initial
+	// writer joins, prove zero effects and complete each refused write once.
+	if err := finishSeededRunWrites(t.Context(), append(writesA, writesB...)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -315,7 +416,7 @@ func TestSeededJournalsAreIsolated(t *testing.T) {
 	if err := os.RemoveAll(a.StateDir()); err != nil {
 		t.Fatal(err)
 	}
-	if err := createRuns(b, "b2", 2); err != nil {
+	if err := finishSeededRunWrites(t.Context(), createRuns(b, "b2", 2)); err != nil {
 		t.Fatal(err)
 	}
 	runs, err := b.ListRuns(t.Context(), 100)
