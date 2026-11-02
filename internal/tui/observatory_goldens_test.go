@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -752,5 +754,106 @@ func TestMissionKeepsExplicitUnsupervisedNow(t *testing.T) {
 				t.Fatalf("NOW lost explicit owner observation: %q", rows[2])
 			}
 		})
+	}
+}
+
+// Exercise View rather than a row-capping helper: each invocation records the
+// actual input to the real formatter, which still performs all sanitisation.
+func TestObservatoryDiffViewportWork(t *testing.T) {
+	t.Parallel()
+	for _, width := range []int{90, 120, 160} {
+		t.Run(strconv.Itoa(width), func(t *testing.T) {
+			t.Parallel()
+			m := ladderGoldenFixture(t, width, 30, true)
+			m.focusPane, m.sidePane, m.diffOrigin = paneDetail, paneDetail, paneEvidence
+			m.snap.Candidate = &journal.CandidateRow{Commit: strings.Repeat("c", 40), BaseRev: strings.Repeat("b", 40)}
+			m.diff = Diff{Lines: make([]DiffLine, 10000), total: 10000}
+			for i := range m.diff.Lines {
+				m.diff.Lines[i] = DiffLine{Kind: DiffContext, Text: fmt.Sprintf("context line %05d", i)}
+			}
+			calls, visits := 0, 0
+			m.diffRenderer = func(d Diff, w int) []string {
+				calls++
+				visits += len(d.Lines)
+				if d.TotalLines() != 10000 || d.Truncated || d.TruncateCap != "" {
+					t.Fatal("viewport changed physical diff provenance")
+				}
+				return d.Render(w, m.cfg.Caps, m.cfg.Tokens)
+			}
+			view := stripANSI(m.View())
+			if calls != 1 || visits != map[int]int{90: 20, 120: 21, 160: 21}[width] {
+				t.Fatalf("View formatted %d diff rows in %d calls for height %d", visits, calls, m.height)
+			}
+			if !strings.Contains(view, "context line 00000") || strings.Contains(view, "context line 09999") || !strings.Contains(view, "more lines") {
+				t.Fatalf("viewport lost visible prefix or omission marker: %s", view)
+			}
+			if len(m.diff.Lines) != 10000 || m.diff.TotalLines() != 10000 || m.diff.Truncated {
+				t.Fatal("View mutated original diff")
+			}
+			calls, visits = 0, 0
+			exported := m.exportText()
+			var want strings.Builder
+			want.WriteString(stripANSI(m.paneHeader(paneDetail, "DIFF").text) + "\n" + m.ruleLine(width) + "\n")
+			for i := range 10000 {
+				fmt.Fprintf(&want, "context line %05d\n", i)
+			}
+			want.WriteString("verification: waiting\n")
+			if calls != 1 || visits != 10000 || exported != want.String() {
+				t.Fatalf("full export changed: calls=%d visits=%d exact=%v", calls, visits, exported == want.String())
+			}
+		})
+	}
+}
+
+// The independently retained render-then-cap result is an output oracle, not
+// the performance implementation. It covers proof rows at the slice boundary,
+// the empty label, physical limits and budgets smaller than the pane header.
+func TestObservatoryDiffViewportSemantics(t *testing.T) {
+	t.Parallel()
+	for _, count := range []int{0, 1, 2, 8, 100} {
+		for _, physical := range []string{"", truncateLines, truncateBytes} {
+			t.Run(fmt.Sprintf("%d/%s", count, physical), func(t *testing.T) {
+				t.Parallel()
+				m := ladderGoldenFixture(t, 100, 30, true)
+				m.focusPane = paneDetail
+				m.diff = Diff{Lines: make([]DiffLine, count), Truncated: physical != "", TruncateCap: physical, total: count + 700}
+				for i := range m.diff.Lines {
+					m.diff.Lines[i] = DiffLine{Kind: DiffAdd, Text: fmt.Sprintf("+row %d\t\x1b[31m", i)}
+				}
+				full := m.detailLines(40)
+				for height := 1; height <= count+10; height++ {
+					want := capLines(append([]line(nil), full...), height, m.cfg.Caps, m.cfg.Tokens.TextMuted)
+					got := m.detailViewportLines(40, height)
+					if !reflect.DeepEqual(got, want) {
+						t.Fatalf("height %d: bounded rows differ from complete render-then-cap\ngot %#v\nwant %#v", height, got, want)
+					}
+				}
+				if physical != "" {
+					calls, visits := 0, 0
+					m.diffRenderer = func(d Diff, width int) []string {
+						calls++
+						visits += len(d.Lines)
+						if !d.Truncated || d.TruncateCap != physical || d.TotalLines() != count+700 {
+							t.Fatal("viewport renderer lost physical provenance")
+						}
+						return d.Render(width, m.cfg.Caps, m.cfg.Tokens)
+					}
+					before := m.truncationNotice()
+					m.View()
+					if calls > 1 || visits > 19 || !reflect.DeepEqual(before, m.truncationNotice()) || len(m.diff.Lines) != count {
+						t.Fatalf("physical viewport changed original notice or exceeded body: calls=%d visits=%d", calls, visits)
+					}
+					calls, visits = 0, 0
+					exported := m.exportText()
+					var want strings.Builder
+					for _, row := range m.detailLines(100) {
+						want.WriteString(stripANSI(row.text) + "\n")
+					}
+					if exported != want.String() || visits != 2*count || calls != 2 {
+						t.Fatal("physical truncation export no longer uses all retained rows and proof")
+					}
+				}
+			})
+		}
 	}
 }

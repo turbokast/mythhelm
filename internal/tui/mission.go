@@ -159,7 +159,7 @@ func (m *Model) detailLines(width int) []line {
 	case m.diffErr != nil:
 		out = append(out, line{text: "diff unavailable: " + cell(m.diffErr.Error())})
 	default:
-		rows := m.diff.Render(width, m.cfg.Caps, m.cfg.Tokens)
+		rows := m.renderDiff(m.diff, width)
 		if m.diff.Truncated && len(rows) > 0 {
 			// The in-pane counts footer is replaced by the full-width
 			// provenance notice below the columns, which also names the
@@ -171,6 +171,55 @@ func (m *Model) detailLines(width int) []line {
 		}
 	}
 	return append(out, m.verificationLines()...)
+}
+
+// detailViewportLines bounds formatter input before rendering. The original
+// diff remains the export source; viewport omission is not physical truncation.
+func (m *Model) detailViewportLines(width, height int) []line {
+	if m.snap.Candidate == nil || m.diffErr != nil {
+		return capLines(m.detailLines(width), height, m.cfg.Caps, m.cfg.Tokens.TextMuted)
+	}
+	proof := m.verificationLines()
+	diffRows := len(m.diff.Lines)
+	if diffRows == 0 && !m.diff.Truncated {
+		diffRows = 1 // the formatter's labelled empty diff
+	}
+	total := 2 + diffRows + len(proof)
+	if total <= height {
+		return m.detailLines(width)
+	}
+	out := []line{m.paneHeader(paneDetail, "DIFF"), {text: m.ruleLine(width)}}
+	// Keep one row for the exact same omission marker as render-then-cap.
+	prefix := max(0, height-1)
+	if prefix < len(out) {
+		out = out[:prefix]
+	} else {
+		visible := min(diffRows, prefix-len(out))
+		if visible > 0 {
+			diff := m.diff
+			diff.Lines = diff.Lines[:min(visible, len(diff.Lines))]
+			rows := m.renderDiff(diff, width)
+			if diff.Truncated {
+				rows = rows[:len(rows)-1]
+			}
+			for _, row := range rows {
+				out = append(out, line{text: row})
+			}
+		}
+		out = append(out, proof[:min(len(proof), prefix-len(out))]...)
+	}
+	return append(out, line{
+		text:   ellGlyph(m.cfg.Caps) + fmt.Sprintf(" and %d more lines", total-prefix),
+		colour: m.cfg.Tokens.TextMuted,
+	})
+}
+
+// renderDiff keeps the formatter local to a model, including instrumentation.
+func (m *Model) renderDiff(diff Diff, width int) []string {
+	if m.diffRenderer != nil {
+		return m.diffRenderer(diff, width)
+	}
+	return diff.Render(width, m.cfg.Caps, m.cfg.Tokens)
 }
 
 // verificationLines pairs the verification result with its checked revision:

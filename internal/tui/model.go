@@ -84,6 +84,7 @@ type Model struct {
 	working             string
 	diff                Diff
 	diffErr             error
+	diffRenderer        func(Diff, int) []string
 	loadDiff            func(ctx context.Context, workspace, base, commit string) (Diff, error)
 	loadSnapshot        func(ctx context.Context, dir, runID string) (viewmodel.Snapshot, error)
 	width               int
@@ -554,6 +555,9 @@ func (m *Model) observatoryBody(l layout, height int) []line {
 		return capLines(m.observatoryVerdict(m.width), height, m.cfg.Caps, m.cfg.Tokens.TextMuted)
 	}
 	if l == layoutSingle {
+		if m.focusPane == paneDetail {
+			return m.detailViewportLines(m.width, height)
+		}
 		return capLines(m.focusedPaneLines(m.width), height, m.cfg.Caps, m.cfg.Tokens.TextMuted)
 	}
 	ids := []string{paneTasks, paneAgents, paneEvidence}
@@ -580,7 +584,12 @@ func (m *Model) observatoryBody(l layout, height int) []line {
 	widths := columnWidths(m.width, len(ids))
 	cols := make([]column, len(ids))
 	for i, id := range ids {
-		rows := m.paneLines(id, widths[i])
+		var rows []line
+		if id == paneDetail {
+			rows = m.detailViewportLines(widths[i], height)
+		} else {
+			rows = m.paneLines(id, widths[i])
+		}
 		if l == layoutTwoPane && id == paneTasks {
 			stages := m.observatoryEvidence(widths[i])
 			rows = append(rows, stages[:min(5, len(stages))]...)
