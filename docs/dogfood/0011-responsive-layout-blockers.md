@@ -10,7 +10,7 @@ not demonstrated. Actual MYTHHELM admission refused before launch; authoring
 used direct-session fallbacks, not MYTHHELM-owned execution.**
 
 This is a fixed **2026-11-02 09:03 UTC snapshot**. Later repairs and merges do not
-rewrite it. [Report 0010](0010-observatory-and-ci-failures.md) preserves the
+rewrite it. [Report 0010](0010-observatory-and-ci-failures.html) preserves the
 previous observation, including the failed pane attempts and Windows collector
 failures.
 
@@ -88,8 +88,8 @@ remain unresolved rather than being assigned invented outcomes. Overlapping
 records are not independent trials, and later defects remain possible.
 
 No completed full-product baseline or controlled comparison establishes 20×.
-See the [measurement plan](../benchmarks.md). The
-[service shell staging limitation](../limitations.md#service-shell-staging)
+See the [measurement plan](../benchmarks.html). The
+[service shell staging limitation](../limitations.html#service-shell-staging)
 also remains: fresh startup adopts the root and legacy local run/recover/apply
 then refuse it until their service clients land. The shell serves authenticated
 status; run.start and attachment.open remain unsupported. Service-owned dispatch
