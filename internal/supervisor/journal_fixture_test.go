@@ -348,9 +348,7 @@ func TestSeededJournalCompletionRejectsUnknownError(t *testing.T) {
 }
 
 func TestSeededJournalsAreIsolated(t *testing.T) {
-	// Isolate this fixture from unrelated parallel package work while retaining
-	// its four concurrent A writers and independent B writer below. Windows CI
-	// observed SQLITE_BUSY here; the underlying load/lock cause is unproven.
+	t.Parallel()
 	img, err := pristineSchema()
 	if err != nil {
 		t.Fatal(err)
