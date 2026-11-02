@@ -843,7 +843,7 @@ func TestWatchWaitsForStreamStart(t *testing.T) {
 // so the watch must still start and end the stream promptly with the echo
 // trailer — never hang until Ctrl-C.
 func TestReviewResumePastEndReturnsPromptly(t *testing.T) {
-	// Keep the prompt-return watchdog outside the parallel SQLite fixture wave.
+	// runAccessibleReview installs process-wide os.Interrupt handling; keep its watchdog outside the parallel fixture wave.
 	f := newAccessibleFixture(t)
 	runID := ids.New("run")
 	f.addRun(runID, "completed", strings.Repeat("0", 64))
