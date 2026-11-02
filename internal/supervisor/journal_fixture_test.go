@@ -247,7 +247,9 @@ func TestSeededJournalMatchesFreshJournal(t *testing.T) {
 }
 
 func TestSeededJournalsAreIsolated(t *testing.T) {
-	t.Parallel()
+	// Isolate this fixture from unrelated parallel package work while retaining
+	// its four concurrent A writers and independent B writer below. Windows CI
+	// observed SQLITE_BUSY here; the underlying load/lock cause is unproven.
 	img, err := pristineSchema()
 	if err != nil {
 		t.Fatal(err)
