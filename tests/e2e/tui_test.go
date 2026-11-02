@@ -741,8 +741,8 @@ func TestNormalizeAdmissionPinnedExecutionDeadlineOnly(t *testing.T) {
 	e := env{state: "/state/synthetic", home: "/synthetic/home"}
 	const first = `{"type":"attempt.admission_pinned","payload":{"nonce_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","ladder_version":"stop-ladder/v1","launch_provenance":{"schema_version":1,"run_id":"run_fixture","attempt_id":"att_fixture","launch_token_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","nonce_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","ladder_version":"stop-ladder/v1","generation":0,"execution_deadline":"2026-01-02T03:04:05.123456789Z"}}}`
 	second := strings.Replace(first, "03:04:05.123456789Z", "03:04:06.987654321Z", 1)
-	normalize := func(raw string) string { return normalizeJSONLLine(t, raw, e, "/repo/synthetic") }
-	if normalize(first) != normalize(second) {
+	normalise := func(raw string) string { return normalizeJSONLLine(t, raw, e, "/repo/synthetic") }
+	if normalise(first) != normalise(second) {
 		t.Fatal("independent valid launch-provenance deadlines compare differently")
 	}
 	for _, tc := range []struct{ name, left, right string }{
