@@ -178,7 +178,7 @@ record_main() (
 	# The hero scratch directory has a short fixed path so the recording's
 	# paths read /tmp/demo/...; hero-env.sh replaces a leftover one that
 	# carries its marker file, and the exit trap removes it the same way.
-	# shellcheck disable=SC2329 # invoked by the EXIT trap
+	# shellcheck disable=SC2317,SC2329 # invoked indirectly by the EXIT trap (0.9/newer diagnostics)
 	cleanup() {
 		rm -rf "$tmpdir"
 		if test -f "$HERO_TMP/.mythhelm-hero"; then
