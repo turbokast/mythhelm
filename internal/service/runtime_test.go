@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -253,10 +254,7 @@ func TestServiceRootReadinessBindsIdentity(t *testing.T) {
 	}
 	for key, wrong := range map[string]any{"pid": float64(-1), "generation": float64(0), "root": "foreign-root", "endpoint": "foreign-endpoint", "migration_required": true} {
 		t.Run(key, func(t *testing.T) {
-			changed := make(map[string]any, len(valid))
-			for k, v := range valid {
-				changed[k] = v
-			}
+			changed := maps.Clone(valid)
 			changed[key] = wrong
 			if err := checkServiceRootIdentity(changed, "synthetic-root", "synthetic-endpoint"); err == nil {
 				t.Fatal("foreign or unadopted status counted as readiness")
