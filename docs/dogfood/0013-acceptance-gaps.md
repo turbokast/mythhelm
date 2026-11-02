@@ -51,7 +51,7 @@ The following categories describe different intervals and quantities:
 
 | Observation | Value |
 |---|---:|
-| Monotonic engine elapsed time | 596.403 seconds |
+| Monotonic engine elapsed time | 596.096 seconds |
 | Native-reported duration | 538.035 seconds |
 | Native-reported permission denials | 5 |
 | Reported input tokens | 66 |
@@ -60,6 +60,11 @@ The following categories describe different intervals and quantities:
 | Reported cache-creation tokens | 127,459 |
 | Estimated retail-equivalent usage | USD 2.5954286 |
 | Actual billed charges | Unknown |
+
+**Measurement erratum:** the earlier 596.403-second figure included an after-run
+authentication-status probe by the outer controller. The corrected 596.096-second
+engine interval ends at MYTHHELM command termination; it is not accepted-delivery
+latency. Native-reported duration and all other observations remain unchanged.
 
 The cache categories are separately reported usage, not fresh input tokens or
 cash charges. The retail-equivalent estimate is not an invoice, a measured
