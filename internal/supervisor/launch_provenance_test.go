@@ -26,7 +26,7 @@ import (
 
 // captureLaunchEnv names the file a re-executed worker writes its raw
 // Launch stdin to instead of running: the test binary is the exe Spawn
-// starts, so this captures the exact serialized handoff.
+// starts, so this captures the exact serialised handoff.
 const captureLaunchEnv = "MYTHHELM_TEST_CAPTURE_LAUNCH"
 
 func init() {
@@ -45,7 +45,7 @@ func init() {
 }
 
 const (
-	tokenSentinel = "launch-token-SENTINEL-7f3a"
+	tokenSentinel = "launch-token-SENTINEL-7f3a" //nolint:gosec // G101: fixed synthetic sentinel, never a credential.
 	envSentinel   = "SECRET_ENV_SENTINEL=9c1e"
 )
 
@@ -71,7 +71,7 @@ func tokenAttempt(t *testing.T, j *journal.Journal, p *Producer, runID, token st
 	return attemptID
 }
 
-// handoffMatches compares the durable record with a serialized Launch.
+// handoffMatches compares the durable record with a serialised Launch.
 func handoffMatches(rec control.LaunchProvenanceV1, l workers.Launch) error {
 	switch {
 	case *rec.Generation != l.Generation:
@@ -158,7 +158,7 @@ func TestLaunchProvenanceMatchesSerializedHandoff(t *testing.T) {
 		t.Fatalf("handoff deadline = %v, want the original %v with the attempt's token", handed.ExecutionDeadline, deadline)
 	}
 	if err := handoffMatches(rec, handed); err != nil {
-		t.Fatalf("durable record differs from the serialized handoff: %v", err)
+		t.Fatalf("durable record differs from the serialised handoff: %v", err)
 	}
 	if *rec.Generation != pinnedGen || !rec.ExecutionDeadline.Equal(deadline) {
 		t.Fatalf("record generation/deadline = %d/%v, want %d/%v", *rec.Generation, rec.ExecutionDeadline, pinnedGen, deadline)
@@ -198,7 +198,7 @@ func readCapture(t *testing.T, path string) workers.Launch {
 	t.Helper()
 	raw, err := os.ReadFile(path) //nolint:gosec // G304: the test's own capture path
 	if err != nil {
-		t.Fatalf("no serialized handoff reached the capture worker: %v", err)
+		t.Fatalf("no serialised handoff reached the capture worker: %v", err)
 	}
 	var handed workers.Launch
 	if err := json.Unmarshal(raw, &handed); err != nil {
@@ -320,7 +320,7 @@ func TestLaunchProvenanceWriteBeforeSpawn(t *testing.T) {
 			t.Fatalf("zero-generation handoff = %d/%v, record %v", handed.Generation, handed.ExecutionDeadline, rec.Generation)
 		}
 		if err := handoffMatches(rec, handed); err != nil {
-			t.Fatalf("durable record differs from the serialized handoff: %v", err)
+			t.Fatalf("durable record differs from the serialised handoff: %v", err)
 		}
 		if err := RecordAdmissionPinned(ctx, j, runID, "task_1", attemptID, stopLadderVersion(runtime.GOOS), workers.NonceDigest("other"), prod); err != nil {
 			t.Fatal(err)

@@ -951,7 +951,7 @@ func spawnPinned(ctx context.Context, exe, stateDir, runID, attemptID string, la
 // derived from that exact value before returning it for workers.Spawn
 // (design §3.2). A failed or conflicting pin returns an error and the
 // caller must not spawn. The pin is not evidence that a worker exists and
-// never authorizes a relaunch (I18).
+// never authorises a relaunch (I18).
 func pinnedLaunch(ctx context.Context, j *journal.Journal, prod *Producer, stateDir, runID, taskID, attemptID string, launch workers.Launch) (workers.Launch, error) {
 	nonce, generation, err := admissionInputs(stateDir)
 	if err != nil {
