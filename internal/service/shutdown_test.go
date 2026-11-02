@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -90,7 +91,67 @@ func TestServiceShutdownWithBlockedEntry(t *testing.T) {
 	unlock()
 }
 
-const synchronousCloseEntered = "T6 observer callback entered before synchronous Close"
+const observerCloseEntered = "T6 observer callback entered before close"
+
+// exec serializes writes when stdout and stderr share this writer. The parent
+// reads the buffer only after Wait has joined both output copies.
+type observerCloseOutput struct {
+	buf     bytes.Buffer
+	tail    []byte
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (w *observerCloseOutput) Write(p []byte) (int, error) {
+	n, err := w.buf.Write(p)
+	marker := []byte("\n" + observerCloseEntered + "\n")
+	w.tail = append(w.tail, p...)
+	if bytes.Contains(w.tail, marker) {
+		w.once.Do(func() { close(w.entered) })
+	}
+	if len(w.tail) >= len(marker) {
+		w.tail = w.tail[len(w.tail)-len(marker)+1:]
+	}
+	return n, err
+}
+
+func runObserverCloseProcess(cmd *exec.Cmd, setupBudget, closeBudget time.Duration) (string, bool, error) {
+	out := &observerCloseOutput{entered: make(chan struct{})}
+	cmd.Stdout, cmd.Stderr = out, out
+	if err := cmd.Start(); err != nil {
+		return "", false, err
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	setup := time.NewTimer(setupBudget)
+	defer setup.Stop()
+	select {
+	case <-out.entered:
+	case err := <-done:
+		// Wait may win the select after a fast callback and child exit.
+		select {
+		case <-out.entered:
+			return out.buf.String(), false, err
+		default:
+			return out.buf.String(), false, fmt.Errorf("child exited before close callback (exit=%v)", err)
+		}
+	case <-setup.C:
+		_ = cmd.Process.Kill()
+		err := <-done
+		return out.buf.String(), false, fmt.Errorf("setup deadline before close callback: %w", err)
+	}
+	// Setup, including SQLite and entry admission, does not consume this budget.
+	action := time.NewTimer(closeBudget)
+	defer action.Stop()
+	select {
+	case err := <-done:
+		return out.buf.String(), false, err
+	case <-action.C:
+		_ = cmd.Process.Kill()
+		err := <-done
+		return out.buf.String(), true, err
+	}
+}
 
 func TestObserverCloseOrdering(t *testing.T) {
 	if fixture := os.Getenv("MYTHHELM_T6_CLOSE_FIXTURE"); fixture != "" {
@@ -106,23 +167,85 @@ func TestObserverCloseOrdering(t *testing.T) {
 		blocked       bool
 	}{{"request close returns", "request", false}, {"synchronous close cannot return", "sync", true}} {
 		t.Run(c.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-			defer cancel()
-			cmd := exec.CommandContext(ctx, exe, "-test.run=^TestObserverCloseOrdering$", "-test.v", "-test.timeout=30s")
+			cmd := exec.CommandContext(t.Context(), exe, "-test.run=^TestObserverCloseOrdering$", "-test.v", "-test.timeout=30s")
 			cmd.Env = []string{"MYTHHELM_T6_CLOSE_FIXTURE=" + c.fixture, "MYTHHELM_T6_FIXTURE_PARENT=" + t.TempDir(), "SystemRoot=" + os.Getenv("SystemRoot"), "USERNAME=" + os.Getenv("USERNAME"), "TEMP=" + os.TempDir(), "TMP=" + os.TempDir()}
-			var out bytes.Buffer
-			cmd.Stdout = &out
-			cmd.Stderr = &out
-			err := cmd.Run()
-			blocked := errors.Is(ctx.Err(), context.DeadlineExceeded)
-			if blocked && !bytes.Contains(out.Bytes(), []byte("\n"+synchronousCloseEntered+"\n")) {
-				t.Fatalf("child blocked before the actual synchronous Close callback: %v %s", err, out.String())
-			}
+			out, blocked, err := runObserverCloseProcess(cmd, 20*time.Second, 5*time.Second)
 			if blocked != c.blocked {
-				t.Fatalf("callback close blocked=%v want%v: %v %s", blocked, c.blocked, err, out.String())
+				t.Fatalf("callback close blocked=%v want%v: %v %s", blocked, c.blocked, err, out)
 			}
 			if !blocked && err != nil {
-				t.Fatalf("owned callback fixture failed: %v %s", err, out.String())
+				t.Fatalf("owned callback fixture failed: %v %s", err, out)
+			}
+		})
+	}
+}
+
+func TestObserverCloseProcessPhases(t *testing.T) {
+	if mode := os.Getenv("MYTHHELM_T6_PHASE_FIXTURE"); mode != "" {
+		if mode == "missing" {
+			os.Exit(0)
+		}
+		var gate [1]byte
+		if _, err := io.ReadFull(os.Stdin, gate[:]); err != nil {
+			t.Fatal(err)
+		}
+		// Separate writes also exercise marker fragments crossing output reads.
+		_, _ = fmt.Fprint(os.Stdout, "\n"+observerCloseEntered[:12])
+		_, _ = fmt.Fprintln(os.Stdout, observerCloseEntered[12:])
+		os.Exit(7)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"gated", "missing", "setup timeout"} {
+		t.Run(mode, func(t *testing.T) {
+			cmd := exec.CommandContext(t.Context(), exe, "-test.run=^TestObserverCloseProcessPhases$", "-test.timeout=10s")
+			cmd.Env = append(os.Environ(), "MYTHHELM_T6_PHASE_FIXTURE="+mode)
+			gate, err := cmd.StdinPipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer gate.Close()
+			released := make(chan struct{})
+			if mode == "gated" {
+				go func() {
+					defer close(released)
+					// Hold setup longer than the entire action budget without changing it.
+					timer := time.NewTimer(1100 * time.Millisecond)
+					defer timer.Stop()
+					select {
+					case <-timer.C:
+						_, _ = gate.Write([]byte{1})
+					case <-t.Context().Done():
+					}
+				}()
+			} else {
+				close(released)
+			}
+			setupBudget := 5 * time.Second
+			if mode == "setup timeout" {
+				setupBudget = 100 * time.Millisecond
+			}
+			out, blocked, err := runObserverCloseProcess(cmd, setupBudget, time.Second)
+			<-released
+			if blocked {
+				t.Fatalf("setup consumed close budget: %v %s", err, out)
+			}
+			switch mode {
+			case "gated":
+				var exit *exec.ExitError
+				if !errors.As(err, &exit) || exit.ExitCode() != 7 || !bytes.Contains([]byte(out), []byte(observerCloseEntered)) {
+					t.Fatalf("callback output/exit lost: %v %s", err, out)
+				}
+			case "missing":
+				if err == nil || !bytes.Contains([]byte(err.Error()), []byte("exited before close callback")) {
+					t.Fatalf("missing marker accepted: %v %s", err, out)
+				}
+			case "setup timeout":
+				if err == nil || !bytes.Contains([]byte(err.Error()), []byte("setup deadline before close callback")) {
+					t.Fatalf("setup failure misclassified: %v %s", err, out)
+				}
 			}
 		})
 	}
@@ -134,19 +257,24 @@ func observerCloseFixture(t *testing.T, synchronous bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	callbackEntered := make(chan struct{})
 	callbackReturned := make(chan struct{})
-	var once sync.Once
+	var once, returnedOnce sync.Once
 	releaseIngest := make(chan struct{})
 	seedVerifying(t, r, "run_callback")
 	a, err := r.startEntry(t.Context(), owner, func(ctx context.Context, h supervisor.Hooks) error {
 		h.Event = func(journal.Event) {
+			// Only the first actual callback begins the close-return window.
+			once.Do(func() {
+				_, _ = fmt.Fprintln(os.Stdout, observerCloseEntered)
+				close(callbackEntered)
+			})
 			if synchronous {
-				_, _ = fmt.Fprintln(os.Stdout, synchronousCloseEntered)
 				_ = owner.Close()
 			} else {
 				h.Observer.RequestClose()
 			}
-			once.Do(func() { close(callbackReturned) })
+			returnedOnce.Do(func() { close(callbackReturned) })
 			<-releaseIngest
 		}
 		_, err := supervisor.RecoverOwned(ctx, r.journal, owner, "run_callback", h)
@@ -154,6 +282,18 @@ func observerCloseFixture(t *testing.T, synchronous bool) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	setup := time.NewTimer(20 * time.Second)
+	defer setup.Stop()
+	select {
+	case <-callbackEntered:
+	case <-a.done:
+		t.Fatal("owned entry returned before close callback")
+	case <-setup.C:
+		// The subprocess timeout remains the final bound if entry cleanup stalls.
+		close(releaseIngest)
+		<-a.done
+		t.Fatal("setup deadline before close callback")
 	}
 	timer := time.NewTimer(time.Second)
 	defer timer.Stop()
