@@ -83,6 +83,8 @@ func TestServiceRootConflict(t *testing.T) {
 	}
 }
 
+var errServiceRunReturnedBeforeReadiness = errors.New("service Run returned before readiness")
+
 // waitServiceRootStatus waits only for this owned Run. A listening endpoint
 // cannot count as readiness after Run has already returned.
 func waitServiceRootStatus(ctx context.Context, runDone <-chan struct{}, probe func(context.Context) (map[string]any, error)) (map[string]any, error) {
@@ -91,7 +93,7 @@ func waitServiceRootStatus(ctx context.Context, runDone <-chan struct{}, probe f
 	for {
 		select {
 		case <-runDone:
-			return nil, errors.New("service Run returned before readiness")
+			return nil, errServiceRunReturnedBeforeReadiness
 		case <-ctx.Done():
 			return nil, fmt.Errorf("service readiness: %w", ctx.Err())
 		default:
@@ -99,7 +101,7 @@ func waitServiceRootStatus(ctx context.Context, runDone <-chan struct{}, probe f
 		status, err := probe(ctx)
 		select {
 		case <-runDone:
-			return nil, errors.New("service Run returned before readiness")
+			return nil, errServiceRunReturnedBeforeReadiness
 		default:
 		}
 		if err == nil {
@@ -110,7 +112,7 @@ func waitServiceRootStatus(ctx context.Context, runDone <-chan struct{}, probe f
 		}
 		select {
 		case <-runDone:
-			return nil, errors.New("service Run returned before readiness")
+			return nil, errServiceRunReturnedBeforeReadiness
 		case <-ctx.Done():
 			return nil, fmt.Errorf("service readiness: %w", ctx.Err())
 		case <-tick.C:
@@ -123,6 +125,17 @@ func checkServiceRootIdentity(status map[string]any, root, endpoint string) erro
 	if status["pid"] != float64(os.Getpid()) || status["root"] != root || status["endpoint"] != endpoint ||
 		status["migration_required"] != false || !ok || generation <= 0 || generation != float64(int64(generation)) {
 		return errors.New("status does not identify the owned adopted service")
+	}
+	return nil
+}
+
+// checkServiceRootAfterClientExit also rejects a different valid generation.
+func checkServiceRootAfterClientExit(first, second map[string]any, root, endpoint string) error {
+	if err := checkServiceRootIdentity(second, root, endpoint); err != nil {
+		return err
+	}
+	if first["pid"] != second["pid"] || first["generation"] != second["generation"] || first["root"] != second["root"] {
+		return errors.New("view exit changed runtime")
 	}
 	return nil
 }
@@ -197,13 +210,27 @@ func TestServiceRootContextSurvivesClientExit(t *testing.T) {
 		clientCancel()
 		t.Fatal(err)
 	}
+	defer clientCancel()
+	defer func() { _ = c.Close() }()
+	// A reply proves this exact connection was accepted and handled before exit.
+	res, err := control.Call(clientCtx, c, control.Intent{OperationID: ids.New("op"), Method: "status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var connected map[string]any
+	if err := json.Unmarshal(res.Body, &connected); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkServiceRootAfterClientExit(first, connected, canonicalRoot, endpoint); err != nil {
+		t.Fatal(err)
+	}
 	clientCancel()
 	_ = c.Close()
 	second, err := probe(action)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := checkServiceRootIdentity(second, canonicalRoot, endpoint); err != nil {
+	if err := checkServiceRootAfterClientExit(first, second, canonicalRoot, endpoint); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -211,8 +238,12 @@ func TestServiceRootContextSurvivesClientExit(t *testing.T) {
 		t.Fatal("client exit returned the owned service Run")
 	default:
 	}
-	if first["pid"] != second["pid"] || first["generation"] != second["generation"] || first["root"] != second["root"] || second["pid"] != float64(os.Getpid()) {
-		t.Fatalf("view exit changed runtime: %v -> %v", first, second)
+	// Synthetic observer fault after the real connection exit: a different,
+	// otherwise valid generation must fail the same bracket used above.
+	changed := maps.Clone(second)
+	changed["generation"] = second["generation"].(float64) + 1
+	if err := checkServiceRootAfterClientExit(first, changed, canonicalRoot, endpoint); err == nil {
+		t.Fatal("client-exit bracket accepted a changed generation")
 	}
 }
 
@@ -241,10 +272,32 @@ func TestServiceRootReadinessRejectsMissingOrReturnedRun(t *testing.T) {
 			if err == nil || status != nil {
 				t.Fatalf("%s accepted readiness: %v %v", mode, status, err)
 			}
+			want := errServiceRunReturnedBeforeReadiness
+			if mode == "missing readiness" {
+				want = context.Canceled
+			}
+			if !errors.Is(err, want) {
+				t.Fatalf("%s returned wrong readiness error: %v", mode, err)
+			}
 			if mode == "already returned" && called {
 				t.Fatal("already-returned Run still probed another service")
 			}
 		})
+	}
+}
+
+func TestServiceRootReadinessReturnsProbeError(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	probeErr := errors.New("probe failed")
+	calls := 0
+	status, err := waitServiceRootStatus(ctx, make(chan struct{}), func(context.Context) (map[string]any, error) {
+		calls++
+		return nil, probeErr
+	})
+	if !errors.Is(err, probeErr) || status != nil || calls != 1 {
+		t.Fatalf("probe error not returned after one call: status=%v err=%v calls=%d", status, err, calls)
 	}
 }
 
