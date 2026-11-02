@@ -13,7 +13,7 @@ const (
 )
 
 // paneOrder is the Tab cycle across the mission panes.
-var paneOrder = []string{paneTasks, paneAgents, paneDetail}
+var paneOrder = []string{paneTasks, paneAgents, paneEvidence, paneDetail}
 
 // handleKey routes key messages to the focus, filter, palette, help, dialog
 // and details flows (design §9). Lifecycle inputs share the mode policy; Esc backs out one level
@@ -191,6 +191,12 @@ func (m *Model) cyclePane(delta int) {
 	next := (cur + delta + len(paneOrder)) % len(paneOrder)
 	m.focusPrev = m.focusPane
 	m.focusPane = paneOrder[next]
+	if m.focusPane == paneDetail {
+		m.diffOrigin = m.focusPrev
+	}
+	if m.focusPane != paneTasks {
+		m.sidePane = m.focusPane
+	}
 	m.focusIndex = clampFocus(m.focusIndex, m.focusedRowCount())
 }
 
@@ -204,6 +210,8 @@ func (m *Model) moveIndex(delta int) {
 func (m *Model) openDetails() {
 	if m.focusPane != paneDetail {
 		m.focusPrev = m.focusPane
+		m.diffOrigin = m.focusPane
+		m.sidePane = paneDetail
 		m.focusPane = paneDetail
 	}
 	m.focusIndex = clampFocus(m.focusIndex, m.focusedRowCount())
@@ -227,7 +235,13 @@ func (m *Model) backOut() {
 	if m.focusPrev == "" || m.focusPrev == m.focusPane {
 		m.focusPrev = paneTasks
 	}
+	if m.focusPane == paneDetail && m.diffOrigin != "" {
+		m.focusPrev = m.diffOrigin
+	}
 	m.focusPane = m.focusPrev
+	if m.focusPane != paneTasks {
+		m.sidePane = m.focusPane
+	}
 	m.focusPrev = paneTasks
 	m.focusIndex = clampFocus(m.focusIndex, m.focusedRowCount())
 }

@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/tui/caps"
 	"github.com/turbokast/mythhelm/internal/tui/theme"
@@ -18,9 +19,10 @@ import (
 
 // Focusable pane ids.
 const (
-	paneTasks  = "tasks"
-	paneAgents = "agents"
-	paneDetail = "detail"
+	paneTasks    = "tasks"
+	paneAgents   = "agent"
+	paneEvidence = "evidence"
+	paneDetail   = "diff"
 )
 
 // Config is the TUI program's inputs. Events feeds live journaled events and
@@ -82,12 +84,15 @@ type Model struct {
 	working             string
 	diff                Diff
 	diffErr             error
+	diffRenderer        func(Diff, int) []string
 	loadDiff            func(ctx context.Context, workspace, base, commit string) (Diff, error)
 	loadSnapshot        func(ctx context.Context, dir, runID string) (viewmodel.Snapshot, error)
 	width               int
 	height              int
 	focusPane           string
 	focusPrev           string
+	diffOrigin          string
+	sidePane            string
 	focusIndex          int
 	selectedTask        string
 	agentRaw            bool
@@ -343,30 +348,7 @@ func (m *Model) View() string {
 	if !m.ready {
 		return m.render([]line{{text: "loading snapshot" + ellGlyph(m.cfg.Caps)}})
 	}
-	switch resolveLayout(m.width, m.height) {
-	case layoutCompact:
-		body := m.gateCompactActivity(m.compactLines())
-		// Notices are must-see status, so they sit between the five-row
-		// offer (which a 5-row terminal always sees whole) and the
-		// detail rows: render's height truncation then drops detail
-		// before notices, never the reverse.
-		offer, detail := body, []line(nil)
-		if len(body) > compactOfferRows {
-			offer, detail = body[:compactOfferRows], body[compactOfferRows:]
-		}
-		rows := append(append([]line{}, offer...), m.noticeRows(maxNoticeRows)...)
-		if ln, ok := m.filterLine(); ok {
-			rows = append(rows, ln)
-		}
-		rows = append(rows, detail...)
-		return m.render(rows)
-	case layoutSingle:
-		return m.viewSingle()
-	case layoutTwoPane:
-		return m.viewTwoPane()
-	default:
-		return m.viewThreePane()
-	}
+	return m.observatoryView()
 }
 
 // render finalises single-column rows: each fits the width, then the view
@@ -391,138 +373,236 @@ func (m *Model) finaliseRows(rows []line, width int) []string {
 	return out
 }
 
-// viewSingle renders the 80–99 column rung: labelled tabs, the focused pane,
-// the truncation notice when the detail pane shows a truncated diff, drained
-// notices, and the persistent critical status with the entitlement sentence.
-func (m *Model) viewSingle() string {
-	var rows []line
-	rows = append(rows, m.tabsLine())
-	notices := m.noticeRows(maxNoticeRows)
-	filter, showFilter := m.filterLine()
-	bodyH := m.height - 4 - len(notices)
-	if showFilter {
-		bodyH--
-	}
-	if m.showNotice(layoutSingle) {
-		bodyH -= 2
-	}
-	rows = append(rows, capLines(m.focusedPaneLines(m.width), bodyH, m.cfg.Caps, m.cfg.Tokens.TextMuted)...)
-	if m.showNotice(layoutSingle) {
-		rows = append(rows, m.truncationNotice()...)
-	}
-	rows = append(rows, notices...)
-	rows = append(rows, m.criticalStatusLine(), line{text: m.entitlementText(), colour: m.cfg.Tokens.TextMuted}, m.footerLine())
-	if showFilter {
-		rows = append(rows, filter)
-	}
-	return m.render(rows)
-}
-
-// viewTwoPane renders the 100–139 column rung: tasks beside the switchable
-// detail panel (agents, or the selected change when it holds focus).
-func (m *Model) viewTwoPane() string {
-	widths := columnWidths(m.width, 2)
-	return m.viewColumns(layoutTwoPane, []column{m.tasksColumn(widths[0]), m.detailColumn(widths[1])})
-}
-
-// viewThreePane renders the 140+ column rung: tasks, agents and selected
-// detail side by side.
-func (m *Model) viewThreePane() string {
-	widths := columnWidths(m.width, 3)
-	detail := column{width: widths[2], rows: m.detailRows(widths[2])}
-	return m.viewColumns(layoutThreePane, []column{m.tasksColumn(widths[0]), m.agentsColumn(widths[1]), detail})
-}
-
 // column is one pane's fitted rows plus its width.
 type column struct {
 	width int
 	rows  []line
 }
 
-func (m *Model) tasksColumn(width int) column {
-	return column{width: width, rows: m.applyFilter(m.tasksRows(width))}
-}
-
-func (m *Model) agentsColumn(width int) column {
-	return column{width: width, rows: m.applyFilter(m.agentsRows(width))}
-}
-
-// detailColumn is the switchable detail panel: the selected change when it
-// holds focus, else the agents pane. Detail rows are built at the column
-// width so the diff renderer fits before styling.
-func (m *Model) detailColumn(width int) column {
-	if m.focusPane == paneDetail {
-		return column{width: width, rows: m.detailRows(width)}
-	}
-	return column{width: width, rows: m.applyFilter(m.agentsRows(width))}
-}
-
-// focusedPaneLines is the single rung's full-width pane. The filter applies
-// to the tasks and agents panes only; the detail pane is never filtered.
-func (m *Model) focusedPaneLines(width int) []line {
-	switch m.focusPane {
+func (m *Model) focusedPaneLines(width int) []line { return m.paneLines(m.focusPane, width) }
+func (m *Model) paneLines(id string, width int) []line {
+	switch id {
 	case paneAgents:
 		return m.applyFilter(m.agentsRows(width))
-	case paneDetail:
-		return m.detailRows(width)
-	default:
-		return m.applyFilter(m.tasksRows(width))
-	}
-}
-
-// viewColumns assembles the header, side-by-side panes, truncation notice,
-// drained notices, status strip and footer for the two- and three-pane rungs.
-// Panes virtualise to the body height and notices to their tail cap, so the
-// truncation notice keeps its rows whenever a truncated diff shows.
-func (m *Model) viewColumns(l layout, cols []column) string {
-	widths := columnWidths(m.width, len(cols))
-	sep := " " + vBarGlyph(m.cfg.Caps) + " "
-	notices := m.noticeRows(maxNoticeRows)
-	filter, showFilter := m.filterLine()
-	header, status := m.headerLines(), m.statusLines()
-	chrome := len(header) + len(status) + 1 + len(notices) // header, status strip, footer, notices
-	if showFilter {
-		chrome++
-	}
-	if m.showNotice(l) {
-		chrome += 2
-	}
-	bodyH := max(m.height-chrome, 1)
-	for i := range cols {
-		if cols[i].width == 0 {
-			cols[i].width = widths[i]
+	case paneEvidence:
+		rows := []line{m.paneHeader(paneEvidence, "EVIDENCE"), {text: m.ruleLine(width), colour: m.cfg.Tokens.Border}}
+		for _, row := range m.observatoryEvidence(width) {
+			if strings.HasPrefix(row.text, "entitlement:") {
+				for part := range strings.SplitSeq(lipgloss.NewStyle().Width(max(1, width)).Render(m.entitlementText()), "\n") {
+					rows = append(rows, m.paneFact(strings.TrimRight(part, " "), width))
+				}
+			} else {
+				rows = append(rows, row)
+			}
+			if strings.HasPrefix(row.text, "Billing:") {
+				qualified, paid := "unknown", "unknown"
+				if a := m.snap.Admission; a != nil {
+					if a.Qualified {
+						qualified = "true"
+					} else {
+						qualified = "false"
+					}
+					paid = observatoryValue(a.PaidContinuation)
+				}
+				rows = append(rows, m.paneFact("qualified: "+qualified, width), m.paneFact("paid continuation: "+paid, width))
+			}
 		}
-		cols[i].rows = capLines(cols[i].rows, bodyH, m.cfg.Caps, m.cfg.Tokens.TextMuted)
+		return rows
+	case paneDetail:
+		return m.detailLines(width)
+	default:
+		rows := m.applyFilter(m.tasksRows(width))
+		var fitted []line
+		for _, row := range rows {
+			if len(row.spans) == 0 && lipgloss.Width(row.text) > width {
+				for part := range strings.SplitSeq(lipgloss.NewStyle().Width(max(1, width)).Render(row.text), "\n") {
+					fitted = append(fitted, line{text: part, colour: row.colour})
+				}
+			} else {
+				fitted = append(fitted, row)
+			}
+		}
+		return fitted
 	}
-	var out []string
-	out = append(out, m.finaliseRows(header, m.width)...)
-	out = append(out, joinColumns(m.cfg.Caps, cols, sep)...)
-	if m.showNotice(l) {
-		out = append(out, m.finaliseRows(m.truncationNotice(), m.width)...)
+}
+func (m *Model) settledVerdict() bool {
+	switch m.snap.Run.State {
+	case "ready_for_review", "completed", "blocked", "failed", "cancelled":
+		return true
+	default:
+		return false
 	}
-	out = append(out, m.finaliseRows(notices, m.width)...)
-	out = append(out, m.finaliseRows(status, m.width)...)
-	out = append(out, m.finaliseRows([]line{m.footerLine()}, m.width)...)
-	if showFilter {
-		out = append(out, m.finaliseRows([]line{filter}, m.width)...)
-	}
-	if m.height > 0 && len(out) > m.height {
-		out = out[:m.height]
-	}
-	return strings.Join(out, "\n")
 }
 
-// columnWidths splits the width across n panes with one separator each.
-func columnWidths(width, n int) []int {
-	seps := (n - 1) * 3
-	rest := width - seps
-	if n == 2 {
-		left := rest * 2 / 5
-		return []int{left, rest - left}
+// missionNowNext retains the session's launch-acknowledgement guard when
+// composing the previously independent NOW producer.
+func (m *Model) missionNowNext(width int) []line {
+	ack := m.dispatchWaiting() && m.snap.Run.State == "executing" && !m.inspectUnsupervised()
+	cause := m.observatoryAttention() && m.snap.Run.Reason != ""
+	if !ack && !cause {
+		return m.nowNext(width)
 	}
-	tasks := rest / 4
-	agents := rest * 3 / 10
-	return []int{tasks, agents, rest - tasks - agents}
+	current, next := m.observatoryNow(), m.observatoryNext()
+	if ack {
+		// Reuse the incumbent guard, so the new NOW cannot bypass the launch ack.
+		guarded := m.gateCompactActivity([]line{{text: "activity: " + m.activityText()}})
+		current = strings.TrimPrefix(guarded[0].text, "activity: ")
+	}
+	if cause {
+		next = "reason: " + cell(m.snap.Run.Reason) + "; " + next
+	}
+	if width < 80 || m.height < 10 {
+		return []line{m.observatoryLabel("now", current, width), m.observatoryLabel("next", next, width)}
+	}
+	leftWidth := (width - 2) / 2
+	left := m.observatoryLabel("NOW", current, leftWidth)
+	right := m.observatoryLabel("NEXT", next, width-leftWidth-2)
+	left.spans = append(left.spans, span{text: strings.Repeat(" ", leftWidth-lipgloss.Width(left.text)+2), colour: m.cfg.Tokens.Text})
+	return []line{lineFromSpans(append(left.spans, right.spans...)...)}
+}
+
+// observatoryView reserves mandatory chrome before optional content. Notices
+// retain priority over filter/details, and no row follows the final key bar.
+func (m *Model) observatoryView() string {
+	l := resolveLayout(m.width, m.height)
+	compact := l == layoutCompact
+	keys := m.observatoryKeys(m.width, compact)
+	key := keys[len(keys)-1]
+	now := m.missionNowNext(m.width)
+	if len(keys) > 1 && compact {
+		relocated := keys[0].spans
+		relocated[0].text = "next "
+		budget := max(0, m.width-lipgloss.Width(lineFromSpans(relocated...).text)-1)
+		relocated = append(relocated, span{text: " " + m.observatoryFit(strings.TrimPrefix(now[1].text, "next "), budget), colour: m.cfg.Tokens.Text})
+		now[1] = lineFromSpans(relocated...)
+	}
+	notices := m.noticeRows(maxNoticeRows)
+	filter, hasFilter := m.filterLine()
+	var prefix, body, extras []line
+	if compact {
+		prefix = []line{m.observatoryHeader(m.width), now[0], now[1], m.compactUsage(m.width)}
+		extras = append(extras, m.verificationLines()...)
+		extras = append(extras, m.statusLines()[:2]...)
+	} else {
+		rule := line{text: m.ruleLine(m.width), colour: m.cfg.Tokens.Border}
+		prefix = []line{m.observatoryHeader(m.width), rule, now[0]}
+		if l == layoutSingle && (!m.settledVerdict() || m.focusPane == paneDetail) {
+			prefix = append(prefix, m.tabsLine())
+		}
+		prefix = append(prefix, rule)
+		extras = []line{rule}
+	}
+	// Reserve all available notice rows before optional input and body rows.
+	spare := max(0, m.height-len(prefix)-1)
+	if !compact {
+		spare = max(0, spare-1)
+	}
+	if len(notices) > spare {
+		notices = notices[len(notices)-spare:]
+	}
+	spare -= len(notices)
+	var input []line
+	if hasFilter && spare > 0 {
+		input = []line{filter}
+		spare--
+	}
+	if compact {
+		if len(extras) > spare {
+			extras = extras[:spare]
+		}
+		body = extras
+	} else {
+		var trunc []line
+		if m.focusPane == paneDetail && m.diff.Truncated && m.snap.Attempt != nil && m.snap.Candidate != nil && spare >= 2 {
+			trunc = m.truncationNotice()
+			spare -= len(trunc)
+		}
+		body = m.observatoryBody(l, spare)
+		body = append(body, trunc...)
+	}
+	rows := append([]line{}, prefix...)
+	rows = append(rows, body...)
+	rows = append(rows, notices...)
+	rows = append(rows, input...)
+	footerRows := 1
+	if !compact {
+		footerRows = 2
+	}
+	for len(rows) < m.height-footerRows {
+		rows = append(rows, line{})
+	}
+	if !compact {
+		rows = append(rows, line{text: m.ruleLine(m.width), colour: m.cfg.Tokens.Border})
+	}
+	if len(rows) > max(0, m.height-1) { // Extremely short compact terminals.
+		if m.height >= 3 {
+			rows = []line{m.observatoryHeader(m.width), now[len(now)-1]}
+		} else {
+			rows = rows[:max(0, m.height-1)]
+		}
+	}
+	for len(rows) < m.height-1 {
+		rows = append(rows, line{})
+	}
+	rows = append(rows, key)
+	return m.render(rows)
+}
+func (m *Model) observatoryBody(l layout, height int) []line {
+	if height <= 0 {
+		return nil
+	}
+	if l != layoutThreePane && m.settledVerdict() && m.focusPane != paneDetail {
+		return capLines(m.observatoryVerdict(m.width), height, m.cfg.Caps, m.cfg.Tokens.TextMuted)
+	}
+	if l == layoutSingle {
+		if m.focusPane == paneDetail {
+			return m.detailViewportLines(m.width, height)
+		}
+		return capLines(m.focusedPaneLines(m.width), height, m.cfg.Caps, m.cfg.Tokens.TextMuted)
+	}
+	ids := []string{paneTasks, paneAgents, paneEvidence}
+	if l == layoutTwoPane {
+		side := m.sidePane
+		if m.focusPane != paneTasks {
+			side = m.focusPane
+		}
+		if side == "" || side == paneTasks {
+			side = paneAgents
+		}
+		ids = []string{paneTasks, side}
+	} else if m.focusPane == paneDetail {
+		origin := m.diffOrigin
+		if origin == "" {
+			origin = paneEvidence
+		}
+		for i, id := range ids {
+			if id == origin {
+				ids[i] = paneDetail
+			}
+		}
+	}
+	widths := columnWidths(m.width, len(ids))
+	cols := make([]column, len(ids))
+	for i, id := range ids {
+		var rows []line
+		if id == paneDetail {
+			rows = m.detailViewportLines(widths[i], height)
+		} else {
+			rows = m.paneLines(id, widths[i])
+		}
+		if l == layoutTwoPane && id == paneTasks {
+			stages := m.observatoryEvidence(widths[i])
+			rows = append(rows, stages[:min(5, len(stages))]...)
+		}
+		cols[i] = column{width: widths[i], rows: capLines(rows, height, m.cfg.Caps, m.cfg.Tokens.TextMuted)}
+	}
+	sep := " " + styleText(m.cfg.Caps, vBarGlyph(m.cfg.Caps), m.cfg.Tokens.Border) + " "
+	rendered := joinColumns(m.cfg.Caps, cols, sep)
+	rows := make([]line, len(rendered))
+	for i, text := range rendered {
+		rows[i] = line{text: text}
+	}
+	return rows
 }
 
 // joinColumns pads each pane's rows to its width, styles them, and joins the

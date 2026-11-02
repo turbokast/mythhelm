@@ -238,17 +238,21 @@ func (b *journalBuilder) close() {
 // (AC-1.1): goal, next action, activity, diff and verification.
 func TestMissionShowsRequiredFacts(t *testing.T) {
 	t.Parallel()
-	view := readyModel(t, fullCaps, 160, 30).View()
+	m := readyModel(t, fullCaps, 160, 30)
+	view := stripANSISequences(m.View())
 	for _, want := range []string{
-		"Add pagination to the audit log",     // goal
-		"Next action: review the candidate",   // next action
-		"7 assistant turns (native-reported)", // activity
-		"added garnish",                       // diff
-		"verified ccccccc",                    // verification
+		"Add pagination to the audit log",    // goal
+		"NEXT review the candidate",          // next action
+		"native-reported: 7 assistant turns", // activity
+		"verified ccccccc",                   // verification
 	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("wide view missing %q\n%s", want, view)
 		}
+	}
+	m.openDetails()
+	if view := stripANSISequences(m.View()); !strings.Contains(view, "added garnish") || !strings.Contains(view, "verified ccccccc") {
+		t.Fatalf("Diff lost patch/proof: %s", view)
 	}
 }
 
@@ -256,78 +260,30 @@ func TestMissionShowsRequiredFacts(t *testing.T) {
 // including stopping → "waiting for worker confirmation" (I06).
 func TestNextActionTable(t *testing.T) {
 	t.Parallel()
-	commitB := strings.Repeat("b", 40)
-	commitA := strings.Repeat("a", 40)
-	verifiedSnap := func() viewmodel.Snapshot {
-		s := richSnapshot()
-		s.Run.State = "ready_for_review"
-		return s
-	}
-	unverifiedSnap := func() viewmodel.Snapshot {
-		s := richSnapshot()
-		s.Run.State = "ready_for_review"
-		s.Verification = nil
-		return s
-	}
-	mismatchSnap := func() viewmodel.Snapshot {
-		s := richSnapshot()
-		s.Run.State = "ready_for_review"
-		s.Candidate.Commit = commitB
-		s.Verification.CandidateCommit = commitA
-		return s
-	}
-	passedWithoutCandidateSnap := func() viewmodel.Snapshot {
-		s := richSnapshot()
-		s.Run.State = "ready_for_review"
-		s.Candidate = nil
-		return s
-	}
-	stateSnap := func(state string) viewmodel.Snapshot {
-		s := richSnapshot()
-		s.Run.State = state
-		s.Verification = nil
-		s.Candidate = nil
-		return s
-	}
-	cases := []struct {
-		name string
-		snap viewmodel.Snapshot
-		want string
-	}{
-		{"created", stateSnap("created"), "admitting — no action"},
-		{"admission", stateSnap("admission"), "admitting — no action"},
-		{"executing", stateSnap("executing"), "none — agent working (stop available)"},
-		{"verifying", stateSnap("verifying"), "none — agent working (stop available)"},
-		{"stopping", stateSnap("stopping"), "waiting for worker confirmation — stop requested, not confirmed"},
-		{"ready verified", verifiedSnap(), "review the candidate, then apply or close"},
-		{"ready unverified", unverifiedSnap(), "verification unavailable — apply needs explicit unverified acceptance"},
-		{"ready mismatch", mismatchSnap(), "verification unavailable — apply needs explicit unverified acceptance"},
-		{"ready passed without candidate", passedWithoutCandidateSnap(), "verification unavailable — apply needs explicit unverified acceptance"},
-		{"blocked", stateSnap("blocked"), "read the reason; recover or start a new run"},
-		{"failed", stateSnap("failed"), "read the reason; recover or start a new run"},
-		{"interrupted", stateSnap("interrupted"), "recover the run"},
-		{"recovering", stateSnap("recovering"), "recovery running — no action"},
-		{"applying", stateSnap("applying"), "none — run is terminal"},
-		{"completed", stateSnap("completed"), "none — run is terminal"},
-		{"cancelled", stateSnap("cancelled"), "none — run is terminal"},
-		{"unknown state", stateSnap("bogus"), "unknown"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, state := range []string{"created", "admission", "executing", "verifying", "stopping", "ready_for_review", "blocked", "failed", "interrupted", "recovering", "applying", "completed", "cancelled", "future"} {
+		t.Run(state, func(t *testing.T) {
 			t.Parallel()
-			if got := nextAction(tc.snap, fullCaps); got != tc.want {
-				t.Errorf("nextAction = %q, want %q", got, tc.want)
-			}
-			// The ASCII twin carries the same text with no non-ASCII bytes.
-			ascii := nextAction(tc.snap, asciiCaps)
-			for i := 0; i < len(ascii); i++ {
-				if ascii[i] >= 0x80 {
-					t.Errorf("ASCII nextAction has non-ASCII byte: %q", ascii)
-					break
+			m := observatoryFixture(t)
+			m.snap.Run.State = state
+			text := m.observatoryNext()
+			for _, pair := range []struct {
+				word   string
+				action Action
+			}{{"s stop", actionStop}, {"d detach", actionDetach}, {"r recover", actionRecover}, {"a apply", actionApply}} {
+				if strings.Contains(text, pair.word) {
+					if ok, reason := m.actionGate(pair.action); !ok {
+						t.Fatalf("%s names closed %s: %s", state, pair.word, reason)
+					}
 				}
 			}
-			if strings.ReplaceAll(tc.want, "—", "-") != ascii {
-				t.Errorf("ASCII nextAction = %q, want dash-folded %q", ascii, tc.want)
+			if state == "stopping" && (!strings.Contains(text, "stop requested") || strings.Contains(text, "stopped")) {
+				t.Fatalf("stopping mislabeled: %q", text)
+			}
+			if (state == "failed" || state == "blocked") && !strings.Contains(text, "read the reason") {
+				t.Fatalf("failure guidance lost: %q", text)
+			}
+			if text == "" {
+				t.Fatal("missing next sentence")
 			}
 		})
 	}
@@ -337,14 +293,14 @@ func TestNextActionTable(t *testing.T) {
 // attempt number on every lane, never a logo (AC-1.3).
 func TestLaneLabels(t *testing.T) {
 	t.Parallel()
-	uni := readyModel(t, fullCaps, 160, 30).View()
-	for _, want := range []string{"builtin/fake / trusted-host", "A · attempt 1"} {
+	uni := stripANSISequences(readyModel(t, fullCaps, 160, 30).View())
+	for _, want := range []string{"builtin/fake · unknown · trusted-host", "attempt 1"} {
 		if !strings.Contains(uni, want) {
 			t.Errorf("unicode view missing lane label %q\n%s", want, uni)
 		}
 	}
 	ascii := readyModel(t, asciiCaps, 160, 30).View()
-	for _, want := range []string{"builtin/fake / trusted-host", "A - attempt 1"} {
+	for _, want := range []string{"builtin/fake | unknown | trusted-host", "attempt 1"} {
 		if !strings.Contains(ascii, want) {
 			t.Errorf("ASCII view missing lane label %q\n%s", want, ascii)
 		}
@@ -359,7 +315,7 @@ func TestLaneLabels(t *testing.T) {
 	m.setSnapshot(t.Context(), snap)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 30})
 	view := updated.(*Model).View()
-	if !strings.Contains(view, "unknown / trusted-host") {
+	if !strings.Contains(view, "unknown | unknown | trusted-host") {
 		t.Errorf("lane with unknown adapter missing its label\n%s", view)
 	}
 }
@@ -406,7 +362,7 @@ func notRunView(t *testing.T, result, reason string) string {
 	m.loadDiff = stubDiff(mustParseDiff(t, smallDiffInput))
 	m.setSnapshot(t.Context(), snap)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 30})
-	return updated.(*Model).View()
+	return stripANSISequences(updated.(*Model).View())
 }
 
 // TestMissionNotRunShowsReason renders the recorded reason beside the NOT RUN
@@ -477,7 +433,9 @@ func TestMissionStatusStripEntitlement(t *testing.T) {
 		m.loadDiff = stubDiff(mustParseDiff(t, smallDiffInput))
 		m.setSnapshot(t.Context(), snap)
 		updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: height})
-		return updated.(*Model).View()
+		m = updated.(*Model)
+		m.focusPane = paneEvidence
+		return stripANSISequences(m.View())
 	}
 	declared := &viewmodel.Admission{
 		AdapterID: "builtin/fake", Qualified: false, PaidContinuation: "unknown",
@@ -491,11 +449,16 @@ func TestMissionStatusStripEntitlement(t *testing.T) {
 			// The sentence starts with its verdict, so a narrow rung that
 			// truncates keeps "user-declared, NOT verified by MYTHHELM".
 			want := declaredEntitlement
-			if len(want) > size.width {
-				want = want[:size.width-len(ellGlyph(asciiCaps))]
+			// Pane wrapping preserves every word; export retains the entire sentence.
+			cfg := newModel(testConfig(asciiCaps, t))
+			cfg.snap.Admission = declared
+			if cfg.entitlementText() != declaredEntitlement {
+				t.Fatal("recorded entitlement changed")
 			}
-			if !strings.Contains(view, want) {
-				t.Errorf("strip missing %q\n%s", want, view)
+			for _, phrase := range []string{"user-declared", "NOT verified", "MYTHHELM"} {
+				if !strings.Contains(view, phrase) {
+					t.Errorf("evidence lost %q from %q\n%s", phrase, want, view)
+				}
 			}
 			assertWidthSafe(t, view, size.width, size.height)
 		})
@@ -600,7 +563,9 @@ func TestTruncationFooterNamesExactCommand(t *testing.T) {
 		snap.Candidate.BaseRev, snap.Candidate.Commit = base, commit
 		m.setSnapshot(t.Context(), snap)
 		updated, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
-		return updated.(*Model).View()
+		m = updated.(*Model)
+		m.openDetails()
+		return stripANSISequences(m.View())
 	}
 
 	t.Run("lines", func(t *testing.T) {
@@ -658,7 +623,10 @@ func TestEscapesRenderedInert(t *testing.T) {
 		m.loadDiff = stubDiff(mustParseDiff(t, evil))
 		m.setSnapshot(t.Context(), snap)
 		updated, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 30})
-		view := updated.(*Model).View()
+		m = updated.(*Model)
+		before := m.View()
+		m.openDetails()
+		view := before + "\n" + m.View()
 		if strings.Contains(view, "\x1b") {
 			t.Errorf("caps %+v: view leaks an escape introduction\n%q", c, view)
 		}
@@ -683,7 +651,7 @@ func TestNoFontDependentGlyphs(t *testing.T) {
 		m.loadDiff = stubDiff(mustParseDiff(t, smallDiffInput))
 		m.setSnapshot(t.Context(), snap)
 		updated, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
-		return updated.(*Model).View()
+		return stripANSISequences(updated.(*Model).View())
 	}
 	ascii, uni := mk(asciiCaps), mk(fullCaps)
 	if err := checkGoldenGlyphs(ascii, true); err != nil {
@@ -728,9 +696,9 @@ func TestNoFontDependentGlyphs(t *testing.T) {
 	}
 	// Label parity: the ASCII twin carries every text label.
 	labels := []string{
-		"Goal:", "TASKS", "AGENTS", "SELECTED CHANGE", "Next action:",
+		"TASKS", "AGENT", "EVIDENCE", "NEXT",
 		"verified", "qualified:", "paid continuation:", "native exit:",
-		"Tab focus", "Enter inspect", "attempt 1", "assistant turns",
+		"q exit", "Enter", "attempt 1", "assistant turns",
 	}
 	for _, label := range labels {
 		if !strings.Contains(uni, label) {

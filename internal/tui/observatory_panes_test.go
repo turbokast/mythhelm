@@ -296,7 +296,7 @@ func TestPaneViewportKeepsFilterAndFooter(t *testing.T) {
 				if !strings.Contains(view, "filter /x_") {
 					t.Fatalf("long pane hides active filter\n%s", view)
 				}
-				if !strings.Contains(view, "q exit options") {
+				if !strings.Contains(view, "q exit") {
 					t.Fatalf("long pane hides footer\n%s", view)
 				}
 				rows := strings.Split(view, "\n")
@@ -319,38 +319,42 @@ func TestPaneViewportKeepsFilterAndFooter(t *testing.T) {
 func TestCompactFilterPrecedesOptionalDetail(t *testing.T) {
 	t.Parallel()
 	for _, size := range [][2]int{{72, 6}, {72, 9}, {72, 24}, {160, 9}} {
-		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
 			t.Parallel()
 			m := observatoryFixture(t)
 			m.width, m.height = size[0], size[1]
 			before := strings.Split(stripANSISequences(m.View()), "\n")
 			m.handleKey(runeMsg("/"))
 			m.handleKey(runeMsg("x"))
-			view := stripANSISequences(m.View())
-			rows := strings.Split(view, "\n")
-			if len(rows) < 6 || rows[5] != "filter /x_" {
-				t.Fatalf("compact optional detail hides filter: %q", view)
-			}
-			for i := range 5 {
-				if rows[i] != before[i] {
-					t.Fatalf("filter changed mandatory compact offer row%d: %q", i, rows[i])
+			rows := strings.Split(stripANSISequences(m.View()), "\n")
+			index := -1
+			for i, row := range rows {
+				if row == "filter /x_" {
+					index = i
 				}
 			}
-			if !strings.Contains(view, "--accessible for linear") {
-				t.Fatal("compact linear offer lost")
+			if index < 4 || index >= len(rows)-1 {
+				t.Fatalf("filter not visible before keys: %q", rows)
+			}
+			for i := range 4 {
+				if rows[i] != before[i] {
+					t.Fatalf("mandatory compact content changed at%d", i)
+				}
+			}
+			if rows[len(rows)-1] != before[len(before)-1] || !strings.Contains(rows[len(rows)-1], "--accessible: linear") {
+				t.Fatal("final key/linear group changed")
 			}
 			if len(rows) > m.height {
-				t.Fatal("compact over height")
+				t.Fatal("viewport exceeded")
 			}
 			for _, row := range rows {
 				if lipgloss.Width(row) > m.width {
-					t.Fatal("compact over width")
+					t.Fatal("width exceeded")
 				}
 			}
 		})
 	}
 }
-
 func TestCompactNoticeKeepsPriorityOverFilter(t *testing.T) {
 	t.Parallel()
 	for _, height := range []int{6, 7, 9, 24} {
@@ -359,23 +363,29 @@ func TestCompactNoticeKeepsPriorityOverFilter(t *testing.T) {
 			m := observatoryFixture(t)
 			m.width, m.height = 72, height
 			m.notices = []journal.Event{noticeEvent("important recorded notice", m.snap.At)}
-			before := strings.Split(stripANSISequences(m.View()), "\n")
 			m.handleKey(runeMsg("/"))
 			m.handleKey(runeMsg("x"))
 			rows := strings.Split(stripANSISequences(m.View()), "\n")
-			if len(rows) < 6 || rows[5] != "notice: important recorded notice" {
-				t.Fatalf("filter displaced mandatory notice: %q", rows)
-			}
-			for i := range 5 {
-				if rows[i] != before[i] {
-					t.Fatalf("mandatory offer row %d changed: %q", i, rows)
+			notice, filter := -1, -1
+			for i, row := range rows {
+				if row == "notice: important recorded notice" {
+					notice = i
+				}
+				if row == "filter /x_" {
+					filter = i
 				}
 			}
-			if height >= 7 && (len(rows) < 7 || rows[6] != "filter /x_") {
-				t.Fatalf("filter missing despite sufficient space: %q", rows)
+			if notice < 4 || notice >= len(rows)-1 {
+				t.Fatalf("notice lost before keys: %q", rows)
 			}
-			if len(rows) > height {
-				t.Fatalf("viewport exceeded: %d > %d", len(rows), height)
+			if height >= 7 && (filter <= notice || filter >= len(rows)-1) {
+				t.Fatalf("filter lost with space or outranked notice: %q", rows)
+			}
+			if height == 6 && filter >= 0 {
+				t.Fatal("filter displaced mandatory content at six rows")
+			}
+			if !strings.Contains(rows[len(rows)-1], "q exit") || len(rows) > height {
+				t.Fatal("mandatory final keys/height lost")
 			}
 		})
 	}
@@ -385,15 +395,15 @@ func TestCompactNoticeKeepsPriorityOverFilter(t *testing.T) {
 		m.notices = append(m.notices, noticeEvent("recorded "+strconv.Itoa(i), m.snap.At))
 	}
 	expected := m.noticeRows(maxNoticeRows)
-	m.height = compactOfferRows + len(expected) + 1
+	m.height = 5 + len(expected) + 1
 	m.handleKey(runeMsg("/"))
 	rows := strings.Split(stripANSISequences(m.View()), "\n")
 	for i, notice := range expected {
-		if rows[compactOfferRows+i] != notice.text {
-			t.Fatalf("capped notice %d lost before filter: %q", i, rows)
+		if rows[4+i] != notice.text {
+			t.Fatalf("capped notice %d lost: %q", i, rows)
 		}
 	}
-	if rows[len(rows)-1] != "filter /_" {
-		t.Fatalf("filter not retained after capped notices: %q", rows)
+	if rows[len(rows)-2] != "filter /_" || !strings.Contains(rows[len(rows)-1], "q exit") {
+		t.Fatalf("input/final keys lost: %q", rows)
 	}
 }

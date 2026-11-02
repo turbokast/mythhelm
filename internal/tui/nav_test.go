@@ -58,38 +58,30 @@ func TestKeyFlows(t *testing.T) {
 	t.Run("tab and arrows move focus", func(t *testing.T) {
 		t.Parallel()
 		m := flowModel(t)
-		if m.focusPane != paneTasks {
-			t.Fatalf("initial focus = %q, want tasks", m.focusPane)
+		for _, want := range []string{paneAgents, paneEvidence, paneDetail, paneTasks} {
+			m, _ = pressKey(t, m, specialMsg(tea.KeyTab))
+			if m.focusPane != want {
+				t.Fatalf("Tab focus=%q want%q", m.focusPane, want)
+			}
 		}
-		m, _ = pressKey(t, m, specialMsg(tea.KeyTab))
-		if m.focusPane != paneAgents {
-			t.Fatalf("after Tab focus = %q, want agents", m.focusPane)
-		}
-		m, _ = pressKey(t, m, specialMsg(tea.KeyTab))
-		if m.focusPane != paneDetail {
-			t.Fatalf("after Tab Tab focus = %q, want detail", m.focusPane)
-		}
-		m, _ = pressKey(t, m, specialMsg(tea.KeyTab))
-		if m.focusPane != paneTasks {
-			t.Fatalf("after Tab Tab Tab focus = %q, want tasks", m.focusPane)
-		}
-		m, _ = pressKey(t, m, specialMsg(tea.KeyShiftTab))
-		if m.focusPane != paneDetail {
-			t.Fatalf("after Shift-Tab focus = %q, want detail", m.focusPane)
-		}
-		m, _ = pressKey(t, m, specialMsg(tea.KeyLeft))
-		if m.focusPane != paneAgents {
-			t.Fatalf("after Left focus = %q, want agents", m.focusPane)
+		for _, want := range []string{paneDetail, paneEvidence, paneAgents, paneTasks} {
+			m, _ = pressKey(t, m, specialMsg(tea.KeyShiftTab))
+			if m.focusPane != want {
+				t.Fatalf("reverse Tab focus=%q want%q", m.focusPane, want)
+			}
 		}
 		m, _ = pressKey(t, m, specialMsg(tea.KeyRight))
-		if m.focusPane != paneDetail {
-			t.Fatalf("after Right focus = %q, want detail", m.focusPane)
+		if m.focusPane != paneAgents {
+			t.Fatal("right did not cycle")
 		}
-		// Up/Down stay on the single Stage 1 row without leaving the pane.
-		m, _ = pressKey(t, m, specialMsg(tea.KeyUp))
+		m, _ = pressKey(t, m, specialMsg(tea.KeyLeft))
+		if m.focusPane != paneTasks {
+			t.Fatal("left did not restore")
+		}
 		m, _ = pressKey(t, m, specialMsg(tea.KeyDown))
-		if m.focusPane != paneDetail || m.focusIndex != 0 {
-			t.Fatalf("after Up/Down focus = %q/%d, want detail/0", m.focusPane, m.focusIndex)
+		m, _ = pressKey(t, m, specialMsg(tea.KeyUp))
+		if m.focusIndex != 0 {
+			t.Fatal("row clamp lost")
 		}
 	})
 
@@ -168,14 +160,14 @@ func TestKeyFlows(t *testing.T) {
 	t.Run("enter opens details", func(t *testing.T) {
 		t.Parallel()
 		m := readyModel(t, fullCaps, 85, 30)
-		if view := m.View(); !strings.Contains(view, "TASKS") {
+		if view := m.View(); !strings.Contains(view, "PROVEN") {
 			t.Fatalf("single-pane view starts outside TASKS\n%s", view)
 		}
 		m, _ = pressKey(t, m, specialMsg(tea.KeyEnter))
 		if m.focusPane != paneDetail {
 			t.Fatalf("after Enter focus = %q, want detail", m.focusPane)
 		}
-		if view := m.View(); !strings.Contains(view, "SELECTED CHANGE") {
+		if view := m.View(); !strings.Contains(view, "DIFF") {
 			t.Errorf("after Enter the single pane is not the detail pane\n%s", view)
 		}
 	})
@@ -401,8 +393,8 @@ func TestFocusStableAcrossReload(t *testing.T) {
 	m.focusPane = paneAgents
 	updated, _ = m.Update(specialMsg(tea.KeyTab))
 	m = updated.(*Model)
-	if m.focusPane != paneDetail {
-		t.Fatalf("Tab from agents reached %q, want detail", m.focusPane)
+	if m.focusPane != paneEvidence {
+		t.Fatalf("Tab from agents reached %q, want evidence", m.focusPane)
 	}
 	second := richSnapshot()
 	second.Goal = "Land the reworked audit export"
@@ -412,14 +404,14 @@ func TestFocusStableAcrossReload(t *testing.T) {
 	if m.selectedTask == "" || m.selectedLane == "" {
 		t.Errorf("reload dropped the selection: task=%q lane=%q", m.selectedTask, m.selectedLane)
 	}
-	if m.focusPane != paneDetail || m.focusIndex != 0 {
-		t.Errorf("reload moved focus to %q/%d, want detail/0", m.focusPane, m.focusIndex)
+	if m.focusPane != paneEvidence || m.focusIndex != 0 {
+		t.Errorf("reload moved focus to %q/%d, want evidence/0", m.focusPane, m.focusIndex)
 	}
 	view := m.View()
 	if !strings.Contains(view, "Land the reworked audit export") {
 		t.Errorf("reloaded view lacks the new goal\n%s", view)
 	}
-	if !strings.Contains(view, "11 assistant turns (native-reported)") {
+	if !strings.Contains(view, "native-reported: 11 assistant turns") {
 		t.Errorf("reloaded view lacks the new progress\n%s", view)
 	}
 	// The lane the reload kept is the same attempt the first load selected.
@@ -635,7 +627,7 @@ func TestFilterNeverHidesDetail(t *testing.T) {
 	lanes.focusPane = paneAgents
 	lanes, _ = pressKey(t, lanes, runeMsg("/"))
 	lanes = typeRunes(t, lanes, "builtin/fake")
-	if view := lanes.View(); !strings.Contains(view, "builtin/fake / trusted-host") {
+	if view := stripANSISequences(lanes.View()); !strings.Contains(view, "builtin/fake · unknown · trusted-host") {
 		t.Errorf("lane filter hid the matching lane\n%s", view)
 	}
 	// The two-pane rung filters its agents panel too: detailColumn doubles

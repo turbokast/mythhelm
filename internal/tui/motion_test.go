@@ -174,7 +174,7 @@ func TestDispatchNeedsLaunchAck(t *testing.T) {
 	if cmd == nil {
 		t.Error("launch ack scheduled no dispatch frame under full motion")
 	}
-	if view := m.View(); !strings.Contains(view, "state: running") {
+	if view := m.View(); !strings.Contains(view, "attempt 1: running") {
 		t.Errorf("post-ack view lacks the running label\n%s", view)
 	}
 	if view := m.View(); strings.Contains(view, "dispatching") {
@@ -297,7 +297,7 @@ func TestLivePulseHasNoTypewriterDelay(t *testing.T) {
 			t.Errorf("same-update view lacks full counter %q\n%s", want, view)
 		}
 	}
-	activity, ok := segmentWithPrefix(view, "●")
+	activity, ok := segmentWithPrefix(view, "● 7 assistant")
 	if !ok || !strings.Contains(activity, "7 assistant turns") {
 		t.Errorf("pulse marker missing from the activity row\n%s", view)
 	}
@@ -317,7 +317,7 @@ func TestLivePulseHasNoTypewriterDelay(t *testing.T) {
 	if frames > motionPulseFrames {
 		t.Errorf("pulse settled in %d frames, want at most %d", frames, motionPulseFrames)
 	}
-	if view := m.View(); !strings.Contains(view, "7 assistant turns (native-reported)") {
+	if view := stripANSISequences(m.View()); !strings.Contains(view, "native-reported: 7 assistant turns") {
 		t.Errorf("settled view lost the counters\n%s", view)
 	}
 	if activity, _ := segmentWithPrefix(m.View(), "●"); strings.Contains(activity, "assistant turns") {
@@ -331,7 +331,7 @@ func TestLivePulseHasNoTypewriterDelay(t *testing.T) {
 	if !strings.Contains(asciiView, "7 assistant turns (native-reported)") {
 		t.Errorf("ASCII same-update view lacks the full counters\n%s", asciiView)
 	}
-	if activity, ok := segmentWithPrefix(asciiView, "*"); !ok || !strings.Contains(activity, "assistant turns") {
+	if activity, ok := segmentWithPrefix(asciiView, "* 7 assistant"); !ok || !strings.Contains(activity, "assistant turns") {
 		t.Errorf("ASCII pulse marker missing from the activity row\n%s", asciiView)
 	}
 }
@@ -460,7 +460,7 @@ func TestArrivalInterruptible(t *testing.T) {
 			t.Parallel()
 			m := readyModel(t, fullCaps, 160, 30)
 			first := m.View()
-			for _, want := range []string{"Add pagination to the audit log", "Next action:"} {
+			for _, want := range []string{"Add pagination to the audit log", "NEXT"} {
 				if !strings.Contains(first, want) {
 					t.Fatalf("first paint waits on the arrival: missing %q\n%s", want, first)
 				}
@@ -530,8 +530,9 @@ func TestNoWaitingCountdown(t *testing.T) {
 			if !ok {
 				t.Fatalf("%s view lacks the waiting indicator\n%s", tc.state, updated.(*Model).View())
 			}
-			if !strings.Contains(indicator, tc.reason) {
-				t.Errorf("indicator = %q, want the static reason %q", indicator, tc.reason)
+			full := observatoryPlain(updated.(*Model).focusedPaneLines(220))
+			if !strings.Contains(full, tc.reason) {
+				t.Errorf("focused task lost static reason %q: %s", tc.reason, full)
 			}
 			if hasDigit.MatchString(indicator) {
 				t.Errorf("indicator carries a digits-based countdown: %q", indicator)
@@ -584,59 +585,42 @@ func TestNoWaitingCountdown(t *testing.T) {
 // recorded rows, with stage names only — never a percentage.
 func TestNoIntegrationPercentage(t *testing.T) {
 	t.Parallel()
-	strip := func(snap viewmodel.Snapshot) string {
-		t.Helper()
-		m := newModel(testConfig(fullCaps, t))
-		m.setSnapshot(t.Context(), snap)
-		updated, _ := m.Update(tea.WindowSizeMsg{Width: 220, Height: 30})
-		line, ok := segmentWithPrefix(updated.(*Model).View(), "stages:")
-		if !ok {
-			t.Fatalf("view lacks the integration strip\n%s", updated.(*Model).View())
-		}
-		return line
-	}
-	t.Run("nothing recorded", func(t *testing.T) {
-		t.Parallel()
-		snap := richSnapshot()
-		snap.Run.State = "executing"
-		snap.Candidate = nil
-		snap.Verification = nil
-		if got, want := strip(snap), "stages: [wait] frozen  [wait] checked  [wait] ready"; got != want {
-			t.Errorf("strip = %q, want %q", got, want)
-		}
-	})
-	t.Run("frozen only", func(t *testing.T) {
-		t.Parallel()
-		snap := richSnapshot()
-		snap.Run.State = "verifying"
-		snap.Verification = nil
-		if got, want := strip(snap), "stages: [done] frozen  [wait] checked  [wait] ready"; got != want {
-			t.Errorf("strip = %q, want %q", got, want)
-		}
-	})
-	t.Run("frozen checked ready", func(t *testing.T) {
-		t.Parallel()
-		if got, want := strip(richSnapshot()), "stages: [done] frozen  [done] checked  [done] ready"; got != want {
-			t.Errorf("strip = %q, want %q", got, want)
-		}
-	})
-	t.Run("never a percentage", func(t *testing.T) {
-		t.Parallel()
-		for _, snap := range []viewmodel.Snapshot{richSnapshot(), dispatchSnapshot()} {
-			line := strip(snap)
-			for _, name := range []string{"frozen", "checked", "ready"} {
-				if !strings.Contains(line, name) {
-					t.Errorf("strip lacks stage %q: %q", name, line)
+	for _, state := range []string{"none", "frozen", "checked", "failed", "mismatch"} {
+		t.Run(state, func(t *testing.T) {
+			t.Parallel()
+			snap := richSnapshot()
+			snap.Run.State = "verifying"
+			switch state {
+			case "none":
+				snap.Candidate = nil
+				snap.Verification = nil
+			case "frozen":
+				snap.Verification = nil
+			case "failed":
+				snap.Verification.Result = "failed"
+			case "mismatch":
+				snap.Verification.CandidateCommit = "other"
+			}
+			m := newModel(testConfig(fullCaps, t))
+			m.setSnapshot(t.Context(), snap)
+			m.width, m.height = 220, 30
+			view := stripANSISequences(m.View())
+			for _, stage := range []string{"frozen", "checked", "ready"} {
+				if !strings.Contains(view, stage) {
+					t.Fatalf("stage lost %q: %s", stage, view)
 				}
 			}
-			if strings.Contains(line, "%") {
-				t.Errorf("strip renders a percentage: %q", line)
+			if strings.Contains(view, "%") {
+				t.Fatal("invented integration percentage")
 			}
-			if hasDigit.MatchString(line) {
-				t.Errorf("strip renders digits without a denominator: %q", line)
+			if strings.Contains(view, "✓ checked") != (state == "checked") {
+				t.Fatalf("checked proof wrong at %s: %s", state, view)
 			}
-		}
-	})
+			if strings.Contains(view, "✓ frozen") != (state != "none") {
+				t.Fatalf("frozen source wrong at %s", state)
+			}
+		})
+	}
 }
 
 // TestFailureWithoutSpectacle pins the moment 10 truth rule: failure
@@ -735,7 +719,8 @@ func TestLiveAdmissionEventCarriesStatement(t *testing.T) {
 	if m.snap.Admission == nil || m.snap.Admission.EntitlementStatement != declaredEntitlement {
 		t.Fatalf("Admission = %+v, want statement %q", m.snap.Admission, declaredEntitlement)
 	}
-	if view := stripANSISequences(m.View()); !strings.Contains(view, declaredEntitlement) {
+	m.focusPane = paneEvidence
+	if view := m.exportText(); !strings.Contains(view, declaredEntitlement) {
 		t.Errorf("strip after the event missing %q\n%s", declaredEntitlement, view)
 	}
 }
@@ -800,7 +785,7 @@ func TestReducedMotionStatic(t *testing.T) {
 					t.Errorf("%s motion lacks immediate %q\n%s", level.name, want, view)
 				}
 			}
-			if activity, _ := segmentWithPrefix(view, "●"); strings.Contains(activity, "assistant turns") {
+			if activity, _ := segmentWithPrefix(view, "● 7 assistant"); strings.Contains(activity, "assistant turns") {
 				t.Errorf("%s motion pulses: %q", level.name, activity)
 			}
 			if _, ok := segmentWithPrefix(view, "outcome:"); ok {

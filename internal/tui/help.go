@@ -6,9 +6,11 @@ func paneTitle(id string) string {
 	case paneTasks:
 		return "Tasks"
 	case paneAgents:
-		return "Agents"
+		return "Agent"
+	case paneEvidence:
+		return "Evidence"
 	case paneDetail:
-		return "Selected change"
+		return "Diff"
 	default:
 		return cell(id)
 	}
@@ -30,7 +32,8 @@ func (m *Model) helpLines() []line {
 		{text: "  /" + d + "filter the focused collection"},
 		{text: "  :" + d + "open the command palette"},
 		{text: "  ?" + d + "show this help"},
-		{text: "  Enter" + d + "open details"},
+		{text: "  v" + d + "toggle Agent summary/full stream"},
+		{text: "  Enter" + d + "open Diff; Esc restores its originating pane"},
 		{text: "  Esc" + d + "back out (never quits)"},
 		{text: "  q" + d + "exit options"},
 		{text: "Actions:"},
