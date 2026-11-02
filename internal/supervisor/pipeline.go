@@ -542,27 +542,18 @@ func (p *pipeline) attempt(ctx context.Context) error {
 		return err
 	}
 
-	nonce, generation, err := pinAdmission(ctx, p.j, p.prod, d.StateDir, d.RunID, d.TaskID, d.AttemptID)
-	if err != nil {
-		// The launch intent is journaled but the worker never spawned:
-		// like a spawn failure, the attempt is interrupted rather than
-		// retried blind.
-		return errors.Join(err,
-			p.attemptTo(ctx, AttemptInterrupted, "admission_pin_failed"),
-			p.runTo(ctx, RunFailed, "admission_pin_failed"))
-	}
 	launch := launchForAttempt(d, token)
 	launch.ExecutionDeadline = p.deadline
-	launch.LadderVersion = stopLadderVersion(runtime.GOOS)
-	launch.Nonce = nonce
-	launch.Generation = generation
-	proc, err := workers.Spawn(p.exe, d.StateDir, d.RunID, d.AttemptID, launch)
+	proc, reason, err := spawnPinned(ctx, p.exe, d.StateDir, d.RunID, d.AttemptID, launch,
+		func(ctx context.Context, l workers.Launch) (workers.Launch, error) {
+			return pinnedLaunch(ctx, p.j, p.prod, d.StateDir, d.RunID, d.TaskID, d.AttemptID, l)
+		})
 	if err != nil {
-		// Spawn kills a worker it could not hand the launch to, and a
-		// worker without its launch starts nothing.
+		// The launch intent is journaled but the worker never ran: the
+		// attempt is interrupted rather than retried blind.
 		return errors.Join(err,
-			p.attemptTo(ctx, AttemptInterrupted, "worker_spawn_failed"),
-			p.runTo(ctx, RunFailed, "worker_spawn_failed"))
+			p.attemptTo(ctx, AttemptInterrupted, reason),
+			p.runTo(ctx, RunFailed, reason))
 	}
 	exited := make(chan struct{})
 	go func() {
@@ -908,6 +899,19 @@ func RecordAdmissionPinned(ctx context.Context, j *journal.Journal, runID, taskI
 // holder, so the error propagates to the spawn site's
 // admission_pin_failed path.
 func pinAdmission(ctx context.Context, j *journal.Journal, prod *Producer, stateDir, runID, taskID, attemptID string) (nonce string, generation int64, err error) {
+	nonce, generation, err = admissionInputs(stateDir)
+	if err != nil {
+		return "", 0, err
+	}
+	if err := RecordAdmissionPinned(ctx, j, runID, taskID, attemptID, stopLadderVersion(runtime.GOOS), workers.NonceDigest(nonce), prod); err != nil {
+		return "", 0, err
+	}
+	return nonce, generation, nil
+}
+
+// admissionInputs mints the worker nonce and reads the boot generation
+// once, with pinAdmission's explicit legacy fallback to generation 0.
+func admissionInputs(stateDir string) (nonce string, generation int64, err error) {
 	nonce, err = workerNonce()
 	if err != nil {
 		return "", 0, fmt.Errorf("minting the worker nonce: %w", err)
@@ -920,10 +924,86 @@ func pinAdmission(ctx context.Context, j *journal.Journal, prod *Producer, state
 	default:
 		return "", 0, fmt.Errorf("reading the boot generation: %w", err)
 	}
-	if err := RecordAdmissionPinned(ctx, j, runID, taskID, attemptID, stopLadderVersion(runtime.GOOS), workers.NonceDigest(nonce), prod); err != nil {
-		return "", 0, err
-	}
 	return nonce, generation, nil
+}
+
+// spawnPinned pins launch and hands exactly the pinned value to
+// workers.Spawn: nothing rereads the boot generation or rebuilds the
+// Launch in between, and a failed pin spawns nothing. The returned reason
+// names the failed step for the attempt and run transitions.
+func spawnPinned(ctx context.Context, exe, stateDir, runID, attemptID string, launch workers.Launch, pin func(context.Context, workers.Launch) (workers.Launch, error)) (*os.Process, string, error) {
+	launch, err := pin(ctx, launch)
+	if err != nil {
+		return nil, "admission_pin_failed", err
+	}
+	// Spawn kills a worker it could not hand the launch to, and a worker
+	// without its launch starts nothing.
+	proc, err := workers.Spawn(exe, stateDir, runID, attemptID, launch)
+	if err != nil {
+		return nil, "worker_spawn_failed", err
+	}
+	return proc, "", nil
+}
+
+// pinnedLaunch completes launch with the nonce, boot generation and ladder
+// version captured once, verifies the attempt row's launch token digest,
+// and journals attempt.admission_pinned with the nested LaunchProvenanceV1
+// derived from that exact value before returning it for workers.Spawn
+// (design §3.2). A failed or conflicting pin returns an error and the
+// caller must not spawn. The pin is not evidence that a worker exists and
+// never authorises a relaunch (I18).
+func pinnedLaunch(ctx context.Context, j *journal.Journal, prod *Producer, stateDir, runID, taskID, attemptID string, launch workers.Launch) (workers.Launch, error) {
+	nonce, generation, err := admissionInputs(stateDir)
+	if err != nil {
+		return workers.Launch{}, err
+	}
+	launch.Nonce = nonce
+	launch.Generation = generation
+	launch.LadderVersion = stopLadderVersion(runtime.GOOS)
+	sum := sha256.Sum256([]byte(launch.LaunchToken))
+	tokenSHA := hex.EncodeToString(sum[:])
+	row, err := j.Attempt(ctx, attemptID)
+	if err != nil {
+		return workers.Launch{}, fmt.Errorf("reading the attempt before the admission pin: %w", err)
+	}
+	if row.RunID != runID || row.LaunchTokenSHA256 != tokenSHA {
+		return workers.Launch{}, fmt.Errorf("attempt %s does not match the launch identity", attemptID)
+	}
+	events, err := j.Events(ctx, runID, 0)
+	if err != nil {
+		return workers.Launch{}, fmt.Errorf("reading the journal before the admission pin: %w", err)
+	}
+	for _, ev := range events {
+		if ev.AttemptID == attemptID && ev.Type == control.EventAdmissionPinned {
+			return workers.Launch{}, fmt.Errorf("attempt %s already has an admission pin", attemptID)
+		}
+	}
+	gen := launch.Generation
+	nested, err := json.Marshal(control.LaunchProvenanceV1{
+		SchemaVersion:     control.LaunchProvenanceSchemaVersion,
+		RunID:             runID,
+		AttemptID:         attemptID,
+		LaunchTokenSHA256: tokenSHA,
+		NonceSHA256:       workers.NonceDigest(launch.Nonce),
+		LadderVersion:     launch.LadderVersion,
+		Generation:        &gen,
+		ExecutionDeadline: launch.ExecutionDeadline,
+	})
+	if err != nil {
+		return workers.Launch{}, err
+	}
+	ev, err := newEvent(runID, taskID, attemptID, control.EventAdmissionPinned, control.AdmissionPinnedPayload{
+		LadderVersion:    launch.LadderVersion,
+		NonceSHA256:      workers.NonceDigest(launch.Nonce),
+		LaunchProvenance: nested,
+	}, time.Now().UTC())
+	if err != nil {
+		return workers.Launch{}, err
+	}
+	if err := prod.append(ctx, j, ev, nil); err != nil {
+		return workers.Launch{}, err
+	}
+	return launch, nil
 }
 
 // errWorkerUnverified reports a worker whose identity does not match the
