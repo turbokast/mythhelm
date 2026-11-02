@@ -453,7 +453,7 @@
 - **Status**: ✅ Completed — implementation submitted in PR #562; exact-final-head CI and actual merge remain pending.
 - **Implementation**: Source `496da0a` supplies the adopted bounded Agent/Evidence/Verdict producers plus compatible incumbent viewport repairs. All six canonical gates pass (full race349.7s); independent final code and architecture review6f2b52ba is Ready on that exact source. Lifecycle metadata032 was independently checked without changing Go bytes. Earlier A1 filter failure, A2 notice-priority failure, interrupted gate and missed A2 review deadline remain retained; this is direct fallback after native refusal, with complete Task15 composition still unfinished.
 
-### Task 15 — Install all responsive ladder views
+### Task 15 — Install all responsive ladder views ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: complex (shared layout integration; eleven files include four existing suites with old label contracts)
@@ -480,6 +480,8 @@
 - **Test plan**: Fixed time/snapshot fixtures. Embedded goldens are expected literals independently reviewed against source frames; no auto-accepting generator. Rendered-row counters for 10,000-line diff.
 - **Invariants touched**: I03/I06/I07/I09/I13 (v2 §15.1, AT-37: stable actions, bounded rendering, truthful content and closed glyph set).
 
+- **Status**: ✅ Completed — responsive Observatory composition and pre-format Diff viewport bounds are implemented; PR #566. Exact-head CI and actual merge remain required.
+- **Implementation**: Source `e4151e0` composes all rungs; `e25e483` bounds actual Diff formatter input while retaining full export/proof/truncation semantics. Signed integration `219991a` inherits merged core fixture PR #565 without changing the thirteen TUI source/test paths or protected producers.
 - **Implementation checkpoint**: Signed source `e4151e0` composes the shared header/NOW/NEXT and final key bar across all adopted rungs, four stable pane identities and Diff-origin restoration. Twenty-two complete literal captures cover all eleven sizes in Unicode/ASCII; production action/owner/provenance APIs remain unchanged. Independent source review, actual PR, exact-head CI and merge remain pending.
 - **Spec deviations**:
   - `internal/tui/live_test.go` is an additional same-domain test path: the explicitly retained `TestViewportVirtualises` lives here and must open Diff instead of assuming the obsolete default Diff pane; the compact guard now checks the actual five-row chrome/linear offer. Bounds, real10000-line data, exact fallback command and notice assertions remain.
@@ -492,6 +494,8 @@
 
 - **Fresh attempt 2 checkpoint (2026-11-02)**: Signed source `e25e483` corrects the pre-format viewport work defect in `model.go`, `mission.go` and `observatory_goldens_test.go`, within the declared source scope. A per-model private renderer seam delegates to the real Diff formatter. View slices a value copy before formatting; full export retains the original diff. Header, verification and omission rows consume the actual pane budget; original total, physical truncation/cap, candidate revision and full-width fallback provenance remain intact. The old failed attempt and its two findings above are retained; this is a separately measured native-refused/direct-fallback attempt, not a renewed old envelope.
 - **Attempt 2 evidence/pending boundary**: The actual View counter first fails with10000 rows formatted at all three layouts for height30, then passes with20/21/21 visits for single/two/wide. Full10000-row export matches independently constructed expected bytes. Boundary equivalence preserves empty/physical-line/physical-byte/proof rows and exact omission counts. All22 original literal frames remain unchanged. Focused race passes1.324s; whole TUI race passes5.686s. All four static gates pass. Four private overlays fail their intended assertions (restored full rendering, lost total provenance, wrong omission count and clipped export), with no timeout or compile failure substituted. Independent review, the separately owned core PTY readiness repair, combined all-six gates, actual PR, exact-head CI and merge remain pending; this checkpoint is not completed/accepted or native/platform/G09/G11/full-product/20× qualification.
+
+- **Final local validation/publication**: PR #566 was opened only after exact `e25e483` code/architecture review returned Ready and all six gates passed on signed integrated `219991a`: formatter0.2s, tidy0.1s, vet0.6s, full repository race332.9s, lint3.0s/zero issues, hygiene5.3s. Eight named final acceptance suites pass1.355s, including all22 original literals and actual View/full-export counters. Source/protected producer hashes remain byte-identical across core integration. Own lifecycle entry/spec/hygiene/marker checks are refreshed separately after this metadata; exact-final-head CI/review and merge remain outstanding. Earlier failures/control bindings remain historical, not erased or relabelled. No native/platform/full-product/G09/G11/20× qualification is claimed.
 
 ### Task 16 — Compose overlays with semantic colour checks
 
