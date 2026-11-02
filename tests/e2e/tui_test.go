@@ -109,6 +109,7 @@ func normalizeJSONLLine(t *testing.T, line string, e env, repo string) string {
 	}
 	typ, _ := ev["type"].(string)
 	if p, ok := ev["payload"].(map[string]any); ok {
+		normalisePinnedDeadline(line, typ, p)
 		ev["payload"] = normalizeJSONLPayload(typ, p, e, repo)
 	}
 	out, err := json.Marshal(ev)
@@ -116,6 +117,43 @@ func normalizeJSONLLine(t *testing.T, line string, e env, repo string) string {
 		t.Fatalf("re-marshalling %q: %v", line, err)
 	}
 	return string(out)
+}
+
+// normalisePinnedDeadline changes only the new clock field. It preserves the
+// existing generic normaliser and does not validate admission or identity.
+func normalisePinnedDeadline(line, typ string, payload map[string]any) {
+	if typ != "attempt.admission_pinned" {
+		return
+	}
+	// Read just this path's original token: float64 decoding alone would
+	// equate malformed integer spellings 1.0/1e0 with the producer's literal1.
+	rawToken := json.RawMessage(line)
+	for _, field := range []string{"payload", "launch_provenance", "schema_version"} {
+		var object map[string]json.RawMessage
+		if err := json.Unmarshal(rawToken, &object); err != nil {
+			return
+		}
+		rawToken = object[field]
+	}
+	if !bytes.Equal(bytes.TrimSpace(rawToken), []byte("1")) {
+		return
+	}
+	pin, ok := payload["launch_provenance"].(map[string]any)
+	if !ok {
+		return
+	}
+	raw, ok := pin["execution_deadline"].(string)
+	if !ok {
+		return
+	}
+	deadline, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil || deadline.IsZero() || deadline.Format(time.RFC3339Nano) != raw {
+		return
+	}
+	if _, err := deadline.MarshalJSON(); err != nil {
+		return
+	}
+	pin["execution_deadline"] = "<execution_deadline>"
 }
 
 // normalizeJSONLPayload replaces per-run values in one event payload. The
@@ -719,6 +757,53 @@ func TestNormalizeLaunchCreationTimeOnly(t *testing.T) {
 		if normalizeJSONLLine(t, left, e, "/repo/synthetic") == normalizeJSONLLine(t, right, e, "/repo/synthetic") {
 			t.Fatalf("%s creation time normalised", typ)
 		}
+	}
+}
+
+// The future additive pin uses only public synthetic values; this fixture
+// consumes no producer API. Stable labels, unknown fields and known-zero evidence
+// stay strict; generated per-run IDs and digests retain existing normalisation.
+func TestNormalizeAdmissionPinnedExecutionDeadlineOnly(t *testing.T) {
+	t.Parallel()
+	e := env{state: "/state/synthetic", home: "/synthetic/home"}
+	const first = `{"type":"attempt.admission_pinned","payload":{"nonce_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","ladder_version":"stop-ladder/v1","launch_provenance":{"schema_version":1,"run_id":"run_fixture","attempt_id":"att_fixture","launch_token_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","nonce_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","ladder_version":"stop-ladder/v1","generation":0,"execution_deadline":"2026-01-02T03:04:05.123456789Z"}}}`
+	second := strings.Replace(first, "03:04:05.123456789Z", "03:04:06.987654321Z", 1)
+	normalise := func(raw string) string { return normalizeJSONLLine(t, raw, e, "/repo/synthetic") }
+	if normalise(first) != normalise(second) {
+		t.Fatal("independent valid launch-provenance deadlines compare differently")
+	}
+	// This comparator checks independent runs, not same-run provenance authority.
+	// The existing recursive helper deliberately masks generated IDs and tokens.
+	productionFirst := strings.NewReplacer("run_fixture", "run_"+strings.Repeat("0", 26), "att_fixture", "att_"+strings.Repeat("0", 26)).Replace(first)
+	productionSecond := strings.NewReplacer("run_fixture", "run_"+strings.Repeat("1", 26), "att_fixture", "att_"+strings.Repeat("1", 26), strings.Repeat("a", 64), strings.Repeat("c", 64), strings.Repeat("b", 64), strings.Repeat("d", 64)).Replace(second)
+	if normalise(productionFirst) != normalise(productionSecond) {
+		t.Fatal("independent generated IDs, token hashes and deadlines compare differently")
+	}
+	for _, tc := range []struct{ name, left, right string }{
+		{"missing deadline", first, strings.Replace(first, `,"execution_deadline":"2026-01-02T03:04:05.123456789Z"`, "", 1)},
+		{"null deadline", first, strings.Replace(first, `"2026-01-02T03:04:05.123456789Z"`, "null", 1)},
+		{"known zero deadline", first, strings.Replace(first, "2026-01-02T03:04:05.123456789Z", "0001-01-01T00:00:00Z", 1)},
+		{"malformed deadlines", strings.Replace(first, "2026-01-02T03:04:05.123456789Z", "invalid-one", 1), strings.Replace(first, "2026-01-02T03:04:05.123456789Z", "invalid-two", 1)},
+		{"numeric deadlines", strings.Replace(first, `"2026-01-02T03:04:05.123456789Z"`, "1", 1), strings.Replace(first, `"2026-01-02T03:04:05.123456789Z"`, "2", 1)},
+		{"other event", strings.Replace(first, "attempt.admission_pinned", "attempt.progress", 1), strings.Replace(second, "attempt.admission_pinned", "attempt.progress", 1)},
+		{"other container", strings.Replace(first, "launch_provenance", "other_provenance", 1), strings.Replace(second, "launch_provenance", "other_provenance", 1)},
+		{"future schema", strings.Replace(first, `"schema_version":1`, `"schema_version":2`, 1), strings.Replace(second, `"schema_version":1`, `"schema_version":2`, 1)},
+		{"known zero generation", first, strings.Replace(second, `"generation":0`, `"generation":1`, 1)},
+		{"stable non-generated label", first, strings.Replace(second, "run_fixture", "run_other", 1)},
+		{"outer ladder evidence", first, strings.Replace(second, "stop-ladder/v1", "stop-ladder/v2", 1)},
+		{"nested ladder evidence", first, strings.Replace(second, `"ladder_version":"stop-ladder/v1","generation":0`, `"ladder_version":"stop-ladder/v2","generation":0`, 1)},
+		{"comma deadlines", strings.Replace(first, ".123456789Z", ",123456789Z", 1), strings.Replace(second, ".987654321Z", ",987654321Z", 1)},
+		{"decimal schema", strings.Replace(first, `"schema_version":1`, `"schema_version":1.0`, 1), strings.Replace(second, `"schema_version":1`, `"schema_version":1.0`, 1)},
+		{"exponent schema", strings.Replace(first, `"schema_version":1`, `"schema_version":1e0`, 1), strings.Replace(second, `"schema_version":1`, `"schema_version":1e0`, 1)},
+		{"unknown evidence", strings.Replace(first, `"generation":0`, `"generation":0,"unknown":1`, 1), strings.Replace(second, `"generation":0`, `"generation":0,"unknown":2`, 1)},
+		{"unrelated date", strings.Replace(first, `"generation":0`, `"generation":0,"other_clock":"2026-01-02T03:04:05Z"`, 1), strings.Replace(second, `"generation":0`, `"generation":0,"other_clock":"2026-01-02T03:04:06Z"`, 1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if normalizeJSONLLine(t, tc.left, e, "/repo/synthetic") == normalizeJSONLLine(t, tc.right, e, "/repo/synthetic") {
+				t.Fatal("distinct malformed, misplaced or stable evidence normalised away")
+			}
+		})
 	}
 }
 
