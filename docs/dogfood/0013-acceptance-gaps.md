@@ -32,7 +32,7 @@ Other candidates remain incomplete at this snapshot:
 | Attachment response queue handoff (Task35), first native attempt | MYTHHELM owned the native attempt. Native exit was zero, but the configured formatting check failed. Vet and race checks passed; later independent review found two production defects and a fixture-join defect. The candidate was rejected. A bounded second native attempt was in flight, with no accepted outcome at this snapshot. |
 | Recording selector, [draft PR #576](https://github.com/turbokast/mythhelm/pull/576) | Fake-tool checks had passed, but later counterfixtures exposed an unselected media overwrite, omitted embedded-input freshness checks and a deletion-blind snapshot assertion. The publication workflow also assumes one shared pin, conflicting with selected mixed historical pins. Merge is held; no real recording follows. |
 | Service fixture, [PR #573](https://github.com/turbokast/mythhelm/pull/573) | All local gates passed. Windows CI still failed in a seeded-journal fixture with SQLite busy. Its cause was unknown; local passes did not establish cross-platform acceptance. |
-| Pre-spawn launch provenance (Task32) | All six local gates passed on its own source, but it was not yet published or merged, awaiting fixture changes. It was not a shipped capability. |
+| Pre-spawn launch provenance (Task32) | All six local gates passed on a private integrated candidate including pending fixture prerequisites, but it was not yet published or merged. It was not a shipped capability. |
 
 The selector's unchanged-unselected-bytes failures matter even though ordinary
 fake-tool assertions passed. The response-queue defects matter even though vet
@@ -43,13 +43,17 @@ later counterexamples disappear.
 ## Task35 first-attempt observations
 
 The first attachment response-queue attempt was actual MYTHHELM-owned native
-execution. The following categories describe different intervals and quantities:
+execution using Claude Code **2.1.316**, with native-reported model
+`claude-opus-5-5`; effort was unknown. The route was experimental `trusted-host`
+with a `subscription-declared` billing posture. Entitlement was declared, not
+independently verified; no containment or billing qualification follows.
+The following categories describe different intervals and quantities:
 
 | Observation | Value |
 |---|---:|
 | Monotonic engine elapsed time | 596.403 seconds |
 | Native-reported duration | 538.035 seconds |
-| Observed permission denials | 5 |
+| Native-reported permission denials | 5 |
 | Reported input tokens | 66 |
 | Reported output tokens | 47,595 |
 | Reported cache-read tokens | 3,117,963 |
