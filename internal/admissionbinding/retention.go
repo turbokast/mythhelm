@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -33,7 +34,7 @@ const (
 	RetentionNativeStatus  RetentionProvenanceV1 = "native_status_nonsecret"
 	RetentionNativeAuth    RetentionProvenanceV1 = "native_auth_store"
 	RetentionTranscript    RetentionProvenanceV1 = "native_transcript"
-	RetentionCredentialEnv RetentionProvenanceV1 = "credential_environment"
+	RetentionCredentialEnv RetentionProvenanceV1 = "credential_environment" //nolint:gosec // G101: provenance label, never a credential.
 	RetentionApprove       RetentionDecisionV1   = "approve"
 	RetentionReject        RetentionDecisionV1   = "reject"
 )
@@ -357,7 +358,7 @@ func resolve(x reflect.Value, segments []string, prefix string, emit func(string
 	}
 	if segments[0] == "*" {
 		for i := 0; i < x.Len(); i++ {
-			resolve(x.Index(i), segments[1:], join(fmt.Sprint(i)), emit)
+			resolve(x.Index(i), segments[1:], join(strconv.Itoa(i)), emit)
 		}
 		return
 	}

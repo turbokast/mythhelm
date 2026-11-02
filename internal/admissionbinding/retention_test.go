@@ -109,7 +109,7 @@ func TestRetentionApprovalCanonicalCodec(t *testing.T) {
 		"future schema":      {strings.Replace(approvalGolden, `"SchemaVersion":1`, `"SchemaVersion":2`, 1), ab.ErrCapabilityUnsupported},
 	} {
 		other := ab.ErrInvalidContract
-		if tc.want == other {
+		if tc.want == other { //nolint:errorlint // compares fixed expected sentinels, not a returned error.
 			other = ab.ErrCapabilityUnsupported
 		}
 		got, err := ab.DecodeRetentionApprovalV1([]byte(tc.input))

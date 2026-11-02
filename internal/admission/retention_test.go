@@ -219,7 +219,7 @@ func TestRetentionUnclassifiedRefuses(t *testing.T) { // I02/I20 (v2 §§6/8)
 	}
 	classes := map[string]string{
 		"git email": "Decision.GitEmail", "git name": "Decision.GitName",
-		"task title": "Decision.Task.Title", "task artifact": "Decision.Task.ArtifactRef",
+		"task title": "Decision.Task.Title", "task artefact": "Decision.Task.ArtifactRef",
 		"challenge": "Challenges.3.Text", "repository path": "Request.Repository",
 		"config path": "Decision.Probe.Executable", "check argv": "Decision.ProjectConfig.Checks.0.Argv.1",
 		"proposal argv": "Decision.Proposal.Args.0", "tools": "Decision.ProjectConfig.AllowedTools.1",
@@ -684,7 +684,7 @@ func TestRetentionPolicyByteBound(t *testing.T) {
 	c := newRetentionCase(t)
 	content := c.policy.Content
 	content.Rules = nil
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		content.Rules = append(content.Rules, ab.RetentionRuleV1{FieldPath: "A" + strings.Repeat("x", 4092) + fmt.Sprintf("%03d", i), Classification: ab.RetentionNonSecret, Provenance: ab.RetentionOperatorInput})
 	}
 	if _, err := ab.RetentionPolicyDigestV1(content); !errors.Is(err, ab.ErrCapabilityUnsupported) {
