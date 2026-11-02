@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/admission"
+	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/supervisor"
 	"github.com/turbokast/mythhelm/internal/workers"
 )
@@ -1093,7 +1094,7 @@ sys.stderr.write("reap-probe: " + verdict + "\n")
 // readyReview is a finished run (ready_for_review) on the packaged binary
 // and the argv that inspects it in the live view: the packaged child of the
 // cleanup rows, reading the journal only and launching no work.
-func readyReview(t *testing.T) (environ, argv []string, ready string) {
+func readyReview(t *testing.T) (environ, argv []string, ready func(*ptyClient)) {
 	t.Helper()
 	f := newLifecycleFixture(t, "")
 	code, out, stderr := run(t, f.e, f.repo, baseRunArgs(f.digest)...)
@@ -1105,7 +1106,124 @@ func readyReview(t *testing.T) (environ, argv []string, ready string) {
 	if runID == "" || runID == first {
 		t.Fatalf("linear output's first line %q names no run ID", first)
 	}
-	return f.environ(t, ""), []string{mythhelmBin, "review", runID}, runID
+	if got := onlyRun(t, f.e.state); got != runID {
+		t.Fatalf("linear run ID %q differs from journal run %q", runID, got)
+	}
+	return f.environ(t, ""), []string{mythhelmBin, "review", runID}, func(c *ptyClient) {
+		t.Helper()
+		if err := reviewChildIdentity(c, f.e.state, f.repo, runID); err != nil {
+			t.Fatal(err)
+		}
+		// Together these witness the loaded mission, not a loading/error
+		// screen. Exact identity comes from argv, journal and PID, not the
+		// number of run-ID cells the current layout can display.
+		c.waitText("TASKS", 0, "")
+		c.waitText("q exit", 0, "")
+		if err := reviewChildIdentity(c, f.e.state, f.repo, runID); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// reviewChildIdentity checks this cleanup fixture's exact finished run and the
+// spawned inspector independently of terminal geometry. The real PTY driver
+// execs its argv tail and reports the resulting child PID; startDriver pins its
+// start time. No generic screen marker alone satisfies this check.
+func reviewChildIdentity(c *ptyClient, state, repo, runID string) error {
+	want := []string{mythhelmBin, "review", runID}
+	if runID == "" || len(c.cmd.Args) < len(want) || !slices.Equal(c.cmd.Args[len(c.cmd.Args)-len(want):], want) {
+		return errors.New("PTY child argv does not inspect the exact expected run")
+	}
+	homes := 0
+	for _, entry := range c.cmd.Env {
+		if value, ok := strings.CutPrefix(entry, "MYTHHELM_HOME="); ok {
+			homes++
+			if value != state {
+				return errors.New("PTY child has a different state root")
+			}
+		}
+	}
+	if homes != 1 {
+		return errors.New("PTY child has no unique state root")
+	}
+	start, err := workers.ProcessStartTime(c.pid)
+	if err != nil {
+		return fmt.Errorf("PTY child identity unavailable: %w", err)
+	}
+	if c.start.IsZero() || !start.Equal(c.start) {
+		return errors.New("PTY child PID/start identity changed")
+	}
+	select {
+	case <-c.done:
+		return errors.New("PTY driver exited before review readiness")
+	default:
+	}
+	j, err := journal.OpenReadOnly(c.t.Context(), state)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = j.Close() }()
+	runs, err := j.ListRuns(c.t.Context(), 2)
+	if err != nil {
+		return err
+	}
+	if len(runs) != 1 || runs[0].RunID != runID || runs[0].State != "ready_for_review" || runs[0].SourceRepo != repo {
+		return errors.New("PTY review is not the fixture's exact finished journal run")
+	}
+	attempt, err := j.LatestAttempt(c.t.Context(), runID)
+	if err != nil {
+		return err
+	}
+	candidate, err := j.Candidate(c.t.Context(), attempt.AttemptID)
+	if err != nil {
+		return err
+	}
+	if attempt.RunID != runID || candidate.AttemptID != attempt.AttemptID || candidate.Commit == "" {
+		return errors.New("PTY review has no candidate bound to its exact attempt")
+	}
+	return nil
+}
+
+// TestPTYReviewReadinessIdentity draws the real loaded view, then proves the
+// same generic markers cannot authorize a different run, argv, root or process.
+func TestPTYReviewReadinessIdentity(t *testing.T) {
+	t.Parallel()
+	environ, argv, ready := readyReview(t)
+	c := startDriver(t, environ, ownedJoinGrace, append([]string{"-I", "-B", ptyDriver(t), "160", "40", t.TempDir()}, argv...)...)
+	ready(c)
+	state := ""
+	for _, entry := range environ {
+		if value, ok := strings.CutPrefix(entry, "MYTHHELM_HOME="); ok {
+			state = value
+		}
+	}
+	row, _, _ := runSnapshot(t, state, argv[2])
+	_, otherArgv, _ := readyReview(t)
+	for _, tc := range []struct {
+		name   string
+		runID  string
+		change func(*ptyClient)
+	}{
+		{"generic view for a different actual finished run", otherArgv[2], func(*ptyClient) {}},
+		{"generic view without run identity", "", func(*ptyClient) {}},
+		{"different forwarded review argv", argv[2], func(p *ptyClient) { p.cmd.Args[len(p.cmd.Args)-1] = otherArgv[2] }},
+		{"different state environment", argv[2], func(p *ptyClient) { p.cmd.Env = append(p.cmd.Env, "MYTHHELM_HOME="+t.TempDir()) }},
+		{"different child PID", argv[2], func(p *ptyClient) { p.pid = os.Getpid() }},
+		{"different child start time", argv[2], func(p *ptyClient) { p.start = p.start.Add(time.Second) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Copy only observed identity data; ownership and cleanup remain
+			// with the actual client above, never with this negative fixture.
+			probe := &ptyClient{t: t, cmd: &exec.Cmd{Args: slices.Clone(c.cmd.Args), Env: slices.Clone(c.cmd.Env)}, pid: c.pid, start: c.start, done: c.done}
+			tc.change(probe)
+			if err := reviewChildIdentity(probe, state, row.SourceRepo, tc.runID); err == nil {
+				t.Fatal("generic loaded-view markers accepted without exact review identity")
+			}
+		})
+	}
+	if err := reviewChildIdentity(c, state, row.SourceRepo, argv[2]); err != nil {
+		t.Fatalf("the actual finished-run inspector lost its identity: %v", err)
+	}
 }
 
 // TestPTYClientCleanupBinary drives the actual ptyClient shutdown and the
@@ -1119,8 +1237,8 @@ func readyReview(t *testing.T) (environ, argv []string, ready string) {
 func TestPTYClientCleanupBinary(t *testing.T) {
 	t.Parallel()
 	const grace = 2 * time.Second
-	hostile := func(t *testing.T) ([]string, []string, string) {
-		return []string{"PATH=" + os.Getenv("PATH")}, []string{python3(t), "-I", "-c", hostileChild}, hostileReady
+	hostile := func(t *testing.T) ([]string, []string, func(*ptyClient)) {
+		return []string{"PATH=" + os.Getenv("PATH")}, []string{python3(t), "-I", "-c", hostileChild}, func(c *ptyClient) { c.waitText(hostileReady, 0, "") }
 	}
 	eofIgnoring := func(t *testing.T, dir string, child []string) []string {
 		return append([]string{"-I", "-B", "-c", eofIgnoringDriver, filepath.Dir(ptyDriver(t)), dir}, child...)
@@ -1130,7 +1248,7 @@ func TestPTYClientCleanupBinary(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		name       string
-		child      func(t *testing.T) (environ, argv []string, ready string)
+		child      func(t *testing.T) (environ, argv []string, ready func(*ptyClient))
 		driver     func(t *testing.T, dir string, child []string) []string
 		malformed  bool
 		wantKilled bool
@@ -1162,7 +1280,7 @@ func TestPTYClientCleanupBinary(t *testing.T) {
 					t.Errorf("leaked packaged child: %v", err)
 				}
 			})
-			c.waitText(ready, 0, "")
+			ready(c)
 			began := time.Now()
 			if tc.malformed {
 				if _, err := c.in.Write([]byte("{not json\n")); err != nil {
