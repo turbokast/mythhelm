@@ -201,3 +201,10 @@ Source496da0a preserves the six producer paths and existing key/selection/eviden
 ### Task14 actual publication checkpoint
 
 PR #562 submits exact source496da0a with all-six local gates and independent code/architecture Ready. Actual final-head CI and merge are still required before Task15 implementation. The producer and viewport semantics above are unchanged; final publication bookkeeping introduces no additional source path.
+
+
+### Task15 fresh attempt 2 — Bounded Diff viewport
+
+Signed source `e25e483` retains all22 literal frames and earlier task/source history. `detailViewportLines(width, height)` is a View-only compositor: it reserves its two header rows and exact omission marker before passing a sliced Diff value to the existing real formatter. Verification rows follow the same retained prefix ordering as before. Original Diff.Lines, total, physical Truncated/TruncateCap, full-width physical-cap notice and candidate/workspace fallback provenance are unchanged. `detailLines` and focused plain export continue consuming the complete original retained diff. The private per-model renderer seam permits a real input counter without a global hook or new producer API.
+
+Actual View regression rejects10000 pre-format visits and passes20/21/21 at height30 for single/two/wide panes; complete export matches independent expected bytes. Boundary tests compare the former render-then-cap output for all prefix/proof boundaries, empty data and both physical cap reasons. All22 literal captures remain unchanged. Whole TUI race passes5.686s and four static gates pass; four assertion-based controls reject full rendering, provenance loss, incorrect omission and clipped export. These are renderer-fixture observations. Independent review, combined canonical gates after the separately owned core PTY fixture repair, exact-head publication/CI and actual merge remain pending. This fresh admitted/direct-fallback attempt does not erase the prior full-gate/NFR failures or qualify native/platform/full-product/20× behavior.
