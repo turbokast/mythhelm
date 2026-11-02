@@ -38,6 +38,15 @@ remains separate evidence. These observations do not complete service-owned
 dispatch or the full product; at least 20× faster full-product delivery remains
 unproven.
 
+The later [19:30 UTC acceptance-gaps report](dogfood/0013-acceptance-gaps.html)
+records another MYTHHELM-owned native attempt with exit zero but failed formatting
+and independent production/fixture findings; its next attempt was still in
+flight at that snapshot. Passing local checks also left recording-selector
+counterexamples and Windows service-fixture CI unresolved. Merged documentation
+and watchdog repairs are progress, not full-product completion. Reported usage
+and retail-equivalent estimates are not known charges, and these routine
+observations establish no faster, cheaper or higher-quality delivery advantage.
+
 ## Supported today
 
 - Headless `mythhelm run` with admission, supervision, verification, review,
