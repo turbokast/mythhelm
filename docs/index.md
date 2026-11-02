@@ -25,7 +25,7 @@ cells:
 <section class="landing-intro" aria-labelledby="landing-title">
   <h1 id="landing-title">Run the agents you already trust.<br> Know what they actually did.</h1>
   <p><a href="#status">What works, what’s in progress, what’s not yet</a></p>
-  <p><strong>Delivery target: at least 20× faster full-product delivery. Not demonstrated.</strong> The product is unfinished. Native admission refused; authoring used direct fallbacks, not MYTHHELM-owned execution. Read the <a href="{{ '/dogfood/0011-responsive-layout-blockers.html' | relative_url }}">self-use report: failed checks, missed defects, delivery waits and unknown measurements</a>.</p>
+  <p><strong>Delivery target: at least 20× faster full-product delivery. Not demonstrated.</strong> Actual MYTHHELM-owned native self-use began, but its first attempt was independently rejected: a successful native exit and three Go checks left the candidate unchanged. A fresh attempt was still running at the fixed snapshot. Direct fallback work and a rejected local prototype remain separate. Read the <a href="{{ '/dogfood/0012-native-self-building-start.html' | relative_url }}">native self-building report: execution, rejection and unknown charges</a>. The product remains unfinished.</p>
 </section>
 
 <section id="quickstart" aria-labelledby="try-the-scripted-demo" markdown="1">
