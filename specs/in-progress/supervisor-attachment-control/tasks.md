@@ -825,7 +825,7 @@
 - **Test plan**: Synthetic fixtures and deterministic barriers for the named cases; pair negative assertions with a deliberately violating fixture. Public process behavior uses the packaged binary in the integration task, not helper-only evidence.
 - **Invariants touched**: I06/I09/I14 (v2 §§14/15/18: evidence-bounded claims).
 
-### Task 32 — Persist immutable pre-spawn launch provenance
+### Task 32 — Persist immutable pre-spawn launch provenance ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (five source paths; ≤45minutes total,15minute artifact checkpoint,max2 repairs≤15minutes each inside total)
@@ -844,6 +844,12 @@
   - TestLaunchProvenanceWriteBeforeSpawn injects pin failure/conflict, observes zero Spawn, preserves exact same attempt and execution clock, and rejects conflicting later pins. Crash after pin is not worker-existence/relaunch authority. Existing PinnedAdmission historical/latest behavior and legacy launch fallback tests remain green.
 - **Test plan**: Actual journal+attempt rows and serialized fake worker handoff; retain valid nonempty controls and assertion-failing missing/presence/reread/failed-write counterfixtures. No native account. Freeze the smallest proposed split if extra paths or finite envelope are needed; no check waiver.
 - **Invariants touched**: I09/I12/I18/I19/I20/I21 (v2 §§3/6/8: immutable observed launch provenance, absence never zero).
+- **Status**: ✅ Completed — immutable pre-spawn launch provenance implementation submitted for independent review; PR #581. This pre-merge entry does not claim the pull request merged.
+- **Implementation**: Reviewed source integrates immutable launch provenance in `2bfce4a` with comment/annotation normalization in `4dc9eeb`; the three Task32 source blobs remain byte-identical on integration `e5322c1` after the merged fixture prerequisite PR #573. `ReadLaunchProvenance` distinguishes absent history from explicit generation zero, validates identities and conflicting pins, and returns a copied generation. The production pin-to-Spawn path records the exact handed-off generation/deadline before spawn; real nonempty envelope/attempt controls retain the execution clock.
+- **Spec deviations**: Required own-task records add `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md` and `specs/in-progress/supervisor-attachment-control/scratchpad.md` beyond the implementation Files list. The existing `internal/control/pinning_test.go` and `internal/supervisor/pipeline_launch_test.go` remain unchanged; the new `internal/supervisor/launch_provenance_test.go` exercises reader validation and actual serialized Spawn handoff together. The separately reviewed native test-only follow-up, followed by direct coordinator integration and mechanical comment/annotation normalization, adds real nonempty canonical envelope/attempt comparisons and an assertion-failing clock-change control, consistent with Task32 acceptance; no production contract is widened.
+- **Files modified**: `internal/control/pinning.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/launch_provenance_test.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
+- **Validation**: All six canonical local gates pass on integration `e5322c1`, including full repository race 319.6s and zero lint issues. All three named acceptance tests independently pass under race (supervisor 4.056s); exact source hashes remain unchanged after prerequisite PR #573. Earlier failures and gate receipts on prior staging revisions remain separate; required CI and merge are pending.
+
 
 ### Task 33 — Persist additive service assignment epochs
 
