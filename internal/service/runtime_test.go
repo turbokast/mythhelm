@@ -217,6 +217,7 @@ func TestServiceRootContextSurvivesClientExit(t *testing.T) {
 }
 
 func TestServiceRootReadinessRejectsMissingOrReturnedRun(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"already returned", "returned during status", "missing readiness"} {
 		t.Run(mode, func(t *testing.T) {
 			done := make(chan struct{})
@@ -248,6 +249,7 @@ func TestServiceRootReadinessRejectsMissingOrReturnedRun(t *testing.T) {
 }
 
 func TestServiceRootReadinessBindsIdentity(t *testing.T) {
+	t.Parallel()
 	valid := map[string]any{"pid": float64(os.Getpid()), "generation": float64(1), "root": "synthetic-root", "endpoint": "synthetic-endpoint", "migration_required": false}
 	if err := checkServiceRootIdentity(valid, "synthetic-root", "synthetic-endpoint"); err != nil {
 		t.Fatal(err)
