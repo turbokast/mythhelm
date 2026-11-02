@@ -565,7 +565,7 @@
 
 - **Domain/agent**: go-implementer (docs)
 - **Budget**: standard
-- **Depends on**: Task 18
+- **Depends on**: Task 18, Task 21
 - **Change**: Document implemented view, controls, detach/recover semantics, theme choice and remaining evidence gaps, preserving docs-site structure and existing linear examples.
 - **Files**:
   - `README.md`
@@ -597,3 +597,21 @@
   - Record the exact generating command/version and inspect the rendered artifact before marking complete. If tooling is unavailable, keep this task incomplete with its concrete blocker; no placeholder recording or claimed human accessibility qualification.
 - **Test plan**: Follow `specs/*/tui-tape-recording/` and docs/demos/README.md; hygiene plus artifact inspection.
 - **Invariants touched**: I09/I13/I14 (v2 §§15.1,19: demonstration provenance and no expanded qualification claim).
+
+### Task 21 — Produce scoped recording selection
+
+- **Domain/agent**: go-implementer (docs)
+- **Budget**: complex (three coupled mechanism/docs/test files; process and failure-cleanup boundaries)
+- **Depends on**: None
+- **Change**: Add the optional selector/default-all and selected provenance/install contract in design's proposed recording selector section, before documentation and maintainer re-recording consume it. Existing main recording schema/script are its only producer inputs; no future TUI API is consumed.
+- **Files**:
+  - `docs/demos/record.sh`
+  - `docs/demos/record_test.sh` (new)
+  - `docs/demos/README.md`
+- **Produces**: `docs/demos/record.sh [--repin] [--recording NAME]`, with exact parsing, mixed-pin, selected generation/verification and cleanup contract in design. Default-all remains available.
+- **Acceptance**:
+  - `record_test.sh` sources the actual copied record_main body with fixture-only root/BIN/HERO_TMP in isolated Git repositories with fake external tool processes: default-all and selected tui/hero success have expected artifacts, transcript label counts, current selected pins and exact unselected files/serialized entries. Global repin or unselected-write controls fail.
+  - Real-script malformed/duplicate/unknown arguments, dirty source, wrong commit/VHS, either TUI transcript take failure and generation/verification/pin-write failures return nonzero, preserve unselected bytes and never accept partial selected output; cleanup removes only owned resources. A swallowed pipeline failure or missing cleanup control fails an effect assertion.
+  - README states the exact new selector/default commands and per-record historical/current provenance; no real rendered/native/human evidence is claimed from fake tools. Task20 owner, dependency, six artifact paths and human/tooling gates remain unchanged.
+- **Test plan**: Bash/Git/Python fixtures only; fake credential-free external tools, exact before/after bytes and negative process statuses. Keep literal-entry bad-argument/pre-build failure controls separate from shared-body success coverage. Public fixed paths and literal tapes stay unchanged; no successful public recording or real rendering/maintainer action occurs in this producer.
+- **Invariants touched**: I07/I09/I13/I14 (v2 §§15/19: exact recording provenance, isolated tooling, no false qualification).
