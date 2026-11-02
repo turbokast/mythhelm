@@ -598,7 +598,7 @@
 - **Test plan**: Follow `specs/*/tui-tape-recording/` and docs/demos/README.md; hygiene plus artifact inspection.
 - **Invariants touched**: I09/I13/I14 (v2 §§15.1,19: demonstration provenance and no expanded qualification claim).
 
-### Task 21 — Produce scoped recording selection
+### Task 21 — Produce scoped recording selection ✅ COMPLETED
 
 - **Domain/agent**: go-implementer (docs)
 - **Budget**: complex (three coupled mechanism/docs/test files; process and failure-cleanup boundaries)
@@ -615,3 +615,9 @@
   - README states the exact new selector/default commands and per-record historical/current provenance; no real rendered/native/human evidence is claimed from fake tools. Task20 owner, dependency, six artifact paths and human/tooling gates remain unchanged.
 - **Test plan**: Bash/Git/Python fixtures only; fake credential-free external tools, exact before/after bytes and negative process statuses. Keep literal-entry bad-argument/pre-build failure controls separate from shared-body success coverage. Public fixed paths and literal tapes stay unchanged; no successful public recording or real rendering/maintainer action occurs in this producer.
 - **Invariants touched**: I07/I09/I13/I14 (v2 §§15/19: exact recording provenance, isolated tooling, no false qualification).
+- **Status**: ✅ Completed — produced selected/default-all recording generation with exact per-record provenance and fake-tool regression coverage; PR #576.
+- **Implementation**: Commit `b26a2654e20d7599c8e028fc5a710b645b57573c` copies the independently reviewed source blobs. `record_main` is the shared private fixture seam; the public command retains fixed paths. Scoped fixtures pass119 assertions; ShellCheck/Bash syntax pass; independent code/architecture review Ready. Historical revisions must resolve to commits, including unselected entries.
+- **Spec deviations**:
+  - Own `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md` and `specs/in-progress/tui-observatory-view/scratchpad.md` records accompany the three listed paths under WORKFLOW/task-completion.
+  - Added the historical non-commit pin regression after independent review exposed existence-only Git object validation (consistent with the adopted commit-resolution contract). The original rejected candidate and subsequent repair remain distinct evidence; no real recording or Task20 qualification follows.
+- **Files modified**: `docs/demos/record.sh`, `docs/demos/record_test.sh`, `docs/demos/README.md`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.

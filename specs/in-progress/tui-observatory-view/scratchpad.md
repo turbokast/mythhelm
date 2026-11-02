@@ -96,6 +96,14 @@ Accounting across three fresh-context reviewers: dispatched=3 returned=3 failed=
 
 ## Discoveries
 
+
+### Task21 — Selected recording provenance
+
+- PR #576 produces the optional selector through one shared implementation body while preserving default-all, public fixed paths, literal tapes and marker-owned cleanup. Fake fixtures compare complete mixed-pin manifest serialization and every unselected file;119 assertions pass on the reviewed source, with ShellCheck/Bash syntax and hygiene passing.
+- Independent review found that `git cat-file -e` accepted a historical blob pin even though the contract requires a commit. The first candidate was rejected despite its passing fixture suite. The repaired commit-resolution guard refuses that coherent control; valid historical commits still pass. Reverting only this guard fails both retained exit and exact-manifest-byte assertions, preserving the original failure as evidence rather than relabeling it success.
+- Task19 consumes the selector after merge. Task20 remains the separate maintainer-owned six-artifact recording/human-inspection gate; sentinel media, actual mechanism self-use and passing routing tests do not qualify real rendering or accessibility.
+
+
 ### Task 1 — Deterministic linear capture findings
 
 - Captured seven nonempty outputs from unchanged production code at `e4ab1fc46fb08886af5e8195c4a2812b1b0b6e6f`; two consecutive base captures matched before storing their exact normalized bytes. Inputs are synthetic journal events, receipt and typed usage rows, plus the credential-free fake demo. No native account evidence is claimed.
