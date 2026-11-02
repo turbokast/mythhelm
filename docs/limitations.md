@@ -28,8 +28,15 @@ Migration is one-way; no command restores its backup.
 This is an incomplete product stage. The source-tested singleton, read-only
 status and observer/shutdown boundaries do not establish ordinary service-owned
 run dispatch or native ingestion. The self-building reports retain their dated
-snapshots: native admission refused before launch, authoring used direct agent
-sessions, and at least 20× faster full-product delivery remains unproven.
+snapshots. The [2026-11-02 09:03 UTC report](dogfood/0011-responsive-layout-blockers.html)
+records earlier admission refusals and direct-session authoring. The later
+[12:51:55 UTC report](dogfood/0012-native-self-building-start.html) records an
+admitted, MYTHHELM-owned native product-task attempt that was independently
+rejected: exit zero and three Go checks left the candidate unchanged after two
+edit denials. The [earlier accepted maintenance pilot](dogfood/0003-measured-self-hosting.html)
+remains separate evidence. These observations do not complete service-owned
+dispatch or the full product; at least 20× faster full-product delivery remains
+unproven.
 
 ## Supported today
 
