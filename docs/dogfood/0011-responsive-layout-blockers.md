@@ -22,7 +22,9 @@ It did not complete the responsive composition.
 
 [PR #561](https://github.com/turbokast/mythhelm/pull/561) merged the test timing
 collector and deterministic drain deadline coverage at 13:18 UTC, in `de655cd`.
-Its final 33 PR checks passed, and all six main workflows succeeded. Earlier
+Its final readiness assessment accepted all 33 PR checks under the existing
+check policy, including permitted neutral or skipped results; all six main
+workflows succeeded. Earlier
 Windows Unicode, newline, drain-test and DCO failures remain in the history.
 These diagnostics establish no delivery speedup.
 
