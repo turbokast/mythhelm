@@ -768,7 +768,7 @@ func TestBindingV1ChallengeShape(t *testing.T) { // I03/I09/I20 (v2 section2): s
 		})
 	}
 	// These are well-formed DIFFERENT data, never confirmations or authority.
-	// The independently required Task8 planner must reject unauthorized semantic
+	// The independently required Task8 planner must reject unauthorised semantic
 	// substitutions before ANY confirmation/retention/durable row/ack or effect.
 	original := fixture(t)
 	base, err := ab.DigestV1(original)
