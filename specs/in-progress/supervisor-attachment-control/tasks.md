@@ -111,7 +111,7 @@
 - **Spec deviations**: Own completion, handoff and scratchpad paths record required lifecycle evidence beyond the two listed docs paths. The pre-merge completion entry follows WORKFLOW/task-completion and does not claim PR #541 is merged. Follow-on spec implementation contracts remain confined to separate PR #543; no normative design change.
 - **Files modified**: `docs/decisions/0022-service-admission-binding.md`, `docs/decisions/README.md`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
-### Task 23 — Produce the closed canonical admission binding codec
+### Task 23 — Produce the closed canonical admission binding codec ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -130,6 +130,12 @@
   - `TestBindingV1HashSpellings` preserves validated raw prefixed/unprefixed/uppercase TaskSHA256, exact lowercase trust flags or absence and normalized derived hashes; NoChecks empty config and absent native evidence remain distinct. A global64hex validator mutant fails the valid controls.
 - **Test plan**: No Task4 import, native account, file probing or live authority. Run codec goldens and one deliberately permissive mutant per parser/binding class; full Go gates and independent architecture review.
 - **Invariants touched**: I02/I09/I20 (v2 §§2/6/8: closed immutable evidence and honest absence).
+- **Status**: ✅ Completed — produced the closed, pure canonical BindingV1 codec under the merged challenge-shape clarification; PR #570.
+- **Implementation**: Exact independent DTOs, bounded strict canonical UTF-8 JSON, domain-separated SHA-256, stable exclusive sentinel errors and current-source field dispositions. Commits `f4176b16a9cc5e38d934d0103243380f7a7234da` and `8814b81b591c8907dc56d480bcff77c347262c20`; independent source/architecture review Ready; all six repository gates passed, including full race474.4s. The six named acceptance tests passed under race5.546s and eight compile-valid permissive mutants failed assertions.
+- **Spec deviations**:
+  - Own `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md` and `specs/in-progress/supervisor-attachment-control/scratchpad.md` records are required beyond the three implementation paths by WORKFLOW/task-completion; their pre-merge completion entry takes precedence over this child's heading-after-merge convention. No runtime or authority-policy deviation is introduced.
+  - Current-source grounding distinguishes request selector `claudecode` from descriptor harness `claude-code` (consistent with the actual admission/adapter producers). The already-merged PR #569 shape contract leaves Task8 responsible for complete exact fresh challenge-plan equality before every confirmation/retention acceptance, durable preparation/binding/answer/Ready/operation acknowledgement, successful Prepare/Confirm acknowledgement and authority/effect; Task24 still produces retention-policy validation. Codec validity supplies no consent.
+- **Files modified**: `internal/admissionbinding/binding.go`, `internal/admissionbinding/codec.go`, `internal/admissionbinding/codec_test.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
 ### Task 24 — Produce fail-closed retention policy validation
 
