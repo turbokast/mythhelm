@@ -494,7 +494,8 @@ func (c *blockedStatusConn) Peer() control.Peer                              { r
 func (c *blockedStatusConn) Request(context.Context, []byte) ([]byte, error) { return nil, io.EOF }
 func (c *blockedStatusConn) Receive(ctx context.Context) ([]byte, error) {
 	if c.used {
-		return nil, io.EOF
+		<-ctx.Done()
+		return nil, ctx.Err()
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
