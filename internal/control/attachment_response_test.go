@@ -617,7 +617,7 @@ func TestAttachmentRefusalsPrecedeTheHandler(t *testing.T) {
 // TestReviewExpiredRequestWithEmptyQueuePublishesNothing: the request
 // context expires before queue acceptance, with the queue empty.
 func TestReviewExpiredRequestWithEmptyQueuePublishesNothing(t *testing.T) {
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		p := newProbe()
 		srv := NewServer(nil)
 		if err := srv.RegisterAttachment("attachment.read", func(ctx context.Context, _ Peer, _ Intent) (*AttachmentResponse, error) {
