@@ -82,15 +82,70 @@ func TestServiceRootConflict(t *testing.T) {
 	}
 }
 
+// waitServiceRootStatus waits only for this owned Run. A listening endpoint
+// cannot count as readiness after Run has already returned.
+func waitServiceRootStatus(ctx context.Context, runDone <-chan struct{}, probe func(context.Context) (map[string]any, error)) (map[string]any, error) {
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-runDone:
+			return nil, errors.New("service Run returned before readiness")
+		case <-ctx.Done():
+			return nil, fmt.Errorf("service readiness: %w", ctx.Err())
+		default:
+		}
+		status, err := probe(ctx)
+		select {
+		case <-runDone:
+			return nil, errors.New("service Run returned before readiness")
+		default:
+		}
+		if err == nil {
+			return status, nil
+		}
+		if !errors.Is(err, control.ErrNoSupervisor) {
+			return nil, err
+		}
+		select {
+		case <-runDone:
+			return nil, errors.New("service Run returned before readiness")
+		case <-ctx.Done():
+			return nil, fmt.Errorf("service readiness: %w", ctx.Err())
+		case <-tick.C:
+		}
+	}
+}
+
+func checkServiceRootIdentity(status map[string]any, root, endpoint string) error {
+	generation, ok := status["generation"].(float64)
+	if status["pid"] != float64(os.Getpid()) || status["root"] != root || status["endpoint"] != endpoint ||
+		status["migration_required"] != false || !ok || generation <= 0 || generation != float64(int64(generation)) {
+		return errors.New("status does not identify the owned adopted service")
+	}
+	return nil
+}
+
 func TestServiceRootContextSurvivesClientExit(t *testing.T) {
 	root := isolatedRoot(t)
 	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
-	go func() { done <- Run(ctx, root) }()
+	done := make(chan struct{})
+	var runErr error
+	go func() { runErr = Run(ctx, root); close(done) }()
 	defer func() {
 		cancel()
-		if err := <-done; err != nil {
-			t.Error(err)
+		timer := time.NewTimer(20 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-done:
+			if runErr != nil && !errors.Is(runErr, context.Canceled) {
+				t.Error(runErr)
+			}
+		case <-timer.C:
+			t.Error("owned service Run exceeded its cleanup deadline")
+			// Keep ownership until the actual join: a test timeout cannot
+			// cancel uninterruptible OS I/O or permit temp-root removal.
+			<-done
 		}
 	}()
 	tr, err := control.DefaultTransport()
@@ -101,52 +156,112 @@ func TestServiceRootContextSurvivesClientExit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var first map[string]any
-	deadline := time.NewTimer(5 * time.Second)
-	defer deadline.Stop()
-	tick := time.NewTicker(time.Millisecond)
-	defer tick.Stop()
-	for {
-		c, err := tr.Dial(endpoint)
-		if err == nil {
-			res, err := control.Call(t.Context(), c, control.Intent{OperationID: ids.New("op"), Method: "status"})
-			_ = c.Close()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := json.Unmarshal(res.Body, &first); err != nil {
-				t.Fatal(err)
-			}
-			break
+	probe := func(callCtx context.Context) (map[string]any, error) {
+		c, err := tr.DialContext(callCtx, endpoint)
+		if err != nil {
+			return nil, err
 		}
-		select {
-		case <-deadline.C:
-			t.Fatal("service did not listen")
-		case <-tick.C:
+		defer func() { _ = c.Close() }()
+		res, err := control.Call(callCtx, c, control.Intent{OperationID: ids.New("op"), Method: "status"})
+		if err != nil {
+			return nil, err
 		}
+		var status map[string]any
+		if err := json.Unmarshal(res.Body, &status); err != nil {
+			return nil, err
+		}
+		return status, nil
 	}
-	clientCtx, clientCancel := context.WithCancel(t.Context())
+	// Root preparation and the actual authenticated status exchange have their
+	// own finite setup budget; this is not a product responsiveness SLO.
+	setup, setupCancel := context.WithTimeout(t.Context(), 30*time.Second)
+	first, err := waitServiceRootStatus(setup, done, probe)
+	setupCancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := checkServiceRootIdentity(first, canonicalRoot, endpoint); err != nil {
+		t.Fatal(err)
+	}
+	// Begin the client-lifetime action window only after real readiness.
+	action, actionCancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer actionCancel()
+	clientCtx, clientCancel := context.WithCancel(action)
 	c, err := tr.DialContext(clientCtx, endpoint)
 	if err != nil {
+		clientCancel()
 		t.Fatal(err)
 	}
 	clientCancel()
 	_ = c.Close()
-	c, err = tr.Dial(endpoint)
+	second, err := probe(action)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = c.Close() }()
-	res, err := control.Call(t.Context(), c, control.Intent{OperationID: ids.New("op"), Method: "status"})
-	if err != nil {
+	if err := checkServiceRootIdentity(second, canonicalRoot, endpoint); err != nil {
 		t.Fatal(err)
 	}
-	var second map[string]any
-	if err := json.Unmarshal(res.Body, &second); err != nil {
-		t.Fatal(err)
+	select {
+	case <-done:
+		t.Fatal("client exit returned the owned service Run")
+	default:
 	}
 	if first["pid"] != second["pid"] || first["generation"] != second["generation"] || first["root"] != second["root"] || second["pid"] != float64(os.Getpid()) {
 		t.Fatalf("view exit changed runtime: %v -> %v", first, second)
+	}
+}
+
+func TestServiceRootReadinessRejectsMissingOrReturnedRun(t *testing.T) {
+	for _, mode := range []string{"already returned", "returned during status", "missing readiness"} {
+		t.Run(mode, func(t *testing.T) {
+			done := make(chan struct{})
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if mode == "already returned" {
+				close(done)
+			}
+			called := false
+			status, err := waitServiceRootStatus(ctx, done, func(context.Context) (map[string]any, error) {
+				called = true
+				if mode == "missing readiness" {
+					cancel()
+					return nil, control.ErrNoSupervisor
+				}
+				if mode == "returned during status" {
+					close(done)
+				}
+				return map[string]any{"pid": float64(os.Getpid())}, nil
+			})
+			if err == nil || status != nil {
+				t.Fatalf("%s accepted readiness: %v %v", mode, status, err)
+			}
+			if mode == "already returned" && called {
+				t.Fatal("already-returned Run still probed another service")
+			}
+		})
+	}
+}
+
+func TestServiceRootReadinessBindsIdentity(t *testing.T) {
+	valid := map[string]any{"pid": float64(os.Getpid()), "generation": float64(1), "root": "synthetic-root", "endpoint": "synthetic-endpoint", "migration_required": false}
+	if err := checkServiceRootIdentity(valid, "synthetic-root", "synthetic-endpoint"); err != nil {
+		t.Fatal(err)
+	}
+	for key, wrong := range map[string]any{"pid": float64(-1), "generation": float64(0), "root": "foreign-root", "endpoint": "foreign-endpoint", "migration_required": true} {
+		t.Run(key, func(t *testing.T) {
+			changed := make(map[string]any, len(valid))
+			for k, v := range valid {
+				changed[k] = v
+			}
+			changed[key] = wrong
+			if err := checkServiceRootIdentity(changed, "synthetic-root", "synthetic-endpoint"); err == nil {
+				t.Fatal("foreign or unadopted status counted as readiness")
+			}
+		})
 	}
 }
 
