@@ -1,18 +1,27 @@
 ---
 layout: default
-title: Native self-building began — 2026-11-02
+title: Native product-task trial rejected — 2026-11-02
 ---
 
-# Native self-building began — 2026-11-02
+# Native product-task trial rejected — 2026-11-02
 
-**MYTHHELM launched actual native work while building itself. The first attempt
-was independently rejected. The full product is unfinished, and at least 20×
+**MYTHHELM launched actual native work on a product task. The first attempt in
+this November 2 trial was independently rejected. The full product is unfinished,
+and at least 20×
 faster full-product delivery is not demonstrated.**
 
 This is a fixed **2026-11-02 12:51:55 UTC snapshot**, based on main `6f4323a`.
 The [09:03 blockers report](0011-responsive-layout-blockers.html) remains a
 historical snapshot; later repairs and merges do not rewrite its failures.
 Routine delivery observations are not a controlled comparison.
+
+This is not the first native self-use. The [October 21 maintenance
+pilot](0003-measured-self-hosting.html) recorded an accepted self-hosted safety-test
+change and one completed matched development pair. Direct native-reported
+execution was 58.182 seconds versus 87.093 seconds through MYTHHELM. Coordinator
+waiting confounded the acceptance endpoint; the one independent repository/task-family
+component established no advantage. That report recorded an open delayed-defect
+window; a later follow-up result is unknown here.
 
 ## What reached main
 
@@ -48,8 +57,10 @@ The checks had already completed before the coordinator's stop request could
 prevent them. That ordering is retained rather than describing the request as
 having stopped verification. Owned native and worker processes were reconciled
 as gone, with no unresolved descendants. Before/after official authentication
-metadata matched, and the existing native login was preserved; no credentials
-were read or copied. These observations do not establish general lifecycle or
+metadata matched, and the existing native login was preserved. The coordinator
+did not extract or copy native subscription secrets; this does not audit or
+exclude the native client's legitimate use of its own authentication. These
+observations do not establish general lifecycle or
 subscription-only qualification.
 
 A possible setup confound remains unresolved: the coordinator placed private
@@ -116,8 +127,8 @@ explicit direct Codex fallbacks after the restricted route refused admission.
 They are not MYTHHELM-owned execution. A rejected native attempt is evidence of
 self-use and failed delivery, not a demonstrated delivery advantage.
 
-There was no same-contract direct-native arm, protected paired assignment or
-closed defect-observation window. No completed full-product baseline establishes
+For this November 2 product-task trial, there was no same-contract direct-native
+arm, protected paired assignment or closed defect-observation window. No completed full-product baseline establishes
 20×, and model labels, overlapping routine records or token counts cannot supply
 one. See the [measurement plan](../benchmarks.html). Later outcomes, defects and
 charges must be recorded as later evidence, not substituted into this snapshot.
