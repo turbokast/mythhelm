@@ -93,7 +93,7 @@ func TestServiceShutdownWithBlockedEntry(t *testing.T) {
 
 const observerCloseEntered = "T6 observer callback entered before close"
 
-// exec serializes writes when stdout and stderr share this writer. The parent
+// exec serialises writes when stdout and stderr share this writer. The parent
 // reads the buffer only after Wait has joined both output copies.
 type observerCloseOutput struct {
 	buf     bytes.Buffer
@@ -133,7 +133,10 @@ func runObserverCloseProcess(cmd *exec.Cmd, setupBudget, closeBudget time.Durati
 		case <-out.entered:
 			return out.buf.String(), false, err
 		default:
-			return out.buf.String(), false, fmt.Errorf("child exited before close callback (exit=%v)", err)
+			if err == nil {
+				err = errors.New("child exited successfully")
+			}
+			return out.buf.String(), false, fmt.Errorf("child exited before close callback: %w", err)
 		}
 	case <-setup.C:
 		_ = cmd.Process.Kill()
@@ -206,7 +209,7 @@ func TestObserverCloseProcessPhases(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer gate.Close()
+			defer func() { _ = gate.Close() }()
 			released := make(chan struct{})
 			if mode == "gated" {
 				go func() {
