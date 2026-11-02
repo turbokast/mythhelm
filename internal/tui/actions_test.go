@@ -519,7 +519,7 @@ func TestExportWritesStateDir(t *testing.T) {
 	if m.dialog != dialogDone {
 		t.Fatalf("after Export view dialog = %q, want done", m.dialog)
 	}
-	wantPath := filepath.Join(stateDir, "exports", "run_t6-detail.txt")
+	wantPath := filepath.Join(stateDir, "exports", "run_t6-diff.txt")
 	if view := m.View(); !strings.Contains(view, wantPath) {
 		t.Errorf("export result lacks the path %q\n%s", wantPath, view)
 	}
@@ -527,7 +527,7 @@ func TestExportWritesStateDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	for _, want := range []string{"SELECTED CHANGE", "new row", "verified"} {
+	for _, want := range []string{"DIFF", "new row", "verified"} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("export lacks %q\n%s", want, raw)
 		}

@@ -72,3 +72,16 @@ func (m *Model) focusedRowCount() int {
 	}
 	return 1
 }
+
+// columnWidths splits the width across n panes with one separator each.
+func columnWidths(width, n int) []int {
+	seps := (n - 1) * 3
+	rest := width - seps
+	if n == 2 {
+		left := rest / 3
+		return []int{left, rest - left}
+	}
+	tasks := max(24, rest/5)
+	agents := rest * 2 / 5
+	return []int{tasks, agents, rest - tasks - agents}
+}

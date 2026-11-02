@@ -728,7 +728,9 @@ func TestViewportVirtualises(t *testing.T) {
 		m.loadDiff = stubDiff(Diff{Lines: lines})
 		m.setSnapshot(t.Context(), richSnapshot())
 		updated, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 30})
-		view := updated.(*Model).View()
+		m = updated.(*Model)
+		m.openDetails()
+		view := m.View()
 		rows := strings.Split(view, "\n")
 		if len(rows) > 30 {
 			t.Errorf("view has %d rows, height budget is 30", len(rows))
@@ -757,7 +759,9 @@ func TestViewportVirtualises(t *testing.T) {
 		snap := richSnapshot()
 		m.setSnapshot(t.Context(), snap)
 		updated, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 30})
-		view := updated.(*Model).View()
+		m = updated.(*Model)
+		m.openDetails()
+		view := m.View()
 		rows := strings.Split(view, "\n")
 		if len(rows) > 30 {
 			t.Errorf("view has %d rows, height budget is 30", len(rows))
@@ -819,8 +823,8 @@ func TestCompactReservesNoticeRows(t *testing.T) {
 	if rows := len(strings.Split(view, "\n")); rows > 9 {
 		t.Errorf("160x9 compact view has %d rows", rows)
 	}
-	offer := withNotices(5).View()
-	for _, want := range []string{"compact", "--accessible"} {
+	offer := stripANSISequences(withNotices(5).View())
+	for _, want := range []string{"now ", "next ", "use ", "q exit", "--accessible: linear"} {
 		if !strings.Contains(offer, want) {
 			t.Errorf("160x5 compact view lost its offer %q\n%s", want, offer)
 		}
