@@ -2,7 +2,7 @@
 
 ### Dependencies
 
-- Epic: `specs/*/herdr-embedded-client/plan.md`. Prerequisites: reviewed ADR 0021; completed supervisor-service/migration/stop-recover and protected-acceptance building blocks. Ownership extraction, migration/runtime and public-client tasks wait for the relevant merged `specs/*/tui-observatory-view/` Tasks4–9; isolated protocol/persistence tasks may proceed independently. Task7 and Task26 serialize with Windows worker-boundary edits/tests. Appended producers23–31 retain published IDs; Task23/24/25/27/29/30/31 may run before Task4 only after Task22 completes and only without unmerged owner symbols. Task26 waits for Task4; Task28 is a separate docs-domain naming producer before the schema change. Tasks6–9 retain both ADR/follow-on merges and Task22 exact handoff gates. Admission and worker adoption may proceed independently after runtime if file lists remain disjoint; scoped-read producers may progress alongside admission. Public stop consumers follow completed stop persistence/delivery/reconciliation producers. Core Tasks16–19 additionally wait for MH-23 Task18 (shared run/demo/TUI launch branches); Task21 waits for MH-23 Task19 and docs-site-restyle Task11 (shared user-guide). Each re-grounds the merged contract before editing; unrelated core tasks remain independently dispatchable.
+- Epic: `specs/*/herdr-embedded-client/plan.md`. Prerequisites: reviewed ADR 0021; completed supervisor-service/migration/stop-recover and protected-acceptance building blocks. Ownership extraction, migration/runtime and public-client tasks wait for the relevant merged `specs/*/tui-observatory-view/` Tasks4–9; isolated protocol/persistence tasks may proceed independently. Task7 and Task26 serialize with Windows worker-boundary edits/tests. Appended producers23–33 retain published IDs; Task23/24/25/27/29/30/31 may run before Task4 only after Task22 completes and only without unmerged owner symbols. Task26 waits for Task4; Task28 is a separate docs-domain naming producer before the schema change. Tasks6–9 retain both ADR/follow-on merges and Task22 exact handoff gates. Admission and worker adoption may proceed independently after runtime if file lists remain disjoint; scoped-read producers may progress alongside admission. Public stop consumers follow completed stop persistence/delivery/reconciliation producers. Core Tasks16–19 additionally wait for MH-23 Task18 (shared run/demo/TUI launch branches); Task21 waits for MH-23 Task19 and docs-site-restyle Task11 (shared user-guide). Each re-grounds the merged contract before editing; unrelated core tasks remain independently dispatchable.
 - Tasks sharing a Files path serialize. No task may consume proposed/unmerged interfaces; re-ground exact dependency contracts before starting. Task 22 may inspect a pinned unmerged Task 4 candidate to identify design gaps; inspection neither consumes that interface nor completes Task 4 or authorizes runtime work. All tasks require independent code review; persistence/process/public interfaces also require architecture review.
 - **Gates for every task**: format changed Go with gofmt first (go mod tidy when needed), then `scripts/harness/gate.sh go` for Go tasks, `scripts/harness/gate.sh harness` for harness changes and `scripts/ci/check-public-hygiene.sh` for all changes; spec bookkeeping also runs `scripts/ci/lint-agent-harness.sh --only specs`. Docs tasks run public hygiene and applicable harness lint. Files existing or an agent reporting success is not completion.
 - **Completion convention**: append ✅ COMPLETED to the task heading only after merged evidence; add Status (PR), Implementation (SHAs), Spec deviations and Files modified; retain original fields and update scratchpad discoveries.
@@ -126,6 +126,7 @@
   - `TestBindingV1CanonicalInputs` uses independently written nonempty byte/hash goldens, all nested DTO fields, unset/zero/null/empty cases, ordered argv/tools/checks and sorted source sets. Duplicate/unknown/missing keys, malformed UTF-8, overflow/range/enum errors, depth/1MiB bounds, changed field order/domain separator and noncanonical re-encoding refuse; permissive codec mutants fail.
   - `TestBindingV1SentinelErrors` uses named malformed-supported-version, future-schema, unsupported-bound and valid fixtures across all four exported codec/validation APIs; each failure matches exactly its design §3.2 sentinel via errors.Is, including one/two `%w` wrappers, and rejects the opposite sentinel. `TestAdmissionBindingStandardLibraryOnly` checks actual package dependencies exclude all non-standard-library imports, including v2contract. Error-string matching, a bare fresh errors.New at each call, or a typed ControlError-only leaf mutant fails. No failed output is accepted as usable evidence.
   - `TestBindingV1SourceFieldInventory` enumerates actual main Decision, RunSpec and nested launch fields and assigns every one its exact persist/rederive/reject disposition. Adding a source field without a rule, dropping a mapping, or inconsistent outer/Decision.Environment/root/run/task/attempt identities fails.
+  - `TestBindingV1ChallengeShape` rejects empty required confirmation evidence, duplicate/invalid IDs, empty kind/text and count/string-bound violations. Structurally valid changed kind/text/unique-ID controls produce different canonical bytes/digests without an authority oracle; exact planned-set correspondence remains the mandatory Task8 producer acceptance, not an implemented claim of this leaf.
   - `TestBindingV1HashSpellings` preserves validated raw prefixed/unprefixed/uppercase TaskSHA256, exact lowercase trust flags or absence and normalized derived hashes; NoChecks empty config and absent native evidence remain distinct. A global64hex validator mutant fails the valid controls.
 - **Test plan**: No Task4 import, native account, file probing or live authority. Run codec goldens and one deliberately permissive mutant per parser/binding class; full Go gates and independent architecture review.
 - **Invariants touched**: I02/I09/I20 (v2 §§2/6/8: closed immutable evidence and honest absence).
@@ -241,10 +242,10 @@
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
-- **Depends on**: Task 23, Task 28
+- **Depends on**: Task 23, Task 28, Task 33
 - **Change**: Add ADR0022 binding/consumption/pending-dispatch/claim tables, guards and schema/version/import mirrors as one atomic compatibility change; no runtime owner or Task4 symbol is consumed.
 - **Files**:
-  - `internal/journal/migrations/0010_service_admission_bindings.sql` (verify next free number; never edit0009)
+  - `internal/journal/migrations/0011_service_admission_bindings.sql` (verify next free number; never edit0009)
   - `internal/journal/service_admission_migration_test.go`
   - `internal/journal/journal.go`
   - `internal/journal/attachment_revision.go`
@@ -261,9 +262,9 @@
   - `internal/migrate/preview/plan.go`
   - `internal/migrate/SUPPORT.md`
   - `internal/cli/migrate_test.go`
-- **Produces**: Exact ADR0022 schema10 tables/foreign keys/identity and rowid guards/revision triggers, current migration registration/pragma/backup/preview/import compatibility. No Task4 owner or service runtime is consumed; Task30 produces typed constructors/storage methods after these tables exist.
+- **Produces**: Exact ADR0022 schema11 tables/foreign keys/identity and rowid guards/revision triggers, current migration registration/pragma/backup/preview/import compatibility. No Task4 owner or service runtime is consumed; Task30 produces typed constructors/storage methods after these tables exist.
 - **Acceptance**:
-  - `TestServiceAdmissionMigration` checks exact new tables/guards/version/migration list, preserves historical rows and schema8 fixture inventory, leaves unsupported/newer schemas unchanged and keeps old schema9 preparations unavailable. Independent backup/preview/import/CLI mirrors track the new version and preserve all new relations.
+  - `TestServiceAdmissionMigration` checks exact new tables/guards/version/migration list, preserves historical rows and schema8 fixture inventory, leaves unsupported/newer schemas unchanged and keeps old schema9/10 preparations without bindings unavailable. Independent backup/preview/import/CLI mirrors track the new version and preserve all new relations.
   - `TestServiceBindingImmutability` rejects SQL INSERT/UPDATE OR REPLACE collisions through every unique key and rowid alias, identity/byte/digest mutation, immutable byte/hash/root/peer/context/generation relations and invalid claim transitions directly in SQL; Task30 owns semantic expiry/confirmation decoding. A removed-guard fixture with an unreferenced victim fails.
 - **Test plan**: In-memory/temp SQLite, direct hostile SQL and deterministic failure barriers; fake data only. The remaining schema/guard/version/import/backup files are one compatibility unit: registering the new schema without any current mirror or guard is the violating fixture; splitting their activation would make the binary accept an unsupported/mis-backed-up state. Task30 APIs and Task29 quota logic are independent producers, not hidden in this sizing exception. Compile imports to prove journal never imports admission/supervisor/service; mirror checks are independent of production constants. Task28 must first remove the stale-version coupling from current public backup guidance; all code/version/import mirrors change atomically here. No runtime source mirror is deferred.
 - **Invariants touched**: I02/I09/I12/I20/I21/I23 (v2 §§5/6/8: atomic immutable admission, current quotas and canonical one-use intent).
@@ -454,7 +455,7 @@
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (≤45minutes total worker envelope,15minute artifact checkpoint, at most2 repair passes≤15minutes each within that total; design §3.3)
-- **Depends on**: Task 6
+- **Depends on**: Task 6, Task 32, Task 33
 - **Sizing**: The exact file count, coupled integration boundary, separated producers and finite acceptance/CI checkpoint are design §3.3; crossing that scope/envelope freezes a partial result rather than waiving checks.
 - **Change**: Reconcile the exact existing worker and record service adoption before enabling run controls; keep worker launch generation/deadline immutable and completed-episode wait separate from authority.
 - **Files**:
@@ -467,7 +468,7 @@
   - `internal/workers/worker_test.go`
   - `internal/journal/canonical_tx.go`
   - `internal/journal/canonical_tx_test.go`
-- **Produces**: control.ServiceAdoption and RecordServiceAdoption(ctx context.Context, tx *sql.Tx, adoption ServiceAdoption) error, plus DecodeServiceAdoption(event journal.Event) (ServiceAdoption, error) and journal.AppendCanonicalTx(ctx context.Context, tx *sql.Tx, envelope v2contract.Envelope, project func(*sql.Tx) error) error; exact schema2 fields/evidence and historical decode separation in design §7.
+- **Produces**: control.ServiceAdoption and RecordServiceAdoption(ctx context.Context, tx *sql.Tx, adoption ServiceAdoption) error, plus DecodeServiceAdoption(event journal.Event) (ServiceAdoption, error) and journal.AppendCanonicalTx(ctx context.Context, tx *sql.Tx, envelope v2contract.Envelope, project func(*sql.Tx) error) error; exact schema2 fields/evidence including distinct OperationID, checked Task32 launch provenance and Task33 assignment epoch, with historical decode separation in design §7.
 - **Acceptance**:
   - `TestServiceGenerationAdoption` records new control generation with unchanged launch generation/identity/deadline and one attempt; PID reuse, foreign launch, corrupt identity and unsupported spool refuse.
   - `TestAdoptionCrashDoesNotRelaunch` kills service before/after reconciliation commit and observes one continuing worker, no replacement and retained durable operations.
@@ -476,6 +477,7 @@
   - TestCanonicalAdoptionV2Transaction rejects envelope/payload1 and future critical schema, refuses pre-adoption phase, preserves v1 historical bytes through migration, and commits v2 event plus assignment together; projection failure rolls back both and duplicate event replay reapplies neither.
   - `TestAdoptionWithStalledObserver` adopts the existing instrumented fake worker through the real actor/recovery entry while its observer never reads; committed spool sequence and the same launch identity advance with zero replacement launch. A blocking delivery mutant fails that progress assertion.
   - `TestAdoptionCancellationKeepsOwnerUntilIngestionExit` closes the view and requests service shutdown at deterministic ingestion/callback barriers. Callback close returns, worker/owner identity remains held until the active entry exits, then coordinator joins/releases once. Duplicate close, late wakeup and changed generation cannot release early or replay a launch; a lease-timeout-as-proof mutant fails.
+- **Deferred startup wiring**: Task9 owns runtime.go and must consume this real actor/recovery producer before actual startup mutation/presence. Task20 tests prove that wiring; its tests-only scope cannot implement it. The hard nine-source-file/45minute/15minute-artifact/max2-repair envelope stays unchanged.
 - **Test plan**: Instrumented fake worker, deterministic commit barriers and a violating heartbeat-as-authority fixture; no native account.
 - **Invariants touched**: I03/I06/I12/I18/I21 (v2 §§3/6/8: same-launch observation never grants a new episode).
 
@@ -504,6 +506,7 @@
   - TestServiceAdmissionBinding invalidates task/config/repository/native-evidence drift between preparation and confirmation/start; native launch count stays zero.
   - TestServiceAdmissionAuthority rejects host/attachment token, foreign challenge and changed confirmation binding; noninteractive missing decisions retain actionable refusal.
   - TestServiceEnvironmentIsolation proves credential/PATH sentinels from caller maps are rejected and native policies remain pinned without serializing callbacks or full environment.
+  - `TestServiceAdmissionChallengePlanExact` invokes the real staged producer, confirmation/retention path and fresh revalidator with an independently specified synthetic service-owned authority plan. Missing, extra, wrong-kind, changed-text, swapped-ID, duplicate-ID and changed-authority fixtures refuse before accepting any confirmation, including retention, and produce zero new or changed durable preparation/binding/answer/Ready/operation-acknowledgement rows, zero successful acknowledgements/current-plan hints, zero trust grants/admitted records/attempts and zero dispatch effects. Test barriers immediately before each earliest effect, including initial Prepare acknowledgement and retention persistence; the unchanged exact-plan control is the only successful path and retains approved-retention-first ordering. A structurally valid altered binding with a recomputed matching digest must not bypass comparison. IDs remain fixed to the original preparation; a changed plan invalidates it and its confirmations, while restart/changed context remains stale. Preserve design §3.1 authenticated immutable historical-replay semantics without treating a historical acknowledgement as fresh consent. Issue #550 closes only with this independently reviewed producer evidence.
   - TestServiceAdmissionBindingAllInputs changes repository, revision, task bytes/digest, no-checks, project/native configuration and trust, route/profile, billing/envelopes and confirmation separately after prepare and at a deterministic pre-commit barrier. Each changed input invalidates the preparation with zero native launches; an unchanged control remains ready without launching; Task 9 owns the successful start control. Dropping any binding must fail its corresponding case.
   - `TestRetentionBeforePersistence` leaves only bounded volatile state until exact retain-local-binding approval, then persists computed readiness (retention-only true, otherwise false) and separately records any remaining confirmations before final RevalidateService; rejected/unknown/expired policy, email/path/argv/challenge sentinels and native auth/full-env provenance persist no binding or grant. A synthetic approved control writes the exact allowed record; it is not live authority.
   - `TestServicePreparationCapacity` fills32 total/8 peer volatile preparations, rejects overflow with zero durable/native effects and expires/cancels only unaccepted plans without changing accepted runs; an unbounded-store mutant fails. Binding/task byte caps and5minute expiry are separate from actual process-memory claims.
@@ -539,6 +542,7 @@
   - `internal/journal/admission_bindings.go`
   - `internal/journal/admission_bindings_test.go`
 - **Produces**: supervisor.RunAdmittedOwned(ctx,j,owner,permit,committedAdmission,sink) and shared fixed createRunTx/appendAdmissionTx/recordLaunchIntentTx extraction from existing pipeline/state/acceptance/budget code; run.start(StartRun) returns immutable RunAccepted; run.operation returns the persisted accepted identity/outcome under standalone authorization.
+- **Startup consumption**: Wire Task7 reconciliation from real runtime.Run startup before mutation handlers/presence for each affected run; consume Task32 checked launch provenance and Task33 atomic operation/event/assignment epoch, preserving unknown historical provenance as refusal. TestDispatchRestartMissingLiveContextRefuses additionally proves this actual callsite; no constructor-only or Task20-only wiring claim.
 - **Acceptance**:
   - TestDispatchDuplicateLaunchOnce replays concurrent start operations and observes one run, attempt, launch and assignment.
   - TestDispatchCrashWindows covers before commit, after commit before spawn, after spawn before acknowledgment and after worker identity; only proven unconsumed original launch proceeds, ambiguity quarantines.
@@ -586,12 +590,12 @@
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
-- **Depends on**: Task 6, Task 3
+- **Depends on**: Task 6, Task 3, Task 34
 - **Change**: Produce transaction-scoped grant mint/validate/revoke primitives with no public Open response or projection dependency; isolate attachment authority from attempt tokens.
 - **Files**:
   - `internal/control/attachment_auth.go`
   - `internal/control/attachment_auth_test.go`
-- **Produces**: MintAttachmentGrant(ctx context.Context, tx *sql.Tx, peer Peer, runID string, generation int64) (AttachmentGrant, error); ValidateAttachmentGrant(ctx context.Context, tx *sql.Tx, peer Peer, grant AttachmentGrant, generation int64) error; RevokeAttachmentGrant(ctx context.Context, tx *sql.Tx, peer Peer, grant AttachmentGrant, generation int64) error. Their guard/preconditions/error contract is design §4; public Open/Read/Close are Task12.
+- **Produces**: MintAttachmentGrant(ctx context.Context, tx *sql.Tx, peer Peer, runID string, generation int64) (AttachmentGrant, error); ValidateAttachmentGrant(ctx context.Context, tx *sql.Tx, peer Peer, grant AttachmentGrant, generation int64) error; RevokeAttachmentGrant(ctx context.Context, tx *sql.Tx, peer Peer, grant AttachmentGrant, generation int64) error. Their guard/preconditions/error contract is design §4 including proposed §4.1; these are trusted-core storage primitives, never standalone ownership verifiers. Caller retains an existing resolved ServiceOwner and instance hold for this run through queue handoff. Public Open/Read/Close are Task12.
 - **Acceptance**:
   - TestAttachmentGrantScope mints in a held-generation transaction for one canonical run/repository and rejects forged peer/pane/repository identities before names/counts; no public OpenAttachment is fabricated.
   - TestAttachmentGrantMutationIsolation mints/validates/revokes grants and observes unchanged run/attempt/launch/owner; a primitive calling recovery fails the assertion.
@@ -603,7 +607,7 @@
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
-- **Depends on**: Task 11
+- **Depends on**: Task 11, Task 34, Task 35
 - **Change**: Compose public Open/Read/Close with the internal grant primitives and bounded projection producer under one authority/generation snapshot; maintain complete revision dependencies.
 - **Files**:
   - `internal/control/attachment_projection.go`
@@ -612,8 +616,11 @@
   - `internal/journal/attachment_revision_test.go`
   - `internal/service/attachments.go`
   - `internal/service/attachments_test.go`
+  - `internal/service/runtime.go` (explicit seventh path: register the real handlers after the gate and queue producers merge; no global/init hook)
 - **Produces**: attachment.open/read/close and AttachmentClient.Open/Read/Close: Open returns complete OpenAttachment{Grant, Projection} atomically, Read returns Projection and Close revokes the grant only; null/enum/sanitizer and snapshot rules are design §§4–5.
 - **Acceptance**:
+  - `TestAttachmentPublicRefusalDoesNotRevealOwner` exercises actual registered Read/Close handlers using paired syntactically valid forged/cross-scope grants against known-owned, unknown, unowned, ambiguous, closing and overflow targets. Every preauthorization refusal has identical permission_denied/message payload, revision0 and absent body; compare public bytes with the same caller operation ID. Pair unknown/foreign Open and valid-but-now-unowned grants with the same result. Forged stale generation remains permission_denied; only a hash-authorized old grant under real current owner retention may return revision_conflict. Malformed input receives the same lookup-independent invalid_contract on every target; foreign peer refuses before lookup. Snapshot all grant/run/owner/launch/operation rows and counters unchanged on refusal. A private-error passthrough, early generation classification or retained-proof bypass mutant fails these paired assertions; no constant-time or scheduling guarantee is inferred. The exact public mapping and single-transaction/no-preauthorization-query contract are design §4.1.
+  - `TestAttachmentRetainedOwnerQueueHandoff` invokes actual Serve with registered Task12 handlers and a real retained ServiceOwner: root shutdown/owner.Close cannot release run/instance ownership before response queue commit or discard, but a stalled socket after queue commit does not retain those guards. Read and revoke serialize at the shared gate. Unknown/unowned/terminal-without-owner, replaced root/database, stale generation and queue failure release zero bytes; no acquire/recover/assignment occurs. Removing retention, bypassing the gate or registering through Execute fails actual barrier/isolation assertions.
   - TestAttachmentOpenReadCloseComposition initial/repeated public open returns same canonical run/attempt with complete grant-bound projection and no launch/recover/owner effects; close revokes only that grant. Injected initial-projection failure rolls back mint/cache writes and emits neither token nor data.
   - TestProjectionSnapshotAuthorityRace uses deterministic barriers around authority/data selection and generation change: one valid snapshot or zero released bytes.
   - TestProjectionCompleteRevision covers candidate/verification/apply and assignment changes; omitted field dependency makes the fixture fail.
@@ -810,3 +817,97 @@
   - Limitations identify live legacy-owner migration boundary, Windows unqualified rows, no whole MH-3/G11 and no host/native route upgrade.
 - **Test plan**: Synthetic fixtures and deterministic barriers for the named cases; pair negative assertions with a deliberately violating fixture. Public process behavior uses the packaged binary in the integration task, not helper-only evidence.
 - **Invariants touched**: I06/I09/I14 (v2 §§14/15/18: evidence-bounded claims).
+
+### Task 32 — Persist immutable pre-spawn launch provenance
+
+- **Domain/agent**: go-implementer
+- **Budget**: complex (five source paths; ≤45minutes total,15minute artifact checkpoint,max2 repairs≤15minutes each inside total)
+- **Depends on**: Task 5
+- **Change**: Capture once the exact serialized Launch generation/deadline with explicit generation presence and bind safe provenance to existing attempt/token/nonce before Spawn; retain legacy absence as unknown.
+- **Files**:
+  - `internal/control/pinning.go`
+  - `internal/control/pinning_test.go`
+  - `internal/supervisor/pipeline.go`
+  - `internal/supervisor/launch_provenance_test.go`
+  - `internal/supervisor/pipeline_launch_test.go`
+- **Produces**: LaunchProvenanceV1 and checked copied ReadLaunchProvenance API in design §3.2; optional versioned nested launch_provenance on the existing attempt.admission_pinned event, and the actual pre-Spawn producer/handoff. No new DB version, event type, worker production file, raw credential/env persistence or authority grant.
+- **Acceptance**:
+  - TestLaunchProvenanceKnownZeroAndUnknown pairs missing historical provenance (ownership_unresolved) with explicit0 and nonzero records; nil/omitted/null/negative/future/malformed/duplicate fields, wrong run/attempt/token/nonce/ladder/deadline refuse. A default-zero or worker-spool1 substitute mutant fails.
+  - TestLaunchProvenanceMatchesSerializedHandoff captures real Spawn stdin through the owned existing fake-process seam and compares generation/deadline/token-hash/nonce-hash to the one durable record. Change CurrentGeneration after capture; no reread or changed Launch reaches Spawn. A reread-generation mutant fails; raw Env/token/nonce sentinels never enter the journal.
+  - TestLaunchProvenanceWriteBeforeSpawn injects pin failure/conflict, observes zero Spawn, preserves exact same attempt and execution clock, and rejects conflicting later pins. Crash after pin is not worker-existence/relaunch authority. Existing PinnedAdmission historical/latest behavior and legacy launch fallback tests remain green.
+- **Test plan**: Actual journal+attempt rows and serialized fake worker handoff; retain valid nonempty controls and assertion-failing missing/presence/reread/failed-write counterfixtures. No native account. Freeze the smallest proposed split if extra paths or finite envelope are needed; no check waiver.
+- **Invariants touched**: I09/I12/I18/I19/I20/I21 (v2 §§3/6/8: immutable observed launch provenance, absence never zero).
+
+### Task 33 — Persist additive service assignment epochs
+
+- **Domain/agent**: go-implementer
+- **Budget**: complex (nineteen source paths in one additive-schema/API/mirror compatibility unit;≤45minutes total,15minute artifact,max2 repairs≤15minutes each inside total; freeze/propose a smaller split if infeasible)
+- **Depends on**: Task 3, Task 28
+- **Change**: Add schema10 assignment-epoch/adoption-reference history and checked transaction readers/writers while preserving released assignment shape, operation FKs and revision/replay semantics; explicitly reserve Task25's binding migration as0011/schema11.
+- **Files**:
+  - `internal/journal/migrations/0010_service_assignment_epochs.sql`
+  - `internal/journal/service_assignment_migration_test.go`
+  - `internal/journal/service_assignment_epoch.go`
+  - `internal/journal/service_assignment_epoch_test.go`
+  - `internal/journal/journal.go`
+  - `internal/journal/attachment_revision.go`
+  - `internal/journal/attachment_revision_test.go`
+  - `internal/journal/migrate_tables_test.go`
+  - `internal/journal/journal_test.go`
+  - `internal/journal/acceptance_test.go`
+  - `internal/journal/evaluator_test.go`
+  - `internal/journal/qualification_test.go`
+  - `internal/migrate/backup.go`
+  - `internal/migrate/backup_test.go`
+  - `internal/migrate/import.go`
+  - `internal/migrate/import_test.go`
+  - `internal/migrate/preview/plan.go`
+  - `internal/migrate/SUPPORT.md`
+  - `internal/cli/migrate_test.go`
+- **Produces**: STRICT service_assignment_epochs relation and AssignmentEpoch/RecordAssignmentEpoch/ReadAssignmentEpoch exact schema/API in design §3.2, atomic current-version/backup/preview/import compatibility and selected-data revision guards. No runtime/control/supervisor imports, ownership mint, startup registration or native launch.
+- **Acceptance**:
+  - TestAssignmentEpochMigration preserves all four legacy assignment columns and positional INSERTs, completed operation results and historical rows; no epoch backfill/default1. Exact tables/guards/version10/migration order and all independent backup/preview/import/CLI mirrors agree. Newer schemas leave bytes unchanged; omit-one-mirror mutant fails.
+  - TestAssignmentEpochIdentityAndRevision checks real operation/event/run/attempt/generation relations, strict monotonic epochs and current assignment link, unknown historical/missing-assignment boolfalse for valid runs, coherent current reads and same-transaction actual RunRevision. Missing/foreign operation FK, event-ID-as-operation-ID, payload/gen mismatch, stale epoch and owner-string epoch refuse; no guessed revision+1.
+  - TestAssignmentEpochAtomicReplay exercises a claimed internal service.adopt operation completed in the same transaction as schema2 event, assignment and epoch; fail each write/projection and see complete rollback. Same exact committed replay changes no row/revision/result; changed-op/same-event or changed-arguments/same-op refuses. No OR REPLACE or ignored collision. The epoch AFTER INSERT projector advances or creates the four-column assignment, avoiding a cyclic write-order requirement; committed claimed-only results remain unavailable.
+  - TestAssignmentEpochSQLGuards directly attempts INSERT/UPDATE OR REPLACE through each unique key/rowid plus immutable UPDATE/DELETE and inconsistent links; an unreferenced-victim/removed-guard control fails. Read/write APIs are storage evidence only and do not grant held-owner authority.
+- **Test plan**: Real SQLite, synthetic schema9 legacy rows, independent mirror expectations, transaction rollback and direct hostile SQL controls. Migration registration plus all current-version/import/backup mirrors land atomically. This is separate from Task25's binding representation and does not inherit Task23; no released migration changes or unbounded source-budget exception.
+- **Invariants touched**: I03/I07/I09/I12/I20/I21/I23 (v2 §§3/5/6: canonical atomic epoch evidence, immutable replay and historical unknowns).
+
+### Task 34 — Retain existing run ownership for attachment snapshots
+
+- **Domain/agent**: go-implementer
+- **Budget**: complex (≤45 minutes total, artifact by 15 minutes, at most two repairs ≤15 minutes each inside the total; freeze partial work on overflow)
+- **Depends on**: Task 6, Task 4, Task 3
+- **Change**: Produce existing-owner observation retention and the private runtime-local attachment gate in design §4.1. Never acquire, recover, assign or launch execution for an attachment.
+- **Files**:
+  - `internal/supervisor/service_owner.go`
+  - `internal/supervisor/service_owner_test.go`
+  - `internal/service/attachment_scope.go`
+  - `internal/service/attachment_scope_test.go`
+  - `internal/service/runtime.go`
+- **Produces**: ServiceOwner.MatchesRun(runID string) bool reads immutable private run identity only, returning false for nil/zero; it is routing information, never authority, and may return true for a closed/stale/foreign-root owner. Runtime snapshots at most64 existing actor owner pointers under its short mutex, refusing a larger roster before allocating/copying; after unlocking, context checks and the matcher must select exactly one candidate before any observation retain. Zero/multiple matches refuse ownership_unresolved; copied wrappers count separately, never first-match success or deduplication into success. The new64 inspection ceiling is a proposed conservative attachment-read refusal, not an execution capacity, existing view-slot limit or aggregate service bound. Then ServiceOwner.RetainObservation(ctx context.Context,j *journal.Journal,runID string) (release func(),err error), backed by shared private observation references, supplies the mandatory real owner/root/database/generation/closing proof; Close waits for both active entry and retained observations. Private runtime.retainAttachmentScope(ctx,runID,write) returns a private attachmentScope plus error: exact existing owner, live instance hold, generation and root/database identity, and one runtime-local read/write authority gate. The write argument chooses locking only; it cannot certify ownership. No exported scope constructor/context grant/caller success flag exists. Task11 storage signatures stay unchanged; Task12 consumes the private guard.
+- **Acceptance**:
+  - `TestRetainedOwnerObservationLifetime` retains a real already acquired owner during a real busy RecoverOwned callback; concurrent Close remains blocked after the entry joins until observation release, and duplicate release is safe. New retains on closing/closed/nil/foreign run or replaced root/database fail. A bypass-reference mutant releases the run lock early and fails an actual competing-lock probe. Cleanup releases all owned barriers and joins all callers. No observation helper calls AcquireServiceOwner/AcquireOwner/recovery.
+  - `TestAttachmentScopeUsesExistingActor` registers actual existing actors in an isolated runtime and selects exactly one of at most64 snapshot candidates before mandatory real retention. Include64 candidates/one valid match success;65 candidates refusal even with one valid owner; zero matches; two actor wrappers/copies for the same run refusal; nil/zero owners; a matcher-true but closed/stale/foreign-root owner whose RetainObservation fails; cancellation before snapshot and between permitted checks; and closing after snapshot/before final runtime recheck. Failure releases every acquired run observation, instance hold and gate, with no speculative retain during matching. A matcher-only bypass, first-match shortcut, missing64 ceiling and missing final closing check each fail an actual retained assertion. Terminal state without a retained owner refuses; terminal state with an existing valid owner is allowed without reconciliation. Seeded assignment labels/metadata/ErrHeld and Peer.SameUser alone never succeed. Owner-acquisition/recovery counters and exact ledger/launch identity snapshots remain unchanged; bypass and acquire-to-observe mutants fail.
+  - `TestAttachmentScopeGuardOrdering` deterministically races retained read/write gates, owner.Close and root shutdown with an actual held instance lease. No guard release before explicit handoff; no callback calls Close; requests exceeding their two-second budget refuse with zero released data. A blocked execution entry retains ownership after timeout. Tests explicitly release barriers and join cleanup rather than claiming forced OS-I/O cancellation.
+- **Test plan**: Real temp SQLite/adopted roots, actual ServiceOwner/InstanceLease and deterministic channels; separately failing retention, generation and authority-gate controls. Only the producer is delivered here: public handler registration and projection belong to Task12.
+- **Invariants touched**: I03/I06/I09/I18/I23 (v2 §§3/8/14: presentation never acquires execution authority).
+
+### Task 35 — Produce the attachment response queue handoff
+
+- **Domain/agent**: go-implementer
+- **Budget**: complex (≤45 minutes total, artifact by 15 minutes, at most two repairs ≤15 minutes each inside the total; freeze partial work on overflow)
+- **Depends on**: Task 6, Task 2
+- **Change**: Add a dedicated authenticated attachment executor and bounded owned response queue; no public attachment handler is implemented or registered by this producer.
+- **Files**:
+  - `internal/control/server.go`
+  - `internal/control/server_test.go`
+  - `internal/control/attachment_response.go`
+  - `internal/control/attachment_response_test.go`
+- **Produces**: AttachmentHandler func(context.Context,Peer,Intent) (*AttachmentResponse,error); Server.RegisterAttachment(method string,h AttachmentHandler) error restricted to attachment.open/read/close; NewAttachmentResponse(result Result,release func()) (*AttachmentResponse,error) copies bounded response data and transfers a one-shot cleanup obligation, not authority. Private fields prevent queued bytes or the cleanup callback being replaced after construction. The actual Serve path authenticates/validates before invoking this table, never Execute/ExecuteLong/operations.result; ordinary Dispatch cannot strip a pending response into an unguarded Result and returns explicit unsupported for these transport-only methods. Duplicate/unknown registration refuses. Existing status/ordinary dispatch behavior stays intact.
+- **Acceptance**:
+  - `TestAttachmentQueueHandoffBoundary` runs actual Serve/answer routing with an owned fake Conn whose Respond blocks. At most one pending ≤64KiB encoded attachment response plus one in-flight frame per connection; ownership cleanup runs exactly once after immutable queue acceptance, or on encoding/queue/cancellation failure before exposure. A release-before-queue mutant fails a barrier assertion; a release-after-socket-write mutant blocks the guard and fails. Failure paths release guards and join writer/connection workers after the fixture unblocks its own I/O.
+  - `TestAttachmentExecutorBypassesOperationPersistence` proves valid synthetic replies never create operations/result rows or store raw token sentinels; unauthenticated peers refuse before handlers, unknown methods remain unsupported and direct Dispatch cannot bypass handoff. Routing through Execute fails row/token isolation assertions.
+  - `TestAttachmentQueueBoundAndCancellation` fills the queue behind blocked Respond, verifies a further request ends within its existing two-second request deadline without publishing bytes or growing storage, and joins all workers on owned connection close. Existing ordinary/status fixtures remain passing. No ability to cancel arbitrary OS writes is claimed; disconnect must not release execution ownership early.
+- **Test plan**: Actual Serve plus fake transport barriers, bounded queue accounting, failure injection and three separately assertion-failing queue/executor controls; no live sockets/native credentials required. Task12 performs real scoped handler registration and generation/revocation races after this producer merges.
+- **Invariants touched**: I03/I06/I09/I18/I21/I23 (v2 §§3/8/14: bounded presentation transport with no durable raw grants).
