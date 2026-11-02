@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/turbokast/mythhelm/adapters/claudecode"
+	"github.com/turbokast/mythhelm/adapters/codex"
 	"github.com/turbokast/mythhelm/adapters/fake"
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/admission"
@@ -40,11 +41,15 @@ func fixture(t *testing.T) ab.BindingV1 {
 	return b
 }
 func TestBindingV1CanonicalInputs(t *testing.T) { // I02/I20 (v2 sections 2/6/8).
-	t.Run("strict parser", TestBindingV1StrictParser)
-	t.Run("exact bounds", TestBindingV1Bounds)
-	t.Run("optional evidence", TestBindingV1OptionalEvidence)
-	t.Run("Unicode escapes", TestBindingV1UnicodeAndLiteralEscapes)
-	t.Run("owning OS paths", TestBindingV1OwningOSPaths)
+	t.Parallel()
+	t.Run("strict parser", checkBindingV1StrictParser)
+	t.Run("exact bounds", checkBindingV1Bounds)
+	t.Run("optional evidence", checkBindingV1OptionalEvidence)
+	t.Run("Unicode escapes", checkBindingV1UnicodeAndLiteralEscapes)
+	t.Run("owning OS paths", checkBindingV1OwningOSPaths)
+	t.Run("snapshot resolution", checkBindingV1SnapshotResolution)
+	t.Run("request repository provenance", checkBindingV1RequestRepositoryProvenance)
+	t.Run("duration alignment", checkBindingV1DurationAlignment)
 	b := fixture(t)
 	got, err := ab.EncodeV1(b)
 	if err != nil || string(got) != golden {
@@ -60,6 +65,7 @@ func TestBindingV1CanonicalInputs(t *testing.T) { // I02/I20 (v2 sections 2/6/8)
 	}
 }
 func TestBindingV1SentinelErrors(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		mutate func(*ab.BindingV1)
@@ -75,6 +81,7 @@ func TestBindingV1SentinelErrors(t *testing.T) {
 		}, ab.ErrCapabilityUnsupported},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			b := fixture(t)
 			tc.mutate(&b)
 			enc, e1 := ab.EncodeV1(b)
@@ -115,6 +122,7 @@ func TestBindingV1SentinelErrors(t *testing.T) {
 	}
 }
 func TestAdmissionBindingStandardLibraryOnly(t *testing.T) {
+	t.Parallel()
 	cmd := exec.CommandContext(context.Background(), "go", "list", "-deps", "-f", `{{if not .Standard}}{{.ImportPath}}{{end}}`, "github.com/turbokast/mythhelm/internal/admissionbinding")
 	out, err := cmd.Output()
 	if err != nil {
@@ -127,7 +135,9 @@ func TestAdmissionBindingStandardLibraryOnly(t *testing.T) {
 	}
 }
 
-func TestBindingV1StrictParser(t *testing.T) {
+func checkBindingV1StrictParser(t *testing.T) {
+	t.Helper()
+	t.Parallel()
 	cases := map[string]string{
 		"duplicate":        strings.Replace(golden, `"SchemaVersion":1`, `"SchemaVersion":1,"SchemaVersion":1`, 1),
 		"nested duplicate": strings.Replace(golden, `"Name":"vet"`, `"Name":"vet","Name":"vet"`, 1),
@@ -148,6 +158,7 @@ func TestBindingV1StrictParser(t *testing.T) {
 	}
 	for name, raw := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			got, err := ab.DecodeV1([]byte(raw))
 			if !errors.Is(err, ab.ErrInvalidContract) || !reflect.DeepEqual(got, ab.BindingV1{}) {
 				t.Fatalf("got usable value/error %v", err)
@@ -160,7 +171,8 @@ func TestBindingV1StrictParser(t *testing.T) {
 }
 
 func TestBindingV1HashSpellings(t *testing.T) {
-	t.Run("pinned source flag grammar", TestBindingV1NativeTrustFlagSource) // I09 (v2 section 2): absence is not a zero digest.
+	t.Parallel()
+	t.Run("pinned source flag grammar", checkBindingV1NativeTrustFlagSource) // I09 (v2 section 2): absence is not a zero digest.
 	for _, task := range []string{strings.Repeat("ab", 32), strings.Repeat("AB", 32), "sha256:" + strings.Repeat("ab", 32), "sha256:" + strings.Repeat("AB", 32)} {
 		b := fixture(t)
 		b.Request.TaskSHA256 = task
@@ -219,6 +231,7 @@ func TestBindingV1HashSpellings(t *testing.T) {
 		"no-checks populated": func(b *ab.BindingV1) { b.Request.NoChecks = true; b.Decision.NoChecks = true },
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			b := fixture(t)
 			mutate(&b)
 			if err := ab.ValidateV1(b); !errors.Is(err, ab.ErrInvalidContract) {
@@ -228,7 +241,9 @@ func TestBindingV1HashSpellings(t *testing.T) {
 	}
 }
 
-func TestBindingV1Consistency(t *testing.T) {
+func checkBindingV1Consistency(t *testing.T) {
+	t.Helper()
+	t.Parallel()
 	for name, mutate := range map[string]func(*ab.BindingV1){
 		"root":             func(b *ab.BindingV1) { b.RootID = "other" },
 		"task":             func(b *ab.BindingV1) { b.TaskID = "other" },
@@ -250,19 +265,19 @@ func TestBindingV1Consistency(t *testing.T) {
 		"manifest sort": func(b *ab.BindingV1) {
 			b.Decision.Proposal.Manifest[0], b.Decision.Proposal.Manifest[1] = b.Decision.Proposal.Manifest[1], b.Decision.Proposal.Manifest[0]
 		},
-		"manifest duplicate":  func(b *ab.BindingV1) { b.Decision.Proposal.Manifest[1] = b.Decision.Proposal.Manifest[0] },
-		"names sort":          func(b *ab.BindingV1) { b.Decision.Environment.RequiredNames = []string{"ZED", "ALPHA"} },
-		"names duplicate":     func(b *ab.BindingV1) { b.Decision.Environment.RequiredNames = []string{"ALPHA", "ALPHA"} },
-		"challenge duplicate": func(b *ab.BindingV1) { b.Challenges = append(b.Challenges, b.Challenges[0]) },
-		"challenge missing":   func(b *ab.BindingV1) { b.Challenges = nil },
-		"artefact escape":     func(b *ab.BindingV1) { b.Decision.Task.ArtifactRef = "../task" },
-		"short commit":        func(b *ab.BindingV1) { b.Decision.Snapshot.BaseRev = "abc123" },
-		"timezone":            func(b *ab.BindingV1) { b.ExpiresAt = "2026-01-01T00:05:00+00:00" },
-		"zero duration":       func(b *ab.BindingV1) { *b.Request.Ceilings.ExecutionNanos = 0 },
-		"fraction millis":     func(b *ab.BindingV1) { *b.Request.Ceilings.ExecutionNanos = 1 },
-		"task bytes":          func(b *ab.BindingV1) { b.Decision.Task.Bytes = -1 },
+		"manifest duplicate":       func(b *ab.BindingV1) { b.Decision.Proposal.Manifest[1] = b.Decision.Proposal.Manifest[0] },
+		"names sort":               func(b *ab.BindingV1) { b.Decision.Environment.RequiredNames = []string{"ZED", "ALPHA"} },
+		"names duplicate":          func(b *ab.BindingV1) { b.Decision.Environment.RequiredNames = []string{"ALPHA", "ALPHA"} },
+		"challenge duplicate":      func(b *ab.BindingV1) { b.Challenges = append(b.Challenges, b.Challenges[0]) },
+		"challenge missing":        func(b *ab.BindingV1) { b.Challenges = nil },
+		"artefact escape":          func(b *ab.BindingV1) { b.Decision.Task.ArtifactRef = "../task" },
+		"short commit":             func(b *ab.BindingV1) { b.Decision.Snapshot.BaseRev = "abc123" },
+		"timezone":                 func(b *ab.BindingV1) { b.ExpiresAt = "2026-01-01T00:05:00+00:00" },
+		"ceiling pointer mismatch": func(b *ab.BindingV1) { *b.Request.Ceilings.ExecutionNanos = 1 },
+		"task bytes":               func(b *ab.BindingV1) { b.Decision.Task.Bytes = -1 },
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			b := fixture(t)
 			mutate(&b)
 			if err := ab.ValidateV1(b); !errors.Is(err, ab.ErrInvalidContract) {
@@ -279,8 +294,11 @@ func TestBindingV1Consistency(t *testing.T) {
 //
 //nolint:gosec // G101: rules contain source field names and dispositions, no credential values.
 func TestBindingV1SourceFieldInventory(t *testing.T) {
-	t.Run("bound identities", TestBindingV1Consistency)
-	t.Run("actual selector", TestBindingV1CurrentMainSelector)
+	t.Parallel()
+	t.Run("bound identities", checkBindingV1Consistency)
+	t.Run("actual selectors", checkBindingV1CurrentMainSelector)
+	t.Run("declared inputs", checkBindingV1DeclaredInputsAgree)
+	t.Run("pinned selectors", checkBindingV1PinnedSourceSelectors)
 	type inventory struct {
 		source reflect.Type
 		rules  map[string]string
@@ -414,7 +432,9 @@ func slicesContain(values []string, s string) bool {
 	return slices.Contains(values, s)
 }
 
-func TestBindingV1UnicodeAndLiteralEscapes(t *testing.T) {
+func checkBindingV1UnicodeAndLiteralEscapes(t *testing.T) {
+	t.Helper()
+	t.Parallel()
 	for _, s := range []string{`literal \u2028 and \u2029`, "actual \u2028 and \u2029", `literal \\u2028 and \\\u2029`, "mixed \\u2028 \u2028"} {
 		b := fixture(t)
 		b.Decision.Task.Title = s
@@ -432,7 +452,9 @@ func TestBindingV1UnicodeAndLiteralEscapes(t *testing.T) {
 	}
 }
 
-func TestBindingV1Bounds(t *testing.T) {
+func checkBindingV1Bounds(t *testing.T) {
+	t.Helper()
+	t.Parallel()
 	cases := []struct {
 		name  string
 		at    func(*ab.BindingV1, int)
@@ -484,6 +506,7 @@ func TestBindingV1Bounds(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			b := fixture(t)
 			tc.at(&b, tc.limit)
 			if err := ab.ValidateV1(b); err != nil {
@@ -527,7 +550,9 @@ func TestBindingV1Bounds(t *testing.T) {
 	}
 }
 
-func TestBindingV1OptionalEvidence(t *testing.T) {
+func checkBindingV1OptionalEvidence(t *testing.T) {
+	t.Helper()
+	t.Parallel()
 	b := fixture(t)
 	b.Request.Ceilings = ab.OptionalCeilingsV1{}
 	b.Decision.EnvelopeFlags = nil
@@ -553,7 +578,9 @@ func TestBindingV1OptionalEvidence(t *testing.T) {
 	}
 }
 
-func TestBindingV1DeclaredInputsAgree(t *testing.T) {
+func checkBindingV1DeclaredInputsAgree(t *testing.T) {
+	t.Helper()
+	t.Parallel()
 	for name, mutate := range map[string]func(*ab.BindingV1){
 		"native grant digest": func(b *ab.BindingV1) {
 			b.Decision.NativeTrustGrant = "native_config:sha256:" + strings.Repeat("ac", 32)
@@ -567,6 +594,7 @@ func TestBindingV1DeclaredInputsAgree(t *testing.T) {
 		"empty checks":                func(b *ab.BindingV1) { b.Decision.ProjectConfig.Checks = nil },
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			b := fixture(t)
 			mutate(&b)
 			if err := ab.ValidateV1(b); !errors.Is(err, ab.ErrInvalidContract) {
@@ -576,7 +604,9 @@ func TestBindingV1DeclaredInputsAgree(t *testing.T) {
 	}
 }
 
-func TestBindingV1SnapshotResolution(t *testing.T) {
+func checkBindingV1SnapshotResolution(t *testing.T) {
+	t.Helper()
+	t.Parallel()
 	for _, tc := range []struct {
 		name, revision, source string
 		dirty, useCommitted    bool
@@ -588,6 +618,7 @@ func TestBindingV1SnapshotResolution(t *testing.T) {
 		{"explicit revision", "main", "--rev", true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			b := fixture(t)
 			b.Request.Revision = tc.revision
 			b.Request.UseCommitted = tc.useCommitted
@@ -617,9 +648,12 @@ func windowsFixture(t *testing.T, root string) ab.BindingV1 {
 	b.Decision.Profile.Boundary.OS = "windows"
 	return b
 }
-func TestBindingV1OwningOSPaths(t *testing.T) {
+func checkBindingV1OwningOSPaths(t *testing.T) {
+	t.Helper()
+	t.Parallel()
 	for _, root := range []string{`C:`, `c:`, `\\server\share`} {
 		t.Run(root, func(t *testing.T) {
+			t.Parallel()
 			b := windowsFixture(t, root)
 			raw, err := ab.EncodeV1(b)
 			if err != nil {
@@ -635,6 +669,7 @@ func TestBindingV1OwningOSPaths(t *testing.T) {
 		"volume relative": `C:repo`, "rooted without volume": `\repo`, "POSIX in Windows": `/tmp/repo`, "mixed separators": `C:\repo/sub`, "traversal": `C:\repo\..\repo`, "dot": `C:\repo\.`, "trailing separator": `C:\repo\`, "UNC server only": `\\server`, "UNC no share": `\\server\\repo`,
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			b := windowsFixture(t, `C:`)
 			b.Request.Repository = requestPath
 			if err := ab.ValidateV1(b); !errors.Is(err, ab.ErrInvalidContract) {
@@ -680,9 +715,12 @@ func fakeFixture(t *testing.T) ab.BindingV1 {
 	b.Decision.Proposal.Capabilities.HarnessID = "fake"
 	return b
 }
-func TestBindingV1PinnedSourceSelectors(t *testing.T) {
+func checkBindingV1PinnedSourceSelectors(t *testing.T) {
+	t.Helper()
+	t.Parallel()
 	for _, name := range fake.Scenarios() {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			b := fakeFixture(t)
 			b.Request.Scenario = name
 			b.Decision.Scenario = name
@@ -692,6 +730,7 @@ func TestBindingV1PinnedSourceSelectors(t *testing.T) {
 		})
 	}
 	t.Run("unknown fake scenario", func(t *testing.T) {
+		t.Parallel()
 		b := fakeFixture(t)
 		b.Request.Scenario = "future-unreviewed"
 		b.Decision.Scenario = b.Request.Scenario
@@ -700,6 +739,7 @@ func TestBindingV1PinnedSourceSelectors(t *testing.T) {
 		}
 	})
 	t.Run("boundary source route", func(t *testing.T) {
+		t.Parallel()
 		b := fixture(t)
 		b.Decision.Profile.Boundary.Route = b.Decision.Adapter.ID
 		if err := ab.ValidateV1(b); err != nil {
@@ -708,7 +748,9 @@ func TestBindingV1PinnedSourceSelectors(t *testing.T) {
 	})
 }
 
-func TestBindingV1RequestRepositoryProvenance(t *testing.T) {
+func checkBindingV1RequestRepositoryProvenance(t *testing.T) {
+	t.Helper()
+	t.Parallel()
 	b := fixture(t)
 	b.Request.Repository = "/tmp/repo/subdirectory"
 	if err := ab.ValidateV1(b); err != nil {
@@ -721,25 +763,99 @@ func TestBindingV1RequestRepositoryProvenance(t *testing.T) {
 	}
 }
 
-func TestBindingV1CurrentMainSelector(t *testing.T) {
-	b := fixture(t)
-	d := claudecode.New().Descriptor()
-	b.Request.Adapter = admission.AdapterClaudeCode
-	b.Decision.Adapter = ab.DescriptorV1{ID: d.ID, Version: d.Version, Harness: d.Harness, Surface: d.Surface}
-	b.Decision.Proposal.Capabilities.AdapterID = d.ID
-	b.Decision.Proposal.Capabilities.AdapterVersion = d.Version
-	b.Decision.Proposal.Capabilities.HarnessID = d.Harness
-	b.Decision.Proposal.Capabilities.ExecutionSurface = d.Surface
-	if err := ab.ValidateV1(b); err != nil {
-		t.Fatalf("actual registered selector/descriptor pair refused: %v", err)
+func checkBindingV1CurrentMainSelector(t *testing.T) {
+	t.Helper()
+	t.Parallel()
+	for _, tc := range []struct {
+		selector string
+		adapter  adapter.Adapter
+	}{
+		{admission.AdapterFake, fake.New()},
+		{admission.AdapterCodex, codex.New()},
+		{admission.AdapterClaudeCode, claudecode.New()},
+	} {
+		t.Run(tc.selector, func(t *testing.T) {
+			t.Parallel()
+			b := fixture(t)
+			switch tc.selector {
+			case admission.AdapterFake:
+				b = fakeFixture(t)
+			case admission.AdapterCodex:
+				b.Request.StripCredentialEnv = false
+				b.Request.DeclareEntitlement = ""
+				b.Decision.Declaration = nil
+			}
+			d := tc.adapter.Descriptor()
+			if d.ID == "" || d.Version == "" || d.Harness == "" || d.Surface == "" {
+				t.Fatal("actual descriptor is incomplete")
+			}
+			b.Request.Adapter = tc.selector
+			b.Decision.Adapter = ab.DescriptorV1{ID: d.ID, Version: d.Version, Harness: d.Harness, Surface: d.Surface}
+			b.Decision.Profile.Boundary.Route = d.ID
+			b.Decision.Proposal.Capabilities.AdapterID = d.ID
+			b.Decision.Proposal.Capabilities.AdapterVersion = d.Version
+			b.Decision.Proposal.Capabilities.HarnessID = d.Harness
+			b.Decision.Proposal.Capabilities.ExecutionSurface = d.Surface
+			raw, err := ab.EncodeV1(b)
+			if err != nil || len(raw) == 0 {
+				t.Fatalf("actual registered selector/descriptor pair refused: %v", err)
+			}
+			got, err := ab.DecodeV1(raw)
+			if err != nil || !reflect.DeepEqual(got, b) {
+				t.Fatalf("actual descriptor roundtrip differs: %v", err)
+			}
+			b.Decision.Adapter.Harness = "unregistered-harness"
+			if err := ab.ValidateV1(b); !errors.Is(err, ab.ErrInvalidContract) {
+				t.Fatalf("changed descriptor accepted: %v", err)
+			}
+		})
 	}
-	b.Request.Adapter = "claude-code"
-	if err := ab.ValidateV1(b); !errors.Is(err, ab.ErrInvalidContract) {
-		t.Fatalf("non-selector harness label accepted: %v", err)
+	t.Run("harness is not request selector", func(t *testing.T) {
+		t.Parallel()
+		b := fixture(t)
+		b.Request.Adapter = "claude-code"
+		if err := ab.ValidateV1(b); !errors.Is(err, ab.ErrInvalidContract) {
+			t.Fatalf("non-selector harness label accepted: %v", err)
+		}
+	})
+}
+
+func checkBindingV1DurationAlignment(t *testing.T) {
+	t.Helper()
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		nanos int64
+		valid bool
+	}{
+		{"zero duration", 0, false},
+		{"fraction millis", 1, false},
+		{"fraction after millis", 1000001, false},
+		{"aligned one millis", 1000000, true},
+		{"aligned many millis", 60001000000, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			b := fixture(t)
+			// Keep separately allocated request/envelope pointers and the resolved
+			// value coherent: a pointer mismatch must not mask alignment rejection.
+			*b.Request.Ceilings.ExecutionNanos = tc.nanos
+			*b.Decision.EnvelopeFlags.ExecutionNanos = tc.nanos
+			b.Decision.ResolvedCeilings.ExecutionNanos = tc.nanos
+			err := ab.ValidateV1(b)
+			if tc.valid {
+				if err != nil {
+					t.Fatalf("aligned duration refused: %v", err)
+				}
+			} else if !errors.Is(err, ab.ErrInvalidContract) {
+				t.Fatalf("coherent invalid duration accepted: %v", err)
+			}
+		})
 	}
 }
 
 func TestBindingV1ChallengeShape(t *testing.T) { // I03/I09/I20 (v2 section2): shape grants no consent.
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		change func(*ab.BindingV1)
@@ -759,6 +875,7 @@ func TestBindingV1ChallengeShape(t *testing.T) { // I03/I09/I20 (v2 section2): s
 		}, ab.ErrCapabilityUnsupported},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			b := fixture(t)
 			tc.change(&b)
 			raw, err := ab.EncodeV1(b)
@@ -784,6 +901,7 @@ func TestBindingV1ChallengeShape(t *testing.T) { // I03/I09/I20 (v2 section2): s
 		{"changed text", func(b *ab.BindingV1) { b.Challenges[0].Text = "Different authority wording" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			b := fixture(t)
 			tc.change(&b)
 			got, err := ab.DigestV1(b)
@@ -814,10 +932,13 @@ func TestBindingV1ChallengeShape(t *testing.T) { // I03/I09/I20 (v2 section2): s
 	}
 }
 
-func TestBindingV1NativeTrustFlagSource(t *testing.T) {
+func checkBindingV1NativeTrustFlagSource(t *testing.T) {
+	t.Helper()
+	t.Parallel()
 	digest := strings.Repeat("ab", 32)
 	for _, raw := range []string{"sha256:" + digest, "sha256:" + strings.ToUpper(digest), digest, "sha256:short"} {
 		t.Run(raw, func(t *testing.T) {
+			t.Parallel()
 			record, sourceErr := admission.CheckNativeTrustConfig(t.Context(), nil, "/tmp/repo", admission.NativeConfig{Digest: digest, RequiresTrust: true}, raw)
 			b := fixture(t)
 			b.Request.TrustNativeConfig = raw
