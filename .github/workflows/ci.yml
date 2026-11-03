@@ -97,8 +97,12 @@ jobs:
         run: >-
           go test -count=1 -v ./internal/workers ./internal/supervisor
           -run '^Test(WindowsRunnerParentJobSpike|NativeCreatedSuspended|JobHandleNotInheritable|JobHasKillOnCloseAndNoBreakawayLimits|ParentJobLaunchPreparationFailsClosed|NativeIsInJobBeforeResume|JobCreateFailureEndsLaunchFailed|KillOnCloseParentJobRefused|ParentJobQueryErrorFailsLaunch|AssignFailureTerminatesSuspendedNative|UnconfirmedTerminationIsStopUnconfirmed|NativeStartTimeFailureTerminatesSuspendedNative|LaunchRecordsNativeStartTimeWindows|StartTimeReadFailureTerminatesJob|ParentJobSemantics|JobHasNoBreakawayLimits|RepeatedLaunchDoesNotStopExistingNative|ConfirmationHandleFailureStillTerminatesNative|IdentityFailureStopsNative|IdentityWriteFailureTerminatesSuspendedNative|StopKillsChildAndGrandchild|CreateNewProcessGroupDescendantDies|StopReportsSurvivorsWithIdentity|EnumerationFailureIsFailedScan|WindowsLadderHasOnlyKill|SignalRejectsNonKillOnWindows|StopTimeoutEndsStopUnconfirmed|LateJobScanInvalidatesConfirmation|PanicBeforeJobAssignmentTerminatesSuspendedNative|PanicAfterAssignmentStopsTree|PanicCleanupTimeoutRemainsUnconfirmed|RecoverAfterWorkerCrashWindows|RecoverNeverMatchesReusedPID|SuspendedNativeIsRecordedBeforeAssign|LaunchBoundaryCrashRecords|RecoverLaunchBoundaryOutcomes|ProcessStartTimeRejectsExitedWindows|SurvivesCLIExitAndConsoleClose|FirstInterruptRequestsStop|SecondInterruptDetaches)$'
-      - if: runner.os != 'Windows'
+      - if: runner.os == 'Linux'
         run: go test -race ./...
+      # Most tests are parallel and wait on helper processes and I/O; the
+      # 3-core macOS runner otherwise starves them of parallel slots.
+      - if: runner.os == 'macOS'
+        run: go test -race -parallel 8 ./...
       # Bound package scheduling on Windows; retain each package's parallel tests.
       - if: matrix.os == 'windows-latest'
         run: python .github/scripts/go-test-shard.py rest --race

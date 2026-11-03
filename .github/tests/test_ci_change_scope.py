@@ -243,7 +243,8 @@ class WorkflowTests(unittest.TestCase):
         for text in ("    if: needs.detect.outputs.go == 'true'",
                      'name: Go (${{ matrix.os }})',
                      'os: ${{ fromJSON(needs.detect.outputs.matrix) }}',
-                     "      - if: runner.os != 'Windows'\n        run: go test -race ./...",
+                     "      - if: runner.os == 'Linux'\n        run: go test -race ./...",
+                     "      - if: runner.os == 'macOS'\n        run: go test -race -parallel 8 ./...",
                      '- run: go vet ./...', '- run: go mod tidy -diff'):
             self.assertIn(text, go)
         for job in ('windows-supervisor', 'windows-cli', 'lint', 'govulncheck', 'licenses'):
