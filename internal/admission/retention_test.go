@@ -10,6 +10,7 @@ import (
 	"go/parser"
 	"go/token"
 	"maps"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strconv"
@@ -519,7 +520,8 @@ func TestRetentionRecordsGrantNoAuthority(t *testing.T) { // I03 (v2 §6: record
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := control.RunSpec{SchemaVersion: 2, Repository: "/tmp/repo", TaskFile: "/tmp/task.md", TaskSHA256: strings.Repeat("a", 64), Adapter: "fake", Billing: "api"}
+	fixtureRoot := t.TempDir()
+	spec := control.RunSpec{SchemaVersion: 2, Repository: filepath.Join(fixtureRoot, "repo"), TaskFile: filepath.Join(fixtureRoot, "task.md"), TaskSHA256: strings.Repeat("a", 64), Adapter: "fake", Billing: "api"}
 	conf := control.RunConfirmation{SchemaVersion: 2, PreparationID: "prep_1", ChallengeID: "challenge_4", BindingSHA256: strings.Repeat("a", 64), Approved: true}
 	if _, err := control.DecodeParams[control.RunSpec](withFields(t, spec, nil)); err != nil {
 		t.Fatalf("control RunSpec refused: %v", err)
