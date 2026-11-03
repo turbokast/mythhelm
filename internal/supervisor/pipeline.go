@@ -542,7 +542,14 @@ func (p *pipeline) attempt(ctx context.Context) error {
 		return err
 	}
 
-	launch := launchForAttempt(d, token)
+	launch, err := launchForAttempt(d, token)
+	if err != nil {
+		// The admitted config sources cannot be bound to exact paths: the
+		// worker would verify nothing it was admitted on, so nothing spawns.
+		return errors.Join(err,
+			p.attemptTo(ctx, AttemptInterrupted, "native_config_unbound"),
+			p.runTo(ctx, RunFailed, "native_config_unbound"))
+	}
 	launch.ExecutionDeadline = p.deadline
 	proc, reason, err := spawnPinned(ctx, p.exe, d.StateDir, d.RunID, d.AttemptID, launch,
 		func(ctx context.Context, l workers.Launch) (workers.Launch, error) {
@@ -599,8 +606,9 @@ func (p *pipeline) attempt(ctx context.Context) error {
 // or the fresh token, so journaled model output (attempt.native_result rows
 // included) is not an input and can never reach the launch.
 // pipeline_launch_test.go pins the consumed Decision fields and this
-// signature, so a new input fails the pin until reviewed.
-func launchForAttempt(d admission.Decision, token string) workers.Launch {
+// signature, so a new input fails the pin until reviewed. The error reports
+// an admitted config source that cannot be bound to its exact path.
+func launchForAttempt(d admission.Decision, token string) (workers.Launch, error) {
 	lp := d.Proposal
 	l := workers.Launch{
 		LaunchToken:  token,
@@ -634,15 +642,19 @@ func launchForAttempt(d admission.Decision, token string) workers.Launch {
 		// yet.
 	}
 	if len(lp.Manifest.Digests) > 0 {
+		paths, err := exactBoundConfigSources(admittedConfigPaths(d.Adapter.ID, specHome(lp.Spec.Env), d.Workdir, lp.Spec.Env), lp.Manifest.Digests)
+		if err != nil {
+			return workers.Launch{}, err
+		}
 		l.UserConfigDigests = maps.Clone(lp.Manifest.Digests)
-		l.UserConfigPaths = admittedConfigPaths(d.Adapter.ID, specHome(lp.Spec.Env), d.Workdir, lp.Spec.Env)
+		l.UserConfigPaths = paths
 	}
-	return l
+	return l, nil
 }
 
-// admittedConfigPaths maps the admitted manifest's sources to their paths with
-// the inventory of the adapter that produced it; every adapter but Codex
-// shares the Claude inventory.
+// admittedConfigPaths is the available source→path inventory of the adapter
+// that produced the manifest; every adapter but Codex shares the Claude
+// inventory. It may list sources the manifest did not admit.
 func admittedConfigPaths(adapterID, home, workdir string, env []string) map[string]string {
 	if adapterID == codex.AdapterID {
 		return codex.AdmittedConfigPathsForEnv(home, workdir, env)
@@ -654,7 +666,7 @@ func admittedConfigPaths(adapterID, home, workdir string, env []string) map[stri
 // carries none. Later duplicates win, matching security.BuildEnv and the
 // worker's re-inventory HOME, so the paths below always bind the same home
 // the pre-exec re-hash re-inventories (design §2.9, I20). A missing HOME
-// yields no mapping, and the worker then fails the launch closed.
+// yields no inventory, so a non-empty manifest refuses the launch.
 func specHome(env []string) string {
 	home := ""
 	for _, kv := range env {
