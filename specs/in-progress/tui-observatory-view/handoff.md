@@ -197,7 +197,9 @@
 
 ## Task 19 — Update user-facing limits and instructions
 
-<!-- pending -->
+- **Produces**: PR #621 documents current Observatory panes/controls, phase exits, exact state-bound demo recovery and explicit later operator cleanup, theme/startup/background limits and mixed-binary handoff refusal.
+- **Evidence**: Source `24984bc`, fresh independent Ready review, passing focused TUI/theme/CLI-help tests,34 linked test names and all20 original fenced examples preserved. Named source/test evidence supports each new claim; no new pasted output or recovery/deletion command was executed as documentation validation.
+- **For Task20**: The current media remain pinned historical artifacts. Use the selected recorder and per-recording consumer, capture real tools/versions and inspect actual rendered artifacts. Fake-tool routing and two-commit fixtures supply no recording/human evidence; preserve unselected historical provenance and all remaining terminal/native/accessibility gaps.
 
 ## Task 20 — Re-record the synthetic TUI demonstration
 
