@@ -37,9 +37,10 @@ type ServiceOwner struct {
 }
 
 // ownerState is one capability's identity and lifetime. The identity fields
-// are immutable after minting; mu guards busy, closing, closed and the
-// releases. busy admits one owned entry at a time: the capability has
-// exactly one ingestor.
+// are immutable after minting; mu guards busy, observations, closing, closed
+// and the releases. busy admits one owned entry at a time: the capability has
+// exactly one ingestor. observations counts retained attachment reads, which
+// keep the run lock and lease hold alive but never enter the worker.
 type ownerState struct {
 	lease      *control.InstanceLease
 	generation int64
@@ -49,13 +50,14 @@ type ownerState struct {
 	rootInfo   os.FileInfo
 	dbInfo     os.FileInfo
 
-	mu          sync.Mutex
-	idle        *sync.Cond
-	busy        bool
-	closing     bool
-	closed      bool
-	releaseRun  func()
-	releaseHold func()
+	mu           sync.Mutex
+	idle         *sync.Cond
+	busy         bool
+	observations int
+	closing      bool
+	closed       bool
+	releaseRun   func()
+	releaseHold  func()
 }
 
 func ownershipRefused(format string, args ...any) error {
@@ -173,8 +175,56 @@ func (s *ownerState) verifyIdentity(ctx context.Context, j *journal.Journal) err
 	return nil
 }
 
-// Close refuses new entries, waits for the active one, then releases the run
-// lock and the lease hold. It is idempotent across every copy; concurrent
+// MatchesRun compares runID with the owner's immutable run identity. It is
+// routing information only: a true result may describe a closed, stale or
+// foreign-root owner and never replaces RetainObservation.
+func (o *ServiceOwner) MatchesRun(runID string) bool {
+	return o != nil && o.s != nil && runID != "" && o.s.runID == runID
+}
+
+// RetainObservation proves that this existing owner still holds runID on j's
+// original physical root and database under the live instance generation,
+// and keeps that ownership from being released until the returned release
+// runs. It acquires, recovers and enters nothing. Copies share one count;
+// release is idempotent.
+func (o *ServiceOwner) RetainObservation(ctx context.Context, j *journal.Journal, runID string) (func(), error) {
+	if o == nil || o.s == nil {
+		return nil, ownershipRefused("not a service owner")
+	}
+	if j == nil {
+		return nil, ownershipRefused("no journal")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s := o.s
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch {
+	case s.closing:
+		return nil, ownershipRefused("service owner is closed")
+	case runID != s.runID:
+		return nil, ownershipRefused("capability is for run %s, not %s", s.runID, runID)
+	case s.lease.Generation() != s.generation:
+		return nil, ownershipRefused("instance generation changed")
+	}
+	if err := sameRoot(s.root, j.StateDir()); err != nil {
+		return nil, err
+	}
+	if err := s.verifyIdentity(ctx, j); err != nil {
+		return nil, err
+	}
+	s.observations++
+	return sync.OnceFunc(func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.observations--
+		s.idle.Broadcast()
+	}), nil
+}
+
+// Close refuses new entries and observations, waits for the active entry and
+// every retained observation, then releases the run lock and the lease hold. It is idempotent across every copy; concurrent
 // calls all return only once the releases are done. Calling it from the
 // active entry's own Hooks.Event or Hooks.Notice never returns.
 func (o *ServiceOwner) Close() error {
@@ -191,7 +241,7 @@ func (o *ServiceOwner) Close() error {
 		return nil
 	}
 	s.closing = true
-	for s.busy {
+	for s.busy || s.observations > 0 {
 		s.idle.Wait()
 	}
 	s.releaseRun()

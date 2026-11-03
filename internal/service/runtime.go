@@ -32,9 +32,13 @@ type runtime struct {
 	views             *viewSlots
 	closing           bool
 	entries           map[*actor]struct{}
-	joined            chan struct{}
-	closeOnce         sync.Once
-	closeErr          error
+	// attachmentCandidateChecked observes completed routing checks in tests; it
+	// supplies no owner, match result or authority and is nil in production.
+	attachmentCandidateChecked func(int)
+	authority                  *authorityGate
+	joined                     chan struct{}
+	closeOnce                  sync.Once
+	closeErr                   error
 }
 
 // Run owns one root independently of any status client's lifetime. A fresh
@@ -138,7 +142,7 @@ func openRuntimePrepared(ctx context.Context, stateDir string, prepare func(cont
 	if err != nil {
 		return nil, err
 	}
-	r := &runtime{lease: lease, migrationRequired: required, entries: map[*actor]struct{}{}, joined: make(chan struct{}), views: newViewSlots()}
+	r := &runtime{lease: lease, migrationRequired: required, entries: map[*actor]struct{}{}, authority: newAuthorityGate(), joined: make(chan struct{}), views: newViewSlots()}
 	if err := lease.CheckRootIdentity(ctx, stateDir); err != nil {
 		_ = lease.Close()
 		return nil, err
@@ -214,7 +218,8 @@ func (r *runtime) status(ctx context.Context, _ control.Peer, _ control.Intent) 
 }
 
 // shutdown refuses new work immediately. Its coordinator closes owners and
-// leases only after entries actually join, never from inside a callback.
+// leases only after entries actually join, never from inside a callback;
+// each owner's Close also waits for its retained attachment observations.
 func (r *runtime) shutdown(ctx context.Context) error {
 	r.closeOnce.Do(func() {
 		r.mu.Lock()
