@@ -1,6 +1,6 @@
 ## kimi-native-qualification — Refinement log
 
-Date: 2026-11-03. Parent epic: [remaining-native-targets](../remaining-native-targets/plan.md).
+Date: 2026-11-03. Parent epic: `specs/*/remaining-native-targets/plan.md`.
 
 `dispatched=2 returned=2 failed=0`
 
@@ -20,3 +20,7 @@ These are the two epic-wide assessment dispatches covering the parent and all fi
 ### Remaining design and qualification obligations
 
 The next stage may design bounded discovery and its honest blocked result. Native surface/build/configuration/funding/platform facts remain unknown until evidenced. Implementation tasks, authorized native episodes, support promotion and public gate claims retain their exact prerequisites. This refinement ran specs-only lint/hygiene, with no native inference, authentication/account operations or Go qualification. Lifecycle movement and stage banners are metadata, not an accepted adapter or passing native gate.
+
+### Post-assessment review repair
+
+The original two-round assessment history above remains unchanged. Later PR review identified stable sibling-citation, adjacent source-locator, version-qualified tag, named acceptance-check/broken-input, decision-owner and grammar gaps. This review repair adds those explicit contracts without claiming another assessment returned or any native/provider qualification passed. Every acceptance criterion now names a prospective target-specific check and retained broken input; these are future obligations, not executed tests. Open questions name the delegated project agent as decision owner while preserving every independently required authority and unknown native fact. Fresh review of this repaired revision is separate from the historical Ready verdict.
