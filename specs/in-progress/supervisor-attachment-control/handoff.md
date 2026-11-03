@@ -222,6 +222,12 @@
 - **Status and dependencies**: PR #582 carries this producer on main `f94ab99` after merged fixture PR #583, with all four reviewed Go blobs unchanged and fresh canonical gates (full race 631.5s). Current-head CI and actual merge remain required; this pre-merge entry does not complete dependent consumers. Task12 retains Task11/Task34/Task35 prerequisites.
 - **History**: Earlier formatting failure and first-review blockers remain failures; native repair and the sixteen-index range-only integration delta do not reset task timing or create another source-authoring allowance. Later verification/publication elapsed time remains part of honest delivery accounting.
 
+## Task 26 — Bind exact worker configuration source maps
+
+- **Produces**: `exactBoundConfigSources` selects exactly the admitted manifest keys from the pinned adapter's existing inventory; `launchForAttempt` now returns `(workers.Launch, error)` and refuses unbound sources before spawning. The worker re-inventories exact source/path identity before digest checks and native Start.
+- **For dependents**: Task9 must preserve the launch error path and immutable provenance; raw available inventory candidates are not admitted payload entries. Equal digests cannot authorize swapped paths. Empty-manifest and both native inventory conventions remain distinct.
+- **Evidence**: Instrumented fake-native launches prove exact mapping starts once and invalid mappings start zero times. A removed mapping-check control fails that real counter. Existing admission rehash fixtures use actual temporary inventory paths; managed-byte hashing is separately tested below the identity layer without host-policy writes.
+- **Limits**: No authentication secret is copied or native auth disabled. Fixture/platform/native qualification remains as previously recorded; PR #591 requires exact-head CI and merge before service dispatch consumes it.
 ## Task 33 — Persist additive service assignment epochs
 
 - **Produces**: Schema 10 `service_assignment_epochs`, `journal.AssignmentEpoch`, `RecordAssignmentEpoch` and `ReadAssignmentEpoch`. Existing four-column `run_assignments` is projected from epoch history without a historical backfill.

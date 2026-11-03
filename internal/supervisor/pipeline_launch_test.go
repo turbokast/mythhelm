@@ -87,9 +87,19 @@ func t9decision(t *testing.T) admission.Decision {
 	}
 }
 
+// t9launch is the launch built for d, which must bind.
+func t9launch(t *testing.T, d admission.Decision) workers.Launch {
+	t.Helper()
+	l, err := launchForAttempt(d, t9token)
+	if err != nil {
+		t.Fatalf("launchForAttempt = %v", err)
+	}
+	return l
+}
+
 func t9launchJSON(t *testing.T, d admission.Decision) []byte {
 	t.Helper()
-	raw, err := json.Marshal(launchForAttempt(d, t9token))
+	raw, err := json.Marshal(t9launch(t, d))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,10 +144,10 @@ func TestModelOutputNeverReachesLaunch(t *testing.T) {
 	}
 
 	// The signature itself is pinned at compile time: exactly
-	// (Decision, string) in and one Launch out, so a future journal or
-	// store parameter breaks this test until reviewed.
+	// (Decision, string) in and one Launch plus its binding error out, so a
+	// future journal or store parameter breaks this test until reviewed.
 	//nolint:staticcheck // QF1011: the explicit type is the pin; inference would pin nothing.
-	var _ func(admission.Decision, string) workers.Launch = launchForAttempt
+	var _ func(admission.Decision, string) (workers.Launch, error) = launchForAttempt
 }
 
 func TestLaunchDecisionFieldPin(t *testing.T) {
@@ -265,7 +275,7 @@ func TestLaunchForAttemptHostileTaskBytes(t *testing.T) {
 	d := t9decision(t)
 	hostile := []byte("do it\"; rm -rf /\nsecond line\n--allowedTools=*\n")
 	d.Task = admission.Task{Content: hostile, SHA256: "evil", Title: "evil\"; rm -rf /"}
-	l := launchForAttempt(d, t9token)
+	l := t9launch(t, d)
 	// Task bytes travel on stdin only: no argv element may contain any task
 	// line, and the child env is the admitted spec env verbatim.
 	for line := range strings.SplitSeq(string(hostile), "\n") {
@@ -286,7 +296,7 @@ func TestLaunchForAttemptHostileTaskBytes(t *testing.T) {
 func TestLaunchForAttemptContained(t *testing.T) {
 	t.Parallel()
 	d := t9decision(t)
-	l := launchForAttempt(d, t9token)
+	l := t9launch(t, d)
 	if l.Containment == nil {
 		t.Fatal("contained launch carries no policy")
 	}
@@ -304,12 +314,12 @@ func TestLaunchForAttemptContained(t *testing.T) {
 	}
 
 	d.Profile.Name = "inspect"
-	if l := launchForAttempt(d, t9token); l.Containment == nil || !l.Containment.ReadOnly || l.Containment.Profile != "inspect" {
+	if l := t9launch(t, d); l.Containment == nil || !l.Containment.ReadOnly || l.Containment.Profile != "inspect" {
 		t.Fatalf("inspect containment = %+v; want a read-only policy", l.Containment)
 	}
 
 	d.Profile.Contained = false
-	if l := launchForAttempt(d, t9token); l.Containment != nil {
+	if l := t9launch(t, d); l.Containment != nil {
 		t.Fatalf("trusted-host containment = %+v; want none", l.Containment)
 	}
 }
@@ -323,18 +333,14 @@ func TestLaunchForAttemptConfigPaths(t *testing.T) {
 			home = value
 		}
 	}
-	l := launchForAttempt(d, t9token)
+	l := t9launch(t, d)
 	if !reflect.DeepEqual(l.UserConfigDigests, d.Proposal.Manifest.Digests) {
 		t.Fatalf("digests = %v, want the admitted manifest %v", l.UserConfigDigests, d.Proposal.Manifest.Digests)
 	}
-	want := claudecode.AdmittedConfigPathsForEnv(home, d.Workdir, d.Proposal.Spec.Env)
+	inventory := claudecode.AdmittedConfigPathsForEnv(home, d.Workdir, d.Proposal.Spec.Env)
+	want := map[string]string{"user": inventory["user"], "user_mcp": inventory["user_mcp"]}
 	if !reflect.DeepEqual(l.UserConfigPaths, want) {
-		t.Fatalf("paths = %v, want %v", l.UserConfigPaths, want)
-	}
-	for key := range d.Proposal.Manifest.Digests {
-		if _, ok := l.UserConfigPaths[key]; !ok {
-			t.Fatalf("digest key %q has no path mapping; the worker would fail the launch", key)
-		}
+		t.Fatalf("paths = %v, want exactly the admitted sources %v", l.UserConfigPaths, want)
 	}
 	// The launch owns its digest copy: later decision mutation cannot move it.
 	d.Proposal.Manifest.Digests["user"] = "mutated"
@@ -343,14 +349,67 @@ func TestLaunchForAttemptConfigPaths(t *testing.T) {
 	}
 
 	d.Proposal.Manifest = adapter.ConfigManifest{}
-	if l := launchForAttempt(d, t9token); l.UserConfigDigests != nil || l.UserConfigPaths != nil {
+	if l := t9launch(t, d); l.UserConfigDigests != nil || l.UserConfigPaths != nil {
 		t.Fatalf("digestless launch carries %v / %v; want neither", l.UserConfigDigests, l.UserConfigPaths)
 	}
 
+	// A homeless env has no inventory, so the admitted sources cannot bind and
+	// no launch is built at all.
 	d = t9decision(t)
 	d.Proposal.Spec.Env = []string{"PATH=/usr/bin:/bin"}
-	if l := launchForAttempt(d, t9token); len(l.UserConfigPaths) != 0 {
-		t.Fatalf("homeless launch maps %v; want no mapping so the worker fails closed", l.UserConfigPaths)
+	if l, err := launchForAttempt(d, t9token); err == nil || !strings.Contains(err.Error(), "not in the adapter inventory") || l.Path != "" {
+		t.Fatalf("homeless launchForAttempt = %+v, %v; want the unbound-source refusal and no launch", l, err)
+	}
+
+	// An admitted source the pinned adapter does not inventory refuses.
+	d = t9decision(t)
+	d.Proposal.Manifest.Digests["plugin_cache"] = strings.Repeat("e", 64)
+	if _, err := launchForAttempt(d, t9token); err == nil || !strings.Contains(err.Error(), `"plugin_cache"`) {
+		t.Fatalf("unknown-source launchForAttempt = %v; want the unbound-source refusal", err)
+	}
+}
+
+// Both adapter inventories still bind their admitted sources to the paths
+// the worker re-hashes, an empty manifest still maps nothing, and the field
+// pin above still holds (I20, v2 §8: native credential ownership unchanged).
+func TestLegacyConfigLaunchStillBound(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		adapterID string
+		digests   map[string]string
+		inventory func(home, workdir string, env []string) map[string]string
+	}{
+		{name: "the Claude inventory binds its admitted sources", adapterID: "builtin/claudecode", digests: map[string]string{"user": strings.Repeat("c", 64), "project": strings.Repeat("d", 64)}, inventory: claudecode.AdmittedConfigPathsForEnv},
+		{name: "the Codex inventory binds its admitted sources", adapterID: codex.AdapterID, digests: map[string]string{"user_config": strings.Repeat("c", 64), "project_config": strings.Repeat("d", 64)}, inventory: codex.AdmittedConfigPathsForEnv},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			d := t9decision(t)
+			d.Adapter.ID = tc.adapterID
+			d.Proposal.Manifest = adapter.ConfigManifest{Digests: tc.digests}
+			l := t9launch(t, d)
+			inventory := tc.inventory(t9home(d), d.Workdir, d.Proposal.Spec.Env)
+			if len(inventory) <= len(tc.digests) {
+				t.Fatalf("inventory %v holds no unadmitted candidate; the exact-subset check would pass vacuously", inventory)
+			}
+			want := map[string]string{}
+			for source := range tc.digests {
+				want[source] = inventory[source]
+			}
+			if !reflect.DeepEqual(l.UserConfigPaths, want) || !reflect.DeepEqual(l.UserConfigDigests, tc.digests) {
+				t.Fatalf("launch binds %v / %v; want exactly %v / %v", l.UserConfigPaths, l.UserConfigDigests, want, tc.digests)
+			}
+			if !reflect.DeepEqual(l.Env, d.Proposal.Spec.Env) {
+				t.Fatalf("launch env = %q, want the admitted spec env verbatim", l.Env)
+			}
+
+			d.Proposal.Manifest = adapter.ConfigManifest{}
+			if l := t9launch(t, d); l.UserConfigDigests != nil || l.UserConfigPaths != nil {
+				t.Fatalf("empty admission carries %v / %v; want neither", l.UserConfigDigests, l.UserConfigPaths)
+			}
+		})
 	}
 }
 
@@ -358,7 +417,10 @@ func TestLaunchForAttemptBadContainmentFailsClosed(t *testing.T) {
 	t.Parallel()
 	d := t9decision(t)
 	d.Workdir = "relative/workspace"
-	l := launchForAttempt(d, t9token)
+	// No manifest: a relative workdir has no config inventory, so admitted
+	// sources would refuse the launch before the containment fallback.
+	d.Proposal.Manifest = adapter.ConfigManifest{}
+	l := t9launch(t, d)
 	// A contained launch that cannot build its policy must never run
 	// uncontained: the zero policy is an invalid launch the worker refuses
 	// with exit 2, and it must survive the JSON trip to the worker intact.
@@ -435,15 +497,11 @@ func TestCodexConfigPathsAndInventoryUsed(t *testing.T) { // AC-3.1, D11
 	d.Proposal.Manifest = adapter.ConfigManifest{Digests: map[string]string{
 		"user_config": strings.Repeat("c", 64), "project_instructions": strings.Repeat("d", 64),
 	}}
-	l := launchForAttempt(d, t9token)
-	want := codex.AdmittedConfigPathsForEnv(t9home(d), d.Workdir, d.Proposal.Spec.Env)
+	l := t9launch(t, d)
+	inventory := codex.AdmittedConfigPathsForEnv(t9home(d), d.Workdir, d.Proposal.Spec.Env)
+	want := map[string]string{"user_config": inventory["user_config"], "project_instructions": inventory["project_instructions"]}
 	if !reflect.DeepEqual(l.UserConfigPaths, want) {
-		t.Fatalf("paths = %v, want the Codex map %v", l.UserConfigPaths, want)
-	}
-	for key := range d.Proposal.Manifest.Digests {
-		if l.UserConfigPaths[key] == "" {
-			t.Errorf("Codex manifest key %q has no path; the worker would fail the launch", key)
-		}
+		t.Fatalf("paths = %v, want the admitted Codex sources %v", l.UserConfigPaths, want)
 	}
 }
 
@@ -451,14 +509,10 @@ func TestClaudeConfigPathsUnchanged(t *testing.T) { // I15
 	t.Parallel()
 	d := t9decision(t)
 	d.Adapter.ID = claudecode.New().Descriptor().ID
-	l := launchForAttempt(d, t9token)
-	want := claudecode.AdmittedConfigPathsForEnv(t9home(d), d.Workdir, d.Proposal.Spec.Env)
+	l := t9launch(t, d)
+	inventory := claudecode.AdmittedConfigPathsForEnv(t9home(d), d.Workdir, d.Proposal.Spec.Env)
+	want := map[string]string{"user": inventory["user"], "user_mcp": inventory["user_mcp"]}
 	if !reflect.DeepEqual(l.UserConfigPaths, want) {
-		t.Fatalf("paths = %v, want the Claude map %v", l.UserConfigPaths, want)
-	}
-	for key := range d.Proposal.Manifest.Digests {
-		if l.UserConfigPaths[key] == "" {
-			t.Errorf("Claude manifest key %q has no path", key)
-		}
+		t.Fatalf("paths = %v, want the admitted Claude sources %v", l.UserConfigPaths, want)
 	}
 }

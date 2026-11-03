@@ -402,6 +402,9 @@ func TestWorkerRehashesMutableConfig(t *testing.T) {
 	}
 	writeFile := func(t *testing.T, path, content string) {
 		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -416,7 +419,7 @@ func TestWorkerRehashesMutableConfig(t *testing.T) {
 			t.Fatalf("identity = %+v, want a launched native process", id)
 		}
 	}
-	expectLaunchFailed := func(t *testing.T, l workers.Launch, tag string) {
+	expectLaunchFailed := func(t *testing.T, l workers.Launch, tag string) string {
 		t.Helper()
 		stateDir := t.TempDir()
 		code, id := t9spawn(t, bin, stateDir, "run_rehash_"+tag, "att_rehash_"+tag, l)
@@ -429,11 +432,18 @@ func TestWorkerRehashesMutableConfig(t *testing.T) {
 		if state, reason := t9terminal(t, stateDir, "run_rehash_"+tag, "att_rehash_"+tag); state != "failed_native" || reason != "launch_failed" {
 			t.Fatalf("terminal = %s/%s, want failed_native/launch_failed", state, reason)
 		}
+
+		// #nosec G304 -- worker log inside this fixture's own state directory.
+		log, err := os.ReadFile(filepath.Join(workers.AttemptDir(stateDir, "run_rehash_"+tag, "att_rehash_"+tag), "worker.log"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(log)
 	}
 
 	t.Run("unchanged file launches", func(t *testing.T) {
 		dir, taskPath, env := stage(t)
-		settings := filepath.Join(t.TempDir(), "settings.json")
+		settings := filepath.Join(env["HOME"], ".claude", "settings.json")
 		writeFile(t, settings, "{\"theme\":\"dark\"}\n")
 		l := launch(t, dir, taskPath, env,
 			map[string]string{"user": settings},
@@ -444,12 +454,15 @@ func TestWorkerRehashesMutableConfig(t *testing.T) {
 	for _, tc := range []struct{ name, tag, source, file, before, after string }{
 		{"changed file ends launch_failed with no native process", "mut", "user", "settings.json",
 			"{\"theme\":\"dark\"}\n", "{\"theme\":\"light\",\"hooks\":{\"x\":[]}}\n"},
-		{"managed source mutated fails", "mgd", "managed", "managed-settings.json",
+		{"unbound managed source refuses before rehash", "mgd", "managed", "managed-settings.json",
 			"{}\n", "{\"env\":{\"X\":\"1\"}}\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir, taskPath, env := stage(t)
 			path := filepath.Join(t.TempDir(), tc.file)
+			if tc.source == "user" {
+				path = filepath.Join(env["HOME"], ".claude", tc.file)
+			}
 			writeFile(t, path, tc.before)
 			// The launch is built against the admitted bytes; the file
 			// changes between admission and exec.
@@ -457,7 +470,14 @@ func TestWorkerRehashesMutableConfig(t *testing.T) {
 				map[string]string{tc.source: path},
 				map[string]string{tc.source: fileDigest(t, path)})
 			writeFile(t, path, tc.after)
-			expectLaunchFailed(t, l, tc.tag)
+			log := expectLaunchFailed(t, l, tc.tag)
+			want := "changed after admission"
+			if tc.source == "managed" {
+				want = "payload path is not its inventoried path"
+			}
+			if !strings.Contains(log, want) {
+				t.Fatalf("worker log %q lacks exact refusal branch %q", log, want)
+			}
 		})
 	}
 
