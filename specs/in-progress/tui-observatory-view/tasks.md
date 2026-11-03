@@ -526,7 +526,7 @@
 - **Files modified**: `internal/tui/overlays.go`, `internal/tui/overlays_test.go`, `internal/tui/model.go`, `internal/tui/dialogs.go`, `internal/tui/palette.go`, `internal/tui/observatory_bench_test.go`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`.
 - **Validation**: All six canonical gates pass, including full repository race 986.0s. After normal integration of merged recording-consumer PR #585, all five Go gates pass again, including full repository race 700.2s; the six reviewed Go source blobs remain unchanged. The named acceptance/semantic/confirmation suites and retained Unicode boundary controls pass; independent architecture review and real reload-freeze fault checks pass. Ten non-race 100ms samples with GOMAXPROCS=4 give medians: View 1383048 ns/op, 319659.5 B/op, 4782 allocs/op; Overlay 2028836 ns/op, 419221.5 B/op, 6004 allocs/op. These local measurements meet the view target and establish no native-harness advantage.
 
-### Task 17 — Resolve themes and suppress delayed OSC replies
+### Task 17 — Resolve themes and suppress delayed OSC replies ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: complex (six files; spec-decomposition sizing rule)
@@ -546,6 +546,13 @@
   - `TestLateOSCReplyNotKeys` feeds AC-2.7's exact alt-prefixed sequence and proves no action, palette/filter/dialog; identical suffix without prefix acts normally. Malformed, overlong and expired sequences release ordinary keys, and bound memory64 runes.
 - **Test plan**: Pure counting callback plus actual tea.KeyMsg sequences; no terminal network/query; no change to go.mod/go.sum.
 - **Invariants touched**: I03/I13/I14 (v2 §15.1: no injected key action, no font/module dependency, honest fallback).
+
+- **Status**: ✅ Completed — producer implementation and local acceptance are submitted; exact-head CI, review and merge remain pending; PR #604.
+- **Implementation**: Source `612a3c0`, mechanical lint correction `d3de11f` and integration `c8541ed` provide validated theme resolution and a per-model64-rune OSC11 candidate. Existing polls expire buffered candidates; ordinary replay retains modal confirmation gates. Task18 consumes the resolver for CLI flags and cached-callback wiring.
+- **Spec deviations**: Approved same-domain addition `internal/tui/model.go` owns per-model OSC state and expiry in the existing poll branch; no separate timer, query or module is added. Required own lifecycle records are `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md` and `specs/in-progress/tui-observatory-view/scratchpad.md`. The three-path lint correction changes append assignment, import grouping and an integer loop without changing parser behavior.
+- **Files modified**: `internal/tui/theme/choice.go`, `internal/tui/theme_choice.go`, `internal/tui/theme_choice_test.go`, `internal/tui/nav.go`, `internal/tui/osc_reply.go`, `internal/tui/osc_reply_test.go`, `internal/tui/model.go`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
+- **Acceptance evidence**: Eight named theme/OSC race test roots pass1.119s. Original-source five compiled controls fail assertions for extra callback consultation, forced dark choice, prefix bypass, swallowed malformed input and removed poll expiry. The retained actual-model grouped-reply/long-suffix regression failed before the candidate-bound correction. Independent code review is Ready; the bounded mechanical delta preserves those semantics.
+- **Validation**: Integrated full repository race gate passes578.3s, uncached with the original package deadline. Formatter, tidy-diff, vet, untruncated diagnostic lint and canonical lint/hygiene pass. Initial five-issue lint failure remains a separate recorded attempt. Seven source blobs remain unchanged across integration and the full gate. No native/platform, human accessibility or comparative performance qualification is claimed.
 
 ### Task 18 — Expose --theme across launch branches
 

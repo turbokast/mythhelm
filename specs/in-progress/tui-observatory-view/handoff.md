@@ -180,7 +180,11 @@
 
 ## Task 17 — Resolve themes and suppress delayed OSC replies
 
-<!-- pending -->
+- **Produces**: `theme.ParseChoice` validates auto/dark/light, and `tui.ResolveTheme` returns the chosen built-in ID and tokens from the injected cached answer. Only permitted auto selection consults that callback; nil defaults dark and invalid input still errors when disabled.
+- **For Task18**: Wire actual CLI flags, launch-mode suppression, cached callback and platform help through this seam. This producer performs no terminal query and does not qualify detection.
+- **Input boundary**: Exact alt-] arms a per-model64-rune OSC11 candidate. Complete RGB BEL/ST replies are discarded; malformed, overlong and expired candidates replay through ordinary modal/action gates. Grouped trailing keys remain ordinary input. The existing poll chain expires candidates after their200ms lifetime; preserve that hook and model isolation.
+- **Deviation**: Approved `model.go` state/poll integration accompanies the six planned paths. No live-loop, module or runtime authority change is introduced.
+- **Evidence**: Eight focused race roots pass1.119s, independent code review is Ready, and integrated full race passes578.3s. Earlier five assertion-failing source controls and the grouped long-suffix regression retain their source bindings. Canonical six markers are fresh before lifecycle metadata; PR #604 still requires final-head checks and actual merge.
 
 ## Task 18 — Expose --theme across launch branches
 
