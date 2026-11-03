@@ -1,23 +1,23 @@
-## Kimi Code CLI native qualification — Requirements
+## OpenCode native qualification — Requirements
 
-> Unrefined. Run /refine-spec kimi-native-qualification before /spec.
+> Refined after two independent assessment rounds; Ready for bounded discovery-first design. Adapter implementation and live promotion remain gated on actual mandatory evidence.
 >
-> Requirements-only child of [remaining-native-targets](../remaining-native-targets/plan.md), delivering the Kimi Code CLI portion of MH-29/W14. Normative product source: Master Specification v2 §§7,14,17–18, UR-05/UR-06. The epic’s fixed Shared Qualification Contract is binding here. No native call, account operation or qualification pass is authorized or claimed.
+> Requirements-only child of [remaining-native-targets](../remaining-native-targets/plan.md), delivering the OpenCode portion of MH-29/W14. Normative product source: Master Specification v2 §§7,14,17–18, UR-05/UR-06. The epic’s fixed Shared Qualification Contract is binding here. No native call, account operation or qualification pass is authorized or claimed.
 
 ## Context
 
 - **Backlog card**: MH-29 (child scope only; the epic owns aggregate completion).
 - **Issue**: [#135](https://github.com/turbokast/mythhelm/issues/135).
 - **Grounding revision**: `615e74a6bb6907f87bd2065e2f576f5e18b5dec5` on actual origin/main.
-- **Target identity**: `kimi` in `internal/qualify/seed.go:72`; retain the existing canonical name/record history.
+- **Target identity**: `opencode` in `internal/qualify/seed.go:62`; retain the existing canonical name/record history.
 
-The master names Kimi Code CLI as an explicit target. Its candidate direction is: Native ACP or interactive interface when permission interaction requires it; select the exact current supported surface during discovery. This is a design input requiring current primary-source discovery, not an observation of installed behavior. Qualification must address: Prompt-mode automatic permission handling/static denies, native skill discovery, actual membership entitlement and disabled Extra Usage. Do not hard-code the master source’s historical server illustration or assume a deprecated command remains supported.
+The master names OpenCode as an explicit target. Its candidate direction is: Installed native server/CLI; thin SDK or native ACP only if independently qualified. This is a design input requiring current primary-source discovery, not an observation of installed behavior. Qualification must address: Provider-specific entitlement; all small/title/compaction/review routes and native plugins; operating a Claude model remains OpenCode, and no other harness subscription secrets may be imported.
 
-Premise grounding: HOLDS — the named seed commitment (`internal/qualify/seed.go:72`) and v2 §7.2 direction exist. PARTIAL — recorded complete `git ls-tree -r --name-only origin/main adapters` enumeration at the grounding revision yields directory set `claudecode, codex, fake`; no `kimi` adapter directory appears. `internal/qualify/seed.go:93` (SeedV1 through line121) initializes unknown independent columns. UNVERIFIABLE — installed executable/version/config/provider/funding/platform behavior and live evidence were not probed. `internal/qualify/qualify.go:57` (Key), `:75` (Evidence), `:105` (Record), `internal/qualify/registry.go:203` (Record) and `internal/journal/migrations/0002_qualification.sql:4` ground the reusable qualification producer/storage; none qualifies this target. The epic Current State cites the Windows implementation-versus-promotion boundary.
+Premise grounding: HOLDS — the named seed commitment (`internal/qualify/seed.go:62`) and v2 §7.2 direction exist. PARTIAL — recorded complete `git ls-tree -r --name-only origin/main adapters` enumeration at the grounding revision yields directory set `claudecode, codex, fake`; no `opencode` adapter directory appears. `internal/qualify/seed.go:93` (SeedV1 through line121) initializes unknown independent columns. UNVERIFIABLE — installed executable/version/config/provider/funding/platform behavior and live evidence were not probed. `internal/qualify/qualify.go:57` (Key), `:75` (Evidence), `:105` (Record), `internal/qualify/registry.go:203` (Record) and `internal/journal/migrations/0002_qualification.sql:4` ground the reusable qualification producer/storage; none qualifies this target. The epic Current State cites the Windows implementation-versus-promotion boundary.
 
 ### Objectives
 
-- **O1**: Identify the smallest useful exact native Kimi Code CLI execution surface and disclose its fidelity limits.
+- **O1**: Identify the smallest useful exact native OpenCode execution surface and disclose its fidelity limits.
 - **O2**: Qualify effective funding, trust, tools and lifecycle independently without substituting another harness or losing process ownership.
 - **O3**: Publish exact versioned support/refusal rows and bounded next tests while preserving unknown evidence honestly.
 
@@ -34,7 +34,7 @@ Premise grounding: HOLDS — the named seed commitment (`internal/qualify/seed.g
 
 ### FR-1 — Bounded discovery and exact bundle identity (v2 §§7.1–7.2)
 
-- **AC-1.1** [I01/I09/I14, G02] When preparing a Kimi Code CLI bundle, discovery shall resolve the exact native executable/build/digest, adapter/protocol, surface, OS/architecture, provider/endpoint, observed model/snapshot or moving alias, effort/settings, non-secret auth/entitlement class, effective configuration/instructions/tools/skills/hooks/plugins/MCP digest, trust profile and workspace/environment class. Unknown fields remain explicit; another harness running the same model is not this target.
+- **AC-1.1** [I01/I09/I14, G02] When preparing a OpenCode bundle, discovery shall resolve the exact native executable/build/digest, adapter/protocol, surface, OS/architecture, provider/endpoint, observed model/snapshot or moving alias, effort/settings, non-secret auth/entitlement class, effective configuration/instructions/tools/skills/hooks/plugins/MCP digest, trust profile and workspace/environment class. Unknown fields remain explicit; another harness running the same model is not this target.
 - **AC-1.2** [I02/I03/I19, G02/G07] If required identity/configuration evidence is missing, opaque, changed or untrusted, then preparation shall refuse before native inference or unapproved startup/tool effects. Safe read-only source inventory shall respect precedence and the epic’s finite limits, not scan/copy secrets, infer no hooks from missing user files or trust a digest without reviewing its effects.
 - **AC-1.3** [I09/I14, G02] When documenting the candidate surface, the record shall cite dated official primary documentation for the exact operation/version and distinguish documented-candidate, fixture-tested and actual live evidence. Missing/currently unavailable documentation or binary evidence shall produce an explicit bounded next test, not a fabricated supported surface.
 
@@ -42,7 +42,7 @@ Premise grounding: HOLDS — the named seed commitment (`internal/qualify/seed.g
 
 - **AC-2.1** [I01/I03/I11/I14, G02/G10] When qualifying native fidelity, the suite shall observe instruction/skill discovery, effective hooks/plugins/MCP, tool/permission/approval interactions, context behavior and required browser/editor/child functions, each marked preserved/restricted/unsupported/unobservable. A credential-free fixture tests MYTHHELM parsing/control only; live parity claims require the exact actual native surface.
 - **AC-2.2** [I03/I11/I14/I16, G02/G10/G12] If a thin SDK, ACP, PTY, runtime SDK or host bridge is selected, then its exact native ownership/approval/trust behavior shall be independently qualified; screen text/exit code shall not synthesize permission or prove success. Raw model SDK and separately funded/remote profile substitution shall refuse without new identity/authority/admission.
-- **AC-2.3** [I01/I09/I14] Before this target is advertised, the qualification plan shall include successful and violating cases for these concrete master-identified hazards: Prompt-mode automatic permission handling/static denies, native skill discovery, actual membership entitlement and disabled Extra Usage. Do not hard-code the master source’s historical server illustration or assume a deprecated command remains supported. Each hazard must produce observable exact evidence or a bounded explicit unsupported/blocked result; prose promises do not pass it.
+- **AC-2.3** [I01/I09/I14] Before this target is advertised, the qualification plan shall include successful and violating cases for these concrete master-identified hazards: Provider-specific entitlement; all small/title/compaction/review routes and native plugins; operating a Claude model remains OpenCode, and no other harness subscription secrets may be imported. Each hazard must produce observable exact evidence or a bounded explicit unsupported/blocked result; prose promises do not pass it.
 
 ### FR-3 — Funding, owned execution and reconciled outcomes (v2 §§6–7)
 

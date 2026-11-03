@@ -1,23 +1,23 @@
-## Cursor Agent CLI native qualification — Requirements
+## Antigravity native qualification — Requirements
 
-> Unrefined. Run /refine-spec cursor-agent-native-qualification before /spec.
+> Refined after two independent assessment rounds; Ready for bounded discovery-first design. Adapter implementation and live promotion remain gated on actual mandatory evidence.
 >
-> Requirements-only child of [remaining-native-targets](../remaining-native-targets/plan.md), delivering the Cursor Agent CLI portion of MH-29/W14. Normative product source: Master Specification v2 §§7,14,17–18, UR-05/UR-06. The epic’s fixed Shared Qualification Contract is binding here. No native call, account operation or qualification pass is authorized or claimed.
+> Requirements-only child of [remaining-native-targets](../remaining-native-targets/plan.md), delivering the Antigravity portion of MH-29/W14. Normative product source: Master Specification v2 §§7,14,17–18, UR-05/UR-06. The epic’s fixed Shared Qualification Contract is binding here. No native call, account operation or qualification pass is authorized or claimed.
 
 ## Context
 
 - **Backlog card**: MH-29 (child scope only; the epic owns aggregate completion).
 - **Issue**: [#135](https://github.com/turbokast/mythhelm/issues/135).
 - **Grounding revision**: `615e74a6bb6907f87bd2065e2f576f5e18b5dec5` on actual origin/main.
-- **Target identity**: `cursor` in `internal/qualify/seed.go:77`; retain the existing canonical name/record history.
+- **Target identity**: `antigravity` in `internal/qualify/seed.go:82`; retain the existing canonical name/record history.
 
-The master names Cursor Agent CLI as an explicit target. Its candidate direction is: Resolved installed native local CLI; exact headless/session interface only if documented and evidenced. This is a design input requiring current primary-source discovery, not an observation of installed behavior. Qualification must address: Editor versus local CLI versus SDK versus cloud features; actual plan/model inclusion and paid continuation; executable provenance. Editor parity, remote handoff and cloud entitlement are never inferred.
+The master names Antigravity as an explicit target. Its candidate direction is: Installed native agy and a documented structured headless conversation surface where adequate. This is a design input requiring current primary-source discovery, not an observation of installed behavior. Qualification must address: Headless soft denial despite exit zero; native account auth versus configured Gemini API route; exact CLI/account/model no-overage evidence. A separately enabled SDK route requires its own evidence and cannot inherit CLI qualification.
 
-Premise grounding: HOLDS — the named seed commitment (`internal/qualify/seed.go:77`) and v2 §7.2 direction exist. PARTIAL — recorded complete `git ls-tree -r --name-only origin/main adapters` enumeration at the grounding revision yields directory set `claudecode, codex, fake`; no `cursor` adapter directory appears. `internal/qualify/seed.go:93` (SeedV1 through line121) initializes unknown independent columns. UNVERIFIABLE — installed executable/version/config/provider/funding/platform behavior and live evidence were not probed. `internal/qualify/qualify.go:57` (Key), `:75` (Evidence), `:105` (Record), `internal/qualify/registry.go:203` (Record) and `internal/journal/migrations/0002_qualification.sql:4` ground the reusable qualification producer/storage; none qualifies this target. The epic Current State cites the Windows implementation-versus-promotion boundary.
+Premise grounding: HOLDS — the named seed commitment (`internal/qualify/seed.go:82`) and v2 §7.2 direction exist. PARTIAL — recorded complete `git ls-tree -r --name-only origin/main adapters` enumeration at the grounding revision yields directory set `claudecode, codex, fake`; no `antigravity` adapter directory appears. `internal/qualify/seed.go:93` (SeedV1 through line121) initializes unknown independent columns. UNVERIFIABLE — installed executable/version/config/provider/funding/platform behavior and live evidence were not probed. `internal/qualify/qualify.go:57` (Key), `:75` (Evidence), `:105` (Record), `internal/qualify/registry.go:203` (Record) and `internal/journal/migrations/0002_qualification.sql:4` ground the reusable qualification producer/storage; none qualifies this target. The epic Current State cites the Windows implementation-versus-promotion boundary.
 
 ### Objectives
 
-- **O1**: Identify the smallest useful exact native Cursor Agent CLI execution surface and disclose its fidelity limits.
+- **O1**: Identify the smallest useful exact native Antigravity execution surface and disclose its fidelity limits.
 - **O2**: Qualify effective funding, trust, tools and lifecycle independently without substituting another harness or losing process ownership.
 - **O3**: Publish exact versioned support/refusal rows and bounded next tests while preserving unknown evidence honestly.
 
@@ -34,7 +34,7 @@ Premise grounding: HOLDS — the named seed commitment (`internal/qualify/seed.g
 
 ### FR-1 — Bounded discovery and exact bundle identity (v2 §§7.1–7.2)
 
-- **AC-1.1** [I01/I09/I14, G02] When preparing a Cursor Agent CLI bundle, discovery shall resolve the exact native executable/build/digest, adapter/protocol, surface, OS/architecture, provider/endpoint, observed model/snapshot or moving alias, effort/settings, non-secret auth/entitlement class, effective configuration/instructions/tools/skills/hooks/plugins/MCP digest, trust profile and workspace/environment class. Unknown fields remain explicit; another harness running the same model is not this target.
+- **AC-1.1** [I01/I09/I14, G02] When preparing a Antigravity bundle, discovery shall resolve the exact native executable/build/digest, adapter/protocol, surface, OS/architecture, provider/endpoint, observed model/snapshot or moving alias, effort/settings, non-secret auth/entitlement class, effective configuration/instructions/tools/skills/hooks/plugins/MCP digest, trust profile and workspace/environment class. Unknown fields remain explicit; another harness running the same model is not this target.
 - **AC-1.2** [I02/I03/I19, G02/G07] If required identity/configuration evidence is missing, opaque, changed or untrusted, then preparation shall refuse before native inference or unapproved startup/tool effects. Safe read-only source inventory shall respect precedence and the epic’s finite limits, not scan/copy secrets, infer no hooks from missing user files or trust a digest without reviewing its effects.
 - **AC-1.3** [I09/I14, G02] When documenting the candidate surface, the record shall cite dated official primary documentation for the exact operation/version and distinguish documented-candidate, fixture-tested and actual live evidence. Missing/currently unavailable documentation or binary evidence shall produce an explicit bounded next test, not a fabricated supported surface.
 
@@ -42,7 +42,7 @@ Premise grounding: HOLDS — the named seed commitment (`internal/qualify/seed.g
 
 - **AC-2.1** [I01/I03/I11/I14, G02/G10] When qualifying native fidelity, the suite shall observe instruction/skill discovery, effective hooks/plugins/MCP, tool/permission/approval interactions, context behavior and required browser/editor/child functions, each marked preserved/restricted/unsupported/unobservable. A credential-free fixture tests MYTHHELM parsing/control only; live parity claims require the exact actual native surface.
 - **AC-2.2** [I03/I11/I14/I16, G02/G10/G12] If a thin SDK, ACP, PTY, runtime SDK or host bridge is selected, then its exact native ownership/approval/trust behavior shall be independently qualified; screen text/exit code shall not synthesize permission or prove success. Raw model SDK and separately funded/remote profile substitution shall refuse without new identity/authority/admission.
-- **AC-2.3** [I01/I09/I14] Before this target is advertised, the qualification plan shall include successful and violating cases for these concrete master-identified hazards: Editor versus local CLI versus SDK versus cloud features; actual plan/model inclusion and paid continuation; executable provenance. Editor parity, remote handoff and cloud entitlement are never inferred. Each hazard must produce observable exact evidence or a bounded explicit unsupported/blocked result; prose promises do not pass it.
+- **AC-2.3** [I01/I09/I14] Before this target is advertised, the qualification plan shall include successful and violating cases for these concrete master-identified hazards: Headless soft denial despite exit zero; native account auth versus configured Gemini API route; exact CLI/account/model no-overage evidence. A separately enabled SDK route requires its own evidence and cannot inherit CLI qualification. Each hazard must produce observable exact evidence or a bounded explicit unsupported/blocked result; prose promises do not pass it.
 
 ### FR-3 — Funding, owned execution and reconciled outcomes (v2 §§6–7)
 

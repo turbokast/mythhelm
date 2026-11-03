@@ -1,6 +1,6 @@
 ## Remaining native harness targets — Master Plan
 
-> Unrefined requirements epic. Refine each child before design/tasks. This captures MH-29, not implemented adapters or passing qualification. Normative source: Master Specification v2 §§7,14,17–18, explicit UR-05/UR-06 and implementation-plan W14. Independent target/surface/platform evidence is mandatory; no requirement here authorizes inference, login, installation or account changes.
+> Refined requirements epic after two independent assessment rounds; all five children are Ready for bounded discovery-first design. This captures MH-29, not implemented adapters or passing qualification. Normative source: Master Specification v2 §§7,14,17–18, explicit UR-05/UR-06 and implementation-plan W14. Independent target/surface/platform evidence is mandatory; no requirement here authorizes inference, login, installation or account changes.
 
 ### Context and Problem Summary
 
@@ -65,7 +65,7 @@ No additional raw-model/runtime-SDK substitute, private subscription-secret impo
 - Applicable effective funding/auxiliary and no-paid-continuation mechanism — per child; default block subscription-only if any required route is unproven. A differently funded route needs distinct identity and authority.
 - Initial platform/host subset — resolved through each child’s bounded discovery-first design outcome: an evidenced exact candidate or explicit blocked inventory. Unknown subset does not block designing that discovery outcome; it continues to block unsupported adapter implementation/live promotion. Every absent pair remains unknown, never inherits another architecture’s result. MH-11/MH-3/MH-7 retain their producer scope.
 - Implementation decomposition — discovery-contract design may proceed now; after an evidenced candidate is available, freeze exact independent producers/consumers and split by surface/platform before adapter implementation tasks. A blocked inventory preserves the unresolved facts and next test rather than inventing implementation readiness. No API or migration number is preallocated.
-- Epic structure proceeds under explicit project delegation; independent root review remains required before commit. No founder decision is requested and no reviewed lifecycle state is implied.
+- Epic structure proceeds under explicit project delegation; independent root acceptance followed the fresh second assessment. The reviewed refinement state permits bounded discovery-first design only; it does not establish adapter implementation or live promotion readiness. No founder decision is required.
 
 ### Risks
 
@@ -80,3 +80,9 @@ No additional raw-model/runtime-SDK substitute, private subscription-secret impo
 - [ ] Each child has its own reviewed design/tasks and a versioned target/surface/platform evidence inventory, even when blocked.
 - [ ] All advertised support is independently bound to exact current evidence; unknown/refused routes expose a bounded next test and authority requirement.
 - [ ] No completed Claude/Codex, Windows implementation or registry work is duplicated; public support advances only through the applicable actual gates.
+
+### Refinement History
+
+`dispatched=2 returned=2 failed=0` — two epic-wide assessment dispatches, each covering this plan and all five children. Round1 assessor `native_targets_assessor` returned Needs work: D3/D8 NEEDS_WORK and the other six dimensions PASS. Auto-fixes supplied exact source/command-output grounding and corrected the design-entry contradiction by defining bounded discovery with an evidenced candidate or explicit blocked inventory. No human question was raised. Fresh round2 assessor `native_targets_assessor_r2` returned Ready, D1–D8 PASS, with each child individually Ready for bounded discovery-first design and no findings. Independent root acceptance approved source capture commit `3a9d78f` before lifecycle metadata.
+
+The epic directory retains only this plan; each child’s `refinement-log.md` preserves the same two-round history and its remaining design/implementation/qualification gates. Unknown native facts remain blockers for adapter implementation/live promotion. No native test, provider/account operation or qualification pass occurred during requirements capture/refinement.
