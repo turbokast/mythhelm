@@ -13,6 +13,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/supervisor"
 	"github.com/turbokast/mythhelm/internal/tui/caps"
@@ -134,7 +135,7 @@ func TestStopLabelsRequested(t *testing.T) {
 		t.Fatalf("after Stop run dialog = %q, want stop", m.dialog)
 	}
 	for _, want := range []string{"Stop run", "run: run_t6", "[Request stop]", "[Cancel]"} {
-		if view := m.View(); !strings.Contains(view, want) {
+		if view := ansi.Strip(m.View()); !strings.Contains(view, want) {
 			t.Errorf("stop dialog lacks %q\n%s", want, view)
 		}
 	}
@@ -393,7 +394,7 @@ func TestApplyShowsExactEffects(t *testing.T) {
 	for _, want := range []string{"Apply candidate", "run: run_t6", "candidate: " + commit,
 		"target branch:", "accept validation flags: off", "accept unverified: off",
 		"verified " + commit[:7], "[Cancel]"} {
-		if view := m.View(); !strings.Contains(view, want) {
+		if view := ansi.Strip(m.View()); !strings.Contains(view, want) {
 			t.Errorf("apply dialog lacks %q\n%s", want, view)
 		}
 	}

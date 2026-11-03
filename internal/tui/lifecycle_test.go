@@ -15,6 +15,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/supervisor"
 	"github.com/turbokast/mythhelm/internal/tui/caps"
@@ -84,8 +85,9 @@ func TestExitModeTable(t *testing.T) {
 				}
 			}
 			m, _ = pressKey(t, m, runeMsg("q"))
-			if !strings.Contains(m.View(), tc.rows) || !strings.Contains(m.View(), focusGlyph(m.cfg.Caps)+" back") {
-				t.Fatalf("q rows/focus: %s", m.View())
+			view := ansi.Strip(m.View())
+			if !strings.Contains(view, tc.rows) || !strings.Contains(view, focusGlyph(m.cfg.Caps)+" back") {
+				t.Fatalf("q rows/focus: %s", view)
 			}
 			m, cmd := pressKey(t, m, specialMsg(tea.KeyEnter))
 			if cmd != nil || m.dialog != "" {
