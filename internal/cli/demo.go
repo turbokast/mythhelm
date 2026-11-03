@@ -144,6 +144,11 @@ func runDemoWithDeps(args []string, stdio Stdio, deps demoDeps) error {
 			resultErr = finish(newRenderer("plain", stdio), out, derr)
 			break
 		}
+		opts, err = opts.resolveTheme(deps.tui)
+		if err != nil {
+			resultErr = finish(newRenderer("plain", stdio), out, err)
+			break
+		}
 		// Once supervision may start, deletion requires joined, certain terminal evidence.
 		cleanup = false
 		liveRunID = d.RunID

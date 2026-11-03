@@ -1577,3 +1577,101 @@ func reapDetached(t *testing.T, p attemptProcs) {
 		waitProcessesGone(t, p)
 	})
 }
+
+func TestThemeFlagBinary(t *testing.T) {
+	e := newEnv(t)
+	root := t.TempDir()
+	const help = "auto detects the terminal background on Linux and macOS outside tmux and screen; under tmux or screen it uses COLORFGBG and otherwise dark; on Windows it always selects dark, use --theme light for a light terminal"
+	for _, verb := range []string{"run", "demo", "review"} {
+		t.Run("help/"+verb, func(t *testing.T) {
+			code, out, stderr := run(t, e, root, verb, "--help")
+			if code != 0 || !strings.Contains(out+stderr, help) {
+				t.Fatalf("packaged %s help: code%d out%q err%q", verb, code, out, stderr)
+			}
+		})
+		t.Run("invalid/"+verb, func(t *testing.T) {
+			args := []string{verb, "--theme", "paper"}
+			if verb == "review" {
+				args = append(args, "run_missing")
+			}
+			code, out, stderr := run(t, e, root, args...)
+			if code != 2 || !strings.Contains(stderr, "--theme") || !strings.Contains(stderr, `"paper"`) {
+				t.Fatalf("packaged invalid %s: code%d out%q err%q", verb, code, out, stderr)
+			}
+		})
+	}
+	repo, digest := mkRepo(t, e, root, "pass")
+	code, stdout, stderr := run(t, e, repo, append(baseRunArgs(digest), "--format", "jsonl")...)
+	if code != 0 {
+		t.Fatalf("synthetic run: code%d out%s err%s", code, stdout, stderr)
+	}
+	runID, _ := runResultOf(t, stdout)
+	for _, choice := range []string{"dark", "light"} {
+		t.Run("piped/"+choice, func(t *testing.T) {
+			code, out, stderr := run(t, e, repo, "review", runID, "--theme", choice, "--no-diff")
+			if code != 0 || !strings.Contains(out, runID) {
+				t.Fatalf("packaged %s dispatch: code%d out%s err%s", choice, code, out, stderr)
+			}
+			assertNoCursorCodes(t, "piped theme output", out)
+		})
+	}
+	t.Run("terminal colours", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Unix PTY colour witness; packaged help, validation and piped dispatch run on Windows above")
+		}
+		// Resolve a version-manager shim before applying the fixture's private HOME.
+		// The actual terminal child still receives only the isolated fixture env.
+		probeCtx, probeCancel := context.WithTimeout(t.Context(), 10*time.Second)
+		defer probeCancel()
+		probe := exec.CommandContext(probeCtx, python3(t), "-I", "-c", "import sys; print(sys.executable)")
+		resolved, err := probe.Output()
+		python := strings.TrimSpace(string(resolved))
+		if err != nil || !filepath.IsAbs(python) {
+			t.Fatalf("resolving Python executable: %v %q", err, resolved)
+		}
+		for _, tc := range []struct{ choice, colour string }{{"dark", "38;2;77;218;233"}, {"light", "38;2;0;130;157"}} {
+			t.Run(tc.choice, func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(t.Context(), 40*time.Second)
+				defer cancel()
+				cmd := exec.CommandContext(ctx, python, "-I", "-B", "-c", themePTYWitness, ptyDriver(t), repo, mythhelmBin, runID, tc.choice, tc.colour)
+				cmd.Env = append(e.withParent(t), "TERM=xterm-256color", "COLORTERM=truecolor", "NO_COLOR=")
+				out, err := cmd.CombinedOutput()
+				if err != nil || string(out) != "theme colour observed\n" {
+					t.Fatalf("packaged %s terminal witness: %v %s", tc.choice, err, out)
+				}
+			})
+		}
+	})
+}
+
+// The existing test terminal owns and answers startup queries. This wrapper
+// observes actual SGR bytes, then terminates and joins its inspect-only child.
+const themePTYWitness = `
+import importlib.util, os, signal, sys, time
+spec = importlib.util.spec_from_file_location("theme_terminal", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+term = module.Terminal(160, 40, sys.argv[2], [sys.argv[3], "review", sys.argv[4], "--theme", sys.argv[5], "--colour", "always", "--motion", "off"])
+try:
+    needle = sys.argv[6].encode("ascii")
+    deadline = time.monotonic() + 20
+    with term.cond:
+        while needle not in term.raw:
+            if term.eof or time.monotonic() >= deadline:
+                raise RuntimeError("selected theme colour was not rendered")
+            term.cond.wait(max(0, deadline - time.monotonic()))
+    print("theme colour observed", flush=True)
+finally:
+    if not term.reap(False):
+        os.kill(term.pid, signal.SIGTERM)
+        deadline = time.monotonic() + 5
+        while not term.reap(False) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        if not term.reap(False):
+            os.kill(term.pid, signal.SIGKILL)
+            term.reap(True)
+    term.reader.join(5)
+    os.close(term.fd)
+    if term.reader.is_alive():
+        raise RuntimeError("terminal reader did not join")
+`
