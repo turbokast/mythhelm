@@ -1,6 +1,6 @@
 ## Scoped context, task dependencies and stale-evidence invalidation — Requirements
 
-> Unrefined. Run /refine-spec delivery-scoped-context before /spec.
+> Refined after independent assessment; see [refinement-log.md](refinement-log.md). Proceed to /spec delivery-scoped-context.
 >
 > Make original evidence available through scoped, bounded retrieval and make dependency changes invalidate affected work before reuse. This requirements-only MH-24/W07 document extends continuity-owned context foundations; it does not qualify S1/S2, launch native work or establish passing G07/G13. Normative source: `mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md`, version 2.0, §§4, 5.3, 9–11 and 18; `mythhelm-synthesis/MYTHHELM_Implementation_Plan.md`, W07. I-, G- and AT-IDs refer to v2.
 
