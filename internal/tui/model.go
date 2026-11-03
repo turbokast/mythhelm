@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -124,6 +125,7 @@ type Model struct {
 	recoverNotices      *NoticeBacklog
 	reload              *reloadCall
 	reloadGen           uint64
+	oscReply            oscReplyState
 }
 
 // newModel builds the program state with default dimensions; the first
@@ -295,11 +297,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cancelAction()
 		return m, m.exit(ExitUnresolvedAction)
 	case pollTickMsg:
+		replay := m.expireOSCReply(time.Now())
 		reload := m.onPollTick()
 		if m.managedPoll {
-			return m, tea.Batch(reload, m.scheduleMotion())
+			return m, tea.Batch(replay, reload, m.scheduleMotion())
 		}
-		return m, tea.Batch(m.pollCmd(), reload, m.scheduleMotion())
+		return m, tea.Batch(m.pollCmd(), replay, reload, m.scheduleMotion())
 	case reloadResultMsg:
 		m.applyReload(msg.call)
 		return m, m.scheduleMotion()
