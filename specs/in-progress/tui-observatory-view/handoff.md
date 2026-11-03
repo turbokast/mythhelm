@@ -214,6 +214,25 @@ Actual View regression rejects10000 pre-format visits and passes20/21/21 at heig
 
 PR #566 is open with exact source code/architecture Ready, unchanged original22 literal frames and all-six integrated local gates passing (full race332.9s, hygiene5.3s). The final eight named acceptance suites pass1.355s; current-source four private controls and restored proof remain exact-source-bound. Own completion/entry/spec/hygiene markers are refreshed after publication metadata. Exact-final-head CI/review and actual merge remain outstanding; Task16 and later theme work are not dispatched by this record. Earlier failed attempts and independently owned merged core fixture remain separate evidence, with no native/platform/full-product/20× performance claim.
 
+## Task 21 — Produce scoped recording selection
+
+- **Produces**: PR #576 supplies `docs/demos/record.sh [--repin] [--recording NAME]`; selector names are demo/tui/hero, either option order is allowed once, and absent selector preserves default-all. Invalid/duplicate/missing options refuse before build/write.
+- **For Task19**: Document current selected artifact generation/verification and historical unselected provenance separately. Only selected entries' version/commit values and tape headers move on successful repin; all other manifest bytes and unselected files remain exact. Historical pins must resolve to commits; blob existence is insufficient.
+- **Failure boundary**: Selected partial media may remain after failure, never accepted or repinned. Pin-write failure reports incomplete repinning without promising rollback. The EXIT trap owns invocation tempdir and marker-owned hero scratch only; fixed public binary/scratch paths remain single-invocation resources, not concurrency isolation.
+- **Test seam**: Private sourceable `record_main ROOT BIN HERO_TMP` runs the same body in a subshell with fixture-owned paths. Successful fixture tests use fake external tools/sentinel media. Literal public entry is exercised only for argument/pre-build refusals; no successful real recorder is invoked by mechanism tests.
+- **Review repairs**: Source `1125e62c4981c4f4161749638559b63458075fb2` validates selected tape Output/header syntax and every manifest route before building, covers all current embedded assets, rejects uncommitted non-pin manifest configuration and checks actual rewritten tape headers. Exact executable Output counting excludes quoted text/comments/regex; indentation, same-line and split-line extra outputs refuse. Manifest replacement is atomic but tape writes are separate; there is still no multi-file rollback or concurrency isolation.
+- **Evidence**: Final actual-body fake-tool suite passes193 assertions, including the original four effect mutants and output-routing, embed-guard, manifest-configuration and atomic-replacement controls. The prior119/179-assertion candidates and failed output-whitespace regressions remain separate historical evidence. Bash syntax/ShellCheck pass; independent final review and exact-head CI/merge remain required.
+- **Consumer boundary**: Task22 is merged in PR #585 and now builds each recording transcript/qualifier at its own immutable commit. This producer preserves that independently shipped workflow; Task20 still requires its real recording/human evidence.
+- **For Task20**: Keep its maintainer ownership, Task19 dependency, exact six artifact paths, actual installed-tool command/version recording and human artifact inspection. This producer supplies no real rendered artifact, accessibility/native/platform qualification or Task20 completion.
+- **Deviations**: Only required own lifecycle records accompany the three producer paths. No recording artifacts, manifest, native profile or runtime APIs are changed.
+
+## Task 16 — Compose overlays with semantic colour checks
+
+- **Produces**: Raised help, palette and confirmation cards above a freshly rendered dimmed mission when the body fits; compact layouts retain the one-line header and full-screen fallback. Foreground/background rules operate on final semantic spans.
+- **For dependents**: Task17 must preserve overlay/pending effect identity and the existing polling reload. Complete graphemes determine clipping and SGR coordinates; a wide glyph crossing an edge becomes padding, never half a glyph. Confirmation effects remain unchanged.
+- **Evidence**: Real journal append to production reload changes the visible dimmed NOW content while help stays open. Retained Unicode/CJK/continuation controls and an independently assertion-failing actual reload-freeze control cover the discovered gaps. All six local gates pass; PR #587 still awaits required exact-head CI and merge.
+- **Performance method**: Ten non-race 100ms samples per benchmark with GOMAXPROCS=4; compare local View/Overlay medians to the render target. No hardware-normalized or native-CLI comparison is inferred. Human accessibility and real recordings remain later evidence.
+
 
 ## Task 22 — Verify recording consumers at each immutable pin
 

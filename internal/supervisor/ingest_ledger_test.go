@@ -21,11 +21,7 @@ type ledgerFixture struct {
 
 func newLedgerFixture(t *testing.T) *ledgerFixture {
 	t.Helper()
-	j, err := journal.Open(t.Context(), t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = j.Close() })
+	j := openSeededJournal(t)
 	f := &ledgerFixture{j: j, runID: ids.New("run"), seq: map[string]int64{}}
 	now := time.Now()
 	if err := j.Transact(t.Context(), func(tx *sql.Tx) error {

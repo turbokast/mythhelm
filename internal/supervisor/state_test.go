@@ -19,13 +19,8 @@ import (
 
 func openTemp(t *testing.T) (*journal.Journal, string) {
 	t.Helper()
-	dir := t.TempDir()
-	j, err := journal.Open(t.Context(), dir)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(func() { _ = j.Close() })
-	return j, filepath.Join(dir, journal.DBName)
+	j := openSeededJournal(t)
+	return j, filepath.Join(j.StateDir(), journal.DBName)
 }
 
 // rawOpen is a second connection for fixtures and fault injection that
