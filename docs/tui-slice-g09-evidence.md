@@ -6,7 +6,9 @@ tasks 1–13 merged) unless a row says otherwise.
 **Status: complete 2026-10-03.** Interactive matrix row (§1.2),
 UX session (§2), screen-reader position (§3, experimental) and
 traceability (§4) are recorded. Per I14, a combination without a
-full row below is not claimed — see `README.md` ("TUI status").
+full row below is not claimed — see `README.md` ("TUI status"). This is a
+historical evidence record, not a G09 pass for the current Observatory view.
+Section 5 records subsequent automated evidence and the remaining gaps.
 
 ## 1. Terminal/shell matrix (§16.4)
 
@@ -132,23 +134,60 @@ satisfied by §3 above (or the experimental marking), not by a Go test.
 | AC-7.2 | Verification status attached to its exact revision | `TestVerificationMismatchLabelsRevisions`, `TestNativeResultNeverVerified` (task 6) |
 | AC-7.3 | Cost/quota figures kind-labelled; unknown never zero | `TestStatusStripKindLabels` (task 6) |
 
-## 5. Findings for follow-up
+## 5. Current source evidence and remaining gaps
 
-- **F-1 (exit-options dialog unwired):** `q` renders the exit-options
-  rows (`internal/tui/dialogs.go`, `dialogExitOptions`) but key
-  selection was never wired — "informational until a later task wires
-  its rows; only Esc acts" — and no later task did. Observed
-  2026-10-03: left/right/Tab/Enter all inert in the dialog; Esc closes
-  it; Ctrl-C quits. The README claims no selectable exit options.
-  Needs a follow-up task or backlog card to wire the rows (detach /
-  request stop / cancel) per the design exit behaviour.
-- **F-2 (mid-run Ctrl-C cancels instead of detaching):** task 12's
-  contract is "quit-while-active detaches via two interrupts with the
-  `review <run>` reattach line" (`TestQuitLiveDetaches` passes), but
-  three real mid-run Ctrl-C presses on the scripted demo (2026-10-03)
-  all cancelled the run with exit 130 and no detach line. Likely
-  mechanism: on a fast run the stop confirms before the detach logic
-  can engage, so the detach path is unobservable via `demo`. Needs a
-  slow-adapter retest or a design clarification of what TUI Ctrl-C
-  promises. (One very-early Ctrl-C attempt printed nothing after `^C`;
-  exit code not captured.)
+The observations in §§1–3 remain bound to `dfc0f22`; the participant session
+has not been repeated. F-1 (unwired `q` rows, [#106](https://github.com/turbokast/mythhelm/issues/106))
+and F-2 (the coupled two-interrupt exit path, [#107](https://github.com/turbokast/mythhelm/issues/107))
+are closed as current implementation defects by the lifecycle work below.
+The historical row and UX failures are preserved. Current Ctrl-C deliberately
+requests stop first; use Detach to leave a supported running worker alone.
+
+| Current claim | Merged implementation / named automated evidence |
+|---|---|
+| Selectable mode/phase exit rows; stop differs from detach; action cancellation joins cleanup | [PR #513](https://github.com/turbokast/mythhelm/pull/513); `TestExitModeTable`, `TestLiveCtrlCIntents`, `TestEmergencyDetachQualification`, `TestExplicitActionQuitCancelsAndJoins` in [lifecycle_test.go](https://github.com/turbokast/mythhelm/blob/main/internal/tui/lifecycle_test.go) |
+| State-bound detach/recover, single SIGINT, terminal loss, retained demo resources and recovery | [PR #521](https://github.com/turbokast/mythhelm/pull/521); `TestTUIDetachRecoverBinary`, `TestTUIStopDetachRecoverBinary`, `TestTUISIGINTOnceBinary`, `TestTUITerminalLossBinary`, `TestDemoDetachRecoverBinary` in [packaged Unix PTY tests](https://github.com/turbokast/mythhelm/blob/main/tests/e2e/tui_lifecycle_unix_test.go) (scripted fake agent, real processes) |
+| Startup failure does not stop the run; phase/terminal-loss exits preserve canonical results | [PR #516](https://github.com/turbokast/mythhelm/pull/516); `TestTUIStartupFailureJoinsWithoutStop`, `TestTerminalLossStateTable`, `TestTerminalLossApplyOutcome`, `TestInspectStopTerminalLoss` in [CLI lifecycle tests](https://github.com/turbokast/mythhelm/blob/main/internal/cli/tui_lifecycle_test.go) |
+| Demo retains repository/state; exact shell-labelled recovery and explicit later cleanup | [PR #518](https://github.com/turbokast/mythhelm/pull/518); `TestDemoDetachRetainsWorkspace`, `TestDemoRetentionNotice`, `TestPOSIXRecoveryCommandExecution`, `TestPowerShellRecoveryCommandExecution` in [demo lifecycle tests](https://github.com/turbokast/mythhelm/blob/main/internal/cli/demo_lifecycle_test.go); native PowerShell execution is Windows-only |
+| Worker enforces pinned deadline without a supervisor; mixed-version handoffs reject before launch | [PR #497](https://github.com/turbokast/mythhelm/pull/497); `TestWorkerDeadlineWithoutSupervisor`, `TestMixedWorkerHandoffVersions`, `TestDeadlineRequestPrecedence` in [worker deadline tests](https://github.com/turbokast/mythhelm/blob/main/internal/workers/deadline_test.go); `TestDetachedDeadlineRecoveryBinary` in [packaged deadline tests](https://github.com/turbokast/mythhelm/blob/main/tests/e2e/tui_deadline_test.go) |
+| NOW / NEXT and responsive Observatory panes, hidden keys and bounded Diff viewport | [PR #566](https://github.com/turbokast/mythhelm/pull/566); `TestObservatoryLadderGoldens`, `TestHiddenKeysStillWork`, `TestObservatoryDiffViewportWork` in [renderer tests](https://github.com/turbokast/mythhelm/blob/main/internal/tui/observatory_goldens_test.go) |
+| Cards preserve mission context and semantic colours | [PR #587](https://github.com/turbokast/mythhelm/pull/587); `TestObservatoryOverlayCards`, `TestOverlayKeepsUpdating`, `TestSemanticSGRRuns` in [overlay tests](https://github.com/turbokast/mythhelm/blob/main/internal/tui/overlays_test.go) |
+| Cached theme selection, delayed OSC replies, actual CLI launch/help and unchanged linear baseline | [PR #604](https://github.com/turbokast/mythhelm/pull/604), [PR #618](https://github.com/turbokast/mythhelm/pull/618); `TestThemeChoiceCountingSeam` in [theme tests](https://github.com/turbokast/mythhelm/blob/main/internal/tui/theme_choice_test.go), `TestLateOSCReplyNotKeys` in [OSC reply tests](https://github.com/turbokast/mythhelm/blob/main/internal/tui/osc_reply_test.go); `TestThemeFlagLaunchMatrix`, `TestThemeHelpPlatformLimits`, `TestThemeFlagInvalidLaunchBranches`, `TestUntouchedVerbsStable` in [CLI tests](https://github.com/turbokast/mythhelm/blob/main/internal/cli/tui_test.go); `TestThemeFlagBinary` in [packaged tests](https://github.com/turbokast/mythhelm/blob/main/tests/e2e/tui_test.go) |
+
+These are synthetic/unit/packaged-binary checks. Renderer goldens and parsed
+colours establish no human screen-reader usability, real-terminal detection,
+live-native qualification or complete G09 pass. The [user guide](user-guide.md#the-terminal-view)
+describes the current controls and phase outcomes; acceptance's existing
+candidate-only TUI verification limit remains there.
+
+Remaining gaps:
+
+- **Detection and platform matrix:** the current light/dark detection path is
+  unqualified. `auto` can choose dark on a light terminal under tmux/screen or
+  on Windows; the existing startup query can wait 5 seconds. The only human
+  terminal row remains the historical §1.2 combination. Contrast assumes a
+  matching terminal background.
+- **Human accessibility:** NVDA, VoiceOver and Orca sessions and the current
+  G09 UX re-run remain missing; all screen-reader combinations stay
+  experimental. Declarative user theme/keymap files and reset are deferred.
+- **Windows detach:** deliberate detach requires admission's recorded
+  `worker_detachment: supported`. Unknown/unsupported records disable it;
+  emergency exit says unqualified and does not establish support.
+- **Reconnect wait:** fenced non-deadline episodes can wait indefinitely after
+  spooling for a supervisor to reconnect. Deadline-expired workers exit after
+  terminal spooling; that fix does not close the general reconnect gap.
+- **Verification cancellation:** worker stop cannot cancel verification or
+  applying. Those TUI controls are disabled and a second Ctrl-C finishes the
+  phase headless. The linear-path cancellation limitation remains.
+- **Supervision observation:** a stale or missing beat means unknown, not
+  proof that the owner is absent; no production unlocked-owner observation
+  has been qualified.
+- **Upgrade handoff:** mixed supervisor/worker payloads fail closed; finish or
+  drain old supervisors before replacing the binary. Already running workers
+  retain their pins, but seamless admission-to-spawn replacement is unsupported.
+- **Recording:** Task 20 still awaits real recording tools, generated artifacts
+  and human inspection. [PR #576](https://github.com/turbokast/mythhelm/pull/576)
+  tests the selector with fake tools (193 assertions), and
+  [PR #585](https://github.com/turbokast/mythhelm/pull/585) tests per-recording
+  CI pins with 15 two-commit fixtures. Neither supplies a new recording or
+  human evidence; [recording provenance](demos/README.md) stays per artifact.

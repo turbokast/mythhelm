@@ -9,6 +9,12 @@ is the exception: interactive bytes can never byte-match a re-run, so it
 comes from companion linear-mode runs of the same binary (with stderr
 merged), not from the taped takes themselves.
 
+The checked-in media below remain historical, pinned to `031676ad5355`.
+They do not show the current Observatory renderer, overlays, theme selection
+or selectable detach controls. Task 20 still awaits the real recording tools,
+regenerated TUI artifacts and human inspection. The recorder selector and CI
+pin checks alone do not advance that evidence.
+
 ## Record command
 
 ```sh
@@ -75,7 +81,14 @@ and do not require GNU checksum tools.
 
 The docs workflow checks each recording at its own `binary_commit`. A selected
 repin that produces mixed pins passes publication checks when each recording's
-transcript matches at its own pin and its qualifiers pass there.
+transcript matches at its own pin and its qualifiers pass there. This consumer
+is covered by [PR #585](https://github.com/turbokast/mythhelm/pull/585)'s 15
+two-commit integration fixtures; they do not render media. The selector's
+[PR #576](https://github.com/turbokast/mythhelm/pull/576) fake-tool suite passes
+193 assertions, establishing routing/provenance behavior rather than a real
+VHS recording. After a future TUI-only repin, only the selected TUI artifacts
+will describe that new binary; unselected demo/hero pins retain their own
+historical provenance and acquire no current-view qualification.
 
 Note the squash-merge trap: pins name the pre-commit HEAD, so after a merge
 no checkout matches and plain `record.sh` always refuses — re-record with
@@ -161,10 +174,11 @@ ladder rung by rung (120, 90, 70 columns — each a fresh launch, since the TUI
 owns all input while it runs and a rung change cannot be typed mid-session),
 the keyboard flows (arrows, `/` filter, `:` palette, `?` help,
 `Enter`/`Escape`), and the linear `--accessible` stream as the closing take.
-Scope is exactly the met tui-slice acceptance: the inert exit-dialog rows
-(issue #106) and the unwired history search never appear as working
-behaviour — `q` is never pressed, only `ctrl+c` quits. Its manifest entry
-declares the exact binary revision rendered from and the qualifying test for
+This is the historical tui-slice build: its inert exit-dialog rows
+(issue #106, since fixed in current source) and unwired history search never
+appear as working behavior — `q` is never pressed, only `ctrl+c` quits. Its
+Ctrl-C take does not demonstrate the current phase-dependent exit policy. Its
+manifest entry declares the exact binary revision rendered from and the qualifying test for
 each shown capability:
 
 | Capability shown | Qualifying test |
