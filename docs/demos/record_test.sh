@@ -502,6 +502,24 @@ for shape in mismatch missing multiple; do
 	preflight_refuses "selected $shape Output"
 done
 
+for form in spaces tab same-line split-line; do
+	new_case "hidden-output-$form"
+	case "$form" in
+	spaces) printf '  Output docs/demos/hero.gif\n' >>"$C/repo/docs/demos/tui.tape" ;;
+	tab) printf '\tOutput docs/demos/hero.gif\n' >>"$C/repo/docs/demos/tui.tape" ;;
+	same-line) printf 'Type "done" Output docs/demos/hero.gif\n' >>"$C/repo/docs/demos/tui.tape" ;;
+	split-line) printf 'Output\n"docs/demos/hero.gif"\n' >>"$C/repo/docs/demos/tui.tape" ;;
+	esac
+	preflight_refuses "executable $form second Output"
+done
+
+new_case output-in-text
+printf 'Type "Output docs/demos/hero.gif"\n# Output docs/demos/hero.gif\n' >>"$C/repo/docs/demos/tui.tape"
+commit "$C/repo" output-text >/dev/null
+run_body "$C" --recording tui --repin
+expect_rc "Output inside Type text and comments is inert" 0
+check "inert Output text leaves unselected hero bytes unchanged" grep -q '^historical hero gif$' "$C/repo/docs/demos/hero.gif"
+
 for key in tape artifact transcript; do
 	new_case "alias-$key"
 	python3 - "$C/repo/docs/demos/manifest.json" "$key" <<'EOF'
@@ -716,7 +734,7 @@ if ! cleaned; then ok "missing-cleanup mutant fails the cleanup check"; else bad
 
 # Bypassing the Output guard must demonstrably overwrite the unselected GIF
 # and return success while the stale selected GIF still passes verification.
-mutant output-route 's/if outputs != \[rec\["artifact"\]\]:/if False:/'
+mutant output-route 's/if output_count != 1 or outputs != \[rec\["artifact"\]\]:/if False:/'
 new_case mut-output-route "$WORK/output-route.sh"
 sed 's@Output docs/demos/tui.gif@Output docs/demos/hero.gif@' "$C/repo/docs/demos/tui.tape" >"$C/tape"
 cp "$C/tape" "$C/repo/docs/demos/tui.tape"

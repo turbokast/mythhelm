@@ -211,8 +211,15 @@ for rec in manifest["recordings"]:
     if name not in selected:
         continue
     tape=Path(rec["tape"]).read_text(encoding="utf-8")
+    # VHS skips whitespace between tokens, so a second Output can be
+    # indented, follow another command, or put its path on the next line.
+    # Ignore quoted Type text, comments and regex literals while counting
+    # exact Output keywords; require the sole output's canonical literal
+    # line too. This is a restricted tape contract, not a VHS parser.
+    tokens=re.finditer(r"\"[^\"\r\n]*\"|'[^'\r\n]*'|`[^`\r\n]*`|#[^\r\n]*|/(?:\\.|[^/\\\r\n])*/|[A-Za-z.][A-Za-z0-9._/%-]*",tape)
+    output_count=sum(token.group() == "Output" for token in tokens)
     outputs=re.findall(r"^Output[ \t]+(.*)$",tape,re.M)
-    if outputs != [rec["artifact"]]:
+    if output_count != 1 or outputs != [rec["artifact"]]:
         refuse("%s tape needs one literal Output matching its artifact" % name)
     for key,pattern in (("Binary-Commit",r"[0-9a-f]{40}"),("Binary-Version",r"\S+")):
         headers=re.findall(r"^# "+key+r":(.*)$",tape,re.M)

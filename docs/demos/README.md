@@ -27,7 +27,9 @@ A selected run builds one binary from the current checkout, regenerates the
 selected transcript (twice, for the determinism check), renders the selected
 tape with the pinned VHS, generates its poster and verifies the transcript
 labels, the GIF, the poster and the tape's single literal `Output`, which must
-match its own manifest artifact before any build or output write. The hero
+match its own manifest artifact before any build or output write. Additional
+executable `Output` tokens are rejected even when indented or split across
+lines; quoted text and comments are inert. The hero
 videos and chapters are rendered and checked only when `hero` is selected or no
 recording is named.
 
