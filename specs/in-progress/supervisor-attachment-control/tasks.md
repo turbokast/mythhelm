@@ -924,6 +924,8 @@
 - **Files modified**: `internal/supervisor/service_owner.go`, `internal/supervisor/service_owner_test.go`, `internal/service/attachment_scope.go`, `internal/service/attachment_scope_test.go`, `internal/service/runtime.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
 
+- **Coordinator integration**: Actual merged assignment/retention/parallel-runner prerequisites were normally integrated with all five reviewed Task34 source blobs unchanged. Fresh complete repository race passes in 762.4s; earlier 857.6s remains evidence for its earlier base. Own Task24/33/34 records are all retained; current-head CI and merge remain required.
+
 ### Task 35 — Produce the attachment response queue handoff ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
