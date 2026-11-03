@@ -1,6 +1,6 @@
 ## Protected portfolio experiments — Requirements
 
-> Unrefined. Run /refine-spec protected-portfolio-experiments before /spec.
+> Refined. Independent assessment: Ready. Next: /spec protected-portfolio-experiments.
 
 > Register and evaluate one bounded route, context or prompt hypothesis through canonical runs, with protected acceptance, foreground reserves and an honest recommendation or inconclusive/rejected result. Normative source: `mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md`, version 2.0, §§4–5, 7–8, 10–13, 17–19; implementation slice W11 in `mythhelm-synthesis/MYTHHELM_Implementation_Plan.md`. Every I-ID below is qualified by v2 §2, every AT-ID by v2 §18.2 and every G-ID by v2 §18.3. Planned checks and gates are requirements, not passing results. Capture authorizes no experiment, installation, native call, collection or publication.
 
