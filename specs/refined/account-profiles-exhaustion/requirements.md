@@ -1,6 +1,6 @@
 # Account profiles and exhaustion handoff — Requirements
 
-> Unrefined. Run /refine-spec account-profiles-exhaustion before /spec.
+> Refined after independent assessment; see [refinement-log.md](refinement-log.md). Proceed to /spec account-profiles-exhaustion.
 >
 > Capture named, explicitly authorised native account profiles and safe continuation after allowance exhaustion. Normative source: `mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md`, version 2.0, especially §§4, 6–10 and §18; all I/AT/G identifiers below refer to v2. This document grants no account operation, native trial, implementation or qualification.
 
