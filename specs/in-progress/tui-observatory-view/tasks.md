@@ -604,7 +604,7 @@
 - **Test plan**: Follow `specs/*/tui-tape-recording/` and docs/demos/README.md; hygiene plus artifact inspection.
 - **Invariants touched**: I09/I13/I14 (v2 §§15.1,19: demonstration provenance and no expanded qualification claim).
 
-### Task 21 — Produce scoped recording selection
+### Task 21 — Produce scoped recording selection ✅ COMPLETED
 
 - **Domain/agent**: go-implementer (docs)
 - **Budget**: complex (three coupled mechanism/docs/test files; process and failure-cleanup boundaries)
@@ -621,6 +621,15 @@
   - README states the exact new selector/default commands and per-record historical/current provenance; no real rendered/native/human evidence is claimed from fake tools. Task20 owner, dependency, six artifact paths and human/tooling gates remain unchanged.
 - **Test plan**: Bash/Git/Python fixtures only; fake credential-free external tools, exact before/after bytes and negative process statuses. Keep literal-entry bad-argument/pre-build failure controls separate from shared-body success coverage. Public fixed paths and literal tapes stay unchanged; no successful public recording or real rendering/maintainer action occurs in this producer.
 - **Invariants touched**: I07/I09/I13/I14 (v2 §§15/19: exact recording provenance, isolated tooling, no false qualification).
+- **Status**: ✅ Completed — produced selected/default-all recording generation with exact per-record provenance and fake-tool regression coverage; PR #576.
+- **Implementation**: Initial source `b26a2654e20d7599c8e028fc5a710b645b57573c` and callback annotation `2d580d669eb4c06dd01f18e583a00a5a3b357931` remain historical. Review repairs `0751cea4410a308cd73253a76cd370757442c308` and `1125e62c4981c4f4161749638559b63458075fb2` validate fixed recording paths, sole executable literal Output and pin headers before build/write; cover every current embedded input; reject dirty non-pin manifest configuration; replace the manifest atomically and verify rewritten tape pins. Portable byte-snapshot tests include additions, modifications and deletions. The final fake-tool suite passes193 assertions, including eight effect mutants; independent final review and exact-head CI/merge remain required. No real recording is generated.
+- **Spec deviations**:
+  - Own `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md` and `specs/in-progress/tui-observatory-view/scratchpad.md` records accompany the three listed paths under WORKFLOW/task-completion.
+  - Added the historical non-commit pin regression after independent review exposed existence-only Git object validation (consistent with the adopted commit-resolution contract). The original rejected candidate and subsequent repair remain distinct evidence; no real recording or Task20 qualification follows.
+  - Added SC2317 beside the existing SC2329 annotation for the EXIT cleanup callback after the initial Harness job reported it unreachable under ShellCheck0.9, while local0.11 passed (consistent with the actual indirect invocation). This is a direct publication compatibility comment, not native-authored behavior or a broad lint exception.
+  - Added source-grounded review regressions for output aliases/noncanonical executable Output, dirty embedded assets/configuration, malformed headers, deleted paths and interrupted manifest replacement (consistent with the fixed literal paths, exact provenance and failure contract). Committed configuration comparison excludes only output pin fields to avoid requiring a commit to contain its own hash. Atomic replacement protects one manifest; multi-file rollback and concurrent recording remain outside the adopted scope. The separate release-domain mixed-pin workflow consumer remains necessary before Task20 publication; this producer does not change `.github/workflows/docs.yml`.
+- **Files modified**: `docs/demos/record.sh`, `docs/demos/record_test.sh`, `docs/demos/README.md`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
+
 
 
 ### Task 22 — Verify recording consumers at each immutable pin ✅ COMPLETED
