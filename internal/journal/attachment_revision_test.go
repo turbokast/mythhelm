@@ -77,8 +77,8 @@ func TestAttachmentMigration(t *testing.T) { // I09/I23 (v2 sections 5/6): prese
 			t.Fatal(err)
 		}
 		defer func() { _ = j.Close() }()
-		if SchemaVersion != 9 {
-			t.Fatalf("schema=%d, want9", SchemaVersion)
+		if SchemaVersion != 10 {
+			t.Fatalf("schema=%d, want10", SchemaVersion)
 		}
 		after := schemaObjects(t, j.db)
 		for name, ddl := range before {
@@ -115,8 +115,8 @@ func TestAttachmentMigration(t *testing.T) { // I09/I23 (v2 sections 5/6): prese
 		if err := j.db.QueryRowContext(t.Context(), `SELECT schema_version FROM migration_state`).Scan(&stateSchema); err != nil {
 			t.Fatal(err)
 		}
-		if stateSchema != 9 {
-			t.Fatalf("migration schema=%d, want9", stateSchema)
+		if stateSchema != SchemaVersion {
+			t.Fatalf("migration schema=%d, want%d", stateSchema, SchemaVersion)
 		}
 		for _, table := range []string{"attachment_grants", "stop_outbox", "dispatch_outbox", "prepared_runs"} {
 			var ddl string
@@ -168,7 +168,7 @@ func TestAttachmentMigration(t *testing.T) { // I09/I23 (v2 sections 5/6): prese
 		t.Parallel()
 		j, dir := openTemp(t)
 		seedRun(t, j, "future")
-		if _, err := j.db.ExecContext(t.Context(), `PRAGMA user_version=10`); err != nil {
+		if _, err := j.db.ExecContext(t.Context(), `PRAGMA user_version=11`); err != nil {
 			t.Fatal(err)
 		}
 		if err := j.Close(); err != nil {
@@ -185,7 +185,7 @@ func TestAttachmentMigration(t *testing.T) { // I09/I23 (v2 sections 5/6): prese
 		if got := fileSHA256(t, path); got != before {
 			t.Fatal("newer database bytes changed")
 		}
-		if _, err := os.Stat(path + ".bak-v10"); !errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Stat(path + ".bak-v11"); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("newer refusal created backup: %v", err)
 		}
 	})
