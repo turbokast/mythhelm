@@ -296,6 +296,9 @@ func PrepareService(ctx context.Context, in ServiceInputs) (*ServicePlan, error)
 	if err != nil {
 		return nil, err
 	}
+	if err := validateServiceRetentionPlan(b.Challenges); err != nil {
+		return nil, err
+	}
 	canonical, err := ab.EncodeV1(b)
 	if err != nil {
 		return nil, serviceAdmissionError(v2contract.CodeInvalidContract)
@@ -523,6 +526,9 @@ func (s *servicePlanState) fresh(ctx context.Context) (admission.Decision, error
 	if d.Adapter.ID != "builtin/fake" {
 		return admission.Decision{}, serviceAdmissionError(v2contract.CodeCapabilityUnsupported)
 	}
+	if err := validateServiceRetentionPlan(b.Challenges); err != nil {
+		return admission.Decision{}, err
+	}
 	if len(challenges)+1 != len(b.Challenges) {
 		return admission.Decision{}, serviceAdmissionError(v2contract.CodeDependencyStale)
 	}
@@ -563,6 +569,15 @@ func (s *servicePlanState) fresh(ctx context.Context) (admission.Decision, error
 	if !reflect.DeepEqual(decision, b.Decision) {
 		return admission.Decision{}, serviceAdmissionError(v2contract.CodeDependencyStale)
 	}
+	// The original file is only a drift observer. The frozen, service-owned
+	// RAM artefact remains the sole task-content input to a fresh permit.
+	artefact := s.decision.Task
+	taskSum := sha256.Sum256(artefact.Content)
+	if len(artefact.Content) > admission.MaxTaskBytes || int64(len(artefact.Content)) != b.Decision.Task.Bytes || hex.EncodeToString(taskSum[:]) != b.Decision.Task.SHA256 || artefact.SHA256 != b.Decision.Task.SHA256 || artefact.Title != b.Decision.Task.Title || !bytes.Equal(d.Task.Content, artefact.Content) {
+		return admission.Decision{}, serviceAdmissionError(v2contract.CodeDependencyStale)
+	}
+	d.Task = admission.Task{Content: bytes.Clone(artefact.Content), SHA256: artefact.SHA256, Title: artefact.Title}
+
 	canonical, err := ab.EncodeV1(b)
 	if err != nil || !bytes.Equal(canonical, s.canonical) || !reflect.DeepEqual(b.Challenges, s.metadata.Challenges) {
 		return admission.Decision{}, serviceAdmissionError(v2contract.CodeDependencyStale)
@@ -668,4 +683,32 @@ func ValidateServicePlan(ctx context.Context, plan *ServicePlan) error {
 		return err
 	}
 	return ctx.Err()
+}
+
+func validateServiceRetentionPlan(challenges []ab.ChallengeV1) error {
+	count := 0
+	for _, challenge := range challenges {
+		if challenge.Kind == ab.RetentionChallengeKind {
+			count++
+		}
+	}
+	if len(challenges) == 0 || count != 1 {
+		return &v2contract.ControlError{Code: v2contract.CodePolicyIneligible, Owner: "supervisor", OperationID: "service.admission", Disposition: v2contract.CodePolicyIneligible.DefaultDisposition(), NextAction: "prepare again with exact local retention authority", Detail: map[string]string{"mythhelm.retention/reason": "missing_retention_authority"}}
+	}
+	return nil
+}
+
+// InvalidateServicePlan revokes one shared private plan and its outstanding
+// permits without changing another context, durable evidence or an owner.
+func InvalidateServicePlan(ctx context.Context, plan *ServicePlan) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if plan == nil || plan.state == nil {
+		return serviceAdmissionError(v2contract.CodeInvalidContract)
+	}
+	plan.state.mu.Lock()
+	defer plan.state.mu.Unlock()
+	plan.state.invalid = true
+	return nil
 }

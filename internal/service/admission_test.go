@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -15,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/turbokast/mythhelm/internal/admission"
 	ab "github.com/turbokast/mythhelm/internal/admissionbinding"
 	"github.com/turbokast/mythhelm/internal/control"
 	"github.com/turbokast/mythhelm/internal/journal"
@@ -206,7 +208,7 @@ func (c *admissionFramedConn) Close() error         { return nil }
 
 func TestServicePreparedOuterRevisions(t *testing.T) {
 	r := testRuntime(t)
-	spec := requestFixture(t)
+	spec := retentionOnlyRequestFixture(t)
 	configureSyntheticAdmission(t, r, spec)
 	client := control.NewPreparedRunClient(&admissionFramedConn{runtime: r, peer: control.Peer{SameUser: true, PID: 77}})
 	before := admissionRowCounts(t, r)
@@ -317,19 +319,7 @@ func TestServiceAdmissionBinding(t *testing.T) {
 
 func TestServiceRetentionConfirmationOrder(t *testing.T) {
 	r := testRuntime(t)
-	spec := requestFixture(t)
-	config := []byte("schema_version = 1\n[[checks]]\nname = \"synthetic\"\nargv = [\"git\", \"status\", \"--porcelain\"]\ntimeout = \"5s\"\n")
-	if err := os.WriteFile(filepath.Join(spec.Repository, "mythhelm.toml"), config, 0600); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"add", "mythhelm.toml"}, {"commit", "--quiet", "-m", "synthetic checks"}} {
-		cmd := exec.CommandContext(t.Context(), "git", args...)
-		cmd.Dir = spec.Repository
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("fixture config commit: %v %s", err, out)
-		}
-	}
-	spec.NoChecks = false
+	spec := projectRequestFixture(t)
 	configureSyntheticAdmission(t, r, spec)
 	client := control.NewPreparedRunClient(&admissionFramedConn{runtime: r, peer: control.Peer{SameUser: true, PID: 77}})
 	prepared, err := client.PrepareRevisioned(t.Context(), "op_order_prepare", spec)
@@ -400,7 +390,7 @@ func TestServiceRetentionConfirmationOrder(t *testing.T) {
 
 func TestServiceAdmissionChallengePlanExact(t *testing.T) {
 	r := testRuntime(t)
-	spec := requestFixture(t)
+	spec := retentionOnlyRequestFixture(t)
 	configureSyntheticAdmission(t, r, spec)
 	peer := control.Peer{SameUser: true, PID: 77}
 	result, err := r.server.Dispatch(t.Context(), peer, admissionIntent(t, r, "run.prepare", "op_exact_prepare", "", 0, spec))
@@ -452,9 +442,9 @@ func TestServicePreparationCapacity(t *testing.T) {
 	spec := requestFixture(t)
 	configureSyntheticAdmission(t, r, spec)
 	before := admissionRowCounts(t, r)
-	for peerIndex := 0; peerIndex < 4; peerIndex++ {
+	for peerIndex := range 4 {
 		peer := control.Peer{SameUser: true, PID: int32(100 + peerIndex)}
-		for i := 0; i < 8; i++ {
+		for i := range 8 {
 			_, err := r.server.Dispatch(t.Context(), peer, admissionIntent(t, r, "run.prepare", fmt.Sprintf("op_capacity_%d_%d", peerIndex, i), "", 0, spec))
 			if err != nil {
 				t.Fatalf("bounded preparation %d/%d: %v", peerIndex, i, err)
@@ -488,5 +478,558 @@ func TestPreparedAdmissionVolatileDispatch(t *testing.T) {
 	requireAdmissionCode(t, err, control.CodeCapabilityUnsupported)
 	if len(r.preparations.plans) != 0 || len(r.preparations.operations) != 0 {
 		t.Fatal("unconfigured policy retained volatile preparation bytes")
+	}
+}
+
+func TestPreparedClientActualMigrationRefusal(t *testing.T) {
+	root := isolatedRoot(t)
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	j, err := journal.Open(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(root, journal.DBName)
+	before, err := os.ReadFile(dbPath) // #nosec G304 -- Fixed database name within this isolated fixture root.
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := openRuntime(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := r.shutdown(context.Background()); err != nil {
+			t.Error(err)
+		}
+	})
+	if !r.migrationRequired || r.journal != nil {
+		t.Fatal("actual status fixture unexpectedly acquired a writer")
+	}
+	spec := requestFixture(t)
+	client := control.NewPreparedRunClient(&admissionFramedConn{runtime: r, peer: control.Peer{SameUser: true, PID: 77}})
+	result, err := client.PrepareRevisioned(t.Context(), "op_migration_blocked", spec)
+	var ce *control.Error
+	if !errors.As(err, &ce) || ce.Code != control.CodeCapabilityUnsupported || ce.Message != "migration_required" {
+		t.Fatalf("actual migration status refusal=%v", err)
+	}
+	after, err := os.ReadFile(dbPath) // #nosec G304 -- Same isolated fixture database, checked for refusal effects.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Run.PreparationID != "" || !bytes.Equal(before, after) || len(r.preparations.plans) != 0 {
+		t.Fatal("migration refusal retained or changed preparation state")
+	}
+}
+
+func prepareFixtureRun(t *testing.T, r *runtime, spec control.RunSpec, operation string) (control.PreparedRun, control.Peer) {
+	t.Helper()
+	peer := control.Peer{SameUser: true, PID: 77}
+	result, err := r.server.Dispatch(t.Context(), peer, admissionIntent(t, r, "run.prepare", operation, "", 0, spec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var prepared control.PreparedRun
+	if err := json.Unmarshal(result.Body, &prepared); err != nil {
+		t.Fatal(err)
+	}
+	return prepared, peer
+}
+func retentionAnswer(p control.PreparedRun) control.RunConfirmation {
+	for _, ch := range p.Challenges {
+		if ch.Kind == ab.RetentionChallengeKind {
+			return control.RunConfirmation{SchemaVersion: 2, PreparationID: p.PreparationID, ChallengeID: ch.ID, BindingSHA256: p.BindingSHA256, Approved: true}
+		}
+	}
+	return control.RunConfirmation{}
+}
+
+func TestServiceAdmissionBindingAllInputs(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*testing.T, *preparationEntry, control.RunSpec)
+	}{
+		{"repository", func(t *testing.T, e *preparationEntry, _ control.RunSpec) { e.inputs.Request.Repository = t.TempDir() }},
+		{"revision", func(_ *testing.T, e *preparationEntry, _ control.RunSpec) { e.inputs.Request.Revision = "HEAD~1" }},
+		{"task digest", func(_ *testing.T, e *preparationEntry, _ control.RunSpec) {
+			e.inputs.Request.TaskSHA256 = strings.Repeat("b", 64)
+		}},
+		{"task bytes", func(t *testing.T, _ *preparationEntry, s control.RunSpec) {
+			if err := os.WriteFile(s.TaskFile, []byte("# Changed task\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"no checks", func(_ *testing.T, e *preparationEntry, _ control.RunSpec) { e.inputs.Request.NoChecks = false }},
+		{"project trust", func(_ *testing.T, e *preparationEntry, _ control.RunSpec) {
+			e.inputs.Request.TrustProjectConfig = "sha256:" + strings.Repeat("c", 64)
+		}},
+		{"native trust", func(_ *testing.T, e *preparationEntry, _ control.RunSpec) {
+			e.inputs.Request.TrustNativeConfig = "sha256:" + strings.Repeat("c", 64)
+		}},
+		{"route", func(_ *testing.T, e *preparationEntry, _ control.RunSpec) { e.inputs.Request.Adapter = "claudecode" }},
+		{"profile", func(_ *testing.T, e *preparationEntry, _ control.RunSpec) {
+			e.inputs.Request.ExecutionProfile = "restricted"
+		}},
+		{"billing", func(_ *testing.T, e *preparationEntry, _ control.RunSpec) {
+			e.inputs.Request.Billing = "subscription-only"
+		}},
+		{"envelope", func(_ *testing.T, e *preparationEntry, _ control.RunSpec) {
+			v := int64(0)
+			e.inputs.Request.Ceilings.Repairs = &v
+		}},
+		{"task artefact", func(_ *testing.T, e *preparationEntry, _ control.RunSpec) {
+			e.inputs.TaskArtifactRef = "pending/changed"
+		}},
+		{"repository evidence", func(t *testing.T, _ *preparationEntry, s control.RunSpec) {
+			cmd := exec.CommandContext(t.Context(), "git", "commit", "--allow-empty", "--quiet", "-m", "changed source")
+			cmd.Dir = s.Repository
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("source change: %v %s", err, out)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := testRuntime(t)
+			spec := requestFixture(t)
+			configureSyntheticAdmission(t, r, spec)
+			prepared, peer := prepareFixtureRun(t, r, spec, "op_all_inputs")
+			before := admissionRowCounts(t, r)
+			tc.change(t, r.preparations.plans[prepared.PreparationID], spec)
+			result, err := r.server.Dispatch(t.Context(), peer, admissionIntent(t, r, "run.confirm", "op_changed_inputs", prepared.PreparationID, 0, retentionAnswer(prepared)))
+			requireAdmissionCode(t, err, control.Code("dependency_stale"))
+			if len(result.Body) != 0 || admissionRowCounts(t, r) != before {
+				t.Fatal("changed preparation input produced effects")
+			}
+		})
+	}
+}
+
+func TestServiceAdmissionEarliestEffectBarriers(t *testing.T) {
+	for _, stage := range []string{"prepare acknowledgement", "retention persistence"} {
+		t.Run(stage, func(t *testing.T) {
+			r := testRuntime(t)
+			spec := requestFixture(t)
+			configureSyntheticAdmission(t, r, spec)
+			var prepared control.PreparedRun
+			peer := control.Peer{SameUser: true, PID: 77}
+			if stage == "retention persistence" {
+				prepared, peer = prepareFixtureRun(t, r, spec, "op_barrier_prepare")
+			}
+			before := admissionRowCounts(t, r)
+			barriers := 0
+			r.preparations.beforeEffect = func() {
+				barriers++
+				if err := os.WriteFile(spec.TaskFile, []byte("# Changed at the earliest effect\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			intent := admissionIntent(t, r, "run.prepare", "op_barrier_prepare", "", 0, spec)
+			if stage == "retention persistence" {
+				intent = admissionIntent(t, r, "run.confirm", "op_barrier_confirm", prepared.PreparationID, 0, retentionAnswer(prepared))
+			}
+			result, err := r.server.Dispatch(t.Context(), peer, intent)
+			requireAdmissionCode(t, err, control.Code("dependency_stale"))
+			if barriers != 1 || len(result.Body) != 0 || admissionRowCounts(t, r) != before {
+				t.Fatalf("earliest effect was not fenced: barriers=%d body=%s", barriers, result.Body)
+			}
+		})
+	}
+}
+
+func TestServiceRetentionOnlyReadiness(t *testing.T) {
+	r := testRuntime(t)
+	spec := retentionOnlyRequestFixture(t)
+	configureSyntheticAdmission(t, r, spec)
+	prepared, peer := prepareFixtureRun(t, r, spec, "op_ready_prepare")
+	answer := retentionAnswer(prepared)
+	firstIntent := admissionIntent(t, r, "run.confirm", "op_ready_retention", prepared.PreparationID, 0, answer)
+	first, err := r.server.Dispatch(t.Context(), peer, firstIntent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body control.PreparedRun
+	if err := json.Unmarshal(first.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if first.Revision != 1 || !body.Ready {
+		t.Fatalf("retention-only readiness=%s revision=%d", first.Body, first.Revision)
+	}
+	before := admissionRowCounts(t, r)
+	// A completed operation remains an immutable historical acknowledgement
+	// after source drift; a new operation cannot reuse it as fresh authority.
+	if err := os.WriteFile(spec.TaskFile, []byte("# Changed after committed confirmation\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	replay, err := r.server.Dispatch(t.Context(), peer, firstIntent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replay.Revision != first.Revision || !bytes.Equal(replay.Body, first.Body) {
+		t.Fatal("historical readiness acknowledgement changed")
+	}
+	_, err = r.server.Dispatch(t.Context(), peer, admissionIntent(t, r, "run.confirm", "op_ready_new", prepared.PreparationID, 1, answer))
+	requireAdmissionCode(t, err, control.Code("dependency_stale"))
+	if admissionRowCounts(t, r) != before {
+		t.Fatal("source drift produced fresh confirmation effects")
+	}
+}
+
+func TestRetentionBeforePersistence(t *testing.T) {
+	for _, stage := range []string{"preparation row", "binding row", "operation acknowledgement"} {
+		t.Run(stage, func(t *testing.T) {
+			r := testRuntime(t)
+			spec := retentionOnlyRequestFixture(t)
+			configureSyntheticAdmission(t, r, spec)
+			prepared, peer := prepareFixtureRun(t, r, spec, "op_retention_atomic_prepare")
+			before := admissionRowCounts(t, r)
+			statement := map[string]string{
+				"preparation row":           `CREATE TRIGGER deny_retention BEFORE INSERT ON prepared_runs BEGIN SELECT RAISE(ABORT,'synthetic preparation failure'); END`,
+				"binding row":               `CREATE TRIGGER deny_retention BEFORE INSERT ON service_admission_bindings BEGIN SELECT RAISE(ABORT,'synthetic binding failure'); END`,
+				"operation acknowledgement": `CREATE TRIGGER deny_retention BEFORE UPDATE ON operations WHEN NEW.state='done' BEGIN SELECT RAISE(ABORT,'synthetic acknowledgement failure'); END`,
+			}[stage]
+			if err := r.journal.Transact(t.Context(), func(tx *sql.Tx) error { _, err := tx.ExecContext(t.Context(), statement); return err }); err != nil {
+				t.Fatal(err)
+			}
+			in := admissionIntent(t, r, "run.confirm", "op_retention_atomic", prepared.PreparationID, 0, retentionAnswer(prepared))
+			result, err := r.server.Dispatch(t.Context(), peer, in)
+			if err == nil || len(result.Body) != 0 || admissionRowCounts(t, r) != before || len(r.preparations.confirmations) != 0 || r.preparations.plans[prepared.PreparationID].retained {
+				t.Fatalf("failed retention transaction leaked effects: %v", err)
+			}
+			if err := r.journal.Transact(t.Context(), func(tx *sql.Tx) error {
+				_, err := tx.ExecContext(t.Context(), `DROP TRIGGER deny_retention`)
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			result, err = r.server.Dispatch(t.Context(), peer, in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var ready control.PreparedRun
+			if err := json.Unmarshal(result.Body, &ready); err != nil {
+				t.Fatal(err)
+			}
+			if result.Revision != 1 || !ready.Ready {
+				t.Fatalf("restored retention producer not ready=%s", result.Body)
+			}
+		})
+	}
+}
+
+func projectRequestFixture(t *testing.T) control.RunSpec {
+	t.Helper()
+	spec := requestFixture(t)
+	config := []byte("schema_version = 1\n[[checks]]\nname = \"synthetic\"\nargv = [\"git\", \"status\", \"--porcelain\"]\ntimeout = \"5s\"\n")
+	if err := os.WriteFile(filepath.Join(spec.Repository, "mythhelm.toml"), config, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "mythhelm.toml"}, {"commit", "--quiet", "-m", "synthetic checks"}} {
+		cmd := exec.CommandContext(t.Context(), "git", args...)
+		cmd.Dir = spec.Repository
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("fixture config commit: %v %s", err, out)
+		}
+	}
+	spec.NoChecks = false
+	return spec
+}
+func preparationImage(t *testing.T, r *runtime, id string) string {
+	t.Helper()
+	var revision int64
+	var ready int
+	var answers string
+	if err := r.journal.Transact(t.Context(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(t.Context(), `SELECT revision,ready,confirmations FROM prepared_runs WHERE preparation_id=?`, id).Scan(&revision, &ready, &answers)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf("%d/%d/%s", revision, ready, answers)
+}
+
+func TestServiceRemainingConfirmationAtomic(t *testing.T) {
+	for _, stage := range []string{"answer row", "operation acknowledgement", "source barrier"} {
+		t.Run(stage, func(t *testing.T) {
+			r := testRuntime(t)
+			spec := projectRequestFixture(t)
+			configureSyntheticAdmission(t, r, spec)
+			prepared, peer := prepareFixtureRun(t, r, spec, "op_extra_atomic_prepare")
+			retained, err := r.server.Dispatch(t.Context(), peer, admissionIntent(t, r, "run.confirm", "op_extra_atomic_retain", prepared.PreparationID, 0, retentionAnswer(prepared)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if retained.Revision != 1 {
+				t.Fatal("retention did not establish revision one")
+			}
+			var project control.AdmissionChallenge
+			for _, ch := range prepared.Challenges {
+				if ch.Kind == "project-config" {
+					project = ch
+				}
+			}
+			answer := control.RunConfirmation{SchemaVersion: 2, PreparationID: prepared.PreparationID, ChallengeID: project.ID, BindingSHA256: prepared.BindingSHA256, Approved: true}
+			in := admissionIntent(t, r, "run.confirm", "op_extra_atomic_answer", prepared.PreparationID, 1, answer)
+			before, image := admissionRowCounts(t, r), preparationImage(t, r, prepared.PreparationID)
+			if stage == "source barrier" {
+				r.preparations.beforeEffect = func() {
+					if err := os.WriteFile(filepath.Join(spec.Repository, "mythhelm.toml"), []byte("# changed at final authority barrier\n"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			} else {
+				statement := map[string]string{"answer row": `CREATE TRIGGER deny_answer BEFORE UPDATE ON prepared_runs BEGIN SELECT RAISE(ABORT,'synthetic answer failure'); END`, "operation acknowledgement": `CREATE TRIGGER deny_answer BEFORE UPDATE ON operations WHEN NEW.state='done' BEGIN SELECT RAISE(ABORT,'synthetic answer acknowledgement failure'); END`}[stage]
+				if err := r.journal.Transact(t.Context(), func(tx *sql.Tx) error { _, err := tx.ExecContext(t.Context(), statement); return err }); err != nil {
+					t.Fatal(err)
+				}
+			}
+			result, err := r.server.Dispatch(t.Context(), peer, in)
+			if err == nil || len(result.Body) != 0 || admissionRowCounts(t, r) != before || preparationImage(t, r, prepared.PreparationID) != image || len(r.preparations.confirmations) != 1 {
+				t.Fatalf("failed answer leaked row/readiness/ack effects: %v", err)
+			}
+			if stage == "source barrier" {
+				requireAdmissionCode(t, err, control.Code("dependency_stale"))
+				return
+			}
+			if err := r.journal.Transact(t.Context(), func(tx *sql.Tx) error { _, err := tx.ExecContext(t.Context(), `DROP TRIGGER deny_answer`); return err }); err != nil {
+				t.Fatal(err)
+			}
+			result, err = r.server.Dispatch(t.Context(), peer, in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var final control.PreparedRun
+			if err := json.Unmarshal(result.Body, &final); err != nil {
+				t.Fatal(err)
+			}
+			if result.Revision != 2 || !final.Ready {
+				t.Fatalf("restored answer not ready=%s", result.Body)
+			}
+		})
+	}
+}
+
+func retentionOnlyRequestFixture(t *testing.T) control.RunSpec {
+	t.Helper()
+	spec := projectRequestFixture(t)
+	config, err := os.ReadFile(filepath.Join(spec.Repository, admission.ProjectConfigFile)) // #nosec G304 -- Fixed committed configuration within this fixture repository.
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, digest, err := admission.ParseProjectConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec.TrustProjectConfig = "sha256:" + digest
+	return spec
+}
+
+func TestServiceNoChecksRequiresExactAnswer(t *testing.T) {
+	r := testRuntime(t)
+	spec := requestFixture(t)
+	configureSyntheticAdmission(t, r, spec)
+	prepared, peer := prepareFixtureRun(t, r, spec, "op_no_checks_prepare")
+	var noChecks control.AdmissionChallenge
+	for _, ch := range prepared.Challenges {
+		if ch.Kind == "no-checks" {
+			noChecks = ch
+		}
+	}
+	if noChecks.ID == "" || len(prepared.Challenges) != 2 {
+		t.Fatalf("explicit no-checks challenge missing: %+v", prepared.Challenges)
+	}
+	retained, err := r.server.Dispatch(t.Context(), peer, admissionIntent(t, r, "run.confirm", "op_no_checks_retain", prepared.PreparationID, 0, retentionAnswer(prepared)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var intermediate control.PreparedRun
+	if err := json.Unmarshal(retained.Body, &intermediate); err != nil {
+		t.Fatal(err)
+	}
+	if intermediate.Ready || retained.Revision != 1 {
+		t.Fatal("retention alone approved no-checks authority")
+	}
+	answer := control.RunConfirmation{SchemaVersion: 2, PreparationID: prepared.PreparationID, ChallengeID: noChecks.ID, BindingSHA256: prepared.BindingSHA256, Approved: true}
+	final, err := r.server.Dispatch(t.Context(), peer, admissionIntent(t, r, "run.confirm", "op_no_checks_answer", prepared.PreparationID, 1, answer))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var complete control.PreparedRun
+	if err := json.Unmarshal(final.Body, &complete); err != nil {
+		t.Fatal(err)
+	}
+	if !complete.Ready || final.Revision != 2 {
+		t.Fatal("exact no-checks answer did not finish readiness")
+	}
+}
+
+func TestServiceRetentionPolicyEligibility(t *testing.T) {
+	for _, tc := range []struct {
+		name, path string
+		provenance ab.RetentionProvenanceV1
+	}{
+		{"email classification", "Decision.GitEmail", ab.RetentionOperatorInput},
+		{"path classification", "Request.TaskFile", ab.RetentionOperatorInput},
+		{"argv classification", "Decision.Proposal.Args.0", ab.RetentionOperatorInput},
+		{"challenge classification", "Challenges.0.Text", ab.RetentionOperatorInput},
+		{"native authentication provenance", "Request.TaskFile", ab.RetentionNativeAuth},
+		{"full environment provenance", "Request.TaskFile", ab.RetentionCredentialEnv},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := testRuntime(t)
+			spec := retentionOnlyRequestFixture(t)
+			configureSyntheticAdmission(t, r, spec)
+			old := r.preparations.context
+			content := r.preparations.policy.Content
+			content.Rules = append([]ab.RetentionRuleV1{}, content.Rules...)
+			found := false
+			for i := range content.Rules {
+				if content.Rules[i].FieldPath == tc.path {
+					found = true
+					content.Rules[i].Provenance = tc.provenance
+					if tc.provenance == ab.RetentionOperatorInput {
+						content.Rules[i].Classification = ab.RetentionForbidden
+					}
+				}
+			}
+			if !found {
+				t.Fatalf("missing classification fixture %s", tc.path)
+			}
+			sum, err := ab.RetentionPolicyDigestV1(content)
+			if err != nil {
+				t.Fatal(err)
+			}
+			policy := ab.RetentionPolicyV1{Revision: "sha256:" + hex.EncodeToString(sum[:]), Content: content}
+			fresh, err := supervisor.NewExecutionContext(t.Context(), r.journal, r.lease, supervisor.ExecutionContextOptions{PolicyRevision: policy.Revision, RetentionPolicy: policy})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := old.Close(); err != nil {
+				t.Fatal(err)
+			}
+			r.preparations.context = fresh
+			r.preparations.policy = policy
+			prepared, peer := prepareFixtureRun(t, r, spec, "op_policy_prepare")
+			before := admissionRowCounts(t, r)
+			result, err := r.server.Dispatch(t.Context(), peer, admissionIntent(t, r, "run.confirm", "op_policy_refusal", prepared.PreparationID, 0, retentionAnswer(prepared)))
+			requireAdmissionCode(t, err, control.Code("policy_ineligible"))
+			if len(result.Body) != 0 || admissionRowCounts(t, r) != before || len(r.preparations.confirmations) != 0 {
+				t.Fatal("forbidden retained value or provenance produced authority")
+			}
+		})
+	}
+}
+
+func TestServicePreparedConcurrentRevisions(t *testing.T) {
+	r := testRuntime(t)
+	spec := projectRequestFixture(t)
+	configureSyntheticAdmission(t, r, spec)
+	prepared, peer := prepareFixtureRun(t, r, spec, "op_concurrent_prepare")
+	if _, err := r.server.Dispatch(t.Context(), peer, admissionIntent(t, r, "run.confirm", "op_concurrent_retention", prepared.PreparationID, 0, retentionAnswer(prepared))); err != nil {
+		t.Fatal(err)
+	}
+	var project control.AdmissionChallenge
+	for _, challenge := range prepared.Challenges {
+		if challenge.Kind == "project-config" {
+			project = challenge
+		}
+	}
+	answer := control.RunConfirmation{SchemaVersion: 2, PreparationID: prepared.PreparationID, ChallengeID: project.ID, BindingSHA256: prepared.BindingSHA256, Approved: true}
+	type reply struct {
+		prepared control.PreparedReply
+		err      error
+	}
+	results := make(chan reply, 2)
+	start := make(chan struct{})
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	for i := range 2 {
+		go func() {
+			<-start
+			client := control.NewPreparedRunClient(&admissionFramedConn{runtime: r, peer: peer})
+			result, err := client.ConfirmRevisioned(ctx, fmt.Sprintf("op_concurrent_answer_%d", i), 1, answer)
+			results <- reply{result, err}
+		}()
+	}
+	close(start)
+	accepted, refused := 0, 0
+	for range 2 {
+		select {
+		case result := <-results:
+			if result.err == nil {
+				accepted++
+				if result.prepared.Revision != 2 || !result.prepared.Run.Ready {
+					t.Fatalf("winning revision=%+v", result.prepared)
+				}
+			} else {
+				refused++
+				requireAdmissionCode(t, result.err, control.CodeRevisionConflict)
+			}
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+	}
+	if accepted != 1 || refused != 1 || len(r.preparations.confirmations) != 2 {
+		t.Fatalf("concurrent stale effects: accepted=%d refused=%d hints=%d", accepted, refused, len(r.preparations.confirmations))
+	}
+	image := preparationImage(t, r, prepared.PreparationID)
+	if !strings.HasPrefix(image, "2/1/") {
+		t.Fatalf("row/outer revision mismatch=%s", image)
+	}
+}
+
+func TestServiceRejectionRevokesPlanAndPermit(t *testing.T) {
+	r := testRuntime(t)
+	spec := retentionOnlyRequestFixture(t)
+	configureSyntheticAdmission(t, r, spec)
+	prepared, peer := prepareFixtureRun(t, r, spec, "op_revoke_prepare")
+	answer := retentionAnswer(prepared)
+	retainedIntent := admissionIntent(t, r, "run.confirm", "op_revoke_retention", prepared.PreparationID, 0, answer)
+	first, err := r.server.Dispatch(t.Context(), peer, retainedIntent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := r.preparations.plans[prepared.PreparationID]
+	metadata, err := entry.plan.Metadata()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lookup := journal.PreparationLookup{PreparationID: metadata.PreparationID, PeerID: metadata.PeerID, RootID: metadata.RootID, BindingSHA256: metadata.BindingSHA256, ContextEpoch: metadata.ContextEpoch, Generation: metadata.Generation, ExpectedRevision: 1, ObservedAt: time.Now().UTC()}
+	confirmed, err := r.journal.ReadConfirmedPreparation(t.Context(), lookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	permit, err := supervisor.RevalidateService(t.Context(), confirmed, entry.inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := admissionRowCounts(t, r)
+	answer.Approved = false
+	attackPeer := peer
+	attackPeer.PID++
+	_, err = r.server.Dispatch(t.Context(), attackPeer, admissionIntent(t, r, "run.confirm", "op_foreign_rejection", prepared.PreparationID, 1, answer))
+	requireAdmissionCode(t, err, control.CodePermissionDenied)
+	if _, err := permit.Metadata(); err != nil {
+		t.Fatalf("wrong peer revoked a legitimate permit: %v", err)
+	}
+	_, err = r.server.Dispatch(t.Context(), peer, admissionIntent(t, r, "run.confirm", "op_exact_rejection", prepared.PreparationID, 1, answer))
+	requireAdmissionCode(t, err, control.Code("policy_ineligible"))
+	if _, err := permit.Metadata(); err == nil {
+		t.Fatal("outstanding permit survived an exact authenticated rejection")
+	}
+	if _, err := supervisor.RevalidateService(t.Context(), confirmed, entry.inputs); err == nil {
+		t.Fatal("rejected plan minted another permit")
+	}
+	historical, err := r.server.Dispatch(t.Context(), peer, retainedIntent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if historical.Revision != first.Revision || !bytes.Equal(historical.Body, first.Body) {
+		t.Fatal("rejection rewrote the immutable historical acknowledgement")
+	}
+	if admissionRowCounts(t, r) != before {
+		t.Fatal("plan-specific revocation changed durable rows or granted effects")
 	}
 }

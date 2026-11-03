@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"reflect"
 	"strconv"
 	"sync"
 	"time"
@@ -23,6 +24,9 @@ import (
 // preparationStore is owned by one runtime. mu serialises its bounded RAM
 // plans/replay cache and their approved durable confirmation transitions.
 type preparationStore struct {
+	// beforeEffect observes a fresh boundary in tests; it returns no authority.
+	// Production composition leaves it nil; callbacks perform no lifecycle work.
+	beforeEffect  func()
 	mu            sync.Mutex
 	context       *supervisor.ExecutionContext
 	policy        ab.RetentionPolicyV1
@@ -215,6 +219,9 @@ func (r *runtime) prepareAdmission(ctx context.Context, peer control.Peer, in co
 	if err != nil {
 		return control.Result{}, admissionWireError(err)
 	}
+	if s.beforeEffect != nil {
+		s.beforeEffect()
+	}
 	if err := supervisor.ValidateServicePlan(ctx, plan); err != nil {
 		return control.Result{}, admissionWireError(err)
 	}
@@ -318,6 +325,10 @@ func (r *runtime) confirmAdmission(ctx context.Context, peer control.Peer, in co
 	if err != nil {
 		return control.Result{}, admissionWireError(err)
 	}
+	if !reflect.DeepEqual(binding.Request, entry.inputs.Request) || binding.Decision.Task.ArtifactRef != entry.inputs.TaskArtifactRef {
+		return control.Result{}, admissionFailure(control.Code("dependency_stale"), "preparation inputs changed")
+	}
+
 	var challenge *ab.ChallengeV1
 	for i := range binding.Challenges {
 		if binding.Challenges[i].ID == answer.ChallengeID {
@@ -329,7 +340,9 @@ func (r *runtime) confirmAdmission(ctx context.Context, peer control.Peer, in co
 		return control.Result{}, admissionFailure(control.CodeInvalidContract, "confirmation challenge is foreign")
 	}
 	if !answer.Approved {
-		delete(s.plans, answer.PreparationID)
+		if err := supervisor.InvalidateServicePlan(ctx, entry.plan); err != nil {
+			return control.Result{}, admissionWireError(err)
+		}
 		return control.Result{}, admissionFailure(control.Code("policy_ineligible"), "confirmation rejected; prepare again")
 	}
 	if in.ExpectedRevision < 0 {
@@ -343,17 +356,20 @@ func (r *runtime) confirmAdmission(ctx context.Context, peer control.Peer, in co
 		if in.ExpectedRevision != 0 {
 			return control.Result{}, admissionFailure(control.CodeRevisionConflict, "retention requires preparation revision zero")
 		}
-		fields, err := ab.DeriveRetentionFieldsV1(binding, s.policy)
-		if err != nil {
-			return control.Result{}, admissionWireError(err)
+		fields, fieldErr := ab.DeriveRetentionFieldsV1(binding, s.policy)
+		if fieldErr != nil {
+			return control.Result{}, admissionWireError(fieldErr)
 		}
-		fieldSum, err := ab.RetentionFieldSetSHA256(fields)
-		if err != nil {
-			return control.Result{}, admissionWireError(err)
+		fieldSum, digestErr := ab.RetentionFieldSetSHA256(fields)
+		if digestErr != nil {
+			return control.Result{}, admissionWireError(digestErr)
 		}
 		approval := ab.RetentionApprovalV1{SchemaVersion: 1, PreparationID: metadata.PreparationID, ChallengeID: challenge.ID, BindingSHA256: metadata.BindingSHA256, FieldSetSHA256: hex.EncodeToString(fieldSum[:]), PolicyRevision: metadata.PolicyRevision, PeerID: peerID, RootID: metadata.RootID, ContextEpoch: metadata.ContextEpoch, Generation: metadata.Generation, ExpiresAt: binding.ExpiresAt, ObservedAt: observed.Format(time.RFC3339Nano), Decision: ab.RetentionApprove}
 		if err := admission.CheckRetentionV1(binding, s.policy, &approval, observed); err != nil {
 			return control.Result{}, admissionWireError(err)
+		}
+		if s.beforeEffect != nil {
+			s.beforeEffect()
 		}
 		if err := supervisor.ValidateServicePlan(ctx, entry.plan); err != nil {
 			return control.Result{}, admissionWireError(err)
@@ -365,6 +381,9 @@ func (r *runtime) confirmAdmission(ctx context.Context, peer control.Peer, in co
 	} else {
 		if !entry.retained {
 			return control.Result{}, admissionFailure(control.Code("policy_ineligible"), "approve exact local binding retention first")
+		}
+		if s.beforeEffect != nil {
+			s.beforeEffect()
 		}
 		if err := supervisor.ValidateServicePlan(ctx, entry.plan); err != nil {
 			return control.Result{}, admissionWireError(err)

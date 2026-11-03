@@ -358,7 +358,14 @@ func ValidateV1(b BindingV1) error {
 		v.require(!r.StripCredentialEnv && !r.AllowUntestedNativeVersion && r.TrustNativeConfig == "" && r.DeclareEntitlement == "")
 	}
 	v.require(d.Adapter.ID == adapterID && d.Adapter.Harness == harnessID && c.AdapterID == adapterID && c.HarnessID == harnessID)
-	v.require(c.AdapterVersion == d.Adapter.Version && c.RuntimeVersion == d.Probe.Version && c.ExecutionSurface == d.Adapter.Surface && c.Platform.OS == d.Probe.OS && p.Path == d.Probe.Executable)
+	// Descriptor labels and capability execution keys are separate source domains.
+	// Preserve literal equality and the one exact existing fake producer pair;
+	// structural compatibility never supplies execution or qualification authority.
+	surfaceMatches := c.ExecutionSurface == d.Adapter.Surface ||
+		r.Adapter == "fake" && d.Adapter.ID == "builtin/fake" && c.AdapterID == "builtin/fake" &&
+			d.Adapter.Harness == "fake" && c.HarnessID == "fake" &&
+			d.Adapter.Surface == "scripted-child-process (ndjson)" && c.ExecutionSurface == "scripted-child-process"
+	v.require(c.AdapterVersion == d.Adapter.Version && c.RuntimeVersion == d.Probe.Version && surfaceMatches && c.Platform.OS == d.Probe.OS && p.Path == d.Probe.Executable)
 	v.require(oneOf(c.Mode, "headless", "interactive"))
 	v.require(oneOf(d.Probe.OS, "linux", "darwin", "windows"))
 	v.require(oneOf(d.Probe.Arch, "amd64", "arm64"))

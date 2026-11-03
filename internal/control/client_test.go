@@ -391,3 +391,55 @@ func TestPreparedClientLostAckAndConflictConcurrentCallers(t *testing.T) {
 		t.Fatalf("synthetic server writes=%d", writes.Load())
 	}
 }
+
+func TestPreparedClientActualStatusCompatibility(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, status string
+		code         control.Code
+		message      string
+		prepares     int
+	}{
+		{name: "legacy status", status: `{"pid":123,"generation":7,"root":"synthetic-root","endpoint":"synthetic-endpoint"}`, prepares: 1},
+		{name: "actual adopted status", status: `{"pid":123,"generation":7,"root":"synthetic-root","endpoint":"synthetic-endpoint","migration_required":false}`, prepares: 1},
+		{name: "actual migration refusal", status: `{"pid":123,"generation":7,"root":"synthetic-root","endpoint":"synthetic-endpoint","migration_required":true}`, code: control.CodeCapabilityUnsupported, message: "migration_required"},
+		{name: "invalid generation remains invalid", status: `{"generation":-1,"migration_required":true}`, code: control.CodeInvalidContract},
+		{name: "unknown status field", status: `{"generation":7,"unexpected":false}`, code: control.CodeInvalidContract},
+		{name: "duplicate migration flag", status: `{"generation":7,"migration_required":true,"migration_required":false}`, code: control.CodeInvalidContract},
+		{name: "null migration flag", status: `{"generation":7,"migration_required":null}`, code: control.CodeInvalidContract},
+		{name: "wrong migration flag type", status: `{"generation":7,"migration_required":"false"}`, code: control.CodeInvalidContract},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			prepares := 0
+			conn := newRevisionConn(func(in control.Intent) ([]byte, error) {
+				if in.Method == "status" {
+					return revisionFrame(in, 0, json.RawMessage(tc.status), nil), nil
+				}
+				if in.Method != "run.prepare" {
+					t.Fatalf("unexpected request=%s", in.Method)
+				}
+				prepares++
+				return revisionFrame(in, 0, preparationFixture(), nil), nil
+			})
+			result, err := control.NewPreparedRunClient(conn).PrepareRevisioned(t.Context(), "op_status_contract", runSpecFixture())
+			if tc.code != "" {
+				var ce *control.Error
+				if !errors.As(err, &ce) || ce.Code != tc.code {
+					t.Fatalf("status error=%v, want %s", err, tc.code)
+				}
+				if tc.message != "" && ce.Message != tc.message {
+					t.Fatalf("status refusal=%q", ce.Message)
+				}
+				if result.Run.PreparationID != "" {
+					t.Fatal("refusing status disclosed a preparation")
+				}
+			} else if err != nil || result.Run.PreparationID != "prep" || result.Revision != 0 {
+				t.Fatalf("valid status preparation=%+v,%v", result, err)
+			}
+			if prepares != tc.prepares {
+				t.Fatalf("prepare calls=%d, want %d", prepares, tc.prepares)
+			}
+		})
+	}
+}

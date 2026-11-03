@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+	"unicode"
 
 	ab "github.com/turbokast/mythhelm/internal/admissionbinding"
 )
@@ -26,6 +28,9 @@ func PrepareService(ctx context.Context, req Request) (Decision, []ab.ChallengeV
 		return Decision{}, nil, &BlockedError{Code: "service_task_unavailable", Capability: true, Action: "use a bounded regular task file"}
 	}
 	challenges := []ab.ChallengeV1{}
+	if req.NoChecks {
+		challenges = append(challenges, ab.ChallengeV1{ID: "planned_0", Kind: "no-checks", Text: "Run this exact preparation without project checks."})
+	}
 	// This collector is internal staged resolution, never a caller confirmation
 	// function and never a grant. Native routes have already refused above.
 	req.Confirm = func(text string) (bool, error) {
@@ -37,6 +42,11 @@ func PrepareService(ctx context.Context, req Request) (Decision, []ab.ChallengeV
 			kind = "committed-revision"
 		default:
 			return false, &BlockedError{Code: "service_challenge_unsupported", Capability: true, Action: "this decision has no closed service authority mapping"}
+		}
+		// The closed wire excludes control characters. Preserve the complete
+		// legacy question as an unambiguous quoted display string when needed.
+		if strings.ContainsFunc(text, unicode.IsControl) {
+			text = strconv.Quote(text)
 		}
 		challenges = append(challenges, ab.ChallengeV1{ID: fmt.Sprintf("planned_%d", len(challenges)), Kind: kind, Text: text})
 		return true, nil

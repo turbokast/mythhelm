@@ -312,11 +312,12 @@ func typedResult[T v2contract.Validator](body []byte) (T, error) {
 }
 
 type serviceStatus struct {
-	PID        int       `json:"pid"`
-	Generation int64     `json:"generation"`
-	Root       string    `json:"root"`
-	Endpoint   string    `json:"endpoint"`
-	StartedAt  time.Time `json:"started_at"`
+	MigrationRequired bool      `json:"migration_required"`
+	PID               int       `json:"pid"`
+	Generation        int64     `json:"generation"`
+	Root              string    `json:"root"`
+	Endpoint          string    `json:"endpoint"`
+	StartedAt         time.Time `json:"started_at"`
 }
 
 type runClient struct {
@@ -338,6 +339,9 @@ func (c *runClient) serviceGeneration(ctx context.Context) (int64, error) {
 	}
 	if err := generation(s.Generation); err != nil {
 		return 0, err
+	}
+	if s.MigrationRequired {
+		return 0, newError(CodeCapabilityUnsupported, "migration_required")
 	}
 	return s.Generation, nil
 }
