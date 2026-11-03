@@ -28,7 +28,7 @@ const (
 	DBName = "mythhelm.db"
 	// SchemaVersion is the newest database schema (PRAGMA user_version)
 	// this binary understands.
-	SchemaVersion = 10
+	SchemaVersion = 11
 	// EnvelopeVersion is the only event envelope schema_version accepted.
 	EnvelopeVersion = 1
 )
