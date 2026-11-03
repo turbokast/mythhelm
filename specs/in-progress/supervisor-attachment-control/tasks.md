@@ -886,7 +886,7 @@
 - **Test plan**: Real SQLite, synthetic schema9 legacy rows, independent mirror expectations, transaction rollback and direct hostile SQL controls. Migration registration plus all current-version/import/backup mirrors land atomically. This is separate from Task25's binding representation and does not inherit Task23; no released migration changes or unbounded source-budget exception.
 - **Invariants touched**: I03/I07/I09/I12/I20/I21/I23 (v2 §§3/5/6: canonical atomic epoch evidence, immutable replay and historical unknowns).
 
-### Task 34 — Retain existing run ownership for attachment snapshots
+### Task 34 — Retain existing run ownership for attachment snapshots ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (≤45 minutes total, artifact by 15 minutes, at most two repairs ≤15 minutes each inside the total; freeze partial work on overflow)
@@ -905,6 +905,12 @@
   - `TestAttachmentScopeGuardOrdering` deterministically races retained read/write gates, owner.Close and root shutdown with an actual held instance lease. No guard release before explicit handoff; no callback calls Close; requests exceeding their two-second budget refuse with zero released data. A blocked execution entry retains ownership after timeout. Tests explicitly release barriers and join cleanup rather than claiming forced OS-I/O cancellation.
 - **Test plan**: Real temp SQLite/adopted roots, actual ServiceOwner/InstanceLease and deterministic channels; separately failing retention, generation and authority-gate controls. Only the producer is delivered here: public handler registration and projection belong to Task12.
 - **Invariants touched**: I03/I06/I09/I18/I23 (v2 §§3/8/14: presentation never acquires execution authority).
+
+- **Status**: ✅ Completed — added shared owner-observation retention, exact-one existing actor routing and the private attachment authority gate; PR #588 remains draft pending required CI and verified merge.
+- **Implementation**: Signed source `5fb60b4` preserves real run/instance ownership until every observation and active entry releases. Independent code/architecture review returned Ready and independently reran all three acceptance roots under race (service 9.603s; supervisor 5.353s); author runs passed in 15.487s/6.897s. Seven compile-valid fault controls fail assertions. Final canonical repository race gate passed in 857.6s, with format/tidy/vet/lint and source hygiene passing; no native/platform qualification follows.
+- **Spec deviations**: A private nil-default traversal observation callback in runtime.go makes cancellation after an actual candidate check deterministic; it supplies neither a match predicate nor authority. The real prior-generation refusal explicitly uses a closed owner after actual boot rollover, since a held owner prevents lease rollover. Exact ledger/artefact/worker identity snapshots, canonical event counts and a forbidden-execution source-call witness establish the observed no-effect boundary without inventing runtime acquisition/recovery counts. Own completion, handoff and scratchpad paths are required lifecycle bookkeeping outside the five source paths.
+- **Files modified**: `internal/supervisor/service_owner.go`, `internal/supervisor/service_owner_test.go`, `internal/service/attachment_scope.go`, `internal/service/attachment_scope_test.go`, `internal/service/runtime.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
+
 
 ### Task 35 — Produce the attachment response queue handoff ✅ COMPLETED
 

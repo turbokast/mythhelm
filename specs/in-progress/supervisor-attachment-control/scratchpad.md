@@ -52,6 +52,9 @@ Task12 remains the real scoped handler/retained-owner/SQL/gate/runtime-registrat
 
 Post-fixture integration `d00a8e2` merges actual main `f94ab99`, including separate PR #583 worker/status-client fixture corrections, while preserving all four Task35 source hashes. New canonical gates pass, including full race 631.5s and named acceptance race 3.030s; earlier 722.9s remains evidence only for its prior base. The macOS status-writer failure and original Windows worker-fixture failure retain their actual observations and unknown platform causes. Current-head CI and merge are still required.
 
+- **Task 34 retained observation proof**: A routing match can remain true for a foreign physical root or closed prior-generation owner. Tests use real owners/leases, actual boot rollover, deterministic between-candidate cancellation and exact ledger/run/worker identity observations. A held owner prevents lease rollover, so the prior-generation case deliberately claims closed-plus-stale refusal rather than constructing an impossible open-stale owner. Task12 still owns public registration and queue-handoff integration.
+
+
 ## Validation round 1 fixes
 
 Fresh independent review found missing standalone observation/results, canonical adoption schema mismatch, stop producer ordering, host freshness/resync transport and stable-status TTL renewal. The author added exact typed contracts, canonical schema2 adoption with separate historical decoding, producer-first dependencies, safe freshness fanout/read-only resync and independent qualified publication renewal. Shared docs wait for docs-site-restyle Task11. These are contract/ordering corrections, not source requirement or ownership-policy changes. Round2 fresh validation is pending; this author check is not an independent verdict.
