@@ -1,6 +1,6 @@
 ## Verified production delivery — Requirements
 
-> Unrefined. Run /refine-spec verified-production-delivery before /spec.
+> Refined after one fresh-context assessment; Ready for design. Destination-specific live enablement remains separately gated.
 
 > Optional delivery of an exact accepted build to an explicitly authorised, separately qualified destination, with independent health evidence and reconciled effects. Normative source: `mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md`, version 2.0, §§6.3–6.4, 8, 11, 17–18; implementation sequence: `mythhelm-synthesis/MYTHHELM_Implementation_Plan.md` W15. All invariant, gate and acceptance-case references below are version-qualified v2 references, not historical Revision 1.1 claims.
 
