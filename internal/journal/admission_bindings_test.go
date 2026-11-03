@@ -238,7 +238,7 @@ func TestServiceAdmissionAtomicStorage(t *testing.T) { // I02/I12/I20/I23 (v2 §
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.RunID != f.b.RunID || m.AttemptID != f.b.AttemptID || m.BindingSHA256 != f.input.Lookup.BindingSHA256 || m.Revision == 0 {
+	if m.RunID != f.b.RunID || m.AttemptID != f.b.AttemptID || m.BindingSHA256 != f.input.Lookup.BindingSHA256 || m.Revision != storageRunRevision(t, j, f.b.RunID) {
 		t.Fatalf("bad committed metadata: %+v", m)
 	}
 	again, err := j.CommitServiceAdmission(t.Context(), c)
@@ -326,7 +326,7 @@ func TestServiceArmingStorage(t *testing.T) { // I12/I20/I21 (v2 §§5/6): durab
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.SnapshotEventID != snapshot || m.LaunchTokenSHA256 != in.LaunchTokenSHA256 || m.Revision == 0 || !m.ExecutionDeadline.Equal(in.ExecutionDeadline) {
+	if m.SnapshotEventID != snapshot || m.LaunchTokenSHA256 != in.LaunchTokenSHA256 || m.Revision != storageRunRevision(t, j, f.b.RunID) || !m.ExecutionDeadline.Equal(in.ExecutionDeadline) {
 		t.Fatalf("bad dispatch: %+v", m)
 	}
 	_, err = j.ArmServiceDispatch(t.Context(), arm)
@@ -1404,5 +1404,238 @@ func testClosedConstructorMutationMatrix(t *testing.T) {
 	again, err := dispatch.Metadata()
 	if err != nil || again.Admission.RunID != f.b.RunID {
 		t.Fatal("dispatch metadata leaked mutable values")
+	}
+}
+
+// storageRunRevision reads the final durable revision after the API returns,
+// independently of the returned acknowledgement and its cached handle.
+func storageRunRevision(t *testing.T, j *journal.Journal, run string) uint64 {
+	t.Helper()
+	var revision uint64
+	if err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+		var err error
+		revision, err = journal.RunRevision(t.Context(), tx, run)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return revision
+}
+
+func TestStorageDistinctOperationsConsumePreparationOnce(t *testing.T) { // I12/I20 (v2 §6): distinct operations compete for one current preparation.
+	t.Parallel()
+	f := preparationFixtureFor(t, false)
+	j := storageJournal(t)
+	adoptStorageFixture(t, j)
+	first := preparedCommit(t, j, f)
+	secondInput, err := first.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondInput.OperationID = "competing_start"
+	second, err := journal.NewAdmissionCommit(secondInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type result struct {
+		admission journal.CommittedAdmission
+		err       error
+	}
+	start, results := make(chan struct{}), make(chan result, 2)
+	var wg sync.WaitGroup
+	for _, commit := range []journal.AdmissionCommit{first, second} {
+		wg.Add(1)
+		go func(c journal.AdmissionCommit) {
+			defer wg.Done()
+			<-start
+			a, e := j.CommitServiceAdmission(t.Context(), c)
+			results <- result{a, e}
+		}(commit)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	successes := 0
+	winner := ""
+	for r := range results {
+		if r.err != nil {
+			assertStorageCode(t, r.err, v2contract.CodeRevisionConflict)
+			continue
+		}
+		successes++
+		m, e := r.admission.Metadata()
+		if e != nil {
+			t.Fatal(e)
+		}
+		winner = m.OperationID
+		if m.Revision != storageRunRevision(t, j, f.b.RunID) {
+			t.Fatal("winner revision is not final durable revision")
+		}
+	}
+	if successes != 1 {
+		t.Fatalf("distinct operation successes=%d want1", successes)
+	}
+	if err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+		for _, table := range []string{"runs", "service_admission_consumptions", "service_pending_dispatch", "reservations", "run_assignments"} {
+			var count int
+			if err := tx.QueryRowContext(t.Context(), `SELECT count(*) FROM `+table).Scan(&count); err != nil {
+				return err
+			}
+			if count != 1 {
+				t.Errorf("%s count=%d want1", table, count)
+			}
+		}
+		var starts int
+		if err := tx.QueryRowContext(t.Context(), `SELECT count(*) FROM operations WHERE method='run.start' AND operation_id=?`, winner).Scan(&starts); err != nil {
+			return err
+		}
+		if starts != 1 {
+			t.Errorf("winner run.start operations=%d want1", starts)
+		}
+		var allStarts int
+		if err := tx.QueryRowContext(t.Context(), `SELECT count(*) FROM operations WHERE method='run.start'`).Scan(&allStarts); err != nil {
+			return err
+		}
+		if allStarts != 1 {
+			t.Errorf("run.start operations=%d want1", allStarts)
+		}
+		for _, table := range []string{"service_admission_consumptions", "service_pending_dispatch", "run_assignments"} {
+			var op string
+			if err := tx.QueryRowContext(t.Context(), `SELECT operation_id FROM `+table).Scan(&op); err != nil {
+				return err
+			}
+			if op != winner {
+				t.Errorf("%s operation=%q want winner %q", table, op, winner)
+			}
+		}
+		var consumed int
+		if err := tx.QueryRowContext(t.Context(), `SELECT consumed FROM prepared_runs`).Scan(&consumed); err != nil {
+			return err
+		}
+		if consumed != 1 {
+			t.Errorf("preparation consumed=%d want1", consumed)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStorageArmingRechecksDurableRows(t *testing.T) { // I02/I12/I20/I21 (v2 §§5/6/8): current authority and finite envelope, never cached authority.
+	t.Parallel()
+	cases := []struct {
+		name, statement, snapshotChange, armChange string
+		code                                       v2contract.Code
+	}{
+		{name: "owner reassigned", statement: `UPDATE run_assignments SET owner='other'`, code: v2contract.CodeOwnershipUnresolved},
+		{name: "assignment operation changed", statement: `UPDATE run_assignments SET operation_id='retention_op'`, code: v2contract.CodeOwnershipUnresolved},
+		{name: "pending settled", statement: `UPDATE service_pending_dispatch SET state='settled',revision=2`, code: v2contract.CodeRevisionConflict},
+		{name: "pending expected revision mismatch", armChange: "pending revision", code: v2contract.CodeRevisionConflict},
+		{name: "snapshot run mismatch", snapshotChange: "run", code: v2contract.CodeDependencyStale},
+		{name: "snapshot wrong event type", snapshotChange: "type", code: v2contract.CodeDependencyStale},
+		{name: "snapshot task mismatch", snapshotChange: "task", code: v2contract.CodeDependencyStale},
+		{name: "snapshot generation mismatch", snapshotChange: "generation", code: v2contract.CodeDependencyStale},
+		{name: "snapshot wrong base", snapshotChange: "base", code: v2contract.CodeDependencyStale},
+		{name: "snapshot wrong branch", snapshotChange: "branch", code: v2contract.CodeDependencyStale},
+		{name: "snapshot wrong workspace", snapshotChange: "workspace", code: v2contract.CodeDependencyStale},
+		{name: "snapshot trust differs", snapshotChange: "trust", code: v2contract.CodeDependencyStale},
+		{name: "snapshot precedes latest admission", snapshotChange: "order", code: v2contract.CodeDependencyStale},
+		{name: "snapshot observed after arming observation", armChange: "observation", code: v2contract.CodeDependencyStale},
+		{name: "project trust revoked", statement: `DELETE FROM trust_grants WHERE kind='project_config'`, code: v2contract.CodeDependencyStale},
+		{name: "execution allowance changed", statement: `UPDATE run_envelopes SET execution_seconds=execution_seconds+1`, code: v2contract.CodeDependencyStale},
+		{name: "repair allowance changed", statement: `UPDATE run_envelopes SET repairs=repairs+1`, code: v2contract.CodeDependencyStale},
+		{name: "replan allowance changed", statement: `UPDATE run_envelopes SET replans=replans+1`, code: v2contract.CodeDependencyStale},
+		{name: "transport allowance changed", statement: `UPDATE run_envelopes SET transport_retries=transport_retries+1`, code: v2contract.CodeDependencyStale},
+		{name: "repair already used", statement: `UPDATE run_envelopes SET repairs_used=1`, code: v2contract.CodeDependencyStale},
+		{name: "replan already used", statement: `UPDATE run_envelopes SET replans_used=1`, code: v2contract.CodeDependencyStale},
+		{name: "transport already used", statement: `UPDATE run_envelopes SET transport_retries_seen=1`, code: v2contract.CodeDependencyStale},
+		{name: "execution clock already started", statement: `UPDATE run_envelopes SET first_start_at='2026-01-01T00:00:00Z'`, code: v2contract.CodeDependencyStale},
+		{name: "pauses already recorded", statement: `UPDATE run_envelopes SET pause_spans='[{"start":"2026-01-01T00:00:00Z"}]'`, code: v2contract.CodeDependencyStale},
+		{name: "deadline differs from exact ceiling", armChange: "deadline", code: v2contract.CodeInvalidContract},
+		{name: "run already stopped", statement: `UPDATE runs SET state='stopped'`, code: v2contract.CodeDependencyStale},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := preparationFixtureFor(t, false)
+			j := storageJournal(t)
+			adoptStorageFixture(t, j)
+			c := preparedCommit(t, j, f)
+			admitted, err := j.CommitServiceAdmission(t.Context(), c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			snapshotFixture := f
+			switch tc.snapshotChange {
+			case "run":
+				if err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+					return journal.InsertRun(t.Context(), tx, journal.RunRow{RunID: "other_run", State: "created", AdapterID: "builtin/fake", SourceRepo: f.b.Decision.Snapshot.SourceRepo, TaskSHA256: strings.Repeat("a", 64), BillingPosture: "local-scripted", ExecutionProfile: "trusted-host", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()})
+				}); err != nil {
+					t.Fatal(err)
+				}
+				snapshotFixture.b.RunID = "other_run"
+			case "task":
+				snapshotFixture.b.TaskID = "other_task"
+			case "generation":
+				snapshotFixture.b.Generation++
+			case "base":
+				snapshotFixture.b.Decision.Snapshot.BaseRev = strings.Repeat("b", 40)
+			case "branch":
+				snapshotFixture.b.Decision.Snapshot.Branch = "other"
+			case "workspace":
+				snapshotFixture.b.Decision.Workdir = filepath.Join(t.TempDir(), "other")
+			case "trust":
+				snapshotFixture.b.Decision.RecordTrust = false
+			}
+			snapshot := snapshotForArm(t, j, snapshotFixture)
+			if tc.snapshotChange == "type" {
+				events, err := j.Events(t.Context(), f.b.RunID, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				snapshot = ""
+				for _, event := range events {
+					if event.Type == "admission.decided" {
+						snapshot = event.EventID
+						break
+					}
+				}
+				if snapshot == "" {
+					t.Fatal("missing real admission event")
+				}
+			}
+			if tc.snapshotChange == "order" {
+				if err := j.Append(t.Context(), journal.Event{SchemaVersion: 2, EventID: "later_admission", RunID: f.b.RunID, TaskID: f.b.TaskID, ProducerID: "later_admission_fixture", ProducerSequence: 1, Generation: f.b.Generation, ObservedAt: time.Now().UTC(), Type: "admission.decided", Payload: json.RawMessage(`{}`)}, nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+			now := time.Now().UTC()
+			in := journal.DispatchArmInput{Admission: admitted, ExpectedPendingRevision: 1, SnapshotEventID: snapshot, BindingSHA256: f.input.Lookup.BindingSHA256, LaunchTokenSHA256: strings.Repeat("c", 64), NonceSHA256: strings.Repeat("d", 64), LadderVersion: "synthetic-ladder-v1", PolicyRevision: f.b.PolicyRevision, Generation: f.b.Generation, ObservedAt: now, ExecutionDeadline: now.Add(time.Duration(f.b.Decision.ResolvedCeilings.ExecutionNanos))}
+			if tc.name == "pending settled" {
+				in.ExpectedPendingRevision = 2
+			}
+			switch tc.armChange {
+			case "pending revision":
+				in.ExpectedPendingRevision = 2
+			case "deadline":
+				in.ExecutionDeadline = in.ExecutionDeadline.Add(time.Second)
+			case "observation":
+				in.ObservedAt = now.Add(-time.Second)
+				in.ExecutionDeadline = in.ObservedAt.Add(time.Duration(f.b.Decision.ResolvedCeilings.ExecutionNanos))
+			}
+			arm, err := journal.NewDispatchArm(in)
+			if err != nil {
+				t.Fatalf("fixture did not reach durable-row consumer: %v", err)
+			}
+			if tc.statement != "" {
+				if err := j.Transact(t.Context(), func(tx *sql.Tx) error { _, e := tx.ExecContext(t.Context(), tc.statement); return e }); err != nil {
+					t.Fatalf("current-row mutation: %v", err)
+				}
+			}
+			before := tableImages(t, j)
+			_, err = j.ArmServiceDispatch(t.Context(), arm)
+			assertStorageCode(t, err, tc.code)
+			assertUnchangedTables(t, before, tableImages(t, j))
+		})
 	}
 }
