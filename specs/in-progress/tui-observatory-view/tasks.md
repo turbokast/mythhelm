@@ -497,7 +497,7 @@
 
 - **Final local validation/publication**: PR #566 was opened only after exact `e25e483` code/architecture review returned Ready and all six gates passed on signed integrated `219991a`: formatter0.2s, tidy0.1s, vet0.6s, full repository race332.9s, lint3.0s/zero issues, hygiene5.3s. Eight named final acceptance suites pass1.355s, including all22 original literals and actual View/full-export counters. Source/protected producer hashes remain byte-identical across core integration. Own lifecycle entry/spec/hygiene/marker checks are refreshed separately after this metadata; exact-final-head CI/review and merge remain outstanding. Earlier failures/control bindings remain historical, not erased or relabelled. No native/platform/full-product/G09/G11/20× qualification is claimed.
 
-### Task 16 — Compose overlays with semantic colour checks
+### Task 16 — Compose overlays with semantic colour checks ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: complex (shared compositor and SGR validation)
@@ -519,6 +519,12 @@
   - Existing confirmation tests retain their specified effects (AC-5.3). `BenchmarkObservatoryView` and `BenchmarkObservatoryOverlay` report ten non-race samples with ns/op/allocations and median; record hardware-neutral method and local target assessment, never a statistical native-CLI claim (NFR-2).
 - **Test plan**: Golden cells and parsed SGR, both modes/themes; one benign fake live event is the positive witness for background updates. Keep benchmark results distinct from acceptance gates.
 - **Invariants touched**: I03/I07/I09/I13 (v2 §§15.1,16: explicit effect safety, contrast and evidence remain readable).
+
+- **Status**: ✅ Completed — live raised cards, semantic display-cell checks and the compact fallback submitted in PR #587; required CI and merge remain pending.
+- **Implementation**: Commit fe60d30 integrates the reviewed compositor and repairs clipping to preserve whole grapheme clusters. The SGR oracle counts wide continuation cells and complete clusters; a real journal append reaches the open-help background through production polling/reload.
+- **Spec deviations**: Required own-task records add `specs/in-progress/tui-observatory-view/tasks.md` and `specs/in-progress/tui-observatory-view/handoff.md`. Existing live/motion production code required no changes. The delegated two-file follow-up repairs Unicode and journal-proof gaps; initial test-only spelling/loop lint failures were corrected without changing assertions. The predicate self-comparison was removed in favour of independently demonstrated production-freeze rejection. Earlier native failures remain historical.
+- **Files modified**: `internal/tui/overlays.go`, `internal/tui/overlays_test.go`, `internal/tui/model.go`, `internal/tui/dialogs.go`, `internal/tui/palette.go`, `internal/tui/observatory_bench_test.go`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`.
+- **Validation**: All six canonical gates pass, including full repository race 986.0s. After normal integration of merged recording-consumer PR #585, all five Go gates pass again, including full repository race 700.2s; the six reviewed Go source blobs remain unchanged. The named acceptance/semantic/confirmation suites and retained Unicode boundary controls pass; independent architecture review and real reload-freeze fault checks pass. Ten non-race 100ms samples with GOMAXPROCS=4 give medians: View 1383048 ns/op, 319659.5 B/op, 4782 allocs/op; Overlay 2028836 ns/op, 419221.5 B/op, 6004 allocs/op. These local measurements meet the view target and establish no native-harness advantage.
 
 ### Task 17 — Resolve themes and suppress delayed OSC replies
 

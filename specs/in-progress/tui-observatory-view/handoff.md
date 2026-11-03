@@ -214,6 +214,13 @@ Actual View regression rejects10000 pre-format visits and passes20/21/21 at heig
 
 PR #566 is open with exact source code/architecture Ready, unchanged original22 literal frames and all-six integrated local gates passing (full race332.9s, hygiene5.3s). The final eight named acceptance suites pass1.355s; current-source four private controls and restored proof remain exact-source-bound. Own completion/entry/spec/hygiene markers are refreshed after publication metadata. Exact-final-head CI/review and actual merge remain outstanding; Task16 and later theme work are not dispatched by this record. Earlier failed attempts and independently owned merged core fixture remain separate evidence, with no native/platform/full-product/20× performance claim.
 
+## Task 16 — Compose overlays with semantic colour checks
+
+- **Produces**: Raised help, palette and confirmation cards above a freshly rendered dimmed mission when the body fits; compact layouts retain the one-line header and full-screen fallback. Foreground/background rules operate on final semantic spans.
+- **For dependents**: Task17 must preserve overlay/pending effect identity and the existing polling reload. Complete graphemes determine clipping and SGR coordinates; a wide glyph crossing an edge becomes padding, never half a glyph. Confirmation effects remain unchanged.
+- **Evidence**: Real journal append to production reload changes the visible dimmed NOW content while help stays open. Retained Unicode/CJK/continuation controls and an independently assertion-failing actual reload-freeze control cover the discovered gaps. All six local gates pass; PR #587 still awaits required exact-head CI and merge.
+- **Performance method**: Ten non-race 100ms samples per benchmark with GOMAXPROCS=4; compare local View/Overlay medians to the render target. No hardware-normalized or native-CLI comparison is inferred. Human accessibility and real recordings remain later evidence.
+
 
 ## Task 22 — Verify recording consumers at each immutable pin
 
