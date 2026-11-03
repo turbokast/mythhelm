@@ -189,7 +189,7 @@ func checkAdoptionSpool(ctx context.Context, path string, a journal.AttemptRow, 
 	// migration drain, hostile same-UID swaps between Lstat/open or unresponsive
 	// filesystems can still block OS I/O; this is no arbitrary-I/O cancellation
 	// guarantee or containment boundary.
-	f, err := os.Open(path) // #nosec G304 -- fixed attempt spool under held root/run ownership; pre-open regular-file check and opened-inode comparison bind this read.
+	f, err := os.Open(path) // #nosec G304 G703 -- fixed attempt spool under held root/run ownership; pre-open regular-file check and opened-inode comparison bind this read.
 	if err != nil {
 		return errors.Join(supervisor.ErrOwnership, err)
 	}
