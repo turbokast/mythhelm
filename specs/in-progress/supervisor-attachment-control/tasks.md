@@ -245,7 +245,7 @@
 - **Spec deviations**: `specs/in-progress/supervisor-attachment-control/tasks.md` records own completion, `specs/in-progress/supervisor-attachment-control/handoff.md` supplies dependent-task guidance, and `specs/in-progress/supervisor-attachment-control/scratchpad.md` records the source finding. Pre-merge completion metadata follows WORKFLOW/task-completion; PR #549 must merge before dependents consume it. No naming or runtime contract change.
 - **Files modified**: `docs/user-guide.md`, `docs/limitations.md`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
-### Task 25 — Produce the additive binding schema and atomic version mirrors
+### Task 25 — Produce the additive binding schema and atomic version mirrors ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -275,6 +275,11 @@
   - `TestServiceBindingImmutability` rejects SQL INSERT/UPDATE OR REPLACE collisions through every unique key and rowid alias, identity/byte/digest mutation, immutable byte/hash/root/peer/context/generation relations and invalid claim transitions directly in SQL; Task30 owns semantic expiry/confirmation decoding. A removed-guard fixture with an unreferenced victim fails.
 - **Test plan**: In-memory/temp SQLite, direct hostile SQL and deterministic failure barriers; fake data only. The remaining schema/guard/version/import/backup files are one compatibility unit: registering the new schema without any current mirror or guard is the violating fixture; splitting their activation would make the binary accept an unsupported/mis-backed-up state. Task30 APIs and Task29 quota logic are independent producers, not hidden in this sizing exception. Compile imports to prove journal never imports admission/supervisor/service; mirror checks are independent of production constants. Task28 must first remove the stale-version coupling from current public backup guidance; all code/version/import mirrors change atomically here. No runtime source mirror is deferred.
 - **Invariants touched**: I02/I09/I12/I20/I21/I23 (v2 §§5/6/8: atomic immutable admission, current quotas and canonical one-use intent).
+
+- **Status**: ✅ Completed — additive schema11 and atomic compatibility mirrors submitted in PR #593; final-head CI and actual merge remain pending.
+- **Implementation**: Source `f2b2c3e5ebe150b181174718c4472a99e70e5496` adds immutable bindings, consumption, pending dispatch and claims with retained-parent replacement guards; released migrations remain unchanged. Focused race checks pass (journal17.978s; migrate3.015s). Original whole-gate timeout835.1s is retained; identical-source verification passed492.3s with GOMAXPROCS=8/GOFLAGS=-p=4 and unchanged600s package timeout. All six required canonical gate markers are fresh.
+- **Spec deviations**: `internal/journal/service_assignment_migration_test.go` preserves historical schema10 assertions using the explicit migration prefix while separately checking current11 compatibility. Own `tasks.md`, `handoff.md` and `scratchpad.md` carry required delivery records. Retained preparation and claimed-operation parent guards close demonstrated same-identity/rowid replacement holes in the additive migration.
+- **Files modified**: `internal/journal/attachment_revision_test.go`, `internal/journal/journal.go`, `internal/journal/migrate_tables_test.go`, `internal/journal/migrations/0011_service_admission_bindings.sql`, `internal/journal/service_admission_migration_test.go`, `internal/journal/service_assignment_migration_test.go`, `internal/migrate/SUPPORT.md`, `internal/migrate/backup.go`, `internal/migrate/backup_test.go`, `internal/migrate/preview/plan.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
 ### Task 30 — Produce closed preparation and admission transaction APIs
 
