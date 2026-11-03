@@ -1,6 +1,6 @@
 ## Consented outcome evidence and the fixed execution portfolio — Requirements
 
-> Unrefined. Run /refine-spec consented-outcome-evidence before /spec.
+> Refined after one fresh-context assessment; Ready for design. Live evidence and parallel portfolio capabilities remain separately gated.
 
 > Capture comparable operational outcomes and an optional, consented learning projection for fixed P1/P2/P4 policies; admit P3 only after qualified parallel construction. Normative source: `mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md`, version 2.0, §§4–5, 8–13 and 18, and `mythhelm-synthesis/MYTHHELM_Implementation_Plan.md`, W10. Every I-, AT- and G-ID below refers to v2 (§2, §18.2 and §18.3 respectively). This document captures requirements only and authorizes no collection, native calls or experiments.
 
