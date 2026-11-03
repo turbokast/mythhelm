@@ -1,6 +1,7 @@
 # 0023. Immutable local verification inputs and owned evidence storage
 
-- Status: proposed
+- Status: accepted upon reviewed merge
+- Acceptance: independent architecture/documentation review of `df97c56e44f830228c35f3251fca689a43ed2ea9` returned Ready; this decision becomes effective only when its reviewed pull request merges, before Task 1 implementation.
 - Date: 2026-11-03
 - Source: `specs/*/immutable-local-verification/`, Task 8; independently reviewed design revision `1ebabd6a500613665ecdad9f1ca56d74fe81b7fa`, delivered by [PR #619](https://github.com/turbokast/mythhelm/pull/619) at `6a81f6036bab0fcc7410b03ff65d845763d33c3c`.
 - Design content SHA-256: `e69693d7e0f3a97eba2d2607edc6e40a3bc266749b1a40e0aa6d3c213f5d3d46`.
@@ -11,7 +12,7 @@ The shared gate engine runs checks from a mutable working tree and accepts an ex
 
 The requirements retain existing checks, explicit legacy evidence and a narrow initial stronger profile. They do not request universal hermetic execution, native inference, spending, publication, product acceptance or protection against a hostile host. The relevant obligations are harness charter principles 1/2/3/5/6 and Master Specification v2 I07/I08/I09/I20/I21/I23 (§2), with the trusted-host and filesystem/privacy limits in §§8.1/8.3. [WORKFLOW.md](../../WORKFLOW.md) governs delivery; [GOVERNANCE.md](../../GOVERNANCE.md) requires a decision record for persistence and security boundaries even when they belong to contributor tooling.
 
-This proposal adopts the source design's §§2–6 contracts and D1–D7 decisions. It introduces durable private manifests, ownership and crash reconciliation before their implementation. Proposed interfaces, codecs and qualification probes remain future work. No helper, tool, kernel, filesystem or production profile has been qualified by writing this record.
+This record adopts the source design's §§2–6 contracts and D1–D7 decisions. It introduces durable private manifests, ownership and crash reconciliation before their implementation. Proposed interfaces, codecs and qualification probes remain future work. No helper, tool, kernel, filesystem or production profile has been qualified by writing this record.
 
 ## Decision
 
