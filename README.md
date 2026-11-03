@@ -22,6 +22,21 @@ MYTHHELM is a pre-alpha project for coordinating native coding agents while pres
 
 > **Status: pre-alpha.** The only release so far, v0.0.1, is a source tag with no binary archives, so you build from source. The headless dogfood slice (`run`, `review`, `apply`, `recover`) plus an offline `demo` and a read-only `doctor` are implemented on `main` and covered by a packaged-binary end-to-end suite. `stop` and `runs list`, a budget ledger with finite run envelopes, execution profiles, a per-user supervisor and a one-way `migrate` have landed since, with the limits listed below and in the [limitations register](docs/limitations.md). A focused mission TUI is also implemented, with the evidence and limitations below. The broader adaptive product remains a design contract, not an implemented or benchmarked capability.
 
+<!-- performance-report:start -->
+## Native delivery performance
+
+**No current validated matched pairs.** No comparative advantage is established.
+
+| Route | Acceptance / assigned | Observed mean elapsed | Usage provenance / missingness | Paired trials |
+|---|---|---|---|---|
+| MYTHHELM | Unavailable | Unavailable | Unavailable | 0 |
+| Direct native | Unavailable | Unavailable | Unavailable | 0 |
+
+![Observed native delivery time; unavailable values have no bars](docs/assets/performance.svg)
+
+Same native harness, model, effort, source, task, checks, settings, environment and registered budget are required for current matched evidence. Historical [scheduling-confounded pilot](docs/dogfood/0003-measured-self-hosting.md) results are excluded. See the [measurement method](docs/harness/measured-delivery.md#controlled-comparisons).
+<!-- performance-report:end -->
+
 ## Dogfood slice status
 
 Supported now:

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="270" viewBox="0 0 800 270" role="img" aria-labelledby="title desc">
+<title id="title">Observed native delivery time</title>
+<desc id="desc">All assigned outcomes; missing observations have no bars. Descriptive evidence only, no superiority claim.</desc>
+<rect width="800" height="270" fill="#f7f9fc"/>
+<g fill="#152238" font-family="sans-serif" font-size="17">
+<text x="24" y="30">Observed elapsed time — descriptive evidence only</text>
+<text x="24" y="60">No current validated matched pairs</text>
+<text x="24" y="100">Observed delivery time unavailable for both routes</text>
+<text x="24" y="250" font-size="13">No established advantage. Missing is not zero; pilot results do not generalize.</text>
+</g>
+</svg>
