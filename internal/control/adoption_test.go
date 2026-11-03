@@ -74,7 +74,7 @@ func TestCanonicalAdoptionV2Transaction(t *testing.T) {
 			return err
 		}
 		var result Result
-		if json.Unmarshal([]byte(raw), &result) != nil || result.OperationID != a.OperationID || result.Revision != int64(current) || revision != current {
+		if json.Unmarshal([]byte(raw), &result) != nil || result.OperationID != a.OperationID || result.Revision < 0 || uint64(result.Revision) != current || revision != current {
 			return errors.New("result does not bind actual final revision")
 		}
 		epoch, ok, err := journal.ReadAssignmentEpoch(ctx, tx, a.RunID)

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1436,7 +1437,7 @@ func TestUnixDescendantScanUnchanged(t *testing.T) {
 // The episode has already ended before either presence generation is supplied.
 func TestCompletedWorkerWaitGrantsNothing(t *testing.T) {
 	for _, generation := range []int64{7, 8} {
-		t.Run(fmt.Sprint(generation), func(t *testing.T) {
+		t.Run(strconv.FormatInt(generation, 10), func(t *testing.T) {
 			a := newAttempt(t)
 			launch := a.launch(t, "count-launches")
 			launch.Generation = 7
@@ -1446,18 +1447,18 @@ func TestCompletedWorkerWaitGrantsNothing(t *testing.T) {
 			a.waitDone(t)
 			spool := filepath.Join(a.dir, "spool.jsonl")
 			identity := filepath.Join(a.dir, "worker.json")
-			beforeSpool, err := os.ReadFile(spool)
+			beforeSpool, err := os.ReadFile(spool) // #nosec G304 -- fixed spool/identity file in this test-owned attempt TempDir.
 			if err != nil {
 				t.Fatal(err)
 			}
-			beforeIdentity, err := os.ReadFile(identity)
+			beforeIdentity, err := os.ReadFile(identity) // #nosec G304 -- fixed spool/identity file in this test-owned attempt TempDir.
 			if err != nil {
 				t.Fatal(err)
 			}
 			if err := awaitWorkerReturn(t, a.dir, generation, exited); err != nil {
 				t.Fatal(err)
 			}
-			afterSpool, err := os.ReadFile(spool)
+			afterSpool, err := os.ReadFile(spool) // #nosec G304 -- fixed spool/identity file in this test-owned attempt TempDir.
 			if err != nil {
 				t.Fatal(err)
 			}

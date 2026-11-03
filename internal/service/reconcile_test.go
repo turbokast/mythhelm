@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -255,7 +256,7 @@ func TestAdoptionRefusesUnverifiedLaunch(t *testing.T) {
 			ctx := t.Context()
 			dir := workers.AttemptDir(f.r.journal.StateDir(), f.run, f.attempt)
 			identity := filepath.Join(dir, "worker.json")
-			original, err := os.ReadFile(identity)
+			original, err := os.ReadFile(identity) // #nosec G304 -- fixed worker identity in this test-owned attempt TempDir.
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -283,7 +284,7 @@ func TestAdoptionRefusesUnverifiedLaunch(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "unsupported_spool":
-				file, err := os.OpenFile(filepath.Join(dir, supervisor.SpoolFile), os.O_APPEND|os.O_WRONLY, 0600)
+				file, err := os.OpenFile(filepath.Join(dir, supervisor.SpoolFile), os.O_APPEND|os.O_WRONLY, 0600) // #nosec G304 -- inject one malformed event into this test-owned fixed spool only.
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -318,8 +319,32 @@ func TestAdoptionRefusesUnverifiedLaunch(t *testing.T) {
 	}
 }
 
-func crashAdoptionService(state, run, mode, marker string) int {
+// The crash helper accepts only a parent-created fixture capability: the open
+// root must contain the random witness whose hash the parent supplies. Reads
+// use the root capability rather than following arbitrary argument paths.
+func crashAdoptionService(run, mode, marker, proof string) int {
+	// The parent binds this process cwd to its exact state root through cmd.Dir;
+	// the helper accepts no root/path argument and holds that cwd capability.
+	fixtureRoot, err := os.OpenRoot(".")
+	if err != nil {
+		return 2
+	}
+	defer func() { _ = fixtureRoot.Close() }()
+	witness, err := fixtureRoot.ReadFile("adoption-fixture-proof")
+	if err != nil || len(witness) != 32 {
+		return 2
+	}
+	digest := sha256.Sum256(witness)
+	if hex.EncodeToString(digest[:]) != proof {
+		return 2
+	}
 	ctx := context.Background()
+	state, err := os.Getwd()
+	if err != nil {
+		return 2
+	}
+	// The kernel-bound cwd and fixed witness identify the actual parent-owned
+	// fixture; normal runtime physical-root/database validation still runs.
 	r, err := openRuntime(ctx, state)
 	if err != nil {
 		return 2
@@ -337,36 +362,35 @@ func crashAdoptionService(state, run, mode, marker string) int {
 			return 3
 		}
 		return 9 // Reaching here would mean the mid-transaction barrier failed.
-	} else {
-		a, err := r.reconcileRun(ctx, run)
+	}
+	a, err := r.reconcileRun(ctx, run)
+	if err != nil {
+		return 4
+	}
+	until := time.Now().Add(10 * time.Second)
+	for {
+		committed := false
+		events, err := r.journal.Events(ctx, run, 0)
 		if err != nil {
-			return 4
+			return 5
 		}
-		until := time.Now().Add(10 * time.Second)
-		for {
-			committed := false
-			events, err := r.journal.Events(ctx, run, 0)
-			if err != nil {
-				return 5
+		for _, e := range events {
+			if e.Type == "service.adopted" {
+				committed = true
 			}
-			for _, e := range events {
-				if e.Type == "service.adopted" {
-					committed = true
-				}
-			}
-			if committed {
-				break
-			}
-			select {
-			case <-a.done:
-				return 6
-			default:
-			}
-			if time.Now().After(until) {
-				return 7
-			}
-			time.Sleep(10 * time.Millisecond)
 		}
+		if committed {
+			break
+		}
+		select {
+		case <-a.done:
+			return 6
+		default:
+		}
+		if time.Now().After(until) {
+			return 7
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	if err := os.WriteFile(marker, []byte(mode), 0600); err != nil {
 		return 8
@@ -380,12 +404,33 @@ func TestAdoptionCrashDoesNotRelaunch(t *testing.T) {
 	f := newAdoptionFixture(t, "count-launches")
 	state := f.r.journal.StateDir()
 	ctx := t.Context()
+	var witness [32]byte
+	if _, err := rand.Read(witness[:]); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state, "adoption-fixture-proof"), witness[:], 0600); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(witness[:])
+	proof := hex.EncodeToString(digest[:])
+	// A valid-shaped argument naming an unrelated empty root has no fixture
+	// witness and must be refused before runtime preparation creates a DB.
+	unrelated := t.TempDir()
+	rejected := exec.Command(os.Args[0], "__adoption-service", f.run, "before", filepath.Join(t.TempDir(), "rejected-marker"), proof) // #nosec G702 -- own test executable, fixed helper verb and test-owned refusal fixture; no shell.
+	rejected.Dir = unrelated
+	if err := rejected.Run(); err == nil {
+		t.Fatal("unproved fixture root was accepted")
+	}
+	if _, err := os.Stat(filepath.Join(unrelated, journal.DBName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unproved fixture root was mutated: %v", err)
+	}
 	if err := f.r.shutdown(ctx); err != nil {
 		t.Fatal(err)
 	}
 	for _, mode := range []string{"before", "after"} {
 		marker := filepath.Join(t.TempDir(), "service-phase")
-		cmd := exec.Command(os.Args[0], "__adoption-service", state, f.run, mode, marker)
+		cmd := exec.Command(os.Args[0], "__adoption-service", f.run, mode, marker, proof) // #nosec G702 -- re-exec this test binary with fixed helper verb and parent-owned fixture capability; no shell.
+		cmd.Dir = state
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
