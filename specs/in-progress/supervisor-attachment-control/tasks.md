@@ -386,6 +386,8 @@
 - **Files modified**: `internal/supervisor/config_sources.go`, `internal/supervisor/config_sources_test.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/pipeline_launch_test.go`, `internal/workers/worker.go`, `internal/workers/worker_test.go`, `internal/workers/config_sources_test.go`, `internal/admission/launch_fixture_test.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`.
 - **Validation**: All six canonical gates pass, including full repository race 434.4s after the fixture repair. Three named source-binding acceptances pass; independent code/architecture review and a compile-valid removed pre-Start mapping check produce the intended real native-start counter failure. Corrected admission/managed digest cases pass under race in 3.379s/2.745s. Windows-native identity coverage remains explicitly unqualified.
 
+- **Integrated verification**: Normal main integration preserves all eight source blobs. The first integrated full race gate failed819.4s at the aggregate supervisor600s limit with active tests only2–22s and no assertion failure. Unchanged-source verification with GOMAXPROCS=8 and GOFLAGS=-p=4,-parallel=16 passes823.4s, retaining the default package timeout; this is bounded scheduling evidence, not a controlled performance comparison. All required source gates are refreshed before publication.
+
 ### Task 5 — Close root migration and legacy writer fences ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
