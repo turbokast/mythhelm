@@ -213,3 +213,8 @@ Actual View regression rejects10000 pre-format visits and passes20/21/21 at heig
 ### Task15 actual publication checkpoint
 
 PR #566 is open with exact source code/architecture Ready, unchanged original22 literal frames and all-six integrated local gates passing (full race332.9s, hygiene5.3s). The final eight named acceptance suites pass1.355s; current-source four private controls and restored proof remain exact-source-bound. Own completion/entry/spec/hygiene markers are refreshed after publication metadata. Exact-final-head CI/review and actual merge remain outstanding; Task16 and later theme work are not dispatched by this record. Earlier failed attempts and independently owned merged core fixture remain separate evidence, with no native/platform/full-product/20× performance claim.
+
+
+## Task 22 — Verify recording consumers at each immutable pin
+
+<!-- pending -->
