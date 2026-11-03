@@ -236,6 +236,7 @@ class WorkflowTests(unittest.TestCase):
                      'python3 .github/scripts/ci_change_scope.py classify'):
             self.assertIn(text, detect)
         self.assertIn("python3 -m unittest discover -s .github/tests -p 'test_*.py'", self.job('harness'))
+        self.assertIn('run: .claude/hooks/tests/run-tests.sh --jobs 4', self.job('harness'))
 
     def test_docs_mode_keeps_the_full_linux_go_job_and_unchanged_names(self):
         go = self.job('go')
