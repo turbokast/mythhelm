@@ -203,6 +203,14 @@
 - **Deviations**: Reader and handoff checks live together in the new supervisor launch-provenance test file; the two existing optional test paths in Task32's Files list remain unchanged. Required own-task records accompany the three implementation files. No native billing/platform or complete-service qualification follows.
 - **Staged consumer**: `ReadLaunchProvenance` has no production caller yet. Task7, depending on Tasks6/32/33, must consume the checked reader under design §7; its exact acceptance is: “`TestServiceGenerationAdoption` records new control generation with unchanged launch generation/identity/deadline and one attempt; PID reuse, foreign launch, corrupt identity and unsupported spool refuse.” Task9 owns real startup wiring. Neither Task7 nor Task9 is merged; this producer does not deliver recovery/adoption behavior.
 
+## Task 24 — Produce fail-closed retention policy validation
+
+- **Produces**: Closed canonical retention policy/content/approval codecs, content digests, exact binding-derived field commitments and pure `admission.CheckRetentionV1` with typed safe errors; PR #575 awaits independent closeout, required CI and merge.
+- **For dependents**: Tasks 8/9 must obtain authenticated exact confirmation before persistence/admission/launch. Structurally valid policy and approval records alone confer no authority. Unknown classifications, forbidden provenance and changed/expired approval bindings refuse; classifications cover the finite declared provenance vocabulary, not universal secret detection.
+- **Error boundary**: Malformed supported records map to `invalid_contract`, unsupported versions to `capability_unsupported`, and valid refusals to `policy_ineligible`; diagnostic detail uses fixed namespaced keys without raw input text.
+- **Validation**: All six named acceptance tests plus retention codec/error/boundary cases pass under race; full repository race gate 925.2s on the integrated attachment-transport base and format/tidy/vet/lint pass. The valid RunSpec wire fixture uses platform-native absolute temporary paths; production retention validation is unchanged by that correction.
+- **Deviations**: Only required own-task completion records extend the four implementation paths. No schema, public wire field, durable storage or launch behavior is introduced.
+
 ## Task 35 — Produce the attachment response queue handoff
 
 - **Produces**: `control.AttachmentHandler func(context.Context, Peer, Intent) (*AttachmentResponse, error)`, `(*control.Server).RegisterAttachment(method string, h AttachmentHandler) error`, and `control.NewAttachmentResponse(result Result, release func()) (*AttachmentResponse, error)`. Registration accepts only attachment.open/read/close and rejects duplicate/nil/unknown bindings. Actual Serve consumes these responses; ordinary Dispatch refuses these transport-only methods.
@@ -220,3 +228,9 @@
 - **For dependents**: Task9 must preserve the launch error path and immutable provenance; raw available inventory candidates are not admitted payload entries. Equal digests cannot authorize swapped paths. Empty-manifest and both native inventory conventions remain distinct.
 - **Evidence**: Instrumented fake-native launches prove exact mapping starts once and invalid mappings start zero times. A removed mapping-check control fails that real counter. Existing admission rehash fixtures use actual temporary inventory paths; managed-byte hashing is separately tested below the identity layer without host-policy writes.
 - **Limits**: No authentication secret is copied or native auth disabled. Fixture/platform/native qualification remains as previously recorded; PR #591 requires exact-head CI and merge before service dispatch consumes it.
+## Task 33 — Persist additive service assignment epochs
+
+- **Produces**: Schema 10 `service_assignment_epochs`, `journal.AssignmentEpoch`, `RecordAssignmentEpoch` and `ReadAssignmentEpoch`. Existing four-column `run_assignments` is projected from epoch history without a historical backfill.
+- **For dependents**: Task7 supplies actual held-owner adoption. Storage records grant no ownership; missing history stays unknown, claimed-only operations are unavailable, and completed results must match operation identity and an actual run revision. Complete adoption projections and operation result in the same transaction.
+- **Compatibility**: Backup/preview mirrors and current schema move together; Task25's binding migration remains reserved as schema 11. Native execution profiles are excluded.
+- **Validation**: Named SQLite migration/identity/replay/hostile-SQL tests and independent architecture review pass. Full repository race gate passed; PR #584 still requires exact-head CI and merge before consumers start.
