@@ -211,7 +211,7 @@ func TestServiceChallengePlanExactPrivate(t *testing.T) {
 			if _, ok := errors.AsType[*v2contract.ControlError](err); !ok {
 				t.Fatalf("altered authority plan accepted: %v", err)
 			}
-			if !s.invalid {
+			if !s.invalid.Load() {
 				t.Fatal("altered authority did not invalidate the original plan")
 			}
 		})

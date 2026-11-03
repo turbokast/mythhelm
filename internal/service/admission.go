@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -27,6 +28,7 @@ type preparationStore struct {
 	// beforeEffect observes a fresh boundary in tests; it returns no authority.
 	// Production composition leaves it nil; callbacks perform no lifecycle work.
 	beforeEffect  func()
+	pending       *preparationEntry
 	mu            sync.Mutex
 	context       *supervisor.ExecutionContext
 	policy        ab.RetentionPolicyV1
@@ -35,11 +37,13 @@ type preparationStore struct {
 	confirmations map[string]confirmationReplay
 }
 type preparationEntry struct {
-	plan     *supervisor.ServicePlan
-	metadata supervisor.PlanMetadata
-	inputs   supervisor.ServiceInputs
-	expires  time.Time
-	retained bool
+	plan           *supervisor.ServicePlan
+	metadata       supervisor.PlanMetadata
+	sealedMetadata supervisor.PlanMetadata
+	canonical      []byte
+	inputs         supervisor.ServiceInputs
+	expires        time.Time
+	retained       bool
 }
 type confirmationReplay struct {
 	peerID, preparationID, digest string
@@ -49,6 +53,7 @@ type confirmationReplay struct {
 type preparationReplay struct {
 	peerID, preparationID, digest string
 	result                        control.Result
+	expires                       time.Time
 }
 
 func (r *runtime) registerPreparedAdmission() error {
@@ -120,9 +125,17 @@ func (r *runtime) admissionScope(ctx context.Context, peer control.Peer, in cont
 	return "peer_" + hex.EncodeToString(sum[:]), release, nil
 }
 
-func (s *preparationStore) expire(now time.Time) {
+func (s *preparationStore) expire(ctx context.Context, now time.Time) error {
+	for operation, replay := range s.operations {
+		if !replay.expires.IsZero() && !now.Before(replay.expires) {
+			delete(s.operations, operation)
+		}
+	}
 	for id, entry := range s.plans {
 		if !now.Before(entry.expires) {
+			if err := supervisor.InvalidateServicePlan(ctx, entry.plan); err != nil {
+				return err
+			}
 			delete(s.plans, id)
 			for op, replay := range s.confirmations {
 				if replay.preparationID == id {
@@ -136,6 +149,7 @@ func (s *preparationStore) expire(now time.Time) {
 			}
 		}
 	}
+	return nil
 }
 func preparedResult(operation string, m supervisor.PlanMetadata, state journal.PreparationState) (control.Result, error) {
 	if state.Revision > math.MaxInt64 {
@@ -176,7 +190,9 @@ func (r *runtime) prepareAdmission(ctx context.Context, peer control.Peer, in co
 	if err != nil {
 		return control.Result{}, admissionWireError(err)
 	}
-	s.expire(time.Now().UTC())
+	if err := s.expire(ctx, time.Now().UTC()); err != nil {
+		return control.Result{}, admissionWireError(err)
+	}
 	if _, found := s.confirmations[in.OperationID]; found {
 		return control.Result{}, admissionFailure(control.CodeRevisionConflict, "operation method changed")
 	}
@@ -194,12 +210,15 @@ func (r *runtime) prepareAdmission(ctx context.Context, peer control.Peer, in co
 		if meta.ContextEpoch != entry.inputs.ContextEpoch || meta.PolicyRevision != entry.inputs.PolicyRevision || meta.RootID != entry.inputs.RootID {
 			return control.Result{}, admissionFailure(control.Code("dependency_stale"), "preparation context changed")
 		}
-		if err := supervisor.ValidateServicePlan(ctx, entry.plan); err != nil {
+		if err := validatePreparationEntry(ctx, entry); err != nil {
 			return control.Result{}, admissionWireError(err)
 		}
 		out := replay.result
 		out.Body = append(json.RawMessage{}, out.Body...)
 		return out, nil
+	}
+	if len(s.operations) >= 4096 {
+		return control.Result{}, admissionFailure(control.CodeAllowanceExhausted, "volatile operation replay capacity reached")
 	}
 	count := 0
 	for _, entry := range s.plans {
@@ -219,25 +238,32 @@ func (r *runtime) prepareAdmission(ctx context.Context, peer control.Peer, in co
 	if err != nil {
 		return control.Result{}, admissionWireError(err)
 	}
-	if s.beforeEffect != nil {
-		s.beforeEffect()
-	}
-	if err := supervisor.ValidateServicePlan(ctx, plan); err != nil {
-		return control.Result{}, admissionWireError(err)
-	}
 	metadata, err := plan.Metadata()
 	if err != nil {
 		return control.Result{}, admissionWireError(err)
 	}
-	if _, err := plan.CanonicalBinding(); err != nil {
+	canonical, err := plan.CanonicalBinding()
+	if err != nil {
+		return control.Result{}, admissionWireError(err)
+	}
+	sealed := metadata
+	sealed.Challenges = append([]ab.ChallengeV1{}, metadata.Challenges...)
+	entry := &preparationEntry{plan: plan, metadata: metadata, sealedMetadata: sealed, canonical: canonical, inputs: inputs, expires: metadata.ExpiresAt}
+	s.pending = entry
+	defer func() { s.pending = nil }()
+	if s.beforeEffect != nil {
+		s.beforeEffect()
+	}
+	if err := validatePreparationEntry(ctx, entry); err != nil {
+		_ = supervisor.InvalidateServicePlan(context.WithoutCancel(ctx), plan)
 		return control.Result{}, admissionWireError(err)
 	}
 	result, err := preparedResult(in.OperationID, metadata, journal.PreparationState{})
 	if err != nil {
 		return control.Result{}, admissionWireError(err)
 	}
-	s.plans[metadata.PreparationID] = &preparationEntry{plan: plan, metadata: metadata, inputs: inputs, expires: metadata.ExpiresAt}
-	s.operations[in.OperationID] = preparationReplay{peerID: peerID, preparationID: metadata.PreparationID, digest: digest, result: result}
+	s.plans[metadata.PreparationID] = entry
+	s.operations[in.OperationID] = preparationReplay{peerID: peerID, preparationID: metadata.PreparationID, digest: digest, result: result, expires: metadata.ExpiresAt}
 	return result, nil
 }
 
@@ -268,7 +294,9 @@ func (r *runtime) confirmAdmission(ctx context.Context, peer control.Peer, in co
 	if err != nil {
 		return control.Result{}, admissionWireError(err)
 	}
-	s.expire(time.Now().UTC())
+	if err := s.expire(ctx, time.Now().UTC()); err != nil {
+		return control.Result{}, admissionWireError(err)
+	}
 	entry := s.plans[answer.PreparationID]
 	if entry == nil {
 		return control.Result{}, admissionFailure(control.Code("dependency_stale"), "preparation is unavailable; prepare again")
@@ -286,7 +314,7 @@ func (r *runtime) confirmAdmission(ctx context.Context, peer control.Peer, in co
 		if replay.preparationID != answer.PreparationID || replay.digest != digest {
 			return control.Result{}, admissionFailure(control.CodeRevisionConflict, "operation arguments changed")
 		}
-		metadata := entry.metadata
+		metadata := entry.sealedMetadata
 		if in.ExpectedRevision < 0 {
 			return control.Result{}, admissionFailure(control.CodeInvalidContract, "negative preparation revision")
 		}
@@ -307,7 +335,9 @@ func (r *runtime) confirmAdmission(ctx context.Context, peer control.Peer, in co
 	if len(s.confirmations) >= 32*128 {
 		return control.Result{}, admissionFailure(control.CodeAllowanceExhausted, "confirmation replay capacity reached")
 	}
-	if err := supervisor.ValidateServicePlan(ctx, entry.plan); err != nil {
+	s.pending = entry
+	defer func() { s.pending = nil }()
+	if err := validatePreparationEntry(ctx, entry); err != nil {
 		return control.Result{}, admissionWireError(err)
 	}
 	metadata, err := entry.plan.Metadata()
@@ -339,9 +369,35 @@ func (r *runtime) confirmAdmission(ctx context.Context, peer control.Peer, in co
 	if challenge == nil {
 		return control.Result{}, admissionFailure(control.CodeInvalidContract, "confirmation challenge is foreign")
 	}
+	if in.ExpectedRevision < 0 {
+		return control.Result{}, admissionFailure(control.CodeInvalidContract, "negative preparation revision")
+	}
+	current := journal.PreparationState{PreparationID: metadata.PreparationID, BindingSHA256: metadata.BindingSHA256}
+	if entry.retained {
+		current, err = r.journal.ReadPreparationState(ctx, journal.PreparationLookup{PreparationID: metadata.PreparationID, PeerID: peerID, RootID: metadata.RootID, Generation: metadata.Generation, ContextEpoch: metadata.ContextEpoch, BindingSHA256: metadata.BindingSHA256, ExpectedRevision: uint64(in.ExpectedRevision), ObservedAt: time.Now().UTC()})
+		if err != nil {
+			return control.Result{}, admissionWireError(err)
+		}
+	}
+	if uint64(in.ExpectedRevision) != current.Revision {
+		reply, err := preparedResult(in.OperationID, metadata, current)
+		if err != nil {
+			return control.Result{}, admissionWireError(err)
+		}
+		return reply, admissionFailure(control.CodeRevisionConflict, "preparation revision changed")
+	}
 	if !answer.Approved {
 		if err := supervisor.InvalidateServicePlan(ctx, entry.plan); err != nil {
 			return control.Result{}, admissionWireError(err)
+		}
+		if !entry.retained {
+			delete(s.plans, answer.PreparationID)
+			for operation, replay := range s.operations {
+				if replay.preparationID == answer.PreparationID {
+					replay.result = control.Result{}
+					s.operations[operation] = replay
+				}
+			}
 		}
 		return control.Result{}, admissionFailure(control.Code("policy_ineligible"), "confirmation rejected; prepare again")
 	}
@@ -371,7 +427,7 @@ func (r *runtime) confirmAdmission(ctx context.Context, peer control.Peer, in co
 		if s.beforeEffect != nil {
 			s.beforeEffect()
 		}
-		if err := supervisor.ValidateServicePlan(ctx, entry.plan); err != nil {
+		if err := validatePreparationEntry(ctx, entry); err != nil {
 			return control.Result{}, admissionWireError(err)
 		}
 		state, err = r.journal.StoreRetainedPreparation(ctx, journal.RetainedPreparationInput{Operation: operation, CanonicalBinding: canonical, Policy: s.policy, Retention: approval, Lookup: lookup})
@@ -385,7 +441,7 @@ func (r *runtime) confirmAdmission(ctx context.Context, peer control.Peer, in co
 		if s.beforeEffect != nil {
 			s.beforeEffect()
 		}
-		if err := supervisor.ValidateServicePlan(ctx, entry.plan); err != nil {
+		if err := validatePreparationEntry(ctx, entry); err != nil {
 			return control.Result{}, admissionWireError(err)
 		}
 		state, err = r.journal.ConfirmPreparation(ctx, lookup, journal.ConfirmationV1{Operation: operation, ChallengeID: challenge.ID, BindingSHA256: metadata.BindingSHA256, PeerID: peerID, RootID: metadata.RootID, ContextEpoch: metadata.ContextEpoch, Generation: metadata.Generation, Decision: ab.RetentionApprove, ObservedAt: observed})
@@ -426,4 +482,37 @@ func decodeAdmission[T v2contract.Validator](raw json.RawMessage) (T, error) {
 		return zero, err
 	}
 	return control.Decode[T](frame)
+}
+
+func validatePreparationEntry(ctx context.Context, entry *preparationEntry) error {
+	if entry == nil {
+		return admissionFailure(control.CodeInvalidContract, "missing prepared view")
+	}
+	if err := supervisor.ValidateServicePlan(ctx, entry.plan); err != nil {
+		return err
+	}
+	metadata, err := entry.plan.Metadata()
+	if err != nil {
+		return err
+	}
+	canonical, err := entry.plan.CanonicalBinding()
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(metadata, entry.metadata) || !bytes.Equal(canonical, entry.canonical) || !entry.expires.Equal(metadata.ExpiresAt) {
+		return admissionFailure(control.Code("dependency_stale"), "prepared authority view changed")
+	}
+	binding, err := ab.DecodeV1(canonical)
+	if err != nil {
+		return err
+	}
+	in := entry.inputs
+	contextMetadata, err := in.Context.Metadata()
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(binding.Request, in.Request) || binding.Decision.Task.ArtifactRef != in.TaskArtifactRef || metadata.RootID != in.RootID || metadata.PeerID != in.PeerID || metadata.Generation != in.Generation || metadata.ContextEpoch != in.ContextEpoch || metadata.PolicyRevision != in.PolicyRevision || contextMetadata.PrincipalRef != binding.Decision.Environment.PrincipalRef || contextMetadata.ContextEpoch != metadata.ContextEpoch {
+		return admissionFailure(control.Code("dependency_stale"), "prepared execution inputs changed")
+	}
+	return nil
 }

@@ -1033,3 +1033,350 @@ func TestServiceRejectionRevokesPlanAndPermit(t *testing.T) {
 		t.Fatal("plan-specific revocation changed durable rows or granted effects")
 	}
 }
+
+func TestReviewStaleRejectionDoesNotRevoke(t *testing.T) {
+	r := testRuntime(t)
+	spec := retentionOnlyRequestFixture(t)
+	configureSyntheticAdmission(t, r, spec)
+	prepared, peer := prepareFixtureRun(t, r, spec, "op_review_prepare")
+	answer := retentionAnswer(prepared)
+	if _, err := r.server.Dispatch(t.Context(), peer, admissionIntent(t, r, "run.confirm", "op_review_retention", prepared.PreparationID, 0, answer)); err != nil {
+		t.Fatal(err)
+	}
+	entry := r.preparations.plans[prepared.PreparationID]
+	m, err := entry.plan.Metadata()
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmed, err := r.journal.ReadConfirmedPreparation(t.Context(), journal.PreparationLookup{PreparationID: m.PreparationID, PeerID: m.PeerID, RootID: m.RootID, BindingSHA256: m.BindingSHA256, ContextEpoch: m.ContextEpoch, Generation: m.Generation, ExpectedRevision: 1, ObservedAt: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	permit, err := supervisor.RevalidateService(t.Context(), confirmed, entry.inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer.Approved = false
+	out, err := r.server.Dispatch(t.Context(), peer, admissionIntent(t, r, "run.confirm", "op_review_stale_reject", prepared.PreparationID, 0, answer))
+	var ce *control.Error
+	if !errors.As(err, &ce) || ce.Code != control.CodeRevisionConflict {
+		t.Errorf("stale rejection error = %v, expected revision_conflict; reply=%s", err, out.Body)
+	}
+	if _, err := permit.Metadata(); err != nil {
+		t.Errorf("stale rejection revoked current permit: %v", err)
+	}
+}
+
+func TestReviewStaleConfirmationHasCurrent(t *testing.T) {
+	r := testRuntime(t)
+	spec := projectRequestFixture(t)
+	configureSyntheticAdmission(t, r, spec)
+	client := control.NewPreparedRunClient(&admissionFramedConn{runtime: r, peer: control.Peer{SameUser: true, PID: 77}})
+	p, err := client.PrepareRevisioned(t.Context(), "op_review_current_prepare", spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retention := retentionAnswer(p.Run)
+	retained, err := client.ConfirmRevisioned(t.Context(), "op_review_current_retain", 0, retention)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var answer control.RunConfirmation
+	for _, ch := range p.Run.Challenges {
+		if ch.Kind == "project-config" {
+			answer = control.RunConfirmation{SchemaVersion: 2, PreparationID: p.Run.PreparationID, ChallengeID: ch.ID, BindingSHA256: p.Run.BindingSHA256, Approved: true}
+		}
+	}
+	final, err := client.ConfirmRevisioned(t.Context(), "op_review_current_answer", retained.Revision, answer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.ConfirmRevisioned(t.Context(), "op_review_current_stale", retained.Revision, answer)
+	var conflict *control.PreparationConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("stale confirmation error=%T %v; expected PreparationConflictError with current revision %d", err, err, final.Revision)
+	}
+	current, ok := conflict.Current()
+	if !ok || current.Revision != final.Revision || current.Run.BindingSHA256 != p.Run.BindingSHA256 {
+		t.Fatalf("incoherent current=%+v present=%v", current, ok)
+	}
+}
+
+func admissionEffectSnapshot(t *testing.T, r *runtime) string {
+	t.Helper()
+	rows := []string{}
+	if err := r.journal.Transact(t.Context(), func(tx *sql.Tx) error {
+		query, err := tx.QueryContext(t.Context(), `SELECT preparation_id,revision,ready,confirmations FROM prepared_runs ORDER BY preparation_id`)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = query.Close() }()
+		for query.Next() {
+			var id, answers string
+			var revision, ready int
+			if err := query.Scan(&id, &revision, &ready, &answers); err != nil {
+				return err
+			}
+			rows = append(rows, fmt.Sprintf("%s/%d/%d/%s", id, revision, ready, answers))
+		}
+		return query.Err()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf("%s/%v/active=%d/ops=%d/hints=%d", admissionRowCounts(t, r), rows, len(r.preparations.plans), len(r.preparations.operations), len(r.preparations.confirmations))
+}
+
+func TestServiceClosedPlanEarliestEffectMatrix(t *testing.T) {
+	for _, stage := range []string{"prepare", "retention", "remaining answer"} {
+		for _, change := range []string{"missing", "extra", "wrong kind", "changed text", "swapped IDs", "duplicate ID", "authority"} {
+			t.Run(stage+"/"+change, func(t *testing.T) {
+				r := testRuntime(t)
+				spec := projectRequestFixture(t)
+				configureSyntheticAdmission(t, r, spec)
+				peer := control.Peer{SameUser: true, PID: 77}
+				var prepared control.PreparedRun
+				if stage != "prepare" {
+					prepared, peer = prepareFixtureRun(t, r, spec, "op_matrix_prepare")
+				}
+				if stage == "remaining answer" {
+					if _, err := r.server.Dispatch(t.Context(), peer, admissionIntent(t, r, "run.confirm", "op_matrix_retain", prepared.PreparationID, 0, retentionAnswer(prepared))); err != nil {
+						t.Fatal(err)
+					}
+				}
+				before := admissionEffectSnapshot(t, r)
+				barriers := 0
+				r.preparations.beforeEffect = func() {
+					barriers++
+					pending := r.preparations.pending
+					if pending == nil {
+						t.Fatal("fresh transition did not expose its closed view")
+					}
+					b, err := ab.DecodeV1(pending.canonical)
+					if err != nil {
+						t.Fatal(err)
+					}
+					switch change {
+					case "missing":
+						b.Challenges = b.Challenges[1:]
+					case "extra":
+						b.Challenges = append(b.Challenges, ab.ChallengeV1{ID: "challenge_extra", Kind: "project-config", Text: "Different authority"})
+					case "wrong kind":
+						b.Challenges[0].Kind = "no-checks"
+					case "changed text":
+						b.Challenges[0].Text = "Different authority"
+					case "swapped IDs":
+						b.Challenges[0].ID, b.Challenges[1].ID = b.Challenges[1].ID, b.Challenges[0].ID
+					case "duplicate ID":
+						b.Challenges[1].ID = b.Challenges[0].ID
+					case "authority":
+						b.Request.KeepGoing = true
+						b.Decision.KeepGoing = true
+						pending.inputs.Request.KeepGoing = true
+					}
+					pending.metadata.Challenges = append([]ab.ChallengeV1{}, b.Challenges...)
+					raw, err := ab.EncodeV1(b)
+					if err != nil {
+						if change != "duplicate ID" {
+							t.Fatal(err)
+						}
+						raw, err = json.Marshal(b)
+						if err != nil {
+							t.Fatal(err)
+						}
+					}
+					pending.canonical = raw
+					if digest, err := ab.DigestV1(b); err == nil {
+						pending.metadata.BindingSHA256 = hex.EncodeToString(digest[:])
+					}
+				}
+				in := admissionIntent(t, r, "run.prepare", "op_matrix_prepare", "", 0, spec)
+				if stage == "retention" {
+					in = admissionIntent(t, r, "run.confirm", "op_matrix_retain", prepared.PreparationID, 0, retentionAnswer(prepared))
+				}
+				if stage == "remaining answer" {
+					var answer control.RunConfirmation
+					for _, ch := range prepared.Challenges {
+						if ch.Kind == "project-config" {
+							answer = control.RunConfirmation{SchemaVersion: 2, PreparationID: prepared.PreparationID, ChallengeID: ch.ID, BindingSHA256: prepared.BindingSHA256, Approved: true}
+						}
+					}
+					in = admissionIntent(t, r, "run.confirm", "op_matrix_answer", prepared.PreparationID, 1, answer)
+				}
+				result, err := r.server.Dispatch(t.Context(), peer, in)
+				if err == nil || len(result.Body) != 0 || barriers != 1 || r.preparations.pending != nil || admissionEffectSnapshot(t, r) != before {
+					t.Fatalf("altered closed authority crossed %s boundary: error=%v body=%s barriers=%d", stage, err, result.Body, barriers)
+				}
+			})
+		}
+	}
+}
+
+func TestServicePreparationCapacityRecovery(t *testing.T) {
+	for _, mode := range []string{"expire", "cancel"} {
+		t.Run(mode, func(t *testing.T) {
+			r := testRuntime(t)
+			spec := requestFixture(t)
+			configureSyntheticAdmission(t, r, spec)
+			before := admissionRowCounts(t, r)
+			prepared := []control.PreparedRun{}
+			peers := []control.Peer{}
+			for i := range 32 {
+				peer := control.Peer{SameUser: true, PID: int32(100 + i/8)}
+				p, _ := prepareFixtureRunPeer(t, r, spec, fmt.Sprintf("op_recovery_%d", i), peer)
+				prepared = append(prepared, p)
+				peers = append(peers, peer)
+			}
+			for _, index := range []int{0, 8} {
+				p := prepared[index]
+				if mode == "expire" {
+					r.preparations.plans[p.PreparationID].expires = time.Now().Add(-time.Second)
+				} else {
+					answer := retentionAnswer(p)
+					answer.Approved = false
+					_, err := r.server.Dispatch(t.Context(), peers[index], admissionIntent(t, r, "run.confirm", fmt.Sprintf("op_cancel_%d", index), p.PreparationID, 0, answer))
+					requireAdmissionCode(t, err, control.Code("policy_ineligible"))
+					old := r.preparations.operations[fmt.Sprintf("op_recovery_%d", index)]
+					if len(old.result.Body) != 0 {
+						t.Fatal("cancellation kept the full unapproved acknowledgement")
+					}
+				}
+			}
+			prepareFixtureRunPeer(t, r, spec, "op_recovered_peer", peers[0])
+			prepareFixtureRunPeer(t, r, spec, "op_recovered_global", control.Peer{SameUser: true, PID: 999})
+			if len(r.preparations.plans) != 32 {
+				t.Fatalf("recovered active slots=%d", len(r.preparations.plans))
+			}
+			if _, ok := r.preparations.plans[prepared[0].PreparationID]; ok {
+				t.Fatal("expired/cancelled plan remained active")
+			}
+			if _, ok := r.preparations.plans[prepared[1].PreparationID]; !ok {
+				t.Fatal("live unexpired preparation was evicted")
+			}
+			if admissionRowCounts(t, r) != before {
+				t.Fatal("volatile capacity recovery changed durable authority")
+			}
+			_, err := r.server.Dispatch(t.Context(), peers[0], admissionIntent(t, r, "run.prepare", "op_recovery_0", "", 0, spec))
+			if mode == "cancel" {
+				requireAdmissionCode(t, err, control.Code("dependency_stale"))
+			}
+		})
+	}
+}
+func prepareFixtureRunPeer(t *testing.T, r *runtime, spec control.RunSpec, operation string, peer control.Peer) (control.PreparedRun, control.Result) {
+	t.Helper()
+	result, err := r.server.Dispatch(t.Context(), peer, admissionIntent(t, r, "run.prepare", operation, "", 0, spec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var prepared control.PreparedRun
+	if err := json.Unmarshal(result.Body, &prepared); err != nil {
+		t.Fatal(err)
+	}
+	return prepared, result
+}
+
+func TestServiceTaskByteCap(t *testing.T) {
+	r := testRuntime(t)
+	spec := requestFixture(t)
+	configureSyntheticAdmission(t, r, spec)
+	body := append([]byte("# Bounded task\n"), bytes.Repeat([]byte("x"), admission.MaxTaskBytes)...)
+	if err := os.WriteFile(spec.TaskFile, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(body)
+	spec.TaskSHA256 = hex.EncodeToString(sum[:])
+	before := admissionEffectSnapshot(t, r)
+	result, err := r.server.Dispatch(t.Context(), control.Peer{SameUser: true, PID: 77}, admissionIntent(t, r, "run.prepare", "op_oversize_task", "", 0, spec))
+	if err == nil || len(result.Body) != 0 || admissionEffectSnapshot(t, r) != before {
+		t.Fatal("oversized task crossed the volatile preparation boundary")
+	}
+}
+
+func TestServicePreparedRestartRefuses(t *testing.T) {
+	r := testRuntime(t)
+	spec := requestFixture(t)
+	configureSyntheticAdmission(t, r, spec)
+	prepared, peer := prepareFixtureRun(t, r, spec, "op_restart_prepare")
+	root := r.lease.Root()
+	if err := r.shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := openRuntime(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = fresh.shutdown(context.Background()) })
+	configureSyntheticAdmission(t, fresh, spec)
+	before := admissionEffectSnapshot(t, fresh)
+	result, err := fresh.server.Dispatch(t.Context(), peer, admissionIntent(t, fresh, "run.confirm", "op_restart_confirm", prepared.PreparationID, 0, retentionAnswer(prepared)))
+	requireAdmissionCode(t, err, control.Code("dependency_stale"))
+	if len(result.Body) != 0 || admissionEffectSnapshot(t, fresh) != before {
+		t.Fatal("restart recreated authority from a forgotten preparation")
+	}
+}
+
+func TestServiceBindingByteCap(t *testing.T) {
+	r := testRuntime(t)
+	spec := retentionOnlyRequestFixture(t)
+	configureSyntheticAdmission(t, r, spec)
+	arg := "'" + strings.Repeat("\"", 2500) + "'"
+	config := []byte("schema_version = 1\n[[checks]]\nname = \"bounded\"\nargv = ['git'," + strings.Repeat(arg+",", 254) + arg + "]\ntimeout = \"5s\"\n")
+	_, digest, err := admission.ParseProjectConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(spec.Repository, admission.ProjectConfigFile), config, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", admission.ProjectConfigFile}, {"commit", "--quiet", "-m", "bounded binding fixture"}} {
+		cmd := exec.CommandContext(t.Context(), "git", args...)
+		cmd.Dir = spec.Repository
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("binding fixture: %v %s", err, out)
+		}
+	}
+	spec.TrustProjectConfig = "sha256:" + digest
+	before := admissionEffectSnapshot(t, r)
+	result, err := r.server.Dispatch(t.Context(), control.Peer{SameUser: true, PID: 77}, admissionIntent(t, r, "run.prepare", "op_oversize_binding", "", 0, spec))
+	if err == nil || len(result.Body) != 0 || admissionEffectSnapshot(t, r) != before {
+		t.Fatal("oversized canonical binding produced effects")
+	}
+}
+
+func TestServicePreparedRootReplacementRefuses(t *testing.T) {
+	r := testRuntime(t)
+	spec := requestFixture(t)
+	configureSyntheticAdmission(t, r, spec)
+	prepared, peer := prepareFixtureRun(t, r, spec, "op_replaced_prepare")
+	root := r.lease.Root()
+	if err := r.journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(root, root+"-original"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := journal.Open(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := replacement.Close(); err != nil {
+		t.Fatal(err)
+	}
+	database := filepath.Join(root, journal.DBName)
+	before, err := os.ReadFile(database) // #nosec G304 -- Fixed replacement database within this isolated root.
+	if err != nil {
+		t.Fatal(err)
+	} // #nosec G304 -- Fixed replacement database within this isolated root.
+	result, err := r.server.Dispatch(t.Context(), peer, admissionIntent(t, r, "run.confirm", "op_replaced_confirm", prepared.PreparationID, 0, retentionAnswer(prepared)))
+	requireAdmissionCode(t, err, control.Code("dependency_stale"))
+	after, err := os.ReadFile(database) // #nosec G304 -- Same deliberate replacement database; verifies refusal effects.
+	if err != nil {
+		t.Fatal(err)
+	} // #nosec G304 -- Same deliberate replacement database; verifies refusal effects.
+	if len(result.Body) != 0 || !bytes.Equal(before, after) || r.preparations.pending != nil {
+		t.Fatal("physical root replacement disclosed or changed preparation authority")
+	}
+}

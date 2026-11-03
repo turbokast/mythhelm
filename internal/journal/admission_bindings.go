@@ -223,6 +223,30 @@ func (j *Journal) ConfirmPreparation(ctx context.Context, l PreparationLookup, a
 	return result, nil
 }
 
+// ReadPreparationState checks the current durable preparation without minting
+// authority. ExpectedRevision is a caller observation, not a read predicate.
+func (j *Journal) ReadPreparationState(ctx context.Context, l PreparationLookup) (PreparationState, error) {
+	if j == nil || j.db == nil {
+		return PreparationState{}, admissionStorageError(v2contract.CodeInvalidContract)
+	}
+	var result PreparationState
+	err := j.Transact(ctx, func(tx *sql.Tx) error {
+		row, err := readPreparation(ctx, tx, l)
+		if err != nil {
+			return err
+		}
+		if row.state.Consumed {
+			return admissionStorageError(v2contract.CodeRevisionConflict)
+		}
+		result = row.state
+		return nil
+	})
+	if err != nil {
+		return PreparationState{}, admissionTransactionError(err)
+	}
+	return result, nil
+}
+
 // ReadConfirmedPreparation validates the complete current durable answer set.
 // It grants no native/trust authority and remains subject to fresh revalidation.
 func (j *Journal) ReadConfirmedPreparation(ctx context.Context, l PreparationLookup) (ConfirmedPreparation, error) {

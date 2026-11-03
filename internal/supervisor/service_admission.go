@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/turbokast/mythhelm/internal/adapter"
@@ -186,7 +187,7 @@ type servicePlanState struct {
 	metadata   PlanMetadata
 	observedAt time.Time
 	repoInfo   os.FileInfo
-	invalid    bool
+	invalid    atomic.Bool
 }
 
 // LaunchPermit has one shared consumption state even when copied.
@@ -230,7 +231,7 @@ func (p *ServicePlan) CanonicalBinding() ([]byte, error) {
 }
 
 func (s *servicePlanState) check() error {
-	if s.invalid {
+	if s.invalid.Load() {
 		return serviceAdmissionError(v2contract.CodeDependencyStale)
 	}
 	if _, err := s.context.Metadata(); err != nil {
@@ -238,7 +239,7 @@ func (s *servicePlanState) check() error {
 	}
 	now := time.Now().UTC()
 	if now.Before(s.observedAt) || !now.Before(s.metadata.ExpiresAt) {
-		s.invalid = true
+		s.invalid.Store(true)
 		return serviceAdmissionError(v2contract.CodeDependencyStale)
 	}
 	s.observedAt = now
@@ -324,7 +325,7 @@ func PrepareService(ctx context.Context, in ServiceInputs) (*ServicePlan, error)
 		return nil, serviceAdmissionError(v2contract.CodeInvalidContract)
 	}
 	for id, prior := range in.Context.state.plans {
-		if !now.Before(prior.state.metadata.ExpiresAt) {
+		if !now.Before(prior.state.metadata.ExpiresAt) || prior.state.invalid.Load() {
 			delete(in.Context.state.plans, id)
 		}
 	}
@@ -500,7 +501,7 @@ func copyServiceRequest(in ab.RunSpecV2) ab.RunSpecV2 {
 // Planned IDs are service-owned; rebinding only their fixed fake recipe slots
 // prevents newly allocated IDs from disguising genuine source drift.
 func (s *servicePlanState) fresh(ctx context.Context) (admission.Decision, error) {
-	if s.invalid {
+	if s.invalid.Load() {
 		return admission.Decision{}, serviceAdmissionError(v2contract.CodeDependencyStale)
 	}
 	m, err := s.context.Metadata()
@@ -641,7 +642,7 @@ func RevalidateService(ctx context.Context, confirmed journal.ConfirmedPreparati
 	}
 	d, err := s.fresh(ctx)
 	if err != nil {
-		s.invalid = true
+		s.invalid.Store(true)
 		return nil, err
 	}
 	nonce := sha256.Sum256([]byte(ids.New("permit")))
@@ -666,20 +667,20 @@ func ValidateServicePlan(ctx context.Context, plan *ServicePlan) error {
 	}
 	c := s.context.state
 	if err := c.lease.CheckRootIdentity(ctx, c.journal.StateDir()); err != nil {
-		s.invalid = true
+		s.invalid.Store(true)
 		return serviceAdmissionError(v2contract.CodeDependencyStale)
 	}
 	if err := c.journal.CheckStateIdentity(ctx); err != nil {
-		s.invalid = true
+		s.invalid.Store(true)
 		return serviceAdmissionError(v2contract.CodeDependencyStale)
 	}
 	principal, err := executionPrincipal()
 	if err != nil || principal != c.metadata.PrincipalRef {
-		s.invalid = true
+		s.invalid.Store(true)
 		return serviceAdmissionError(v2contract.CodeDependencyStale)
 	}
 	if _, err := s.fresh(ctx); err != nil {
-		s.invalid = true
+		s.invalid.Store(true)
 		return err
 	}
 	return ctx.Err()
@@ -709,6 +710,6 @@ func InvalidateServicePlan(ctx context.Context, plan *ServicePlan) error {
 	}
 	plan.state.mu.Lock()
 	defer plan.state.mu.Unlock()
-	plan.state.invalid = true
+	plan.state.invalid.Store(true)
 	return nil
 }
