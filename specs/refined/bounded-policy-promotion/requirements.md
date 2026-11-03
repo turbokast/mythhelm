@@ -1,6 +1,6 @@
 ## Bounded policy promotion — Requirements
 
-> Unrefined. Run /refine-spec bounded-policy-promotion before /spec.
+> Refined. Independent assessment: Ready. Next: /spec bounded-policy-promotion.
 
 > Promote immutable runtime data policies for a defined cohort only after protected evidence, current route qualification and applicable authority; canary future admissions, preserve running episode pins and reconcile bounded rollback. Normative source: `mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md`, version 2.0, §§4–5, 7–13, 17–19; implementation slice W12 in `mythhelm-synthesis/MYTHHELM_Implementation_Plan.md`. Every I-ID below refers to v2 §2, every AT-ID to v2 §18.2 and every G-ID to v2 §18.3. Named checks are prospective requirements, not passing results or live qualification. This capture authorizes no activation, experiment, installation, native/provider call, collection or publication.
 
