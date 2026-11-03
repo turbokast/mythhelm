@@ -35,9 +35,11 @@ func (r *runtime) reconcileRunObserved(ctx context.Context, runID string, onComm
 	if err != nil {
 		return nil, err
 	}
+	ready := make(chan error, 1)
 	a, err := r.startEntry(ctx, owner, func(ctx context.Context, h supervisor.Hooks) error {
 		adoption, err := r.verifyAdoption(ctx, runID)
 		if err != nil {
+			ready <- err
 			return err
 		}
 		if err := r.journal.Transact(ctx, func(tx *sql.Tx) error {
@@ -55,8 +57,10 @@ func (r *runtime) reconcileRunObserved(ctx context.Context, runID string, onComm
 			}
 			return control.RecordServiceAdoption(ctx, tx, adoption)
 		}); err != nil {
+			ready <- err
 			return err
 		}
+		ready <- nil // Durable adoption precedes readiness and recovery presence.
 		if onCommitted != nil {
 			deliver := h.Event
 			h.Event = func(e journal.Event) { onCommitted(e); deliver(e) }
@@ -66,8 +70,18 @@ func (r *runtime) reconcileRunObserved(ctx context.Context, runID string, onComm
 	})
 	if err != nil {
 		_ = owner.Close()
+		return nil, err
 	}
-	return a, err
+	select {
+	case err := <-ready:
+		if err != nil {
+			return nil, err
+		}
+		return a, nil
+	case <-ctx.Done():
+		// The admitted actor remains owned until coordinated shutdown joins it.
+		return nil, ctx.Err()
+	}
 }
 
 // verifyAdoption is read-only. In particular it never invokes recovery/ingest

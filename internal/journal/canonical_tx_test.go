@@ -1,6 +1,7 @@
 package journal
 
 import (
+	"bytes"
 	"database/sql"
 	"errors"
 	"testing"
@@ -9,9 +10,29 @@ import (
 	"github.com/turbokast/mythhelm/internal/v2contract"
 )
 
-func TestAppendCanonicalTx(t *testing.T) {
-	j, _ := openTemp(t)
+func TestCanonicalAdoptionV2Transaction(t *testing.T) {
 	ctx := t.Context()
+	dir := t.TempDir()
+	legacy, err := open(ctx, dir, migrations[:9])
+	if err != nil {
+		t.Fatal(err)
+	}
+	historical := Event{SchemaVersion: 1, EventID: "evt_historical", RunID: "run_canonical", ProducerID: "legacy", ProducerSequence: 1, Generation: 1, ObservedAt: time.Now().UTC(), Type: "legacy.fixture", Payload: []byte(`{ "original" : "bytes" }`)}
+	if err := legacy.Append(ctx, historical, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatal(err)
+	}
+	j, err := Open(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = j.Close() })
+	before, err := j.Events(ctx, historical.RunID, 0)
+	if err != nil || len(before) != 1 || before[0].SchemaVersion != 1 || before[0].Generation != 1 || before[0].ProducerSequence != 1 || !bytes.Equal(before[0].Payload, historical.Payload) {
+		t.Fatalf("migration rewrote historical bytes: %v %v", before, err)
+	}
 	event := v2contract.Envelope{SchemaVersion: 2, EventID: "evt_canonical", RunID: "run_canonical", ProducerID: "service.canonical", ProducerSequence: 1, Generation: 2, ObservedAt: time.Now().UTC(), Type: "service.adopted", Payload: []byte(`{"schema_version":2}`)}
 	for _, version := range []int{1, 3} {
 		e := event
@@ -45,7 +66,7 @@ func TestAppendCanonicalTx(t *testing.T) {
 		t.Fatal(err)
 	}
 	events, err := j.Events(ctx, event.RunID, 0)
-	if err != nil || len(events) != 1 || events[0].RunSequence != 1 || count != 1 {
+	if err != nil || len(events) != 2 || events[1].RunSequence != 2 || count != 1 || !bytes.Equal(events[0].Payload, historical.Payload) {
 		t.Fatalf("duplicate reapplied: %v %v count%d", events, err, count)
 	}
 }
