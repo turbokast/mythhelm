@@ -260,7 +260,9 @@ func TestAdoptionRefusesUnverifiedLaunch(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { _ = os.WriteFile(identity, original, 0600) })
+			t.Cleanup(func() {
+				_ = os.WriteFile(identity, original, 0600) // #nosec G703 -- restore only the fixed worker identity in this test-owned attempt TempDir.
+			})
 			switch name {
 			case "pid_reuse", "foreign_launch":
 				var id workers.Identity
@@ -392,7 +394,7 @@ func crashAdoptionService(run, mode, marker, proof string) int {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if err := os.WriteFile(marker, []byte(mode), 0600); err != nil {
+	if err := os.WriteFile(marker, []byte(mode), 0600); err != nil { // #nosec G703 -- parent-created marker path in its private TempDir, passed only to this validated own-fixture helper.
 		return 8
 	}
 	for {
@@ -441,7 +443,10 @@ func TestAdoptionCrashDoesNotRelaunch(t *testing.T) {
 				_ = cmd.Wait()
 			}
 		})
-		awaitAdoptionCondition(t, func() bool { raw, err := os.ReadFile(marker); return err == nil && string(raw) == mode })
+		awaitAdoptionCondition(t, func() bool {
+			raw, err := os.ReadFile(marker) // #nosec G304 -- fixed crash-phase marker in this test-owned TempDir.
+			return err == nil && string(raw) == mode
+		})
 		if err := cmd.Process.Kill(); err != nil {
 			t.Fatal(err)
 		}
@@ -563,7 +568,7 @@ func TestAdoptionRefusesSpooledLaunchMismatch(t *testing.T) {
 			path := filepath.Join(workers.AttemptDir(f.r.journal.StateDir(), f.run, f.attempt), supervisor.SpoolFile)
 			// No ingestion has occurred; the only available launch observation is spool.
 			awaitAdoptionCondition(t, func() bool {
-				raw, err := os.ReadFile(path)
+				raw, err := os.ReadFile(path) // #nosec G304 -- fixed spool in this test-owned attempt root; observes the real launch before deliberate fixture corruption.
 				return err == nil && strings.Contains(string(raw), `"attempt.launched"`)
 			})
 			raw, err := os.ReadFile(path)

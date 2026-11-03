@@ -1462,7 +1462,7 @@ func TestCompletedWorkerWaitGrantsNothing(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			afterIdentity, err := os.ReadFile(identity)
+			afterIdentity, err := os.ReadFile(identity) // #nosec G304 -- fixed worker identity in this test-owned attempt TempDir.
 			if err != nil {
 				t.Fatal(err)
 			}
