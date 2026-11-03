@@ -1200,12 +1200,12 @@ func TestThemeFlagLaunchMatrix(t *testing.T) {
 	}{
 		{name: "auto light", terminal: true, view: true, want: "light", calls: 1},
 		{name: "auto dark", terminal: true, dark: true, view: true, want: "dark", calls: 1},
-		{name: "plain", flag: "--plain"},
-		{name: "accessible", flag: "--accessible"},
-		{name: "jsonl", flag: "--format=jsonl"},
+		{name: "plain", flag: "--plain", terminal: true},
+		{name: "accessible", flag: "--accessible", terminal: true},
+		{name: "jsonl", flag: "--format=jsonl", terminal: true},
 		{name: "piped"},
 		{name: "dumb", terminal: true, envKey: "TERM", envValue: "dumb"},
-		{name: "NO_COLOR", terminal: true, envKey: "NO_COLOR", envValue: "1", view: true, want: "dark"},
+		{name: "NO_COLOR", terminal: true, envKey: "NO_COLOR", envValue: "1", view: true, want: "dark"}, //nolint:misspell // NO_COLOR is the standard environment variable spelling.
 		{name: "colour never", terminal: true, flag: "--colour=never", view: true, want: "dark"},
 		{name: "explicit dark", terminal: true, flag: "--theme=dark", view: true, want: "dark"},
 		{name: "explicit light", terminal: true, flag: "--theme=light", dark: true, view: true, want: "light"},
@@ -1220,7 +1220,7 @@ func TestThemeFlagLaunchMatrix(t *testing.T) {
 					setDemoFixtureRoot(t, t.TempDir())
 				}
 				t.Setenv("TERM", "xterm-256color")
-				t.Setenv("NO_COLOR", "")
+				t.Setenv("NO_COLOR", "") //nolint:misspell // NO_COLOR is the standard environment variable spelling.
 				if tc.envKey != "" {
 					t.Setenv(tc.envKey, tc.envValue)
 				}
@@ -1316,7 +1316,7 @@ func TestThemeFlagInvalidLaunchBranches(t *testing.T) {
 		for _, mode := range []struct{ name, flag, envKey, envValue string }{
 			{name: "TTY"}, {name: "plain", flag: "--plain"}, {name: "accessible", flag: "--accessible"},
 			{name: "jsonl", flag: "--format=jsonl"}, {name: "dumb", envKey: "TERM", envValue: "dumb"},
-			{name: "NO_COLOR", envKey: "NO_COLOR", envValue: "1"}, {name: "colour never", flag: "--colour=never"},
+			{name: "NO_COLOR", envKey: "NO_COLOR", envValue: "1"}, {name: "colour never", flag: "--colour=never"}, //nolint:misspell // NO_COLOR is the standard environment variable spelling.
 		} {
 			if mode.name == "plain" && verb != "run" || mode.name == "jsonl" && verb == "demo" {
 				continue
@@ -1324,7 +1324,7 @@ func TestThemeFlagInvalidLaunchBranches(t *testing.T) {
 			t.Run(verb+"/"+mode.name, func(t *testing.T) {
 				stateHome(t)
 				t.Setenv("TERM", "xterm-256color")
-				t.Setenv("NO_COLOR", "")
+				t.Setenv("NO_COLOR", "") //nolint:misspell // NO_COLOR is the standard environment variable spelling.
 				if mode.envKey != "" {
 					t.Setenv(mode.envKey, mode.envValue)
 				}

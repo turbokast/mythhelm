@@ -1634,7 +1634,7 @@ func TestThemeFlagBinary(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 40*time.Second)
 				defer cancel()
 				cmd := exec.CommandContext(ctx, python, "-I", "-B", "-c", themePTYWitness, ptyDriver(t), repo, mythhelmBin, runID, tc.choice, tc.colour)
-				cmd.Env = append(e.withParent(t), "TERM=xterm-256color", "COLORTERM=truecolor", "NO_COLOR=")
+				cmd.Env = append(e.withParent(t), "TERM=xterm-256color", "COLORTERM=truecolor", "NO_COLOR=") //nolint:misspell // NO_COLOR is the standard environment variable spelling.
 				out, err := cmd.CombinedOutput()
 				if err != nil || string(out) != "theme colour observed\n" {
 					t.Fatalf("packaged %s terminal witness: %v %s", tc.choice, err, out)
