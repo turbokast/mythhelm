@@ -198,16 +198,32 @@ EOF
 	echo "$c1"
 }
 
-# snapshot <dir> <out>: sha256 of every file outside .git.
+# snapshot <dir> <out>: portable, filename-safe SHA256 map outside .git.
 snapshot() {
-	(cd "$1" && find . -path ./.git -prune -o -type f -print | LC_ALL=C sort | xargs sha256sum) >"$2"
+	python3 - "$1" >"$2" <<'EOF'
+import hashlib,json,os,sys
+from pathlib import Path
+root=Path(sys.argv[1])
+files={}
+for parent,dirs,names in os.walk(root):
+    dirs[:]=[d for d in dirs if d != ".git"]
+    for name in names:
+        p=Path(parent)/name
+        if p.is_file() and not p.is_symlink():
+            files[p.relative_to(root).as_posix()]=hashlib.sha256(p.read_bytes()).hexdigest()
+json.dump(files,sys.stdout,sort_keys=True)
+EOF
 }
 
-# changed <before> <after>: the paths whose bytes differ or appeared, sorted.
+# changed <before> <after>: additions, modifications AND deletions.
 changed() {
-	# diff exits 1 on any difference; under pipefail that status would make
-	# every negated caller pass, so only diff's trouble status (2) fails.
-	{ diff "$1" "$2" || test "$?" -eq 1; } | sed -n 's/^> [0-9a-f]* *\.\///p' | LC_ALL=C sort -u
+	python3 - "$1" "$2" <<'EOF'
+import json,sys
+before,after=[json.load(open(p)) for p in sys.argv[1:]]
+for path in sorted(before.keys() | after.keys()):
+    if before.get(path) != after.get(path):
+        print(path)
+EOF
 }
 export -f changed
 
@@ -459,6 +475,150 @@ else
 	check "pin-write failure keeps unselected bytes" unchanged_except '^docs/demos/(tui[.-]|manifest\.json$)'
 fi
 
+# --- review regressions: refusal precedes any build/output write ---------
+
+preflight_refuses() {
+	local label="$1"
+	shift
+	commit "$C/repo" review-input >/dev/null
+	snapshot "$C/repo" "$C/before"
+	run_body "$C" --recording tui --repin
+	snapshot "$C/repo" "$C/after"
+	if test "$rc" -ne 0; then ok "$label refuses"; else bad "$label exits 0"; fi
+	check "$label leaves every recording byte unchanged" cmp -s "$C/before" "$C/after"
+	check "$label never builds" bash -c '! grep -q "go build" "$1"' _ "$C/log"
+}
+
+for shape in mismatch missing multiple; do
+	new_case "output-$shape"
+	case "$shape" in
+	mismatch) sed 's@Output docs/demos/tui.gif@Output docs/demos/hero.gif@' "$C/repo/docs/demos/tui.tape" >"$C/tape" ;;
+	missing) sed '/^Output /d' "$C/repo/docs/demos/tui.tape" >"$C/tape" ;;
+	multiple) cat "$C/repo/docs/demos/tui.tape" >"$C/tape"; echo 'Output docs/demos/hero.gif' >>"$C/tape" ;;
+	esac
+	cp "$C/tape" "$C/repo/docs/demos/tui.tape"
+	# Keep valid stale selected media: a check after VHS could accept it.
+	printf 'GIF89a stale selected\n' >"$C/repo/docs/demos/tui.gif"
+	preflight_refuses "selected $shape Output"
+done
+
+for key in tape artifact transcript; do
+	new_case "alias-$key"
+	python3 - "$C/repo/docs/demos/manifest.json" "$key" <<'EOF'
+import json,sys
+p,key=sys.argv[1:]
+m=json.load(open(p))
+m["recordings"][1][key]=m["recordings"][2][key]
+json.dump(m,open(p,"w"))
+EOF
+	preflight_refuses "cross-record $key alias"
+done
+
+for header in Binary-Version Binary-Commit; do
+	for shape in missing duplicate malformed; do
+		new_case "header-$header-$shape"
+		case "$shape" in
+		missing) sed "/^# $header:/d" "$C/repo/docs/demos/tui.tape" >"$C/tape" ;;
+		duplicate) cat "$C/repo/docs/demos/tui.tape" >"$C/tape"; grep "^# $header:" "$C/tape" >>"$C/repo/docs/demos/tui.tape"; cp "$C/repo/docs/demos/tui.tape" "$C/tape" ;;
+		malformed) sed "s/^# $header:.*/# $header:/" "$C/repo/docs/demos/tui.tape" >"$C/tape" ;;
+		esac
+		cp "$C/tape" "$C/repo/docs/demos/tui.tape"
+		preflight_refuses "$shape $header header"
+	done
+done
+
+# No-repin permits pin output fields to name HEAD, but not uncommitted
+# routing/configuration fields; a commit cannot include its own object ID.
+new_case dirty-manifest-routing
+set_pins "$C1" "$C2" "$C1"
+python3 - "$C/repo/docs/demos/manifest.json" <<'EOF'
+import json,sys
+p=sys.argv[1]
+m=json.load(open(p))
+m["recordings"][1]["transcript"]="docs/demos/hero.transcript.txt"
+json.dump(m,open(p,"w"))
+EOF
+snapshot "$C/repo" "$C/before"
+run_body "$C" --recording tui
+snapshot "$C/repo" "$C/after"
+expect_rc "dirty manifest routing" 1
+check "dirty manifest routing leaves all outputs unchanged" cmp -s "$C/before" "$C/after"
+check "dirty manifest routing never builds" bash -c '! grep -q "go build" "$1"' _ "$C/log"
+
+new_case dirty-manifest-capabilities
+set_pins "$C1" "$C2" "$C1"
+python3 - "$C/repo/docs/demos/manifest.json" <<'EOF'
+import json,sys
+p=sys.argv[1]
+m=json.load(open(p))
+m["recordings"][1]["capabilities"][0]["qualifier"]="TestUncommitted"
+json.dump(m,open(p,"w"))
+EOF
+snapshot "$C/repo" "$C/before"
+run_body "$C" --recording tui
+snapshot "$C/repo" "$C/after"
+expect_rc "dirty manifest capability configuration" 1
+check "dirty capability configuration refuses before build or writes" bash -c '! grep -q "go build" "$1" && cmp -s "$2" "$3"' _ "$C/log" "$C/before" "$C/after"
+
+for asset in internal/processsupport/SUPPORT.md adapters/claudecode/testdata/qualification/routes.json adapters/codex/testdata/qualification/routes.json; do
+	new_case dirty-embed
+	mkdir -p "$(dirname "$C/repo/$asset")"
+	printf 'committed embedded fixture\n' >"$C/repo/$asset"
+	asset_head="$(commit "$C/repo" embedded-input)"
+	set_pins "$C1" "$asset_head" "$C1"
+	printf 'dirty embedded fixture\n' >>"$C/repo/$asset"
+	# Snapshot after the deliberate edit: the refused run must add no effects.
+	snapshot "$C/repo" "$C/before"
+	run_body "$C" --recording tui
+	snapshot "$C/repo" "$C/after"
+	expect_rc "dirty embedded $asset" 1
+	check "dirty embedded $asset never builds" bash -c '! grep -q "go build" "$1"' _ "$C/log"
+	check "dirty embedded $asset leaves output bytes unchanged" cmp -s "$C/before" "$C/after"
+done
+
+new_case snapshot-changes
+snapshot "$C/repo" "$C/before"
+rm "$C/repo/docs/demos/hero.gif"
+printf 'changed\n' >"$C/repo/docs/demos/demo.gif"
+printf 'added\n' >"$C/repo/docs/demos/new file.txt"
+snapshot "$C/repo" "$C/after"
+check "snapshot detects additions, changes and deletions including spaces" only_changed 	docs/demos/hero.gif docs/demos/demo.gif 'docs/demos/new file.txt'
+if unchanged_except '^docs/demos/(demo\.gif|new file\.txt)$'; then
+	bad "unselected deletion evades the scope oracle"
+else
+	ok "unselected deletion fails the scope oracle"
+fi
+
+# A failure at the atomic manifest replacement retains the previous file,
+# cleans the staged file, and cannot report a successful repin. The fake
+# wrapper executes the actual Python body, replacing only os.replace with
+# an injected I/O error; all parsing, byte-preserving edits and writes run.
+atomic_failure_case() { # atomic_failure_case <label> [script]
+	new_case "$1" "${2:-$SCRIPT}"
+	cat >"$C/fake/python3" <<'EOF'
+#!/usr/bin/env bash
+if test "$#" -ge 4 && test "$1" = - && test "$4" = v9.9.9-fixture; then
+	exec "$REAL_PYTHON" -c 'import os,sys
+sys.argv=sys.argv[1:]
+def fail_replace(*args):
+    raise OSError("injected manifest replacement failure")
+os.replace=fail_replace
+exec(compile(sys.stdin.read(),"record.sh repin","exec"))' "$@"
+fi
+exec "$REAL_PYTHON" "$@"
+EOF
+	chmod +x "$C/fake/python3"
+	cp "$C/repo/docs/demos/manifest.json" "$C/manifest.before"
+	snapshot "$C/repo" "$C/before"
+	run_with "REAL_PYTHON=$(command -v python3)" -- --recording tui --repin
+	snapshot "$C/repo" "$C/after"
+}
+atomic_failure_case atomic-replace
+expect_rc "failed atomic manifest replacement" 1
+check "failed replacement keeps the complete previous manifest" cmp -s "$C/manifest.before" "$C/repo/docs/demos/manifest.json"
+check "failed replacement reports incomplete repinning" grep -q 'repin incomplete' "$C/out"
+check "failed replacement removes staging and keeps unselected bytes" unchanged_except '^docs/demos/tui[.-](gif|transcript\.txt|poster\.png)$'
+
 # --- argument refusals: exit 2 before any tool or build -----------------
 
 for args in "--recording" "--recording tui --recording tui" "--repin --repin" "--bogus" \
@@ -553,6 +713,61 @@ fi
 mutant no-cleanup '/^\ttrap cleanup EXIT$/d'
 tui_repin_case mut-no-cleanup "$WORK/no-cleanup.sh"
 if ! cleaned; then ok "missing-cleanup mutant fails the cleanup check"; else bad "missing-cleanup mutant not caught"; fi
+
+# Bypassing the Output guard must demonstrably overwrite the unselected GIF
+# and return success while the stale selected GIF still passes verification.
+mutant output-route 's/if outputs != \[rec\["artifact"\]\]:/if False:/'
+new_case mut-output-route "$WORK/output-route.sh"
+sed 's@Output docs/demos/tui.gif@Output docs/demos/hero.gif@' "$C/repo/docs/demos/tui.tape" >"$C/tape"
+cp "$C/tape" "$C/repo/docs/demos/tui.tape"
+printf 'GIF89a stale selected\n' >"$C/repo/docs/demos/tui.gif"
+commit "$C/repo" output-mismatch >/dev/null
+cp "$C/repo/docs/demos/hero.gif" "$C/hero.before"
+run_body "$C" --recording tui --repin
+if test "$rc" -eq 0 && ! cmp -s "$C/hero.before" "$C/repo/docs/demos/hero.gif"; then
+	ok "Output guard mutant fails exact unselected byte preservation"
+else
+	bad "Output guard mutant not caught (rc=$rc)"
+fi
+
+mutant no-embed-guard '/internal\/processsupport\/SUPPORT\.md/d'
+new_case mut-embed "$WORK/no-embed-guard.sh"
+mkdir -p "$C/repo/internal/processsupport"
+echo committed >"$C/repo/internal/processsupport/SUPPORT.md"
+asset_head="$(commit "$C/repo" embedded-input)"
+set_pins "$C1" "$asset_head" "$C1"
+echo dirty >>"$C/repo/internal/processsupport/SUPPORT.md"
+run_body "$C" --recording tui
+if test "$rc" -eq 0 && grep -q 'go build' "$C/log"; then
+	ok "embedded-input mutant fails pre-build dirty-input refusal"
+else
+	bad "embedded-input mutant not caught (rc=$rc)"
+fi
+
+mutant no-config-guard 's/if configuration\(manifest\) != configuration\(committed\):/if False:/'
+new_case mut-config "$WORK/no-config-guard.sh"
+set_pins "$C1" "$C2" "$C1"
+python3 - "$C/repo/docs/demos/manifest.json" <<'EOF'
+import json,sys
+p=sys.argv[1]
+m=json.load(open(p))
+m["recordings"][1]["capabilities"][0]["qualifier"]="TestUncommitted"
+json.dump(m,open(p,"w"))
+EOF
+run_body "$C" --recording tui
+if test "$rc" -eq 0 && grep -q 'go build' "$C/log"; then
+	ok "configuration guard mutant accepts uncommitted manifest input"
+else
+	bad "configuration guard mutant not caught (rc=$rc)"
+fi
+
+mutant direct-manifest-write 's/os.replace\(staged, path\)/open(path, "w").write(new)/'
+atomic_failure_case mut-direct-manifest-write "$WORK/direct-manifest-write.sh"
+if test "$rc" -eq 0 && ! cmp -s "$C/manifest.before" "$C/repo/docs/demos/manifest.json"; then
+	ok "direct manifest write mutant bypasses the atomic replacement refusal"
+else
+	bad "direct manifest write mutant not caught (rc=$rc)"
+fi
 
 echo "record_test.sh: $pass passed, $fail failed"
 test "$fail" -eq 0

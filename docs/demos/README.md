@@ -26,8 +26,9 @@ or written. Without `--recording` every recording is selected, as before.
 A selected run builds one binary from the current checkout, regenerates the
 selected transcript (twice, for the determinism check), renders the selected
 tape with the pinned VHS, generates its poster and verifies the transcript
-labels, the GIF, the poster and the tape's single `Output`. The hero videos
-and chapters are rendered and checked only when `hero` is selected or no
+labels, the GIF, the poster and the tape's single literal `Output`, which must
+match its own manifest artifact before any build or output write. The hero
+videos and chapters are rendered and checked only when `hero` is selected or no
 recording is named.
 
 Provenance stays per recording. After `--recording tui --repin`, the tui
@@ -41,13 +42,20 @@ and `binary_version` values (keeping every other manifest byte) and its tape
 header, and only after every selected check has passed.
 
 Without `--repin` the checkout must match each selected recording's
-`binary_commit`, and the build inputs, the normalization script and the
-selected tape must be committed; otherwise the script refuses to write
-artifacts another revision labels. A failed run exits nonzero: it may leave
+`binary_commit`, and the build inputs (including embedded assets), the
+normalization script and the selected tape must be committed. Manifest configuration must match
+the committed configuration; only `binary_commit` and `binary_version` are
+excluded from that comparison because they are output pins (a commit cannot
+contain its own hash). Every recording uses its existing fixed tape,
+artifact and transcript paths, so cross-record aliases are refused. Each
+selected tape needs exactly one valid version header and commit header;
+repinning verifies their rewritten values. Otherwise the script refuses to
+write artifacts another revision labels. A failed run exits nonzero: it may leave
 partial selected media behind, which is not accepted output, and it moves no
 pin. If writing the pins themselves fails, the script reports the repinning
-as incomplete; nothing is rolled back, so inspect `git diff` before
-re-running.
+as incomplete. The manifest is replaced atomically, preserving the old
+complete file if replacement fails; tape headers are separate writes, so
+there is no multi-file rollback. Inspect `git diff` before re-running.
 
 Recording uses the fixed paths `/tmp/mythhelm-record` (the binary the tapes
 type) and `/tmp/demo` (the hero scratch directory), so run one recording
@@ -59,7 +67,14 @@ other processes or resources.
 behaviour in temporary Git fixtures with fake `go`, `vhs`, `ffmpeg`,
 `ffprobe`, `file`, `ttyd` and `timeout`. Its sentinel media qualify the
 script's routing only; they are not recordings, and they say nothing about
-real rendering or accessibility.
+real rendering or accessibility. The tests use Bash, Git and Python; their
+snapshot checks include added, changed and removed paths, including spaces,
+and do not require GNU checksum tools.
+
+The current docs workflow still requires a shared recording pin. A selected
+repin producing mixed pins needs the separate per-record workflow update
+before those artifacts can pass publication checks.
+
 Note the squash-merge trap: pins name the pre-commit HEAD, so after a merge
 no checkout matches and plain `record.sh` always refuses — re-record with
 `--repin` on a clean main tip instead.

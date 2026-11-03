@@ -155,6 +155,9 @@ record_main() (
 		# directive). The hero scripts count when hero is selected.
 		inputs=('*.go' 'go.mod' 'go.sum' "$SED"
 			'adapters/fake/scenarios/*.json'
+			'adapters/claudecode/testdata/qualification/routes.json'
+			'adapters/codex/testdata/qualification/routes.json'
+			'internal/processsupport/SUPPORT.md'
 			'internal/journal/migrations/*.sql'
 			'mods/themes/*.toml')
 		for n in $names; do
@@ -170,6 +173,52 @@ record_main() (
 			exit 1
 		fi
 	fi
+
+	# Validate all output routing before building or writing any recording.
+	# Pin fields are outputs: a commit cannot contain its own object ID.
+	# All other manifest configuration must match the committed configuration
+	# for no-repin runs; a dirty transcript/artifact route is never accepted.
+	# shellcheck disable=SC2086 # $names is a word list of validated recording names
+	python3 - "$MANIFEST" "$REPIN" $names <<'EOF'
+import json,re,subprocess,sys
+from pathlib import Path
+path,repin,*selected=sys.argv[1:]
+manifest=json.loads(Path(path).read_text(encoding="utf-8"))
+def refuse(message):
+    sys.exit("record.sh: " + message)
+if repin == "0":
+    committed=json.loads(subprocess.check_output(["git","show","HEAD:"+path]))
+    def configuration(value):
+        value=json.loads(json.dumps(value))
+        for rec in value["recordings"]:
+            rec.pop("binary_commit",None)
+            rec.pop("binary_version",None)
+        return value
+    if configuration(manifest) != configuration(committed):
+        refuse("uncommitted manifest recording configuration; commit it before recording")
+seen=set()
+for rec in manifest["recordings"]:
+    name=rec["name"]
+    if name not in ("demo","tui","hero") or name in seen:
+        refuse("unknown or duplicate manifest recording name")
+    seen.add(name)
+    # These are the existing public literal paths, not configurable output
+    # destinations. Enforcing them also prevents cross-record path aliases,
+    # traversal and aliases of derived poster/video paths.
+    for key,suffix in (("tape",".tape"),("artifact",".gif"),("transcript",".transcript.txt")):
+        if rec[key] != "docs/demos/"+name+suffix:
+            refuse("%s %s must name its own fixed recording path" % (name,key))
+    if name not in selected:
+        continue
+    tape=Path(rec["tape"]).read_text(encoding="utf-8")
+    outputs=re.findall(r"^Output[ \t]+(.*)$",tape,re.M)
+    if outputs != [rec["artifact"]]:
+        refuse("%s tape needs one literal Output matching its artifact" % name)
+    for key,pattern in (("Binary-Commit",r"[0-9a-f]{40}"),("Binary-Version",r"\S+")):
+        headers=re.findall(r"^# "+key+r":(.*)$",tape,re.M)
+        if len(headers) != 1 or re.fullmatch(" "+pattern,headers[0]) is None:
+            refuse("%s tape needs exactly one valid %s header" % (name,key))
+EOF
 
 	echo "record.sh: build the binary (go build, never go run)"
 	go build -o "$BIN" ./cmd/mythhelm
@@ -414,7 +463,7 @@ EOF
 		# as it was.
 		# shellcheck disable=SC2086 # $names is a word list of manifest names
 		python3 - "$MANIFEST" "$head" "$ver" $names <<'EOF' || repin_incomplete
-import json, re, sys
+import json, os, re, stat, sys, tempfile
 path, head, ver, names = sys.argv[1], sys.argv[2], sys.argv[3], set(sys.argv[4:])
 with open(path, encoding="utf-8") as fh:
     text = fh.read()
@@ -448,14 +497,28 @@ for rec in expect["recordings"]:
     if rec["name"] in names:
         rec["binary_commit"], rec["binary_version"] = head, ver
 assert json.loads(new) == expect
-with open(path, "w", encoding="utf-8") as fh:
-    fh.write(new)
+# Replace the complete manifest atomically: a failed/interrupted write never
+# truncates the previous manifest. Tape headers remain separate writes below.
+fd, staged = tempfile.mkstemp(prefix=".manifest-", dir=os.path.dirname(path))
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(new)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.chmod(staged, stat.S_IMODE(os.stat(path).st_mode))
+    os.replace(staged, path)
+finally:
+    if os.path.exists(staged):
+        os.unlink(staged)
 print("record.sh: manifest re-pinned %s to %s (%s)" % (" ".join(sorted(names)), head, ver))
 EOF
 		for n in $names; do
 			tape="$(field "$n" tape)" || repin_incomplete
 			sed -E "s|^# Binary-Version: .*|# Binary-Version: $ver|; s|^# Binary-Commit: .*|# Binary-Commit: $head|" "$tape" >"$tmpdir/repin" || repin_incomplete
 			cat "$tmpdir/repin" >"$tape" || repin_incomplete
+			# Verify the actual rewritten header, not just sed's exit status.
+			test "$(grep -cFx "# Binary-Commit: $head" "$tape")" -eq 1 || repin_incomplete
+			test "$(grep -cFx "# Binary-Version: $ver" "$tape")" -eq 1 || repin_incomplete
 		done
 	fi
 
