@@ -28,7 +28,8 @@ HARNESS_PREFIXES = ('specs/', 'knowledge/', '.claude/agents/', '.claude/skills/'
                     '.claude/rules/', '.claude/hooks/', '.agents/skills/', '.grok/skills/',
                     'scripts/harness/', 'scripts/orchestration/', 'scripts/pm/')
 HARNESS_FILES = {'AGENTS.md', 'CLAUDE.md', 'WORKFLOW.md'}
-DOC_FILES = {'README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'MAINTAINERS.md'}
+DOC_FILES = {'README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'MAINTAINERS.md',
+             'CHANGELOG.md', 'GOVERNANCE.md', 'CODE_OF_CONDUCT.md', 'SUPPORT.md'}
 BUILD_FILES = {'go.mod', 'go.sum', 'go.work', 'go.work.sum', 'Makefile', 'Dockerfile',
                'Containerfile', 'package.json', 'package-lock.json', 'npm-shrinkwrap.json',
                'pyproject.toml', 'uv.lock', 'requirements.txt', 'Cargo.toml', 'Cargo.lock',

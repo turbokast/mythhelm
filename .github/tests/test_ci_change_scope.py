@@ -36,6 +36,7 @@ class SelectionTests(unittest.TestCase):
 
     def test_docs_keep_the_real_linux_go_job(self):
         for path in ('README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'MAINTAINERS.md',
+                     'CHANGELOG.md', 'GOVERNANCE.md', 'CODE_OF_CONDUCT.md', 'SUPPORT.md',
                      'docs/limitations.md', 'docs/assets/brand/README.md',
                      'docs/decisions/0016-migration-import.md', 'docs/new note\nline.md'):
             with self.subTest(path=path):
