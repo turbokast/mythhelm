@@ -662,3 +662,14 @@ func TestReconnectBeatProducerRenewsForDelayedObserver(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPresenceReturnKeepsAuthorityFence(t *testing.T) {
+	t.Parallel()
+	env := EpisodeEnvelope{AttemptID: "att_presence", LaunchID: "launch_presence", Generation: 3}
+	if err := awaitWithLiveBeats(t, t.TempDir(), env, 4); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckEnvelope(env, env.AttemptID, env.LaunchID, 4); !errors.Is(err, errRevisionConflict) {
+		t.Fatalf("changed-generation presence weakened authority fence: %v", err)
+	}
+}

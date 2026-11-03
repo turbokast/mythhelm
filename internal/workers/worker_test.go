@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1431,4 +1432,52 @@ func TestUnixDescendantScanUnchanged(t *testing.T) {
 	}
 	t.Run("unresolved descendant", TestUnresolvedDescendantReported)
 	t.Run("orphan contract", TestOrphanPIDsContract)
+}
+
+// The episode has already ended before either presence generation is supplied.
+func TestCompletedWorkerWaitGrantsNothing(t *testing.T) {
+	for _, generation := range []int64{7, 8} {
+		t.Run(strconv.FormatInt(generation, 10), func(t *testing.T) {
+			a := newAttempt(t)
+			launch := a.launch(t, "count-launches")
+			launch.Generation = 7
+			launch.ExecutionDeadline = time.Now().Add(time.Minute)
+			proc := a.spawn(t, launch)
+			exited := observeWorkerExit(t, proc)
+			a.waitDone(t)
+			spool := filepath.Join(a.dir, "spool.jsonl")
+			identity := filepath.Join(a.dir, "worker.json")
+			beforeSpool, err := os.ReadFile(spool) // #nosec G304 -- fixed spool/identity file in this test-owned attempt TempDir.
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeIdentity, err := os.ReadFile(identity) // #nosec G304 -- fixed spool/identity file in this test-owned attempt TempDir.
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := awaitWorkerReturn(t, a.dir, generation, exited); err != nil {
+				t.Fatal(err)
+			}
+			afterSpool, err := os.ReadFile(spool) // #nosec G304 -- fixed spool/identity file in this test-owned attempt TempDir.
+			if err != nil {
+				t.Fatal(err)
+			}
+			afterIdentity, err := os.ReadFile(identity) // #nosec G304 -- fixed worker identity in this test-owned attempt TempDir.
+			if err != nil {
+				t.Fatal(err)
+			}
+			count, err := os.ReadFile(filepath.Join(a.workdir, "launch-count.txt"))
+			if err != nil || string(count) != "launch\n" {
+				t.Fatalf("replacement launch count %q %v", count, err)
+			}
+			if string(beforeSpool) != string(afterSpool) || string(beforeIdentity) != string(afterIdentity) {
+				t.Fatal("completed wait changed spooled effects or worker/token identity")
+			}
+			if generation != launch.Generation {
+				if err := CheckEnvelope(EpisodeEnvelope{AttemptID: a.attemptID, LaunchID: launch.LaunchToken, Generation: launch.Generation}, a.attemptID, launch.LaunchToken, generation); !errors.Is(err, errRevisionConflict) {
+					t.Fatalf("presence granted changed-generation authority: %v", err)
+				}
+			}
+		})
+	}
 }
