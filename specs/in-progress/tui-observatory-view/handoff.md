@@ -217,4 +217,8 @@ PR #566 is open with exact source code/architecture Ready, unchanged original22 
 
 ## Task 22 — Verify recording consumers at each immutable pin
 
-<!-- pending -->
+- **Produces**: PR #585 supplies `.github/scripts/check_recordings.py`, called by Docs checks after its real Git/Go fixture suite. Each fixed demo/tui/hero transcript uses its own immutable present commit; each capability qualifier runs in its owning worktree and requires both zero exit and an exact PASS witness.
+- **Reuse**: Shared commits reuse one binary build; equal commit/qualifier pairs reuse a successful result. Results from a different commit cannot certify the current record. Manifest data cannot supply shell commands or alternative transcript destinations.
+- **For Task20**: Mixed historical/current pins are supported by this consumer after its merge. Task20 waits for Tasks19/22; Task19 still waits for Tasks18/21. Existing real-tool, artifact/version and human-inspection requirements remain. The hero companion retains its current isolated CI runner `/tmp/demo` convention; this is no new recorder or concurrency guarantee.
+- **Evidence**: Fifteen real two-commit Git/Go fixtures pass, including shared/mixed pins, missing/non-commit revisions, failing build/producer/normalizer/qualifier, missing or misleading PASS text, cleanup and four source effect controls. Independent rerun and architecture/code review are Ready on source `5a4e0045a9aa60dbf2b9099e72e3f26d69f1d574`; actionlint, offline zizmor and applicable hygiene pass. Exact-head CI and merge remain required.
+- **Sequencing**: This is an independent release compatibility fix for the unchanged existing manifest schema. It consumes no Task21 producer API; the initial proposed construction dependency was removed under delegated architecture review while retaining publication dependencies.

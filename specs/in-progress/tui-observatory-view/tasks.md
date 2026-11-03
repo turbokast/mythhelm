@@ -617,7 +617,7 @@
 - **Invariants touched**: I07/I09/I13/I14 (v2 §§15/19: exact recording provenance, isolated tooling, no false qualification).
 
 
-### Task 22 — Verify recording consumers at each immutable pin
+### Task 22 — Verify recording consumers at each immutable pin ✅ COMPLETED
 
 - **Domain/agent**: release-engineer
 - **Budget**: complex (workflow integration, immutable revision execution and real fixture qualification)
@@ -634,3 +634,9 @@
   - The workflow uses this consumer without a global shared-pin assertion or generic first-record binary. Existing transcript normalization and fixed per-name pipelines remain; real recording artifacts, producer paths, Task20 ownership/six-file scope and human/tooling qualification requirements do not change.
 - **Test plan**: Python stdlib unittest integration suite with real Git/Go and no external modules or native accounts; pinned actionlint, zizmor and applicable shared gates. Synthetic evidence establishes consumer routing/refusal only, not real rendering or accessibility.
 - **Invariants touched**: I07/I09/I13/I14 (v2 §§15/19: evidence stays bound to each exact revision, missing evidence refuses and historical artifacts remain historical).
+- **Status**: ✅ Completed — implemented the per-recording CI consumer with real shared/mixed-pin fixtures and exact subprocess evidence; PR #585. Exact-head CI and actual merge remain required.
+- **Implementation**: Source `5a4e0045a9aa60dbf2b9099e72e3f26d69f1d574` replaces duplicated first-pin workflow logic with one fixed-pipeline consumer. It validates all revisions/names before execution, reuses builds and exact revision/qualifier results, checks producer/normalizer/test exits and requires literal PASS witnesses. Fifteen real Git/Go integration tests pass; an independent rerun and code/architecture review are Ready on this source. Source hygiene, pinned actionlint, offline zizmor, spec lint and workflow credential/trigger checks pass.
+- **Spec deviations**:
+  - Own `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md` and `specs/in-progress/tui-observatory-view/scratchpad.md` record this task's contract/completion and dependent guidance. `specs/in-progress/tui-observatory-view/design.md` records the delegated, independently reviewed release-domain consumer amendment, and Task20's dependency includes Task22 so mixed-pin publication waits for the qualified consumer.
+  - The initial proposed Task21 construction edge was removed during independent architecture review: Task22 consumes only the already existing unchanged manifest schema and no producer API. This corrects sequencing without claiming an unmerged prerequisite passed; Task19 retains Tasks18/21 and Task20 waits for Tasks19/22. Task20's owner, six-file artifact scope and real-tool/inspection gates remain unchanged.
+- **Files modified**: `.github/workflows/docs.yml`, `.github/scripts/check_recordings.py`, `.github/scripts/tests/test_check_recordings.py`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/design.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
