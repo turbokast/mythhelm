@@ -29,6 +29,7 @@ type runtime struct {
 	journal           *journal.Journal
 	server            *control.Server
 	migrationRequired bool
+	preparations      *preparationStore
 	views             *viewSlots
 	closing           bool
 	entries           map[*actor]struct{}
@@ -186,6 +187,9 @@ func openRuntimePrepared(ctx context.Context, stateDir string, prepare func(cont
 		}
 	}
 	r.server = control.NewStatusServer(r.status)
+	if err := r.registerPreparedAdmission(); err != nil {
+		return nil, errors.Join(err, r.shutdown(context.WithoutCancel(ctx)))
+	}
 	return r, nil
 }
 
@@ -239,6 +243,13 @@ func (r *runtime) shutdown(ctx context.Context) error {
 					r.closeErr = errors.Join(r.closeErr, a.owner.Close())
 				}
 				r.closeErr = errors.Join(r.closeErr, a.adapter.close())
+			}
+			if r.preparations != nil {
+				r.preparations.mu.Lock()
+				if r.preparations.context != nil {
+					r.closeErr = errors.Join(r.closeErr, r.preparations.context.Close())
+				}
+				r.preparations.mu.Unlock()
 			}
 			if r.journal != nil {
 				r.closeErr = errors.Join(r.closeErr, r.journal.Close())
