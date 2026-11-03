@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 	"time"
@@ -324,11 +325,18 @@ func crashAdoptionService(state, run, mode, marker string) int {
 		return 2
 	}
 	if mode == "before" {
-		owner, err := supervisor.AcquireServiceOwner(ctx, r.journal, r.lease, run)
+		_, err := r.reconcileRunCheckpoint(ctx, run, nil, func() {
+			if err := os.WriteFile(marker, []byte(mode), 0600); err != nil {
+				os.Exit(8)
+			}
+			for {
+				time.Sleep(time.Second)
+			} // parent kills the real transaction owner.
+		})
 		if err != nil {
 			return 3
 		}
-		defer func() { _ = owner.Close() }()
+		return 9 // Reaching here would mean the mid-transaction barrier failed.
 	} else {
 		a, err := r.reconcileRun(ctx, run)
 		if err != nil {
@@ -428,6 +436,21 @@ func TestAdoptionCrashDoesNotRelaunch(t *testing.T) {
 		if adopted != want {
 			t.Fatalf("%s crash has %d adoption events, want%d", mode, adopted, want)
 		}
+		if err := j.Transact(ctx, func(tx *sql.Tx) error {
+			var operations, epochs int
+			if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM operations WHERE method='service.adopt' AND object=?`, f.run).Scan(&operations); err != nil {
+				return err
+			}
+			if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM service_assignment_epochs WHERE run_id=?`, f.run).Scan(&epochs); err != nil {
+				return err
+			}
+			if operations != want || epochs != want {
+				return errors.New("crash left partial adoption operation or epoch")
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
 		if mode == "after" {
 			if err := j.Transact(ctx, func(tx *sql.Tx) error {
 				epoch, ok, err := journal.ReadAssignmentEpoch(ctx, tx, f.run)
@@ -485,4 +508,117 @@ func TestZeroGenerationNeedsMigration(t *testing.T) {
 			t.Fatal("absent provenance was treated as known generation zero")
 		}
 	})
+}
+
+func TestAdoptionRefusesSpooledLaunchMismatch(t *testing.T) {
+	for _, field := range []string{"worker_pid", "worker_start_time"} {
+		t.Run(field, func(t *testing.T) {
+			f := newAdoptionFixture(t)
+			ctx := t.Context()
+			path := filepath.Join(workers.AttemptDir(f.r.journal.StateDir(), f.run, f.attempt), supervisor.SpoolFile)
+			// No ingestion has occurred; the only available launch observation is spool.
+			awaitAdoptionCondition(t, func() bool {
+				raw, err := os.ReadFile(path)
+				return err == nil && strings.Contains(string(raw), `"attempt.launched"`)
+			})
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := strings.Split(string(raw), "\n")
+			changed := false
+			for i, line := range lines {
+				if line == "" {
+					continue
+				}
+				var ev journal.Event
+				if err := json.Unmarshal([]byte(line), &ev); err != nil {
+					t.Fatal(err)
+				}
+				if ev.Type != "attempt.launched" {
+					continue
+				}
+				var payload map[string]json.RawMessage
+				if err := json.Unmarshal(ev.Payload, &payload); err != nil {
+					t.Fatal(err)
+				}
+				if field == "worker_pid" {
+					payload[field] = json.RawMessage(`1`)
+				} else {
+					payload[field] = json.RawMessage(`"2000-01-01T00:00:00Z"`)
+				}
+				ev.Payload, err = json.Marshal(payload)
+				if err != nil {
+					t.Fatal(err)
+				}
+				data, err := json.Marshal(ev)
+				if err != nil {
+					t.Fatal(err)
+				}
+				lines[i] = string(data)
+				changed = true
+			}
+			if !changed {
+				t.Fatal("fixture had no actual launched payload to corrupt")
+			}
+			if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0600); err != nil {
+				t.Fatal(err)
+			}
+			before, err := f.r.journal.Events(ctx, f.run, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.r.verifyAdoption(ctx, f.run); err == nil {
+				t.Fatal("mismatched spooled launch was accepted before ingestion")
+			}
+			after, err := f.r.journal.Events(ctx, f.run, 0)
+			if err != nil || len(after) != len(before) {
+				t.Fatal("refusal changed events")
+			}
+			if err := f.r.journal.Transact(ctx, func(tx *sql.Tx) error {
+				for _, query := range []string{`SELECT count(*) FROM operations WHERE method='service.adopt' AND object=?`, `SELECT count(*) FROM service_assignment_epochs WHERE run_id=?`} {
+					var n int
+					if err := tx.QueryRowContext(ctx, query, f.run).Scan(&n); err != nil {
+						return err
+					}
+					if n != 0 {
+						return errors.New("refusal left adoption effects")
+					}
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestAdoptionRefusesNonRegularSpool(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "spool.jsonl")
+	if goruntime.GOOS == "windows" {
+		if err := os.Mkdir(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		if out, err := exec.Command("mkfifo", path).CombinedOutput(); err != nil {
+			t.Fatalf("create actual FIFO: %v %s", err, out)
+		}
+	}
+	done := make(chan error, 1)
+	go func() { done <- checkAdoptionSpool(t.Context(), path, journal.AttemptRow{}, workers.Identity{}) }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("nonregular spool accepted")
+		}
+	case <-time.After(time.Second):
+		if goruntime.GOOS != "windows" {
+			writer, err := os.OpenFile(path, os.O_WRONLY, 0600)
+			if err == nil {
+				_ = writer.Close()
+			}
+		}
+		<-done
+		t.Fatal("preexisting nonregular spool blocked before type refusal")
+	}
 }

@@ -31,6 +31,13 @@ func (r *runtime) reconcileRun(ctx context.Context, runID string) (*actor, error
 // The optional private observation checkpoint surrounds actual committed-event
 // delivery. It supplies no identity, authority, predicate or successful result.
 func (r *runtime) reconcileRunObserved(ctx context.Context, runID string, onCommitted func(journal.Event)) (*actor, error) {
+	return r.reconcileRunCheckpoint(ctx, runID, onCommitted, nil)
+}
+
+// beforeCommit is an observational barrier after the real event, epoch and
+// completed operation writes but before transaction commit. It cannot supply
+// an identity, authority decision, SQL handle or successful result.
+func (r *runtime) reconcileRunCheckpoint(ctx context.Context, runID string, onCommitted func(journal.Event), beforeCommit func()) (*actor, error) {
 	owner, err := supervisor.AcquireServiceOwner(ctx, r.journal, r.lease, runID)
 	if err != nil {
 		return nil, err
@@ -55,7 +62,13 @@ func (r *runtime) reconcileRunObserved(ctx context.Context, runID string, onComm
 			if _, _, err := journal.ReadAssignmentEpoch(ctx, tx, runID); err != nil {
 				return err
 			}
-			return control.RecordServiceAdoption(ctx, tx, adoption)
+			if err := control.RecordServiceAdoption(ctx, tx, adoption); err != nil {
+				return err
+			}
+			if beforeCommit != nil {
+				beforeCommit()
+			}
+			return nil
 		}); err != nil {
 			ready <- err
 			return err
@@ -130,11 +143,7 @@ func (r *runtime) verifyAdoption(ctx context.Context, runID string) (control.Ser
 		if ev.Type != "attempt.launched" || ev.AttemptID != row.AttemptID {
 			continue
 		}
-		var launched struct {
-			WorkerPID       int       `json:"worker_pid"`
-			WorkerStartedAt time.Time `json:"worker_start_time"`
-		}
-		if json.Unmarshal(ev.Payload, &launched) != nil || launched.WorkerPID != id.PID || !launched.WorkerStartedAt.Equal(id.StartTime) {
+		if !adoptionLaunchMatches(ev.Payload, id) {
 			return refuse()
 		}
 	}
@@ -151,13 +160,35 @@ func (r *runtime) verifyAdoption(ctx context.Context, runID string) (control.Ser
 	}); err != nil {
 		return out, err
 	}
-	if err := checkAdoptionSpool(ctx, filepath.Join(dir, supervisor.SpoolFile), row); err != nil {
+	if err := checkAdoptionSpool(ctx, filepath.Join(dir, supervisor.SpoolFile), row, id); err != nil {
 		return out, err
 	}
 	return control.ServiceAdoption{SchemaVersion: 2, RunID: runID, AttemptID: row.AttemptID, LaunchSHA256: row.LaunchTokenSHA256, OperationID: ids.New("op"), WorkerPID: id.PID, WorkerStartedAt: id.StartTime, LaunchGeneration: *pin.Generation, ControlGeneration: r.lease.Generation(), CommittedSpoolOffset: row.SpoolOffset, ReconciliationEventID: ids.New("evt")}, nil
 }
 
-func checkAdoptionSpool(ctx context.Context, path string, a journal.AttemptRow) error {
+func adoptionLaunchMatches(payload []byte, id workers.Identity) bool {
+	var launched struct {
+		WorkerPID       int       `json:"worker_pid"`
+		WorkerStartedAt time.Time `json:"worker_start_time"`
+	}
+	return json.Unmarshal(payload, &launched) == nil && launched.WorkerPID == id.PID && launched.WorkerStartedAt.Equal(id.StartTime)
+}
+
+func checkAdoptionSpool(ctx context.Context, path string, a journal.AttemptRow, id workers.Identity) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	before, err := os.Lstat(path)
+	if err != nil {
+		return errors.Join(supervisor.ErrOwnership, err)
+	}
+	if !before.Mode().IsRegular() {
+		return supervisor.ErrCorruptSpool
+	}
+	// Reject named nonregular files before open and bind the opened inode. As in
+	// migration drain, hostile same-UID swaps between Lstat/open or unresponsive
+	// filesystems can still block OS I/O; this is no arbitrary-I/O cancellation
+	// guarantee or containment boundary.
 	f, err := os.Open(path)
 	if err != nil {
 		return errors.Join(supervisor.ErrOwnership, err)
@@ -167,11 +198,11 @@ func checkAdoptionSpool(ctx context.Context, path string, a journal.AttemptRow) 
 	if err != nil {
 		return err
 	}
-	if !info.Mode().IsRegular() || a.SpoolOffset < 0 || a.SpoolOffset > info.Size() {
+	if !info.Mode().IsRegular() || !os.SameFile(before, info) || a.SpoolOffset < 0 || a.SpoolOffset > info.Size() {
 		return supervisor.ErrCorruptSpool
 	}
 	// Inspect a finite byte snapshot; a live appending worker cannot extend it.
-	reader := bufio.NewReaderSize(io.LimitReader(f, info.Size()), 1<<20)
+	reader := bufio.NewReaderSize(io.LimitReader(f, info.Size()), (1<<20)+1)
 	var offset int64
 	boundary := a.SpoolOffset == 0
 	for {
@@ -201,6 +232,9 @@ func checkAdoptionSpool(ctx context.Context, path string, a journal.AttemptRow) 
 		var trailing any
 		if dec.Decode(&ev) != nil || dec.Decode(&trailing) != io.EOF || ev.EventID == "" || ev.ObservedAt.IsZero() || ev.ProducerSequence <= 0 || ev.Generation < 0 || !json.Valid(ev.Payload) || !bytes.HasPrefix(bytes.TrimSpace(ev.Payload), []byte("{")) || ev.SchemaVersion != 1 || ev.RunID != a.RunID || ev.AttemptID != a.AttemptID || ev.ProducerID != "wrk_"+a.AttemptID || !slices.Contains([]string{"attempt.state_changed", "attempt.launched", "attempt.native_session", "attempt.progress", "attempt.permission_denied", "attempt.protocol_counters", "attempt.native_result", "attempt.stop_requested", "attempt.stopped", "attempt.native_error"}, ev.Type) {
 			return supervisor.ErrCorruptSpool
+		}
+		if ev.Type == "attempt.launched" && !adoptionLaunchMatches(ev.Payload, id) {
+			return supervisor.ErrOwnership
 		}
 	}
 }
