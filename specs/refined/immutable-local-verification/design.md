@@ -16,7 +16,7 @@ Investigation baseline: `f18ff8c` on `origin/main`. Opened definitions below can
 
 A disposable synthetic local check executed actual `gofmt -l .`: an unformatted `.claude/data/private.go` was listed, while `.hidden.go` was not. The installed Go source's `cmd/gofmt/gofmt.go`, `isGoFilename` and `gofmtMain`, uses recursive `filepath.WalkDir` without pruning dot directories; it excludes dot-prefixed *file basenames*. Tool qualification must repeat this probe with the pinned real executable. Marker exclusion and actual consumer input selection are different.
 
-**Scope: single spec, seven dependent harness tasks, auto-confirmed (non-interactive).** Contract, capture, enforcement and shared consumers form one result-validity boundary. None independently enables a strong profile; the legacy path remains useful throughout. No application Go, product-state, orchestration, CI configuration or native/provider change. The full historical executable inventory is preserved; only Linux/amd64 `go-fmt` can earn stronger evidence.
+**Scope: single spec, eight dependent tasks (one docs-domain ADR producer, then seven harness tasks), auto-confirmed (non-interactive).** Task 8 must first deliver an independently reviewed and accepted ADR; contract, capture, enforcement and shared consumers then form one result-validity boundary. None independently enables a strong profile; the legacy path remains useful throughout. No application Go, product-state, orchestration, CI configuration or native/provider change. The full historical executable inventory is preserved; only Linux/amd64 `go-fmt` can earn stronger evidence.
 
 ## 2. Candidate and consumer input contract (FR-1/3/4; charter 1/2/6)
 
@@ -166,6 +166,10 @@ All operations raise `VerificationError` with one of `invalid-record`, `wrong-tr
 
 ## 4. Ownership, budgets and retention (FR-6; I08/I21)
 
+The proposed durable private store, ownership lifecycle and crash-reconciliation decisions require an ADR under `.claude/rules/spec-authoring.md` and GOVERNANCE.md even though this is harness state. Task 8 (docs domain) produces `docs/decisions/0023-immutable-local-verification.md` before Task 1 or any other harness implementation. Its exact revision must receive independent architecture review and acceptance through repository governance and merge to `origin/main`; Task 8 handoff records that evidence. The design candidate is not that accepted decision, and no implementation proceeds from an unaccepted ADR. The current `docs/decisions/` inventory ends at 0022; `docs/decisions/README.md` provides the naming/template but requires no exhaustive index, so the ADR producer owns only the new ADR file. If that number is occupied at implementation time, reconcile the planned path through a reviewed spec update before starting; never overwrite another record.
+
+The ADR must decide the private manifest/ownership record store and atomic persistence, owner tokens and state transitions, marker reference counts, bounded process TERM/KILL/join and crash reconciliation, quarantine/retention/cleanup, outside-worktree placement, immutable-profile trusted-host limits and explicit legacy boundaries. It records actual alternatives and consequences (including keeping endpoint-only markers, writable copies/mode bits, reusing worktree-local private state, and using a product journal/SQLite store), the chosen boundary, and the tests in Tasks 1–7 that will pin each decision. Acceptance establishes design governance only; it asserts no actual profile qualification or completed runtime boundary.
+
 `open_store` chooses the user's private state directory `mythhelm/verification` beneath platform state home, creates it mode 0700, files 0600, and refuses any symlink or store nested in *any* registered Git worktree. It does not reuse `.claude/data` for snapshot bytes: actual gofmt would recursively discover retained `.go` copies there. Marker metadata remains at the existing private worktree location and contains JSON only. Tree identity remains in private records. The strong entrypoint resolves `worktree_roots` through the bounded observer using the same preparation budget before calling `open_store`; the store validates that finite observed root set and performs no Git subprocess itself. Task 2 tests supply explicit synthetic root sets; Task 3 supplies the bounded observation and Task 5 joins them, avoiding a contract dependency cycle. Controller uses a global store `flock` with nonblocking admission; one capture/execution is active at a time. This is a cooperative controller lock, not hostile-host exclusion.
 
 States: `reserved -> capturing -> finalized -> executing -> succeeded|failed|cancelled`; any unresolved interruption goes to `quarantined`. Failure before allocation leaves no artifacts. Each transition is atomic JSON replacement plus file/directory fsync, compare-state guarded by lock. Stable random snapshot ID and 256-bit owner token bind owned directory creation; only owned records and open no-follow dirfds authorize cleanup. Directory ownership/mode and token are rechecked. A crashed controller never blindly removes a child or retries execution; reconciliation verifies PID start identity/pidfd, namespace/child exit and actual filesystem ownership first. Unknown process identity remains quarantined. Receipts remain private harness evidence, not a product task store.
@@ -216,6 +220,8 @@ The deterministic regression keeps the original Python read-barrier consumer as 
 
 ## 7. Decisions and coverage
 
+D1–D6 and the durable storage/ownership decisions in §4 are recorded in the Task 8 ADR before harness implementation; the decisions table does not substitute for that deliverable. Execution order is Task 8 → Task 1 → Task 2 → Task 3 → Task 4 → Task 5 → Task 6 → Task 7.
+
 | ID | Decision | Alternative and rationale |
 |---|---|---|
 | D1 | Explicit requested candidate descriptor before copy | Inferring candidate from HEAD or post-copy hashes could credit different dirty bytes. |
@@ -224,7 +230,7 @@ The deterministic regression keeps the original Python read-barrier consumer as 
 | D4 | Explicit optional qualification, fail closed | PATH availability or a fixture substitute cannot establish the supported profile. |
 | D5 | One shared policy evaluator with legacy compatibility | Separate client readers drift; mandatory strong mode for every current gate would drop unsupported checks. |
 | D6 | Store outside all worktrees | Ignored snapshot `.go` files inside a tree are still real gofmt inputs. |
-| D7 | Seven tasks, one harness delivery | Contracts, probes and consumers must agree before the profile is usable; documentation describes shipped mechanism. |
+| D7 | Eight tasks, one delivery with a docs-domain ADR prerequisite | Task 8 supplies the independently reviewed/accepted persistence and ownership decision before Task 1; the seven harness tasks then deliver the coupled verification boundary. |
 
 | Requirements | Owning tasks / observation |
 |---|---|
@@ -233,7 +239,7 @@ The deterministic regression keeps the original Python read-barrier consumer as 
 | AC-3.1–3.3 | 4/5/6: exact gofmt argv/output, transform refusal, actual source/scratch probes |
 | AC-4.1–4.3 | 3/6: untracked/deleted/ignored closure, unsupported links, real Git-dependent refusal |
 | AC-5.1–5.3 | 1/5/6: strict markers, central consumers, failed-run invalidation |
-| AC-6.1–6.3 | 2/3/4/6: fixed limits, capacity/retention, bounded cancel and ownership cleanup |
+| AC-6.1–6.3 | 8 (accepted ADR prerequisite), then 2/3/4/6: fixed limits, capacity/retention, bounded cancel and ownership cleanup |
 | AC-7.1–7.2 | 1/2/4/6: safe profile identity, private bounded artifacts and synthetic sentinels |
 | AC-8.1–8.2 | 5/6/7: shell/shared-reader compatibility, explicit partial rollout and docs |
 | NFR-1–3 | 4/6/7: real tools, deterministic barriers, exact subset and sanitized examples |
@@ -246,7 +252,7 @@ The deterministic regression keeps the original Python read-barrier consumer as 
 | I09: endpoint comparisons | Observational relevance checks; no continuous original-tree equality or atomic historical dirty-tree claim. |
 | v2 §8.1: trust boundary | Trusted host/controller/helper/toolchain; no hostile-host or same-user external-process attestation. |
 | FR-3/4: full gate universe and Git inputs | Other gates, dynamic tools, transforms, source-writing tests, Git-dependent commands and platforms remain legacy-observed or strong-unavailable pending separate reviewed qualification. |
-| I08/I21: ownership/bounds | Cooperative single-controller admission plus qualified child teardown; unresolved ownership quarantines artifacts and may exhaust capacity. |
+| I08/I21: ownership/bounds | Proposed durable persistence/process ownership decisions require the independently accepted Task 8 ADR before implementation. Cooperative single-controller admission plus qualified child teardown; unresolved ownership quarantines artifacts and may exhaust capacity. |
 | I07/I23: product acceptance | Harness receipts only; no replacement for product protected checks or canonical orchestration. |
 | Charter 5 / FR-7: privacy | Private snapshots can contain intended repository source; no export/raw environment/config copies. Redaction cannot certify arbitrary logs. |
 | WORKFLOW required checks | All existing groups/checks retained with current argv, resource limits and explicit observed labels; no native/provider calls or paid review required. |

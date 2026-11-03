@@ -12,7 +12,7 @@
 
 ## Research notes
 
-- Scope is one seven-task harness stream, auto-confirmed non-interactively. Requirements are frozen; candidate remains refined pending a root-dispatched fresh reviewer.
+- Scope is one stream of eight tasks: a docs-domain ADR producer (Task 8) followed by seven harness tasks, auto-confirmed non-interactively. Requirements are frozen; candidate remains refined pending a root-dispatched fresh reviewer.
 - Baseline is `f18ff8c`. Current gatelib includes workflow dependency scopes, runtime/test assets, preflight gate ordering and four-worker harness test invocation. These are existing mechanisms to preserve.
 - Actual local synthetic `gofmt -l .` traversed `.claude/data/private.go`, while excluding a dot-prefixed `.hidden.go` basename. Local Go source `isGoFilename` and `gofmtMain` confirm this distinction. The design refuses ignored actual consumer inputs instead of silently excluding them from verification.
 - Current real gofmt initializes Go telemetry counters. Qualified execution clears ambient environment, disables telemetry and provides bounded scratch configuration/home/cache paths; it mounts no native/secret/config store.
@@ -35,3 +35,13 @@ None from implementation yet.
 - Blocking finding 1: mandated existing `listed_files` uses buffered Git capture with a 120-second timeout before proposed 20,000-entry/30-second bounds. Repair separates a bounded incremental strong observer, includes root/HEAD/base/index/worktree observations in one deadline, bounds records/stdout/stderr, and requires owned-process teardown plus excessive-inventory/blocked-child controls. Legacy helper behavior is preserved.
 - Blocking finding 2: closed profile/qualification/probe schemas omitted the promised checker-definition binding. Repair adds explicit current definition throughout the acyclic plan/probe/qualification/profile chain and execution, with new-candidate/old-qualification refusal controls in codecs, executor and every consumer.
 - Original attempt remains rejected. These author repairs are a candidate for a new independent round; no Ready verdict or qualification is inferred. Requirements and refinement-log are unchanged.
+
+### Round 2 — Needs revision
+
+- Assessed signed source: `02008c1ada44b7972926a611f63c5513b521e57f`.
+- Fresh reviewer: `immutable_design_review_r2`.
+- Cumulative accounting: `dispatched=2 returned=2 failed=0`.
+- References, requirements and conflicts: PASS. Design and tasks: FAIL. Epic: not applicable.
+- Both Round 1 blockers passed fresh re-review. The remaining blocker was the missing explicitly owned ADR for durable private snapshot persistence, ownership, crash reconciliation and retention; repository authoring rules provide no product-only exception.
+- Repair adds docs-domain Task 8 producing `docs/decisions/0023-immutable-local-verification.md`, independently reviewed and accepted before Task 1. Original task IDs 1–7 remain stable; DAG is 8→1→2→3→4→5→6→7. The ADR covers actual decision alternatives and all persistence/ownership and immutable/legacy boundaries, without claiming actual qualification. Current decision inventory ends at 0022; its README has naming/template guidance and requires no index change.
+- Round 2 remains rejected; this repair awaits fresh Round 3. No Ready verdict, actual ADR acceptance, implementation or qualification is inferred. Requirements and refinement-log remain unchanged.

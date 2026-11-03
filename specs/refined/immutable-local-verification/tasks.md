@@ -3,19 +3,36 @@
 ### Dependencies
 
 - Baseline `f18ff8c` includes gate dependency-scope repair and four-worker harness-test argv; re-ground before implementation and preserve both. No external spec completion required for the initial harness profile. `specs/*/contained-execution-profiles/` and `specs/*/protected-acceptance/` supply vocabulary, not qualification or replacement authorities.
-- DAG: 1 → 2 → 3 → 4 → 5 → 6 → 7. No parallel implementation is planned: the bounded result contract must stabilize before its consumers. Each task reads the preceding merged implementation and records deviations.
-- **Gates for every task**: preserve Python/Bash style; shell files use `set -euo pipefail` and pass shellcheck. Format any changed Go fixture generator outputs with actual gofmt when appropriate. Run `scripts/harness/gate.sh harness` and `scripts/harness/gate.sh hygiene` for harness paths, plus `scripts/ci/lint-agent-harness.sh --only specs` for completion metadata. Focused shell entrypoints run real tools where qualification is claimed; orchestration mocks alone never qualify a profile. A file existing or an agent reporting success is not completion.
+- DAG: 8 → 1 → 2 → 3 → 4 → 5 → 6 → 7. Existing task IDs 1–7 are preserved; the docs-domain ADR producer is Task 8 and executes first. No parallel implementation is planned: the bounded result contract must stabilize before its consumers. Each task reads the preceding merged implementation and records deviations.
+- **Gates for every task**: preserve Python/Bash style; shell files use `set -euo pipefail` and pass shellcheck. Format any changed Go fixture generator outputs with actual gofmt when appropriate. Task 8 runs `scripts/ci/lint-agent-harness.sh --only references,specs` and `scripts/harness/gate.sh hygiene`; Tasks 1–7 run `scripts/harness/gate.sh harness` and `scripts/harness/gate.sh hygiene` for harness paths, plus `scripts/ci/lint-agent-harness.sh --only specs` for completion metadata. Focused shell entrypoints run real tools where qualification is claimed; orchestration mocks alone never qualify a profile. A file existing or an agent reporting success is not completion.
 - **Completion convention**: append ` ✅ COMPLETED` to the task heading, then add Status (PR number), Implementation (commit), Spec deviations and Files modified fields; preserve original fields. Append discoveries to scratchpad and handoff according to the shared task-completion procedure.
-- **Commits**: signed off, named paths, isolated task worktrees; land through reviewed PRs and required CI. This spec adds no product persistence or native process-owner authority. If implementation changes those contracts, stop for architecture review and an ADR rather than extending this harness scope.
+- **Commits**: signed off, named paths, isolated task worktrees; land through reviewed PRs and required CI. The durable private harness store and process-ownership lifecycle require the Task 8 ADR, independently reviewed and accepted through repository governance and merged before Task 1. ADR requirements are not limited to product state. Changes beyond that accepted persistence/ownership contract require renewed architecture review and an appropriate decision record.
 - Every test name below is a planned Python unittest method with the exact stated name, implemented in that task's named test file. Shell entrypoints invoke the named file and propagate failures. No embedded Go test selectors are used.
 
 ## Implementation Tasks
+
+### Task 8 — Record the verification persistence and ownership decision
+
+- **Domain/agent**: go-implementer (docs domain)
+- **Budget**: standard (one decision record; authoring/checks capped at 30 minutes; missing review/acceptance returns blocked rather than extending the budget)
+- **Depends on**: None
+- **Change**: Produce the ADR required by design §4 for durable verification records, owned-process reconciliation and immutable-profile/legacy boundaries. Obtain independent architecture review and governance acceptance of its exact revision before any harness implementation.
+- **Files**:
+  - `docs/decisions/0023-immutable-local-verification.md` (new)
+- **Produces**: accepted ADR `docs/decisions/0023-immutable-local-verification.md`, merged to `origin/main`, with exact accepted revision, independent architecture-review evidence and governance acceptance recorded in Task 8 handoff. Task 1 consumes that merged decision; neither a draft ADR nor this design candidate releases it. No `docs/decisions/README.md` edit is required by the current naming/template convention.
+- **Acceptance**:
+  - The ADR follows `docs/decisions/README.md` with Context, Decision and Consequences and records the exact reviewed design revision. It explicitly decides the durable private Store/manifests, atomic ownership transitions, owner tokens, marker reference counts, TERM/KILL/join and crash reconciliation, quarantine/retention/cleanup and outside-worktree placement; omission of any ownership/persistence boundary fails the artifact review.
+  - The ADR compares actual alternatives: endpoint-only evidence versus read-only materialized execution, writable copies/mode bits versus qualified namespace enforcement, worktree-local private artifacts versus an outside-worktree store, and a private harness record store versus product journal/SQLite reuse. Consequences retain finite resource limits, trusted-host assumptions and explicit schema-1/other-gate legacy boundaries, and map to the named planned tests in Tasks 1–7.
+  - Independent architecture review and authorized repository-governance acceptance bind the exact ADR revision; that revision is merged and confirmed on `origin/main` before Task 8 completes or Task 1 starts. A proposed/unreviewed/unmerged ADR keeps dependent tasks blocked. The accepted decision states that implementation, actual helper/tool/kernel qualification and runtime evidence remain future work.
+  - Existing public hygiene and documentation/reference checks pass; the ADR contains no private paths, raw outputs or invented qualification results.
+- **Test plan**: inspect the bounded ADR against the explicit decision checklist above; verify exact independent review/acceptance and merged revision through read-only PR/Git evidence. The later mechanism tasks own the behavioral regression tests cited by the ADR. No runtime fixture, inference or paid call is needed for this documentation task.
+- **Invariants touched**: I07/I20 (v2 §2: exact reviewed decision/evidence revisions); I08 (owned artifacts preserve original/unrelated state); I09 (accepted design is distinct from actual qualification); I21 (finite lifecycle and retention); I23 (private harness receipts do not replace product orchestration); charter principles 1/2/5/6 and repository governance.
 
 ### Task 1 — Define strict manifest, profile and result contracts
 
 - **Domain/agent**: agent-config-editor
 - **Budget**: complex (strict security-sensitive codecs and compatibility variants)
-- **Depends on**: None
+- **Depends on**: Task 8
 - **Change**: Add shared frozen record types, canonical digests and bounded versioned codecs from design §3, without executing a tool at import time.
 - **Files**:
   - `scripts/harness/verification.py` (new)
