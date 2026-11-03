@@ -1,6 +1,6 @@
 ## Immutable local verification inputs — Requirements
 
-> Refined. Run /spec immutable-local-verification to produce the design and tasks.
+> Designed and independently validated. Task 8 records the reviewed architecture decision before harness implementation.
 >
 > Bind local gate results to the exact materialized inputs the check executed, with bounded snapshot preparation and honest support labels. This is harness process hardening, not an implementation or product qualification claim. Normative harness sources are WORKFLOW.md and docs/harness/charter.md. Supporting product invariants refer to MYTHHELM Master Specification v2, version 2.0, especially I07/I09/I20/I21 (§2) and trusted-host limits (§8.1).
 

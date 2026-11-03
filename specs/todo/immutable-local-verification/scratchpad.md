@@ -12,7 +12,7 @@
 
 ## Research notes
 
-- Scope is one stream of eight tasks: a docs-domain ADR producer (Task 8) followed by seven harness tasks, auto-confirmed non-interactively. Requirements are frozen; candidate remains refined pending a root-dispatched fresh reviewer.
+- Scope is one stream of eight tasks: a docs-domain ADR producer (Task 8) followed by seven harness tasks, auto-confirmed non-interactively. Requirements remain frozen; the third fresh validation returned Ready and the lifecycle is moving to todo.
 - Baseline is `f18ff8c`. Current gatelib includes workflow dependency scopes, runtime/test assets, preflight gate ordering and four-worker harness test invocation. These are existing mechanisms to preserve.
 - Actual local synthetic `gofmt -l .` traversed `.claude/data/private.go`, while excluding a dot-prefixed `.hidden.go` basename. Local Go source `isGoFilename` and `gofmtMain` confirm this distinction. The design refuses ignored actual consumer inputs instead of silently excluding them from verification.
 - Current real gofmt initializes Go telemetry counters. Qualified execution clears ambient environment, disables telemetry and provides bounded scratch configuration/home/cache paths; it mounts no native/secret/config store.
@@ -45,3 +45,11 @@ None from implementation yet.
 - Both Round 1 blockers passed fresh re-review. The remaining blocker was the missing explicitly owned ADR for durable private snapshot persistence, ownership, crash reconciliation and retention; repository authoring rules provide no product-only exception.
 - Repair adds docs-domain Task 8 producing `docs/decisions/0023-immutable-local-verification.md`, independently reviewed and accepted before Task 1. Original task IDs 1–7 remain stable; DAG is 8→1→2→3→4→5→6→7. The ADR covers actual decision alternatives and all persistence/ownership and immutable/legacy boundaries, without claiming actual qualification. Current decision inventory ends at 0022; its README has naming/template guidance and requires no index change.
 - Round 2 remains rejected; this repair awaits fresh Round 3. No Ready verdict, actual ADR acceptance, implementation or qualification is inferred. Requirements and refinement-log remain unchanged.
+
+
+### Round 3 — Ready for implementation
+
+- Assessed signed source: `1ebabd6a500613665ecdad9f1ca56d74fe81b7fa`; fresh reviewer `immutable_design_review_r3`.
+- Cumulative accounting: `dispatched=3 returned=3 failed=0`; references, requirements, design, tasks and conflicts PASS; single-spec epic check not applicable. No blocking or advisory findings.
+- The independently checked32 task paths have existing parents and no overlap with current todo/in-progress task file plans. The eight-task DAG remains8→1→2→3→4→5→6→7; all22 AC IDs are unique and traceable. References/specs lint passes.
+- Task8 owns the reviewed/accepted/merged ADR before implementation; no actual ADR acceptance, tool/profile qualification, strong verification result, native call or implementation is established by this design. The first two rejected rounds and their separate bounded repairs remain recorded above.
