@@ -5,7 +5,8 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 python3 - "$root" <<'PY'
 import html
-import ast
+import os
+import types
 import itertools
 import json
 import re
@@ -81,9 +82,9 @@ class Examples(unittest.TestCase):
                 self.assertTrue(examples.workflow_findings(self.root))
                 path.write_text('on: [pull_request, merge_group]')
 
-    def assert_ci_contract(self, ci):
+    def assert_ci_contract(self, ci, helper_source=None):
         # Extract this workflow's block-style jobs, refusing missing/duplicate
-        # keys. Comments cannot provide executable dependencies or conditions.
+        # keys. Comments and unrelated jobs cannot supply executable wiring.
         body = ci.split('\njobs:\n', 1)[1]
         jobs = {}
         current = None
@@ -104,50 +105,70 @@ class Examples(unittest.TestCase):
         self.assertIn('    uses: ./.github/workflows/docs.yml', site)
         self.assertIn('    name: CI OK', gate)
         self.assertIn('    if: always()', gate)
-        self.assertFalse(any(line.strip().startswith('continue-on-error:') for line in gate))
+        self.assertFalse(any(line.strip().startswith(('continue-on-error:', 'defaults:')) for line in gate))
         needs = [line for line in gate if line.startswith('    needs: ')]
         self.assertEqual(1, len(needs))
         match = re.fullmatch(r'    needs: \[([a-z0-9, -]+)\]', needs[0])
         self.assertIsNotNone(match)
         dependencies = [item.strip() for item in match[1].split(',')]
         self.assertEqual(len(dependencies), len(set(dependencies)))
-        self.assertTrue({'detect', 'go', 'windows-supervisor', 'windows-cli', 'site-build'} <= set(dependencies))
-        conditions = [line for line in gate if line.startswith('      - if: ')]
-        self.assertEqual(1, len(conditions))
-        position = gate.index(conditions[0]) + 1
-        self.assertLess(position, len(gate))
-        self.assertEqual('        run: exit 1', gate[position])
-        expression = conditions[0].split(': ', 1)[1]
-        expression = expression.replace("contains(needs.*.result, 'failure')", "('failure' in results)")
-        expression = expression.replace("contains(needs.*.result, 'cancelled')", "('cancelled' in results)")
-        for source, name in (('needs.site-build.result', 'site'), ('needs.windows-supervisor.result', 'supervisor'),
-                             ('needs.windows-cli.result', 'cli'),
-                             ('needs.detect.outputs.go', 'detected'), ('needs.go.result', 'go')):
-            expression = expression.replace(source, name)
-        expression = expression.replace('||', ' or ').replace('&&', ' and ')
-        expression = re.sub(r'\bfalse\b', 'False', expression)
-        try:
-            tree = ast.parse(expression, mode='eval')
-        except SyntaxError as exc:
-            self.fail(f'unsupported CI condition: {exc}')
-        allowed = (ast.Expression, ast.BoolOp, ast.Or, ast.And, ast.Compare, ast.Eq, ast.NotEq,
-                   ast.In, ast.Name, ast.Load, ast.Constant)
-        self.assertTrue(all(isinstance(node, allowed) for node in ast.walk(tree)))
-        self.assertTrue({node.id for node in ast.walk(tree) if isinstance(node, ast.Name)} <=
-                        {'results', 'site', 'supervisor', 'cli', 'detected', 'go'})
-        compiled = compile(tree, '<ci-condition>', 'eval')
-        for detected, go, supervisor, cli, site, other in itertools.product(
-                ('true', 'false'), ('success', 'failure', 'cancelled', 'skipped'),
-                ('success', 'failure', 'cancelled', 'skipped'),
-                ('success', 'failure', 'cancelled', 'skipped'),
-                ('success', 'failure', 'cancelled', 'skipped'),
-                ('success', 'failure', 'cancelled')):
-            values = dict(detected=detected, go=go, supervisor=supervisor, cli=cli, site=site,
-                          results=[go, supervisor, cli, site, other])
-            expected = ('failure' in values['results'] or 'cancelled' in values['results'] or
-                        site != 'success' or (detected == 'true' and
-                        (go != 'success' or supervisor != 'success' or cli != 'success')))
-            self.assertEqual(expected, eval(compiled, {'__builtins__': {}}, values), values)
+        always = {'detect', 'workflows', 'harness', 'site-build'}
+        runtime = {'go', 'windows-supervisor', 'windows-cli', 'lint', 'govulncheck', 'licenses'}
+        self.assertEqual(always | runtime, set(dependencies))
+        steps = []
+        for line in gate:
+            if line.startswith('      - '):
+                steps.append([])
+            if steps:
+                steps[-1].append(line)
+        command = '        run: python3 .github/scripts/ci_change_scope.py check'
+        checks = [step for step in steps if command in step]
+        self.assertEqual(1, len(checks))
+        self.assertIn('        env:', checks[0])
+        self.assertIn('          CI_NEEDS: ${{ toJSON(needs) }}', checks[0])
+        self.assertFalse(any(line.strip().startswith(('if:', 'shell:')) for line in checks[0]))
+        self.assertTrue(any(line.startswith('      - uses: actions/checkout@') and
+                            '          persist-credentials: false' in step
+                            for step in steps for line in step))
+
+        # Execute the helper actually wired above. Expected job sets/outputs are
+        # independent fixtures, not values copied from its own plan function.
+        path = repository / '.github/scripts/ci_change_scope.py'
+        helper = types.ModuleType('synthetic_ci_contract')
+        helper.__file__ = str(path)
+        exec(compile(helper_source if helper_source is not None else path.read_text(),
+                     str(path), 'exec'), helper.__dict__)
+        statuses = ('success', 'failure', 'cancelled', 'skipped')
+        platforms = ['ubuntu-latest', 'ubuntu-24.04-arm', 'macos-latest', 'windows-latest', 'windows-11-arm']
+        for mode in ('full', 'docs-linux', 'harness-only'):
+            selected = always | (runtime if mode == 'full' else {'go'} if mode == 'docs-linux' else set())
+            outputs = dict(mode=mode, go='false' if mode == 'harness-only' else 'true',
+                           matrix=json.dumps(platforms if mode == 'full' else ['ubuntu-latest'], separators=(',', ':')))
+            baseline = {job: dict(result='success' if job in selected else 'skipped', outputs={})
+                        for job in dependencies}
+            baseline['detect']['outputs'] = outputs
+            self.assertTrue(helper.check_needs(baseline), mode)
+            for go, supervisor, cli, site_result, other in itertools.product(statuses, repeat=5):
+                for other_job in ('workflows', 'harness', 'detect', 'lint', 'govulncheck', 'licenses'):
+                    actual = {job: dict(row) for job, row in baseline.items()}
+                    for job, result in (('go', go), ('windows-supervisor', supervisor),
+                                        ('windows-cli', cli), ('site-build', site_result), (other_job, other)):
+                        actual[job]['result'] = result
+                    expected = all(row['result'] == ('success' if job in selected else 'skipped')
+                                   for job, row in actual.items())
+                    self.assertEqual(expected, helper.check_needs(actual), (mode, actual))
+            invalid = {job: dict(row) for job, row in baseline.items()}
+            invalid['detect']['outputs'] = dict(outputs, matrix='[]')
+            self.assertFalse(helper.check_needs(invalid))
+            if helper_source is None:
+                # Pin CLI dispatch too: a disconnected checker cannot certify a
+                # failed/skipped/cancelled reusable site workflow.
+                for site_result in statuses:
+                    actual = {job: dict(row) for job, row in baseline.items()}
+                    actual['site-build']['result'] = site_result
+                    result = subprocess.run([sys.executable, str(path), 'check'],
+                        env=dict(os.environ, CI_NEEDS=json.dumps(actual)), capture_output=True, timeout=5)
+                    self.assertEqual(0 if site_result == 'success' else 1, result.returncode)
 
     def test_workflow_build_and_gate_contract(self):
         ci = (repository / '.github/workflows/ci.yml').read_text()
@@ -172,26 +193,31 @@ class Examples(unittest.TestCase):
 
     def test_gate_contract_rejects_comments_and_other_jobs(self):
         ci = (repository / '.github/workflows/ci.yml').read_text()
-        lines = ci.splitlines()
-        needs = next(line for line in lines if line.startswith('    needs: [workflows,'))
-        condition = next(line for line in lines if line.startswith('      - if: contains(needs.*.result'))
-        for line in (needs, condition, '        run: exit 1'):
+        needs = next(line for line in ci.splitlines() if line.startswith('    needs: [workflows,'))
+        command = '        run: python3 .github/scripts/ci_change_scope.py check'
+        environment = '          CI_NEEDS: ${{ toJSON(needs) }}'
+        for line in (needs, command, environment, '    if: always()', '    uses: ./.github/workflows/docs.yml'):
             for replacement in ('    # ' + line.strip(), ''):
                 self.assertEqual(1, ci.count(line))
                 mutant = ci.replace(line, replacement, 1) + '\n  unrelated:\n' + line + '\n'
                 with self.subTest(line=line, replacement=replacement), self.assertRaises(AssertionError):
                     self.assert_ci_contract(mutant)
-        for old, new in (('site-build]', ']'),
-                         ('windows-cli, ', ''),
-                         ("needs.windows-cli.result != 'success'", 'false'),
-                         ("needs.site-build.result != 'success'", 'false'),
-                         ("needs.go.result != 'success'", 'false'),
-                         ("needs.windows-supervisor.result != 'success'", 'false'),
-                         (condition.strip()[6:], '(' + condition.strip()[6:] + ') && false'),
-                         ('        run: exit 1', '        run: exit 1\n        continue-on-error: true')):
+        for old, new in (('site-build]', ']'), ('windows-cli, ', ''),
+                         (command, command + ' || true'),
+                         (environment, '          CI_NEEDS: ${{ toJSON(needs.go) }}'),
+                         (command, '        if: false\n' + command),
+                         (command, command + '\n        continue-on-error: true'),
+                         (command, command + '\n        shell: echo {0}')):
             self.assertEqual(1, ci.count(old))
-            with self.subTest(old=old), self.assertRaises(AssertionError):
+            with self.subTest(old=old, new=new), self.assertRaises(AssertionError):
                 self.assert_ci_contract(ci.replace(old, new, 1))
+        source = (repository / '.github/scripts/ci_change_scope.py').read_text()
+        predicate = "if needs[job].get('result') != ('success' if selected else 'skipped'):"
+        self.assertEqual(1, source.count(predicate))
+        for job in ('site-build', 'go', 'windows-supervisor', 'windows-cli', 'harness', 'workflows'):
+            mutant = source.replace(predicate, f"if job != {job!r} and " + predicate[3:], 1)
+            with self.subTest(ignored_job=job), self.assertRaises(AssertionError):
+                self.assert_ci_contract(ci, helper_source=mutant)
 
     def test_exclusive_modes(self):
         self.fixture()
