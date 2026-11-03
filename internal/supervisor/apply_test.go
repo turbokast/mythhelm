@@ -35,7 +35,7 @@ func applyDB(t *testing.T, state string) *sql.DB {
 
 func readyApplyFixture(t *testing.T) (fixture, string) {
 	t.Helper()
-	f := newFixture(t)
+	f := newSeededFixture(t)
 	digest := f.config(t, "pass")
 	// f.run already logs the redacted worker diagnostic on failure.
 	if code, _, stderr := f.run(t, f.checkedRun(digest)...); code != 0 {
