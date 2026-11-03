@@ -798,3 +798,221 @@ func TestServiceOwnerRunResolvesAdmittedRevisionSafely(t *testing.T) {
 		t.Fatalf("RunOwned of the admitted decision = %+v, %v; want ready_for_review", out, err)
 	}
 }
+
+// TestRetainedOwnerObservationLifetime: an observation retained from an
+// existing owner during a busy owned entry keeps the run lock and lease hold
+// after the entry joins, until every retained copy releases; Close waits for
+// both. Retention never acquires or enters (I06/I18 (v2 §3)).
+func TestRetainedOwnerObservationLifetime(t *testing.T) {
+	// Sequential: the instance lock follows XDG_RUNTIME_DIR.
+	f := newFixture(t)
+	lease := ownedLease(t, f)
+	d, _, waitWorker := seedLaunchTimed(t, f, "slow", pinnedPayload, 2*time.Second)
+	j := f.journal(t)
+	setMigrationPhase(t, j, "adopted")
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+
+	other, err := journal.Open(t.Context(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = other.Close() })
+
+	owner := acquireOwned(ctx, t, j, lease, d.RunID)
+	copied := *owner
+	for _, c := range []struct {
+		name  string
+		owner *supervisor.ServiceOwner
+		runID string
+		want  bool
+	}{
+		{"nil owner", nil, d.RunID, false},
+		{"zero owner", &supervisor.ServiceOwner{}, d.RunID, false},
+		{"empty run", owner, "", false},
+		{"other run", owner, ids.New("run"), false},
+		{"own run", owner, d.RunID, true},
+		{"copy", &copied, d.RunID, true},
+	} {
+		if got := c.owner.MatchesRun(c.runID); got != c.want {
+			t.Errorf("MatchesRun %s = %t; want %t", c.name, got, c.want)
+		}
+	}
+
+	entered, release := make(chan struct{}), make(chan struct{})
+	releaseEntry := sync.OnceFunc(func() { close(release) })
+	ran := make(chan error, 1)
+	var active sync.WaitGroup
+	t.Cleanup(func() { releaseEntry(); active.Wait() })
+	active.Go(func() {
+		var once sync.Once
+		_, err := supervisor.RecoverOwned(ctx, j, owner, d.RunID, supervisor.Hooks{Event: func(journal.Event) {
+			once.Do(func() { close(entered); <-release })
+		}})
+		ran <- err
+	})
+	select {
+	case <-entered:
+	case err := <-ran:
+		t.Fatalf("RecoverOwned ended before its callback barrier: %v", err)
+	}
+
+	for _, c := range []struct {
+		name  string
+		owner *supervisor.ServiceOwner
+		j     *journal.Journal
+		runID string
+	}{
+		{"nil owner", nil, j, d.RunID},
+		{"zero owner", &supervisor.ServiceOwner{}, j, d.RunID},
+		{"foreign run", owner, j, ids.New("run")},
+		{"replaced root", owner, other, d.RunID},
+		{"nil journal", owner, nil, d.RunID},
+	} {
+		if rel, err := c.owner.RetainObservation(ctx, c.j, c.runID); !errors.Is(err, supervisor.ErrOwnership) || rel != nil {
+			if rel != nil {
+				rel()
+			}
+			t.Errorf("RetainObservation %s = %v; want an ownership refusal", c.name, err)
+		}
+	}
+	// Quiesce this real worker while the real recovery callback remains held.
+	// Its complete identity and projected rows are then stable independent
+	// witnesses of observation-only behaviour, without invented call counts.
+	waitWorker()
+	attemptBefore, err := j.Attempt(ctx, d.AttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runBefore, err := j.Run(ctx, d.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identityBefore, err := workers.ReadIdentity(workers.AttemptDir(f.state, d.RunID, d.AttemptID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	countsBefore := eventTypeCounts(t, f, d.RunID)
+	viaOwner, err := owner.RetainObservation(ctx, j, d.RunID)
+	if err != nil {
+		t.Fatalf("RetainObservation during a busy entry: %v", err)
+	}
+	t.Cleanup(viaOwner)
+	viaCopy, err := copied.RetainObservation(ctx, j, d.RunID)
+	if err != nil {
+		t.Fatalf("RetainObservation through a copy: %v", err)
+	}
+	t.Cleanup(viaCopy)
+	attemptAfter, err := j.Attempt(ctx, d.AttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runAfter, err := j.Run(ctx, d.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identityAfter, err := workers.ReadIdentity(workers.AttemptDir(f.state, d.RunID, d.AttemptID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(attemptBefore, attemptAfter) || !reflect.DeepEqual(runBefore, runAfter) || !reflect.DeepEqual(identityBefore, identityAfter) {
+		t.Fatal("retention changed the exact existing run, attempt or real worker launch identity")
+	}
+	if countsAfter := eventTypeCounts(t, f, d.RunID); !reflect.DeepEqual(countsBefore, countsAfter) {
+		t.Fatalf("retention changed canonical recovery/launch event counts: before=%v after=%v", countsBefore, countsAfter)
+	}
+
+	closed := make(chan error, 1)
+	active.Go(func() { closed <- copied.Close() })
+	releaseEntry()
+	if err := <-ran; err != nil {
+		t.Fatalf("RecoverOwned: %v", err)
+	}
+	for !closersAccountedFor(len(closed), 1) {
+		runtime.Gosched()
+	}
+	if len(closed) != 0 {
+		t.Fatal("Close returned while observations were retained")
+	}
+	if !runLockHeld(t, d.RunDir) {
+		t.Fatal("run lock released after the entry joined while observations were retained")
+	}
+	if rel, err := owner.RetainObservation(ctx, j, d.RunID); !errors.Is(err, supervisor.ErrOwnership) || rel != nil {
+		if rel != nil {
+			rel()
+		}
+		t.Fatalf("RetainObservation while closing = %v; want an ownership refusal", err)
+	}
+	viaOwner()
+	viaOwner() // a duplicate release must not release the copy's reference
+	if !runLockHeld(t, d.RunDir) {
+		t.Fatal("a duplicate release dropped another observation's reference")
+	}
+	if len(closed) != 0 {
+		t.Fatal("Close returned while the copy's observation was retained")
+	}
+	viaCopy()
+	if err := <-closed; err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if runLockHeld(t, d.RunDir) {
+		t.Fatal("Close kept the run lock after every observation released")
+	}
+	if rel, err := owner.RetainObservation(ctx, j, d.RunID); !errors.Is(err, supervisor.ErrOwnership) || rel != nil {
+		t.Fatalf("RetainObservation after Close = %v; want an ownership refusal", err)
+	}
+	if !owner.MatchesRun(d.RunID) {
+		t.Fatal("MatchesRun of a closed owner must stay routing-only true")
+	}
+	after := eventTypeCounts(t, f, d.RunID)
+	if after["attempt.launched"] != countsBefore["attempt.launched"] {
+		t.Fatalf("observation launched work: %v -> %v", countsBefore, after)
+	}
+
+}
+
+// Retain the actual service/run owners while replacing a closed journal.
+// Windows refuses replacing an open SQLite file. Reopening also distinguishes
+// the old owner's database identity check from a stale Journal handle.
+func TestRetainedOwnerDatabaseReplacement(t *testing.T) {
+	f := newFixture(t)
+	lease := ownedLease(t, f)
+	ctx := t.Context()
+	j, err := journal.Open(ctx, f.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = j.Close() })
+	setMigrationPhase(t, j, "adopted")
+	freshRun := ids.New("run")
+	fresh := acquireOwned(ctx, t, j, lease, freshRun)
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db := filepath.Join(f.state, journal.DBName)
+	raw, err := os.ReadFile(db) // #nosec G304 -- fixture database
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(db, db+".orig"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(db, raw, 0o600); err != nil { // #nosec G703 -- db is the fixture's own temp state database
+
+		t.Fatal(err)
+	}
+	replacement, err := journal.Open(ctx, f.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = replacement.Close() })
+	if err := replacement.CheckStateIdentity(ctx); err != nil {
+		t.Fatalf("replacement journal must have its own valid identity: %v", err)
+	}
+	if rel, err := fresh.RetainObservation(ctx, replacement, freshRun); !errors.Is(err, supervisor.ErrOwnership) || rel != nil {
+		if rel != nil {
+			rel()
+		}
+		t.Fatalf("RetainObservation on a replaced database = %v; want an ownership refusal", err)
+	}
+}

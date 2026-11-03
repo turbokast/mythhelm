@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +34,10 @@ const spawnHelperEnv = "MYTHHELM_TEST_SPAWN_HELPER"
 // codexFixtureCommand switches the test binary into a stand-in Codex native
 // that writes the synthetic frames of the mode in its first argument.
 const codexFixtureCommand = "__codex-fixture"
+
+// nativeCounterEnv names a file the Codex fixture native appends one line to
+// each time it starts, so a test counts real native launches.
+const nativeCounterEnv = "MYTHHELM_TEST_NATIVE_COUNTER"
 
 // TestMain lets the test binary play every process of an attempt: the
 // worker (__worker), the fake agent (__fake-agent) and the spawning CLI.
@@ -69,6 +74,16 @@ func TestMain(m *testing.M) {
 // exits; "malformed-result" writes a result frame no decoder can read and then
 // keeps running until it is stopped.
 func codexFixture(mode string) int {
+	if counter := os.Getenv(nativeCounterEnv); counter != "" {
+		f, err := os.OpenFile(counter, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) //nolint:gosec // G304: the counter is a test-owned t.TempDir file the test passes through nativeCounterEnv.
+		if err != nil {
+			return 2
+		}
+		_, err = f.WriteString("started\n")
+		if err := errors.Join(err, f.Close()); err != nil {
+			return 2
+		}
+	}
 	fmt.Println(`{"_synthetic":true,"type":"session","session_id":"synth-codex-1"}`)
 	fmt.Println(`{"_synthetic":true,"type":"turn"}`)
 	switch mode {
@@ -1417,4 +1432,52 @@ func TestUnixDescendantScanUnchanged(t *testing.T) {
 	}
 	t.Run("unresolved descendant", TestUnresolvedDescendantReported)
 	t.Run("orphan contract", TestOrphanPIDsContract)
+}
+
+// The episode has already ended before either presence generation is supplied.
+func TestCompletedWorkerWaitGrantsNothing(t *testing.T) {
+	for _, generation := range []int64{7, 8} {
+		t.Run(strconv.FormatInt(generation, 10), func(t *testing.T) {
+			a := newAttempt(t)
+			launch := a.launch(t, "count-launches")
+			launch.Generation = 7
+			launch.ExecutionDeadline = time.Now().Add(time.Minute)
+			proc := a.spawn(t, launch)
+			exited := observeWorkerExit(t, proc)
+			a.waitDone(t)
+			spool := filepath.Join(a.dir, "spool.jsonl")
+			identity := filepath.Join(a.dir, "worker.json")
+			beforeSpool, err := os.ReadFile(spool) // #nosec G304 -- fixed spool/identity file in this test-owned attempt TempDir.
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeIdentity, err := os.ReadFile(identity) // #nosec G304 -- fixed spool/identity file in this test-owned attempt TempDir.
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := awaitWorkerReturn(t, a.dir, generation, exited); err != nil {
+				t.Fatal(err)
+			}
+			afterSpool, err := os.ReadFile(spool) // #nosec G304 -- fixed spool/identity file in this test-owned attempt TempDir.
+			if err != nil {
+				t.Fatal(err)
+			}
+			afterIdentity, err := os.ReadFile(identity) // #nosec G304 -- fixed worker identity in this test-owned attempt TempDir.
+			if err != nil {
+				t.Fatal(err)
+			}
+			count, err := os.ReadFile(filepath.Join(a.workdir, "launch-count.txt"))
+			if err != nil || string(count) != "launch\n" {
+				t.Fatalf("replacement launch count %q %v", count, err)
+			}
+			if string(beforeSpool) != string(afterSpool) || string(beforeIdentity) != string(afterIdentity) {
+				t.Fatal("completed wait changed spooled effects or worker/token identity")
+			}
+			if generation != launch.Generation {
+				if err := CheckEnvelope(EpisodeEnvelope{AttemptID: a.attemptID, LaunchID: launch.LaunchToken, Generation: launch.Generation}, a.attemptID, launch.LaunchToken, generation); !errors.Is(err, errRevisionConflict) {
+					t.Fatalf("presence granted changed-generation authority: %v", err)
+				}
+			}
+		})
+	}
 }

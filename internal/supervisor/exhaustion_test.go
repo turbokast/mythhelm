@@ -102,11 +102,7 @@ type bucketWorld struct {
 
 func newBucketWorld(t *testing.T) *bucketWorld {
 	t.Helper()
-	j, err := journal.Open(t.Context(), t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = j.Close() })
+	j := openSeededJournal(t)
 	w := &bucketWorld{j: j, runID: ids.New("run")}
 	now := time.Now()
 	if err := j.Transact(t.Context(), func(tx *sql.Tx) error {
@@ -340,6 +336,7 @@ type exhaustionFixture struct{ state, repo, task string }
 func newExhaustionFixture(t *testing.T) exhaustionFixture {
 	t.Helper()
 	f := exhaustionFixture{state: t.TempDir(), repo: t.TempDir()}
+	SeedJournalState(t, f.state)
 	home := t.TempDir()
 	git := func(args ...string) {
 		t.Helper()

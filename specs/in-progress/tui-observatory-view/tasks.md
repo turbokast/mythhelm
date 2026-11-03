@@ -497,7 +497,7 @@
 
 - **Final local validation/publication**: PR #566 was opened only after exact `e25e483` code/architecture review returned Ready and all six gates passed on signed integrated `219991a`: formatter0.2s, tidy0.1s, vet0.6s, full repository race332.9s, lint3.0s/zero issues, hygiene5.3s. Eight named final acceptance suites pass1.355s, including all22 original literals and actual View/full-export counters. Source/protected producer hashes remain byte-identical across core integration. Own lifecycle entry/spec/hygiene/marker checks are refreshed separately after this metadata; exact-final-head CI/review and merge remain outstanding. Earlier failures/control bindings remain historical, not erased or relabelled. No native/platform/full-product/G09/G11/20× qualification is claimed.
 
-### Task 16 — Compose overlays with semantic colour checks
+### Task 16 — Compose overlays with semantic colour checks ✅ COMPLETED
 
 - **Domain/agent**: tui-implementer
 - **Budget**: complex (shared compositor and SGR validation)
@@ -519,6 +519,12 @@
   - Existing confirmation tests retain their specified effects (AC-5.3). `BenchmarkObservatoryView` and `BenchmarkObservatoryOverlay` report ten non-race samples with ns/op/allocations and median; record hardware-neutral method and local target assessment, never a statistical native-CLI claim (NFR-2).
 - **Test plan**: Golden cells and parsed SGR, both modes/themes; one benign fake live event is the positive witness for background updates. Keep benchmark results distinct from acceptance gates.
 - **Invariants touched**: I03/I07/I09/I13 (v2 §§15.1,16: explicit effect safety, contrast and evidence remain readable).
+
+- **Status**: ✅ Completed — live raised cards, semantic display-cell checks and the compact fallback submitted in PR #587; required CI and merge remain pending.
+- **Implementation**: Commit fe60d30 integrates the reviewed compositor and repairs clipping to preserve whole grapheme clusters. The SGR oracle counts wide continuation cells and complete clusters; a real journal append reaches the open-help background through production polling/reload.
+- **Spec deviations**: Required own-task records add `specs/in-progress/tui-observatory-view/tasks.md` and `specs/in-progress/tui-observatory-view/handoff.md`. Existing live/motion production code required no changes. The delegated two-file follow-up repairs Unicode and journal-proof gaps; initial test-only spelling/loop lint failures were corrected without changing assertions. The predicate self-comparison was removed in favour of independently demonstrated production-freeze rejection. Earlier native failures remain historical.
+- **Files modified**: `internal/tui/overlays.go`, `internal/tui/overlays_test.go`, `internal/tui/model.go`, `internal/tui/dialogs.go`, `internal/tui/palette.go`, `internal/tui/observatory_bench_test.go`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`.
+- **Validation**: All six canonical gates pass, including full repository race 986.0s. After normal integration of merged recording-consumer PR #585, all five Go gates pass again, including full repository race 700.2s; the six reviewed Go source blobs remain unchanged. The named acceptance/semantic/confirmation suites and retained Unicode boundary controls pass; independent architecture review and real reload-freeze fault checks pass. Ten non-race 100ms samples with GOMAXPROCS=4 give medians: View 1383048 ns/op, 319659.5 B/op, 4782 allocs/op; Overlay 2028836 ns/op, 419221.5 B/op, 6004 allocs/op. These local measurements meet the view target and establish no native-harness advantage.
 
 ### Task 17 — Resolve themes and suppress delayed OSC replies
 
@@ -598,7 +604,7 @@
 - **Test plan**: Follow `specs/*/tui-tape-recording/` and docs/demos/README.md; hygiene plus artifact inspection.
 - **Invariants touched**: I09/I13/I14 (v2 §§15.1,19: demonstration provenance and no expanded qualification claim).
 
-### Task 21 — Produce scoped recording selection
+### Task 21 — Produce scoped recording selection ✅ COMPLETED
 
 - **Domain/agent**: go-implementer (docs)
 - **Budget**: complex (three coupled mechanism/docs/test files; process and failure-cleanup boundaries)
@@ -615,6 +621,15 @@
   - README states the exact new selector/default commands and per-record historical/current provenance; no real rendered/native/human evidence is claimed from fake tools. Task20 owner, dependency, six artifact paths and human/tooling gates remain unchanged.
 - **Test plan**: Bash/Git/Python fixtures only; fake credential-free external tools, exact before/after bytes and negative process statuses. Keep literal-entry bad-argument/pre-build failure controls separate from shared-body success coverage. Public fixed paths and literal tapes stay unchanged; no successful public recording or real rendering/maintainer action occurs in this producer.
 - **Invariants touched**: I07/I09/I13/I14 (v2 §§15/19: exact recording provenance, isolated tooling, no false qualification).
+- **Status**: ✅ Completed — produced selected/default-all recording generation with exact per-record provenance and fake-tool regression coverage; PR #576.
+- **Implementation**: Initial source `b26a2654e20d7599c8e028fc5a710b645b57573c` and callback annotation `2d580d669eb4c06dd01f18e583a00a5a3b357931` remain historical. Review repairs `0751cea4410a308cd73253a76cd370757442c308` and `1125e62c4981c4f4161749638559b63458075fb2` validate fixed recording paths, sole executable literal Output and pin headers before build/write; cover every current embedded input; reject dirty non-pin manifest configuration; replace the manifest atomically and verify rewritten tape pins. Portable byte-snapshot tests include additions, modifications and deletions. The final fake-tool suite passes193 assertions, including eight effect mutants; independent final review and exact-head CI/merge remain required. No real recording is generated.
+- **Spec deviations**:
+  - Own `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md` and `specs/in-progress/tui-observatory-view/scratchpad.md` records accompany the three listed paths under WORKFLOW/task-completion.
+  - Added the historical non-commit pin regression after independent review exposed existence-only Git object validation (consistent with the adopted commit-resolution contract). The original rejected candidate and subsequent repair remain distinct evidence; no real recording or Task20 qualification follows.
+  - Added SC2317 beside the existing SC2329 annotation for the EXIT cleanup callback after the initial Harness job reported it unreachable under ShellCheck0.9, while local0.11 passed (consistent with the actual indirect invocation). This is a direct publication compatibility comment, not native-authored behavior or a broad lint exception.
+  - Added source-grounded review regressions for output aliases/noncanonical executable Output, dirty embedded assets/configuration, malformed headers, deleted paths and interrupted manifest replacement (consistent with the fixed literal paths, exact provenance and failure contract). Committed configuration comparison excludes only output pin fields to avoid requiring a commit to contain its own hash. Atomic replacement protects one manifest; multi-file rollback and concurrent recording remain outside the adopted scope. The separate release-domain mixed-pin workflow consumer remains necessary before Task20 publication; this producer does not change `.github/workflows/docs.yml`.
+- **Files modified**: `docs/demos/record.sh`, `docs/demos/record_test.sh`, `docs/demos/README.md`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
+
 
 
 ### Task 22 — Verify recording consumers at each immutable pin ✅ COMPLETED

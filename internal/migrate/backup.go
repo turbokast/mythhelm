@@ -28,7 +28,7 @@ import (
 // must sweep this file too.
 const (
 	dbName                 = "mythhelm.db"
-	supportedSchemaVersion = 10
+	supportedSchemaVersion = 11
 )
 
 // BackupInfo is the sidecar recorded beside every pre-migration backup

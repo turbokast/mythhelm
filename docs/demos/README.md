@@ -12,12 +12,71 @@ merged), not from the taped takes themselves.
 ## Record command
 
 ```sh
-docs/demos/record.sh            # builds the binary, regenerates the transcripts, renders the GIFs, the hero videos and the posters, verifies all of them
-docs/demos/record.sh --repin    # regenerate from the current checkout and move the pins to it (clean tree only)
+docs/demos/record.sh                            # builds the binary, regenerates the transcripts, renders the GIFs, the hero videos and the posters, verifies all of them
+docs/demos/record.sh --repin                    # regenerate every recording from the current checkout and move every pin to it (clean tree only)
+docs/demos/record.sh --recording tui            # only the tui recording; its pin must already name the checkout
+docs/demos/record.sh --recording tui --repin    # only the tui recording, moving only its pin (clean tree only)
 ```
 
-Without flags the checkout must match the manifest's `binary_commit`;
-otherwise the script refuses to write artifacts another revision labels.
+`--recording NAME` selects exactly one manifest recording: `demo`, `tui` or
+`hero`. The options may come in either order and each at most once; a
+missing, repeated or unknown option or name exits 2 before anything is built
+or written. Without `--recording` every recording is selected, as before.
+
+A selected run builds one binary from the current checkout, regenerates the
+selected transcript (twice, for the determinism check), renders the selected
+tape with the pinned VHS, generates its poster and verifies the transcript
+labels, the GIF, the poster and the tape's single literal `Output`, which must
+match its own manifest artifact before any build or output write. Additional
+executable `Output` tokens are rejected even when indented or split across
+lines; quoted text and comments are inert. The hero
+videos and chapters are rendered and checked only when `hero` is selected or no
+recording is named.
+
+Provenance stays per recording. After `--recording tui --repin`, the tui
+entry names the current commit while `demo` and `hero` keep their historical
+`binary_commit`: each pin describes the binary its own artifacts came from,
+and the selected run says nothing new about unselected artifacts. Unselected
+recordings are not regenerated, rendered or probed, and none of their files,
+tape headers or manifest bytes change; their pins must still be commits in
+this repository. `--repin` rewrites only the selected entry's `binary_commit`
+and `binary_version` values (keeping every other manifest byte) and its tape
+header, and only after every selected check has passed.
+
+Without `--repin` the checkout must match each selected recording's
+`binary_commit`, and the build inputs (including embedded assets), the
+normalization script and the selected tape must be committed. Manifest configuration must match
+the committed configuration; only `binary_commit` and `binary_version` are
+excluded from that comparison because they are output pins (a commit cannot
+contain its own hash). Every recording uses its existing fixed tape,
+artifact and transcript paths, so cross-record aliases are refused. Each
+selected tape needs exactly one valid version header and commit header;
+repinning verifies their rewritten values. Otherwise the script refuses to
+write artifacts another revision labels. A failed run exits nonzero: it may leave
+partial selected media behind, which is not accepted output, and it moves no
+pin. If writing the pins themselves fails, the script reports the repinning
+as incomplete. The manifest is replaced atomically, preserving the old
+complete file if replacement fails; tape headers are separate writes, so
+there is no multi-file rollback. Inspect `git diff` before re-running.
+
+Recording uses the fixed paths `/tmp/mythhelm-record` (the binary the tapes
+type) and `/tmp/demo` (the hero scratch directory), so run one recording
+invocation at a time. The script removes only its own temporary directory
+and a `/tmp/demo` that carries the hero marker file; it does not clean up
+other processes or resources.
+
+`docs/demos/record_test.sh` checks the selection, provenance and failure
+behaviour in temporary Git fixtures with fake `go`, `vhs`, `ffmpeg`,
+`ffprobe`, `file`, `ttyd` and `timeout`. Its sentinel media qualify the
+script's routing only; they are not recordings, and they say nothing about
+real rendering or accessibility. The tests use Bash, Git and Python; their
+snapshot checks include added, changed and removed paths, including spaces,
+and do not require GNU checksum tools.
+
+The docs workflow checks each recording at its own `binary_commit`. A selected
+repin that produces mixed pins passes publication checks when each recording's
+transcript matches at its own pin and its qualifiers pass there.
+
 Note the squash-merge trap: pins name the pre-commit HEAD, so after a merge
 no checkout matches and plain `record.sh` always refuses — re-record with
 `--repin` on a clean main tip instead.

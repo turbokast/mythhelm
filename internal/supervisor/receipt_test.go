@@ -32,7 +32,7 @@ import (
 
 func receiptRun(t *testing.T) (fixture, supervisor.Receipt, string) {
 	t.Helper()
-	f := newFixture(t)
+	f := newSeededFixture(t)
 	if code, _, stderr := f.run(t, f.fakeRun()...); code != 5 {
 		t.Fatalf("run exit %d: %s", code, stderr)
 	}
@@ -370,7 +370,9 @@ func ledgerReceiptWorld(t *testing.T) (*journal.Journal, string) {
 // the given state (executing, or a terminal one admission can reach).
 func receiptWorldTo(t *testing.T, to supervisor.RunState) (*journal.Journal, string) {
 	t.Helper()
-	j, err := journal.Open(t.Context(), t.TempDir())
+	state := t.TempDir()
+	supervisor.SeedJournalState(t, state)
+	j, err := journal.Open(t.Context(), state)
 	if err != nil {
 		t.Fatal(err)
 	}

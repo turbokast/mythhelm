@@ -16,10 +16,12 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -634,6 +636,40 @@ func (w *worker) awaitIfUnsupervised(ctx context.Context) error {
 	return AwaitReconnect(ctx, w.dir, env)
 }
 
+// verifyConfigSources requires the payload's source→path mapping to be
+// exactly the admitted sources, each at the path the pinned adapter's own
+// inventory derives under the launch's HOME, workdir and env. Two files with
+// equal bytes share a digest, so only this check catches swapped paths; a
+// missing or extra source fails the same way. An empty admission carries no
+// mapping and verifies nothing here.
+func (l Launch) verifyConfigSources() error {
+	if len(l.UserConfigDigests) == 0 && len(l.UserConfigPaths) == 0 {
+		return nil
+	}
+	home := launchHome(l.Env)
+	var expected map[string]string
+	if l.AdapterID == codex.AdapterID {
+		expected = codex.AdmittedConfigPathsForEnv(home, l.Dir, l.Env)
+	} else {
+		expected = claudecode.AdmittedConfigPathsForEnv(home, l.Dir, l.Env)
+	}
+	for _, source := range slices.Sorted(maps.Keys(l.UserConfigDigests)) {
+		path, ok := l.UserConfigPaths[source]
+		if !ok {
+			return fmt.Errorf("native config %q has no payload path", source)
+		}
+		if want, ok := expected[source]; !ok || path != want {
+			return fmt.Errorf("native config %q payload path is not its inventoried path", source)
+		}
+	}
+	for _, source := range slices.Sorted(maps.Keys(l.UserConfigPaths)) {
+		if _, ok := l.UserConfigDigests[source]; !ok {
+			return fmt.Errorf("native config payload carries unadmitted source %q", source)
+		}
+	}
+	return nil
+}
+
 // start verifies the pinned native, opens the prompt and launches the
 // native process once through l.
 func (w *worker) start(ctx context.Context, l *launcher) (adapter.Session, error) {
@@ -648,7 +684,11 @@ func (w *worker) start(ctx context.Context, l *launcher) (adapter.Session, error
 	}
 	// The admission→exec TOCTOU close: mutable native config that changed
 	// after admission fails the launch before any native process exists
-	// (design §2.9, I20).
+	// (design §2.9, I20). A digest is not a source identity, so the payload's
+	// source→path mapping is checked first.
+	if err := w.launch.verifyConfigSources(); err != nil {
+		return nil, err
+	}
 	if err := w.launch.verifyUserConfig(); err != nil {
 		return nil, err
 	}

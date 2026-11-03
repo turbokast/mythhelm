@@ -132,15 +132,15 @@ func (m *Model) paletteLines() []line {
 		return append(rows, line{text: "no matching actions"})
 	}
 	for i, def := range list {
-		marker, colour := "  ", ""
-		if i == m.palette.sel {
-			marker, colour = focusGlyph(m.cfg.Caps)+" ", t.Focus
-		}
-		text := marker + def.name + " (" + def.keys + ")"
+		text := def.name + " (" + def.keys + ")"
 		if ok, reason := m.actionGate(def.id); !ok {
 			text += " " + dashGlyph(m.cfg.Caps) + " disabled: " + reason
 		}
-		rows = append(rows, line{text: text, colour: colour})
+		if i == m.palette.sel {
+			rows = append(rows, m.focusRow(text))
+		} else {
+			rows = append(rows, line{text: "  " + text})
+		}
 	}
 	return rows
 }

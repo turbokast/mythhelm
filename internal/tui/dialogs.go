@@ -240,22 +240,22 @@ func (m *Model) applyLines() []line {
 // focus.
 func (m *Model) applyFieldLine(field int, text string) line {
 	if m.dialogField == field {
-		return line{text: focusGlyph(m.cfg.Caps) + " " + text, colour: m.cfg.Tokens.Focus}
+		return m.focusRow(text)
 	}
 	return line{text: "  " + text}
 }
 
 // buttonLine renders a confirmation's [Confirm] [Cancel] row with the focus
-// marker before the focused button, which survives ColourNever by shape.
+// marker before the focused button, which survives ColourNever by shape. The
+// marker is the row's only Focus cell.
 func (m *Model) buttonLine(confirm string) line {
-	marker := focusGlyph(m.cfg.Caps) + " "
+	t := m.cfg.Tokens
+	marker := span{text: focusGlyph(m.cfg.Caps), colour: t.Focus}
 	confirmBtn, cancelBtn := "["+confirm+"]", "[Cancel]"
 	if m.dialogFocus == buttonConfirm {
-		confirmBtn = marker + confirmBtn
-	} else {
-		cancelBtn = marker + cancelBtn
+		return lineFromSpans(marker, span{text: " " + confirmBtn + " " + cancelBtn, colour: t.Text})
 	}
-	return line{text: confirmBtn + " " + cancelBtn}
+	return lineFromSpans(span{text: confirmBtn + " ", colour: t.Text}, marker, span{text: " " + cancelBtn, colour: t.Text})
 }
 
 // withDialogErr appends the in-place action error, if any. The dialog stays
