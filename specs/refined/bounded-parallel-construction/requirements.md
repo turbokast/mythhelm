@@ -1,6 +1,6 @@
 ## Bounded two-writer construction and serialized integration — Requirements
 
-> Unrefined. Run /refine-spec bounded-parallel-construction before /spec.
+> Refined after one fresh-context assessment; Ready for bounded offline design. Actual native-child and stop qualification remain live activation gates.
 >
 > Capture MH-14's smallest useful P3 slice: two demonstrably independent construction tasks in separately owned mutable environments, followed by serialized composition and protected verification of the exact combined source. Normative source: `mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md`, version 2.0, §§4, 6–11, 13, 17–18; implementation plan W08. This document neither implements parallel execution nor establishes S1/S3 or a passing live gate.
 
