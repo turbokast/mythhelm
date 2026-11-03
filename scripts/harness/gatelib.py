@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""gatelib.py: quality-gate markers. A marker records one verified pass of one gate
-over one exact tree state, so a later check can tell "this gate passed on what is
-on disk now" from "this gate passed once, on something else".
+"""gatelib.py: quality-gate markers for isolated, frozen worktrees. A marker pairs
+an exit-0 gate run with its scope fingerprint so later checks detect persistent
+changes. The before/after observation limits are described below.
 
     gatelib.py run <gate|group>... [--root DIR]      run gates; record each verified pass
     gatelib.py fingerprint --scope go|harness|all [--root DIR]
@@ -22,12 +22,16 @@ consistency, vet, lint when configured, and vulnerability checks on module chang
 Explicitly named gates retain caller order; group selection does not add optional
 checks when their existing conditions are absent.
 
-Only a verifiably successful run records. `run` computes the scope's fingerprint,
-runs the gate's fixed command unpiped from the tree root, and writes
-<tree>/.claude/data/gate-marker-<gate>.json only when the command exited 0 AND the
-fingerprint is unchanged afterwards: a tree that changed while the gate ran was
-not the tree it checked. A failing run deletes the gate's marker. A marker is
-fresh when its fingerprint equals the scope's current fingerprint in the same tree.
+`run` computes the scope's fingerprint, runs the gate's fixed command unpiped
+from the tree root, and writes <tree>/.claude/data/gate-marker-<gate>.json only
+when the command exited 0 AND the before/after fingerprints agree. A failing run
+deletes the gate's marker. A marker is fresh when its fingerprint equals the
+scope's current fingerprint in the same tree.
+
+Gates require an isolated worktree whose inputs stay frozen for the whole run.
+Before/after fingerprints detect persistent changes, not transient edits restored
+before the second fingerprint. They do not enforce isolation, create an immutable
+execution snapshot or prove which bytes a command read during concurrent edits.
 
 A fingerprint is SHA-256 over every tracked and untracked, non-ignored file in the
 scope (path, type, executable bit, content; a deleted tracked file counts as
@@ -65,6 +69,10 @@ GOVULNCHECK = "golang.org/x/vuln/cmd/govulncheck@v1.8.0"
 HARNESS_PREFIXES = (".agents/", ".grok/", ".claude/", "scripts/", "knowledge/", "docs/harness/")
 HARNESS_FILES = ("CLAUDE.md", "AGENTS.md", "WORKFLOW.md")
 GO_FILES = ("go.mod", "go.sum", ".golangci.yml")
+# Runtime and test-source trees include embedded assets, fixtures and support
+# matrices. External documentation consistency is checked separately in CI;
+# lifecycle metadata must not select the full Go gate group.
+GO_PREFIXES = ("adapters/", "cmd/", "internal/", "mods/", "tests/")
 MAX_BLOCKS = 3
 
 
@@ -81,7 +89,7 @@ GATES = {
     "golangci-lint": Gate("go", ["go", "run", GOLANGCI, "run"]),
     "govulncheck": Gate("go", ["go", "run", GOVULNCHECK, "./..."]),
     "harness-lint": Gate("harness", ["scripts/ci/lint-agent-harness.sh"]),
-    "harness-tests": Gate("harness", [".claude/hooks/tests/run-tests.sh"]),
+    "harness-tests": Gate("harness", [".claude/hooks/tests/run-tests.sh", "--jobs", "4"]),
     "shellcheck": Gate("harness", ["shellcheck"]),
     "hygiene": Gate("all", ["scripts/ci/check-public-hygiene.sh"]),
 }
@@ -107,7 +115,7 @@ def in_scope(path, scope):
     if scope == "all":
         return True
     if scope == "go":
-        return path.endswith(".go") or path in GO_FILES
+        return path.endswith(".go") or path in GO_FILES or path.startswith(GO_PREFIXES)
     if scope == "harness":
         return path.startswith(HARNESS_PREFIXES) or path in HARNESS_FILES
     raise runspec.Usage("unknown scope %r" % scope)

@@ -137,6 +137,24 @@ expect 1 "an edit after the gates makes status fail"
 has "go-test        stale" "the Go markers are stale"
 has "hygiene        stale" "and so is hygiene"
 
+echo "== harness gate uses the bounded runner =="
+repo harness-workers
+mkdir -p "$R/.claude/hooks/tests"
+cat > "$R/.claude/hooks/tests/run-tests.sh" <<'EOF'
+#!/usr/bin/env bash
+[[ "$#" == 2 && "$1" == --jobs && "$2" == 4 ]] || exit 7
+[[ "${FAKE_RC:-0}" == 0 ]] || exit 1
+printf 'checks=3 failed=0\n'
+EOF
+chmod +x "$R/.claude/hooks/tests/run-tests.sh"
+gate harness-tests
+expect 0 "the harness gate requests exactly four workers"
+has "--jobs 4" "the recorded command discloses its fixed worker bound"
+check "marker retains explicit worker args" [ "$(marker harness-tests command | jq -c .)" == '[".claude/hooks/tests/run-tests.sh","--jobs","4"]' ]
+FAKE_RC=1 gate harness-tests
+expect 1 "parallel test failure still fails the gate"
+check "a failed harness run clears its marker" [ ! -f "$R/.claude/data/gate-marker-harness-tests.json" ]
+
 echo "== failures and suspicious passes record nothing =="
 repo failing
 echo "// y" >> "$R/internal/x/x.go"

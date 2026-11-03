@@ -67,11 +67,8 @@ class ShardTests(unittest.TestCase):
         workflow = (Path(__file__).resolve().parents[1] / "workflows" / "ci.yml").read_text()
         job = workflow.split("  ci-ok:\n", 1)[1]
         self.assertIn("go, windows-supervisor, windows-cli,", job)
-        self.assertIn("contains(needs.*.result, 'failure')", job)
-        self.assertIn("contains(needs.*.result, 'cancelled')", job)
-        self.assertIn("needs.go.result != 'success'", job)
-        self.assertIn("needs.windows-supervisor.result != 'success'", job)
-        self.assertIn("needs.windows-cli.result != 'success'", job)
+        self.assertIn("CI_NEEDS: ${{ toJSON(needs) }}", job)
+        self.assertIn("run: python3 .github/scripts/ci_change_scope.py check", job)
         supervisor = workflow.split("  windows-supervisor:\n", 1)[1].split("  windows-cli:\n", 1)[0]
         self.assertIn("python .github/scripts/go-test-shard.py supervisor --race", supervisor)
         self.assertIn("python .github/scripts/go-test-shard.py supervisor\n", supervisor)
@@ -85,7 +82,8 @@ class ShardTests(unittest.TestCase):
             if shard != "rest":
                 self.assertIn("        os: [windows-latest, windows-11-arm]", block)
             self.assertIn("    needs: detect", block)
-            self.assertIn("    if: needs.detect.outputs.go == 'true'", block)
+            condition = "go == 'true'" if shard == "rest" else "mode == 'full'"
+            self.assertIn("    if: needs.detect.outputs." + condition, block)
             self.assertIn("    runs-on: ${{ matrix.os }}", block)
             self.assertNotIn("continue-on-error:", block)
             pairs = []
@@ -102,15 +100,12 @@ class ShardTests(unittest.TestCase):
     def test_aggregate_condition_from_workflow(self):
         workflow = (Path(__file__).resolve().parents[1] / "workflows" / "ci.yml").read_text()
         job = workflow.split("  ci-ok:\n", 1)[1]
-        expression = next(line.strip()[6:] for line in job.splitlines() if line.strip().startswith("- if: "))
-        expression = expression.replace("contains(needs.*.result, 'failure')", "('failure' in results)")
-        expression = expression.replace("contains(needs.*.result, 'cancelled')", "('cancelled' in results)")
-        expression = expression.replace("needs.site-build.result", "site")
-        expression = expression.replace("needs.windows-supervisor.result", "supervisor")
-        expression = expression.replace("needs.windows-cli.result", "cli")
-        expression = expression.replace("needs.detect.outputs.go", "detected")
-        expression = expression.replace("needs.go.result", "go")
-        expression = expression.replace("||", " or ").replace("&&", " and ")
+        command = next(line.strip()[5:] for line in job.splitlines() if line.strip().startswith("run: "))
+        self.assertEqual(command, "python3 .github/scripts/ci_change_scope.py check")
+        script = Path(__file__).resolve().parents[2] / command.split()[1]
+        module_spec = importlib.util.spec_from_file_location("workflow_scope", script)
+        scope = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(scope)
         for detected, go, supervisor, cli, expected in (
             ("true", "success", "success", "success", False),
             ("true", "skipped", "success", "success", True),
@@ -123,9 +118,18 @@ class ShardTests(unittest.TestCase):
             ("false", "skipped", "skipped", "skipped", False),
         ):
             with self.subTest(detected=detected, go=go, supervisor=supervisor):
-                variables = {"detected": detected, "go": go, "supervisor": supervisor, "cli": cli,
-                             "site": "success", "results": [go, supervisor, cli, "success"]}
-                self.assertEqual(eval(expression, {"__builtins__": {}}, variables), expected)
+                mode = "full" if detected == "true" else "harness-only"
+                needs = {name: {"result": "success", "outputs": {}} for name in scope.ALL_JOBS}
+                needs["detect"]["outputs"] = scope.plan(mode)
+                if mode == "harness-only":
+                    for name in scope.RUNTIME_JOBS:
+                        needs[name]["result"] = "skipped"
+                for name, result in (("go", go), ("windows-supervisor", supervisor), ("windows-cli", cli)):
+                    needs[name]["result"] = result
+                result = subprocess.run([sys.executable, str(script), "check"],
+                                        env=dict(os.environ, CI_NEEDS=json.dumps(needs)),
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode != 0, expected, result.stderr)
 
     def test_test_exit_and_flags(self):
         listing = subprocess.CompletedProcess([], 0, stdout=s.SUPERVISOR + "\n" + CLI + "\nexample.test/project/a\n")

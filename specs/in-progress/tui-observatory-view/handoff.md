@@ -226,6 +226,13 @@ PR #566 is open with exact source code/architecture Ready, unchanged original22 
 - **For Task20**: Keep its maintainer ownership, Task19 dependency, exact six artifact paths, actual installed-tool command/version recording and human artifact inspection. This producer supplies no real rendered artifact, accessibility/native/platform qualification or Task20 completion.
 - **Deviations**: Only required own lifecycle records accompany the three producer paths. No recording artifacts, manifest, native profile or runtime APIs are changed.
 
+## Task 16 — Compose overlays with semantic colour checks
+
+- **Produces**: Raised help, palette and confirmation cards above a freshly rendered dimmed mission when the body fits; compact layouts retain the one-line header and full-screen fallback. Foreground/background rules operate on final semantic spans.
+- **For dependents**: Task17 must preserve overlay/pending effect identity and the existing polling reload. Complete graphemes determine clipping and SGR coordinates; a wide glyph crossing an edge becomes padding, never half a glyph. Confirmation effects remain unchanged.
+- **Evidence**: Real journal append to production reload changes the visible dimmed NOW content while help stays open. Retained Unicode/CJK/continuation controls and an independently assertion-failing actual reload-freeze control cover the discovered gaps. All six local gates pass; PR #587 still awaits required exact-head CI and merge.
+- **Performance method**: Ten non-race 100ms samples per benchmark with GOMAXPROCS=4; compare local View/Overlay medians to the render target. No hardware-normalized or native-CLI comparison is inferred. Human accessibility and real recordings remain later evidence.
+
 
 ## Task 22 — Verify recording consumers at each immutable pin
 

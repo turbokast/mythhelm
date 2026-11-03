@@ -325,16 +325,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View implements tea.Model, dispatching on the layout ladder. The dialog,
-// palette and help overlays take over the whole view while open.
+// palette and help overlays compose over the dimmed mission (overlays.go).
 func (m *Model) View() string {
-	if m.dialog != "" {
-		return m.render(m.dialogLines())
-	}
-	if m.palette.open {
-		return m.render(m.paletteLines())
-	}
-	if m.helpOpen {
-		return m.render(m.helpLines())
+	if rows := m.overlayLines(); rows != nil {
+		return m.overlayView(rows)
 	}
 	if m.loadErr != nil {
 		return m.render([]line{{text: "error: " + cell(m.loadErr.Error())}})

@@ -51,16 +51,26 @@ jobs:
           args: check
 
   detect:
-    name: Detect Go module
+    name: Select CI coverage
     runs-on: ubuntu-latest
     outputs:
       go: ${{ steps.detect.outputs.go }}
+      mode: ${{ steps.detect.outputs.mode }}
+      matrix: ${{ steps.detect.outputs.matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0 # immutable PR base/head objects, including fork ancestry
       - id: detect
-        run: echo "go=$([ -f go.mod ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+        env:
+          CI_EVENT: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          python3 .github/scripts/ci_change_scope.py classify
+          --event "$CI_EVENT" --base "$PR_BASE_SHA" --head "$PR_HEAD_SHA"
+          >> "$GITHUB_OUTPUT"
 
   go:
     name: Go (${{ matrix.os }})
@@ -69,7 +79,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest, windows-11-arm]
+        os: ${{ fromJSON(needs.detect.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -100,7 +110,7 @@ jobs:
   windows-supervisor:
     name: Windows supervisor (${{ matrix.os }})
     needs: detect
-    if: needs.detect.outputs.go == 'true'
+    if: needs.detect.outputs.mode == 'full'
     strategy:
       fail-fast: false
       matrix:
@@ -121,7 +131,7 @@ jobs:
   windows-cli:
     name: Windows CLI (${{ matrix.os }})
     needs: detect
-    if: needs.detect.outputs.go == 'true'
+    if: needs.detect.outputs.mode == 'full'
     strategy:
       fail-fast: false
       matrix:
@@ -142,7 +152,7 @@ jobs:
   lint:
     name: golangci-lint
     needs: detect
-    if: needs.detect.outputs.go == 'true'
+    if: needs.detect.outputs.mode == 'full'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -159,7 +169,7 @@ jobs:
   govulncheck:
     name: govulncheck
     needs: detect
-    if: needs.detect.outputs.go == 'true'
+    if: needs.detect.outputs.mode == 'full'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -173,7 +183,7 @@ jobs:
   licenses:
     name: go-licenses
     needs: detect
-    if: needs.detect.outputs.go == 'true'
+    if: needs.detect.outputs.mode == 'full'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -217,11 +227,11 @@ jobs:
           shellcheck --version
           git ls-files -z -- '*.sh' | xargs -0 shellcheck
       - name: Hook and script tests
-        run: .claude/hooks/tests/run-tests.sh
+        run: .claude/hooks/tests/run-tests.sh --jobs 4
       - name: Agent harness lint
         run: scripts/ci/lint-agent-harness.sh
-      - name: Windows shard unit tests
-        run: python3 -m unittest discover -s .github/tests -p test_go_test_shard.py
+      - name: CI helper unit tests
+        run: python3 -m unittest discover -s .github/tests -p 'test_*.py'
       - name: Public hygiene
         run: scripts/ci/check-public-hygiene.sh
 
@@ -243,5 +253,10 @@ jobs:
     needs: [workflows, detect, go, windows-supervisor, windows-cli, lint, govulncheck, licenses, harness, site-build]
     runs-on: ubuntu-latest
     steps:
-      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || needs.site-build.result != 'success' || (needs.detect.outputs.go == 'true' && (needs.go.result != 'success' || needs.windows-supervisor.result != 'success' || needs.windows-cli.result != 'success'))
-        run: exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify selected CI results
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 .github/scripts/ci_change_scope.py check
