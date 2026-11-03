@@ -138,7 +138,7 @@
 - **Files modified**: `internal/admissionbinding/binding.go`, `internal/admissionbinding/codec.go`, `internal/admissionbinding/codec_test.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 - **Review-response validation**: Later review exposed a masked fractional-duration assertion despite the historical 474.4s gate pass. The test-only follow-up keeps request/envelope/resolved duration values coherent, adds aligned controls, preserves a separate pointer-mismatch negative, removes duplicate top-level test execution and checks actual fake/codex/claudecode descriptors under the six named parallel acceptance roots. Three compile-valid alignment/descriptor mutants fail their intended assertions; final leaf race passes2.306s. Both production files remain byte-identical to `26edb288741378b695a84f2293262fde547ecd4a`. All six gates are fresh after a canonical race pass4.9s with valid package caching. Earlier canonical runs failed the unchanged synthetic `TestResolvedVersionedBinaryLaunched` twice; focused three-run and complete-package diagnostics subsequently passed. The original cause remains unknown, and neither those failures nor the earlier conditional source review are rewritten as acceptance. One equivalent tagged-switch lint repair changed tests only.
 
-### Task 24 — Produce fail-closed retention policy validation
+### Task 24 — Produce fail-closed retention policy validation ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -159,6 +159,12 @@
   - `TestRetentionFieldSetIsInternalBindingCommitment` derives rows only from exact canonical binding plus full content-addressed policy, never new wire metadata. Tampered/missing policy content, rule/value/provenance/root/scope/challenge changes and copied approval refuse; a bare hash/imagined FieldSet wire field cannot approve anything. An independently written policy→binding→field-set order control proves no hash cycle.
 - **Test plan**: Pure closed-record fixtures with no real credentials or granted live policy; independently mutate one approval binding/classification at a time. Task8 owns volatile-before-confirmation integration.
 - **Invariants touched**: I02/I03/I19/I20 (v2 §§6/8: classification/authority before retention; no copied subscription secrets).
+
+- **Status**: ✅ Completed — added closed retention policy/approval validation and exact binding commitments; PR #575 remains draft pending independent closeout and required CI.
+- **Implementation**: Source `069f115` and normalization `b3d0570` implement the pure leaf codecs, classifications and typed admission mapping. Fixture correction `d076ddf` uses native absolute temporary paths without changing production validation; integration `060f073` includes actual main prerequisites. All six named acceptance tests and additional retention codec/error/boundary cases pass under race; the full repository race gate passes in 426.4s, with format/tidy/vet/lint passing. Required CI and actual merge remain pending.
+- **Spec deviations**: The Windows fixture correction is consistent with the existing strict RunSpec path contract and changes no validation rule. Own completion, handoff and scratchpad paths are required lifecycle bookkeeping outside the four implementation paths. Tasks 8/9 retain authenticated confirmation, persistence and launch enforcement; structural records alone grant no authority.
+- **Files modified**: `internal/admissionbinding/retention.go`, `internal/admissionbinding/retention_test.go`, `internal/admission/retention.go`, `internal/admission/retention_test.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
+
 
 ### Task 29 — Extract the fixed pure quota policy and storage producer ✅ COMPLETED
 
