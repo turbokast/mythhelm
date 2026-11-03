@@ -224,7 +224,7 @@ func adoptionFixtureLaunched(ctx context.Context, dir, runID, attemptID string, 
 	if id.RunID != runID || id.AttemptID != attemptID || id.PID != workerPID || id.StartTime.IsZero() || id.NativePID == nil || *id.NativePID <= 0 {
 		return false, nil
 	}
-	file, err := os.Open(filepath.Join(dir, supervisor.SpoolFile))
+	file, err := os.Open(filepath.Join(dir, supervisor.SpoolFile)) // #nosec G304 -- the current fixture's attempt spool.
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
@@ -275,7 +275,7 @@ func TestAdoptionFixtureLaunchReadiness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	file, err := os.Open(filepath.Join(dir, supervisor.SpoolFile))
+	file, err := os.Open(filepath.Join(dir, supervisor.SpoolFile)) // #nosec G304 -- the actual fixture worker spool.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,9 +325,14 @@ func TestAdoptionFixtureLaunchReadiness(t *testing.T) {
 		{"incomplete launch", launched, id, f.run, f.attempt, false},
 		{"missing launch", nil, id, f.run, f.attempt, false},
 		{"outside prefix bound", append(bytes.Repeat([]byte{'\n'}, 64<<10), complete...), id, f.run, f.attempt, false},
-		{"missing native PID", complete, func() workers.Identity { copy := id; copy.NativePID = nil; return copy }(), f.run, f.attempt, false},
-		{"different native PID", complete, func() workers.Identity { copy := id; pid := *id.NativePID + 1; copy.NativePID = &pid; return copy }(), f.run, f.attempt, false},
-		{"different worker PID", complete, func() workers.Identity { copy := id; copy.PID++; return copy }(), f.run, f.attempt, false},
+		{"missing native PID", complete, func() workers.Identity { copied := id; copied.NativePID = nil; return copied }(), f.run, f.attempt, false},
+		{"different native PID", complete, func() workers.Identity {
+			copied := id
+			pid := *id.NativePID + 1
+			copied.NativePID = &pid
+			return copied
+		}(), f.run, f.attempt, false},
+		{"different worker PID", complete, func() workers.Identity { copied := id; copied.PID++; return copied }(), f.run, f.attempt, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			copyDir := t.TempDir()
