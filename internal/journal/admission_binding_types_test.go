@@ -3,10 +3,11 @@ package journal
 import (
 	"errors"
 	"fmt"
-	ab "github.com/turbokast/mythhelm/internal/admissionbinding"
-	"github.com/turbokast/mythhelm/internal/v2contract"
 	"reflect"
 	"testing"
+
+	ab "github.com/turbokast/mythhelm/internal/admissionbinding"
+	"github.com/turbokast/mythhelm/internal/v2contract"
 )
 
 func TestAdmissionTypedFailureMapping(t *testing.T) { // I02/I09 (v2 §§6/8): leaf failures never become authority or raw diagnostics.
@@ -56,7 +57,7 @@ func TestAdmissionTypedFailureMapping(t *testing.T) { // I02/I09 (v2 §§6/8): l
 	}
 }
 
-func TestAdmissionOperationBoundaryDiagnostics(t *testing.T) { // I09 (v2 §8): normalized operation errors disclose no nested input/error text.
+func TestAdmissionOperationBoundaryDiagnostics(t *testing.T) { // I09 (v2 §8): normalised operation errors disclose no nested input/error text.
 	t.Parallel()
 	raw := &v2contract.ControlError{Code: v2contract.CodePersistenceUnavailable, Owner: "private owner", OperationID: "private operation", NextAction: "private raw text", Disposition: v2contract.DispositionBoundedTransient, Detail: map[string]string{"private/key": "private value"}}
 	err := admissionTransactionError(fmt.Errorf("private wrapper: %w", raw))

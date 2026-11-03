@@ -101,7 +101,7 @@ func (j *Journal) StoreRetainedPreparation(ctx context.Context, in RetainedPrepa
 		if err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO service_admission_bindings(preparation_id,codec_version,canonical_binding,binding_sha256,root_id,peer_id,generation,context_epoch,policy_revision,task_artifact_sha256,task_artifact_ref,expires_at,retention_policy,retention_policy_sha256,retention_approval,retention_approval_sha256) VALUES(?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, b.PreparationID, string(in.CanonicalBinding), in.Lookup.BindingSHA256, b.RootID, b.PeerID, b.Generation, b.ContextEpoch, b.PolicyRevision, b.Decision.Task.SHA256, b.Decision.Task.ArtifactRef, b.ExpiresAt, string(policy), storageDigest(policy), string(approval), retentionApprovalRecordDigest(approval))
+		_, err = tx.ExecContext(ctx, `INSERT INTO service_admission_bindings(preparation_id,codec_version,canonical_binding,binding_sha256,root_id,peer_id,generation,context_epoch,policy_revision,task_artifact_sha256,task_artifact_ref,expires_at,retention_policy,retention_policy_sha256,retention_approval,retention_approval_sha256) VALUES(?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, b.PreparationID, string(in.CanonicalBinding), in.Lookup.BindingSHA256, b.RootID, b.PeerID, b.Generation, b.ContextEpoch, b.PolicyRevision, b.Decision.Task.SHA256, b.Decision.Task.ArtifactRef, b.ExpiresAt, string(policy), storageDigest(policy), string(approval), retentionApprovalRecordDigest(approval)) //nolint:misspell // Deployed SQL column names are immutable schema identities.
 		if err != nil {
 			return err
 		}
@@ -715,8 +715,7 @@ func checkPreparationOperation(op PreparationOperation) error {
 	return nil
 }
 func admissionTransactionError(err error) error {
-	var ce *v2contract.ControlError
-	if errors.As(err, &ce) {
+	if ce, ok := errors.AsType[*v2contract.ControlError](err); ok {
 		if ce.Code == v2contract.CodePolicyIneligible && ce.Detail["mythhelm.retention/reason"] == "policy_ineligible" {
 			return retentionStorageError()
 		}
@@ -757,7 +756,7 @@ func preparationAcknowledgement(op PreparationOperation, b ab.BindingV1, state P
 	for i, ch := range b.Challenges {
 		challenges[i] = preparationChallengeAck{ch.ID, ch.Kind, ch.Text, state.BindingSHA256}
 	}
-	return mustJSON(preparationResultAck{op.OperationID, int64(state.Revision), mustJSON(preparationBodyAck{2, b.PreparationID, state.BindingSHA256, b.Generation, challenges, state.Ready})})
+	return mustJSON(preparationResultAck{op.OperationID, int64(state.Revision), mustJSON(preparationBodyAck{2, b.PreparationID, state.BindingSHA256, b.Generation, challenges, state.Ready})}) // #nosec G115 -- successful durable preparation revisions come from nonnegative SQLite INTEGER rows.
 }
 func claimPreparationOperation(ctx context.Context, tx *sql.Tx, op PreparationOperation, b ab.BindingV1, now time.Time) error {
 	var count int
@@ -958,7 +957,7 @@ func admissionMetadata(in AdmissionCommitInput, b ab.BindingV1, revision uint64)
 	return AdmissionMetadata{OperationID: in.OperationID, PreparationID: b.PreparationID, RootID: b.RootID, PeerID: b.PeerID, ContextEpoch: b.ContextEpoch, BindingSHA256: in.Lookup.BindingSHA256, RunID: b.RunID, TaskID: b.TaskID, AttemptID: b.AttemptID, Generation: b.Generation, Revision: revision}
 }
 func admissionAcknowledgement(m AdmissionMetadata) []byte {
-	return mustJSON(preparationResultAck{m.OperationID, int64(m.Revision), mustJSON(storageAcceptedBody{2, m.OperationID, m.RunID, m.AttemptID, m.Generation, m.Revision})})
+	return mustJSON(preparationResultAck{m.OperationID, int64(m.Revision), mustJSON(storageAcceptedBody{2, m.OperationID, m.RunID, m.AttemptID, m.Generation, m.Revision})}) // #nosec G115 -- metadata is privately minted from the final durable signed SQLite RunRevision.
 }
 func startOperationDigest(in AdmissionCommitInput, b ab.BindingV1) string {
 	params := mustJSON(struct {
@@ -1024,7 +1023,7 @@ type storageLaunchProvenance struct {
 type storageAdmissionPin struct {
 	LadderVersion    string                  `json:"ladder_version"`
 	NonceSHA256      string                  `json:"nonce_sha256"`
-	LaunchProvenance storageLaunchProvenance `json:"launch_provenance,omitempty"`
+	LaunchProvenance storageLaunchProvenance `json:"launch_provenance"`
 }
 type storageSnapshotPayload struct {
 	BaseRev                   string  `json:"base_rev"`

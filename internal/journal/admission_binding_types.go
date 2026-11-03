@@ -61,12 +61,15 @@ type confirmedPreparationState struct {
 	lookup   PreparationLookup
 }
 
+// Metadata returns checked durable preparation metadata.
 func (p ConfirmedPreparation) Metadata() (PreparationState, error) {
 	if p.state == nil {
 		return PreparationState{}, admissionStorageError(v2contract.CodeInvalidContract)
 	}
 	return p.state.metadata, nil
 }
+
+// CanonicalBinding returns a copy of the checked binding.
 func (p ConfirmedPreparation) CanonicalBinding() ([]byte, error) {
 	if p.state == nil {
 		return nil, admissionStorageError(v2contract.CodeInvalidContract)
@@ -83,9 +86,12 @@ type AdmissionCommitInput struct {
 	AcceptancePin    acceptance.Pin
 	Policy           v2contract.PolicyVersion
 }
+
+// AdmissionCommit holds copied, checked admission inputs; it grants no execution authority.
 type AdmissionCommit struct{ state *admissionCommitState }
 type admissionCommitState struct{ input AdmissionCommitInput }
 
+// NewAdmissionCommit checks and copies inputs for an atomic storage commit.
 func NewAdmissionCommit(in AdmissionCommitInput) (AdmissionCommit, error) {
 	in = copyAdmissionInput(in)
 	b, err := ab.DecodeV1(in.CanonicalBinding)
@@ -112,6 +118,8 @@ func NewAdmissionCommit(in AdmissionCommitInput) (AdmissionCommit, error) {
 	in = copyAdmissionInput(in)
 	return AdmissionCommit{&admissionCommitState{in}}, nil
 }
+
+// Snapshot returns a copy of the checked admission inputs.
 func (c AdmissionCommit) Snapshot() (AdmissionCommitInput, error) {
 	if c.state == nil {
 		return AdmissionCommitInput{}, admissionStorageError(v2contract.CodeInvalidContract)
@@ -119,18 +127,22 @@ func (c AdmissionCommit) Snapshot() (AdmissionCommitInput, error) {
 	return copyAdmissionInput(c.state.input), nil
 }
 
+// AdmissionMetadata identifies one committed durable admission and its final revision.
 type AdmissionMetadata struct {
 	OperationID, PreparationID, RootID, PeerID, ContextEpoch, BindingSHA256 string
 	RunID, TaskID, AttemptID                                                string
 	Generation                                                              int64
 	Revision                                                                uint64
 }
+
+// CommittedAdmission is minted only after admission storage commits.
 type CommittedAdmission struct{ state *committedAdmissionState }
 type committedAdmissionState struct {
 	metadata AdmissionMetadata
 	binding  []byte
 }
 
+// Metadata returns the committed admission identity and revision.
 func (c CommittedAdmission) Metadata() (AdmissionMetadata, error) {
 	if c.state == nil {
 		return AdmissionMetadata{}, admissionStorageError(v2contract.CodeInvalidContract)
@@ -138,6 +150,7 @@ func (c CommittedAdmission) Metadata() (AdmissionMetadata, error) {
 	return c.state.metadata, nil
 }
 
+// DispatchArmInput binds one admitted pending dispatch to its immutable launch evidence.
 type DispatchArmInput struct {
 	Admission                                                      CommittedAdmission
 	ExpectedPendingRevision                                        uint64
@@ -146,9 +159,12 @@ type DispatchArmInput struct {
 	Generation                                                     int64
 	ExecutionDeadline, ObservedAt                                  time.Time
 }
+
+// DispatchArm holds checked arming inputs; it grants no process ownership.
 type DispatchArm struct{ state *dispatchArmState }
 type dispatchArmState struct{ input DispatchArmInput }
 
+// NewDispatchArm checks the exact admitted identity and copies arming inputs.
 func NewDispatchArm(in DispatchArmInput) (DispatchArm, error) {
 	if in.Admission.state == nil || (in.ExpectedPendingRevision == 0 || in.ExpectedPendingRevision > math.MaxInt64) || !validStorageID(in.SnapshotEventID) || !validStorageID(in.LadderVersion) || !storageSHA(in.LaunchTokenSHA256) || !storageSHA(in.NonceSHA256) || in.ObservedAt.IsZero() || in.ObservedAt.Year() < 1 || in.ObservedAt.Year() > 9999 || in.ExecutionDeadline.Year() < 1 || in.ExecutionDeadline.Year() > 9999 || !in.ExecutionDeadline.After(in.ObservedAt) {
 		return DispatchArm{}, admissionStorageError(v2contract.CodeInvalidContract)
@@ -163,6 +179,8 @@ func NewDispatchArm(in DispatchArmInput) (DispatchArm, error) {
 	}
 	return DispatchArm{&dispatchArmState{in}}, nil
 }
+
+// Snapshot returns the checked immutable arming inputs.
 func (a DispatchArm) Snapshot() (DispatchArmInput, error) {
 	if a.state == nil {
 		return DispatchArmInput{}, admissionStorageError(v2contract.CodeInvalidContract)
@@ -170,15 +188,19 @@ func (a DispatchArm) Snapshot() (DispatchArmInput, error) {
 	return a.state.input, nil
 }
 
+// DispatchMetadata describes the committed snapshot, launch evidence and final revision.
 type DispatchMetadata struct {
 	Admission                                                      AdmissionMetadata
 	SnapshotEventID, LaunchTokenSHA256, NonceSHA256, LadderVersion string
 	ExecutionDeadline                                              time.Time
 	Revision                                                       uint64
 }
+
+// CommittedDispatch is minted only after the atomic arming transaction commits.
 type CommittedDispatch struct{ state *committedDispatchState }
 type committedDispatchState struct{ metadata DispatchMetadata }
 
+// Metadata returns the committed dispatch evidence and final revision.
 func (c CommittedDispatch) Metadata() (DispatchMetadata, error) {
 	if c.state == nil {
 		return DispatchMetadata{}, admissionStorageError(v2contract.CodeInvalidContract)
@@ -224,7 +246,9 @@ func storageSHA(s string) bool {
 		return false
 	}
 	for _, r := range s {
-		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
+		digit := r >= '0' && r <= '9'
+		lowerHex := r >= 'a' && r <= 'f'
+		if !digit && !lowerHex {
 			return false
 		}
 	}

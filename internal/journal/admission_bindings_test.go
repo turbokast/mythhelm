@@ -7,6 +7,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
 	"github.com/turbokast/mythhelm/internal/acceptance"
 	"github.com/turbokast/mythhelm/internal/adapter"
 	"github.com/turbokast/mythhelm/internal/admission"
@@ -17,12 +24,6 @@ import (
 	"github.com/turbokast/mythhelm/internal/qualify"
 	"github.com/turbokast/mythhelm/internal/supervisor"
 	"github.com/turbokast/mythhelm/internal/v2contract"
-	"path/filepath"
-	"runtime"
-	"strings"
-	"sync"
-	"testing"
-	"time"
 )
 
 // This literal synthetic fixture is independent of the storage mapper.
@@ -366,7 +367,7 @@ func tableImages(t *testing.T, j *journal.Journal) map[string]string {
 	images := map[string]string{}
 	if err := j.Transact(t.Context(), func(tx *sql.Tx) error {
 		for _, table := range []string{"runs", "attempts", "journal", "producers", "run_control_revisions", "policies", "declarations", "trust_grants", "run_envelopes", "reservations", "run_assignments", "service_admission_bindings", "service_admission_consumptions", "service_pending_dispatch", "service_dispatch_claims", "dispatch_outbox", "prepared_runs", "operations", "bucket_state"} {
-			rows, err := tx.QueryContext(t.Context(), `SELECT * FROM `+table+` ORDER BY rowid`)
+			rows, err := tx.QueryContext(t.Context(), `SELECT * FROM `+table+` ORDER BY rowid`) // #nosec G202 -- table comes only from the fixed literal fixture relation list above.
 			if err != nil {
 				return err
 			}
@@ -419,7 +420,7 @@ func installStorageFailure(t *testing.T, j *journal.Journal, table, action, cond
 	if condition != "" {
 		when = " WHEN " + condition
 	}
-	query := `CREATE TRIGGER injected_failure BEFORE ` + action + ` ON ` + table + when + ` BEGIN SELECT RAISE(ABORT,'synthetic storage barrier'); END`
+	query := `CREATE TRIGGER injected_failure BEFORE ` + action + ` ON ` + table + when + ` BEGIN SELECT RAISE(ABORT,'synthetic storage barrier'); END` // #nosec G202 -- trusted test-only literal fixture identifiers/actions/conditions, never external input.
 	if err := j.Transact(t.Context(), func(tx *sql.Tx) error { _, err := tx.ExecContext(t.Context(), query); return err }); err != nil {
 		t.Fatal(err)
 	}
@@ -817,14 +818,12 @@ func testConcurrentAdmission(t *testing.T) {
 	failures := make(chan error, 2)
 	var wg sync.WaitGroup
 	for range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start
 			r, err := j.CommitServiceAdmission(t.Context(), c)
 			results <- r
 			failures <- err
-		}()
+		})
 	}
 	close(start)
 	wg.Wait()
@@ -1013,7 +1012,7 @@ func testActualStartIntentAndAcknowledgement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in := control.Intent{RequestEnvelope: v2contract.RequestEnvelope{OperationID: "actual_wire_start", Object: f.b.PreparationID, ExpectedRevision: 1, Generation: &f.b.Generation}, Method: "run.start", Params: body}
+	in := control.Intent{OperationID: "actual_wire_start", Object: f.b.PreparationID, ExpectedRevision: 1, Generation: &f.b.Generation, Method: "run.start", Params: body}
 	// The actual generic digest producer is exercised on an isolated synthetic
 	// operation; its handler does no native work or service authority grant.
 	if _, err := control.Execute(control.WithLedger(t.Context(), db), func(_ context.Context, _ control.Peer, _ control.Intent) (control.Result, error) {
@@ -1035,7 +1034,7 @@ func testActualStartIntentAndAcknowledgement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := json.Marshal(control.Result{OperationID: m.OperationID, Revision: int64(m.Revision), Body: ackBody})
+	want, err := json.Marshal(control.Result{OperationID: m.OperationID, Revision: int64(m.Revision), Body: ackBody}) // #nosec G115 -- m is minted from this fixture database final signed RunRevision.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1168,8 +1167,7 @@ func TestStorageConcurrentArming(t *testing.T) { // I12/I21 (v2 §6): one durabl
 	results := make(chan error, 2)
 	var wg sync.WaitGroup
 	for range 2 {
-		wg.Add(1)
-		go func() { defer wg.Done(); <-start; _, err := j.ArmServiceDispatch(t.Context(), arm); results <- err }()
+		wg.Go(func() { <-start; _, err := j.ArmServiceDispatch(t.Context(), arm); results <- err })
 	}
 	close(start)
 	wg.Wait()
