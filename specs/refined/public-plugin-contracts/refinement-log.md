@@ -39,3 +39,8 @@ The repository lifecycle script moved the single spec from `unrefined` to
 `refined`. The requirements banner records the independent Ready result;
 functional criteria and their implementation/qualification gates are preserved.
 Next: write the reviewed design and domain-pure tasks through `/spec`.
+
+
+## Hosted publication review — Presentation and question ledger
+
+PR #615 identified unescaped alternation pipes inside Markdown table code spans and missing scratchpad question entries. Replace table commands with semantically equivalent repeated rg -e patterns so evidence cells render completely. Copy the four existing questions, conservative defaults, owners and resolution evidence verbatim to the spec-local scratchpad, satisfying the everywhere question-ledger rule without creating design/tasks or changing assessed criteria. All requirements, acceptance criteria, non-goals and dependency choices remain unchanged. Specs lint and public hygiene are checked before signed publication; exact-final-head CI and review remain required.
