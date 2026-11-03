@@ -81,7 +81,7 @@ GATES = {
     "golangci-lint": Gate("go", ["go", "run", GOLANGCI, "run"]),
     "govulncheck": Gate("go", ["go", "run", GOVULNCHECK, "./..."]),
     "harness-lint": Gate("harness", ["scripts/ci/lint-agent-harness.sh"]),
-    "harness-tests": Gate("harness", [".claude/hooks/tests/run-tests.sh"]),
+    "harness-tests": Gate("harness", [".claude/hooks/tests/run-tests.sh", "--jobs", "4"]),
     "shellcheck": Gate("harness", ["shellcheck"]),
     "hygiene": Gate("all", ["scripts/ci/check-public-hygiene.sh"]),
 }
