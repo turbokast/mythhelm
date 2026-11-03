@@ -222,6 +222,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0 # candidate source and PR evidence-only tail
       - name: Shellcheck
         run: |
           shellcheck --version
@@ -232,6 +233,15 @@ jobs:
         run: scripts/ci/lint-agent-harness.sh
       - name: CI helper unit tests
         run: python3 -m unittest discover -s .github/tests -p 'test_*.py'
+      - name: Performance evidence controls
+        run: python3 -m unittest discover -s scripts/harness/tests -p test_performance_report.py
+      - name: Per-PR native delivery evidence
+        env:
+          PERFORMANCE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          PERFORMANCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+        run: >-
+          python3 scripts/harness/performance_report.py check
+          --base "$PERFORMANCE_BASE_SHA" --head "$PERFORMANCE_HEAD_SHA"
       - name: Public hygiene
         run: scripts/ci/check-public-hygiene.sh
 

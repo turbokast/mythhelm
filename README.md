@@ -27,7 +27,7 @@ MYTHHELM is a pre-alpha project for coordinating native coding agents while pres
 
 **No current validated matched pairs.** No comparative advantage is established.
 
-| Route | Acceptance / assigned | Observed mean elapsed | Usage provenance / missingness | Paired trials |
+| Route | Accepted within budget / assigned | Observed mean elapsed | Usage provenance / missingness | Paired trials |
 |---|---|---|---|---|
 | MYTHHELM | Unavailable | Unavailable | Unavailable | 0 |
 | Direct native | Unavailable | Unavailable | Unavailable | 0 |
