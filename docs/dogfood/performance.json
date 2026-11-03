@@ -1,0 +1,162 @@
+{
+  "arms": {
+    "direct-native": {
+      "accepted_within_budget": 1,
+      "assigned": 1,
+      "outcomes": {
+        "accepted": 1,
+        "blocked": 0,
+        "error": 0,
+        "rejected": 0,
+        "timeout": 0,
+        "unfinished": 0,
+        "unstarted": 0
+      },
+      "tokens": {
+        "cache_read_tokens": {
+          "known": 1,
+          "missing": 0,
+          "total": 31652
+        },
+        "cache_write_tokens": {
+          "known": 1,
+          "missing": 0,
+          "total": 3750
+        },
+        "input_tokens": {
+          "known": 1,
+          "missing": 0,
+          "total": 4
+        },
+        "output_tokens": {
+          "known": 1,
+          "missing": 0,
+          "total": 241
+        }
+      },
+      "usage_sources": {
+        "observed": 0,
+        "reported": 1,
+        "unknown": 0
+      },
+      "wall_seconds": {
+        "known": 1,
+        "missing": 0,
+        "total": 14.617767330026254
+      }
+    },
+    "mythhelm": {
+      "accepted_within_budget": 1,
+      "assigned": 1,
+      "outcomes": {
+        "accepted": 1,
+        "blocked": 0,
+        "error": 0,
+        "rejected": 0,
+        "timeout": 0,
+        "unfinished": 0,
+        "unstarted": 0
+      },
+      "tokens": {
+        "cache_read_tokens": {
+          "known": 1,
+          "missing": 0,
+          "total": 30826
+        },
+        "cache_write_tokens": {
+          "known": 1,
+          "missing": 0,
+          "total": 5341
+        },
+        "input_tokens": {
+          "known": 1,
+          "missing": 0,
+          "total": 4
+        },
+        "output_tokens": {
+          "known": 1,
+          "missing": 0,
+          "total": 172
+        }
+      },
+      "usage_sources": {
+        "observed": 0,
+        "reported": 1,
+        "unknown": 0
+      },
+      "wall_seconds": {
+        "known": 1,
+        "missing": 0,
+        "total": 19.282873761025257
+      }
+    }
+  },
+  "bindings": [
+    [
+      "f8ac76265a89bca3366bc07d69ae20bc5f5d3a9b",
+      "81a11f7bdadcb00d3d7fa58205724710009068a3acbceca98b042464009259b2",
+      "7b9172b42b80042756c527a343a75afdb005fcfefb4b6d0a21470755b1ccf17d"
+    ]
+  ],
+  "cap_seconds": 300,
+  "cohort": "development",
+  "comparison_unconfounded": true,
+  "independent_components": 1,
+  "limitations": [
+    "defect_observation_pending",
+    "defect_window_not_elapsed",
+    "pilot_not_confirmatory",
+    "single_dependent_component",
+    "validation_only_not_general_coding",
+    "safe_mode_trusted_host_broad_permissions",
+    "fixed_mythhelm_first_no_counterbalance",
+    "native_prefix_and_host_cache_uncontrolled",
+    "effort_configured_not_internally_observed",
+    "plugin_activation_not_certified_by_inventory",
+    "managed_remote_policy_uncertified",
+    "subscription_funding_declared_not_actual_charges",
+    "workspace_and_attempt_id_differences_disclosed",
+    "single_development_pair_no_superiority",
+    "prior_coding_pair_not_pooled"
+  ],
+  "native": {
+    "configuration_sha256": "3f02198880df47843d767f4e55238320bb111f100753fe8338a3cc58c686d21f",
+    "effort": "xhigh",
+    "environment_sha256": "6c7cacda0a5bc56bdde1da06bea977e276a3095dc5a40f77e2cc354f81399eef",
+    "harness": "claude-code",
+    "model": "claude-opus-5-5",
+    "native_version": "2.1.317"
+  },
+  "pair_receipts": [
+    {
+      "mode": "mythhelm",
+      "pair_id": "report-validation-pair1",
+      "receipt_sha256": "ab6bb7ea1ee2fa817e87f532091bca9547704f8feba19d5ba0b4f4d53f6185e5",
+      "tool_source_revision": "6a81f6036bab0fcc7410b03ff65d845763d33c3c",
+      "workload_source_revision": "f8ac76265a89bca3366bc07d69ae20bc5f5d3a9b"
+    },
+    {
+      "mode": "direct-native",
+      "pair_id": "report-validation-pair1",
+      "receipt_sha256": "25f05ea7629f3fbc3bfbeefe224cdf22cfad8ce602dee8e96be707b34f17bf59",
+      "tool_source_revision": "6a81f6036bab0fcc7410b03ff65d845763d33c3c",
+      "workload_source_revision": "f8ac76265a89bca3366bc07d69ae20bc5f5d3a9b"
+    }
+  ],
+  "phase": "pilot",
+  "planned_pairs": 1,
+  "pr_evidence": {
+    "authored_via": "direct-native",
+    "candidate_source_revision": "6f3a8eac624e7f8db9475bf745b6a2e83a68e8e5",
+    "delivery_scope": "validation-use",
+    "receipt_sha256": "ab6bb7ea1ee2fa817e87f532091bca9547704f8feba19d5ba0b4f4d53f6185e5",
+    "tool_source_revision": "6a81f6036bab0fcc7410b03ff65d845763d33c3c",
+    "trial_configuration_sha256": "566e2f34dfac08779027abaf5d577eda1b5200837cf4c2d01197ec68c40b56e8",
+    "validation_input_revision": "f8ac76265a89bca3366bc07d69ae20bc5f5d3a9b",
+    "validation_profile": "mythhelm.toml-only"
+  },
+  "protocol_sha256": "a817a313907a10b2a9b64e2beb8012bc37caae8093cbc3c6243776481ac1fc7e",
+  "registered_at": "2026-11-03T20:00:15.369798+00:00",
+  "review_evidence_sha256": "fbfedb6944da339c8834a5831b065a0bc89cddf38ea0a8a67a6f0bf39c011558",
+  "schema_version": 1
+}
