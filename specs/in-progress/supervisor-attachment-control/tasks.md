@@ -625,7 +625,7 @@
 - **Test plan**: Deterministic competing-write barriers, real journal pages and independent valid/violating protocol fixtures. Packaged renderer/cursor evidence follows in consumer and end-to-end tasks.
 - **Invariants touched**: I03/I06/I09/I12/I23 (v2 §§3/4/5/15: authenticated canonical observation never executes work).
 
-### Task 11 — Mint and revoke internal scoped attachment grants
+### Task 11 — Mint and revoke internal scoped attachment grants ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -641,6 +641,11 @@
   - TestAttachmentGrantRevocationGeneration rejects revoked/old-generation grants and permits a fresh internal mint for current authenticated scope without rotating attempt tokens; failed transaction persists no grant/hash.
 - **Test plan**: Real ledger transactions plus deterministic instance-generation guards and safe synthetic identities; public response/projection composition is tested only after its Task12 producer exists.
 - **Invariants touched**: I03/I06/I12/I17/I18/I23 (v2 §§8/14: scoped presentation authority only).
+
+- **Status**: ✅ Completed — transaction-scoped attachment grant minting, validation and revocation with exact stored scope and generation checks; PR #613.
+- **Implementation**: Grant source `feb3a7090c348afeda1b3615ca57c17ae1689671` and fixture-only repair `f5de35dd18aaae88c59587941db6befe5ccdbe91`; signed actual-main integration `fa144daab3aef2556b925946269a074a4ea3f2b5` preserves all three authored source blobs. Caller retains the real same-run/root owner, instance hold and authority gate; SQL never proves ownership. Initial independent Ready and full race 519.1s bind prior integration `f1a5c1f`; renewed uncached full repository race passes578.0s (578.284s wall) at integrated `9906f04`, preserving all three source hashes. All six local markers are fresh; final-head CI and merge remain pending.
+- **Spec deviations**: Own three lifecycle records follow WORKFLOW/task-completion. Added `internal/supervisor/deadline_test.go` as an explicitly scoped CI fixture repair: require the actual complete same-run/attempt launched spool event before user-first stop; give that input a one-minute execution envelope while natural-deadline input stays two seconds and setup/recovery bounds stay thirty seconds. Hosted Windows reported launch_failed; its underlying Start error is unknown, and queued stop is not claimed to abort Start. No grant/production API, deadline-function or runtime-authority change; public composition remains Task12.
+- **Files modified**: `internal/control/attachment_auth.go`, `internal/control/attachment_auth_test.go`, `internal/supervisor/deadline_test.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
 ### Task 12 — Produce coherent safe projections
 
