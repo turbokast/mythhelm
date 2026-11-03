@@ -23,3 +23,15 @@
 ## Discoveries
 
 None from implementation yet.
+
+## Independent design validation
+
+### Round 1 — Needs revision
+
+- Assessed signed source: `16df4954fea71eb60884fcf87a63f2db76568122`.
+- Fresh reviewer: `immutable_design_review` (independent fresh context).
+- Accounting: `dispatched=1 returned=1 failed=0`.
+- References, design and tasks: NEEDS_WORK. Requirements and conflicts: PASS. Epic: not applicable (single spec).
+- Blocking finding 1: mandated existing `listed_files` uses buffered Git capture with a 120-second timeout before proposed 20,000-entry/30-second bounds. Repair separates a bounded incremental strong observer, includes root/HEAD/base/index/worktree observations in one deadline, bounds records/stdout/stderr, and requires owned-process teardown plus excessive-inventory/blocked-child controls. Legacy helper behavior is preserved.
+- Blocking finding 2: closed profile/qualification/probe schemas omitted the promised checker-definition binding. Repair adds explicit current definition throughout the acyclic plan/probe/qualification/profile chain and execution, with new-candidate/old-qualification refusal controls in codecs, executor and every consumer.
+- Original attempt remains rejected. These author repairs are a candidate for a new independent round; no Ready verdict or qualification is inferred. Requirements and refinement-log are unchanged.
