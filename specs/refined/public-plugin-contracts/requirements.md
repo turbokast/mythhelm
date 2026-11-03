@@ -1,6 +1,6 @@
 # Public plugin contracts — Requirements
 
-> Unrefined. Run /refine-spec public-plugin-contracts before /spec.
+> Refined. Independent assessment: Ready. Next: /spec public-plugin-contracts.
 >
 > Capture MH-6's small public process protocol, Go reference SDK and declarative workflow/mod journey after built-in consumers exercise the contracts. Normative source: `mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md`, version 2.0, §§4, 6–9, 16 and 18; implementation-plan W09. All I-, AT- and G-IDs below refer to v2. These requirements neither implement extensions nor certify G08/G12 or native qualification.
 
