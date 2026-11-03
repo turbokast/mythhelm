@@ -35,8 +35,8 @@ admitted, MYTHHELM-owned native product-task attempt that was independently
 rejected: exit zero and three Go checks left the candidate unchanged after two
 edit denials. The [earlier accepted maintenance pilot](dogfood/0003-measured-self-hosting.html)
 remains separate evidence. These observations do not complete service-owned
-dispatch or the full product; at least 20× faster full-product delivery remains
-unproven.
+dispatch or the full product; the target to build and ship MYTHHELM at least
+20× faster remains unproven.
 
 The later [19:30 UTC acceptance-gaps report](dogfood/0013-acceptance-gaps.html)
 records another MYTHHELM-owned native attempt with exit zero but failed formatting
@@ -45,7 +45,11 @@ flight at that snapshot. Passing local checks also left recording-selector
 counterexamples and Windows service-fixture CI unresolved. Merged documentation
 and watchdog repairs are progress, not full-product completion. Reported usage
 and retail-equivalent estimates are not known charges, and these routine
-observations establish no faster, cheaper or higher-quality delivery advantage.
+observations establish no faster, cheaper or higher-quality delivery advantage
+than vanilla native harnesses. That separate product goal has no assigned
+speedup factor; 20× concerns building MYTHHELM itself, not product runtime or
+native-harness performance. Building and shipping can continue while fair
+comparisons are prepared; comparative claims still require evidence.
 
 ## Supported today
 
