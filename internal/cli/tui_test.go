@@ -20,6 +20,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/turbokast/mythhelm/internal/admission"
 	"github.com/turbokast/mythhelm/internal/ids"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/supervisor"
@@ -1163,5 +1164,199 @@ func TestRunAccessibleLiveEndsOnStrandedRun(t *testing.T) {
 		}
 	case <-time.After(30 * time.Second):
 		t.Fatal("runAccessibleLive wedged on a stranded created run, want prompt shutdown with a trailer")
+	}
+}
+
+func TestThemeHelpPlatformLimits(t *testing.T) {
+	t.Parallel()
+	const want = "auto detects the terminal background on Linux and macOS outside tmux and screen; under tmux or screen it uses COLORFGBG and otherwise dark; on Windows it always selects dark, use --theme light for a light terminal"
+	for _, verb := range []string{"run", "demo", "review"} {
+		t.Run(runtime.GOOS+"/"+verb, func(t *testing.T) {
+			code, out, stderr := runMain(verb, "--help")
+			if code != 0 || !strings.Contains(out+stderr, "-theme") || !strings.Contains(out+stderr, want) {
+				t.Fatalf("%s theme help: code%d stdout%q stderr%q", verb, code, out, stderr)
+			}
+		})
+	}
+}
+
+func TestThemeFlagValidOnPipedBranches(t *testing.T) {
+	// Owns the process-wide state-root environment.
+	stateHome(t)
+	for _, choice := range []string{"auto", "dark", "light"} {
+		code, out, stderr := runMain("review", "run_missing", "--theme", choice)
+		if code != 1 || !strings.Contains(stderr, "not found") {
+			t.Fatalf("valid piped theme%s refused: code%d out%q err%q", choice, code, out, stderr)
+		}
+	}
+}
+
+func TestThemeFlagLaunchMatrix(t *testing.T) {
+	// Owns process-wide environment and cwd; child fixtures are all synthetic.
+	cases := []struct {
+		name, flag, envKey, envValue, want string
+		terminal, dark, view               bool
+		calls                              int
+	}{
+		{name: "auto light", terminal: true, view: true, want: "light", calls: 1},
+		{name: "auto dark", terminal: true, dark: true, view: true, want: "dark", calls: 1},
+		{name: "plain", flag: "--plain", terminal: true},
+		{name: "accessible", flag: "--accessible", terminal: true},
+		{name: "jsonl", flag: "--format=jsonl", terminal: true},
+		{name: "piped"},
+		{name: "dumb", terminal: true, envKey: "TERM", envValue: "dumb"},
+		{name: "NO_COLOR", terminal: true, envKey: "NO_COLOR", envValue: "1", view: true, want: "dark"}, //nolint:misspell // NO_COLOR is the standard environment variable spelling.
+		{name: "colour never", terminal: true, flag: "--colour=never", view: true, want: "dark"},
+		{name: "explicit dark", terminal: true, flag: "--theme=dark", view: true, want: "dark"},
+		{name: "explicit light", terminal: true, flag: "--theme=light", dark: true, view: true, want: "light"},
+	}
+	for _, verb := range []string{"run", "demo", "review"} {
+		for _, tc := range cases {
+			if tc.name == "plain" && verb != "run" || tc.name == "jsonl" && verb == "demo" {
+				continue
+			}
+			t.Run(verb+"/"+tc.name, func(t *testing.T) {
+				if verb == "demo" {
+					setDemoFixtureRoot(t, t.TempDir())
+				}
+				t.Setenv("TERM", "xterm-256color")
+				t.Setenv("NO_COLOR", "") //nolint:misspell // NO_COLOR is the standard environment variable spelling.
+				if tc.envKey != "" {
+					t.Setenv(tc.envKey, tc.envValue)
+				}
+				stdio, stdout, stderr := testStdio()
+				count, views := 0, 0
+				deps := forcedDeps(tc.terminal, func(_ context.Context, cfg tui.Config) error {
+					views++
+					want, err := theme.BuiltIn(tc.want)
+					if err != nil || cfg.ThemeName != tc.want || cfg.Tokens != want {
+						t.Errorf("launched theme=%q tokens=%+v; want%s", cfg.ThemeName, cfg.Tokens, tc.want)
+					}
+					return nil
+				})
+				deps.backgroundDark = func() bool { count++; return tc.dark }
+				args := []string{}
+				if tc.flag != "" {
+					args = append(args, tc.flag)
+				}
+				var err error
+				switch verb {
+				case "review":
+					_, id := completedFixture(t)
+					args = append(args, id, "--no-diff")
+					err = runReviewWithDeps(args, stdio, deps)
+				case "run":
+					stateHome(t)
+					repo := t.TempDir()
+					exe, xerr := os.Executable()
+					if xerr != nil {
+						t.Fatal(xerr)
+					}
+					task, digest, serr := seedDemoRepo(repo, exe, "pass")
+					if serr != nil {
+						t.Fatal(serr)
+					}
+					t.Chdir(repo)
+					args = append(args, "--task-file", task, "--adapter", "fake", "--billing", "local-scripted", "--execution-profile", "trusted-host", "--non-interactive", "--trust-project-config", "sha256:"+digest)
+					err = runRunWithDeps(args, stdio, deps)
+				case "demo":
+					err = runDemoWithDeps(args, stdio, demoDeps{tui: deps, supervise: func(_ context.Context, d admission.Decision, _ supervisor.Hooks) (supervisor.Outcome, error) {
+						return supervisor.Outcome{RunID: d.RunID, AttemptID: d.AttemptID, State: supervisor.RunReadyForReview, AttemptState: supervisor.AttemptSucceededNative}, nil
+					}, review: func(io.Writer, string, string) error { return nil }})
+				}
+				if err != nil {
+					t.Fatalf("dispatch: %v\nstdout%s\nstderr%s", err, stdout, stderr)
+				}
+				wantViews := 0
+				if tc.view {
+					wantViews = 1
+				}
+				if count != tc.calls || views != wantViews {
+					t.Fatalf("callback=%d views=%d want%d/%d", count, views, tc.calls, wantViews)
+				}
+			})
+		}
+	}
+	for _, verb := range []string{"run", "demo", "review"} {
+		for _, choice := range []string{"paper", "", "Light"} {
+			t.Run(verb+"/invalid/"+strconv.Quote(choice), func(t *testing.T) {
+				stateHome(t)
+				count := 0
+				deps := forcedDeps(false, func(context.Context, tui.Config) error { t.Fatal("invalid theme launched TUI"); return nil })
+				deps.backgroundDark = func() bool { count++; return false }
+				stdio, _, _ := testStdio()
+				args := []string{"--theme", choice}
+				var err error
+				switch verb {
+				case "run":
+					err = runRunWithDeps(args, stdio, deps)
+				case "demo":
+					err = runDemoWithDeps(args, stdio, demoDeps{tui: deps})
+				case "review":
+					err = runReviewWithDeps(append(args, "run_missing"), stdio, deps)
+				}
+				if exitCode(err) != 2 || !strings.Contains(err.Error(), "--theme") || !strings.Contains(err.Error(), strconv.Quote(choice)) || count != 0 {
+					t.Fatalf("invalid theme%s: %v callback%d", strconv.Quote(choice), err, count)
+				}
+				code, out, stderr := runMain(append([]string{verb}, args...)...)
+				if verb == "review" {
+					code, out, stderr = runMain(verb, "run_missing", "--theme", choice)
+				}
+				if code != 2 || !strings.Contains(stderr, "--theme") || !strings.Contains(stderr, strconv.Quote(choice)) {
+					t.Fatalf("Main invalid: code%d out%q err%q", code, out, stderr)
+				}
+			})
+		}
+	}
+}
+
+func TestThemeFlagInvalidLaunchBranches(t *testing.T) {
+	// Owns the process-wide presentation environment and state-root selection.
+	for _, verb := range []string{"run", "demo", "review"} {
+		for _, mode := range []struct{ name, flag, envKey, envValue string }{
+			{name: "TTY"}, {name: "plain", flag: "--plain"}, {name: "accessible", flag: "--accessible"},
+			{name: "jsonl", flag: "--format=jsonl"}, {name: "dumb", envKey: "TERM", envValue: "dumb"},
+			{name: "NO_COLOR", envKey: "NO_COLOR", envValue: "1"}, {name: "colour never", flag: "--colour=never"}, //nolint:misspell // NO_COLOR is the standard environment variable spelling.
+		} {
+			if mode.name == "plain" && verb != "run" || mode.name == "jsonl" && verb == "demo" {
+				continue
+			}
+			t.Run(verb+"/"+mode.name, func(t *testing.T) {
+				stateHome(t)
+				t.Setenv("TERM", "xterm-256color")
+				t.Setenv("NO_COLOR", "") //nolint:misspell // NO_COLOR is the standard environment variable spelling.
+				if mode.envKey != "" {
+					t.Setenv(mode.envKey, mode.envValue)
+				}
+				args := []string{}
+				if mode.flag != "" {
+					args = append(args, mode.flag)
+				}
+				args = append(args, "--theme", "paper")
+				if verb == "review" {
+					args = append(args, "run_missing")
+				}
+				calls := 0
+				deps := forcedDeps(true, func(context.Context, tui.Config) error { t.Fatal("invalid theme launched TUI"); return nil })
+				deps.backgroundDark = func() bool { calls++; return false }
+				stdio, _, _ := testStdio()
+				var err error
+				switch verb {
+				case "run":
+					err = runRunWithDeps(args, stdio, deps)
+				case "review":
+					err = runReviewWithDeps(args, stdio, deps)
+				case "demo":
+					err = runDemoWithDeps(args, stdio, demoDeps{tui: deps})
+				}
+				if err == nil || exitCode(err) != 2 || !strings.Contains(err.Error(), "--theme") || !strings.Contains(err.Error(), "paper") || calls != 0 {
+					t.Fatalf("invalid theme: %v callback%d", err, calls)
+				}
+				code, out, stderr := runMain(append([]string{verb}, args...)...)
+				if code != 2 || !strings.Contains(out+stderr, "--theme") || !strings.Contains(out+stderr, "paper") {
+					t.Fatalf("Main code%d stdout%q stderr%q", code, out, stderr)
+				}
+			})
+		}
 	}
 }

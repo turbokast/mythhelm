@@ -1,5 +1,5 @@
 // Package cli wires launch for run, demo and review (design §2): the
-// presentation flags (--colour plus alias, --motion, --icons, --accessible,
+// presentation flags (--theme, --colour plus alias, --motion, --icons, --accessible,
 // --after), the launch rule choosing linear, accessible or TUI output, TTY
 // detection through the tuiDeps seam, and the supervisor-backed Actions the
 // TUI palette acts through (design §10).
@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	isatty "github.com/mattn/go-isatty"
 	"github.com/turbokast/mythhelm/internal/journal"
 	"github.com/turbokast/mythhelm/internal/supervisor"
@@ -34,6 +35,7 @@ type tuiDeps struct {
 	// A demo caller emits recovery guidance alongside its retained resource paths.
 	deferRecoveryGuidance bool
 	isTerminal            func(w io.Writer) bool
+	backgroundDark        func() bool
 	runTUI                func(ctx context.Context, cfg tui.Config) error
 	lifecycle             func() *tuiLifecycle
 	canonicalOutcome      func(context.Context, string, string) (supervisor.Outcome, error)
@@ -45,14 +47,15 @@ var prodTUIDeps = tuiDeps{
 		f, ok := w.(interface{ Fd() uintptr })
 		return ok && isatty.IsTerminal(f.Fd())
 	},
-	runTUI: tui.Run,
+	runTUI:         tui.Run,
+	backgroundDark: lipgloss.HasDarkBackground,
 }
 
 // tuiFlagSet holds the presentation flags addTUIFlags registers on run, demo
-// and review (design §2). Only --colour is stored: its alias shares the
-// same variable, so it needs no resolution — the last flag on the command
-// line wins.
+// and review (design §2). The --colour alias shares the same variable, so
+// the last spelling on the command line wins.
 type tuiFlagSet struct {
+	theme      *string
 	colour     *string
 	motion     *string
 	icons      *string
@@ -63,6 +66,7 @@ type tuiFlagSet struct {
 // addTUIFlags registers the TUI-slice presentation flags on fs.
 func addTUIFlags(fs *flag.FlagSet) *tuiFlagSet {
 	out := &tuiFlagSet{}
+	out.theme = fs.String("theme", "auto", "theme: auto, dark or light; auto detects the terminal background on Linux and macOS outside tmux and screen; under tmux or screen it uses COLORFGBG and otherwise dark; on Windows it always selects dark, use --theme light for a light terminal")
 	out.colour = fs.String("colour", "auto", "colour mode: auto, always or never")
 	fs.StringVar(out.colour, "color", "auto", "alias for --colour") //nolint:misspell // --color is the required alias spelling.
 	out.motion = fs.String("motion", "auto", "motion mode: auto, full, reduced or off")
@@ -74,15 +78,16 @@ func addTUIFlags(fs *flag.FlagSet) *tuiFlagSet {
 
 // tuiOptions is one invocation's validated presentation options.
 type tuiOptions struct {
-	prefs      caps.Prefs
-	caps       caps.Caps
-	tokens     theme.Tokens
-	accessible bool
-	after      int64
+	themeChoice string
+	themeName   string
+	prefs       caps.Prefs
+	caps        caps.Caps
+	tokens      theme.Tokens
+	accessible  bool
+	after       int64
 }
 
-// resolve validates the flag values: capability modes through caps.Parse and
-// --after as an integer. Every failure is a usageError (exit 2) naming its
+// resolve validates the theme choice, capability modes and integer --after. Every failure is a usageError (exit 2) naming its
 // flag. Validation runs before the launch rule, so an invalid mode exits 2
 // on every branch, including piped linear output.
 func (f *tuiFlagSet) resolve(getenv func(string) string) (tuiOptions, error) {
@@ -91,6 +96,11 @@ func (f *tuiFlagSet) resolve(getenv func(string) string) (tuiOptions, error) {
 	if err != nil {
 		return tuiOptions{}, usageError{err}
 	}
+	choice, err := theme.ParseChoice(*f.theme)
+	if err != nil {
+		return tuiOptions{}, usageError{err}
+	}
+	out.themeChoice, out.themeName = choice, "dark"
 	out.prefs = prefs
 	out.caps = caps.Resolve(prefs, getenv)
 	tokens, err := theme.BuiltIn("dark")
@@ -107,6 +117,17 @@ func (f *tuiFlagSet) resolve(getenv func(string) string) (tuiOptions, error) {
 		out.after = after
 	}
 	return out, nil
+}
+
+// resolveTheme reads only the background answer cached by Bubble Tea startup.
+// Call after selecting the TUI branch; linear modes never consult that answer.
+func (o tuiOptions) resolveTheme(deps tuiDeps) (tuiOptions, error) {
+	name, tokens, err := tui.ResolveTheme(o.themeChoice, true, o.caps, deps.backgroundDark)
+	if err != nil {
+		return tuiOptions{}, err
+	}
+	o.themeName, o.tokens = name, tokens
+	return o, nil
 }
 
 // launchMode is where one invocation's output goes.
@@ -239,6 +260,7 @@ func runLiveTUI(stdio Stdio, deps tuiDeps, stateDir, runID string, opts tuiOptio
 	}()
 	cfg := owner.config(stateDir, runID, opts, tui.ModeLive)
 	cfg.Events, cfg.Notices = events, notices
+	cfg.ThemeName = opts.themeName
 	viewErr := deps.runTUI(context.Background(), cfg)
 	owner.endView()
 	state := owner.snapshot()
@@ -313,7 +335,9 @@ func runLiveTUI(stdio Stdio, deps tuiDeps, stateDir, runID string, opts tuiOptio
 func runInspectTUI(deps tuiDeps, stateDir, runID string, opts tuiOptions) error {
 	owner := deps.lifecycleOwner()
 	defer owner.close()
-	err := deps.runTUI(context.Background(), owner.config(stateDir, runID, opts, tui.ModeInspect))
+	cfg := owner.config(stateDir, runID, opts, tui.ModeInspect)
+	cfg.ThemeName = opts.themeName
+	err := deps.runTUI(context.Background(), cfg)
 	owner.endView()
 	state := owner.snapshot()
 	var mapped error

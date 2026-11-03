@@ -28,6 +28,10 @@ const maxAnswer = 256
 // runRun is `mythhelm run`: admit a task, then supervise its one native
 // attempt (design §3, §10).
 func runRun(args []string, stdio Stdio) error {
+	return runRunWithDeps(args, stdio, prodTUIDeps)
+}
+
+func runRunWithDeps(args []string, stdio Stdio, deps tuiDeps) error {
 	fs := newFlagSet("run")
 	taskFile := fs.String("task-file", "", "the task, as Markdown, delivered to the agent on stdin (required)")
 	adapterName := fs.String("adapter", "", "the native harness adapter: claudecode, codex or fake (required; no default, no fallback)")
@@ -104,14 +108,18 @@ func runRun(args []string, stdio Stdio) error {
 	if !*nonInteractive {
 		req.Confirm = prompter(stdio)
 	}
-	switch selectLaunch(*format, *plain, opts.accessible, stdio.Out, prodTUIDeps, os.Getenv) {
+	switch selectLaunch(*format, *plain, opts.accessible, stdio.Out, deps, os.Getenv) {
 	case launchTUI:
 		d, err := admission.Decide(context.Background(), req)
 		if err != nil {
 			err = persistDriftInvalidation(context.Background(), stateDir, err, stdio.Err)
 			return finish(newRenderer("plain", stdio), supervisor.Outcome{}, err)
 		}
-		out, err := runLiveTUI(stdio, prodTUIDeps, stateDir, d.RunID, opts,
+		opts, err = opts.resolveTheme(deps)
+		if err != nil {
+			return finish(newRenderer("plain", stdio), supervisor.Outcome{}, err)
+		}
+		out, err := runLiveTUI(stdio, deps, stateDir, d.RunID, opts,
 			func(ctx context.Context, hooks supervisor.Hooks) (supervisor.Outcome, error) {
 				return supervisor.Run(ctx, d, hooks)
 			})

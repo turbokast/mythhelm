@@ -554,7 +554,7 @@
 - **Acceptance evidence**: Cleanup `2afc281` passes the whole TUI race suite (tui7.675s, caps1.018s, theme1.028s, viewmodel15.530s). Six current-source compiled controls fail actual assertions: extra callback consultation, forced dark choice, prefix bypass, swallowed malformed input, removed poll expiry and relaxed five-hex grammar. Maximum valid BEL/ST replies pass through actual key routing without leaking input; complete five-hex malformed replies replay ordinarily. Earlier five-control and grouped-reply/long-suffix red evidence retain their original source bindings. Fresh root review accepts the two-path cleanup.
 - **Validation**: Earlier integration `c8541ed` passed the uncached full repository race gate578.3s with the original package deadline; that result belongs to its pre-cleanup source. Review cleanup and renewed main integration preserve the seven owned source blobs; static gates pass, while the renewed integrated full Go run, exact-head CI and actual merge remain pending. Initial five-issue lint failure remains a separate recorded attempt. No native/platform, human accessibility or comparative performance qualification is claimed.
 
-### Task 18 — Expose --theme across launch branches
+### Task 18 — Expose --theme across launch branches ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (six files; spec-decomposition sizing rule)
@@ -573,6 +573,15 @@
   - Task 1 baseline stays byte-identical; no new direct or indirect module (`git diff` against this task's base for go.mod/go.sum is empty).
 - **Test plan**: cli.Main exit/output assertions plus built-binary checks; all theme selection through Task17's seam, no mutable global test state.
 - **Invariants touched**: I09/I13/I14 (v2 §§15.1,15.3: suppressed output unchanged, platform capability disclosed).
+
+- **Status**: ✅ Completed — shared theme validation and selected-TUI launch wiring are submitted; exact-head CI, review threads and actual merge remain required; PR #618.
+- **Implementation**: Signed source `5c7c600` and test-only correction `e9f622c` register `--theme auto|dark|light` on run/demo/review and validate it before presentation branching. Selected TUI branches consume Task17's resolver through the injected cached background answer, and both live/inspect configurations carry the chosen tokens and ThemeName. Linear, accessible and JSONL behavior stays unchanged.
+- **Spec deviations**: No implementation scope or dependency deviation. Required own lifecycle records are `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md` and `specs/in-progress/tui-observatory-view/scratchpad.md`. The test-only correction forces the three flag-override fixtures to TTY output and adds five line-scoped spelling annotations for the standard environment variable.
+- **Files modified**: `internal/cli/tui.go`, `internal/cli/run.go`, `internal/cli/demo.go`, `internal/cli/review.go`, `internal/cli/tui_test.go`, `tests/e2e/tui_test.go`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
+- **Acceptance evidence**: Final launch matrix, invalid-branch, exact GOOS-keyed help and unchanged-baseline race checks pass74.135s. Twelve compiled controls fail intended assertions for explicit choice, configuration identity, consultation counts/suppression, early validation, each verb's resolver and the plain/accessible/JSONL TTY overrides. Fresh code and architecture review are Ready; independent focused launch, packaged PTY and help/invalid checks pass. Packaged checks cover all three verbs' help/invalid exits, piped dark/light review and actual Unix PTY SGR output for both themes; Windows retains its explicit PTY qualification boundary.
+- **Validation**: Canonical formatter, tidy-diff, vet, lint and hygiene pass; untruncated lint reports zero issues. Full repository verification: uncached full repository race PASS568.4s (568.651s wall) at `e9f622c`, with all six owned source hashes unchanged and the original600s package deadline. The earlier whole-CLI race292.839s and packaged race3.973s belong to `5c7c600`; all four production blobs are unchanged at `e9f622c`, whose stronger TTY matrix and independent packaged checks provide separate evidence. Task1's literal baseline and go.mod/go.sum remain byte-identical to base `85cc8cd`.
+- **Limits**: Bubble Tea v1.3.10 already consults lipgloss during package initialization; this wiring reads that cached result and adds no query. Existing startup-query latency, tmux/screen fallback and Windows dark default remain disclosed by the exact shared help. Terminal detection and human accessibility remain unqualified.
+
 
 ### Task 19 — Update user-facing limits and instructions
 
