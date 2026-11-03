@@ -237,3 +237,7 @@
 - **For dependents**: Task7 supplies actual held-owner adoption. Storage records grant no ownership; missing history stays unknown, claimed-only operations are unavailable, and completed results must match operation identity and an actual run revision. Complete adoption projections and operation result in the same transaction.
 - **Compatibility**: Backup/preview mirrors and current schema move together; Task25's binding migration remains reserved as schema 11. Native execution profiles are excluded.
 - **Validation**: Named SQLite migration/identity/replay/hostile-SQL tests and independent architecture review pass. Full repository race gate passed; PR #584 still requires exact-head CI and merge before consumers start.
+
+### Task 34 Windows witness portability
+
+PR #588 fixture repair `f6bb967` preserves the three production blobs. The database-replacement witness now holds the actual owners, closes the old journal and opens a valid replacement before testing the old owner refusal; it detects removal of the actual database identity guard. Snapshot witnesses include empty locked files without forbidden byte-zero reads, while reading every nonempty artifact. Full Linux race passes 751.5s; both Windows architectures still require exact-head CI.

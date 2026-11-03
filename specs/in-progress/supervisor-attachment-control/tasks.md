@@ -926,6 +926,8 @@
 
 - **Coordinator integration**: Actual merged assignment/retention/parallel-runner prerequisites were normally integrated with all five reviewed Task34 source blobs unchanged. Fresh complete repository race passes in 762.4s; earlier 857.6s remains evidence for its earlier base. Own Task24/33/34 records are all retained; current-head CI and merge remain required.
 
+- **Windows fixture repair**: Actual CI on both Windows architectures exposed an open-database rename and a mandatory lock-byte read in test witnesses. Source `f6bb967` retains ownership while closing/replacing/reopening only the journal, then proves the valid replacement journal is refused by the old owner. Empty regular files are hashed from verified zero length; nonempty artifacts are read normally. All three production files remain byte-identical. Named race suites pass (service 15.448s; supervisor 8.203s); a compiled database-identity guard mutant fails the new assertion. All six local gates pass again, including full race 751.5s with unchanged default package deadline. Windows CI still must pass on this repaired head; no platform qualification is inferred from Linux.
+
 ### Task 35 — Produce the attachment response queue handoff ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
