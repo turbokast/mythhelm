@@ -152,6 +152,14 @@
 <!-- pending -->
 
 
+## Task 30 — Produce closed preparation and admission transaction APIs
+
+- **Produces**: PR #612, frozen source `0634d4ce63cdade26482df01a41c2428df9b88c8`: copied closed preparation/admission/dispatch constructors, getters and metadata plus StoreRetainedPreparation/ConfirmPreparation/ReadConfirmedPreparation, CommitServiceAdmission and ArmServiceDispatch. Journal imports no service/admission/supervisor owner; structural handles are trusted-Go storage values, not authenticated grants.
+- **For Tasks8/9**: Derive lookup peer/root/generation/context, current observed time, confirmation authority and fresh supervisor permit through their actual trusted producers. Reads/commit/arm reload current durable rows, verify canonical binding/full retained policy and exact revisions, and refuse stale or legacy-unbound preparations; do not treat a previously returned handle as current authority. Fixed producer mappings, immutable acknowledgements, one-consumption CAS and all projection/row failures remain atomic.
+- **Storage effects**: Retention-only approval immediately computes Ready=true at durable revision1; required additional answers keep it false until complete. Constructors make no writes; admission commit creates no attempt or execution clock before arming. Storage never launches a process. Opaque snapshots/bytes/slices are copied; public confirmation/dispatch remain Tasks8/9 responsibilities.
+- **Digest/cache contract**: The Task30 design clarification distinguishes plain SHA256 canonical full policy/binding integrity columns from the domain-separated full-approval checksum and unchanged leaf revision/digest functions. prepared_runs.spec is the internal canonical RunSpecV2 projection of BindingV1.Request, preserving nanos/zero/unset; readPreparation recomputes it from the authoritative binding. Never decode it as control.RunSpec wire JSON or make it authoritative.
+- **Evidence**: Named constructor/stage/atomic-storage/error-mapping/revision/readiness tests pass; thirteen actual compiled omission controls fail and26 durable-row cases refuse without effects. Independent focused race24.079s and frozen full race575.2s pass with all six required markers fresh. Original failed/time-exhausted attempts remain historical; exact-head CI and actual PR merge are still required for dependent use.
+
 ## Task 31 — Produce revision-aware standalone client metadata
 
 - **Produces**: PR #553 adds `PreparedReply`, `PreparedRunClient`, `NewPreparedRunClient` and `PreparationConflictError.Current` while retaining the existing `runClient` implementation and closed schema2 wire bodies.
