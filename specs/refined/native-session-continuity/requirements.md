@@ -1,6 +1,6 @@
 ## Native-session continuity and grounded handoffs — Requirements
 
-> Unrefined. Run /refine-spec native-session-continuity before /spec.
+> Refined after independent assessment; see [refinement-log.md](refinement-log.md). Proceed to /spec native-session-continuity.
 >
 > Preserve useful native conversations through compatible admitted attempts, or reconstruct an explicitly new session from original requirements and immutable evidence. This is the full MH-15 requirements envelope, not a claim that S1, two routes, native resume or context acknowledgement have qualified. Normative source: `mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md`, version 2.0, §§4, 6, 9 and 18; implementation-plan W06. I-, G- and AT-IDs below refer to v2.
 
