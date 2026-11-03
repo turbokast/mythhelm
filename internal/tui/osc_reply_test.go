@@ -87,9 +87,9 @@ func TestOSCReplyGroupedAndSplit(t *testing.T) {
 	}
 }
 
-func TestOSCReplyMalformedAndOverlongReplay(t *testing.T) {
+func TestOSCReplyMalformedReplay(t *testing.T) {
 	t.Parallel()
-	for _, bad := range []string{"x", "11;rgb:zz", "11;rgb:aaaaa", "11;rgb:/0/0", "11;rgb:0//0", "11;rgb:0/0/0/", "11;rgb:" + strings.Repeat("d", 1024)} {
+	for _, bad := range []string{"x", "11;rgb:zz", "11;rgb:aaaaa", "11;rgb:aaaaa/0000/0000\a", "11;rgb:/0/0", "11;rgb:0//0", "11;rgb:0/0/0/", "11;rgb:" + strings.Repeat("d", 1024)} {
 		t.Run(bad[:min(len(bad), 24)], func(t *testing.T) {
 			t.Parallel()
 			m := flowModel(t)
@@ -100,8 +100,8 @@ func TestOSCReplyMalformedAndOverlongReplay(t *testing.T) {
 			if len(want) > maxFilterRunes {
 				want = want[:maxFilterRunes]
 			}
-			if m.filterText != string(want) || m.oscReply.armed || len(m.oscReply.text) > maxOSCReplyRunes || len(m.oscReply.keys) > maxOSCReplyRunes {
-				t.Fatalf("malformed input not released/bounded: text=%q state=%+v", m.filterText, m.oscReply)
+			if m.filterText != string(want) || m.oscReply.armed {
+				t.Fatalf("malformed input not replayed/reset: text=%q state=%+v", m.filterText, m.oscReply)
 			}
 		})
 	}
@@ -158,7 +158,7 @@ func TestOSCReplyExpiryUsesExistingPoll(t *testing.T) {
 	}
 }
 
-func TestOSCReplyModelIsolationAndBound(t *testing.T) {
+func TestOSCReplyModelIsolation(t *testing.T) {
 	t.Parallel()
 	a, b := flowModel(t), flowModel(t)
 	a.filterOn = true
@@ -168,14 +168,6 @@ func TestOSCReplyModelIsolationAndBound(t *testing.T) {
 	if !b.filterOn || b.oscReply.armed {
 		t.Fatal("one model armed another")
 	}
-	for _, key := range a.oscReply.keys {
-		if len(key.Runes) > maxOSCReplyRunes {
-			t.Fatal("retained unbounded key")
-		}
-	}
-	if a.oscReply.runes > maxOSCReplyRunes || len(a.oscReply.text) > maxOSCReplyRunes {
-		t.Fatal("reply exceeded bound")
-	}
 	a.oscReply.expires = time.Time{}
 	_ = a.expireOSCReply(time.Time{})
 	if a.filterText != "11;" {
@@ -183,9 +175,9 @@ func TestOSCReplyModelIsolationAndBound(t *testing.T) {
 	}
 }
 
-// A terminal read may group a complete bounded reply with later ordinary input;
-// that suffix cannot make the already-terminated reply look overlong.
-func TestOSCReplyBoundAppliesToCandidateNotTrailingKeys(t *testing.T) {
+// A terminal read may group a complete reply with later ordinary input.
+// The trailing keys remain ordinary even when the whole read is long.
+func TestOSCReplyGroupedTrailingKeys(t *testing.T) {
 	t.Parallel()
 	m := flowModel(t)
 	m.filterOn = true
@@ -193,5 +185,44 @@ func TestOSCReplyBoundAppliesToCandidateNotTrailingKeys(t *testing.T) {
 	m, _ = pressKey(t, m, runeMsg("11;rgb:dddd/0000/0000\a"+strings.Repeat("x", 256)))
 	if m.filterText != strings.Repeat("x", maxFilterRunes) || m.oscReply.armed {
 		t.Fatalf("reply leaked into grouped trailing keys: filter=%q armed=%v", m.filterText, m.oscReply.armed)
+	}
+}
+
+// Four hex digits in each RGB component and the two-rune ST form the longest
+// accepted reply:25 runes including the leading alt-]. This actual key path
+// checks retained input while incomplete, rather than a counter after reset.
+func TestOSCReplyGrammarBound(t *testing.T) {
+	t.Parallel()
+	for _, terminator := range []string{"\a", "\x1b\\"} {
+		t.Run(terminator, func(t *testing.T) {
+			t.Parallel()
+			m := flowModel(t)
+			m.filterOn = true
+			m.filterText = "original"
+			m, _ = pressKey(t, m, oscPrefix())
+			reply := []rune("11;rgb:ABCD/0123/ffff" + terminator)
+			for i, r := range reply {
+				m, _ = pressKey(t, m, runeMsg(string(r)))
+				if m.filterText != "original" {
+					t.Fatalf("longest valid reply leaked at input%d: %q", i, m.filterText)
+				}
+				if i == len(reply)-1 {
+					if m.oscReply.armed || len(m.oscReply.text) != 0 || len(m.oscReply.keys) != 0 {
+						t.Fatal("complete longest reply retained input")
+					}
+					continue
+				}
+				if !m.oscReply.armed || len(m.oscReply.text)+2 > 25 {
+					t.Fatalf("incomplete reply not retained within grammar: armed=%v parsed=%d", m.oscReply.armed, len(m.oscReply.text))
+				}
+				retained := 2
+				for _, key := range m.oscReply.keys {
+					retained += len(key.Runes)
+				}
+				if retained > 25 {
+					t.Fatalf("retained input exceeded reply grammar: %d", retained)
+				}
+			}
+		})
 	}
 }

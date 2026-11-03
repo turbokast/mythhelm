@@ -6,17 +6,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const maxOSCReplyRunes = 64
 const oscReplyLifetime = 200 * time.Millisecond
 
-// oscReplyState belongs to one model. Both copied key messages and parsed runes
-// are bounded; the original alt-] is inert even when a candidate is rejected.
+// oscReplyState belongs to one model. The RGB grammar bounds a complete reply
+// to25 runes including alt-] and ST; rejected candidates replay ordinary keys.
 type oscReplyState struct {
 	armed   bool
 	expires time.Time
 	text    []rune
 	keys    []tea.KeyMsg
-	runes   int
 }
 
 func oscPrefixKey(msg tea.KeyMsg) bool {
@@ -116,7 +114,7 @@ func (m *Model) handleOSCKey(msg tea.KeyMsg) tea.Cmd {
 	state := &m.oscReply
 	if !state.armed {
 		if oscPrefixKey(msg) {
-			*state = oscReplyState{armed: true, expires: time.Now().Add(oscReplyLifetime), runes: 2}
+			*state = oscReplyState{armed: true, expires: time.Now().Add(oscReplyLifetime)}
 			return nil
 		}
 		_, cmd := m.handleOrdinaryKey(msg)
@@ -130,12 +128,6 @@ func (m *Model) handleOSCKey(msg tea.KeyMsg) tea.Cmd {
 		return m.replayOSCKeys(keys)
 	}
 	for i, r := range runes {
-		if state.runes+i+1 > maxOSCReplyRunes {
-			state.keys = append(state.keys, msg)
-			keys := state.keys
-			*state = oscReplyState{}
-			return m.replayOSCKeys(keys)
-		}
 		state.text = append(state.text, r)
 		switch oscShape(state.text) {
 		case -1:
@@ -153,7 +145,6 @@ func (m *Model) handleOSCKey(msg tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 	}
-	state.runes += len(runes)
 	copyKey := msg
 	copyKey.Runes = append([]rune(nil), msg.Runes...)
 	state.keys = append(state.keys, copyKey)
