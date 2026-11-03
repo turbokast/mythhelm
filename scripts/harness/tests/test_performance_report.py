@@ -36,7 +36,8 @@ class PerformanceReportTests(unittest.TestCase):
                                   'tool_source_revision': 'f' * 40} for i, identifier in enumerate(ids)],
                 'pr_evidence': {'candidate_source_revision': 'a' * 40, 'delivery_scope': 'validation-use',
                                 'authored_via': 'direct-native', 'receipt_sha256': 'e' * 64,
-                                'tool_source_revision': 'f' * 40}}
+                                'tool_source_revision': 'f' * 40, 'validation_input_revision': 'a' * 40,
+                                'trial_configuration_sha256': None, 'validation_profile': 'same-source'}}
 
     def test_actual_protocol_and_ledger_drive_both_views(self):
         data = self.evidence(outcomes={(0, 'mythhelm'): 'timeout'}, walls={(0, 'mythhelm'): None})
@@ -149,6 +150,10 @@ class PerformanceReportTests(unittest.TestCase):
         (self.root / 'candidate.txt').write_text('measured source')
         source = self.commit()
         data['pr_evidence']['candidate_source_revision'] = source
+        data['pr_evidence']['validation_input_revision'] = source
+        for receipt in data['pair_receipts']:
+            receipt['workload_source_revision'] = source
+        data['bindings'] = [[source, b[1], b[2]] for b in data['bindings']]
         (self.root / report.AGGREGATE).parent.mkdir(parents=True, exist_ok=True)
         (self.root / report.AGGREGATE).write_text(json.dumps(data, sort_keys=True))
         report.update(self.root, data)
@@ -180,6 +185,9 @@ class PerformanceReportTests(unittest.TestCase):
 
     def test_gate_rejects_unrelated_native_receipt_and_old_pr_source(self):
         data, base, source, _ = self.public_candidate()
+        for receipt in data['pair_receipts']:
+            receipt['workload_source_revision'] = 'a' * 40
+        data['bindings'] = [['a' * 40, b[1], b[2]] for b in data['bindings']]
         data['pr_evidence']['receipt_sha256'] = data['pair_receipts'][0]['receipt_sha256']
         (self.root / report.AGGREGATE).write_text(json.dumps(data))
         report.update(self.root, data)
@@ -197,6 +205,74 @@ class PerformanceReportTests(unittest.TestCase):
         _, base, _, _ = self.public_candidate()
         readme = self.root / 'README.md'
         readme.write_text('late prose\n' + readme.read_text())
+        self.commit()
+        with self.assertRaises(ledger.MeasurementError):
+            report.check(self.root, base)
+
+
+    def test_squash_publication_checks_freshness_without_original_ancestry(self):
+        _, base, source, head = self.public_candidate()
+        self.git('reset', '--hard', base)
+        self.git('merge', '--squash', head)
+        self.commit()
+        with self.assertRaises(ledger.MeasurementError):
+            report.check(self.root, base, event='pull_request')
+        self.assertEqual(report.check(self.root, event='push')['pr_evidence']['candidate_source_revision'], source)
+
+    def test_merge_queue_checks_artifacts_without_rejecting_synthetic_merge(self):
+        _, base, _, head = self.public_candidate()
+        self.git('checkout', '-b', 'other-pr', base)
+        (self.root / 'other.txt').write_text('another reviewed PR')
+        self.git('add', 'other.txt')
+        other = self.commit()
+        self.git('checkout', '-b', 'merge-queue', head)
+        self.git('merge', '--no-ff', '--no-edit', other)
+        with self.assertRaises(ledger.MeasurementError):
+            report.check(self.root, base)
+        report.check(self.root, event='merge_group')
+        (self.root / report.CHART).write_text('stale')
+        self.commit()
+        with self.assertRaises(ledger.MeasurementError):
+            report.check(self.root, event='merge_group')
+
+    def test_old_reference_pair_alone_does_not_cover_current_candidate(self):
+        data, base, _, _ = self.public_candidate()
+        for receipt in data['pair_receipts']:
+            receipt['workload_source_revision'] = 'a' * 40
+        data['bindings'] = [['a' * 40, b[1], b[2]] for b in data['bindings']]
+        (self.root / report.AGGREGATE).write_text(json.dumps(data))
+        report.update(self.root, data)
+        self.commit()
+        with self.assertRaises(ledger.MeasurementError):
+            report.check(self.root, base)
+
+    def test_trial_mapping_allows_only_exact_config_child_and_digest(self):
+        _, _, source, _ = self.public_candidate()
+        self.git('checkout', '-b', 'trial-input', source)
+        configuration = b'[execution]\nvalidation = true\n'
+        (self.root / 'mythhelm.toml').write_bytes(configuration)
+        self.git('add', 'mythhelm.toml')
+        trial = self.commit()
+        pr = {'candidate_source_revision': source, 'validation_input_revision': trial,
+              'trial_configuration_sha256': report.hashlib.sha256(configuration).hexdigest()}
+        report.verify_trial_mapping(self.root, pr)
+        pr['trial_configuration_sha256'] = '0' * 64
+        with self.assertRaises(ledger.MeasurementError):
+            report.verify_trial_mapping(self.root, pr)
+        self.git('checkout', '-b', 'bad-trial-input', source)
+        (self.root / 'candidate.txt').write_text('unreviewed source change')
+        bad_trial = self.commit()
+        pr['validation_input_revision'] = bad_trial
+        with self.assertRaises(ledger.MeasurementError):
+            report.verify_trial_mapping(self.root, pr)
+
+
+    def test_direct_native_receipt_cannot_certify_mythhelm_pr_use(self):
+        data, base, _, _ = self.public_candidate()
+        direct = next(r for r in data['pair_receipts'] if r['mode'] == 'direct-native')
+        data['pr_evidence']['receipt_sha256'] = direct['receipt_sha256']
+        (self.root / report.AGGREGATE).write_text(json.dumps(data))
+        report.update(self.root, data)
         self.commit()
         with self.assertRaises(ledger.MeasurementError):
             report.check(self.root, base)

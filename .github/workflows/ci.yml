@@ -233,15 +233,15 @@ jobs:
         run: scripts/ci/lint-agent-harness.sh
       - name: CI helper unit tests
         run: python3 -m unittest discover -s .github/tests -p 'test_*.py'
-      - name: Performance evidence controls
-        run: python3 -m unittest discover -s scripts/harness/tests -p test_performance_report.py
       - name: Per-PR native delivery evidence
         env:
+          PERFORMANCE_EVENT: ${{ github.event_name }}
           PERFORMANCE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           PERFORMANCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
         run: >-
           python3 scripts/harness/performance_report.py check
           --base "$PERFORMANCE_BASE_SHA" --head "$PERFORMANCE_HEAD_SHA"
+          --event "$PERFORMANCE_EVENT"
       - name: Public hygiene
         run: scripts/ci/check-public-hygiene.sh
 

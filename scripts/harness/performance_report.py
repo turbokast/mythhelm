@@ -36,7 +36,7 @@ def summarize(values):
     return {'total': sum(known) if known else None, 'known': len(known), 'missing': len(values) - len(known)}
 
 
-def aggregate(protocol, state, review_hash, unconfounded=False, receipts=None):
+def aggregate(protocol, state, review_hash, unconfounded=False, receipts=None, root=ROOT):
     """Review attests actual parity, equal acceptance scheduling and budget scope."""
     ledger.digest(review_hash)
     if not unconfounded:
@@ -99,6 +99,7 @@ def aggregate(protocol, state, review_hash, unconfounded=False, receipts=None):
                                   for p in plan['assignments']}),
               'limitations': analysis['limitations'], 'arms': arms}
     validate_aggregate(result)
+    verify_trial_mapping(root, result['pr_evidence'])
     return result
 
 
@@ -150,10 +151,18 @@ def validate_aggregate(data):
     if PARITY_BLOCKS.intersection(data['limitations']):
         ledger.fail('unmatched comparisons are not current matched evidence')
     pr = data['pr_evidence']
-    fields(pr, ('candidate_source_revision', 'delivery_scope', 'authored_via', 'receipt_sha256', 'tool_source_revision'))
-    for key in ('candidate_source_revision', 'tool_source_revision'):
+    fields(pr, ('candidate_source_revision', 'delivery_scope', 'authored_via', 'receipt_sha256', 'tool_source_revision',
+                'validation_input_revision', 'trial_configuration_sha256', 'validation_profile'))
+    for key in ('candidate_source_revision', 'tool_source_revision', 'validation_input_revision'):
         ledger.digest(pr[key], revision=True)
     ledger.digest(pr['receipt_sha256'])
+    if pr['validation_input_revision'] == pr['candidate_source_revision']:
+        if pr['validation_profile'] != 'same-source' or pr['trial_configuration_sha256'] is not None:
+            ledger.fail('same-source validation has no trial configuration override')
+    else:
+        if pr['validation_profile'] != 'mythhelm.toml-only':
+            ledger.fail('only a disclosed trial configuration may differ')
+        ledger.digest(pr['trial_configuration_sha256'])
     if pr['delivery_scope'] not in ('validation-use', 'authored') or pr['authored_via'] not in ARMS:
         ledger.fail('invalid PR evidence scope')
     if pr['delivery_scope'] == 'authored' and pr['authored_via'] != 'mythhelm':
@@ -172,6 +181,9 @@ def validate_aggregate(data):
         ledger.digest(receipt['receipt_sha256'])
         if receipt['workload_source_revision'] not in {b[0] for b in data['bindings']}:
             ledger.fail('receipt workload must match registered source')
+    for pair_id in {r['pair_id'] for r in data['pair_receipts']}:
+        if len({r['workload_source_revision'] for r in data['pair_receipts'] if r['pair_id'] == pair_id}) != 1:
+            ledger.fail('both routes of a pair require the same input source')
     fields(data['arms'], ARMS)
     for arm in data['arms'].values():
         fields(arm, ('accepted_within_budget', 'assigned', 'outcomes', 'wall_seconds', 'usage_sources', 'tokens'))
@@ -255,6 +267,10 @@ def render(data=None):
         lines += ['', f"This PR: **{pr['delivery_scope']}** through MYTHHELM; authored via **{pr['authored_via']}**. "
                   f"Candidate source: `{pr['candidate_source_revision']}`; MYTHHELM tool source: `{pr['tool_source_revision']}`; "
                   f"reviewed native-use receipt: `{pr['receipt_sha256']}`.",
+                  f"Validation input: `{pr['validation_input_revision']}`; profile: **{pr['validation_profile']}**; "
+                  f"trial configuration SHA-256: `{pr['trial_configuration_sha256']}`. " +
+                  ('Same committed candidate and validation input.' if pr['validation_profile'] == 'same-source' else
+                   'Only the trial mythhelm.toml differs; this is a reviewed validation profile, not identical full source.'),
                   'The paired performance workload is validation evidence; it does not establish authorship of this PR. Different workload sources are reference measurements.', '',
                   '| Pair / route | Workload source | Tool source | Reviewed native receipt SHA-256 |',
                   '|---|---|---|---|']
@@ -314,6 +330,27 @@ def git(root, *args):
     return result.stdout.decode('utf-8')
 
 
+
+def verify_trial_mapping(root, pr):
+    """Export-time proof using private git input objects; reviewer retains proof."""
+    source, trial = pr['candidate_source_revision'], pr['validation_input_revision']
+    if source == trial:
+        return
+    parents = git(root, 'rev-list', '--parents', '-n', '1', trial).split()
+    if parents != [trial, source]:
+        ledger.fail('trial input must be a direct child of the candidate')
+    changed = git(root, 'diff', '--name-only', '--no-renames', '-z', source, trial)
+    if changed != 'mythhelm.toml\0':
+        ledger.fail('trial configuration is the only allowed input difference')
+    tree_entry = git(root, 'ls-tree', trial, '--', 'mythhelm.toml')
+    if not tree_entry.startswith('100644 blob '):
+        ledger.fail('trial configuration must be a regular source file')
+    raw = subprocess.run(['git', '-C', str(root), 'show', trial + ':mythhelm.toml'],
+                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False)
+    if raw.returncode or hashlib.sha256(raw.stdout).hexdigest() != pr['trial_configuration_sha256']:
+        ledger.fail('trial configuration digest mismatch')
+
+
 def readme_parts(readme):
     if readme.count(START) != 1 or readme.count(END) != 1 or readme.index(START) > readme.index(END):
         ledger.fail('README requires exactly one ordered performance block')
@@ -322,7 +359,7 @@ def readme_parts(readme):
     return before, START + middle + END, after
 
 
-def check(root, base=None, head='HEAD'):
+def check(root, base=None, head='HEAD', event='pull_request'):
     """Validate committed evidence; public hashes need independent private review."""
     head = git(root, 'rev-parse', '--verify', head + '^{commit}').strip()
     ledger.digest(head, revision=True)
@@ -331,7 +368,6 @@ def check(root, base=None, head='HEAD'):
     validate_aggregate(data)
     pr = data['pr_evidence']
     source = pr['candidate_source_revision']
-    git(root, 'merge-base', '--is-ancestor', source, head)
     expected_block, expected_svg = render(data)
     _, actual_block, _ = readme_parts(git(root, 'show', head + ':README.md'))
     if actual_block != expected_block or git(root, 'show', head + ':' + CHART) != expected_svg:
@@ -339,16 +375,26 @@ def check(root, base=None, head='HEAD'):
     pair_modes = {}
     for receipt in data['pair_receipts']:
         pair_modes.setdefault(receipt['pair_id'], set()).add(receipt['mode'])
-        if receipt['receipt_sha256'] == pr['receipt_sha256'] and receipt['workload_source_revision'] != source:
-            ledger.fail('unrelated reference pair cannot establish PR use')
-    if not any(modes == set(ARMS) for modes in pair_modes.values()):
-        ledger.fail('actual native receipts for both assigned arms required')
+        if receipt['receipt_sha256'] == pr['receipt_sha256']:
+            if (receipt['workload_source_revision'] != pr['validation_input_revision'] or
+                    receipt['mode'] != 'mythhelm' or receipt['tool_source_revision'] != pr['tool_source_revision']):
+                ledger.fail('PR use must identify the matching MYTHHELM receipt and tool source')
+    matched = [r['pair_id'] for r in data['pair_receipts'] if r['workload_source_revision'] == pr['validation_input_revision']]
+    if not any(pair_modes[pair] == set(ARMS) for pair in matched):
+        ledger.fail('this PR requires its own complete matched native receipt pair')
     for mode, arm in data['arms'].items():
         if arm['wall_seconds']['known'] == 0:
             ledger.fail('observed comparison time is unavailable')
         receipts = sum(r['mode'] == mode for r in data['pair_receipts'])
         if receipts != arm['assigned'] - arm['outcomes']['unstarted']:
             ledger.fail('native receipts must cover every started assignment')
+    if event not in ('pull_request', 'push', 'merge_group'):
+        ledger.fail('unknown CI event')
+    if event != 'pull_request':
+        # Required PR checks establish ancestry before squash/merge-queue
+        # publication. Those synthetic commits need not retain source ancestry.
+        return data
+    git(root, 'merge-base', '--is-ancestor', source, head)
     # Resolve every evidence-tail commit, not just the final diff: changing code
     # and reverting it after measurement still invalidates the measured source.
     allowed = {AGGREGATE, CHART, 'README.md'}
@@ -392,6 +438,7 @@ def main(argv=None):
     c.add_argument('--root', type=Path, default=ROOT)
     c.add_argument('--base')
     c.add_argument('--head', default='HEAD')
+    c.add_argument('--event', choices=('pull_request', 'push', 'merge_group'), default='pull_request')
     args = parser.parse_args(argv)
     try:
         if args.command == 'aggregate':
@@ -400,7 +447,7 @@ def main(argv=None):
                 json.dump(result, handle, sort_keys=True, indent=2, allow_nan=False)
                 handle.write('\n')
         elif args.command == 'check':
-            check(args.root, args.base, args.head)
+            check(args.root, args.base, args.head, args.event)
         else:
             data = statistics.read_json(args.aggregate)[0] if args.aggregate else None
             update(args.root, data)

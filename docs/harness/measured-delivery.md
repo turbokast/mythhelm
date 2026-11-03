@@ -189,11 +189,25 @@ The private receipt manifest has exactly these top-level fields:
   and `tool_source_revision` (the MYTHHELM binary source revision used).
 - `pr_evidence`: `candidate_source_revision`, `delivery_scope` (`validation-use`
   or `authored`), `authored_via` (`direct-native` or `mythhelm`), `receipt_sha256`
-  (actual MYTHHELM use against that candidate), and `tool_source_revision`.
+  (actual MYTHHELM use against that candidate), `tool_source_revision`,
+  `validation_input_revision`, `validation_profile` and `trial_configuration_sha256`.
   Directly authored reporting changes may accurately use `validation-use`;
   they must not claim MYTHHELM authorship. A paired validation task can supply
   this receipt when its workload source equals the candidate source. An
   unrelated reference workload cannot supply this PR's native-use evidence.
+  At least one complete matched receipt pair must target this PR's validation
+  input; an old direct-native comparison plus a new MYTHHELM receipt is insufficient.
+
+For an identical input, use `validation_profile=same-source`, matching candidate
+and input revisions, and a null trial configuration digest. A bounded validation
+profile may instead use `validation_profile=mythhelm.toml-only`: the input must be
+a direct child of the candidate, changing only `mythhelm.toml`, with its exact
+SHA-256 in `trial_configuration_sha256`. Export verifies the private Git parent,
+path diff and configuration blob before producing the public mapping. Both arms
+use that same actual input revision; the public report discloses its difference
+from the PR candidate. No other source exception is allowed. The reviewer retains
+the private source-diff proof; CI validates the reviewed mapping and candidate
+ancestry without requiring publication of the temporary trial commit.
 
 The reviewer audits real native receipt contents and run ownership, source/tool
 revisions, actual model/effort/configuration parity, acceptance scheduling, all
@@ -222,6 +236,14 @@ README block and `docs/assets/performance.svg`. Any other change, even one later
 reverted, requires new candidate-bound native-use evidence. CI checks each commit
 in that tail and requires a source candidate newer than the PR base. Linear tails
 avoid ambiguous merge ancestry. No self-referential commit hash is needed.
+
+CI uses `check --event pull_request` for these candidate, paired-input and tail
+checks against the original PR head. On `push` and `merge_group`, it checks the
+same reviewed aggregate structure, paired-input coverage and generated-artifact
+freshness, relying on required PR checks for original ancestry. Squash commits
+and synthetic merge-queue commits need not retain that ancestry, and a merge
+group may contain other reviewed PRs. This publication check intentionally has
+a weaker ancestry boundary; it does not re-certify native execution or review.
 
 The public aggregate retains source/contract/check bindings, native settings,
 protocol and review digests, registration date, paired and independent-component
