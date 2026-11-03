@@ -188,7 +188,12 @@
 
 ## Task 18 — Expose --theme across launch branches
 
-<!-- pending -->
+- **Produces**: All three verbs accept `--theme auto|dark|light`, validate before presentation branching and pass selected tokens plus ThemeName to the actual live/inspect TUI configurations. Explicit choices override the cached answer; invalid choices exit2 naming flag/value, including piped and suppressed branches.
+- **For Task19**: Document the exact shared platform help, explicit light override, existing startup-query wait and unqualified real-terminal detection. The injected callback reads lipgloss's result already cached by Bubble Tea v1.3.10 initialization; no additional query is introduced. Plain/accessibility/JSONL output and the Task1 baseline stay unchanged.
+- **Seam**: Per-invocation `tuiDeps.backgroundDark` is injected without mutable global test state. Actual production parser/dispatch tests cover all nine required bypass conditions where the verb supports each flag; run alone supplies --plain and demo still offers no --format.
+- **Evidence**: Final actual launch/baseline/help/invalid race checks pass74.135s; twelve compiled controls fail intended output/count assertions, including the three TTY override controls. Independent code/architecture review is Ready and packaged tests observe actual dark/light SGR on Unix PTYs. Windows help, validation and piped dispatch remain tested without inferring PTY qualification.
+- **Publication boundary**: Full repository verification: uncached full repository race PASS568.4s (568.651s wall) at `e9f622c`, with all six owned source hashes unchanged and the original600s package deadline. PR #618 still requires final-head CI, resolved review and actual merge. The earlier292.839s whole-CLI result remains bound to its original source; literal baseline/modules are unchanged.
+
 
 ## Task 19 — Update user-facing limits and instructions
 

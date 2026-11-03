@@ -21,6 +21,10 @@ import (
 var revisionID = regexp.MustCompile(`^[0-9a-fA-F]{40,64}$`)
 
 func runReview(args []string, stdio Stdio) error {
+	return runReviewWithDeps(args, stdio, prodTUIDeps)
+}
+
+func runReviewWithDeps(args []string, stdio Stdio, deps tuiDeps) error {
 	fs := newFlagSet("review")
 	format := fs.String("format", "plain", "output format: plain or jsonl")
 	noDiff := fs.Bool("no-diff", false, "omit the candidate diff from plain output")
@@ -46,7 +50,7 @@ func runReview(args []string, stdio Stdio) error {
 	if err != nil {
 		return err
 	}
-	return runReviewDispatch(stdio, prodTUIDeps, os.Getenv, dir, positional[0], *format, *noDiff, opts)
+	return runReviewDispatch(stdio, deps, os.Getenv, dir, positional[0], *format, *noDiff, opts)
 }
 
 // runReviewDispatch looks the run up, then evaluates the launch rule before
@@ -70,6 +74,10 @@ func runReviewDispatch(stdio Stdio, deps tuiDeps, getenv func(string) string, di
 	switch selectLaunch(format, false, opts.accessible, stdio.Out, deps, getenv) {
 	case launchTUI:
 		_ = j.Close()
+		opts, err = opts.resolveTheme(deps)
+		if err != nil {
+			return err
+		}
 		return runInspectTUI(deps, dir, run.RunID, opts)
 	case launchAccessible:
 		_ = j.Close()
