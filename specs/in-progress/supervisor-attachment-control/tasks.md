@@ -619,7 +619,7 @@
 - **Test plan**: Deterministic competing-write barriers, real journal pages and independent valid/violating protocol fixtures. Packaged renderer/cursor evidence follows in consumer and end-to-end tasks.
 - **Invariants touched**: I03/I06/I09/I12/I23 (v2 §§3/4/5/15: authenticated canonical observation never executes work).
 
-### Task 11 — Mint and revoke internal scoped attachment grants
+### Task 11 — Mint and revoke internal scoped attachment grants ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -635,6 +635,11 @@
   - TestAttachmentGrantRevocationGeneration rejects revoked/old-generation grants and permits a fresh internal mint for current authenticated scope without rotating attempt tokens; failed transaction persists no grant/hash.
 - **Test plan**: Real ledger transactions plus deterministic instance-generation guards and safe synthetic identities; public response/projection composition is tested only after its Task12 producer exists.
 - **Invariants touched**: I03/I06/I12/I17/I18/I23 (v2 §§8/14: scoped presentation authority only).
+
+- **Status**: ✅ Completed — transaction-scoped attachment grant minting, validation and revocation with exact stored scope and generation checks; PR #613.
+- **Implementation**: Source commit `feb3a7090c348afeda1b3615ca57c17ae1689671`; signed main integration `f1a5c1ffc1aac26506692cbf94e8af51449c13de` preserves both source files. Caller retains the actual same-run/root owner, live instance-generation hold and authority gate; SQL and same-user transport do not prove ownership. Independent implementation/architecture review returned Ready; six focused race suites and all six canonical gates passed, including full repository race 519.1s.
+- **Spec deviations**: Own three lifecycle records accompany the two authorised source files under WORKFLOW/task-completion. No storage API or runtime authority deviation; public handler/projection/queue composition remains Task12.
+- **Files modified**: `internal/control/attachment_auth.go`, `internal/control/attachment_auth_test.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
 ### Task 12 — Produce coherent safe projections
 

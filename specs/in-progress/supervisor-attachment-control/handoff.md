@@ -99,7 +99,12 @@
 
 ## Task 11 — Mint and revoke internal scoped attachment grants
 
-<!-- pending -->
+- **Produces**: PR #613, source `feb3a70`, integrated `f1a5c1f`: exact design signatures `MintAttachmentGrant`, `ValidateAttachmentGrant` and `RevokeAttachmentGrant` in `control`, each using the supplied transaction. No execution-owner package import or public Open response is added.
+- **Caller precondition**: Retain an actually acquired same-run/root `ServiceOwner`, its live instance-generation hold and the runtime authority read guard (write guard for revoke) through commit and response queue acceptance/discard. SameUser, assignment labels, matching generations and SQL rows cannot supply that proof. Every provisional raw token must be discarded after any subsequent transaction/encoding failure.
+- **Scope and errors**: Repository identity hashes the exact qualified recorded source_repo using design §4.1's domain/length encoding, without filesystem resolution. Only the token hash persists. Binding/hash/revocation authentication precedes generation classification; failures carry constant safe typed errors. Revocation changes only attachment authority.
+- **Task12 wiring**: Public Open must select its complete projection in the same transaction and publish only after commit. Its `TestAttachmentRetainedOwnerQueueHandoff` must prove “root shutdown/owner.Close cannot release run/instance ownership before response queue commit or discard, but a stalled socket after queue commit does not retain those guards.” Public preauthorization error normalization remains Task12.
+- **Evidence**: Six focused race suites pass (independent run 5.882s); all six canonical gates are fresh on the integrated source, including full repository race 519.1s. Thirteen compiled controls fail assertions for authority/binding/generation/privacy/mutation boundaries, including a forbidden recovery-entry call. Synthetic nonempty launch provenance is retained ledger evidence, not a worker-launch claim.
+- **History and limits**: Original stub assertion-RED remains distinct from an initial fixture-name compile collision and repaired test-only lint findings. Source froze inside its original finite envelope; later unchanged-source verification and publication are separate phases. Required final-head CI and actual merge remain pending; no native/platform or comparative-performance qualification follows.
 
 ## Task 12 — Produce coherent safe projections
 
