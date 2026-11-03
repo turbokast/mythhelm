@@ -969,9 +969,26 @@ func TestRetainedOwnerObservationLifetime(t *testing.T) {
 		t.Fatalf("observation launched work: %v -> %v", countsBefore, after)
 	}
 
-	// A different database now at the same path refuses retention.
+}
+
+// Retain the actual service/run owners while replacing a closed journal.
+// Windows refuses replacing an open SQLite file. Reopening also distinguishes
+// the old owner's database identity check from a stale Journal handle.
+func TestRetainedOwnerDatabaseReplacement(t *testing.T) {
+	f := newFixture(t)
+	lease := ownedLease(t, f)
+	ctx := t.Context()
+	j, err := journal.Open(ctx, f.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = j.Close() })
+	setMigrationPhase(t, j, "adopted")
 	freshRun := ids.New("run")
 	fresh := acquireOwned(ctx, t, j, lease, freshRun)
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
 	db := filepath.Join(f.state, journal.DBName)
 	raw, err := os.ReadFile(db) // #nosec G304 -- fixture database
 	if err != nil {
@@ -984,7 +1001,18 @@ func TestRetainedOwnerObservationLifetime(t *testing.T) {
 
 		t.Fatal(err)
 	}
-	if rel, err := fresh.RetainObservation(ctx, j, freshRun); !errors.Is(err, supervisor.ErrOwnership) || rel != nil {
+	replacement, err := journal.Open(ctx, f.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = replacement.Close() })
+	if err := replacement.CheckStateIdentity(ctx); err != nil {
+		t.Fatalf("replacement journal must have its own valid identity: %v", err)
+	}
+	if rel, err := fresh.RetainObservation(ctx, replacement, freshRun); !errors.Is(err, supervisor.ErrOwnership) || rel != nil {
+		if rel != nil {
+			rel()
+		}
 		t.Fatalf("RetainObservation on a replaced database = %v; want an ownership refusal", err)
 	}
 }

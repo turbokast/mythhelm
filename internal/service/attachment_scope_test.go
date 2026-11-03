@@ -234,6 +234,17 @@ func snapshotAttachmentEffects(t *testing.T, r *runtime) attachmentEffects {
 			out.Files[rel+"/"] = [32]byte{}
 			return nil
 		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		// A regular zero-length file has exactly known empty bytes. Reading
+		// byte zero of a held empty owner.lock fails on Windows, whose lock
+		// is mandatory. Nonempty artefacts still require actual reads.
+		if info.Mode().IsRegular() && info.Size() == 0 {
+			out.Files[rel] = sha256.Sum256(nil)
+			return nil
+		}
 		raw, err := root.ReadFile(rel)
 		if err != nil {
 			return err
