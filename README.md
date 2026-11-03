@@ -31,8 +31,8 @@ Native harness: **claude-code**; PR scope: **validation-use** (authored via **di
 
 | Route | Accepted within budget / assigned | Observed mean elapsed | Usage provenance / missingness | Paired trials |
 |---|---|---|---|---|
-| MYTHHELM | 1 / 1 | 19.28 s (1 observed; 0 missing) | 1 reported; 0 observed; 0 unknown | 1 |
-| Direct native | 1 / 1 | 14.62 s (1 observed; 0 missing) | 1 reported; 0 observed; 0 unknown | 1 |
+| MYTHHELM | 1 / 1 | 41.51 s (1 observed; 0 missing) | 1 reported; 0 observed; 0 unknown | 1 |
+| Direct native | 1 / 1 | 30.96 s (1 observed; 0 missing) | 1 reported; 0 observed; 0 unknown | 1 |
 
 ![Observed native delivery time; unavailable values have no bars](docs/assets/performance.svg)
 
@@ -50,25 +50,25 @@ Token totals remain separate; each cell shows total / missing assignments.
 
 | Route | input_tokens | output_tokens | cache_read_tokens | cache_write_tokens |
 |---|---|---|---|---|
-| mythhelm | 4 / 0 | 172 / 0 | 30826 / 0 | 5341 / 0 |
-| direct-native | 4 / 0 | 241 / 0 | 31652 / 0 | 3750 / 0 |
+| mythhelm | 6 / 0 | 667 / 0 | 48041 / 0 | 5181 / 0 |
+| direct-native | 4 / 0 | 564 / 0 | 31839 / 0 | 3798 / 0 |
 
-This PR: **validation-use** through MYTHHELM; authored via **direct-native**. Candidate source: `6f3a8eac624e7f8db9475bf745b6a2e83a68e8e5`; MYTHHELM tool source: `6a81f6036bab0fcc7410b03ff65d845763d33c3c`; reviewed native-use receipt: `ab6bb7ea1ee2fa817e87f532091bca9547704f8feba19d5ba0b4f4d53f6185e5`.
-Validation input: `f8ac76265a89bca3366bc07d69ae20bc5f5d3a9b`; profile: **mythhelm.toml-only**; trial configuration SHA-256: `566e2f34dfac08779027abaf5d577eda1b5200837cf4c2d01197ec68c40b56e8`. Only the trial mythhelm.toml differs; this is a reviewed validation profile, not identical full source.
+This PR: **validation-use** through MYTHHELM; authored via **direct-native**. Candidate source: `8c63636dd2cda2f5f23dbeeb5578f658e26c8a76`; MYTHHELM tool source: `6a81f6036bab0fcc7410b03ff65d845763d33c3c`; reviewed native-use receipt: `87a061a9d8d0781488f94fb78b31b0c96c06469801aba4595037d9545451b37f`.
+Validation input: `42289457e84100e6b04d30ae5f054f16700d2215`; profile: **mythhelm.toml-only**; trial configuration SHA-256: `566e2f34dfac08779027abaf5d577eda1b5200837cf4c2d01197ec68c40b56e8`. Only the trial mythhelm.toml differs; this is a reviewed validation profile, not identical full source.
 The paired workload does not establish broader coding performance. Different workload sources are reference measurements. The comparison build identifies MYTHHELM under comparison; only the MYTHHELM arm executes it.
 
 | Pair / route | Workload source | MYTHHELM comparison build | Reviewed native receipt SHA-256 |
 |---|---|---|---|
-| report-validation-pair1 / mythhelm | `f8ac76265a89bca3366bc07d69ae20bc5f5d3a9b` | `6a81f6036bab0fcc7410b03ff65d845763d33c3c` | `ab6bb7ea1ee2fa817e87f532091bca9547704f8feba19d5ba0b4f4d53f6185e5` |
-| report-validation-pair1 / direct-native | `f8ac76265a89bca3366bc07d69ae20bc5f5d3a9b` | `6a81f6036bab0fcc7410b03ff65d845763d33c3c` | `25f05ea7629f3fbc3bfbeefe224cdf22cfad8ce602dee8e96be707b34f17bf59` |
+| report-review-fixes-pair1 / mythhelm | `42289457e84100e6b04d30ae5f054f16700d2215` | `6a81f6036bab0fcc7410b03ff65d845763d33c3c` | `87a061a9d8d0781488f94fb78b31b0c96c06469801aba4595037d9545451b37f` |
+| report-review-fixes-pair1 / direct-native | `42289457e84100e6b04d30ae5f054f16700d2215` | `6a81f6036bab0fcc7410b03ff65d845763d33c3c` | `f358873ecb7a3bba96296a2540c430ba6cf1b00d36030d9b80f93c7bdfb2dedc` |
 
 Registered time ceiling: 300 s per arm; one attempt per arm. Observed elapsed means include all outcomes with known time; missing time is excluded and counted, never zero. These are descriptive observations, not restricted-time scores or successful-run latency.
 
 Native parity: harness `claude-code`, native_version `2.1.317`, model `claude-opus-5-5`, effort `xhigh`.
-Registered: 2026-11-03T20:00:15.369798+00:00. Protocol: `a817a313907a10b2a9b64e2beb8012bc37caae8093cbc3c6243776481ac1fc7e`. Independent review: `fbfedb6944da339c8834a5831b065a0bc89cddf38ea0a8a67a6f0bf39c011558`.
-Source / task contract / checks SHA bindings: `f8ac76265a89bca3366bc07d69ae20bc5f5d3a9b` / `81a11f7bdadcb00d3d7fa58205724710009068a3acbceca98b042464009259b2` / `7b9172b42b80042756c527a343a75afdb005fcfefb4b6d0a21470755b1ccf17d`.
-Configuration / environment SHA-256: `3f02198880df47843d767f4e55238320bb111f100753fe8338a3cc58c686d21f` / `6c7cacda0a5bc56bdde1da06bea977e276a3095dc5a40f77e2cc354f81399eef`.
-Limitations: defect_observation_pending, defect_window_not_elapsed, pilot_not_confirmatory, single_dependent_component, validation_only_not_general_coding, safe_mode_trusted_host_broad_permissions, fixed_mythhelm_first_no_counterbalance, native_prefix_and_host_cache_uncontrolled, effort_configured_not_internally_observed, plugin_activation_not_certified_by_inventory, managed_remote_policy_uncertified, subscription_funding_declared_not_actual_charges, workspace_and_attempt_id_differences_disclosed, single_development_pair_no_superiority, prior_coding_pair_not_pooled. A small pilot cannot establish population performance; independent components, delayed defects and uncertainty limit interpretation.
+Registered: 2026-11-03T20:49:42.706011+00:00. Protocol: `45ad674d657691c9c74c8f67697509d753f03171cb7c92733f525d0ae17d0493`. Independent review: `2449ef0055f99b777b81a9a6bddcef9ed1228aaabf4db214c28237756bb68af4`.
+Source / task contract / checks SHA bindings: `42289457e84100e6b04d30ae5f054f16700d2215` / `e9da73aeb4a6add11ced9685b3152ff0674c3d2ffa2f0f470d1eb65a1b64e887` / `c049bae16f4b1a9609fb730fddd49dbd02f1c8ce148b0b2a348d466258555b3e`.
+Configuration / environment SHA-256: `6b1f303f35d2e291e69eea4a34dad89f989875466e11f79f0f710b408933039a` / `6c7cacda0a5bc56bdde1da06bea977e276a3095dc5a40f77e2cc354f81399eef`.
+Limitations: defect_observation_pending, defect_window_not_elapsed, pilot_not_confirmatory, single_dependent_component, validation_only_not_general_coding, safe_mode_trusted_host_broad_permissions, fixed_mythhelm_first_no_counterbalance, native_prefix_and_host_cache_uncontrolled, effort_configured_not_internally_observed, plugin_activation_not_certified_by_inventory, managed_remote_policy_uncertified, subscription_funding_declared_not_actual_charges, workspace_and_attempt_id_differences_disclosed, single_development_pair_no_superiority, prior_coding_pair_not_pooled, prior_19_test_pair_preserved_not_pooled, native_tool_calls_differ_extra_readonly_git_diff. A small pilot cannot establish population performance; independent components, delayed defects and uncertainty limit interpretation.
 
 </details>
 

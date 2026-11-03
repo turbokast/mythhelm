@@ -5,11 +5,11 @@
 <g fill="#152238" font-family="sans-serif" font-size="17">
 <text x="24" y="30">Observed validation-use time — claude-code</text>
 <text x="24" y="55">Pilot: 1 assigned pairs; 1 independent component(s)</text>
-<text x="24" y="80">MYTHHELM: 19.28 s (1 observed; 0 missing)</text>
-<text x="24" y="165">Direct native: 14.62 s (1 observed; 0 missing)</text>
+<text x="24" y="80">MYTHHELM: 41.51 s (1 observed; 0 missing)</text>
+<text x="24" y="165">Direct native: 30.96 s (1 observed; 0 missing)</text>
 <text x="24" y="250" font-size="13">No established advantage. Missing is not zero; pilot results do not generalize.</text>
 </g>
 <rect x="24" y="92" width="480.00" height="20" fill="#425f9c"/>
-<rect x="24" y="177" width="363.87" height="20" fill="#425f9c"/>
-<metadata>aggregate-sha256:511e3db949228c5a28827300e5ada57bea9344e14e458344b2f72feb7a599794</metadata>
+<rect x="24" y="177" width="357.97" height="20" fill="#425f9c"/>
+<metadata>aggregate-sha256:3fe2e358d4a10147547c1bf503d6fd3d72c9ada7218fe9f70736cfc12cff809b</metadata>
 </svg>
