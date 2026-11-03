@@ -1,6 +1,6 @@
 # Scoped export, retention, erasure and restoration — Requirements
 
-> Unrefined. Run /refine-spec scoped-retention-maintenance before /spec.
+> Refined after independent assessment; see [refinement-log.md](refinement-log.md). Proceed to /spec scoped-retention-maintenance.
 >
 > Give users scoped control over durable MYTHHELM history through previewed export/import, dependency-aware cleanup, recoverable erasure maintenance and tested restoration. Normative source: `mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md`, version 2.0, especially §§4–6, 8–9, 12 and §18; all I/AT/G identifiers below refer to v2. Requirement capture grants no destructive operation, implementation or native execution.
 
