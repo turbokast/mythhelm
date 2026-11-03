@@ -593,6 +593,12 @@ type preparationRow struct {
 	answers   []ConfirmationV1
 }
 
+// prepared_runs.spec is a schema11 internal cache: codec1 BindingV1.Request
+// (RunSpecV2, schema2), encoded in leaf declaration order by encoding/json.
+// It preserves nanoseconds, explicit zero and null optionals. This is neither
+// control.RunSpec wire JSON nor a source of authority. Every read rederives the
+// exact projection from the immutable binding and rejects any other format;
+// historical schema9 preparations without that binding remain unavailable.
 func readPreparation(ctx context.Context, tx *sql.Tx, l PreparationLookup) (preparationRow, error) {
 	var r preparationRow
 	var raw, policy, approval, answers string

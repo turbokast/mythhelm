@@ -608,6 +608,7 @@ func legacyAcceptancePin(t *testing.T, f preparationFixture) acceptance.Pin {
 }
 func TestClosedAdmissionConstructorsAndGetters(t *testing.T) { // I02/I20 (v2 §§6/8).
 	t.Parallel()
+	t.Run("constructor mutation matrix", testClosedConstructorMutationMatrix)
 	f := preparationFixtureFor(t, false)
 	j := storageJournal(t)
 	if _, err := j.StoreRetainedPreparation(t.Context(), f.input); err != nil {
@@ -1040,5 +1041,368 @@ func testActualStartIntentAndAcknowledgement(t *testing.T) {
 	}
 	if storedAck != string(want) {
 		t.Fatalf("service acceptance ack differs from actual wire codec: %s != %s", storedAck, want)
+	}
+}
+
+func TestStorageFollowupPreparationMatrix(t *testing.T) { // I02/I12/I20 (v2 §§5/6/8).
+	t.Parallel()
+	t.Run("multiple additional answers and historical expiry", func(t *testing.T) {
+		t.Parallel()
+		f := preparationFixtureFor(t, true)
+		b := f.b
+		b.Challenges = append(b.Challenges, ab.ChallengeV1{ID: "project_1", Kind: "project-config", Text: "Trust the second exact synthetic configuration"})
+		f = sealPreparationFixture(t, b, f.now)
+		j := storageJournal(t)
+		initial, err := j.StoreRetainedPreparation(t.Context(), f.input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		l := f.input.Lookup
+		l.ExpectedRevision = 1
+		a := confirmationFor(f, "first_extra", "native_1")
+		middle, err := j.ConfirmPreparation(t.Context(), l, a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if middle.Ready || middle.Revision != 2 {
+			t.Fatalf("middle=%+v", middle)
+		}
+		next := l
+		next.ExpectedRevision = 2
+		last, err := j.ConfirmPreparation(t.Context(), next, confirmationFor(f, "last_extra", "project_1"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !last.Ready || last.Revision != 3 {
+			t.Fatalf("final=%+v", last)
+		}
+		expired := l
+		expired.ObservedAt = expired.ObservedAt.Add(5 * time.Minute)
+		before := tableImages(t, j)
+		historical, err := j.ConfirmPreparation(t.Context(), expired, a)
+		if err != nil || historical != middle {
+			t.Fatalf("historical middle acknowledgement=%+v %v", historical, err)
+		}
+		original := f.input
+		original.Lookup.ObservedAt = expired.ObservedAt
+		retained, err := j.StoreRetainedPreparation(t.Context(), original)
+		if err != nil || retained != initial {
+			t.Fatalf("historical initial acknowledgement=%+v %v", retained, err)
+		}
+		assertUnchangedTables(t, before, tableImages(t, j))
+		fresh := a
+		fresh.Operation.OperationID = "new_after_expiry"
+		_, err = j.ConfirmPreparation(t.Context(), expired, fresh)
+		assertStorageCode(t, err, v2contract.CodeDependencyStale)
+		assertUnchangedTables(t, before, tableImages(t, j))
+		expired.PeerID = "foreign"
+		_, err = j.ConfirmPreparation(t.Context(), expired, a)
+		assertStorageCode(t, err, v2contract.CodePermissionDenied)
+		assertUnchangedTables(t, before, tableImages(t, j))
+	})
+	t.Run("consumed historical acknowledgement is not fresh consent", func(t *testing.T) {
+		t.Parallel()
+		f := preparationFixtureFor(t, true)
+		j := storageJournal(t)
+		adoptStorageFixture(t, j)
+		first, err := j.StoreRetainedPreparation(t.Context(), f.input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		l := f.input.Lookup
+		l.ExpectedRevision = 1
+		a := confirmationFor(f, "accepted_extra", "native_1")
+		ready, err := j.ConfirmPreparation(t.Context(), l, a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		current := l
+		current.ExpectedRevision = 2
+		p, err := j.ReadConfirmedPreparation(t.Context(), current)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := journal.NewAdmissionCommit(journal.AdmissionCommitInput{Preparation: p, Lookup: current, OperationID: "consume_op", CanonicalBinding: f.input.CanonicalBinding, AcceptancePin: legacyAcceptancePin(t, f), Policy: acceptance.P1()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := j.CommitServiceAdmission(t.Context(), c); err != nil {
+			t.Fatal(err)
+		}
+		before := tableImages(t, j)
+		old, err := j.ConfirmPreparation(t.Context(), l, a)
+		if err != nil || old != ready {
+			t.Fatalf("consumed historical acknowledgement=%+v %v", old, err)
+		}
+		old, err = j.StoreRetainedPreparation(t.Context(), f.input)
+		if err != nil || old != first {
+			t.Fatalf("consumed retention acknowledgement=%+v %v", old, err)
+		}
+		fresh := a
+		fresh.Operation.OperationID = "new_after_consumption"
+		_, err = j.ConfirmPreparation(t.Context(), current, fresh)
+		assertStorageCode(t, err, v2contract.CodeRevisionConflict)
+		assertUnchangedTables(t, before, tableImages(t, j))
+		_, err = j.ReadConfirmedPreparation(t.Context(), current)
+		assertStorageCode(t, err, v2contract.CodeRevisionConflict)
+		assertUnchangedTables(t, before, tableImages(t, j))
+	})
+}
+func TestStorageConcurrentArming(t *testing.T) { // I12/I21 (v2 §6): one durable first-attempt claim, no second clock.
+	t.Parallel()
+	f := preparationFixtureFor(t, false)
+	j := storageJournal(t)
+	adoptStorageFixture(t, j)
+	c := preparedCommit(t, j, f)
+	admitted, err := j.CommitServiceAdmission(t.Context(), c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := snapshotForArm(t, j, f)
+	now := time.Now().UTC()
+	arm, err := journal.NewDispatchArm(journal.DispatchArmInput{Admission: admitted, ExpectedPendingRevision: 1, SnapshotEventID: snapshot, BindingSHA256: f.input.Lookup.BindingSHA256, LaunchTokenSHA256: strings.Repeat("c", 64), NonceSHA256: strings.Repeat("d", 64), LadderVersion: "synthetic-ladder-v1", PolicyRevision: f.b.PolicyRevision, Generation: f.b.Generation, ObservedAt: now, ExecutionDeadline: now.Add(time.Duration(f.b.Decision.ResolvedCeilings.ExecutionNanos))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() { defer wg.Done(); <-start; _, err := j.ArmServiceDispatch(t.Context(), arm); results <- err }()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	success := 0
+	for err := range results {
+		if err == nil {
+			success++
+		} else {
+			assertStorageCode(t, err, v2contract.CodeRevisionConflict)
+		}
+	}
+	if success != 1 {
+		t.Fatalf("successful arming transactions=%d want1", success)
+	}
+	if err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+		for _, table := range []string{"attempts", "dispatch_outbox", "service_dispatch_claims"} {
+			var n int
+			if err := tx.QueryRowContext(t.Context(), `SELECT count(*) FROM `+table).Scan(&n); err != nil {
+				return err
+			}
+			if n != 1 {
+				t.Errorf("%s count=%d want1", table, n)
+			}
+		}
+		var first string
+		if err := tx.QueryRowContext(t.Context(), `SELECT first_start_at FROM run_envelopes`).Scan(&first); err != nil {
+			return err
+		}
+		if first != now.Format(time.RFC3339Nano) {
+			t.Error("concurrent arming changed first launch clock")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+func TestStoredRunSpecCacheFormat(t *testing.T) { // I09/I20 (v2 §§5/6): internal nanosecond cache is not a wire request.
+	t.Parallel()
+	f := preparationFixtureFor(t, false)
+	j := storageJournal(t)
+	if _, err := j.StoreRetainedPreparation(t.Context(), f.input); err != nil {
+		t.Fatal(err)
+	}
+	var cache string
+	if err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(t.Context(), `SELECT spec FROM prepared_runs`).Scan(&cache)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want, err := json.Marshal(f.b.Request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cache != string(want) || !strings.HasPrefix(cache, `{"SchemaVersion":2,"Repository":`) || !strings.Contains(cache, `"ExecutionNanos":60000000000,"Repairs":0,"Replans":null`) {
+		t.Fatal("internal leaf cache lost its literal version/nanosecond/null representation")
+	}
+	if _, err := v2contract.Decode[control.RunSpec]([]byte(cache)); err == nil {
+		t.Fatal("internal cache was accepted by actual control wire decoder")
+	}
+	r := f.b.Request
+	millis := int64(60000)
+	repairs, retries := 0, 2
+	wire := control.RunSpec{SchemaVersion: 2, Repository: r.Repository, TaskFile: r.TaskFile, TaskSHA256: r.TaskSHA256, Adapter: r.Adapter, Billing: r.Billing, ExecutionProfile: r.ExecutionProfile, Revision: r.Revision, Host: r.Host, Scenario: r.Scenario, UseCommitted: r.UseCommitted, NoChecks: r.NoChecks, KeepGoing: r.KeepGoing, TrustProjectConfig: r.TrustProjectConfig, TrustNativeConfig: r.TrustNativeConfig, DeclareEntitlement: r.DeclareEntitlement, StripCredentialEnv: r.StripCredentialEnv, AllowUntestedNativeVersion: r.AllowUntestedNativeVersion, Ceilings: control.RunCeilings{ExecutionMillis: &millis, Repairs: &repairs, TransportRetries: &retries}}
+	encoded, err := json.Marshal(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := v2contract.Decode[control.RunSpec](encoded); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(t.Context(), `DROP TRIGGER prepared_runs_binding_identity`); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(t.Context(), `UPDATE prepared_runs SET spec=?`, string(encoded))
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	l := f.input.Lookup
+	l.ExpectedRevision = 1
+	before := tableImages(t, j)
+	_, err = j.ReadConfirmedPreparation(t.Context(), l)
+	assertStorageCode(t, err, v2contract.CodeInvalidContract)
+	assertUnchangedTables(t, before, tableImages(t, j))
+}
+
+func testClosedConstructorMutationMatrix(t *testing.T) {
+	t.Helper()
+	f := preparationFixtureFor(t, false)
+	j := storageJournal(t)
+	adoptStorageFixture(t, j)
+	c := preparedCommit(t, j, f)
+	cases := []struct {
+		name   string
+		mutate func(*journal.AdmissionCommitInput)
+		code   v2contract.Code
+	}{
+		{"zero preparation", func(in *journal.AdmissionCommitInput) { in.Preparation = journal.ConfirmedPreparation{} }, v2contract.CodeInvalidContract},
+		{"empty operation", func(in *journal.AdmissionCommitInput) { in.OperationID = "" }, v2contract.CodeInvalidContract},
+		{"foreign root", func(in *journal.AdmissionCommitInput) { in.Lookup.RootID = "foreign" }, v2contract.CodePermissionDenied},
+		{"foreign peer", func(in *journal.AdmissionCommitInput) { in.Lookup.PeerID = "foreign" }, v2contract.CodePermissionDenied},
+		{"changed epoch", func(in *journal.AdmissionCommitInput) { in.Lookup.ContextEpoch = "changed" }, v2contract.CodeDependencyStale},
+		{"changed generation", func(in *journal.AdmissionCommitInput) { in.Lookup.Generation++ }, v2contract.CodeRevisionConflict},
+		{"changed binding hash", func(in *journal.AdmissionCommitInput) { in.Lookup.BindingSHA256 = strings.Repeat("e", 64) }, v2contract.CodeRevisionConflict},
+		{"stale revision", func(in *journal.AdmissionCommitInput) { in.Lookup.ExpectedRevision++ }, v2contract.CodeInvalidContract},
+		{"malformed binding", func(in *journal.AdmissionCommitInput) { in.CanonicalBinding = []byte(`{}`) }, v2contract.CodeInvalidContract},
+		{"changed pin", func(in *journal.AdmissionCommitInput) {
+			in.AcceptancePin.Contract = "sha256:" + strings.Repeat("e", 64)
+		}, v2contract.CodeInvalidContract},
+		{"changed evaluator", func(in *journal.AdmissionCommitInput) {
+			in.AcceptancePin.EvaluatorDigest = "sha256:" + strings.Repeat("e", 64)
+		}, v2contract.CodeInvalidContract},
+		{"changed timeout", func(in *journal.AdmissionCommitInput) { in.AcceptancePin.CheckTimeouts["vet"] = "20s" }, v2contract.CodeInvalidContract},
+		{"changed protected policy", func(in *journal.AdmissionCommitInput) { in.Policy.Prompts["mode"] = "changed" }, v2contract.CodeInvalidContract},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in, err := c.Snapshot()
+			if err != nil {
+				t.Fatal(err)
+			}
+			tc.mutate(&in)
+			before := tableImages(t, j)
+			_, err = journal.NewAdmissionCommit(in)
+			assertStorageCode(t, err, tc.code)
+			assertUnchangedTables(t, before, tableImages(t, j))
+		})
+	}
+	mutate := func(in *journal.AdmissionCommitInput) {
+		in.CanonicalBinding[0] = '!'
+		for k := range in.AcceptancePin.CheckTimeouts {
+			in.AcceptancePin.CheckTimeouts[k] = "changed"
+		}
+		for _, m := range []map[string]string{in.Policy.Prompts, in.Policy.Context, in.Policy.Review, in.Policy.Decomposition} {
+			for k := range m {
+				m[k] = "changed"
+			}
+		}
+		for i := range in.Policy.Evidence {
+			in.Policy.Evidence[i] = "changed"
+		}
+		in.Policy.EligibleCohorts = append(in.Policy.EligibleCohorts, "changed")
+		in.Lookup.PeerID = "changed"
+		in.OperationID = "changed"
+	}
+	in, err := c.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed, err := journal.NewAdmissionCommit(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutate(&in)
+	for range 2 {
+		out, err := closed.Snapshot()
+		if err != nil {
+			t.Fatal(err)
+		}
+		policy, err := json.Marshal(out.Policy)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expected, err := json.Marshal(acceptance.P1())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(out.CanonicalBinding) != string(f.input.CanonicalBinding) || string(policy) != string(expected) || out.AcceptancePin.CheckTimeouts["vet"] != "10s" || out.AcceptancePin.CheckTimeouts["test"] != "1m" || out.Lookup.PeerID != f.b.PeerID || out.OperationID != "start_op" {
+			t.Fatal("constructor/getter retained a mutable byte, map, slice or value")
+		}
+		mutate(&out)
+	}
+	admitted, err := j.CommitServiceAdmission(t.Context(), closed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := snapshotForArm(t, j, f)
+	now := time.Now().UTC()
+	base := journal.DispatchArmInput{Admission: admitted, ExpectedPendingRevision: 1, SnapshotEventID: snapshot, BindingSHA256: f.input.Lookup.BindingSHA256, LaunchTokenSHA256: strings.Repeat("c", 64), NonceSHA256: strings.Repeat("d", 64), LadderVersion: "synthetic-ladder-v1", PolicyRevision: f.b.PolicyRevision, Generation: f.b.Generation, ObservedAt: now, ExecutionDeadline: now.Add(time.Duration(f.b.Decision.ResolvedCeilings.ExecutionNanos))}
+	for _, tc := range []struct {
+		name   string
+		mutate func(*journal.DispatchArmInput)
+	}{
+		{"zero admission", func(in *journal.DispatchArmInput) { in.Admission = journal.CommittedAdmission{} }},
+		{"zero pending revision", func(in *journal.DispatchArmInput) { in.ExpectedPendingRevision = 0 }},
+		{"missing snapshot", func(in *journal.DispatchArmInput) { in.SnapshotEventID = "" }},
+		{"bad launch hash", func(in *journal.DispatchArmInput) { in.LaunchTokenSHA256 = "bad" }},
+		{"bad nonce hash", func(in *journal.DispatchArmInput) { in.NonceSHA256 = "bad" }},
+		{"missing ladder", func(in *journal.DispatchArmInput) { in.LadderVersion = "" }},
+		{"changed generation", func(in *journal.DispatchArmInput) { in.Generation++ }},
+		{"changed policy", func(in *journal.DispatchArmInput) { in.PolicyRevision = "changed" }},
+		{"changed binding", func(in *journal.DispatchArmInput) { in.BindingSHA256 = strings.Repeat("e", 64) }},
+		{"zero observed clock", func(in *journal.DispatchArmInput) { in.ObservedAt = time.Time{} }},
+		{"invalid deadline", func(in *journal.DispatchArmInput) { in.ExecutionDeadline = in.ObservedAt }},
+	} {
+		t.Run("arm "+tc.name, func(t *testing.T) {
+			in := base
+			tc.mutate(&in)
+			before := tableImages(t, j)
+			_, err := journal.NewDispatchArm(in)
+			assertStorageCode(t, err, v2contract.CodeInvalidContract)
+			assertUnchangedTables(t, before, tableImages(t, j))
+		})
+	}
+	arm, err := journal.NewDispatchArm(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base.Admission = journal.CommittedAdmission{}
+	base.SnapshotEventID = "changed"
+	copied, err := arm.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	copied.Admission = journal.CommittedAdmission{}
+	copied.SnapshotEventID = "changed"
+	copied, err = arm.Snapshot()
+	if err != nil || copied.SnapshotEventID != snapshot {
+		t.Fatal("dispatch-arm snapshot leaked mutable values")
+	}
+	dispatch, err := j.ArmServiceDispatch(t.Context(), arm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := dispatch.Metadata()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Admission.RunID = "changed"
+	again, err := dispatch.Metadata()
+	if err != nil || again.Admission.RunID != f.b.RunID {
+		t.Fatal("dispatch metadata leaked mutable values")
 	}
 }
