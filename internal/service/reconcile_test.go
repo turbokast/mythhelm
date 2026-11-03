@@ -353,7 +353,7 @@ func crashAdoptionService(run, mode, marker, proof string) int {
 	}
 	if mode == "before" {
 		_, err := r.reconcileRunCheckpoint(ctx, run, nil, func() {
-			if err := os.WriteFile(marker, []byte(mode), 0600); err != nil {
+			if err := os.WriteFile(marker, []byte(mode), 0600); err != nil { // #nosec G703 -- parent-owned TempDir marker for the real transaction crash barrier in this validated fixture helper.
 				os.Exit(8)
 			}
 			for {
@@ -571,7 +571,7 @@ func TestAdoptionRefusesSpooledLaunchMismatch(t *testing.T) {
 				raw, err := os.ReadFile(path) // #nosec G304 -- fixed spool in this test-owned attempt root; observes the real launch before deliberate fixture corruption.
 				return err == nil && strings.Contains(string(raw), `"attempt.launched"`)
 			})
-			raw, err := os.ReadFile(path)
+			raw, err := os.ReadFile(path) // #nosec G304 -- read only the fixed spool in this test-owned attempt root before controlled payload corruption.
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -611,7 +611,7 @@ func TestAdoptionRefusesSpooledLaunchMismatch(t *testing.T) {
 			if !changed {
 				t.Fatal("fixture had no actual launched payload to corrupt")
 			}
-			if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0600); err != nil {
+			if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0600); err != nil { // #nosec G703 -- rewrite only this owned fixture spool to test refusal of a mismatched launch payload.
 				t.Fatal(err)
 			}
 			before, err := f.r.journal.Events(ctx, f.run, 0)
@@ -663,7 +663,7 @@ func TestAdoptionRefusesNonRegularSpool(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		if goruntime.GOOS != "windows" {
-			writer, err := os.OpenFile(path, os.O_WRONLY, 0600)
+			writer, err := os.OpenFile(path, os.O_WRONLY, 0600) // #nosec G304 -- open only this test-created FIFO to release a violating blocked reader before failing the regression.
 			if err == nil {
 				_ = writer.Close()
 			}
