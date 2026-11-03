@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Exercise runtime/test-source gate scope in disposable Git repositories.
 
-Runs real Go for the embedded-SQL regression; requires the local Go toolchain.
+Runs real Go for the embedded-SQL regression when local race tools are available;
+only that integration case skips missing prerequisites. Scope tests always run.
 No inference or network dependencies. Exit 0 on success, nonzero on failure.
 External documentation consistency remains a separate CI concern.
 """
+import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -77,7 +80,24 @@ class AssetScopeTests(unittest.TestCase):
     def test_embedded_sql_post_gate_mutation_is_stale(self):
         # This process never installs a stand-in go. Invoke the actual gate and
         # verify its recorded command, tree identity and successful exit.
-        self.assertIsNotNone(shutil.which("go"), "local Go toolchain required")
+        if shutil.which("go") is None:
+            self.skipTest("embedded-SQL integration requires local Go")
+        local_env = dict(os.environ, GOTOOLCHAIN="local", GOPROXY="off")
+        config_result = subprocess.run(
+            ["go", "env", "-json", "CGO_ENABLED", "GOOS", "GOARCH", "CC"],
+            cwd=self.root, env=local_env, check=True, capture_output=True, text=True, timeout=30)
+        config = json.loads(config_result.stdout)
+        self.assertIn(config["CGO_ENABLED"], ("0", "1"))
+        if config["CGO_ENABLED"] == "0":
+            self.skipTest("embedded-SQL integration requires CGO_ENABLED=1")
+        # Go accepts a quoted compiler command. Preserve Windows path separators
+        # rather than applying POSIX shell backslash unescaping.
+        compiler_words = shlex.split(config["CC"], posix=False)
+        compiler = compiler_words[0] if compiler_words else ""
+        if len(compiler) >= 2 and compiler[0] == compiler[-1] and compiler[0] in "\"'":
+            compiler = compiler[1:-1]
+        if not compiler or shutil.which(compiler) is None:
+            self.skipTest("embedded-SQL integration requires its configured C compiler")
         self.write("go.mod", "module example.com/embedfixture\n\ngo 1.23\n")
         self.write("internal/journal/migrations/0001_init.sql", "ok\n")
         self.write("asset.go", 'package fixture\nimport "embed"\n'
@@ -89,6 +109,16 @@ class AssetScopeTests(unittest.TestCase):
         self.git("commit", "-qm", "Embed synthetic SQL")
         # The fixture has no dependencies; forbid automatic toolchain downloads.
         with mock.patch.dict(os.environ, {"GOTOOLCHAIN": "local", "GOPROXY": "off"}):
+            # Ask this installed toolchain, not a version-independent target
+            # table. Only its exact unsupported-race diagnostic permits a skip;
+            # compiler/build/tool failures remain failures with their output.
+            preflight = subprocess.run(["go", "test", "-race", "-run", "^$", "./..."],
+                                       cwd=self.root, env=local_env, capture_output=True,
+                                       text=True, timeout=60)
+            unsupported = f'-race is not supported on {config["GOOS"]}/{config["GOARCH"]}'
+            if preflight.returncode != 0 and preflight.stderr.strip() == unsupported:
+                self.skipTest("embedded-SQL integration: " + unsupported)
+            self.assertEqual(preflight.returncode, 0, preflight.stdout + preflight.stderr)
             self.assertEqual(gatelib.run_gate(str(self.root), "go-test"), 0)
             marker = gatelib.read_marker(str(self.root), "go-test")
             self.assertEqual(marker["command"], ["go", "test", "-race", "./..."])
