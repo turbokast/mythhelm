@@ -19,6 +19,11 @@ var paneOrder = []string{paneTasks, paneAgents, paneEvidence, paneDetail}
 // and details flows (design §9). Lifecycle inputs share the mode policy; Esc backs out one level
 // — dialog, palette, help, filter, previous pane — and never quits.
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	return m, m.handleOSCKey(msg)
+}
+
+// handleOrdinaryKey preserves the existing modal/action gates during replay.
+func (m *Model) handleOrdinaryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	if key == "ctrl+c" {
 		return m, m.interrupt()
