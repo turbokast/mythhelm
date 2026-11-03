@@ -65,6 +65,10 @@ GOVULNCHECK = "golang.org/x/vuln/cmd/govulncheck@v1.8.0"
 HARNESS_PREFIXES = (".agents/", ".grok/", ".claude/", "scripts/", "knowledge/", "docs/harness/")
 HARNESS_FILES = ("CLAUDE.md", "AGENTS.md", "WORKFLOW.md")
 GO_FILES = ("go.mod", "go.sum", ".golangci.yml")
+# Runtime and test-source trees include embedded assets, fixtures and support
+# matrices. External documentation consistency is checked separately in CI;
+# lifecycle metadata must not select the full Go gate group.
+GO_PREFIXES = ("adapters/", "cmd/", "internal/", "mods/", "tests/")
 MAX_BLOCKS = 3
 
 
@@ -107,7 +111,7 @@ def in_scope(path, scope):
     if scope == "all":
         return True
     if scope == "go":
-        return path.endswith(".go") or path in GO_FILES
+        return path.endswith(".go") or path in GO_FILES or path.startswith(GO_PREFIXES)
     if scope == "harness":
         return path.startswith(HARNESS_PREFIXES) or path in HARNESS_FILES
     raise runspec.Usage("unknown scope %r" % scope)
