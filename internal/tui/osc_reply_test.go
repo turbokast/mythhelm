@@ -2,11 +2,12 @@ package tui
 
 import (
 	"context"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/turbokast/mythhelm/internal/tui/viewmodel"
 	"strings"
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/turbokast/mythhelm/internal/tui/viewmodel"
 )
 
 func oscPrefix() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Alt: true, Runes: []rune{']'}} }

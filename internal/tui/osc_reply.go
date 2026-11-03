@@ -124,20 +124,23 @@ func (m *Model) handleOSCKey(msg tea.KeyMsg) tea.Cmd {
 	}
 	runes, ok := oscKeyRunes(msg)
 	if !ok {
-		keys := append(state.keys, msg)
+		state.keys = append(state.keys, msg)
+		keys := state.keys
 		*state = oscReplyState{}
 		return m.replayOSCKeys(keys)
 	}
 	for i, r := range runes {
 		if state.runes+i+1 > maxOSCReplyRunes {
-			keys := append(state.keys, msg)
+			state.keys = append(state.keys, msg)
+			keys := state.keys
 			*state = oscReplyState{}
 			return m.replayOSCKeys(keys)
 		}
 		state.text = append(state.text, r)
 		switch oscShape(state.text) {
 		case -1:
-			keys := append(state.keys, msg)
+			state.keys = append(state.keys, msg)
+			keys := state.keys
 			*state = oscReplyState{}
 			return m.replayOSCKeys(keys)
 		case 1:

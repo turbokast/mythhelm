@@ -92,7 +92,7 @@ func TestThemeTogglePersists(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for i := 0; i < 2; i++ {
+			for i := range 2 {
 				m, _ = pressKey(t, m, runeMsg("?"))
 				_, _ = m.Update(tea.WindowSizeMsg{Width: 100 + i*60, Height: 20 + i*10})
 				m, _ = pressKey(t, m, specialMsg(tea.KeyEsc))
