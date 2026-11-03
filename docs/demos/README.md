@@ -73,9 +73,9 @@ real rendering or accessibility. The tests use Bash, Git and Python; their
 snapshot checks include added, changed and removed paths, including spaces,
 and do not require GNU checksum tools.
 
-The current docs workflow still requires a shared recording pin. A selected
-repin producing mixed pins needs the separate per-record workflow update
-before those artifacts can pass publication checks.
+The docs workflow checks each recording at its own `binary_commit`. A selected
+repin that produces mixed pins passes publication checks when each recording's
+transcript matches at its own pin and its qualifiers pass there.
 
 Note the squash-merge trap: pins name the pre-commit HEAD, so after a merge
 no checkout matches and plain `record.sh` always refuses — re-record with

@@ -715,7 +715,7 @@ mutant global-repin 's/(python3 - "\$MANIFEST" "\$head" "\$ver") \$names/\1 $all
 tui_repin_case mut-global-repin "$WORK/global-repin.sh"
 if test "$rc" -eq 0 && ! manifest_is tui; then ok "global-repin mutant fails the manifest byte check"; else bad "global-repin mutant not caught (rc=$rc)"; fi
 
-mutant unselected-write 's/^(\t\tnames=)"\$selected"$/\1"$all"/'
+mutant unselected-write 's/^([[:space:]]+names=)"\$selected"$/\1"$all"/'
 tui_repin_case mut-unselected-write "$WORK/unselected-write.sh"
 if ! selected_tui_only; then ok "unselected-write mutant fails the unselected-bytes check"; else bad "unselected-write mutant not caught"; fi
 
@@ -728,7 +728,7 @@ if ! unchanged_except '^$'; then ok "swallowed first-take mutant writes the fail
 	sed 's/^/     | /' "$C/out" >&2
 fi
 
-mutant no-cleanup '/^\ttrap cleanup EXIT$/d'
+mutant no-cleanup '/^[[:space:]]+trap cleanup EXIT$/d'
 tui_repin_case mut-no-cleanup "$WORK/no-cleanup.sh"
 if ! cleaned; then ok "missing-cleanup mutant fails the cleanup check"; else bad "missing-cleanup mutant not caught"; fi
 
