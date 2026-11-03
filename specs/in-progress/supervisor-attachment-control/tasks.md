@@ -138,7 +138,7 @@
 - **Files modified**: `internal/admissionbinding/binding.go`, `internal/admissionbinding/codec.go`, `internal/admissionbinding/codec_test.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 - **Review-response validation**: Later review exposed a masked fractional-duration assertion despite the historical 474.4s gate pass. The test-only follow-up keeps request/envelope/resolved duration values coherent, adds aligned controls, preserves a separate pointer-mismatch negative, removes duplicate top-level test execution and checks actual fake/codex/claudecode descriptors under the six named parallel acceptance roots. Three compile-valid alignment/descriptor mutants fail their intended assertions; final leaf race passes2.306s. Both production files remain byte-identical to `26edb288741378b695a84f2293262fde547ecd4a`. All six gates are fresh after a canonical race pass4.9s with valid package caching. Earlier canonical runs failed the unchanged synthetic `TestResolvedVersionedBinaryLaunched` twice; focused three-run and complete-package diagnostics subsequently passed. The original cause remains unknown, and neither those failures nor the earlier conditional source review are rewritten as acceptance. One equivalent tagged-switch lint repair changed tests only.
 
-### Task 24 — Produce fail-closed retention policy validation
+### Task 24 — Produce fail-closed retention policy validation ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -159,6 +159,12 @@
   - `TestRetentionFieldSetIsInternalBindingCommitment` derives rows only from exact canonical binding plus full content-addressed policy, never new wire metadata. Tampered/missing policy content, rule/value/provenance/root/scope/challenge changes and copied approval refuse; a bare hash/imagined FieldSet wire field cannot approve anything. An independently written policy→binding→field-set order control proves no hash cycle.
 - **Test plan**: Pure closed-record fixtures with no real credentials or granted live policy; independently mutate one approval binding/classification at a time. Task8 owns volatile-before-confirmation integration.
 - **Invariants touched**: I02/I03/I19/I20 (v2 §§6/8: classification/authority before retention; no copied subscription secrets).
+
+- **Status**: ✅ Completed — added closed retention policy/approval validation and exact binding commitments; PR #575 remains draft pending independent closeout and required CI.
+- **Implementation**: Source `069f115` and normalization `b3d0570` implement the pure leaf codecs, classifications and typed admission mapping. Fixture correction `d076ddf` uses native absolute temporary paths without changing production validation; integration `060f073` includes actual main prerequisites. All six named acceptance tests and additional retention codec/error/boundary cases pass under race; the full repository race gate passes in 426.4s, with format/tidy/vet/lint passing. Required CI and actual merge remain pending.
+- **Spec deviations**: The Windows fixture correction is consistent with the existing strict RunSpec path contract and changes no validation rule. Own completion, handoff and scratchpad paths are required lifecycle bookkeeping outside the four implementation paths. Tasks 8/9 retain authenticated confirmation, persistence and launch enforcement; structural records alone grant no authority.
+- **Files modified**: `internal/admissionbinding/retention.go`, `internal/admissionbinding/retention_test.go`, `internal/admission/retention.go`, `internal/admission/retention_test.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
+
 
 ### Task 29 — Extract the fixed pure quota policy and storage producer ✅ COMPLETED
 
@@ -851,7 +857,7 @@
 - **Validation**: All six canonical local gates pass on integration `e5322c1`, including full repository race 319.6s and zero lint issues. All three named acceptance tests independently pass under race (supervisor 4.056s); exact source hashes remain unchanged after prerequisite PR #573. Earlier failures and gate receipts on prior staging revisions remain separate; required CI and merge are pending.
 - **Staged consumer**: `ReadLaunchProvenance` has no production caller yet. Task7, depending on Tasks6/32/33, must consume the checked reader under design §7; its exact acceptance is: “`TestServiceGenerationAdoption` records new control generation with unchanged launch generation/identity/deadline and one attempt; PID reuse, foreign launch, corrupt identity and unsupported spool refuse.” Task9 owns real startup wiring. Neither Task7 nor Task9 is merged; this producer does not deliver recovery/adoption behavior.
 
-### Task 33 — Persist additive service assignment epochs
+### Task 33 — Persist additive service assignment epochs ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (nineteen source paths in one additive-schema/API/mirror compatibility unit;≤45minutes total,15minute artifact,max2 repairs≤15minutes each inside total; freeze/propose a smaller split if infeasible)
@@ -885,6 +891,12 @@
   - TestAssignmentEpochSQLGuards directly attempts INSERT/UPDATE OR REPLACE through each unique key/rowid plus immutable UPDATE/DELETE and inconsistent links; an unreferenced-victim/removed-guard control fails. Read/write APIs are storage evidence only and do not grant held-owner authority.
 - **Test plan**: Real SQLite, synthetic schema9 legacy rows, independent mirror expectations, transaction rollback and direct hostile SQL controls. Migration registration plus all current-version/import/backup mirrors land atomically. This is separate from Task25's binding representation and does not inherit Task23; no released migration changes or unbounded source-budget exception.
 - **Invariants touched**: I03/I07/I09/I12/I20/I21/I23 (v2 §§3/5/6: canonical atomic epoch evidence, immutable replay and historical unknowns).
+
+- **Status**: ✅ Completed — additive assignment epochs and exact transaction readers/writers submitted in PR #584; merge and required CI remain pending.
+- **Implementation**: Commit 9a5084e adds schema 10, identity/revision guards and immutable replay; the released assignment shape and historical unknowns remain unchanged. Backup and preview mirrors advance atomically.
+- **Spec deviations**: Required own-task completion records add `specs/in-progress/supervisor-attachment-control/tasks.md` and `specs/in-progress/supervisor-attachment-control/handoff.md`. Existing dynamic compatibility tests required no source changes. The delegated fixture-only follow-up changes malformed JSON to a valid empty object so the reader refusal is actually exercised; prior failed attempts remain failures. No execution profile or runtime ownership behavior is changed.
+- **Files modified**: `internal/journal/attachment_revision_test.go`, `internal/journal/journal.go`, `internal/journal/migrate_tables_test.go`, `internal/journal/migrations/0010_service_assignment_epochs.sql`, `internal/journal/service_assignment_epoch.go`, `internal/journal/service_assignment_epoch_test.go`, `internal/journal/service_assignment_migration_test.go`, `internal/migrate/SUPPORT.md`, `internal/migrate/backup.go`, `internal/migrate/preview/plan.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`.
+- **Validation**: All six canonical gates pass, including full repository race 903.1s. Four named acceptance tests independently pass under race in 15.591s; journal, migration, preview and CLI compatibility pass. Independent architecture/code review found no blocking issue.
 
 ### Task 34 — Retain existing run ownership for attachment snapshots
 

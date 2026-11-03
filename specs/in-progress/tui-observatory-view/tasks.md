@@ -589,7 +589,7 @@
 
 - **Domain/agent**: maintainer
 - **Budget**: complex (six files; spec-decomposition sizing rule)
-- **Depends on**: Task 19
+- **Depends on**: Task 19, Task 22
 - **Change**: Re-record the existing credential-free demo after all visual changes and regenerate the poster/manifest with the documented recording workflow.
 - **Files**:
   - `docs/demos/tui.tape`
@@ -621,3 +621,28 @@
   - README states the exact new selector/default commands and per-record historical/current provenance; no real rendered/native/human evidence is claimed from fake tools. Task20 owner, dependency, six artifact paths and human/tooling gates remain unchanged.
 - **Test plan**: Bash/Git/Python fixtures only; fake credential-free external tools, exact before/after bytes and negative process statuses. Keep literal-entry bad-argument/pre-build failure controls separate from shared-body success coverage. Public fixed paths and literal tapes stay unchanged; no successful public recording or real rendering/maintainer action occurs in this producer.
 - **Invariants touched**: I07/I09/I13/I14 (v2 §§15/19: exact recording provenance, isolated tooling, no false qualification).
+
+
+### Task 22 — Verify recording consumers at each immutable pin ✅ COMPLETED
+
+- **Domain/agent**: release-engineer
+- **Budget**: complex (workflow integration, immutable revision execution and real fixture qualification)
+- **Depends on**: None
+- **Change**: Independently align the existing unchanged manifest schema with its per-recording pin contract before Task20 publishes a selected re-record. This consumer compatibility fix uses no Task21 producer API and can be built/qualified in parallel; publication waits for both through Task19 and Task20. Validate all revision/name inputs before executing; reuse a build for recordings sharing a commit while preserving each transcript and capability qualifier's owning revision.
+- **Files**:
+  - `.github/workflows/docs.yml`
+  - `.github/scripts/check_recordings.py` (new)
+  - `.github/scripts/tests/test_check_recordings.py` (new)
+- **Produces**: `python3 .github/scripts/check_recordings.py`, invoked by the existing Docs checks job after credential-free fixture tests.
+- **Acceptance**:
+  - Real temporary Git fixtures with two distinct commits and dependency-free Go programs prove each recording transcript and qualifier executes against its own immutable commit. Shared pins reuse one binary build; repeated revision/qualifier checks may reuse the same passing result. Wrong-first-pin transcript and qualifier controls fail the actual mixed-fixture checks.
+  - Missing/non-commit revisions, malformed names, changed transcripts, failing transcript producers/normalizers, absent qualifier PASS witnesses and failing qualifier commands refuse. Matching output or a misleading PASS line cannot hide a nonzero subprocess exit. Owned Git worktrees are removed after success or failure.
+  - The workflow uses this consumer without a global shared-pin assertion or generic first-record binary. Existing transcript normalization and fixed per-name pipelines remain; real recording artifacts, producer paths, Task20 ownership/six-file scope and human/tooling qualification requirements do not change.
+- **Test plan**: Python stdlib unittest integration suite with real Git/Go and no external modules or native accounts; pinned actionlint, zizmor and applicable shared gates. Synthetic evidence establishes consumer routing/refusal only, not real rendering or accessibility.
+- **Invariants touched**: I07/I09/I13/I14 (v2 §§15/19: evidence stays bound to each exact revision, missing evidence refuses and historical artifacts remain historical).
+- **Status**: ✅ Completed — implemented the per-recording CI consumer with real shared/mixed-pin fixtures and exact subprocess evidence; PR #585. Exact-head CI and actual merge remain required.
+- **Implementation**: Source `5a4e0045a9aa60dbf2b9099e72e3f26d69f1d574` replaces duplicated first-pin workflow logic with one fixed-pipeline consumer. It validates all revisions/names before execution, reuses builds and exact revision/qualifier results, checks producer/normalizer/test exits and requires literal PASS witnesses. Fifteen real Git/Go integration tests pass; an independent rerun and code/architecture review are Ready on this source. Source hygiene, pinned actionlint, offline zizmor, spec lint and workflow credential/trigger checks pass.
+- **Spec deviations**:
+  - Own `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md` and `specs/in-progress/tui-observatory-view/scratchpad.md` record this task's contract/completion and dependent guidance. `specs/in-progress/tui-observatory-view/design.md` records the delegated, independently reviewed release-domain consumer amendment, and Task20's dependency includes Task22 so mixed-pin publication waits for the qualified consumer.
+  - The initial proposed Task21 construction edge was removed during independent architecture review: Task22 consumes only the already existing unchanged manifest schema and no producer API. This corrects sequencing without claiming an unmerged prerequisite passed; Task19 retains Tasks18/21 and Task20 waits for Tasks19/22. Task20's owner, six-file artifact scope and real-tool/inspection gates remain unchanged.
+- **Files modified**: `.github/workflows/docs.yml`, `.github/scripts/check_recordings.py`, `.github/scripts/tests/test_check_recordings.py`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/design.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
