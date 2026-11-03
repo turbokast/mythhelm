@@ -52,7 +52,7 @@ func TestAssignmentEpochMigration(t *testing.T) { // I09/I20/I23 (v2 sections 5/
 		if err := legacy.Close(); err != nil {
 			t.Fatal(err)
 		}
-		j, err := Open(t.Context(), dir)
+		j, err := open(t.Context(), dir, migrations[:10])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -111,6 +111,10 @@ func TestAssignmentEpochMigration(t *testing.T) { // I09/I20/I23 (v2 sections 5/
 			t.Fatal(err)
 		}
 		slices.Sort(names)
+		if len(names) < 10 {
+			t.Fatal("historical migration prefix is incomplete")
+		}
+		names = names[:10] // Pin the released schema10 migration prefix exactly.
 		if len(names) != 10 || names[9] != "migrations/"+epochMigration {
 			t.Fatalf("migrations = %v, want %s as the tenth", names, epochMigration)
 		}
@@ -130,7 +134,7 @@ func TestAssignmentEpochMigration(t *testing.T) { // I09/I20/I23 (v2 sections 5/
 			}
 		}
 	})
-	t.Run("independent mirrors agree", func(t *testing.T) {
+	t.Run("current independent mirrors agree", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		legacy, err := open(t.Context(), dir, migrations[:9])
@@ -145,8 +149,8 @@ func TestAssignmentEpochMigration(t *testing.T) { // I09/I20/I23 (v2 sections 5/
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !slices.Equal(plan.Steps, []string{epochMigration}) {
-			t.Fatalf("preview steps from schema9 = %v, want [%s]", plan.Steps, epochMigration)
+		if !slices.Equal(plan.Steps, []string{epochMigration, "0011_service_admission_bindings.sql"}) {
+			t.Fatalf("preview steps from schema9 = %v, want [%s 0011_service_admission_bindings.sql]", plan.Steps, epochMigration)
 		}
 		backupVersion, err := strconv.Atoi(strings.TrimPrefix(filepath.Base(plan.BackupTo), DBName+".bak-migration-v"))
 		if err != nil {
@@ -168,21 +172,25 @@ func TestAssignmentEpochMigration(t *testing.T) { // I09/I20/I23 (v2 sections 5/
 			"preview.steps":         9 + len(plan.Steps),
 			"preview.backup_target": backupVersion,
 		}
-		if got := mirrorDisagreements(mirrors, 10); len(got) != 0 {
-			t.Fatalf("mirrors disagree with schema 10: %v", got)
+		if got := mirrorDisagreements(mirrors, 11); len(got) != 0 {
+			t.Fatalf("mirrors disagree with schema 11: %v", got)
 		}
 		// Omit-one-mirror control: each lagging mirror alone is named.
 		for name := range mirrors {
 			mutant := maps.Clone(mirrors)
-			mutant[name] = 9
-			if got := mirrorDisagreements(mutant, 10); !slices.Equal(got, []string{name}) {
+			mutant[name] = 10
+			if got := mirrorDisagreements(mutant, 11); !slices.Equal(got, []string{name}) {
 				t.Errorf("omitted mirror %s reported as %v", name, got)
 			}
 		}
 	})
 	t.Run("newer schema leaves bytes unchanged", func(t *testing.T) {
 		t.Parallel()
-		j, dir := openTemp(t)
+		dir := t.TempDir()
+		j, err := open(t.Context(), dir, migrations[:10])
+		if err != nil {
+			t.Fatal(err)
+		}
 		if _, err := j.db.ExecContext(t.Context(), `PRAGMA user_version=11`); err != nil {
 			t.Fatal(err)
 		}
@@ -191,7 +199,7 @@ func TestAssignmentEpochMigration(t *testing.T) { // I09/I20/I23 (v2 sections 5/
 		}
 		path := filepath.Join(dir, DBName)
 		before := fileSHA256(t, path)
-		if newer, err := Open(t.Context(), dir); !errors.Is(err, ErrSchemaTooNew) {
+		if newer, err := open(t.Context(), dir, migrations[:10]); !errors.Is(err, ErrSchemaTooNew) {
 			if newer != nil {
 				_ = newer.Close()
 			}

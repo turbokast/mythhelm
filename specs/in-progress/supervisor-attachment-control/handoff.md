@@ -231,6 +231,12 @@
 - **Status and dependencies**: PR #582 carries this producer on main `f94ab99` after merged fixture PR #583, with all four reviewed Go blobs unchanged and fresh canonical gates (full race 631.5s). Current-head CI and actual merge remain required; this pre-merge entry does not complete dependent consumers. Task12 retains Task11/Task34/Task35 prerequisites.
 - **History**: Earlier formatting failure and first-review blockers remain failures; native repair and the sixteen-index range-only integration delta do not reset task timing or create another source-authoring allowance. Later verification/publication elapsed time remains part of honest delivery accounting.
 
+## Task 26 — Bind exact worker configuration source maps
+
+- **Produces**: `exactBoundConfigSources` selects exactly the admitted manifest keys from the pinned adapter's existing inventory; `launchForAttempt` now returns `(workers.Launch, error)` and refuses unbound sources before spawning. The worker re-inventories exact source/path identity before digest checks and native Start.
+- **For dependents**: Task9 must preserve the launch error path and immutable provenance; raw available inventory candidates are not admitted payload entries. Equal digests cannot authorize swapped paths. Empty-manifest and both native inventory conventions remain distinct.
+- **Evidence**: Instrumented fake-native launches prove exact mapping starts once and invalid mappings start zero times. A removed mapping-check control fails that real counter. Existing admission rehash fixtures use actual temporary inventory paths; managed-byte hashing is separately tested below the identity layer without host-policy writes.
+- **Limits**: No authentication secret is copied or native auth disabled. Fixture/platform/native qualification remains as previously recorded; PR #591 requires exact-head CI and merge before service dispatch consumes it.
 ## Task 33 — Persist additive service assignment epochs
 
 - **Produces**: Schema 10 `service_assignment_epochs`, `journal.AssignmentEpoch`, `RecordAssignmentEpoch` and `ReadAssignmentEpoch`. Existing four-column `run_assignments` is projected from epoch history without a historical backfill.
@@ -241,3 +247,11 @@
 ### Task 34 Windows witness portability
 
 PR #588 fixture repair `f6bb967` preserves the three production blobs. The database-replacement witness now holds the actual owners, closes the old journal and opens a valid replacement before testing the old owner refusal; it detects removal of the actual database identity guard. Snapshot witnesses include empty locked files without forbidden byte-zero reads, while reading every nonempty artifact. Full Linux race passes 751.5s; both Windows architectures still require exact-head CI.
+
+## Task 25 — Produce the additive binding schema and atomic version mirrors
+
+- **Produces**: PR #593, source `f2b2c3e5ebe150b181174718c4472a99e70e5496`, adds schema11/0011 with four STRICT binding, consumption, pending-dispatch and claim relations plus immutable identity, replacement-victim, state/evidence and revision guards. Current schema, backup and preview mirrors activate together; populated import/preview/backup/restore preserves all four relations.
+- **For Task30**: SQL enforces structural identity and exact retention policy-revision links; complete canonical decoding, digest recomputation, expiry/confirmation semantics and typed constructors remain Task30 responsibilities. Planned attempt IDs are text until arming creates their actual rows. No launch or owner authority follows from these records.
+- **Legacy compatibility**: Released migrations/formats are unchanged. Retained preparation and consumed claimed-operation parents cannot be replaced or physically moved; unlinked legacy rows preserve released behavior, including completed-operation duplicate insertion IGNORE. Historical epoch tests explicitly run the schema10 migration prefix; current compatibility is separately checked at11.
+- **Evidence**: Named migration/immutability tests and populated round-trip race checks pass (journal17.978s; migrate3.015s). Direct removed-guard controls reach actual unreferenced replacement victims. Initial retained-parent attacks were red before additive guards; an initial row-count oracle was corrected to inspect exact physical row images.
+- **Verification boundary**: Original full Go gate failed835.1s at the unchanged600s supervisor package ceiling with GOMAXPROCS=4/-p=4. Verification-only identical frozen source passed492.3s with GOMAXPROCS=8/-p=4 and the same package cap; cause of the original timeout is not claimed resolved. Required canonical markers are fresh; independent architecture/code review accepted source. Actual PR merge remains required for dependents.
