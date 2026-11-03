@@ -458,8 +458,12 @@ def main(argv=None):
             data = statistics.read_json(args.aggregate)[0] if args.aggregate else None
             update(args.root, data)
         return 0
-    except (ledger.MeasurementError, OSError, UnicodeError, KeyError, TypeError, ValueError):
-        print('BLOCK: performance report refused\nDetail: invalid or unreviewed evidence\nFix: reconcile the frozen protocol, ledger and independent review', file=sys.stderr)
+    except (ledger.MeasurementError, OSError, UnicodeError, KeyError, TypeError, ValueError) as exc:
+        detail = str(exc) if isinstance(exc, ledger.MeasurementError) else 'invalid or unreviewed evidence'
+        print('BLOCK: performance report refused\nCommand: performance_report.py ' + args.command +
+              '\nDetail: ' + detail +
+              '\nFix: run python3 scripts/harness/performance_report.py ' + args.command +
+              ' --help; reconcile the frozen protocol, ledger and independent review', file=sys.stderr)
         return 1
 
 

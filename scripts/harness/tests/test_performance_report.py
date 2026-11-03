@@ -1,11 +1,14 @@
 """Synthetic reporting fixtures; never live-native performance evidence."""
 import copy
+from contextlib import redirect_stderr
+import io
 import json
 from pathlib import Path
 import sys
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import dogfood_measurement as ledger
@@ -190,8 +193,8 @@ class PerformanceReportTests(unittest.TestCase):
         with self.assertRaises(ledger.MeasurementError):
             report.check(self.root, base)
 
-    def test_gate_rejects_unrelated_native_receipt_and_old_pr_source(self):
-        data, base, source, _ = self.public_candidate()
+    def test_gate_rejects_unrelated_native_receipt(self):
+        data, base, _, _ = self.public_candidate()
         for receipt in data['pair_receipts']:
             receipt['workload_source_revision'] = 'a' * 40
         data['bindings'] = [['a' * 40, b[1], b[2]] for b in data['bindings']]
@@ -201,11 +204,10 @@ class PerformanceReportTests(unittest.TestCase):
         self.commit()
         with self.assertRaises(ledger.MeasurementError):
             report.check(self.root, base)
-        data['pr_evidence']['receipt_sha256'] = 'e' * 64
-        (self.root / report.AGGREGATE).write_text(json.dumps(data))
-        report.update(self.root, data)
-        self.commit()
-        with self.assertRaises(ledger.MeasurementError):
+
+    def test_gate_rejects_base_that_already_contains_candidate(self):
+        _, _, source, _ = self.public_candidate()
+        with self.assertRaisesRegex(ledger.MeasurementError, '^reference evidence predates this PR candidate$'):
             report.check(self.root, source)
 
     def test_gate_rejects_readme_outside_block_change(self):
@@ -283,6 +285,45 @@ class PerformanceReportTests(unittest.TestCase):
         self.commit()
         with self.assertRaises(ledger.MeasurementError):
             report.check(self.root, base)
+
+
+    def test_cli_stale_chart_refusal_identifies_safe_rule_and_command(self):
+        _, base, _, _ = self.public_candidate()
+        (self.root / report.CHART).write_text('stale')
+        self.commit()
+        error = io.StringIO()
+        with redirect_stderr(error):
+            result = report.main(['check', '--root', str(self.root), '--base', base])
+        self.assertEqual(result, 1)
+        self.assertEqual(error.getvalue().splitlines(), [
+            'BLOCK: performance report refused',
+            'Command: performance_report.py check',
+            'Detail: README or performance SVG is stale',
+            'Fix: run python3 scripts/harness/performance_report.py check --help; reconcile the frozen protocol, ledger and independent review'])
+
+    def test_cli_missing_private_aggregate_never_prints_path(self):
+        private_path = self.root / 'private-account-metadata.json'
+        error = io.StringIO()
+        with redirect_stderr(error):
+            result = report.main(['render', '--aggregate', str(private_path)])
+        self.assertEqual(result, 1)
+        lines = error.getvalue().splitlines()
+        self.assertEqual(len(lines), 4)
+        self.assertEqual(lines[1], 'Command: performance_report.py render')
+        self.assertEqual(lines[2], 'Detail: invalid or unreviewed evidence')
+        self.assertNotIn(str(private_path), error.getvalue())
+        self.assertNotIn(private_path.name, error.getvalue())
+
+    def test_cli_unexpected_value_errors_remain_generic(self):
+        for error_type in (ValueError, KeyError, TypeError, UnicodeError):
+            with self.subTest(error_type=error_type):
+                error = io.StringIO()
+                with mock.patch.object(report, 'check', side_effect=error_type('private-input-value')), redirect_stderr(error):
+                    self.assertEqual(report.main(['check']), 1)
+                lines = error.getvalue().splitlines()
+                self.assertEqual(len(lines), 4)
+                self.assertEqual(lines[2], 'Detail: invalid or unreviewed evidence')
+                self.assertNotIn('private-input-value', error.getvalue())
 
 
 if __name__ == '__main__':
