@@ -180,7 +180,11 @@
 
 ## Task 17 — Resolve themes and suppress delayed OSC replies
 
-<!-- pending -->
+- **Produces**: `theme.ParseChoice` validates auto/dark/light, and `tui.ResolveTheme` returns the chosen built-in ID and tokens from the injected cached answer. Only permitted auto selection consults that callback; nil defaults dark and invalid input still errors when disabled.
+- **For Task18**: Wire actual CLI flags, launch-mode suppression, cached callback and platform help through this seam. This producer performs no terminal query and does not qualify detection.
+- **Input boundary**: Exact alt-] arms a per-model OSC11 candidate. The unchanged three-component/four-hex-digit RGB grammar limits the complete ST form to25 runes including its prefix, below the64-rune contract. Valid BEL/ST replies are discarded; malformed and expired candidates replay through ordinary modal/action gates, and grouped trailing keys remain ordinary input. Existing polls expire candidates after their200ms lifetime.
+- **Deviation**: Approved `model.go` state/poll integration accompanies the six planned paths. Review cleanup removes an unreachable64-rune guard/counter; actual grammar bounds remain the operative input limit. No live-loop, module or runtime authority change is introduced.
+- **Evidence**: Cleanup `2afc281` passes whole TUI race and six current-source assertion-failing controls, including relaxed five-hex grammar. Actual maximum valid BEL/ST, malformed reset/replay, model isolation and grouped long-suffix cases pass. Earlier `c8541ed` full race578.3s remains bound to its original source; renewed integrated full Go verification and PR #604 final-head checks/merge remain pending.
 
 ## Task 18 — Expose --theme across launch branches
 
