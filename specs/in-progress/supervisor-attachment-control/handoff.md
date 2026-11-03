@@ -211,6 +211,15 @@
 - **Validation**: All six named acceptance tests plus retention codec/error/boundary cases pass under race; full repository race gate 925.2s on the integrated attachment-transport base and format/tidy/vet/lint pass. The valid RunSpec wire fixture uses platform-native absolute temporary paths; production retention validation is unchanged by that correction.
 - **Deviations**: Only required own-task completion records extend the four implementation paths. No schema, public wire field, durable storage or launch behavior is introduced.
 
+## Task 34 — Retain existing run ownership for attachment snapshots
+
+- **Produces**: `ServiceOwner.MatchesRun` routes immutable identity only; `RetainObservation` proves and retains an existing owner/root/database/generation while `Close` waits for observations and active entries. Private `runtime.retainAttachmentScope` selects exactly one existing actor among at most 64 candidates and holds owner observation, live instance and read/write gate through explicit release. PR #588 awaits required CI and merge.
+- **For dependents**: Task11's storage primitives still require actual retained ownership; same-user transport, assignment labels, match results or held-lock errors confer none. Task12 must transfer the scope release to Task35's bounded response handoff and normalize private preauthorization failures.
+- **Staged consumer**: Task12's `TestAttachmentRetainedOwnerQueueHandoff` must prove that “root shutdown/owner.Close cannot release run/instance ownership before response queue commit or discard, but a stalled socket after queue commit does not retain those guards.” Handler registration and public projections remain that task's work.
+- **Validation**: Three named acceptance roots pass under race; independent coordinator runs passed service 9.603s and supervisor 5.353s. Full canonical race passed 857.6s; seven compiled controls fail assertions for retention/routing/ceiling/closing/cancellation/reference/acquisition bypasses.
+- **Coverage boundary**: The prior-generation fixture is a genuinely closed prior owner after real rollover. Exact observed ledger/launch identities and forbidden-call checks complement each other; no runtime call counts or forcible OS-I/O cancellation guarantee is inferred.
+- **Private test observation**: The nil-default per-runtime traversal callback receives only the count already inspected, with no match result or authority. Production handlers leave it unset.
+
 ## Task 35 — Produce the attachment response queue handoff
 
 - **Produces**: `control.AttachmentHandler func(context.Context, Peer, Intent) (*AttachmentResponse, error)`, `(*control.Server).RegisterAttachment(method string, h AttachmentHandler) error`, and `control.NewAttachmentResponse(result Result, release func()) (*AttachmentResponse, error)`. Registration accepts only attachment.open/read/close and rejects duplicate/nil/unknown bindings. Actual Serve consumes these responses; ordinary Dispatch refuses these transport-only methods.
@@ -234,6 +243,10 @@
 - **For dependents**: Task7 supplies actual held-owner adoption. Storage records grant no ownership; missing history stays unknown, claimed-only operations are unavailable, and completed results must match operation identity and an actual run revision. Complete adoption projections and operation result in the same transaction.
 - **Compatibility**: Backup/preview mirrors and current schema move together; Task25's binding migration remains reserved as schema 11. Native execution profiles are excluded.
 - **Validation**: Named SQLite migration/identity/replay/hostile-SQL tests and independent architecture review pass. Full repository race gate passed; PR #584 still requires exact-head CI and merge before consumers start.
+
+### Task 34 Windows witness portability
+
+PR #588 fixture repair `f6bb967` preserves the three production blobs. The database-replacement witness now holds the actual owners, closes the old journal and opens a valid replacement before testing the old owner refusal; it detects removal of the actual database identity guard. Snapshot witnesses include empty locked files without forbidden byte-zero reads, while reading every nonempty artifact. Full Linux race passes 751.5s; both Windows architectures still require exact-head CI.
 
 ## Task 25 — Produce the additive binding schema and atomic version mirrors
 

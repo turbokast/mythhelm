@@ -911,7 +911,7 @@
 - **Files modified**: `internal/journal/attachment_revision_test.go`, `internal/journal/journal.go`, `internal/journal/migrate_tables_test.go`, `internal/journal/migrations/0010_service_assignment_epochs.sql`, `internal/journal/service_assignment_epoch.go`, `internal/journal/service_assignment_epoch_test.go`, `internal/journal/service_assignment_migration_test.go`, `internal/migrate/SUPPORT.md`, `internal/migrate/backup.go`, `internal/migrate/preview/plan.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`.
 - **Validation**: All six canonical gates pass, including full repository race 903.1s. Four named acceptance tests independently pass under race in 15.591s; journal, migration, preview and CLI compatibility pass. Independent architecture/code review found no blocking issue.
 
-### Task 34 — Retain existing run ownership for attachment snapshots
+### Task 34 — Retain existing run ownership for attachment snapshots ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (≤45 minutes total, artifact by 15 minutes, at most two repairs ≤15 minutes each inside the total; freeze partial work on overflow)
@@ -930,6 +930,16 @@
   - `TestAttachmentScopeGuardOrdering` deterministically races retained read/write gates, owner.Close and root shutdown with an actual held instance lease. No guard release before explicit handoff; no callback calls Close; requests exceeding their two-second budget refuse with zero released data. A blocked execution entry retains ownership after timeout. Tests explicitly release barriers and join cleanup rather than claiming forced OS-I/O cancellation.
 - **Test plan**: Real temp SQLite/adopted roots, actual ServiceOwner/InstanceLease and deterministic channels; separately failing retention, generation and authority-gate controls. Only the producer is delivered here: public handler registration and projection belong to Task12.
 - **Invariants touched**: I03/I06/I09/I18/I23 (v2 §§3/8/14: presentation never acquires execution authority).
+
+- **Status**: ✅ Completed — added shared owner-observation retention, exact-one existing actor routing and the private attachment authority gate; PR #588 remains draft pending required CI and verified merge.
+- **Implementation**: Signed source `5fb60b4` preserves real run/instance ownership until every observation and active entry releases. Independent code/architecture review returned Ready and independently reran all three acceptance roots under race (service 9.603s; supervisor 5.353s); author runs passed in 15.487s/6.897s. Seven compile-valid fault controls fail assertions. Final canonical repository race gate passed in 857.6s, with format/tidy/vet/lint and source hygiene passing; no native/platform qualification follows.
+- **Spec deviations**: A private nil-default traversal observation callback in runtime.go makes cancellation after an actual candidate check deterministic; it supplies neither a match predicate nor authority. The real prior-generation refusal explicitly uses a closed owner after actual boot rollover, since a held owner prevents lease rollover. Exact ledger/artefact/worker identity snapshots, canonical event counts and a forbidden-execution source-call witness establish the observed no-effect boundary without inventing runtime acquisition/recovery counts. Own completion, handoff and scratchpad paths are required lifecycle bookkeeping outside the five source paths.
+- **Files modified**: `internal/supervisor/service_owner.go`, `internal/supervisor/service_owner_test.go`, `internal/service/attachment_scope.go`, `internal/service/attachment_scope_test.go`, `internal/service/runtime.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
+
+
+- **Coordinator integration**: Actual merged assignment/retention/parallel-runner prerequisites were normally integrated with all five reviewed Task34 source blobs unchanged. Fresh complete repository race passes in 762.4s; earlier 857.6s remains evidence for its earlier base. Own Task24/33/34 records are all retained; current-head CI and merge remain required.
+
+- **Windows fixture repair**: Actual CI on both Windows architectures exposed an open-database rename and a mandatory lock-byte read in test witnesses. Source `f6bb967` retains ownership while closing/replacing/reopening only the journal, then proves the valid replacement journal is refused by the old owner. Empty regular files are hashed from verified zero length; nonempty artifacts are read normally. All three production files remain byte-identical. Named race suites pass (service 15.448s; supervisor 8.203s); a compiled database-identity guard mutant fails the new assertion. All six local gates pass again, including full race 751.5s with unchanged default package deadline. Windows CI still must pass on this repaired head; no platform qualification is inferred from Linux.
 
 ### Task 35 — Produce the attachment response queue handoff ✅ COMPLETED
 
