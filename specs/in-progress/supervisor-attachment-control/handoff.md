@@ -213,3 +213,10 @@
 - **Evidence**: Three named Task35 race acceptances, response/registration/auth/status controls, retained actual-Serve expiry/error regressions and five independent compile-valid production mutants establish synthetic transport behavior. Private writer-barrier proof observes connection close while cleanup waits, then joins after owned I/O release. These establish no native/platform/billing or full-service qualification.
 - **Status and dependencies**: PR #582 carries this producer on main `f94ab99` after merged fixture PR #583, with all four reviewed Go blobs unchanged and fresh canonical gates (full race 631.5s). Current-head CI and actual merge remain required; this pre-merge entry does not complete dependent consumers. Task12 retains Task11/Task34/Task35 prerequisites.
 - **History**: Earlier formatting failure and first-review blockers remain failures; native repair and the sixteen-index range-only integration delta do not reset task timing or create another source-authoring allowance. Later verification/publication elapsed time remains part of honest delivery accounting.
+
+## Task 33 — Persist additive service assignment epochs
+
+- **Produces**: Schema 10 `service_assignment_epochs`, `journal.AssignmentEpoch`, `RecordAssignmentEpoch` and `ReadAssignmentEpoch`. Existing four-column `run_assignments` is projected from epoch history without a historical backfill.
+- **For dependents**: Task7 supplies actual held-owner adoption. Storage records grant no ownership; missing history stays unknown, claimed-only operations are unavailable, and completed results must match operation identity and an actual run revision. Complete adoption projections and operation result in the same transaction.
+- **Compatibility**: Backup/preview mirrors and current schema move together; Task25's binding migration remains reserved as schema 11. Native execution profiles are excluded.
+- **Validation**: Named SQLite migration/identity/replay/hostile-SQL tests and independent architecture review pass. Full repository race gate passed; PR #584 still requires exact-head CI and merge before consumers start.

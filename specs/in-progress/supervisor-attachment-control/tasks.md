@@ -851,7 +851,7 @@
 - **Validation**: All six canonical local gates pass on integration `e5322c1`, including full repository race 319.6s and zero lint issues. All three named acceptance tests independently pass under race (supervisor 4.056s); exact source hashes remain unchanged after prerequisite PR #573. Earlier failures and gate receipts on prior staging revisions remain separate; required CI and merge are pending.
 - **Staged consumer**: `ReadLaunchProvenance` has no production caller yet. Task7, depending on Tasks6/32/33, must consume the checked reader under design §7; its exact acceptance is: “`TestServiceGenerationAdoption` records new control generation with unchanged launch generation/identity/deadline and one attempt; PID reuse, foreign launch, corrupt identity and unsupported spool refuse.” Task9 owns real startup wiring. Neither Task7 nor Task9 is merged; this producer does not deliver recovery/adoption behavior.
 
-### Task 33 — Persist additive service assignment epochs
+### Task 33 — Persist additive service assignment epochs ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (nineteen source paths in one additive-schema/API/mirror compatibility unit;≤45minutes total,15minute artifact,max2 repairs≤15minutes each inside total; freeze/propose a smaller split if infeasible)
@@ -885,6 +885,12 @@
   - TestAssignmentEpochSQLGuards directly attempts INSERT/UPDATE OR REPLACE through each unique key/rowid plus immutable UPDATE/DELETE and inconsistent links; an unreferenced-victim/removed-guard control fails. Read/write APIs are storage evidence only and do not grant held-owner authority.
 - **Test plan**: Real SQLite, synthetic schema9 legacy rows, independent mirror expectations, transaction rollback and direct hostile SQL controls. Migration registration plus all current-version/import/backup mirrors land atomically. This is separate from Task25's binding representation and does not inherit Task23; no released migration changes or unbounded source-budget exception.
 - **Invariants touched**: I03/I07/I09/I12/I20/I21/I23 (v2 §§3/5/6: canonical atomic epoch evidence, immutable replay and historical unknowns).
+
+- **Status**: ✅ Completed — additive assignment epochs and exact transaction readers/writers submitted in PR #584; merge and required CI remain pending.
+- **Implementation**: Commit 9a5084e adds schema 10, identity/revision guards and immutable replay; the released assignment shape and historical unknowns remain unchanged. Backup and preview mirrors advance atomically.
+- **Spec deviations**: Required own-task completion records add `specs/in-progress/supervisor-attachment-control/tasks.md` and `specs/in-progress/supervisor-attachment-control/handoff.md`. Existing dynamic compatibility tests required no source changes. The delegated fixture-only follow-up changes malformed JSON to a valid empty object so the reader refusal is actually exercised; prior failed attempts remain failures. No execution profile or runtime ownership behavior is changed.
+- **Files modified**: `internal/journal/attachment_revision_test.go`, `internal/journal/journal.go`, `internal/journal/migrate_tables_test.go`, `internal/journal/migrations/0010_service_assignment_epochs.sql`, `internal/journal/service_assignment_epoch.go`, `internal/journal/service_assignment_epoch_test.go`, `internal/journal/service_assignment_migration_test.go`, `internal/migrate/SUPPORT.md`, `internal/migrate/backup.go`, `internal/migrate/preview/plan.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`.
+- **Validation**: All six canonical gates pass, including full repository race 903.1s. Four named acceptance tests independently pass under race in 15.591s; journal, migration, preview and CLI compatibility pass. Independent architecture/code review found no blocking issue.
 
 ### Task 34 — Retain existing run ownership for attachment snapshots
 
