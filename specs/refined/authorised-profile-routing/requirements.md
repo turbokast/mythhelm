@@ -1,6 +1,6 @@
 # Routing across authorised profiles — Requirements
 
-> Unrefined. Run /refine-spec authorised-profile-routing before /spec.
+> Refined after independent assessment; see [refinement-log.md](refinement-log.md). Proceed to /spec authorised-profile-routing.
 >
 > Explain deterministic selection among explicitly authorised, independently qualified native route bundles, preserving user pins, included-only admission and finite resource envelopes. Normative source: `mythhelm-synthesis/MYTHHELM_Master_Spec_v2.md`, version 2.0, especially §§4, 7–10, 12–13 and §18; all I/AT/G identifiers below refer to v2. This capture grants no native trial, provider selection, account change or implementation.
 
