@@ -825,7 +825,7 @@
 - **Test plan**: Synthetic fixtures and deterministic barriers for the named cases; pair negative assertions with a deliberately violating fixture. Public process behavior uses the packaged binary in the integration task, not helper-only evidence.
 - **Invariants touched**: I06/I09/I14 (v2 §§14/15/18: evidence-bounded claims).
 
-### Task 32 — Persist immutable pre-spawn launch provenance
+### Task 32 — Persist immutable pre-spawn launch provenance ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (five source paths; ≤45minutes total,15minute artifact checkpoint,max2 repairs≤15minutes each inside total)
@@ -844,6 +844,12 @@
   - TestLaunchProvenanceWriteBeforeSpawn injects pin failure/conflict, observes zero Spawn, preserves exact same attempt and execution clock, and rejects conflicting later pins. Crash after pin is not worker-existence/relaunch authority. Existing PinnedAdmission historical/latest behavior and legacy launch fallback tests remain green.
 - **Test plan**: Actual journal+attempt rows and serialized fake worker handoff; retain valid nonempty controls and assertion-failing missing/presence/reread/failed-write counterfixtures. No native account. Freeze the smallest proposed split if extra paths or finite envelope are needed; no check waiver.
 - **Invariants touched**: I09/I12/I18/I19/I20/I21 (v2 §§3/6/8: immutable observed launch provenance, absence never zero).
+- **Status**: ✅ Completed — immutable pre-spawn launch provenance implementation submitted for independent review; PR #581. This pre-merge entry does not claim the pull request merged.
+- **Implementation**: Reviewed source integrates immutable launch provenance in `2bfce4a` with comment/annotation normalization in `4dc9eeb`; the three Task32 source blobs remain byte-identical on integration `e5322c1` after the merged fixture prerequisite PR #573. `ReadLaunchProvenance` distinguishes absent history from explicit generation zero, validates identities and conflicting pins, and returns a copied generation. The production pin-to-Spawn path records the exact handed-off generation/deadline before spawn; real nonempty envelope/attempt controls retain the execution clock.
+- **Spec deviations**: Required own-task records add `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md` and `specs/in-progress/supervisor-attachment-control/scratchpad.md` beyond the implementation Files list. The existing `internal/control/pinning_test.go` and `internal/supervisor/pipeline_launch_test.go` remain unchanged; the new `internal/supervisor/launch_provenance_test.go` exercises reader validation and actual serialized Spawn handoff together. The separately reviewed native test-only follow-up, followed by direct coordinator integration and mechanical comment/annotation normalization, adds real nonempty canonical envelope/attempt comparisons and an assertion-failing clock-change control, consistent with Task32 acceptance; no production contract is widened.
+- **Files modified**: `internal/control/pinning.go`, `internal/supervisor/pipeline.go`, `internal/supervisor/launch_provenance_test.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
+- **Validation**: All six canonical local gates pass on integration `e5322c1`, including full repository race 319.6s and zero lint issues. All three named acceptance tests independently pass under race (supervisor 4.056s); exact source hashes remain unchanged after prerequisite PR #573. Earlier failures and gate receipts on prior staging revisions remain separate; required CI and merge are pending.
+- **Staged consumer**: `ReadLaunchProvenance` has no production caller yet. Task7, depending on Tasks6/32/33, must consume the checked reader under design §7; its exact acceptance is: “`TestServiceGenerationAdoption` records new control generation with unchanged launch generation/identity/deadline and one attempt; PID reuse, foreign launch, corrupt identity and unsupported spool refuse.” Task9 owns real startup wiring. Neither Task7 nor Task9 is merged; this producer does not deliver recovery/adoption behavior.
 
 ### Task 33 — Persist additive service assignment epochs
 
@@ -900,7 +906,7 @@
 - **Test plan**: Real temp SQLite/adopted roots, actual ServiceOwner/InstanceLease and deterministic channels; separately failing retention, generation and authority-gate controls. Only the producer is delivered here: public handler registration and projection belong to Task12.
 - **Invariants touched**: I03/I06/I09/I18/I23 (v2 §§3/8/14: presentation never acquires execution authority).
 
-### Task 35 — Produce the attachment response queue handoff
+### Task 35 — Produce the attachment response queue handoff ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex (≤45 minutes total, artifact by 15 minutes, at most two repairs ≤15 minutes each inside the total; freeze partial work on overflow)
@@ -918,3 +924,10 @@
   - `TestAttachmentQueueBoundAndCancellation` fills the queue behind blocked Respond, verifies a further request ends within its existing two-second request deadline without publishing bytes or growing storage, and joins all workers on owned connection close. Existing ordinary/status fixtures remain passing. No ability to cancel arbitrary OS writes is claimed; disconnect must not release execution ownership early.
 - **Test plan**: Actual Serve plus fake transport barriers, bounded queue accounting, failure injection and three separately assertion-failing queue/executor controls; no live sockets/native credentials required. Task12 performs real scoped handler registration and generation/revocation races after this producer merges.
 - **Invariants touched**: I03/I06/I09/I18/I21/I23 (v2 §§3/8/14: bounded presentation transport with no durable raw grants).
+
+- **Status**: ✅ Completed — dedicated attachment transport executor and queue handoff submitted for review; PR #582. This pre-merge record does not assert merged completion.
+
+- **Implementation**: Source `539621d` retains the native-authored dedicated attachment executor and owned response queue; `201f26b` changes only the expiry regression to Go integer range with the same sixteen indices and assertions. Initial source integration `0ac9e58` preserves all four reviewed Go blobs; fresh merge `d00a8e2` includes main `f94ab99` and its separately merged fixture prerequisite PR #583 without changing those blobs. Actual Serve releases immutable replies after queue acceptance or discard, bypasses operation persistence, rejects expired-before-handoff responses and bounds complete success/error frames. The writer and blocked-I/O fixtures retain explicit join ownership.
+- **Spec deviations**: Required own-task records add `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md` and `specs/in-progress/supervisor-attachment-control/scratchpad.md` beyond the four implementation paths. Review repairs retain actual Serve regressions for expired requests with an empty queue and oversized typed errors, preserve bounded typed-code responses, and join fixture workers after the diagnostic timeout (consistent with Task35 acceptance). Initial formatting failure, whitespace-only formatting repair, failed first review and subsequent native repair remain recorded; first-pass delivery is false. The final integer-range spelling changes no assertion or iteration set.
+- **Files modified**: `internal/control/server.go`, `internal/control/server_test.go`, `internal/control/attachment_response.go`, `internal/control/attachment_response_test.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
+- **Validation**: All six canonical gates pass on the fresh merged scope, including full repository race 631.5s, zero lint issues and hygiene. The three named Task35 acceptances independently pass under race (control 3.030s). The earlier 722.9s race pass predates this main/fixture scope and remains historical; current-head CI and merge remain required.

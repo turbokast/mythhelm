@@ -375,22 +375,51 @@ func TestDeadlineStopWithoutNativeExitIsBounded(t *testing.T) {
 	t.Parallel()
 	w, sp, sess := deadlineFixture(t)
 	sess.noExit = true
-	close(sess.release)
 	result := make(chan outcome, 1)
 	errs := make(chan error, 1)
+	releaseStop := sync.OnceFunc(func() { close(sess.release) })
+	joined := false
+	join := func() {
+		releaseStop()
+		if joined {
+			return
+		}
+		// Release the wrong implementation too, then actually join before
+		// the fixture closes its spool, including on readiness failure.
+		select {
+		case sess.done <- adapter.NativeExit{Code: 1}:
+		default:
+		}
+		<-result
+		<-errs
+		joined = true
+	}
+	t.Cleanup(join)
 	go func() { out, err := w.supervise(t.Context(), sp, sess); result <- out; errs <- err }()
+	select {
+	case <-sess.entered:
+	case out := <-result:
+		err := <-errs
+		joined = true
+		t.Fatalf("supervise returned before stop ladder readiness: outcome=%+v error=%v", out, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("stop ladder did not enter within the fixture readiness budget")
+	}
+	// Initial heartbeat and durable stop-request I/O precede Interrupt.
+	// Measure cleanup from the ready ladder, not that setup interval.
+	watchdog := time.NewTimer(waitDelay + 2*time.Second)
+	defer watchdog.Stop()
+	releaseStop()
 	var out outcome
 	select {
 	case out = <-result:
-	case <-time.After(waitDelay + 2*time.Second):
-		// Release the wrong implementation too, so a failing assertion joins
-		// its goroutine instead of leaving a fixture behind.
-		sess.done <- adapter.NativeExit{Code: 1}
-		<-result
-		<-errs
+	case <-watchdog.C:
+		join()
 		t.Fatal("deadline stop still waited for native exit after its finite cleanup budget")
 	}
-	if err := <-errs; err != nil {
+	err := <-errs
+	joined = true
+	if err != nil {
 		t.Fatal(err)
 	}
 	if out.exited || out.report.Confirmed || sess.count.Load() != 1 {

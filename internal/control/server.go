@@ -18,15 +18,16 @@ import (
 // Server owns the intent dispatch table as instance state, never a
 // package-level map.
 type Server struct {
-	mu       sync.RWMutex
-	methods  map[string]Handler
-	long     map[string]bool
-	readOnly bool
+	mu          sync.RWMutex
+	methods     map[string]Handler
+	long        map[string]bool
+	attachments map[string]AttachmentHandler
+	readOnly    bool
 }
 
 // NewServer builds a Server with the given method bindings.
 func NewServer(handlers map[string]Handler) *Server {
-	s := &Server{methods: make(map[string]Handler, len(handlers)), long: map[string]bool{}}
+	s := &Server{methods: make(map[string]Handler, len(handlers)), long: map[string]bool{}, attachments: map[string]AttachmentHandler{}}
 	maps.Copy(s.methods, handlers)
 	return s
 }
@@ -43,9 +44,12 @@ func NewStatusServer(status Handler) *Server {
 	return s
 }
 
-// Register binds method to h. A duplicate registration is an error naming
-// the method.
+// Register binds method to h. A duplicate registration, or a transport-only
+// attachment method, is an error naming the method.
 func (s *Server) Register(method string, h Handler) error {
+	if attachmentMethod(method) {
+		return fmt.Errorf("control: method %q is served only by RegisterAttachment", method)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, dup := s.methods[method]; dup {
@@ -70,7 +74,8 @@ func (s *Server) RegisterLong(method string, h Handler) error {
 
 // Dispatch runs the intent's method through Execute, or through
 // ExecuteLong for a method bound with RegisterLong. An unregistered
-// method returns capability_unsupported without touching the ledger.
+// method, and a transport-only attachment method, returns
+// capability_unsupported without touching the ledger.
 func (s *Server) Dispatch(ctx context.Context, peer Peer, intent Intent) (Result, error) {
 	if s.readOnly {
 		if !peer.SameUser {
@@ -79,6 +84,9 @@ func (s *Server) Dispatch(ctx context.Context, peer Peer, intent Intent) (Result
 		if err := intent.Validate(); err != nil {
 			return Result{}, newError(CodeInvalidContract, "invalid intent: %v", err)
 		}
+	}
+	if attachmentMethod(intent.Method) {
+		return Result{}, newError(CodeCapabilityUnsupported, "method %q is served only by the attachment transport", intent.Method)
 	}
 	s.mu.RLock()
 	h, ok := s.methods[intent.Method]
@@ -253,48 +261,81 @@ func Serve(ctx context.Context, l Listener, srv *Server, db *sql.DB) error {
 			}
 			return fmt.Errorf("control: accepting: %w", err)
 		}
-		wg.Go(func() {
-			defer func() { _ = conn.Close() }()
-			serveConn(WithLedger(ctx, db), conn, srv)
-		})
+		wg.Go(func() { serveConn(WithLedger(ctx, db), conn, srv) })
 	}
 }
 
 // serveConn answers request frames until the peer leaves or a frame breaks a
-// limit, which ends the integration (NFR-1).
+// limit, which ends the integration (NFR-1). One owned writer drains a
+// queue of one pending frame while it writes another, so a stalled Respond
+// bounds what the connection holds. serveConn closes conn and returns only
+// after the writer has returned; a Respond that never returns blocks it.
 func serveConn(ctx context.Context, conn Conn, srv *Server) {
+	ctx, cancel := context.WithCancel(ctx)
+	queue := make(chan []byte, 1)
+	var writer sync.WaitGroup
+	writer.Go(func() {
+		defer cancel()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case out := <-queue:
+				if err := conn.Respond(out); err != nil || ctx.Err() != nil {
+					return
+				}
+			}
+		}
+	})
+	defer func() {
+		cancel()
+		_ = conn.Close()
+		writer.Wait()
+	}()
 	for {
 		frame, err := conn.Receive(ctx)
 		if err != nil {
 			return
 		}
-		res := answer(ctx, conn.Peer(), srv, frame)
+		in, err := Decode[Intent](frame)
+		if err == nil && attachmentMethod(in.Method) {
+			if !srv.answerAttachment(ctx, conn.Peer(), in, queue) {
+				return
+			}
+			continue
+		}
+		res := answer(ctx, conn.Peer(), srv, in, err)
 		out, err := Encode(res)
 		if err != nil {
 			return
 		}
-		if err := conn.Respond(out); err != nil {
+		select {
+		case queue <- out:
+		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-// answer decodes one request frame and dispatches it. Every failure is a
-// Result carrying its Error, so the client sees one reply shape.
-func answer(ctx context.Context, peer Peer, srv *Server, frame []byte) Result {
-	in, err := Decode[Intent](frame)
-	if err != nil {
-		return Result{Error: newError(CodeInvalidContract, "%v", err)}
+// answer dispatches one decoded request frame. Every failure is a Result
+// carrying its Error, so the client sees one reply shape.
+func answer(ctx context.Context, peer Peer, srv *Server, in Intent, decodeErr error) Result {
+	if decodeErr != nil {
+		return Result{Error: newError(CodeInvalidContract, "%v", decodeErr)}
 	}
 	res, err := srv.Dispatch(ctx, peer, in)
 	res.OperationID = in.OperationID
-	var ce *Error
-	switch {
-	case err == nil:
-	case errors.As(err, &ce):
-		res.Error = ce
-	default:
-		res.Error = newError(CodePersistenceUnavailable, "the request could not be completed")
+	if err != nil {
+		res.Error = replyError(err)
 	}
 	return res
+}
+
+// replyError keeps a control Error and hides any other failure behind one
+// constant message, so no raw payload reaches the wire.
+func replyError(err error) *Error {
+	if ce, ok := errors.AsType[*Error](err); ok {
+		return ce
+	}
+	return newError(CodePersistenceUnavailable, "the request could not be completed")
 }
