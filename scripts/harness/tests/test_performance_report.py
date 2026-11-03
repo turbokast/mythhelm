@@ -47,6 +47,13 @@ class PerformanceReportTests(unittest.TestCase):
         self.assertEqual(data['arms']['mythhelm']['outcomes']['timeout'], 1)
         self.assertIn('pilot_not_confirmatory', block)
         self.assertNotIn('population', data)
+        lead = block.split('<details>')[0]
+        self.assertIn('Native harness: **' + data['native']['harness'] + '**', lead)
+        self.assertIn('PR scope: **validation-use**', lead)
+        self.assertIn('not general coding delivery', lead)
+        self.assertIn('Observed validation-use time', svg)
+        self.assertIn(data['native']['harness'], svg)
+        self.assertIn('MYTHHELM comparison build', block)
 
     def test_missing_usage_is_unavailable_never_zero(self):
         data = self.evidence()

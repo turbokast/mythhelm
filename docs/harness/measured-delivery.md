@@ -186,7 +186,10 @@ The private receipt manifest has exactly these top-level fields:
 
 - `pair_receipts`: one object for **every started assigned arm**, with `attempt_id`
   (the ledger measurement ID), `receipt_sha256` (the actual native run receipt),
-  and `tool_source_revision` (the MYTHHELM binary source revision used).
+  and `tool_source_revision` (the reviewed MYTHHELM comparison-build source
+  revision). This is the same MYTHHELM build under comparison for both routes;
+  only the MYTHHELM arm executes it. The direct-native value does not identify
+  a native harness Git build or claim that direct execution used MYTHHELM.
 - `pr_evidence`: `candidate_source_revision`, `delivery_scope` (`validation-use`
   or `authored`), `authored_via` (`direct-native` or `mythhelm`), `receipt_sha256`
   (actual MYTHHELM use against that candidate), `tool_source_revision`,

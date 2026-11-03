@@ -233,6 +233,10 @@ def render(data=None):
     else:
         lines += [f"**{data['phase'].capitalize()} / {data['cohort']}: {data['planned_pairs']} assigned pairs; "
                   f"{data['independent_components']} independent component(s).** No comparative advantage is established.", '',
+                  f"Native harness: **{data['native']['harness']}**; PR scope: **{data['pr_evidence']['delivery_scope']}** "
+                  f"(authored via **{data['pr_evidence']['authored_via']}**). " +
+                  ('This measures the PR validation workload, not general coding delivery.' if data['pr_evidence']['delivery_scope'] == 'validation-use' else
+                   'This measures the registered coding workload.'), '',
                   '| Route | Accepted within budget / assigned | Observed mean elapsed | Usage provenance / missingness | Paired trials |',
                   '|---|---|---|---|---|']
         chart_text.append((f"{data['phase'].capitalize()}: {data['planned_pairs']} assigned pairs; {data['independent_components']} independent component(s)", 55))
@@ -271,8 +275,8 @@ def render(data=None):
                   f"trial configuration SHA-256: `{pr['trial_configuration_sha256']}`. " +
                   ('Same committed candidate and validation input.' if pr['validation_profile'] == 'same-source' else
                    'Only the trial mythhelm.toml differs; this is a reviewed validation profile, not identical full source.'),
-                  'The paired performance workload is validation evidence; it does not establish authorship of this PR. Different workload sources are reference measurements.', '',
-                  '| Pair / route | Workload source | Tool source | Reviewed native receipt SHA-256 |',
+                  'The paired workload does not establish broader coding performance. Different workload sources are reference measurements. The comparison build identifies MYTHHELM under comparison; only the MYTHHELM arm executes it.', '',
+                  '| Pair / route | Workload source | MYTHHELM comparison build | Reviewed native receipt SHA-256 |',
                   '|---|---|---|---|']
         for receipt in data['pair_receipts']:
             lines.append('| ' + receipt['pair_id'] + ' / ' + receipt['mode'] + ' | ' +
@@ -291,12 +295,14 @@ def render(data=None):
     lines += ['', 'Same native harness, model, effort, source, task, checks, settings, environment and registered budget are required for current matched evidence. '
               'Historical [scheduling-confounded pilot](docs/dogfood/0003-measured-self-hosting.md) results are excluded. '
               'See the [measurement method](docs/harness/measured-delivery.md#controlled-comparisons).', END]
+    chart_title = ('Observed native delivery time' if data is None else
+                   f"Observed {data['pr_evidence']['delivery_scope']} time — {data['native']['harness']}")
     svg = ['<svg xmlns="http://www.w3.org/2000/svg" width="800" height="270" viewBox="0 0 800 270" role="img" aria-labelledby="title desc">',
-           '<title id="title">Observed native delivery time</title>',
+           f'<title id="title">{escape(chart_title)}</title>',
            '<desc id="desc">All assigned outcomes; missing observations have no bars. Descriptive evidence only, no superiority claim.</desc>',
            '<rect width="800" height="270" fill="#f7f9fc"/>',
            '<g fill="#152238" font-family="sans-serif" font-size="17">',
-           '<text x="24" y="30">Observed elapsed time — descriptive evidence only</text>']
+           f'<text x="24" y="30">{escape(chart_title) if data is not None else "Observed elapsed time — descriptive evidence only"}</text>']
     svg += [f'<text x="24" y="{y}">{escape(text)}</text>' for text, y in chart_text]
     svg += ['<text x="24" y="250" font-size="13">No established advantage. Missing is not zero; pilot results do not generalize.</text>', '</g>']
     svg += [f'<rect x="24" y="{y}" width="{width:.2f}" height="20" fill="#425f9c"/>' for y, width in bars]
