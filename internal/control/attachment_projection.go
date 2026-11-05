@@ -19,7 +19,7 @@ import (
 	"github.com/turbokast/mythhelm/internal/v2contract"
 )
 
-// maxProjectionTaskBytes preserves the admission artifact limit without a
+// maxProjectionTaskBytes preserves the admission artefact limit without a
 // control-to-admission dependency. The boundary test pins their equivalence.
 const maxProjectionTaskBytes = 1 << 20
 

@@ -62,6 +62,11 @@ func (r *runtime) attachmentHandler(ctx context.Context, peer control.Peer, in c
 			scope.release()
 		}
 	}()
+	// Identity may change while waiting for the authority guard. Re-prove it
+	// under the retained guard before any attachment transaction.
+	if err := r.checkAttachmentIdentity(ctx); err != nil {
+		return nil, publicAttachmentDenied()
+	}
 	generation := r.lease.Generation()
 	var body []byte
 	var revision uint64

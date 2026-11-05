@@ -676,7 +676,7 @@
 - **Spec deviations**: Own three lifecycle records follow WORKFLOW/task-completion. Added `internal/supervisor/deadline_test.go` as an explicitly scoped CI fixture repair: require the actual complete same-run/attempt launched spool event before user-first stop; give that input a one-minute execution envelope while natural-deadline input stays two seconds and setup/recovery bounds stay thirty seconds. Hosted Windows reported launch_failed; its underlying Start error is unknown, and queued stop is not claimed to abort Start. No grant/production API, deadline-function or runtime-authority change; public composition remains Task12.
 - **Files modified**: `internal/control/attachment_auth.go`, `internal/control/attachment_auth_test.go`, `internal/supervisor/deadline_test.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
-### Task 12 — Produce coherent safe projections
+### Task 12 — Produce coherent safe projections ✅ COMPLETED
 
 - **Domain/agent**: go-implementer
 - **Budget**: complex
@@ -685,6 +685,9 @@
 - **Files**:
   - `internal/control/attachment_projection.go`
   - `internal/control/attachment_projection_test.go`
+  - `internal/control/attachment_response.go` (constant public foreign-peer refusal)
+  - `internal/control/attachment_response_test.go`
+  - `internal/cli/supervisor_test.go` (actual registered Open contract)
   - `internal/journal/attachment_revision.go`
   - `internal/journal/attachment_revision_test.go`
   - `internal/service/attachments.go`
@@ -701,6 +704,11 @@
   - TestProjectionStableRevision repeats identical content then changes one selected field; duplicate retains revision, change increments it monotonically.
 - **Test plan**: Synthetic fixtures and deterministic barriers for the named cases; pair negative assertions with a deliberately violating fixture. Public process behavior uses the packaged binary in the integration task, not helper-only evidence.
 - **Invariants touched**: I03/I07/I09/I17/I19/I23 (v2 §§5/8/14: complete scoped evidence).
+
+- **Status**: ✅ Completed — coherent safe attachment projections and retained response composition; final-head CI and merge remain required.
+- **Implementation**: Open, Read and Close retain the existing owner, instance and authority gate through one SQL transaction and queue acceptance or discard. Identity is rechecked after waiting for the gate. Projection revisions cover selected content; private task artifacts remain bounded to one MiB, and protected verdicts follow canonical finished-time ordering. Focused race acceptance and independent code/architecture review bind the candidate. All six required local gates pass on the final source, including full repository race 383.7s; hosted checks and merge remain required.
+- **Spec deviations**: Three coupled source paths extend the original seven: response error normalization and its regression, plus the CLI test of newly registered malformed/unknown Open. The local artifact bound avoids a production control/admission import cycle. Review repaired portable physical-identity fixtures, a missing post-gate identity recheck and the full-queue test barrier. Windows may refuse live namespace replacement; that concrete OS refusal branch verifies unchanged successful reads, without claiming replacement was exercised.
+- **Files modified**: `internal/control/attachment_projection.go`, `internal/control/attachment_projection_test.go`, `internal/control/attachment_response.go`, `internal/control/attachment_response_test.go`, `internal/journal/attachment_revision.go`, `internal/journal/attachment_revision_test.go`, `internal/service/attachments.go`, `internal/service/attachments_test.go`, `internal/service/runtime.go`, `internal/cli/supervisor_test.go`, `specs/in-progress/supervisor-attachment-control/tasks.md`, `specs/in-progress/supervisor-attachment-control/handoff.md`, `specs/in-progress/supervisor-attachment-control/scratchpad.md`.
 
 ### Task 13 — Accept atomic stop intents with immutable acknowledgments
 

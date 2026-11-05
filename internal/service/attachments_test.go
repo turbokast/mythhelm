@@ -15,6 +15,7 @@ import (
 	goruntime "runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -844,7 +845,7 @@ func TestAttachmentRetainedOwnerFullQueueDiscard(t *testing.T) {
 	send()
 	// The first response is in flight and the second is accepted into the sole
 	// pending slot. The third retains scope while the actual queue is full.
-	waitParked(t, "(*Server).answerAttachment")
+	waitParked(t, "control.offer(")
 	deadline := time.Now().Add(time.Second)
 	for {
 		r.authority.mu.Lock()
@@ -1027,32 +1028,47 @@ func TestAttachmentPublicPhysicalIdentityRefusals(t *testing.T) {
 			seedProjectionRun(t, r, "run_identityview")
 			registerActor(t, r, ownRun(t, r, "run_identityview"))
 			c := newProjectionConn()
-			attachmentWire(t, r, c)
-			path := r.journal.StateDir()
-			if target == "database" {
-				path = filepath.Join(path, journal.DBName)
-			}
-			moved := path + ".synthetic-moved"
-			if err := os.Rename(path, moved); err != nil {
+			client := attachmentWire(t, r, c)
+			opened, err := client.Open(t.Context(), "run_identityview")
+			if err != nil {
 				t.Fatal(err)
 			}
-			restore := sync.OnceFunc(func() {
-				_ = os.Remove(path)
-				if err := os.Rename(moved, path); err != nil {
-					t.Error(err)
-				}
-			})
-			defer restore()
+			// Close SQLite before replacing its physical identity on Windows. Keep
+			// the original owner and lease, but use a valid replacement journal so
+			// refusal cannot be explained by an empty file or a closed database.
+			root := r.journal.StateDir()
+			if err := r.journal.Close(); err != nil {
+				t.Fatal(err)
+			}
+			path := root
+			if target == "database" {
+				path = filepath.Join(root, journal.DBName)
+			}
+			if err := os.Rename(path, path+".synthetic-moved"); err != nil {
+				t.Fatal(err)
+			}
 			if target == "root" {
-				if err := os.Mkdir(path, 0700); err != nil {
-					t.Fatal(err)
-				}
-			} else {
-				if err := os.WriteFile(path, nil, 0600); err != nil {
+				if err := os.Mkdir(root, 0700); err != nil {
 					t.Fatal(err)
 				}
 			}
-			g := control.AttachmentGrant{AttachmentID: "synthetic-id", ClientID: "synthetic-client", RunID: "run_identityview", RepositoryID: "synthetic-repo", Token: "synthetic-token", Generation: 1}
+			originalDB := path + ".synthetic-moved"
+			if target == "root" {
+				originalDB = filepath.Join(originalDB, journal.DBName)
+			}
+			data, err := os.ReadFile(originalDB) // #nosec G304 -- Closed original database in this isolated replacement fixture.
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, journal.DBName), data, 0600); err != nil { // #nosec G703 -- Fixed database name under the fixture-owned root.
+				t.Fatal(err)
+			}
+			replacement, err := journal.Open(t.Context(), root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r.journal = replacement
+			g := opened.Grant
 			for _, method := range []string{"attachment.open", "attachment.read", "attachment.close"} {
 				known := rawAttachment(t, c, method, "run_identityview", g)
 				g.RunID = "run_missing"
@@ -1069,7 +1085,6 @@ func TestAttachmentPublicPhysicalIdentityRefusals(t *testing.T) {
 					t.Fatalf("replaced physical %s disclosed response: %s", target, known)
 				}
 			}
-			restore()
 		})
 	}
 }
@@ -1112,5 +1127,87 @@ func TestIndependentLatestVerificationOrder(t *testing.T) {
 	}
 	if opened.Projection.ReviewState != "candidate" {
 		t.Fatalf("projection did not preserve canonical rejected latest verdict as candidate: %s", opened.Projection.ReviewState)
+	}
+}
+
+func TestAttachmentRootReplacedWhileWaitingGate(t *testing.T) {
+	r := testRuntime(t)
+	seedProjectionRun(t, r, "run_gate_root")
+	registerActor(t, r, ownRun(t, r, "run_gate_root"))
+	client := attachmentWire(t, r, newProjectionConn())
+	opened, err := client.Open(t.Context(), "run_gate_root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err := r.authority.acquire(t.Context(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer guard()
+	type response struct {
+		p   control.Projection
+		err error
+	}
+	done := make(chan response, 1)
+	go func() { p, err := client.Read(t.Context(), opened.Grant); done <- response{p, err} }()
+	waitParked(t, "(*authorityGate).acquire")
+	root := r.journal.StateDir()
+	moved := root + "-original"
+	renameErr := os.Rename(root, moved)
+	if renameErr != nil {
+		var linkErr *os.LinkError
+		if goruntime.GOOS != "windows" || !errors.As(renameErr, &linkErr) ||
+			(!errors.Is(linkErr.Err, syscall.Errno(5)) && !errors.Is(linkErr.Err, syscall.Errno(32)) && !errors.Is(linkErr.Err, syscall.Errno(33))) {
+			t.Fatal(renameErr)
+		}
+		if err := r.checkAttachmentIdentity(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("Windows refused live namespace mutation; verifying unchanged read: %v", renameErr)
+		guard()
+		select {
+		case got := <-done:
+			if got.err != nil || got.p.RunID != opened.Projection.RunID || got.p.RunRevision != opened.Projection.RunRevision {
+				t.Fatalf("unchanged read: %+v, %v", got.p, got.err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("unchanged request did not finish")
+		}
+		return
+	}
+	defer func() {
+		if err := os.RemoveAll(root); err != nil {
+			t.Error(err)
+		}
+		if err := os.Rename(moved, root); err != nil {
+			t.Error(err)
+		}
+	}()
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := journal.Open(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := replacement.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.journal.CheckStateIdentity(t.Context()); err == nil {
+		t.Fatal("replacement did not break original physical identity")
+	}
+	before := attachmentRows(t, r)
+	guard()
+	select {
+	case got := <-done:
+		var ce *control.Error
+		if !errors.As(got.err, &ce) || ce.Code != control.CodePermissionDenied || ce.Message != "attachment unavailable" || got.p.RunID != "" {
+			t.Fatalf("replaced root released projection: run=%q err=%v", got.p.RunID, got.err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("request did not finish")
+	}
+	if !reflect.DeepEqual(before, attachmentRows(t, r)) {
+		t.Fatal("replaced root request changed attachment rows")
 	}
 }

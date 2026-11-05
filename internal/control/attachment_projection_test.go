@@ -15,7 +15,7 @@ import (
 func TestProjectionTaskArtifactBoundaries(t *testing.T) {
 	t.Parallel()
 	if maxProjectionTaskBytes != admission.MaxTaskBytes {
-		t.Fatal("projection artifact bound differs from admission")
+		t.Fatal("projection artefact bound differs from admission")
 	}
 	root := t.TempDir()
 	dir := filepath.Join(root, "runs", "run_artefact")
@@ -48,7 +48,7 @@ func TestProjectionTaskArtifactBoundaries(t *testing.T) {
 	}
 	limitSum := sha256.Sum256(limitTask)
 	if got := projectionTaskDigest(t.Context(), root, "run_artefact"); got != "sha256:"+hex.EncodeToString(limitSum[:]) {
-		t.Fatal("exact-limit artifact was rejected or misread")
+		t.Fatal("exact-limit artefact was rejected or misread")
 	}
 	if err := os.WriteFile(path, []byte(strings.Repeat("x", admission.MaxTaskBytes+1)), 0600); err != nil {
 		t.Fatal(err)

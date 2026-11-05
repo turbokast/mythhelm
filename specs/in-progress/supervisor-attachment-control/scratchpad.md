@@ -250,3 +250,9 @@ The concurrency regression now sends prebuilt intents through the actual registe
 ### Final fixture integration verification
 
 Integrated the reviewed fixture dependency from PR #626 (`ca8385cd`) with the canonical-path, short-root and confirmation-revision test repairs. The combined source passed the full repository race gate in 292.5s (changed service package 254.414s, CLI 286.242s; valid unchanged package caches retained), formatter, dependency, vet, lint and hygiene checks. Coordinator acceptance tests independently passed in 10.141s. After #626 merges, this task retains sixteen core source paths and four specification records; fixture history above remains historical evidence. No production deadline or authority rule changed. Exact-head hosted checks and verified merge remain required.
+
+## Task 12 — Essential projection integration and review repairs
+
+The preserved projection implementation was integrated after the preparation integration merged. A production control/admission import cycle and the CLI's obsolete unsupported-Open expectation were repaired without broadening behavior. Review found live SQLite rename setup incompatible with Windows, plus an actual identity replacement while a request waited at the authority gate; the latter required rechecking identity before SQL. Static fixtures retain valid target/grant data so missing rows cannot explain refusal. The live queued case retains the actual journal handle and documents concrete Windows OS-refusal evidence separately.
+
+An early-release mutation initially survived tests that observed a parent handler stack before its queue wait. Waiting at the actual queue offer makes the existing discard test reject that mutation. Earlier failures, surviving controls and fixture experiments remain in private measurement evidence; they are not relabelled as accepted runs. No new native trial or qualification follows this essential repair.
