@@ -149,7 +149,11 @@ def main(argv=None):
     try:
         result = subprocess.run(["go", "list", "./..."], check=True, text=True, capture_output=True)
         packages = select_packages(result.stdout, args.shard)
-        return run_tests(["go", "test", "-json", *(["-race"] if args.race else []), "-p", "1", *packages])
+        # The Windows race suite can schedule a real 60-second deadline test
+        # near Go's default ten-minute package limit. Preserve its timer and
+        # assertions while allowing bounded headroom for the complete suite.
+        timeout = ["-timeout", "15m"] if args.shard == "supervisor" and args.race else []
+        return run_tests(["go", "test", "-json", *(["-race"] if args.race else []), *timeout, "-p", "1", *packages])
     except subprocess.CalledProcessError as exc:
         print(f"go test shard: go list failed: {exc}", file=sys.stderr)
         if exc.stderr:

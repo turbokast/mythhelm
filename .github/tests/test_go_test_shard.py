@@ -133,9 +133,11 @@ class ShardTests(unittest.TestCase):
 
     def test_test_exit_and_flags(self):
         listing = subprocess.CompletedProcess([], 0, stdout=s.SUPERVISOR + "\n" + CLI + "\nexample.test/project/a\n")
-        for argv, expected in ((["supervisor", "--race"], ["go", "test", "-json", "-race", "-p", "1", s.SUPERVISOR]),
+        for argv, expected in ((["supervisor", "--race"], ["go", "test", "-json", "-race", "-timeout", "15m", "-p", "1", s.SUPERVISOR]),
+                               (["supervisor"], ["go", "test", "-json", "-p", "1", s.SUPERVISOR]),
                                (["cli", "--race"], ["go", "test", "-json", "-race", "-p", "1", CLI]),
                                (["cli"], ["go", "test", "-json", "-p", "1", CLI]),
+                               (["rest", "--race"], ["go", "test", "-json", "-race", "-p", "1", "example.test/project/a"]),
                                (["rest"], ["go", "test", "-json", "-p", "1", "example.test/project/a"])):
             with self.subTest(argv=argv), mock.patch.object(s.subprocess, "run", return_value=listing) as run, \
                     mock.patch.object(s, "run_tests", return_value=7) as tests:
