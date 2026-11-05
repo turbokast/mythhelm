@@ -64,9 +64,10 @@ Try it with no credentials and no network at runtime: `go run ./cmd/mythhelm dem
 
 Supported now (evidence: [G09 record](docs/tui-slice-g09-evidence.md); unrecorded combinations are experimental per I14):
 
-- The focused mission view on a TTY: `mythhelm run` / `demo` / `review` launch the Bubble Tea TUI with responsive layouts (wide, two-pane, single, compact), palette/command navigation and event-driven motion.
+- The Observatory mission view on a TTY: `mythhelm run` / `demo` / `review` show NOW / NEXT, Tasks, Agent, Evidence and an inspectable Diff across wide, two-pane, single and compact layouts. Help, the command palette and confirmations open as overlays; small terminals use a full-screen overlay with a retained header. See [controls and exit behavior](docs/user-guide.md#the-terminal-view).
 - Stable linear output without a TTY, under `TERM=dumb`, with `--plain`, and machine output (`--format jsonl`); `--accessible` emits the ordered screen-reader stream. Covered on Linux, macOS and Windows (x86_64 and ARM) by the packaged-binary end-to-end suite.
-- Explicit `--colour` / `--motion` / `--icons` overrides; `NO_COLOR` and `TERM=dumb` suppress.
+- `--theme auto|dark|light` selects Observatory (dark) or Paper (light); the palette can toggle them. `--colour`, `--motion` and `--icons` remain explicit overrides. Background detection is unqualified; matching the terminal background to the chosen theme is required for its contrast guarantees. See [theme selection and startup limits](docs/user-guide.md#themes-and-terminal-background).
+- `q` offers selectable exit options, initially Back. With recorded detachment support and a running worker, Detach leaves execution running and exits 6 with a state-bound recovery command; Ctrl-C in a live executing run first requests a stop and keeps the view open. Stop remains requested until worker confirmation. Detached demos retain their repository and state for [recovery and explicit cleanup](docs/user-guide.md#recovering-a-detached-demo).
 
 Recorded interactive combination (Revision 1.1 §16.4 row in the G09 record):
 
@@ -77,9 +78,11 @@ Experimental until recorded in the G09 record:
 - Interactive use in any other terminal/shell: only the combinations with full evidence rows are claimed.
 - Screen-reader support: no human session recorded yet, all combinations experimental (AC-5.4).
 
-Known limitations (G09 findings, see the record §5):
+Known limitations (see the [current evidence and gaps](docs/tui-slice-g09-evidence.md#5-current-source-evidence-and-remaining-gaps)):
 
-- The G09 findings (unwired `q` exit rows, mid-run Ctrl-C cancelling) describe its recorded build. Current source wires selectable, mode- and phase-dependent exit controls and distinguishes a worker-confirmed stop from detachment, saying so where detachment is not qualified. Task 10 packaged lifecycle tests have since merged in [PR #521](https://github.com/turbokast/mythhelm/pull/521), using synthetic agents and real processes; they establish no live-native or additional terminal qualification. The planned Observatory renderer remains unfinished; see [TUI limits](docs/limitations.md#tui-limits).
+- The interactive row above and checked-in recordings describe their pinned historical builds. The Observatory renderer, overlays and theme flags have automated evidence ([PR #566](https://github.com/turbokast/mythhelm/pull/566), [#587](https://github.com/turbokast/mythhelm/pull/587), [#618](https://github.com/turbokast/mythhelm/pull/618)); the human G09 session has not been repeated. The new synthetic TUI recording awaits Task 20, real recording tools and artifact inspection.
+- Windows detach remains unqualified and its deliberate control is disabled without recorded support. Verification/apply phases finish headless rather than accepting worker-stop cancellation; non-deadline fenced workers may still wait indefinitely for reconnection. Stale supervisor beats mean unknown supervision. Human screen-reader and light/dark terminal matrices remain missing.
+- Mixed supervisor/worker binary handoffs fail closed. [Finish/drain old supervisors before replacing the binary](docs/user-guide.md#binary-replacement-and-existing-runs); seamless in-place replacement between admission and spawn is unsupported.
 
 ## Principles
 

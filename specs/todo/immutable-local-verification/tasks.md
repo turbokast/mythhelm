@@ -11,7 +11,7 @@
 
 ## Implementation Tasks
 
-### Task 8 — Record the verification persistence and ownership decision
+### Task 8 — Record the verification persistence and ownership decision ✅ COMPLETED
 
 - **Domain/agent**: go-implementer (docs domain)
 - **Budget**: standard (one decision record; authoring/checks capped at 30 minutes; missing review/acceptance returns blocked rather than extending the budget)
@@ -27,6 +27,12 @@
   - Existing public hygiene and documentation/reference checks pass; the ADR contains no private paths, raw outputs or invented qualification results.
 - **Test plan**: inspect the bounded ADR against the explicit decision checklist above; verify exact independent review/acceptance and merged revision through read-only PR/Git evidence. The later mechanism tasks own the behavioral regression tests cited by the ADR. No runtime fixture, inference or paid call is needed for this documentation task.
 - **Invariants touched**: I07/I20 (v2 §2: exact reviewed decision/evidence revisions); I08 (owned artifacts preserve original/unrelated state); I09 (accepted design is distinct from actual qualification); I21 (finite lifecycle and retention); I23 (private harness receipts do not replace product orchestration); charter principles 1/2/5/6 and repository governance.
+
+
+- **Status**: ✅ Completed — ADR and exact-revision governance record prepared in PR #623; merge confirmation remains pending, so Task 1 is not released.
+- **Implementation**: ADR commit `82a167e5f58e51e1083bb2dd88646410cb585653`; unchanged ADR SHA-256 `a6331c8057f66735115cb9f6480ac2976c3267708e08b2aea534f549109e9eb5`. Independent architecture review returned Ready; the coordinator accepted that exact artifact under the maintainer's explicit delegated decision authority on 2026-11-05. Implementation and host/tool qualification remain future work.
+- **Spec deviations**: None. Task completion and handoff metadata follow the shared completion procedure; the completion marker does not assert merge or release Task 1 before confirmation on `origin/main`.
+- **Files modified**: `docs/decisions/0023-immutable-local-verification.md`, `specs/todo/immutable-local-verification/tasks.md`, `specs/todo/immutable-local-verification/handoff.md`.
 
 ### Task 1 — Define strict manifest, profile and result contracts
 

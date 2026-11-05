@@ -583,7 +583,7 @@
 - **Limits**: Bubble Tea v1.3.10 already consults lipgloss during package initialization; this wiring reads that cached result and adds no query. Existing startup-query latency, tmux/screen fallback and Windows dark default remain disclosed by the exact shared help. Terminal detection and human accessibility remain unqualified.
 
 
-### Task 19 — Update user-facing limits and instructions
+### Task 19 — Update user-facing limits and instructions ✅ COMPLETED
 
 - **Domain/agent**: go-implementer (docs)
 - **Budget**: standard
@@ -600,6 +600,14 @@
   - Any newly pasted command output comes from a named executed fake/binary test; old plain/accessibility/JSONL examples remain unchanged. Docs say recording awaits Task20 until artifacts actually exist.
 - **Test plan**: Render/read changed document sections, hygiene gate, verify source links and named evidence; no inferred benchmark advantage.
 - **Invariants touched**: I06/I09/I13/I14/I25 (v2 §§15,19: explicit limits and return-to-native guidance).
+
+- **Status**: ✅ Completed — current documentation and local claim checks submitted in PR #621; exact-head CI and actual merge remain required.
+- **Implementation**: Signed source `24984bc` documents the merged view/controls, phase-dependent lifecycle, retained demo root and explicit post-recovery cleanup, theme syntax/platform help and startup/background limits, mixed-version handoff rejection and per-artifact recording provenance.
+- **Spec deviations**: No documentation scope or dependency change. Review fixes clarify pending-stop detach and add source-grounded evidence (consistent with the lifecycle contract). Required own lifecycle paths are this tasks file, handoff.md and scratchpad.md. Historical media and all 20 original fenced examples remain unchanged.
+- **Files modified**: `README.md`, `docs/user-guide.md`, `docs/tui-slice-g09-evidence.md`, `docs/demos/README.md`, `specs/in-progress/tui-observatory-view/tasks.md`, `specs/in-progress/tui-observatory-view/handoff.md`, `specs/in-progress/tui-observatory-view/scratchpad.md`.
+- **Acceptance evidence**: Independent documentation review returned Ready for source `24984bc`; fresh review fixes preserve all 20 original fenced examples across the four documentation paths against `24984bc^` (Python fence extraction and literal block comparison: `original fenced examples preserved: 20`). The 34 distinct backticked test names in `docs/tui-slice-g09-evidence.md:137` onward each resolve to a `func Test...` declaration in tracked Go tests (source inventory: `section 5 test names: 34; missing: 0`); this is name/source grounding, not a claim that all 34 ran in this closeout. Platform text at `docs/user-guide.md:224` matches `internal/cli/tui.go:69`; `TestThemeHelpPlatformLimits` at `internal/cli/tui_test.go:1170` checks all three verbs. Detach eligibility and pending-stop behavior are grounded in `internal/tui/lifecycle.go:83` and `internal/tui/lifecycle.go:99`, with `TestLiveCtrlCIntents` at `internal/tui/lifecycle_test.go:222`. Recovery templates are grounded in `TestPOSIXRecoveryCommandExecution` and `TestPowerShellRecoveryCommandExecution` at `internal/cli/demo_lifecycle_test.go:205` and `:212`; no recovery/deletion command was executed for documentation validation. Reference/spec lint and hygiene are recorded for the final metadata revision; hosted rendering/link checks still require current-head CI.
+- **Limits**: Human G09/screen-reader/detection matrices, Windows detachment, general non-deadline reconnect, verification cancellation and stale-beat observation remain qualified gaps. Task20 still owns real media generation and human inspection; this documentation establishes no new native/platform/G09 qualification.
+
 
 ### Task 20 — Re-record the synthetic TUI demonstration
 

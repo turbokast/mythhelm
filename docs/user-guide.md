@@ -107,6 +107,155 @@ On a TTY, `run`, `review` and `demo` open the TUI. Without one, or with
 `TERM=dumb`, the output is linear, and `run` also takes `--plain`,
 `--format jsonl` and `--accessible`.
 
+## The terminal view
+
+On a TTY, the Observatory view puts the current phase in NOW and the next
+available action in NEXT. Tasks identifies the run; Agent shows recorded
+progress or the full stream; Evidence keeps verification, billing and unknown
+values visible; Diff opens the candidate change. Activity counters do not say
+which file the native agent is editing, and a native result alone is not proof
+of verification. The acceptance limits below still apply.
+
+At 140 columns and above, Tasks, Agent and Evidence share the screen. At
+100–139 columns, Tasks sits beside the selected pane. At 80–99 columns, one
+pane is visible with tabs for Tasks, Agent, Evidence and Diff. Below 80 columns,
+or below 10 rows, the compact view keeps the phase, NOW / NEXT and exit hint
+within the available space. The key bar drops some hints as space shrinks;
+their keys still work. Help, the palette and confirmations appear over the
+mission at large sizes; below 100 columns or 20 rows, or when a card cannot
+fit, they use a full-screen overlay under a one-line header.
+
+| Key | Effect |
+|---|---|
+| Tab / Shift-Tab, Left / Right | Move between panes |
+| Up / Down, optional j / k | Move within a list |
+| Enter | Open Diff; Esc returns to its originating pane |
+| v | Toggle the Agent summary/full stream |
+| / | Filter the focused collection |
+| : | Open the searchable command palette |
+| ? | Open contextual help with full action names and disabled reasons |
+| a / s / d / r | Confirm apply / request stop / detach / recover when available |
+| e | Export the focused pane as plain text |
+| q | Open exit options, initially focused on Back |
+| Esc | Back out of a prompt, overlay or filter; never quit |
+
+Use Up/Down, j/k or Tab to choose an exit row, then Enter. Choosing Detach
+there is the explicit selection; the direct `d` key opens a separate
+confirmation. Stop, recover, apply and direct detach confirmations start on
+Cancel; move to the labelled action before pressing Enter. Disabled actions
+show why they cannot run.
+
+Current automated evidence and the remaining terminal, screen-reader, Windows
+detachment, reconnect and supervision-observation gaps are recorded in the
+[G09 evidence register](https://github.com/turbokast/mythhelm/blob/main/docs/tui-slice-g09-evidence.md#5-current-source-evidence-and-remaining-gaps).
+The human session and media remain pinned to their historical builds; the new
+TUI recording awaits Task 20 and artifact inspection.
+
+### Leaving, stopping and losing the terminal
+
+`run` and `demo` own a live run; `review` is an inspect view. Closing the view
+does not prove that execution stopped. Deliberate detach exits **6**, says the
+run is not complete, and prints a recovery command bound to its state root.
+
+| Mode / phase | Exit and stop behavior |
+|---|---|
+| Live, created or admission | Request stop is available; detach is disabled because no worker exists. First Ctrl-C requests stop before spawn; another waits for admission. Confirmed cancellation exits 130, or admission refusal exits 3. |
+| Live, executing | `q` offers Detach, Request stop and Back. Detach requires an accepted running worker and recorded platform support; it does not issue a stop request. With no stop already pending, the worker keeps running; detaching after requesting stop does not cancel that request. First Ctrl-C requests stop and keeps the view open; a second detaches with stop still unconfirmed, exit 6. A worker-confirmed cancellation exits 130. |
+| Live, executing but worker not running yet | Detach is disabled with “waiting for the worker.” Stop remains available; another Ctrl-C keeps the view open while waiting. |
+| Live, stopping | Stop is already requested. First Ctrl-C adds no request; a second can detach with recovery guidance, exit 6. |
+| Live, verifying or applying | Stop and detach controls are disabled. First Ctrl-C reports the phase; a second closes the view and finishes that phase in the same process, then exits with the run's outcome. |
+| Live, terminal or ready for review | `q` offers Quit and Back; Ctrl-C closes the view with the run's outcome. An interrupted run exits 6. |
+| Inspect (`review`) | `q` offers Quit and Back; Ctrl-C normally closes the view, exit 0. Detach is unavailable because this view owns no run. Stop is available only during executing; an unconfirmed inspect stop leaves client exit 6 with recovery guidance. |
+
+Stop stays labelled requested until the worker confirms no unresolved
+processes remain. Where platform detachment is unknown or unsupported,
+deliberate Detach is disabled. Emergency second Ctrl-C and terminal loss can
+still close the client, with an explicit “not qualified on this platform”
+notice and exit 6; this does not qualify Windows detachment.
+
+During a confirmed inspect stop, recover or apply, `q` or Ctrl-C first warns
+that the action is in progress. The next Ctrl-C cancels and joins that action's
+cleanup, then exits 6 with recovery guidance; cancellation is not proof that
+its effects were undone. Losing the terminal instead preserves the existing
+action and waits for its actual result. No replacement action is started.
+
+Terminal loss before worker acceptance waits for a safe detach point; during
+verification/apply it finishes headless. A successful canonical run still
+leaves client exit 6 after terminal loss; a nonzero run failure keeps its
+failure code. A TUI startup error also waits for the existing pipeline without
+requesting stop and prints state-bound review guidance while that process
+continues to own the run. Input EOF alone is not terminal-loss evidence.
+
+### Recovering a detached demo
+
+The live TUI demo retains its temporary repository and state directory on
+detach, an unconfirmed stop or uncertain cleanup. Its notice names both
+retained directories and prints the exact recovery command. Use that command
+in the labelled shell: it explicitly selects the demo's private state root,
+which can differ from your current `MYTHHELM_HOME`. The POSIX sh/bash/zsh form
+is `env 'MYTHHELM_HOME=<absolute-demo-state>' mythhelm recover '<run-id>'`;
+on Windows the PowerShell form is
+`$env:MYTHHELM_HOME = '<absolute-demo-state>'; mythhelm recover '<run-id>'`.
+These are syntax templates, not captured output: copy the actual quoted
+values from the notice, including its escaping. For fish, cmd or another
+shell, open the named supported shell first.
+
+Recovery preserves the evidence and does not delete either directory. After
+recovery, inspect the final run/receipt in that same state root and retain or
+export any evidence you need. Confirm that the attempt is terminal and no live
+or uncertain writer remains; a recovery exit code alone is insufficient for
+cleanup. If ownership is unresolved, keep both directories. Once that proof
+exists, explicitly delete only the two exact demo directories printed by the
+retention notice, using your file manager or the named shell. This is an
+operator cleanup step, not a side effect of `recover`.
+
+### Themes and terminal background
+
+`run`, `review` and `demo` accept `--theme auto`, `--theme dark` and
+`--theme light` (default `auto`). Dark is Observatory; light is Paper. Use the
+palette's Toggle theme action to switch while viewing. Unknown choices exit 2,
+including on a piped or linear command. Existing `--colour`, `--motion` and
+`--icons` choices remain available; `--colour never`, `NO_COLOR` and
+`TERM=dumb` suppress colour. `run --plain`, `--accessible` and JSONL output
+retain their linear presentation.
+
+The flag's platform help is:
+
+> auto detects the terminal background on Linux and macOS outside tmux and screen; under tmux or screen it uses COLORFGBG and otherwise dark; on Windows it always selects dark, use --theme light for a light terminal
+
+On other non-Unix platforms the background answer also defaults dark. Real
+terminal detection has not been qualified by a light/dark matrix. Theme
+selection reads the background answer already cached at startup and adds no
+query. The existing Bubble Tea startup query can wait up to **5 seconds** on
+a terminal that does not answer, even for plain, accessible and JSONL modes;
+explicit theme selection does not remove that initialization wait.
+
+Contrast is guaranteed only on a terminal whose background matches the chosen
+theme. The main view leaves your terminal background unchanged; overlay cards
+paint their raised background. Paper's focus colour is a one-cell nontext
+marker, not body text; decorative borders are not a contrast cue for required
+actions. Select `--theme light` explicitly on a light terminal when auto
+chooses dark, and set the terminal background to match the chosen palette.
+
+### Binary replacement and existing runs
+
+Finish/drain old per-run supervisors before replacing the executable, and use
+a matching binary for new launches. The private supervisor-to-worker handoff
+requires an execution deadline: a new worker rejects an old payload without
+it, and an old worker rejects the new field. Both directions fail closed
+before native launch. Preserve a rejected handoff's evidence and follow its
+worker-not-accepted/recovery guidance rather than retrying automatically.
+Seamless binary replacement while an old supervisor is between admission and
+spawn is unsupported.
+
+An already running worker keeps its admitted deadline and episode; recovery
+uses the existing identity and spool evidence without relaunching it. The
+worker enforces that deadline after detach, and a confirmed deadline stop
+recovers as `blocked / envelope_deadline_exceeded`, rather than a user
+cancellation. A user stop accepted first remains a user cancellation. The
+pinned deadline cannot be extended in an already running worker by changing
+flags or configuration.
+
 ## Acceptance
 
 MYTHHELM does not call a candidate verified because a check once passed. A
