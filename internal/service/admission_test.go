@@ -12,7 +12,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	goruntime "runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -1557,4 +1560,127 @@ func TestServiceCanonicalRequestFixtureAliases(t *testing.T) {
 			t.Fatal("actual producer changed physical request provenance")
 		}
 	})
+}
+
+// Run serially so the process-stack barrier identifies this confirmation waiter.
+func TestConfirmationReplayRechecksQueuedPhysicalIdentity(t *testing.T) {
+	r := testRuntime(t)
+	spec := retentionOnlyRequestFixture(t)
+	configureSyntheticAdmission(t, r, spec)
+	client := control.NewPreparedRunClient(&admissionFramedConn{runtime: r, peer: control.Peer{SameUser: true, PID: 77}})
+	prepared, err := client.PrepareRevisioned(t.Context(), "op_identity_prepare", spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer := retentionAnswer(prepared.Run)
+	first, err := client.ConfirmRevisioned(t.Context(), "op_identity_confirm", 0, answer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Revision != 1 || !first.Run.Ready {
+		t.Fatal("initial confirmation not ready")
+	}
+	before := preparationImage(t, r, prepared.Run.PreparationID)
+	r.preparations.mu.Lock()
+	locked := true
+	defer func() {
+		if locked {
+			r.preparations.mu.Unlock()
+		}
+	}()
+	type response struct {
+		reply control.PreparedReply
+		err   error
+	}
+	done := make(chan response, 1)
+	go func() {
+		reply, err := client.ConfirmRevisioned(t.Context(), "op_identity_confirm", 0, answer)
+		done <- response{reply, err}
+	}()
+	waitConfirmationStoreMutex(t)
+	root := r.journal.StateDir()
+	moved := root + "-original"
+	renameErr := os.Rename(root, moved)
+	if renameErr != nil {
+		var linkErr *os.LinkError
+		if goruntime.GOOS != "windows" || !errors.As(renameErr, &linkErr) ||
+			(!errors.Is(linkErr.Err, syscall.Errno(5)) && !errors.Is(linkErr.Err, syscall.Errno(32)) && !errors.Is(linkErr.Err, syscall.Errno(33))) {
+			t.Fatal(renameErr)
+		}
+		if err := r.journal.CheckStateIdentity(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.lease.CheckRootIdentity(t.Context(), root); err != nil {
+			t.Fatal(err)
+		}
+		r.preparations.mu.Unlock()
+		locked = false
+		select {
+		case got := <-done:
+			if got.err != nil || !reflect.DeepEqual(got.reply, first) {
+				t.Fatalf("unchanged replay: %+v, %v", got.reply, got.err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("unchanged replay did not finish")
+		}
+		if after := preparationImage(t, r, prepared.Run.PreparationID); after != before {
+			t.Fatal("unchanged replay changed preparation")
+		}
+		t.Logf("Windows refused live root replacement; unchanged historical replay verified: %v", renameErr)
+		return
+	}
+	defer func() {
+		if err := os.RemoveAll(root); err != nil {
+			t.Error(err)
+		}
+		if err := os.Rename(moved, root); err != nil {
+			t.Error(err)
+		}
+	}()
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := journal.Open(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := replacement.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.journal.CheckStateIdentity(t.Context()); err == nil {
+		t.Fatal("replacement did not change original physical identity")
+	}
+	if image := preparationImage(t, r, prepared.Run.PreparationID); image != before {
+		t.Fatal("retained original journal lost preparation before replay")
+	}
+	r.preparations.mu.Unlock()
+	locked = false
+	select {
+	case got := <-done:
+		var ce *control.Error
+		if !errors.As(got.err, &ce) || ce.Code != control.Code("dependency_stale") || got.reply.Revision != 0 || got.reply.Run.PreparationID != "" {
+			t.Fatalf("changed physical root released historical reply: %+v, %v", got.reply, got.err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("replay did not finish")
+	}
+	if after := preparationImage(t, r, prepared.Run.PreparationID); after != before {
+		t.Fatal("refused replay changed preparation")
+	}
+}
+
+func waitConfirmationStoreMutex(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		buf := make([]byte, 1<<20)
+		buf = buf[:goruntime.Stack(buf, true)]
+		for g := range strings.SplitSeq(string(buf), "\n\n") {
+			if strings.Contains(g, "(*runtime).confirmAdmission(") && strings.Contains(g, "sync.(*Mutex).Lock") && !strings.Contains(g, "(*runtime).admissionScope(") {
+				return
+			}
+		}
+		goruntime.Gosched()
+	}
+	t.Fatal("confirmation did not wait for preparation store after initial scope proof")
 }
