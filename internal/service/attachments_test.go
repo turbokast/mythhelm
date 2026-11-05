@@ -1045,7 +1045,35 @@ func TestAttachmentPublicPhysicalIdentityRefusals(t *testing.T) {
 				path = filepath.Join(root, journal.DBName)
 			}
 			if err := os.Rename(path, path+".synthetic-moved"); err != nil {
-				t.Fatal(err)
+				var linkErr *os.LinkError
+				if target != "root" || goruntime.GOOS != "windows" || !errors.As(err, &linkErr) ||
+					(!errors.Is(linkErr.Err, syscall.Errno(5)) && !errors.Is(linkErr.Err, syscall.Errno(32)) && !errors.Is(linkErr.Err, syscall.Errno(33))) {
+					t.Fatal(err)
+				}
+				// The retained owner can prevent Windows from renaming the root.
+				// Prove the namespace stayed intact and the real grant still works;
+				// this branch does not claim to exercise a replaced root.
+				if identityErr := r.journal.CheckStateIdentity(t.Context()); identityErr != nil {
+					t.Fatal(identityErr)
+				}
+				reopened, openErr := journal.Open(t.Context(), root)
+				if openErr != nil {
+					t.Fatal(openErr)
+				}
+				r.journal = reopened
+				if identityErr := r.checkAttachmentIdentity(t.Context()); identityErr != nil {
+					t.Fatal(identityErr)
+				}
+				before := attachmentRows(t, r)
+				got, readErr := client.Read(t.Context(), opened.Grant)
+				if readErr != nil || got.RunID != opened.Projection.RunID || got.RunRevision != opened.Projection.RunRevision {
+					t.Fatalf("unchanged root read: %+v, %v", got, readErr)
+				}
+				if !reflect.DeepEqual(before, attachmentRows(t, r)) {
+					t.Fatal("unchanged root read modified attachment rows")
+				}
+				t.Logf("Windows retained owner prevented root replacement; unchanged grant read verified: %v", err)
+				return
 			}
 			if target == "root" {
 				if err := os.Mkdir(root, 0700); err != nil {
