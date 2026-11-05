@@ -943,18 +943,21 @@ func TestServicePreparedConcurrentRevisions(t *testing.T) {
 	}
 	answer := control.RunConfirmation{SchemaVersion: 2, PreparationID: prepared.PreparationID, ChallengeID: project.ID, BindingSHA256: prepared.BindingSHA256, Approved: true}
 	type reply struct {
-		prepared control.PreparedReply
-		err      error
+		result control.Result
+		err    error
 	}
 	results := make(chan reply, 2)
 	start := make(chan struct{})
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
+	// Exercise the service revision race with its own bounded context. The typed
+	// client has a separate two-second total budget, including queued validation.
+	// TestReviewStaleConfirmationHasCurrent covers its actual framed metadata.
 	for i := range 2 {
+		intent := admissionIntent(t, r, "run.confirm", fmt.Sprintf("op_concurrent_answer_%d", i), prepared.PreparationID, 1, answer)
 		go func() {
 			<-start
-			client := control.NewPreparedRunClient(&admissionFramedConn{runtime: r, peer: peer})
-			result, err := client.ConfirmRevisioned(ctx, fmt.Sprintf("op_concurrent_answer_%d", i), 1, answer)
+			result, err := r.server.Dispatch(ctx, peer, intent)
 			results <- reply{result, err}
 		}()
 	}
@@ -965,8 +968,12 @@ func TestServicePreparedConcurrentRevisions(t *testing.T) {
 		case result := <-results:
 			if result.err == nil {
 				accepted++
-				if result.prepared.Revision != 2 || !result.prepared.Run.Ready {
-					t.Fatalf("winning revision=%+v", result.prepared)
+				var current control.PreparedRun
+				if err := json.Unmarshal(result.result.Body, &current); err != nil {
+					t.Fatal(err)
+				}
+				if result.result.Revision != 2 || !current.Ready {
+					t.Fatalf("winning revision=%+v body=%+v", result.result, current)
 				}
 			} else {
 				refused++
@@ -982,6 +989,108 @@ func TestServicePreparedConcurrentRevisions(t *testing.T) {
 	image := preparationImage(t, r, prepared.PreparationID)
 	if !strings.HasPrefix(image, "2/1/") {
 		t.Fatalf("row/outer revision mismatch=%s", image)
+	}
+}
+
+// admissionDeadlineConn records the confirmation's request context before the
+// typed client cancels it on return. Status discovery cannot supply this evidence.
+type admissionDeadlineConn struct {
+	*admissionFramedConn
+	confirmed              bool
+	confirmationContextErr error
+}
+
+func (c *admissionDeadlineConn) Request(ctx context.Context, frame []byte) ([]byte, error) {
+	in, err := control.Decode[control.Intent](frame)
+	if err != nil {
+		return nil, err
+	}
+	response, err := c.admissionFramedConn.Request(ctx, frame)
+	if in.Method == "run.confirm" {
+		c.confirmed = true
+		c.confirmationContextErr = ctx.Err()
+	}
+	return response, err
+}
+
+func TestServicePreparedConcurrentStaleClients(t *testing.T) {
+	r := testRuntime(t)
+	spec := projectRequestFixture(t)
+	configureSyntheticAdmission(t, r, spec)
+	prepared, peer := prepareFixtureRun(t, r, spec, "op_stale_clients_prepare")
+	if _, err := r.server.Dispatch(t.Context(), peer, admissionIntent(t, r, "run.confirm", "op_stale_clients_retention", prepared.PreparationID, 0, retentionAnswer(prepared))); err != nil {
+		t.Fatal(err)
+	}
+	var project control.AdmissionChallenge
+	for _, challenge := range prepared.Challenges {
+		if challenge.Kind == "project-config" {
+			project = challenge
+		}
+	}
+	answer := control.RunConfirmation{SchemaVersion: 2, PreparationID: prepared.PreparationID, ChallengeID: project.ID, BindingSHA256: prepared.BindingSHA256, Approved: true}
+	before := preparationImage(t, r, prepared.PreparationID)
+	if !strings.HasPrefix(before, "1/0/") {
+		t.Fatalf("unexpected initial revision/readiness: %s", before)
+	}
+	rowsBefore := admissionRowCounts(t, r)
+	hintsBefore := len(r.preparations.confirmations)
+	type reply struct {
+		err        error
+		confirmed  bool
+		contextErr error
+	}
+	results := make(chan reply, 2)
+	start := make(chan struct{})
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	for i := range 2 {
+		go func() {
+			<-start
+			conn := &admissionDeadlineConn{admissionFramedConn: &admissionFramedConn{runtime: r, peer: peer}}
+			client := control.NewPreparedRunClient(conn)
+			_, err := client.ConfirmRevisioned(ctx, fmt.Sprintf("op_stale_clients_answer_%d", i), 0, answer)
+			results <- reply{err, conn.confirmed, conn.confirmationContextErr}
+		}()
+	}
+	close(start)
+	for range 2 {
+		select {
+		case got := <-results:
+			if !got.confirmed {
+				t.Fatalf("confirmation did not reach registered server: %v", got.err)
+			}
+			var ce *control.Error
+			if !errors.As(got.err, &ce) {
+				t.Fatalf("stale client must receive typed refusal: %v", got.err)
+			}
+			if ce.Code == control.Code("dependency_stale") {
+				if !errors.Is(got.contextErr, context.DeadlineExceeded) {
+					t.Fatalf("dependency stale without observed request deadline: err=%v context=%v", got.err, got.contextErr)
+				}
+				// Deadline exhaustion proves refusal only, not revision-conflict timing.
+				continue
+			}
+			requireAdmissionCode(t, got.err, control.CodeRevisionConflict)
+			var conflict *control.PreparationConflictError
+			if !errors.As(got.err, &conflict) {
+				t.Fatalf("missing typed current metadata: %v", got.err)
+			}
+			current, ok := conflict.Current()
+			if !ok || current.Revision != 1 || current.Run.Ready || current.Run.PreparationID != prepared.PreparationID || current.Run.BindingSHA256 != prepared.BindingSHA256 || current.Run.Generation != prepared.Generation {
+				t.Fatalf("incoherent current metadata: %+v present=%v", current, ok)
+			}
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+	}
+	if after := preparationImage(t, r, prepared.PreparationID); after != before {
+		t.Fatalf("stale clients changed durable state: before=%s after=%s", before, after)
+	}
+	if rowsAfter := admissionRowCounts(t, r); rowsAfter != rowsBefore {
+		t.Fatalf("stale clients changed durable row counts: before=%s after=%s", rowsBefore, rowsAfter)
+	}
+	if hintsAfter := len(r.preparations.confirmations); hintsAfter != hintsBefore {
+		t.Fatalf("stale clients changed confirmation hints: before=%d after=%d", hintsBefore, hintsAfter)
 	}
 }
 
@@ -1086,6 +1195,9 @@ func TestReviewStaleConfirmationHasCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if p.Revision != 0 || p.Run.Ready || retained.Revision != 1 || retained.Run.Ready {
+		t.Fatalf("unexpected prepare/retention revisions: prepared=%+v retained=%+v", p, retained)
+	}
 	var answer control.RunConfirmation
 	for _, ch := range p.Run.Challenges {
 		if ch.Kind == "project-config" {
@@ -1096,14 +1208,25 @@ func TestReviewStaleConfirmationHasCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if final.Revision != 2 || !final.Run.Ready {
+		t.Fatalf("unexpected final confirmation: %+v", final)
+	}
+	before := preparationImage(t, r, p.Run.PreparationID)
+	if !strings.HasPrefix(before, "2/1/") {
+		t.Fatalf("row/outer revision mismatch=%s", before)
+	}
 	_, err = client.ConfirmRevisioned(t.Context(), "op_review_current_stale", retained.Revision, answer)
 	var conflict *control.PreparationConflictError
 	if !errors.As(err, &conflict) {
 		t.Fatalf("stale confirmation error=%T %v; expected PreparationConflictError with current revision %d", err, err, final.Revision)
 	}
 	current, ok := conflict.Current()
-	if !ok || current.Revision != final.Revision || current.Run.BindingSHA256 != p.Run.BindingSHA256 {
+	requireAdmissionCode(t, err, control.CodeRevisionConflict)
+	if !ok || current.Revision != final.Revision || !current.Run.Ready || current.Run.PreparationID != p.Run.PreparationID || current.Run.Generation != p.Run.Generation || current.Run.BindingSHA256 != p.Run.BindingSHA256 {
 		t.Fatalf("incoherent current=%+v present=%v", current, ok)
+	}
+	if after := preparationImage(t, r, p.Run.PreparationID); after != before {
+		t.Fatalf("stale confirmation changed durable state: before=%s after=%s", before, after)
 	}
 }
 
