@@ -64,7 +64,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import runspec  # noqa: E402  (sibling module)
 
-GOLANGCI = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2"
+GOLANGCI = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0"
 GOVULNCHECK = "golang.org/x/vuln/cmd/govulncheck@v1.8.0"
 # Portable harness checks consume workflow definitions and their helper/test
 # inputs. Keep the same dependency scope for gate selection and fingerprints;
