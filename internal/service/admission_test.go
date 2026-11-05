@@ -1388,7 +1388,17 @@ func TestServicePreparedRootReplacementRefuses(t *testing.T) {
 
 // This fixture changes process-wide temporary-directory inputs and cannot run in parallel.
 func TestServiceCanonicalRequestFixtureAliases(t *testing.T) {
-	base := t.TempDir()
+	// The child TempDir includes its test name. Repeating the parent test name
+	// in this root exceeds Windows Git's path limit for loose object files.
+	base, err := os.MkdirTemp("", "mha-") //nolint:usetesting // t.TempDir repeats the test name and exceeds Windows Git path limits; cleanup below owns this short root.
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(base); err != nil {
+			t.Errorf("remove owned alias fixture root: %v", err)
+		}
+	})
 	alias := filepath.Join(base, "alias")
 	target := filepath.Join(base, "physical")
 	if err := os.Mkdir(target, 0700); err != nil {
