@@ -15,9 +15,10 @@ here.
 
 ## Installation
 
-There are no binary archives yet, so build from source. MYTHHELM needs Go 1.27
-or newer. `go.mod` pins the toolchain, so with the default `GOTOOLCHAIN=auto`
-an older `go` command downloads the right version the first time it runs.
+There are no binary archives yet, so build from source. MYTHHELM needs Go 1.27.3
+or newer. `go.mod` sets this minimum; with the default `GOTOOLCHAIN=auto`,
+an older `go` command downloads a suitable toolchain. `GOTOOLCHAIN=local`
+refuses to build with an older version.
 Nothing else is required: no accounts, credentials or network services.
 
 ```sh
