@@ -1191,12 +1191,19 @@ func TestApplyRootHeldOwnerDoesNotUpgradeSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer release()
-	ctx, cancel := context.WithTimeout(t.Context(), 80*time.Millisecond)
+	// This budget covers full ApplyRoot setup as well as the held-owner stage.
+	// TestMigrationQuiesceOwnerDeadline in internal/migrate/service_transition_test.go
+	// separately preserves the exact 80ms owner primitive proof.
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	_, err = migrate.ApplyRoot(ctx, dir, preview.Plan{})
 	var ce *v2contract.ControlError
 	if !errors.As(err, &ce) || ce.Code != v2contract.CodeOwnershipUnresolved {
-		t.Fatalf("held owner error=%v", err)
+		var detail map[string]string
+		if ce != nil {
+			detail = ce.Detail
+		}
+		t.Fatalf("held owner error=%v detail=%v ctx=%v", err, detail, ctx.Err())
 	}
 	var version int
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
