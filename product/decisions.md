@@ -465,3 +465,122 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: The closeout audit has not established the required designated-contrast outcome, external repeat-use criterion and completed quality evidence. Missing or non-comparable observations cannot establish the registered feasibility targets. A further study requires a separately recorded design and decision.
 - **Cards**: MH-12,MH-15,MH-24
 - **Evidence**: docs/validation-plan.md; D-111; validation closeout audit dated 2026-11-05
+
+### D-113 — 2026-11-05: MH-22 → shipped (spec lifecycle reconciliation)
+- **Type**: lifecycle-sync
+- **Decision**: Correct MH-22 to shipped and link its merged specification records. Only the finalized protected-acceptance implementation slice is shipped; complete S1 and native qualification are not established. D-112's expansion deferral, current stage, scores, gate evidence and qualification limits remain unchanged.
+- **Rationale**: Reconcile factual repository lifecycle state with the product index; this does not prioritize or authorize deferred expansion.
+- **Cards**: MH-22
+- **Evidence**: specs/done/protected-acceptance/requirements.md (66bc34c docs(spec): finalize protected-acceptance (#443))
+
+### D-114 — 2026-11-05: MH-33 → shipped (spec lifecycle reconciliation)
+- **Type**: lifecycle-sync
+- **Decision**: Correct MH-33 to shipped and link its merged specification records. The documentation implementation is finalized; this supplies no new runtime qualification. D-112's expansion deferral, current stage, scores, gate evidence and qualification limits remain unchanged.
+- **Rationale**: Reconcile factual repository lifecycle state with the product index; this does not prioritize or authorize deferred expansion.
+- **Cards**: MH-33
+- **Evidence**: specs/done/docs-site-restyle/requirements.md (2f04fff docs(spec): finalize docs-site-restyle (#496))
+
+### D-115 — 2026-11-05: MH-11 → implementing (spec lifecycle reconciliation)
+- **Type**: lifecycle-sync
+- **Decision**: Correct MH-11 to implementing and link its merged specification records. Implementation is in progress; missing native Windows qualification remains unknown. D-112's expansion deferral, current stage, scores, gate evidence and qualification limits remain unchanged.
+- **Rationale**: Reconcile factual repository lifecycle state with the product index; this does not prioritize or authorize deferred expansion.
+- **Cards**: MH-11
+- **Evidence**: specs/in-progress/windows-process-ownership/requirements.md (233d8ad docs(spec): start windows-process-ownership implementation (#476))
+
+### D-116 — 2026-11-05: MH-23 → implementing (spec lifecycle reconciliation)
+- **Type**: lifecycle-sync
+- **Decision**: Correct MH-23 to implementing and link its merged specification records. Implementation is in progress; remaining interaction and accessibility acceptance stays open. D-112's expansion deferral, current stage, scores, gate evidence and qualification limits remain unchanged.
+- **Rationale**: Reconcile factual repository lifecycle state with the product index; this does not prioritize or authorize deferred expansion.
+- **Cards**: MH-23
+- **Evidence**: specs/in-progress/tui-observatory-view/requirements.md (e4ab1fc docs(spec): start tui-observatory-view implementation (#482))
+
+### D-117 — 2026-11-05: MH-13 → implementing (spec lifecycle reconciliation)
+- **Type**: lifecycle-sync
+- **Decision**: Correct MH-13 to implementing and link its merged specification records. Implementation is unfinalized; the cancelled private advisory stays cancelled and finalization is not complete. D-112's expansion deferral, current stage, scores, gate evidence and qualification limits remain unchanged.
+- **Rationale**: Reconcile factual repository lifecycle state with the product index; this does not prioritize or authorize deferred expansion.
+- **Cards**: MH-13
+- **Evidence**: specs/unfinalized/contained-execution-profiles/requirements.md (68363fd docs(spec): contained-execution-profiles implemented, awaiting finalize (#314))
+
+### D-118 — 2026-11-05: MH-3 → implementing (spec lifecycle reconciliation)
+- **Type**: lifecycle-sync
+- **Decision**: Correct MH-3 to implementing and link its merged specification records. The epic remains unfinished: supervisor attachment is in progress, existing-run client and Herdr projection are planned; Task8 alone cannot complete it. D-112's expansion deferral, current stage, scores, gate evidence and qualification limits remain unchanged.
+- **Rationale**: Reconcile factual repository lifecycle state with the product index; this does not prioritize or authorize deferred expansion.
+- **Cards**: MH-3
+- **Evidence**: specs/unrefined/herdr-embedded-client/plan.md (0092328 docs(spec): plan Herdr attachment as three work streams (#489)); specs/in-progress/supervisor-attachment-control/requirements.md (2be5840 docs(spec): adopt reviewed foundation producer contracts (#569)); specs/todo/existing-run-client/requirements.md (0092328 docs(spec): plan Herdr attachment as three work streams (#489)); specs/todo/herdr-scoped-projection/requirements.md (0092328 docs(spec): plan Herdr attachment as three work streams (#489))
+
+### D-119 — 2026-11-05: MH-17 → specced (spec lifecycle reconciliation)
+- **Type**: lifecycle-sync
+- **Decision**: Correct MH-17 to specced and link its merged specification records. Refined requirements provide planning evidence only; no implementation, trial or new authority is granted. D-112's expansion deferral, current stage, scores, gate evidence and qualification limits remain unchanged.
+- **Rationale**: Reconcile factual repository lifecycle state with the product index; this does not prioritize or authorize deferred expansion.
+- **Cards**: MH-17
+- **Evidence**: specs/refined/account-profiles-exhaustion/requirements.md (719661c docs: refine account profiles and exhaustion requirements (MH-17) (#595))
+
+### D-120 — 2026-11-05: MH-15 → specced (spec lifecycle reconciliation)
+- **Type**: lifecycle-sync
+- **Decision**: Correct MH-15 to specced and link its merged specification records. Refined requirements provide planning evidence only; no implementation, trial or new authority is granted. D-112's expansion deferral, current stage, scores, gate evidence and qualification limits remain unchanged.
+- **Rationale**: Reconcile factual repository lifecycle state with the product index; this does not prioritize or authorize deferred expansion.
+- **Cards**: MH-15
+- **Evidence**: specs/refined/native-session-continuity/requirements.md (76ea2e5 docs: refine native session continuity requirements (MH-15) (#599))
+
+### D-121 — 2026-11-05: MH-24 → specced (spec lifecycle reconciliation)
+- **Type**: lifecycle-sync
+- **Decision**: Correct MH-24 to specced and link its merged specification records. Refined requirements provide planning evidence only; no implementation, trial or new authority is granted. D-112's expansion deferral, current stage, scores, gate evidence and qualification limits remain unchanged.
+- **Rationale**: Reconcile factual repository lifecycle state with the product index; this does not prioritize or authorize deferred expansion.
+- **Cards**: MH-24
+- **Evidence**: specs/refined/delivery-scoped-context/requirements.md (a3b1a55 docs: refine scoped context and dependency requirements (MH-24) (#596))
+
+### D-122 — 2026-11-05: MH-25 → specced (spec lifecycle reconciliation)
+- **Type**: lifecycle-sync
+- **Decision**: Correct MH-25 to specced and link its merged specification records. Refined requirements provide planning evidence only; no implementation, trial or new authority is granted. D-112's expansion deferral, current stage, scores, gate evidence and qualification limits remain unchanged.
+- **Rationale**: Reconcile factual repository lifecycle state with the product index; this does not prioritize or authorize deferred expansion.
+- **Cards**: MH-25
+- **Evidence**: specs/refined/scoped-retention-maintenance/requirements.md (141922f docs: refine scoped retention and maintenance requirements (MH-25) (#600))
+
+### D-123 — 2026-11-05: MH-5 → specced (spec lifecycle reconciliation)
+- **Type**: lifecycle-sync
+- **Decision**: Correct MH-5 to specced and link its merged specification records. Refined requirements provide planning evidence only; no implementation, trial or new authority is granted. D-112's expansion deferral, current stage, scores, gate evidence and qualification limits remain unchanged.
+- **Rationale**: Reconcile factual repository lifecycle state with the product index; this does not prioritize or authorize deferred expansion.
+- **Cards**: MH-5
+- **Evidence**: specs/refined/authorised-profile-routing/requirements.md (37536b0 docs: refine authorised profile routing requirements (MH-5) (#598))
+
+### D-124 — 2026-11-05: MH-29 → specced (spec lifecycle reconciliation)
+- **Type**: lifecycle-sync
+- **Decision**: Correct MH-29 to specced and link its merged specification records. Refined requirements provide planning evidence only; no implementation, trial or new authority is granted. D-112's expansion deferral, current stage, scores, gate evidence and qualification limits remain unchanged.
+- **Rationale**: Reconcile factual repository lifecycle state with the product index; this does not prioritize or authorize deferred expansion.
+- **Cards**: MH-29
+- **Evidence**: specs/refined/remaining-native-targets/plan.md (cd082f4 docs: refine remaining native qualification tracks (MH-29) (#597)); specs/refined/antigravity-native-qualification/requirements.md (e79fa9d docs: refine antigravity native qualification requirements (#605)); specs/refined/cursor-agent-native-qualification/requirements.md (7202356 docs: refine cursor-agent native qualification requirements (#607)); specs/refined/kimi-native-qualification/requirements.md (68ebdf9 docs: refine kimi native qualification requirements (#608)); specs/refined/muse-native-qualification/requirements.md (ba963c5 docs: refine muse native qualification requirements (#606)); specs/refined/opencode-native-qualification/requirements.md (efcbf90 docs: refine opencode native qualification requirements (#609))
+
+### D-125 — 2026-11-05: MH-6 → specced (spec lifecycle reconciliation)
+- **Type**: lifecycle-sync
+- **Decision**: Correct MH-6 to specced and link its merged specification records. Refined requirements provide planning evidence only; no implementation, trial or new authority is granted. D-112's expansion deferral, current stage, scores, gate evidence and qualification limits remain unchanged.
+- **Rationale**: Reconcile factual repository lifecycle state with the product index; this does not prioritize or authorize deferred expansion.
+- **Cards**: MH-6
+- **Evidence**: specs/refined/public-plugin-contracts/requirements.md (7e3b260 docs(spec): refine public plugin contracts (#615))
+
+### D-126 — 2026-11-05: MH-14 → specced (spec lifecycle reconciliation)
+- **Type**: lifecycle-sync
+- **Decision**: Correct MH-14 to specced and link its merged specification records. Refined requirements provide planning evidence only; no implementation, trial or new authority is granted. D-112's expansion deferral, current stage, scores, gate evidence and qualification limits remain unchanged.
+- **Rationale**: Reconcile factual repository lifecycle state with the product index; this does not prioritize or authorize deferred expansion.
+- **Cards**: MH-14
+- **Evidence**: specs/refined/bounded-parallel-construction/requirements.md (f18ff8c docs: refine bounded parallel construction requirements (MH-14) (#614))
+
+### D-127 — 2026-11-05: MH-26 → specced (spec lifecycle reconciliation)
+- **Type**: lifecycle-sync
+- **Decision**: Correct MH-26 to specced and link its merged specification records. Refined requirements provide planning evidence only; no implementation, trial or new authority is granted. D-112's expansion deferral, current stage, scores, gate evidence and qualification limits remain unchanged.
+- **Rationale**: Reconcile factual repository lifecycle state with the product index; this does not prioritize or authorize deferred expansion.
+- **Cards**: MH-26
+- **Evidence**: specs/refined/consented-outcome-evidence/requirements.md (ea8a9e8 docs: refine consented outcome evidence requirements (MH-26) (#611))
+
+### D-128 — 2026-11-05: MH-28 → specced (spec lifecycle reconciliation)
+- **Type**: lifecycle-sync
+- **Decision**: Correct MH-28 to specced and link its merged specification records. Refined requirements provide planning evidence only; no implementation, trial or new authority is granted. D-112's expansion deferral, current stage, scores, gate evidence and qualification limits remain unchanged.
+- **Rationale**: Reconcile factual repository lifecycle state with the product index; this does not prioritize or authorize deferred expansion.
+- **Cards**: MH-28
+- **Evidence**: specs/refined/bounded-policy-promotion/requirements.md (457cecb docs(spec): refine bounded policy promotion (#617))
+
+### D-129 — 2026-11-05: MH-30 → specced (spec lifecycle reconciliation)
+- **Type**: lifecycle-sync
+- **Decision**: Correct MH-30 to specced and link its merged specification records. Refined requirements provide planning evidence only; no implementation, trial or new authority is granted. D-112's expansion deferral, current stage, scores, gate evidence and qualification limits remain unchanged.
+- **Rationale**: Reconcile factual repository lifecycle state with the product index; this does not prioritize or authorize deferred expansion.
+- **Cards**: MH-30
+- **Evidence**: specs/refined/verified-production-delivery/requirements.md (4cbbcac docs: refine verified production delivery requirements (MH-30) (#610))
