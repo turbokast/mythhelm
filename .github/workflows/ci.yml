@@ -97,8 +97,12 @@ jobs:
         run: >-
           go test -count=1 -v ./internal/workers ./internal/supervisor
           -run '^Test(WindowsRunnerParentJobSpike|NativeCreatedSuspended|JobHandleNotInheritable|JobHasKillOnCloseAndNoBreakawayLimits|ParentJobLaunchPreparationFailsClosed|NativeIsInJobBeforeResume|JobCreateFailureEndsLaunchFailed|KillOnCloseParentJobRefused|ParentJobQueryErrorFailsLaunch|AssignFailureTerminatesSuspendedNative|UnconfirmedTerminationIsStopUnconfirmed|NativeStartTimeFailureTerminatesSuspendedNative|LaunchRecordsNativeStartTimeWindows|StartTimeReadFailureTerminatesJob|ParentJobSemantics|JobHasNoBreakawayLimits|RepeatedLaunchDoesNotStopExistingNative|ConfirmationHandleFailureStillTerminatesNative|IdentityFailureStopsNative|IdentityWriteFailureTerminatesSuspendedNative|StopKillsChildAndGrandchild|CreateNewProcessGroupDescendantDies|StopReportsSurvivorsWithIdentity|EnumerationFailureIsFailedScan|WindowsLadderHasOnlyKill|SignalRejectsNonKillOnWindows|StopTimeoutEndsStopUnconfirmed|LateJobScanInvalidatesConfirmation|PanicBeforeJobAssignmentTerminatesSuspendedNative|PanicAfterAssignmentStopsTree|PanicCleanupTimeoutRemainsUnconfirmed|RecoverAfterWorkerCrashWindows|RecoverNeverMatchesReusedPID|SuspendedNativeIsRecordedBeforeAssign|LaunchBoundaryCrashRecords|RecoverLaunchBoundaryOutcomes|ProcessStartTimeRejectsExitedWindows|SurvivesCLIExitAndConsoleClose|FirstInterruptRequestsStop|SecondInterruptDetaches)$'
-      - if: runner.os != 'Windows'
+      - if: runner.os == 'Linux'
         run: go test -race ./...
+      # Most tests are parallel and wait on helper processes and I/O; the
+      # 3-core macOS runner otherwise starves them of parallel slots.
+      - if: runner.os == 'macOS'
+        run: go test -race -parallel 8 ./...
       # Bound package scheduling on Windows; retain each package's parallel tests.
       - if: matrix.os == 'windows-latest'
         run: python .github/scripts/go-test-shard.py rest --race
@@ -222,6 +226,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0 # candidate source and PR evidence-only tail
       - name: Shellcheck
         run: |
           shellcheck --version
@@ -232,6 +237,15 @@ jobs:
         run: scripts/ci/lint-agent-harness.sh
       - name: CI helper unit tests
         run: python3 -m unittest discover -s .github/tests -p 'test_*.py'
+      - name: Per-PR native delivery evidence
+        env:
+          PERFORMANCE_EVENT: ${{ github.event_name }}
+          PERFORMANCE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          PERFORMANCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+        run: >-
+          python3 scripts/harness/performance_report.py check
+          --base "$PERFORMANCE_BASE_SHA" --head "$PERFORMANCE_HEAD_SHA"
+          --event "$PERFORMANCE_EVENT"
       - name: Public hygiene
         run: scripts/ci/check-public-hygiene.sh
 

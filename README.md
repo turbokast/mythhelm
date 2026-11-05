@@ -22,6 +22,59 @@ MYTHHELM is a pre-alpha project for coordinating native coding agents while pres
 
 > **Status: pre-alpha.** The only release so far, v0.0.1, is a source tag with no binary archives, so you build from source. The headless dogfood slice (`run`, `review`, `apply`, `recover`) plus an offline `demo` and a read-only `doctor` are implemented on `main` and covered by a packaged-binary end-to-end suite. `stop` and `runs list`, a budget ledger with finite run envelopes, execution profiles, a per-user supervisor and a one-way `migrate` have landed since, with the limits listed below and in the [limitations register](docs/limitations.md). A focused mission TUI is also implemented, with the evidence and limitations below. The broader adaptive product remains a design contract, not an implemented or benchmarked capability.
 
+<!-- performance-report:start -->
+## Native delivery performance
+
+**Pilot / development: 1 assigned pairs; 1 independent component(s).** No comparative advantage is established.
+
+Native harness: **claude-code**; PR scope: **validation-use** (authored via **direct-native**). This measures the PR validation workload, not general coding delivery.
+
+| Route | Accepted within budget / assigned | Observed mean elapsed | Usage provenance / missingness | Paired trials |
+|---|---|---|---|---|
+| MYTHHELM | 1 / 1 | 170.61 s (1 observed; 0 missing) | 1 reported; 0 observed; 0 unknown | 1 |
+| Direct native | 1 / 1 | 158.51 s (1 observed; 0 missing) | 1 reported; 0 observed; 0 unknown | 1 |
+
+![Observed native delivery time; unavailable values have no bars](docs/assets/performance.svg)
+
+<details>
+<summary>Outcomes, usage, provenance and limitations</summary>
+
+All assigned outcomes (including failures and incomplete work):
+
+| Route | accepted | rejected | error | timeout | blocked | unfinished | unstarted |
+|---|---|---|---|---|---|---|---|
+| mythhelm | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| direct-native | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+Token totals remain separate; each cell shows total / missing assignments.
+
+| Route | input_tokens | output_tokens | cache_read_tokens | cache_write_tokens |
+|---|---|---|---|---|
+| mythhelm | 6 / 0 | 1523 / 0 | 47565 / 0 | 7496 / 0 |
+| direct-native | 6 / 0 | 1527 / 0 | 47994 / 0 | 7689 / 0 |
+
+This PR: **validation-use** through MYTHHELM; authored via **direct-native**. Candidate source: `f36fb5f1d60b0bd1405490006aa2a8523f861621`; MYTHHELM tool source: `6a81f6036bab0fcc7410b03ff65d845763d33c3c`; reviewed native-use receipt: `713d294d95383bcf1b80577a2b6484c5988d7f5705c0bfe2f44e0a249a6e1051`.
+Validation input: `76a609af2c530a2bf0fedaddf70751be4fe23a2c`; profile: **mythhelm.toml-only**; trial configuration SHA-256: `20680660d8aeb3d70edaa75de9e1aa46a520127ec1c979fd48fa51070d110c8c`. Only the trial mythhelm.toml differs; this is a reviewed validation profile, not identical full source.
+The paired workload does not establish broader coding performance. Different workload sources are reference measurements. The comparison build identifies MYTHHELM under comparison; only the MYTHHELM arm executes it.
+
+| Pair / route | Workload source | MYTHHELM comparison build | Reviewed native receipt SHA-256 |
+|---|---|---|---|
+| adoption-fixture-max-pair1 / mythhelm | `76a609af2c530a2bf0fedaddf70751be4fe23a2c` | `6a81f6036bab0fcc7410b03ff65d845763d33c3c` | `713d294d95383bcf1b80577a2b6484c5988d7f5705c0bfe2f44e0a249a6e1051` |
+| adoption-fixture-max-pair1 / direct-native | `76a609af2c530a2bf0fedaddf70751be4fe23a2c` | `6a81f6036bab0fcc7410b03ff65d845763d33c3c` | `7e67d2ff86686883f44e44f917ee753ae7812c6ce44f94e1977374f08b1c24da` |
+
+Registered time ceiling: 600 s per arm; one attempt per arm. Observed elapsed means include all outcomes with known time; missing time is excluded and counted, never zero. These are descriptive observations, not restricted-time scores or successful-run latency.
+
+Native parity: harness `claude-code`, native_version `2.1.317`, model `claude-opus-5-5`, effort `xhigh`.
+Registered: 2026-11-03T23:18:30.041397+00:00. Protocol: `c163a0ef6323886217ab1944287ea9b611df6b9628291b8589ab94b864bb7551`. Independent review: `1b5f16242ab0b785f8dfaeeed2a73039197e1d1c44d34b410dcdc515d639bc69`.
+Source / task contract / checks SHA bindings: `76a609af2c530a2bf0fedaddf70751be4fe23a2c` / `a75f9d83e197b1f39ecf1cef25f6a1af7e99020de4071a752332fdd7b4f9afbf` / `80282ec86fbcedc3e3a7501fb3431c7ef01f339954a25118ca0332e2b6ae93e8`.
+Configuration / environment SHA-256: `fe43898d65d1b82f7b0e5cb183a24fbf647863525def48b03e81a9dd2e8057e8` / `0493700c57d4443eaa7cb63a41bb10e5005cc1e9844420e1f0bb5fcc3181d9ca`.
+Limitations: defect_observation_pending, defect_window_not_elapsed, pilot_not_confirmatory, single_dependent_component, validation_only_not_general_coding, safe_mode_trusted_host_broad_permissions, fixed_mythhelm_first_no_counterbalance, native_prefix_and_host_cache_uncontrolled, separate_empty_go_build_caches_paths_normalized, shared_module_preparation_excluded_from_timings, root_full_go_finished_before_pair, effort_configured_not_internally_observed, plugin_activation_not_certified_by_inventory, managed_remote_policy_uncertified, subscription_funding_declared_not_actual_charges, workspace_and_attempt_id_differences_disclosed, native_readonly_git_checks_differ, native_tool_timeout_settings_differ_untriggered, single_development_pair_no_superiority, prior_cohorts_and_rejected_authoring_not_pooled, earlier_quality_defect_observations_retained, actual_cross_platform_ci_still_required. A small pilot cannot establish population performance; independent components, delayed defects and uncertainty limit interpretation.
+
+</details>
+
+Same native harness, model, effort, source, task, checks, settings, environment and registered budget are required for current matched evidence. Historical [scheduling-confounded pilot](docs/dogfood/0003-measured-self-hosting.md) results are excluded. See the [measurement method](docs/harness/measured-delivery.md#controlled-comparisons).
+<!-- performance-report:end -->
+
 ## Dogfood slice status
 
 Supported now:

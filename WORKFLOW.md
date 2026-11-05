@@ -43,6 +43,33 @@ A change larger than a single fix becomes a spec: a directory under `specs/<stat
 | Design and plan | `/spec <name>` | `todo/`: `design.md`, `tasks.md` and `scratchpad.md`, validated by a fresh reviewer |
 | Review an old spec | `/evaluate-spec <name>` | the spec updated against the code, or archived |
 
+## Deliver one useful slice
+
+Choose the smallest end-to-end change that a user can exercise and independently
+verify. Define that observable result and its acceptance checks before dispatch.
+Finish, measure and review that slice before starting more prerequisite work.
+When a missing capability blocks it, repair the smallest concrete blocker; keep
+unrelated backlog expansion parked. Parallelize independent implementation,
+review and acceptance work around the same result, with isolated writers.
+
+Every pull request, including documentation, lifecycle and dependency changes,
+includes evidence of actual MYTHHELM use and a prospectively assigned comparison
+against the same native harness run directly. Use the same task, input revision,
+model and effort, effective configuration, environment, acceptance checks, retry
+budget and time ceiling. Disclose orchestration differences and observed native
+versions. Record both first outcomes, including refusals, failures and timeouts;
+never rerun to replace a poor result. Follow
+[measured delivery](docs/harness/measured-delivery.md) for registration and review.
+
+Update the README performance table and graph from the reviewed public aggregate
+in each pull request. Bind this PR's evidence to its candidate source revision;
+label a separate reference workload as such. State whether MYTHHELM authored the
+change or was used to validate it. A direct agent's work does not become
+MYTHHELM-authored because another task used MYTHHELM. Missing measurements remain
+unavailable and block readiness; do not substitute invented values or historical
+results. Keep raw transcripts, account information and local paths private.
+A small development pilot establishes observations, not general superiority.
+
 ## From spec to merged code
 
 `/run-spec <name>` implements a spec in `todo/` or `in-progress/`. It runs in your session as the orchestrator:

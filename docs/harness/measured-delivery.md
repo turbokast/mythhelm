@@ -166,3 +166,94 @@ record](../benchmarks.md), README or site. Include date, revisions, scope,
 independent sample count, all-assigned acceptance, uncertainty, missingness,
 exclusions, method and public fixture/check definitions. No current measurement
 establishes superiority.
+
+## Per-PR public evidence
+
+Every PR, including documentation and dependency changes, carries actual MYTHHELM
+use, a same-native-harness paired measurement and an updated README table and
+chart. A blocked run remains a blocked run; a failed comparison remains visible.
+No unavailable placeholder satisfies the PR evidence gate. A one-pair validation
+pilot establishes use and descriptive observations, not an advantage.
+
+`scripts/harness/performance_report.py` exports the existing frozen protocol and
+private ledger to the reviewed, public `docs/dogfood/performance.json` aggregate.
+It introduces no second measurement database. Keep prompts, native outputs,
+account information, receipt contents and host paths private. Its receipt manifest
+is also private; the public export contains only reviewed identifiers, source
+revisions and SHA-256 digests.
+
+The private receipt manifest has exactly these top-level fields:
+
+- `pair_receipts`: one object for **every started assigned arm**, with `attempt_id`
+  (the ledger measurement ID), `receipt_sha256` (the actual native run receipt),
+  and `tool_source_revision` (the reviewed MYTHHELM comparison-build source
+  revision). This is the same MYTHHELM build under comparison for both routes;
+  only the MYTHHELM arm executes it. The direct-native value does not identify
+  a native harness Git build or claim that direct execution used MYTHHELM.
+- `pr_evidence`: `candidate_source_revision`, `delivery_scope` (`validation-use`
+  or `authored`), `authored_via` (`direct-native` or `mythhelm`), `receipt_sha256`
+  (actual MYTHHELM use against that candidate), `tool_source_revision`,
+  `validation_input_revision`, `validation_profile` and `trial_configuration_sha256`.
+  Directly authored reporting changes may accurately use `validation-use`;
+  they must not claim MYTHHELM authorship. A paired validation task can supply
+  this receipt when its workload source equals the candidate source. An
+  unrelated reference workload cannot supply this PR's native-use evidence.
+  At least one complete matched receipt pair must target this PR's validation
+  input; an old direct-native comparison plus a new MYTHHELM receipt is insufficient.
+
+For an identical input, use `validation_profile=same-source`, matching candidate
+and input revisions, and a null trial configuration digest. A bounded validation
+profile may instead use `validation_profile=mythhelm.toml-only`: the input must be
+a direct child of the candidate, changing only `mythhelm.toml`, with its exact
+SHA-256 in `trial_configuration_sha256`. Export verifies the private Git parent,
+path diff and configuration blob before producing the public mapping. Both arms
+use that same actual input revision; the public report discloses its difference
+from the PR candidate. No other source exception is allowed. The reviewer retains
+the private source-diff proof; CI validates the reviewed mapping and candidate
+ancestry without requiring publication of the temporary trial commit.
+
+The reviewer audits real native receipt contents and run ownership, source/tool
+revisions, actual model/effort/configuration parity, acceptance scheduling, all
+assigned outcomes and budget compliance. `--reviewed-unconfounded` records that
+reviewer's attestation, bound to `--review-evidence-sha256`; it does **not** prove
+its own truth. Public CI checks structure, bindings and freshness. Hashes alone
+cannot authenticate execution or independent review. This human/private-evidence
+boundary is explicit; neither synthetic tests nor a `mode` label certify use.
+
+After the code, workflow, tests and ordinary documentation are final, commit the
+candidate source. Register and execute both arms against that source, preserving
+all assigned outcomes. Export and render after independent review:
+
+```sh
+python3 scripts/harness/performance_report.py aggregate --protocol "$FROZEN_PROTOCOL" --state-dir "$TASK_METRICS_DIR" --receipts "$REVIEWED_RECEIPT_MANIFEST" --review-evidence-sha256 "$REVIEW_EVIDENCE_SHA256" --reviewed-unconfounded --output docs/dogfood/performance.json
+python3 scripts/harness/performance_report.py render --aggregate docs/dogfood/performance.json
+python3 scripts/harness/performance_report.py check --base "$PR_BASE_SHA" --head HEAD
+```
+
+Commit the public aggregate and generated artifacts before `check`; it reads
+committed objects, not the worktree. Export creates its output once; preserve an
+existing aggregate when preparing its reviewed replacement. README content outside
+`performance-report:start` / `performance-report:end` is left unchanged. After
+measurement, only evidence-only commits may change the aggregate, the generated
+README block and `docs/assets/performance.svg`. Any other change, even one later
+reverted, requires new candidate-bound native-use evidence. CI checks each commit
+in that tail and requires a source candidate newer than the PR base. Linear tails
+avoid ambiguous merge ancestry. No self-referential commit hash is needed.
+
+CI uses `check --event pull_request` for these candidate, paired-input and tail
+checks against the original PR head. On `push` and `merge_group`, it checks the
+same reviewed aggregate structure, paired-input coverage and generated-artifact
+freshness, relying on required PR checks for original ancestry. Squash commits
+and synthetic merge-queue commits need not retain that ancestry, and a merge
+group may contain other reviewed PRs. This publication check intentionally has
+a weaker ancestry boundary; it does not re-certify native execution or review.
+
+The public aggregate retains source/contract/check bindings, native settings,
+protocol and review digests, registration date, paired and independent-component
+counts, receipt/source provenance, all outcomes, accepted-within-budget counts,
+observed elapsed time and missingness, separate token categories and usage
+provenance, and analyzer limitations. Raw accepted outcomes remain distinct from
+budgeted acceptance when time is missing or exceeds the ceiling. Reference-pair
+workload sources and PR-use sources are labelled separately. Failed and timed-out
+trials can satisfy descriptive measurement coverage with genuine native receipts
+and observed time; acceptance of the PR remains a separate review decision.
