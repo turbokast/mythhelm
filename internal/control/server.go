@@ -22,6 +22,7 @@ type Server struct {
 	methods     map[string]Handler
 	long        map[string]bool
 	attachments map[string]AttachmentHandler
+	prepared    bool
 	readOnly    bool
 }
 
@@ -91,9 +92,19 @@ func (s *Server) Dispatch(ctx context.Context, peer Peer, intent Intent) (Result
 	s.mu.RLock()
 	h, ok := s.methods[intent.Method]
 	long := s.long[intent.Method]
+	prepared := s.prepared && (intent.Method == "run.prepare" || intent.Method == "run.confirm")
 	s.mu.RUnlock()
 	if !ok {
 		return Result{}, newError(CodeCapabilityUnsupported, "method %q is not supported", intent.Method)
+	}
+	if prepared {
+		if !peer.SameUser || intent.CapabilityToken != "" {
+			return Result{}, newError(CodePermissionDenied, "ordinary admission requires the standalone OS peer")
+		}
+		if err := intent.Validate(); err != nil {
+			return Result{}, newError(CodeInvalidContract, "invalid admission intent")
+		}
+		return h(ctx, peer, intent)
 	}
 	if s.readOnly {
 		return h(ctx, peer, intent)

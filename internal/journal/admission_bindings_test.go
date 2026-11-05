@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -1634,6 +1635,61 @@ func TestStorageArmingRechecksDurableRows(t *testing.T) { // I02/I12/I20/I21 (v2
 			_, err = j.ArmServiceDispatch(t.Context(), arm)
 			assertStorageCode(t, err, tc.code)
 			assertUnchangedTables(t, before, tableImages(t, j))
+		})
+	}
+}
+
+func TestReadPreparationStateCheckedCurrent(t *testing.T) {
+	t.Parallel()
+	for _, extra := range []bool{false, true} {
+		t.Run(fmt.Sprintf("remaining-%t", extra), func(t *testing.T) {
+			t.Parallel()
+			f := preparationFixtureFor(t, extra)
+			j := storageJournal(t)
+			expected, err := j.StoreRetainedPreparation(t.Context(), f.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lookup := f.input.Lookup
+			lookup.ExpectedRevision = 0
+			var before int
+			if err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+				return tx.QueryRowContext(t.Context(), `SELECT count(*) FROM operations`).Scan(&before)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			current, err := j.ReadPreparationState(t.Context(), lookup)
+			if err != nil || current != expected || current.Ready == extra {
+				t.Fatalf("checked current=%+v,%v expected=%+v", current, err, expected)
+			}
+			for _, tc := range []struct {
+				name   string
+				change func(*journal.PreparationLookup)
+			}{
+				{"foreign peer", func(l *journal.PreparationLookup) { l.PeerID = "peer_foreign" }},
+				{"foreign root", func(l *journal.PreparationLookup) { l.RootID = "root_foreign" }},
+				{"stale context", func(l *journal.PreparationLookup) { l.ContextEpoch = "epoch_foreign" }},
+				{"changed binding", func(l *journal.PreparationLookup) { l.BindingSHA256 = strings.Repeat("c", 64) }},
+				{"expired", func(l *journal.PreparationLookup) { l.ObservedAt = f.now.Add(time.Hour) }},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					bad := lookup
+					tc.change(&bad)
+					got, err := j.ReadPreparationState(t.Context(), bad)
+					if err == nil || got.PreparationID != "" || got.Revision != 0 {
+						t.Fatalf("unproven metadata escaped: %+v %v", got, err)
+					}
+				})
+			}
+			var after int
+			if err := j.Transact(t.Context(), func(tx *sql.Tx) error {
+				return tx.QueryRowContext(t.Context(), `SELECT count(*) FROM operations`).Scan(&after)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if before != after {
+				t.Fatal("read-only metadata created an operation acknowledgement")
+			}
 		})
 	}
 }
