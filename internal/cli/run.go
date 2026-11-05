@@ -369,7 +369,7 @@ func describe(o supervisor.Outcome) string {
 	case o.Detached:
 		return fmt.Sprintf("run %s detached while stopping; the stop is not yet confirmed", o.RunID)
 	case o.ActiveRun != "":
-		return fmt.Sprintf("run %s blocked (active_run_exists): run %s is active; one run at a time in this build", o.RunID, o.ActiveRun)
+		return fmt.Sprintf("run %s blocked (active_run_exists): run %s is active; one run at a time in this build; if its supervisor has exited, try 'mythhelm recover %s' with the same MYTHHELM_HOME; recovery may still refuse", o.RunID, o.ActiveRun, o.ActiveRun)
 	}
 	msg := fmt.Sprintf("run %s ended %s", o.RunID, o.State)
 	if o.Reason != "" {

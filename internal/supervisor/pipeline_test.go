@@ -753,6 +753,10 @@ func TestRunSecondActiveRunBlocked(t *testing.T) {
 	if code != 3 || !strings.Contains(stderr, "active_run_exists") || !strings.Contains(stderr, active) {
 		t.Fatalf("exit %d, stderr %q; want exit 3 naming active run %s", code, stderr, active)
 	}
+	if !strings.Contains(stderr, "if its supervisor has exited") || !strings.Contains(stderr, "try 'mythhelm recover "+active+"'") ||
+		!strings.Contains(stderr, "with the same MYTHHELM_HOME") || !strings.Contains(stderr, "recovery may still refuse") {
+		t.Fatalf("blocked run omitted conditional recovery guidance for holding run %s: %q", active, stderr)
+	}
 	var blocked journal.RunRow
 	for _, r := range f.runs(t) {
 		if r.RunID != active {
