@@ -112,17 +112,26 @@ func (r *runtime) admissionScope(ctx context.Context, peer control.Peer, in cont
 		return "", nil, admissionFailure(control.Code("dependency_stale"), "service ownership changed")
 	}
 	fail := func(err error) (string, func(), error) { release(); return "", nil, err }
-	if err := r.lease.CheckRootIdentity(ctx, r.journal.StateDir()); err != nil {
-		return fail(admissionFailure(control.Code("dependency_stale"), "service root changed"))
-	}
-	if err := r.journal.CheckStateIdentity(ctx); err != nil {
-		return fail(admissionFailure(control.Code("dependency_stale"), "service database changed"))
+	if err := r.checkAdmissionIdentity(ctx); err != nil {
+		return fail(err)
 	}
 	if in.Generation == nil || *in.Generation != r.lease.Generation() {
 		return fail(admissionFailure(control.CodeRevisionConflict, "service generation changed"))
 	}
 	sum := sha256.Sum256([]byte(strconv.FormatUint(uint64(peer.UID), 10) + "\x00" + peer.OSUser + "\x00" + strconv.FormatInt(int64(peer.PID), 10)))
 	return "peer_" + hex.EncodeToString(sum[:]), release, nil
+}
+
+// checkAdmissionIdentity also runs after waiting for the preparation store so
+// queued requests cannot use a journal whose physical namespace has changed.
+func (r *runtime) checkAdmissionIdentity(ctx context.Context) error {
+	if err := r.lease.CheckRootIdentity(ctx, r.journal.StateDir()); err != nil {
+		return admissionFailure(control.Code("dependency_stale"), "service root changed")
+	}
+	if err := r.journal.CheckStateIdentity(ctx); err != nil {
+		return admissionFailure(control.Code("dependency_stale"), "service database changed")
+	}
+	return nil
 }
 
 func (s *preparationStore) expire(ctx context.Context, now time.Time) error {
@@ -183,6 +192,9 @@ func (r *runtime) prepareAdmission(ctx context.Context, peer control.Peer, in co
 	s := r.preparations
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := r.checkAdmissionIdentity(ctx); err != nil {
+		return control.Result{}, err
+	}
 	if s.context == nil {
 		return control.Result{}, admissionFailure(control.CodeCapabilityUnsupported, "no actual service retention policy is configured")
 	}
@@ -212,6 +224,9 @@ func (r *runtime) prepareAdmission(ctx context.Context, peer control.Peer, in co
 		}
 		if err := validatePreparationEntry(ctx, entry); err != nil {
 			return control.Result{}, admissionWireError(err)
+		}
+		if err := r.checkAdmissionIdentity(ctx); err != nil {
+			return control.Result{}, err
 		}
 		out := replay.result
 		out.Body = append(json.RawMessage{}, out.Body...)
@@ -287,6 +302,9 @@ func (r *runtime) confirmAdmission(ctx context.Context, peer control.Peer, in co
 	s := r.preparations
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := r.checkAdmissionIdentity(ctx); err != nil {
+		return control.Result{}, err
+	}
 	if s.context == nil {
 		return control.Result{}, admissionFailure(control.CodeCapabilityUnsupported, "no actual service retention policy is configured")
 	}
@@ -321,6 +339,10 @@ func (r *runtime) confirmAdmission(ctx context.Context, peer control.Peer, in co
 		observed := time.Now().UTC()
 		lookup := journal.PreparationLookup{PreparationID: metadata.PreparationID, PeerID: peerID, RootID: metadata.RootID, Generation: metadata.Generation, ContextEpoch: metadata.ContextEpoch, BindingSHA256: metadata.BindingSHA256, ExpectedRevision: uint64(in.ExpectedRevision), ObservedAt: observed}
 		state, err := r.journal.ConfirmPreparation(ctx, lookup, journal.ConfirmationV1{Operation: journal.PreparationOperation{OperationID: in.OperationID, ParamsSHA256: digest}, ChallengeID: answer.ChallengeID, BindingSHA256: answer.BindingSHA256, PeerID: peerID, RootID: metadata.RootID, ContextEpoch: metadata.ContextEpoch, Generation: metadata.Generation, Decision: ab.RetentionApprove, ObservedAt: observed})
+		// The durable replay can wait for a journal transaction after the earlier check.
+		if err := r.checkAdmissionIdentity(ctx); err != nil {
+			return control.Result{}, err
+		}
 		if err != nil {
 			return control.Result{}, admissionWireError(err)
 		}
