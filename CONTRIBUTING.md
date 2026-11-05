@@ -57,7 +57,7 @@ AI review bots may comment on pull requests. Their comments are advisory: act on
 
 ## Development setup
 
-MYTHHELM needs Go 1.27 or newer. `go.mod` pins the toolchain (`toolchain go1.27.1`); with the default `GOTOOLCHAIN=auto`, an older `go` command downloads that version the first time it runs. Nothing else is required: no accounts, credentials or network services.
+MYTHHELM needs Go 1.27.3 or newer. The minimum version in `go.mod` includes the Windows filesystem security fix for GO-2026-6604. With the default `GOTOOLCHAIN=auto`, an older `go` command downloads a suitable toolchain; `GOTOOLCHAIN=local` refuses to build with an older version. Nothing else is required: no accounts, credentials or network services.
 
 Run these from the repository root. CI runs the same checks on Linux, macOS and Windows, so run them before you push:
 
