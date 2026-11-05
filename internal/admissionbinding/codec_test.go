@@ -795,7 +795,7 @@ func checkBindingV1CurrentMainSelector(t *testing.T) {
 			b.Decision.Proposal.Capabilities.AdapterID = d.ID
 			b.Decision.Proposal.Capabilities.AdapterVersion = d.Version
 			b.Decision.Proposal.Capabilities.HarnessID = d.Harness
-			b.Decision.Proposal.Capabilities.ExecutionSurface = d.Surface
+			b.Decision.Proposal.Capabilities.ExecutionSurface = tc.adapter.Capabilities(adapter.Probe{OS: b.Decision.Probe.OS, Arch: b.Decision.Probe.Arch, Version: b.Decision.Probe.Version}).ExecutionSurface
 			raw, err := ab.EncodeV1(b)
 			if err != nil || len(raw) == 0 {
 				t.Fatalf("actual registered selector/descriptor pair refused: %v", err)
@@ -951,5 +951,62 @@ func checkBindingV1NativeTrustFlagSource(t *testing.T) {
 				t.Fatalf("grammar differs: source=%v codec=%v", sourceErr, codecErr)
 			}
 		})
+	}
+}
+
+func TestBindingV1ActualFakeSurfacePairClosed(t *testing.T) {
+	t.Parallel()
+	actual := fakeFixture(t)
+	descriptor := fake.New().Descriptor()
+	actual.Decision.Adapter = ab.DescriptorV1{ID: descriptor.ID, Version: descriptor.Version, Harness: descriptor.Harness, Surface: descriptor.Surface}
+	actual.Decision.Proposal.Capabilities.AdapterVersion = descriptor.Version
+	actual.Decision.Proposal.Capabilities.ExecutionSurface = fake.New().Capabilities(adapter.Probe{OS: actual.Decision.Probe.OS, Arch: actual.Decision.Probe.Arch, Version: actual.Decision.Probe.Version}).ExecutionSurface
+	if actual.Decision.Adapter.Surface != "scripted-child-process (ndjson)" || actual.Decision.Proposal.Capabilities.ExecutionSurface != "scripted-child-process" {
+		t.Fatal("actual fake label/key source changed")
+	}
+	for _, tc := range []struct {
+		name   string
+		change func(*ab.BindingV1)
+		valid  bool
+	}{
+		{"actual directional pair", func(*ab.BindingV1) {}, true},
+		{"legacy literal equality", func(b *ab.BindingV1) { b.Decision.Proposal.Capabilities.ExecutionSurface = b.Decision.Adapter.Surface }, true},
+		{"legacy short literal equality", func(b *ab.BindingV1) { b.Decision.Adapter.Surface = b.Decision.Proposal.Capabilities.ExecutionSurface }, true},
+		{"wrong selector", func(b *ab.BindingV1) { b.Request.Adapter = "codex" }, false},
+		{"wrong descriptor identity", func(b *ab.BindingV1) { b.Decision.Adapter.ID = "builtin/codex" }, false},
+		{"wrong capability identity", func(b *ab.BindingV1) { b.Decision.Proposal.Capabilities.AdapterID = "builtin/codex" }, false},
+		{"wrong descriptor harness", func(b *ab.BindingV1) { b.Decision.Adapter.Harness = "codex" }, false},
+		{"wrong capability harness", func(b *ab.BindingV1) { b.Decision.Proposal.Capabilities.HarnessID = "codex" }, false},
+		{"reverse pair", func(b *ab.BindingV1) {
+			b.Decision.Adapter.Surface, b.Decision.Proposal.Capabilities.ExecutionSurface = b.Decision.Proposal.Capabilities.ExecutionSurface, b.Decision.Adapter.Surface
+		}, false},
+		{"descriptor near match", func(b *ab.BindingV1) { b.Decision.Adapter.Surface += " " }, false},
+		{"capability near match", func(b *ab.BindingV1) { b.Decision.Proposal.Capabilities.ExecutionSurface += " (other)" }, false},
+		{"unrelated mismatch", func(b *ab.BindingV1) { b.Decision.Adapter.Surface = "unrelated" }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			b := actual
+			tc.change(&b)
+			raw, err := ab.EncodeV1(b)
+			if !tc.valid {
+				if !errors.Is(err, ab.ErrInvalidContract) || raw != nil {
+					t.Fatalf("invalid surface pair=%s,%v", raw, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := ab.DecodeV1(raw)
+			if err != nil || !reflect.DeepEqual(got, b) {
+				t.Fatalf("surface values normalised or rejected: %v", err)
+			}
+		})
+	}
+	native := fixture(t)
+	native.Decision.Proposal.Capabilities.ExecutionSurface = "scripted-child-process"
+	if err := ab.ValidateV1(native); !errors.Is(err, ab.ErrInvalidContract) {
+		t.Fatalf("native mismatch accepted: %v", err)
 	}
 }
