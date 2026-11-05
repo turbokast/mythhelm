@@ -59,7 +59,12 @@ func requireAdmissionCode(t *testing.T, err error, code control.Code) {
 }
 func requestFixture(t *testing.T) control.RunSpec {
 	t.Helper()
-	repo := t.TempDir()
+	// Design §3 requires physical canonical request paths; temporary roots may
+	// contain OS aliases (for example a symlink or Windows short name).
+	repo, err := admission.RepoIdentity(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, args := range [][]string{{"init", "--quiet", "--initial-branch=main"}, {"config", "user.name", "Synthetic Fixture"}, {"config", "user.email", "fixture@example.com"}, {"commit", "--allow-empty", "--quiet", "-m", "synthetic fixture"}} {
 		cmd := exec.CommandContext(t.Context(), "git", args...)
 		cmd.Dir = repo
@@ -1379,4 +1384,44 @@ func TestServicePreparedRootReplacementRefuses(t *testing.T) {
 	if len(result.Body) != 0 || !bytes.Equal(before, after) || r.preparations.pending != nil {
 		t.Fatal("physical root replacement disclosed or changed preparation authority")
 	}
+}
+
+// This fixture changes process-wide temporary-directory inputs and cannot run in parallel.
+func TestServiceCanonicalRequestFixtureAliases(t *testing.T) {
+	base := t.TempDir()
+	alias := filepath.Join(base, "alias")
+	target := filepath.Join(base, "physical")
+	if err := os.Mkdir(target, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, alias); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(name, alias)
+	}
+	t.Run("physical path contract", func(t *testing.T) {
+		r := testRuntime(t)
+		spec := requestFixture(t)
+		physical, err := admission.RepoIdentity(spec.Repository)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if spec.Repository != physical {
+			t.Fatalf("fixture repository=%q, physical=%q", spec.Repository, physical)
+		}
+		configureSyntheticAdmission(t, r, spec)
+		prepared, _ := prepareFixtureRun(t, r, spec, "op_canonical_fixture")
+		raw, err := r.preparations.plans[prepared.PreparationID].plan.CanonicalBinding()
+		if err != nil {
+			t.Fatal(err)
+		}
+		binding, err := ab.DecodeV1(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if binding.Request.Repository != physical || binding.Decision.RepoIdentity != physical || binding.Decision.Snapshot.SourceRepo != physical {
+			t.Fatal("actual producer changed physical request provenance")
+		}
+	})
 }

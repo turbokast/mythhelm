@@ -136,7 +136,12 @@ func TestServiceContextPolicyPrivateCopy(t *testing.T) {
 func servicePlanFixture(t *testing.T) (*ServicePlan, ServiceInputs) {
 	t.Helper()
 	c, _, _ := serviceContextFixture(t)
-	repo := t.TempDir()
+	// Design §3 requires physical canonical request paths; temporary roots may
+	// contain OS aliases (for example a symlink or Windows short name).
+	repo, err := admission.RepoIdentity(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	config := []byte("schema_version = 1\n[[checks]]\nname = \"synthetic\"\nargv = [\"git\", \"status\"]\ntimeout = \"5s\"\n")
 	if err := os.WriteFile(filepath.Join(repo, "mythhelm.toml"), config, 0600); err != nil {
 		t.Fatal(err)
@@ -387,4 +392,49 @@ func TestServiceFrozenTaskArtefactMismatch(t *testing.T) {
 	if _, err := RevalidateService(t.Context(), confirmed, in); err == nil {
 		t.Fatal("changed frozen task artefact minted a permit")
 	}
+}
+
+// The context lease and temporary-directory environment are process-wide.
+func TestServiceCanonicalFixtureAliases(t *testing.T) {
+	base := t.TempDir()
+	alias := filepath.Join(base, "alias")
+	target := filepath.Join(base, "physical")
+	if err := os.Mkdir(target, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, alias); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(name, alias)
+	}
+	t.Run("physical path contract", func(t *testing.T) {
+		plan, in, confirmed := confirmedServiceFixture(t)
+		physical, err := admission.RepoIdentity(in.Request.Repository)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// I02/I20 (v2 §2): the fixture must supply the physical request promised by design §3.
+		if in.Request.Repository != physical {
+			t.Fatalf("fixture repository=%q, physical=%q", in.Request.Repository, physical)
+		}
+		permit, err := RevalidateService(t.Context(), confirmed, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if permit.state.plan != plan || permit.state.decision.Snapshot.SourceRepo != physical {
+			t.Fatal("confirmed permit lost physical repository provenance")
+		}
+		aliasRepo := filepath.Join(base, "repository-alias")
+		if err := os.Symlink(physical, aliasRepo); err != nil {
+			t.Fatal(err)
+		}
+		changed := in
+		changed.Request.Repository = aliasRepo
+		rejected, err := PrepareService(t.Context(), changed)
+		var ce *v2contract.ControlError
+		if rejected != nil || !errors.As(err, &ce) || ce.Code != v2contract.CodeInvalidContract {
+			t.Fatalf("raw alias accepted: plan=%v err=%v", rejected, err)
+		}
+	})
 }
