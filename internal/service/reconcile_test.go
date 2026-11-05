@@ -1,6 +1,8 @@
 package service
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -8,11 +10,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -187,18 +191,231 @@ func newAdoptionFixture(t *testing.T, scenarios ...string) adoptionFixture {
 		}
 	})
 	until := time.Now().Add(15 * time.Second)
+	var lastReadErr error
 	for {
-		_, identityErr := workers.ReadIdentity(workers.AttemptDir(r.journal.StateDir(), d.RunID, d.AttemptID))
-		_, spoolErr := os.Stat(filepath.Join(workers.AttemptDir(r.journal.StateDir(), d.RunID, d.AttemptID), supervisor.SpoolFile))
-		if identityErr == nil && spoolErr == nil {
+		ready, err := adoptionFixtureLaunched(ctx, workers.AttemptDir(r.journal.StateDir(), d.RunID, d.AttemptID), d.RunID, d.AttemptID, proc.Pid)
+		if err != nil {
+			if !adoptionFixtureRetryIdentity(err, goruntime.GOOS) {
+				t.Fatal(err)
+			}
+			lastReadErr = err
+		}
+		if ready {
 			break
 		}
 		if time.Now().After(until) {
-			t.Fatalf("worker not ready: %v %v", identityErr, spoolErr)
+			t.Fatalf("worker did not record its matching native launch before fixture setup expired; last identity read error: %v", lastReadErr)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	return adoptionFixture{r: r, run: d.RunID, attempt: d.AttemptID, proc: proc, launch: launch, pin: pin}
+}
+
+// Only the platform-specific sharing failures while opening this fixture's
+// identity may be retried. JSON errors, ACL failures and other files are fatal.
+func adoptionFixtureRetryIdentity(err error, platform string) bool {
+	var pathErr *os.PathError
+	return platform == "windows" && errors.As(err, &pathErr) &&
+		pathErr.Op == "open" && filepath.Base(pathErr.Path) == "worker.json" &&
+		(errors.Is(pathErr.Err, syscall.Errno(32)) || errors.Is(pathErr.Err, syscall.Errno(33)))
+}
+
+func TestAdoptionFixtureRetryIdentity(t *testing.T) {
+	t.Parallel()
+	pathErr := func(op, name string, errno syscall.Errno) error {
+		return &os.PathError{Op: op, Path: filepath.Join("attempt", name), Err: errno}
+	}
+	for _, c := range []struct {
+		name, platform string
+		err            error
+		want           bool
+	}{
+		{"Windows sharing read", "windows", pathErr("open", "worker.json", 32), true},
+		{"Windows locked read", "windows", pathErr("open", "worker.json", 33), true},
+		{"ACL denied", "windows", pathErr("open", "worker.json", 5), false},
+		{"foreign file", "windows", pathErr("open", "supervisor.beat", 32), false},
+		{"rename conflict", "windows", pathErr("rename", "worker.json", 32), false},
+		{"missing identity", "windows", os.ErrNotExist, false},
+		{"corrupt identity", "windows", &json.SyntaxError{}, false},
+		{"bare errno", "windows", syscall.Errno(32), false},
+		{"Unix errno32", "linux", pathErr("open", "worker.json", 32), false},
+		{"no error", "windows", nil, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := adoptionFixtureRetryIdentity(c.err, c.platform); got != c.want {
+				t.Fatalf("retry = %v, want %v for %v", got, c.want, c.err)
+			}
+		})
+	}
+}
+
+// The initial worker identity and spool precede native Start. The worker writes
+// its final native PID identity before emitting attempt.launched (worker.go).
+// Wait for that complete event before a refusal test mutates worker.json, so a
+// later launch-time identity write cannot replace the test's corrupted input.
+func adoptionFixtureLaunched(ctx context.Context, dir, runID, attemptID string, workerPID int) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	id, err := workers.ReadIdentity(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if id.RunID != runID || id.AttemptID != attemptID || id.PID != workerPID || id.StartTime.IsZero() || id.NativePID == nil || *id.NativePID <= 0 {
+		return false, nil
+	}
+	file, err := os.Open(filepath.Join(dir, supervisor.SpoolFile)) // #nosec G304 -- the current fixture's attempt spool.
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = file.Close() }()
+	// The launch header is near the start; neither a growing suffix nor an
+	// incomplete last line can satisfy this bounded fixture observation.
+	reader := bufio.NewReader(io.LimitReader(file, 64<<10))
+	for {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		line, err := reader.ReadBytes('\n')
+		if errors.Is(err, io.EOF) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		var event journal.Event
+		if err := json.Unmarshal(line, &event); err != nil {
+			return false, err
+		}
+		if event.SchemaVersion != journal.EnvelopeVersion || event.Type != "attempt.launched" || event.RunID != runID || event.AttemptID != attemptID || event.ProducerID != "wrk_"+attemptID {
+			continue
+		}
+		var launched struct {
+			WorkerPID       int       `json:"worker_pid"`
+			WorkerStartedAt time.Time `json:"worker_start_time"`
+			NativePID       *int      `json:"native_pid"`
+		}
+		if err := json.Unmarshal(event.Payload, &launched); err != nil {
+			return false, err
+		}
+		return launched.WorkerPID == id.PID && launched.WorkerStartedAt.Equal(id.StartTime) && launched.NativePID != nil && *launched.NativePID == *id.NativePID, nil
+	}
+}
+
+func TestAdoptionFixtureLaunchReadiness(t *testing.T) {
+	f := newAdoptionFixture(t)
+	dir := workers.AttemptDir(f.r.journal.StateDir(), f.run, f.attempt)
+	id, err := workers.ReadIdentity(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Open(filepath.Join(dir, supervisor.SpoolFile)) // #nosec G304 -- the actual fixture worker spool.
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(io.LimitReader(file, 64<<10))
+	_ = file.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var launched []byte
+	for line := range bytes.SplitSeq(data, []byte{'\n'}) {
+		var event journal.Event
+		if json.Unmarshal(line, &event) == nil && event.Type == "attempt.launched" && event.RunID == f.run && event.AttemptID == f.attempt {
+			launched = bytes.Clone(line)
+			break
+		}
+	}
+	if len(launched) == 0 {
+		t.Fatal("actual worker did not produce the launch record used by readiness controls")
+	}
+	complete := append(bytes.Clone(launched), '\n')
+	mutateEvent := func(change func(*journal.Event)) []byte {
+		t.Helper()
+		var event journal.Event
+		if err := json.Unmarshal(launched, &event); err != nil {
+			t.Fatal(err)
+		}
+		change(&event)
+		raw, err := json.Marshal(event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return append(raw, '\n')
+	}
+	for _, c := range []struct {
+		name     string
+		data     []byte
+		identity workers.Identity
+		run      string
+		attempt  string
+		want     bool
+	}{
+		{"complete actual launch", complete, id, f.run, f.attempt, true},
+		{"foreign event run", mutateEvent(func(e *journal.Event) { e.RunID = "foreign-run" }), id, f.run, f.attempt, false},
+		{"foreign event attempt", mutateEvent(func(e *journal.Event) { e.AttemptID = "foreign-attempt" }), id, f.run, f.attempt, false},
+		{"foreign producer", mutateEvent(func(e *journal.Event) { e.ProducerID = "wrk_foreign" }), id, f.run, f.attempt, false},
+		{"unsupported envelope version", mutateEvent(func(e *journal.Event) { e.SchemaVersion = journal.EnvelopeVersion + 1 }), id, f.run, f.attempt, false},
+		{"different worker start time", complete, func() workers.Identity {
+			copied := id
+			copied.StartTime = copied.StartTime.Add(time.Second)
+			return copied
+		}(), f.run, f.attempt, false},
+		{"foreign identity run", complete, id, "foreign-run", f.attempt, false},
+		{"foreign identity attempt", complete, id, f.run, "foreign-attempt", false},
+		{"incomplete launch", launched, id, f.run, f.attempt, false},
+		{"missing launch", nil, id, f.run, f.attempt, false},
+		{"outside prefix bound", append(bytes.Repeat([]byte{'\n'}, 64<<10), complete...), id, f.run, f.attempt, false},
+		{"missing native PID", complete, func() workers.Identity { copied := id; copied.NativePID = nil; return copied }(), f.run, f.attempt, false},
+		{"different native PID", complete, func() workers.Identity {
+			copied := id
+			pid := *id.NativePID + 1
+			copied.NativePID = &pid
+			return copied
+		}(), f.run, f.attempt, false},
+		{"different worker PID", complete, func() workers.Identity { copied := id; copied.PID++; return copied }(), f.run, f.attempt, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			copyDir := t.TempDir()
+			raw, err := json.Marshal(c.identity)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(copyDir, "worker.json"), raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(copyDir, supervisor.SpoolFile), c.data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			ready, err := adoptionFixtureLaunched(t.Context(), copyDir, c.run, c.attempt, f.proc.Pid)
+			if err != nil || ready != c.want {
+				t.Fatalf("launch readiness = %v, %v; want %v", ready, err, c.want)
+			}
+		})
+	}
+}
+
+// A malformed identity must fail for its decoder error, not an unrelated I/O
+// failure. No launch spool is needed because decoding precedes event matching.
+func TestAdoptionFixtureMalformedIdentity(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "worker.json"), []byte("{"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ready, err := adoptionFixtureLaunched(t.Context(), dir, "run_test", "att_test", 1)
+	if ready || !errors.Is(err, io.ErrUnexpectedEOF) || adoptionFixtureRetryIdentity(err, "windows") {
+		t.Fatalf("truncated identity readiness = %v, %v; want nonretryable JSON decode error", ready, err)
+	}
 }
 
 func TestServiceGenerationAdoption(t *testing.T) {
