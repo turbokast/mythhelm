@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Runs blocked by an active run now suggest trying recovery with the same `MYTHHELM_HOME` if its supervisor has exited, while noting that recovery may still refuse (#460).
 - A run recovered after its supervisor died now enforces its execution deadline (#317)
 
 ## [0.0.1] - 2026-10-06
