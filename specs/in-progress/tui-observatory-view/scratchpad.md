@@ -564,4 +564,9 @@ Final TTY matrix, invalid-branch, exact help and immutable-baseline race checks 
 
 ## Task19 — Implemented documentation and evidence limits
 
-Signed source `24984bc` updates only the four planned documentation paths. Fresh review verifies phase/key behavior, state-root shell quoting, post-recovery cleanup, pinned deadline and mixed handoff refusal, exact theme help/cached startup behavior and current-versus-historical artifact provenance. The20 original fenced examples remain byte-identical and34 current evidence test names resolve. Focused existing tests and public hygiene pass. Human G09, accessibility/detection/native/platform evidence and Task20 actual recordings remain pending; exact-final-head CI and merge are still required for PR #621.
+Signed source `24984bc` updates only the four planned documentation paths. Fresh review verifies phase/key behavior, state-root shell quoting, post-recovery cleanup, pinned deadline and mixed handoff refusal, exact theme help/cached startup behavior and current-versus-historical artifact provenance. The 20 original fenced examples remain byte-identical and 34 current evidence test names resolve. Focused existing tests and public hygiene pass. Human G09, accessibility/detection/native/platform evidence and Task20 actual recordings remain pending; exact-final-head CI and merge are still required for PR #621.
+
+
+### Task19 review closeout — 2026-11-05
+
+The detach row now states that detach issues no new stop request and does not cancel an already pending request (`internal/tui/lifecycle.go:83`, `:99`). Fresh source inventory resolves the 34 section-5 test names; all 20 original fenced examples compare byte-identical with `24984bc^`. The completion record names the exact help/lifecycle/recovery source locations. Earlier broad local-link/anchor validation prose is not new hosted rendering evidence: current-head CI remains the conservative publication requirement, owned by the coordinator. This closeout uses a recorded direct-session fallback and makes no native or platform qualification claim.

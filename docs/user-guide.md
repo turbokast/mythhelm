@@ -160,7 +160,7 @@ run is not complete, and prints a recovery command bound to its state root.
 | Mode / phase | Exit and stop behavior |
 |---|---|
 | Live, created or admission | Request stop is available; detach is disabled because no worker exists. First Ctrl-C requests stop before spawn; another waits for admission. Confirmed cancellation exits 130, or admission refusal exits 3. |
-| Live, executing | `q` offers Detach, Request stop and Back. Detach requires an accepted running worker and recorded platform support; it leaves the worker running without a stop request. First Ctrl-C requests stop and keeps the view open; a second detaches with stop still unconfirmed, exit 6. A worker-confirmed cancellation exits 130. |
+| Live, executing | `q` offers Detach, Request stop and Back. Detach requires an accepted running worker and recorded platform support; it does not issue a stop request. With no stop already pending, the worker keeps running; detaching after requesting stop does not cancel that request. First Ctrl-C requests stop and keeps the view open; a second detaches with stop still unconfirmed, exit 6. A worker-confirmed cancellation exits 130. |
 | Live, executing but worker not running yet | Detach is disabled with “waiting for the worker.” Stop remains available; another Ctrl-C keeps the view open while waiting. |
 | Live, stopping | Stop is already requested. First Ctrl-C adds no request; a second can detach with recovery guidance, exit 6. |
 | Live, verifying or applying | Stop and detach controls are disabled. First Ctrl-C reports the phase; a second closes the view and finishes that phase in the same process, then exits with the run's outcome. |
