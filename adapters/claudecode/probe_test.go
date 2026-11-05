@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/turbokast/mythhelm/internal/adapter"
 )
@@ -33,6 +34,12 @@ func TestMain(m *testing.M) {
 				}
 			}
 			fmt.Printf("%s (Claude Code)\n", os.Getenv("FAKE_VERSION"))
+		case "probe-output":
+			n, err := strconv.Atoi(os.Getenv("FAKE_OUTPUT_BYTES"))
+			if err != nil || n < 0 || n > (1<<20)+1 {
+				os.Exit(9)
+			}
+			fmt.Print(strings.Repeat("x", n))
 		case "auth status":
 			fmt.Print(os.Getenv("FAKE_AUTH"))
 		default:
@@ -522,5 +529,37 @@ func TestClaudecodeCapabilitiesWindowsUnsupported(t *testing.T) {
 		if !strings.Contains(err.Error(), "Windows native-harness qualification missing") {
 			t.Errorf("%s: refusal = %v", name, err)
 		}
+	}
+}
+
+// TestProbeOutputBound exercises os/exec's real stdout copier: embedding a
+// bytes.Buffer promotes ReadFrom and bypasses the limiting Write (I21, v2 §2).
+func TestProbeOutputBound(t *testing.T) {
+	t.Parallel()
+	const limit = 1 << 20
+	for _, tc := range []struct {
+		name     string
+		size     int
+		overflow bool
+	}{
+		{name: "below the limit", size: limit - 1},
+		{name: "exactly at the limit", size: limit},
+		{name: "one byte over the limit", size: limit + 1, overflow: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			in := fakeProbeInput(t, "2.1.284")
+			in.Env = append(in.Env, "FAKE_OUTPUT_BYTES="+strconv.Itoa(tc.size))
+			got, err := runProbe(context.Background(), 10*time.Second, in.ExecutableOverride, in.Env, in.Workdir, "probe-output")
+			if tc.overflow {
+				if !errors.Is(err, errProbeOutputExceeded) || len(got) != 0 {
+					t.Fatalf("oversized probe returned %d bytes, error %v; want refusal and no output", len(got), err)
+				}
+				return
+			}
+			if err != nil || string(got) != strings.Repeat("x", tc.size) {
+				t.Fatalf("probe returned %d bytes, error %v; want exactly %d x bytes", len(got), err, tc.size)
+			}
+		})
 	}
 }

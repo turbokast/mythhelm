@@ -29,6 +29,8 @@ import (
 const AdapterID = "builtin/claudecode"
 const maxProbeOutput = 1 << 20
 
+var errProbeOutputExceeded = errors.New("probe output exceeded limit")
+
 type binaryKey struct {
 	path  string
 	size  int64
@@ -203,17 +205,19 @@ func fileSHA256(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// Keep the buffer named so io.Copy cannot use a promoted ReadFrom to bypass
+// the output limit in Write.
 type boundedOutput struct {
-	bytes.Buffer
+	buf      bytes.Buffer
 	exceeded bool
 }
 
 func (b *boundedOutput) Write(p []byte) (int, error) {
-	if len(p) > maxProbeOutput-b.Len() {
+	if len(p) > maxProbeOutput-b.buf.Len() {
 		b.exceeded = true
-		return 0, errors.New("probe output exceeded limit")
+		return 0, errProbeOutputExceeded
 	}
-	return b.Buffer.Write(p)
+	return b.buf.Write(p)
 }
 func runProbe(ctx context.Context, timeout time.Duration, exe string, env []string, dir string, args ...string) ([]byte, error) {
 	probeCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -225,13 +229,14 @@ func runProbe(ctx context.Context, timeout time.Duration, exe string, env []stri
 	cmd.WaitDelay = time.Second
 	var output boundedOutput
 	cmd.Stdout = &output
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if output.exceeded {
+		return nil, errProbeOutputExceeded
+	}
+	if err != nil {
 		return nil, err
 	}
-	if output.exceeded {
-		return nil, errors.New("probe output exceeded limit")
-	}
-	return bytes.TrimSpace(output.Bytes()), nil
+	return bytes.TrimSpace(output.buf.Bytes()), nil
 }
 
 // CredentialOverrideNames lists only route variable names; callers never
