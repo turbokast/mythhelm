@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
@@ -22,6 +23,59 @@ type applyRecord struct {
 	Branch          string `json:"branch"`
 	TargetRepo      string `json:"target_repo"`
 	CandidateCommit string `json:"candidate_commit"`
+	// Nil identifies a legacy intent whose decision was not recorded. Never
+	// infer historical flags from the resuming command or current verdict.
+	Decision *applyDecision `json:"decision,omitempty"`
+}
+
+type applyDecision struct {
+	AcceptFlags      bool           `json:"accept_flags"`
+	AcceptUnverified bool           `json:"accept_unverified"`
+	Override         *applyOverride `json:"override,omitempty"`
+}
+
+type applyOverride struct {
+	State   AcceptanceState `json:"state"`
+	Reason  string          `json:"reason"`
+	Changed []string        `json:"changed"`
+}
+
+func (r applyRecord) sameTarget(other applyRecord) bool {
+	return r.Branch == other.Branch && r.TargetRepo == other.TargetRepo && r.CandidateCommit == other.CandidateCommit
+}
+
+func (r applyRecord) validDecision() bool {
+	if r.Decision == nil || r.Decision.Override == nil {
+		return true
+	}
+	if !r.Decision.AcceptUnverified {
+		return false
+	}
+	switch r.Decision.Override.State {
+	case AcceptanceUnverified, AcceptanceStale, AcceptanceUnbound, AcceptanceRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// applyReceiptDecision is shared with receipt adoption: only the exact durable
+// decision can explain a change to acceptance in an applied receipt.
+func applyReceiptDecision(r Receipt, decision *applyDecision) {
+	if decision == nil || decision.Override == nil {
+		return
+	}
+	override := decision.Override
+	acc, _ := r["acceptance"].(map[string]any)
+	if acc == nil {
+		acc = map[string]any{}
+	}
+	changed := make([]any, len(override.Changed))
+	for i, value := range override.Changed {
+		changed[i] = value
+	}
+	acc["apply_override"] = map[string]any{"state": string(override.State), "reason": override.Reason, "changed": changed}
+	r["acceptance"] = acc
 }
 
 func applyEvent(ctx context.Context, j *journal.Journal, p *Producer, runID, typ string, record applyRecord) error {
@@ -112,19 +166,25 @@ func ApplyRun(ctx context.Context, j *journal.Journal, runID, branch string, acc
 		if err := json.Unmarshal(ev.Payload, &m); err != nil {
 			return nil, err
 		}
+		if !m.validDecision() {
+			return nil, fmt.Errorf("%w: invalid journaled apply decision", ErrApplyBlocked)
+		}
 		if ev.Type == "apply.intent_recorded" {
 			intent = &m
 		} else {
 			completed = &m
 		}
 	}
-	if intent != nil && *intent != record {
+	if intent != nil && !intent.sameTarget(record) {
 		return nil, fmt.Errorf("%w: prior apply intent targets another branch or commit", ErrApplyBlocked)
 	}
 	if run.State == string(RunApplying) && intent == nil {
 		return nil, fmt.Errorf("%w: applying run has no journaled intent", ErrApplyBlocked)
 	}
-	if completed != nil && *completed != record {
+	if intent != nil {
+		record = *intent
+	}
+	if completed != nil && !reflect.DeepEqual(*completed, record) {
 		return nil, fmt.Errorf("%w: completed apply targets another branch or commit", ErrApplyBlocked)
 	}
 	current, err := workspace.BranchCommit(ctx, run.SourceRepo, branch)
@@ -159,8 +219,8 @@ func ApplyRun(ctx context.Context, j *journal.Journal, runID, branch string, acc
 	if len(flags) > 0 && !acceptFlags && intent == nil {
 		return nil, fmt.Errorf("%w: candidate flags require --accept-flags", ErrApplyBlocked)
 	}
-	var override *AcceptanceStatus
 	if intent == nil {
+		record.Decision = &applyDecision{AcceptFlags: acceptFlags, AcceptUnverified: acceptUnverified}
 		status, err := CheckAcceptance(ctx, j, runID)
 		if err != nil {
 			return nil, err
@@ -169,7 +229,7 @@ func ApplyRun(ctx context.Context, j *journal.Journal, runID, branch string, acc
 			if !acceptUnverified {
 				return nil, fmt.Errorf("%w: %s", ErrApplyBlocked, refusal(status))
 			}
-			override = &status
+			record.Decision.Override = &applyOverride{State: status.State, Reason: status.Reason, Changed: append([]string{}, status.Changed...)}
 		}
 	}
 	if _, err := workspace.Git(ctx, run.SourceRepo, true, "cat-file", "-e", run.BaseRev+"^{commit}"); err != nil {
@@ -229,18 +289,7 @@ func ApplyRun(ctx context.Context, j *journal.Journal, runID, branch string, acc
 	r["external_effects"] = []any{map[string]any{"type": effect, "target_repo": run.SourceRepo,
 		"branch": branch, "commit": candidate.Commit}}
 	r["remaining_human_action"] = []string{"review the branch", "sign off (DCO) after review"}
-	if override != nil {
-		acc, _ := r["acceptance"].(map[string]any)
-		if acc == nil {
-			acc = map[string]any{}
-		}
-		changed := override.Changed
-		if changed == nil {
-			changed = []string{}
-		}
-		acc["apply_override"] = map[string]any{"state": string(override.State), "reason": override.Reason, "changed": changed}
-		r["acceptance"] = acc
-	}
+	applyReceiptDecision(r, record.Decision)
 	if err := writeApplyReceipt(ctx, j, p, runID, r); err != nil {
 		return nil, err
 	}
