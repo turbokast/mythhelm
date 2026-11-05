@@ -339,13 +339,13 @@ func TestAdoptionFixtureLaunchReadiness(t *testing.T) {
 		t.Fatal("actual worker did not produce the launch record used by readiness controls")
 	}
 	complete := append(bytes.Clone(launched), '\n')
-	foreignEvent := func(runID, attemptID string) []byte {
+	mutateEvent := func(change func(*journal.Event)) []byte {
 		t.Helper()
 		var event journal.Event
 		if err := json.Unmarshal(launched, &event); err != nil {
 			t.Fatal(err)
 		}
-		event.RunID, event.AttemptID = runID, attemptID
+		change(&event)
 		raw, err := json.Marshal(event)
 		if err != nil {
 			t.Fatal(err)
@@ -361,8 +361,15 @@ func TestAdoptionFixtureLaunchReadiness(t *testing.T) {
 		want     bool
 	}{
 		{"complete actual launch", complete, id, f.run, f.attempt, true},
-		{"foreign event run", foreignEvent("foreign-run", f.attempt), id, f.run, f.attempt, false},
-		{"foreign event attempt", foreignEvent(f.run, "foreign-attempt"), id, f.run, f.attempt, false},
+		{"foreign event run", mutateEvent(func(e *journal.Event) { e.RunID = "foreign-run" }), id, f.run, f.attempt, false},
+		{"foreign event attempt", mutateEvent(func(e *journal.Event) { e.AttemptID = "foreign-attempt" }), id, f.run, f.attempt, false},
+		{"foreign producer", mutateEvent(func(e *journal.Event) { e.ProducerID = "wrk_foreign" }), id, f.run, f.attempt, false},
+		{"unsupported envelope version", mutateEvent(func(e *journal.Event) { e.SchemaVersion = journal.EnvelopeVersion + 1 }), id, f.run, f.attempt, false},
+		{"different worker start time", complete, func() workers.Identity {
+			copied := id
+			copied.StartTime = copied.StartTime.Add(time.Second)
+			return copied
+		}(), f.run, f.attempt, false},
 		{"foreign identity run", complete, id, "foreign-run", f.attempt, false},
 		{"foreign identity attempt", complete, id, f.run, "foreign-attempt", false},
 		{"incomplete launch", launched, id, f.run, f.attempt, false},
@@ -394,6 +401,20 @@ func TestAdoptionFixtureLaunchReadiness(t *testing.T) {
 				t.Fatalf("launch readiness = %v, %v; want %v", ready, err, c.want)
 			}
 		})
+	}
+}
+
+// A malformed identity must fail for its decoder error, not an unrelated I/O
+// failure. No launch spool is needed because decoding precedes event matching.
+func TestAdoptionFixtureMalformedIdentity(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "worker.json"), []byte("{"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ready, err := adoptionFixtureLaunched(t.Context(), dir, "run_test", "att_test", 1)
+	if ready || !errors.Is(err, io.ErrUnexpectedEOF) || adoptionFixtureRetryIdentity(err, "windows") {
+		t.Fatalf("truncated identity readiness = %v, %v; want nonretryable JSON decode error", ready, err)
 	}
 }
 
