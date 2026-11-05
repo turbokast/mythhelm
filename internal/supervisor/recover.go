@@ -586,6 +586,9 @@ func journaledApplyRecords(events []journal.Event) (intent, completed *applyReco
 		if err := json.Unmarshal(ev.Payload, &m); err != nil {
 			return nil, nil, errors.Join(ErrOwnership, err)
 		}
+		if !m.validDecision() {
+			return nil, nil, fmt.Errorf("%w: invalid journaled apply decision", ErrOwnership)
+		}
 		if ev.Type == "apply.intent_recorded" {
 			intent = &m
 		} else {
@@ -616,7 +619,7 @@ func (p *pipeline) recoverApply(ctx context.Context, row journal.RunRow) error {
 	if intent == nil {
 		return fmt.Errorf("%w: run is %s without a journaled apply intent", ErrOwnership, row.State)
 	}
-	if completed != nil && *completed != *intent {
+	if completed != nil && !reflect.DeepEqual(*completed, *intent) {
 		return fmt.Errorf("%w: journaled apply completion does not match its intent", ErrOwnership)
 	}
 	attempt, err := p.j.LatestAttempt(ctx, runID)
@@ -769,6 +772,7 @@ func checkAdoptedV2(v2, v1 map[string]any, row journal.RunRow, intent *applyReco
 	if !ok || len(actions) != 2 || actions[0] != "review the branch" || actions[1] != "sign off (DCO) after review" {
 		return fail("has unexpected remaining actions")
 	}
+	applyReceiptDecision(v1, intent.Decision)
 	for _, key := range []string{"schema_version", "state", "exit_code", "external_effects", "remaining_human_action"} {
 		delete(v1, key)
 		delete(v2, key)
