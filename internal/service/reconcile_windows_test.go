@@ -79,7 +79,7 @@ func TestAdoptionFixtureSharingReadiness(t *testing.T) {
 		t.Fatal(err)
 	}
 	ready, err = adoptionFixtureLaunched(t.Context(), dir, f.run, f.attempt, f.proc.Pid)
-	if ready || err == nil || adoptionFixtureRetryIdentity(err, "windows") {
+	if ready || !errors.Is(err, io.ErrUnexpectedEOF) || adoptionFixtureRetryIdentity(err, "windows") {
 		t.Fatalf("corrupt identity readiness = %v, %v; want permanent refusal", ready, err)
 	}
 }
