@@ -23,19 +23,22 @@ func TestDeadlineRecoveryConclusion(t *testing.T) {
 		t.Run(first, func(t *testing.T) {
 			t.Parallel()
 			f := newFixture(t)
-			execution := 2 * time.Second
-			if first != workers.DeadlineRequester {
-				// This branch tests stopping an already launched native. Its input
-				// envelope must allow launch preparation before the user stop;
-				// setup and recovery retain their independent 30-second bounds.
-				execution = time.Minute
-			}
+			// Both branches recover a native that actually launched. Allow worker
+			// startup and verification within the envelope, independently of the
+			// 30-second setup bound. The execution branch still waits for the
+			// real worker timer; it does not manufacture a deadline stop request.
+			execution := time.Minute
 			setupCtx, cancelSetup := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancelSetup()
 			d, _, wait := seedLaunchTimed(t, f, "slow", pinnedPayload, execution)
 			dir := workers.AttemptDir(f.state, d.RunID, d.AttemptID)
+			t.Cleanup(func() {
+				if t.Failed() {
+					f.logWorkerDiagnostics(t)
+				}
+			})
+			waitDeadlineNativeLaunch(setupCtx, t, dir, d.RunID, d.AttemptID)
 			if first != workers.DeadlineRequester {
-				waitDeadlineNativeLaunch(setupCtx, t, dir, d.RunID, d.AttemptID)
 				if err := workers.RequestStop(dir, first); err != nil {
 					t.Fatal(err)
 				}
