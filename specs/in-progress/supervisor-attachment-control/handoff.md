@@ -120,7 +120,10 @@
 
 ## Task 12 — Produce coherent safe projections
 
-<!-- pending -->
+- **Produces**: Registered transport-only Open/Read compose grants and closed safe projections in one transaction; Close revokes the grant and returns an acknowledgement. The existing real owner, instance hold and authority guard survive until queue acceptance or discard. Identity is checked again after gate waiting; requests never acquire ownership, recover, launch or enter Execute.
+- **Evidence**: Named race tests cover public refusal equality, rollback, revisions, sanitization, protected verdict binding and actual queue retention. Mutation controls detect private-message disclosure, omitted revision dependency, old verdict ordering, oversized artifacts and premature release. The queue control waits at the actual offer, rather than its parent handler frame.
+- **Review repairs**: Static physical replacement closes SQLite and copies valid original data/grants while retaining old owners. A queued live replacement checks constant refusal and unchanged rows; Windows sharing/access refusal instead proves the unchanged read remains coherent. This platform branch is not replacement-test evidence. Production artifacts use the same exact one-MiB bound as admission without importing it.
+- **Validation and limits**: All nine required local gates pass with the patched Go toolchain from PR #629, including full repository race 405.7s and hygiene. These checks and independent review do not substitute for exact-head hosted checks or merge. No native execution, billing, complete-product or platform qualification is claimed.
 
 ## Task 13 — Accept atomic stop intents with immutable acknowledgments
 

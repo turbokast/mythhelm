@@ -703,3 +703,42 @@ func TestOversizedTypedErrorKeepsItsCode(t *testing.T) {
 		t.Fatalf("bounded error frame still carries the oversized message")
 	}
 }
+
+// The earliest transport authentication refusal is identical for a registered
+// target and an unknown one; neither lookup nor handler may reveal a scope.
+func TestAttachmentForeignPeerConstantPublicRefusal(t *testing.T) {
+	t.Parallel()
+	var handled atomic.Int32
+	var want []byte
+	for _, run := range []string{"run_known", "run_unknown"} {
+		srv := NewServer(nil)
+		if err := srv.RegisterAttachment("attachment.read", func(context.Context, Peer, Intent) (*AttachmentResponse, error) {
+			handled.Add(1)
+			return NewAttachmentResponse(Result{Body: json.RawMessage(`{}`)}, func() {})
+		}); err != nil {
+			t.Fatal(err)
+		}
+		conn := newFakeConn(Peer{UID: 1001, PID: 7}, false)
+		f := startServe(t, srv, nil, conn)
+		in := intent("op_same", "attachment.read")
+		in.Object = run
+		conn.send(t, in)
+		frame := <-conn.entered
+		f.stop(t)
+		if want == nil {
+			want = bytes.Clone(frame)
+		} else if !bytes.Equal(want, frame) {
+			t.Fatalf("foreign refusal differs: %s != %s", want, frame)
+		}
+		var result Result
+		if err := json.Unmarshal(frame[prefixLen:], &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.Error == nil || result.Error.Code != CodePermissionDenied || result.Error.Message != "attachment unavailable" || result.Revision != 0 || (len(result.Body) != 0 && string(result.Body) != "null") {
+			t.Fatalf("foreign public refusal: %+v", result)
+		}
+	}
+	if handled.Load() != 0 {
+		t.Fatal("foreign peer reached attachment handler")
+	}
+}

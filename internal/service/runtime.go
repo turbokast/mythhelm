@@ -190,6 +190,9 @@ func openRuntimePrepared(ctx context.Context, stateDir string, prepare func(cont
 	if err := r.registerPreparedAdmission(); err != nil {
 		return nil, errors.Join(err, r.shutdown(context.WithoutCancel(ctx)))
 	}
+	if err := r.registerAttachments(); err != nil {
+		return nil, errors.Join(err, r.shutdown(context.WithoutCancel(ctx)))
+	}
 	return r, nil
 }
 

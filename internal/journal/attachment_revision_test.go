@@ -1044,3 +1044,38 @@ func TestDispatchImmutableUniqueCollisions(t *testing.T) {
 		})
 	}
 }
+
+func TestAttachmentProjectionCacheCompleteContent(t *testing.T) {
+	t.Parallel()
+	j, _ := openTemp(t)
+	seedRun(t, j, "run_cache")
+	attachmentTx(t, j, func(tx *sql.Tx) {
+		attachmentSQL(t, tx, `INSERT INTO attachment_grants VALUES('grant_cache','hash_cache','client_cache','run_cache','repository_cache',1,0,0)`)
+		content := []byte(`{"projection_revision":0,"run_revision":1,"run_id":"run_cache"}`)
+		first, err := CacheAttachmentProjection(t.Context(), tx, "grant_cache", 1, 1, content)
+		if err != nil {
+			t.Fatal(err)
+		}
+		again, err := CacheAttachmentProjection(t.Context(), tx, "grant_cache", 1, 1, content)
+		if err != nil || again != first {
+			t.Fatalf("duplicate advanced: %d %d %v", first, again, err)
+		}
+		var raw string
+		if err := tx.QueryRowContext(t.Context(), `SELECT content FROM attachment_projections WHERE attachment_id='grant_cache'`).Scan(&raw); err != nil {
+			t.Fatal(err)
+		}
+		var stored struct {
+			Revision uint64 `json:"projection_revision"`
+		}
+		if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+			t.Fatal(err)
+		}
+		if stored.Revision != first {
+			t.Fatalf("cached content is incomplete: revision=%d metadata=%d", stored.Revision, first)
+		}
+		changed, err := CacheAttachmentProjection(t.Context(), tx, "grant_cache", 1, 2, []byte(`{"projection_revision":0,"run_revision":2,"run_id":"run_cache"}`))
+		if err != nil || changed != first+1 {
+			t.Fatalf("selected field change did not advance: %d %v", changed, err)
+		}
+	})
+}

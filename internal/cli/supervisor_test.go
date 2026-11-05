@@ -135,18 +135,30 @@ func TestServiceEntrypointShell(t *testing.T) {
 		}
 		before[table] = count
 	}
-	for _, method := range []string{"run.start", "attachment.open", "assign", "reserve", "stop", "recover"} {
+	for _, method := range []string{"run.start", "assign", "reserve", "stop", "recover"} {
 		params := json.RawMessage(nil)
 		if method == "run.start" {
 			params = json.RawMessage(`{"schema_version":2,"preparation_id":"prep_synthetic","binding_sha256":"` + strings.Repeat("a", 64) + `"}`)
-		}
-		if method == "attachment.open" {
-			params = json.RawMessage(`{"run_id":"run_synthetic"}`)
 		}
 		_, err := control.Call(t.Context(), conn, control.Intent{OperationID: ids.New("op"), Method: method, Params: params})
 		if !errors.Is(err, &control.Error{Code: control.CodeCapabilityUnsupported}) {
 			t.Fatalf("%s error=%v", method, err)
 		}
+	}
+	for _, c := range []struct {
+		name, object, message string
+		code                  control.Code
+	}{
+		{"malformed Open", "", "invalid attachment contract", control.CodeInvalidContract},
+		{"unknown valid Open", "run_synthetic", "attachment unavailable", control.CodePermissionDenied},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			result, err := control.Call(t.Context(), conn, control.Intent{OperationID: ids.New("op"), Method: "attachment.open", Object: c.object, Params: json.RawMessage(`{"run_id":"run_synthetic"}`)})
+			var ce *control.Error
+			if !errors.As(err, &ce) || ce.Code != c.code || ce.Message != c.message || result.Revision != 0 || len(result.Body) != 0 {
+				t.Fatalf("Open result=%+v error=%v; want constant %s without body or revision", result, err, c.code)
+			}
+		})
 	}
 	for table, want := range before {
 		var got int
