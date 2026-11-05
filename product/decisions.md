@@ -458,3 +458,10 @@ The append-only log of product decisions: cards added, rejected or dropped, resc
 - **Rationale**: Operator adopted the evidence-led assessment: comparative speed/token/quality gains and external repeat use remain unproven. Preserve existing stage, prerequisites, safeguards and work; require prospective comparable outcomes before funding expansion.
 - **Cards**: MH-12,MH-15,MH-24
 - **Evidence**: docs/validation-plan.md
+
+### D-112 — 2026-11-05: Close the bounded validation cycle as blocked/inconclusive
+- **Type**: strategic-adjustment
+- **Decision**: Close the 22 October–4 November 2026 feasibility window as blocked/inconclusive. Preserve the existing expansion deferral and limit follow-up to independently accepted essential correctness and workflow repairs. Do not extend the trial window, advance the product stage, qualify a route, or authorize new trials, spending, outreach or publication claims through this decision.
+- **Rationale**: The closeout audit has not established the required designated-contrast outcome, external repeat-use criterion and completed quality evidence. Missing or non-comparable observations cannot establish the registered feasibility targets. A further study requires a separately recorded design and decision.
+- **Cards**: MH-12,MH-15,MH-24
+- **Evidence**: docs/validation-plan.md; D-111; validation closeout audit dated 2026-11-05
