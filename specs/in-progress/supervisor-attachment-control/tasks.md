@@ -685,9 +685,6 @@
 - **Files**:
   - `internal/control/attachment_projection.go`
   - `internal/control/attachment_projection_test.go`
-  - `internal/control/attachment_response.go` (constant public foreign-peer refusal)
-  - `internal/control/attachment_response_test.go`
-  - `internal/cli/supervisor_test.go` (actual registered Open contract)
   - `internal/journal/attachment_revision.go`
   - `internal/journal/attachment_revision_test.go`
   - `internal/service/attachments.go`
