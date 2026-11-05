@@ -7,32 +7,31 @@
 
 Cards with a spec, being specified or implemented.
 
-- **MH-11** Windows process-tree ownership (specced, stage 1, score 4.3; spec `windows-process-ownership`; [#32](https://github.com/turbokast/mythhelm/issues/32))
+- **MH-11** Windows process-tree ownership (implementing, stage 1, score 4.3; spec `windows-process-ownership`; [#32](https://github.com/turbokast/mythhelm/issues/32))
 - **MH-12** Strict subscription-only qualification for Claude Code (implementing, stage 1, score 3.8; spec `claude-strict-subscription`; [#33](https://github.com/turbokast/mythhelm/issues/33))
-- **MH-22** Protected acceptance and a complete v2 one-agent workflow (specced, stage 1, score 3.8; spec `protected-acceptance`; [#128](https://github.com/turbokast/mythhelm/issues/128))
-- **MH-13** Contained execution profiles: restricted and inspect (specced, stage 1, score 3.5; spec `contained-execution-profiles`; [#34](https://github.com/turbokast/mythhelm/issues/34))
-- **MH-33** Docs site that shows the product: layout, search, demo-first landing and tested examples (specced, stage 1, score 3.3; spec `docs-site-restyle`; [#445](https://github.com/turbokast/mythhelm/issues/445))
-- **MH-23** Complete TUI intervention, accessibility and safe declarative themes (specced, stage 1, score 2.8; spec `tui-observatory-view`; [#129](https://github.com/turbokast/mythhelm/issues/129))
+- **MH-17** Account profiles and exhaustion handoff (specced, stage 2, score 3.7; spec `account-profiles-exhaustion`; [#82](https://github.com/turbokast/mythhelm/issues/82))
+- **MH-13** Contained execution profiles: restricted and inspect (implementing, stage 1, score 3.5; spec `contained-execution-profiles`; [#34](https://github.com/turbokast/mythhelm/issues/34))
+- **MH-3** Herdr bridge: single-pane experience with scoped status (implementing, stage 1, score 3.3; spec `herdr-embedded-client`, `supervisor-attachment-control`, `existing-run-client`, `herdr-scoped-projection`; [#24](https://github.com/turbokast/mythhelm/issues/24))
+- **MH-24** Scoped context, task dependencies and stale-evidence invalidation (specced, stage 2, score 3.0; spec `delivery-scoped-context`; [#130](https://github.com/turbokast/mythhelm/issues/130))
+- **MH-25** Scoped export, retention, erasure and tested restoration (specced, stage 2, score 3.0; spec `scoped-retention-maintenance`; [#131](https://github.com/turbokast/mythhelm/issues/131))
+- **MH-23** Complete TUI intervention, accessibility and safe declarative themes (implementing, stage 1, score 2.8; spec `tui-observatory-view`; [#129](https://github.com/turbokast/mythhelm/issues/129))
+- **MH-5** Routing across authorised profiles (specced, stage 2, score 2.5; spec `authorised-profile-routing`; [#26](https://github.com/turbokast/mythhelm/issues/26))
+- **MH-30** Optional verified production delivery with effect reconciliation (specced, stage 6, score 2.5; spec `verified-production-delivery`; [#136](https://github.com/turbokast/mythhelm/issues/136))
+- **MH-26** Consented outcome evidence and the fixed execution portfolio (specced, stage 4, score 2.3; spec `consented-outcome-evidence`; [#132](https://github.com/turbokast/mythhelm/issues/132))
+- **MH-28** Scoped policy promotion, rollback and new-model qualification (specced, stage 5, score 2.2; spec `bounded-policy-promotion`; [#134](https://github.com/turbokast/mythhelm/issues/134))
+- **MH-29** Remaining native harness qualification and platform coverage tracks (specced, stage 2, score 2.2; spec `remaining-native-targets`, `antigravity-native-qualification`, `cursor-agent-native-qualification`, `kimi-native-qualification`, `muse-native-qualification`, `opencode-native-qualification`; [#135](https://github.com/turbokast/mythhelm/issues/135))
+- **MH-15** Native-session continuity and grounded cross-harness handoffs (specced, stage 2, score 2.0; spec `native-session-continuity`; [#36](https://github.com/turbokast/mythhelm/issues/36))
+- **MH-6** Public plugin protocol, SDK and declarative workflow mods (specced, stage 3, score 1.8; spec `public-plugin-contracts`; [#27](https://github.com/turbokast/mythhelm/issues/27))
+- **MH-14** Bounded two-writer construction and serialized integration (specced, stage 3, score 1.8; spec `bounded-parallel-construction`; [#35](https://github.com/turbokast/mythhelm/issues/35))
 
 ## Next
 
 The five highest-scored cards without a spec in an earlier stage, the current stage or the next stage.
 
-- **MH-17** Account profiles and exhaustion handoff (triaged, stage 2, score 3.7; [#82](https://github.com/turbokast/mythhelm/issues/82))
-- **MH-3** Herdr bridge: single-pane experience with scoped status (triaged, stage 1, score 3.3; [#24](https://github.com/turbokast/mythhelm/issues/24))
-- **MH-24** Scoped context, task dependencies and stale-evidence invalidation (triaged, stage 2, score 3.0; [#130](https://github.com/turbokast/mythhelm/issues/130))
-- **MH-25** Scoped export, retention, erasure and tested restoration (triaged, stage 2, score 3.0; [#131](https://github.com/turbokast/mythhelm/issues/131))
-- **MH-5** Routing across authorised profiles (triaged, stage 2, score 2.5; [#26](https://github.com/turbokast/mythhelm/issues/26))
+Nothing queued.
 
 ## Later
 
 Every other open card, by score.
 
 - **MH-27** Bounded protected experiments for routes, context and prompts (triaged, stage 4, score 2.5; [#133](https://github.com/turbokast/mythhelm/issues/133))
-- **MH-30** Optional verified production delivery with effect reconciliation (triaged, stage 6, score 2.5; [#136](https://github.com/turbokast/mythhelm/issues/136))
-- **MH-26** Consented outcome evidence and the fixed execution portfolio (triaged, stage 4, score 2.3; [#132](https://github.com/turbokast/mythhelm/issues/132))
-- **MH-28** Scoped policy promotion, rollback and new-model qualification (triaged, stage 5, score 2.2; [#134](https://github.com/turbokast/mythhelm/issues/134))
-- **MH-29** Remaining native harness qualification and platform coverage tracks (triaged, stage 2, score 2.2; [#135](https://github.com/turbokast/mythhelm/issues/135))
-- **MH-15** Native-session continuity and grounded cross-harness handoffs (triaged, stage 2, score 2.0; [#36](https://github.com/turbokast/mythhelm/issues/36))
-- **MH-6** Public plugin protocol, SDK and declarative workflow mods (triaged, stage 3, score 1.8; [#27](https://github.com/turbokast/mythhelm/issues/27))
-- **MH-14** Bounded two-writer construction and serialized integration (triaged, stage 3, score 1.8; [#35](https://github.com/turbokast/mythhelm/issues/35))

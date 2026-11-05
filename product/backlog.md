@@ -41,7 +41,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 ## Open
 
 ### MH-11: Windows process-tree ownership
-- **Status**: specced
+- **Status**: implementing
 - **Stage**: 1
 - **Gates**: G04
 - **Score**: 4.3 = (value 4 + urgency 5 + risk 4) / effort 3
@@ -62,31 +62,19 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Summary**: Entitlement and overage-prevention evidence that lets strict subscription-only admission pass for Claude Code instead of blocking. The dogfood slice ships only a user-declared, never-verified posture (its non-goal N8); this card earns the strict one (I15).
 - **Notes**: MH-10 supplies versioned records. Existing subscription-declared Claude dogfood remains unverified; preserve strict blocking until effective configuration, all auxiliary/child routes and paid-continuation prevention are proven. Claude need not be the first route.
 
-### MH-22: Protected acceptance and a complete v2 one-agent workflow
-- **Status**: specced
-- **Stage**: 1
-- **Gates**: G01, G03, G05, G06, G07
-- **Score**: 3.8 = (value 5 + urgency 5 + risk 5) / effort 4
-- **Spec**: `protected-acceptance`
-- **Issue**: [#128](https://github.com/turbokast/mythhelm/issues/128)
-- **Source**: Master Specification v2 §§4, 8, 10–11, 15; Implementation Plan W04; issues #72–#76
-- **Summary**: Extend the existing snapshot/check/review/apply flow to deterministic P1 with strict qualified admission, protected acceptance bound to exact revisions, finite repair/resource envelopes and truthful receipts. Preserve an unverified candidate when checks are unavailable; candidate edits cannot weaken its protected evaluator.
-- **Premise-grounded**: Confirmed: internal/admission/billing.go blocks subscription-only; the current dogfood check/apply flow and schema v1 do not implement v2 TaskRevision or policy pins. Issues #72–#76 record remaining receipt and recovery gaps; implementation must re-check each issue before duplicating a fix.
-- **Notes**: Requires the durable supervisor/contracts card, MH-10 and at least one independently qualified route, MH-13 and the S1 portion of MH-16. Value 5: accepted delivery; risk 5: false acceptance/authority; effort 4: extends multiple existing paths.
-
 ### MH-17: Account profiles and exhaustion handoff
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 2
 - **Gates**: G04, G05
 - **Score**: 3.7 = (value 4 + urgency 3 + risk 4) / effort 3
-- **Spec**: (none)
+- **Spec**: `account-profiles-exhaustion`
 - **Issue**: [#82](https://github.com/turbokast/mythhelm/issues/82)
 - **Source**: Master Specification v2 §§7–10; W06; historical issue #82 and S-4
 - **Summary**: Support explicitly authorised native account profiles and exhaustion handoff without copying secrets or rotating identities to evade service limits. Re-admit the destination profile and distinguish compatible native resume from cross-harness reconstruction.
 - **Notes**: Requires MH-10, MH-15 and MH-16; native profile/home selection is enabled only where separately qualified. Unknown entitlement blocks even when remaining allowance is user-declared.
 
 ### MH-13: Contained execution profiles: restricted and inspect
-- **Status**: specced
+- **Status**: implementing
 - **Stage**: 1
 - **Gates**: G07
 - **Score**: 3.5 = (value 4 + urgency 5 + risk 5) / effort 4
@@ -98,34 +86,22 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: Required for claimed S1 enforcement. Preserve native authentication and useful tools within qualified profiles; unknown effective configuration or boundary evidence blocks affected launch.
 
 ### MH-3: Herdr bridge: single-pane experience with scoped status
-- **Status**: triaged
+- **Status**: implementing
 - **Stage**: 1
 - **Gates**: G11
 - **Score**: 3.3 = (value 4 + urgency 5 + risk 4) / effort 4
-- **Spec**: (none)
+- **Spec**: `herdr-embedded-client`, `supervisor-attachment-control`, `existing-run-client`, `herdr-scoped-projection`
 - **Issue**: [#24](https://github.com/turbokast/mythhelm/issues/24)
 - **Source**: Master Specification v2 §§3, 6, 14–15; W05; historical issue #24
 - **Summary**: Deliver the embedded-client and minimal schema-negotiated Herdr bridge with scoped status, attention, safe controls and input takeover. Attach/reconnect uses the one core lifecycle owner; restored panes never start another attempt.
 - **Notes**: Requires MH-21 and MH-22; pair with MH-23. Alternative native surfaces need their own G12 qualification; no Herdr-only inference or second scheduler.
 
-### MH-33: Docs site that shows the product: layout, search, demo-first landing and tested examples
-- **Status**: specced
-- **Stage**: 1
-- **Gates**: G10
-- **Score**: 3.3 = (value 3 + urgency 5 + risk 2) / effort 3
-- **Spec**: `docs-site-restyle`
-- **Issue**: [#445](https://github.com/turbokast/mythhelm/issues/445)
-- **Source**: Master Specification v2 §15.1 (observatory and paper themes), §18.3 G10 (published limitations); design direction review 2026-10-12
-- **Summary**: Restyle the Jekyll site on GitHub Pages in the brand: a Night landing page that leads with the hero demo and the go run quickstart, Paper docs pages with a sidebar grouped Start / Use / Understand / Reference, an on-this-page list and client-side search, reported / estimated / unknown labels styled consistently, code examples marked and tested in CI, and a layout with no horizontal overflow at 390px. Keep Jekyll; revisit Starlight or mdBook only if search or build speed hurts.
-- **Premise-grounded**: 2026-10-12 — Layout replaces the theme with no brand assets HOLDS; flat nav HOLDS; User guide 516px at 390px (13 overflowing elements, re-measured live) HOLDS; no search or on-page contents HOLDS; existing docs CI HOLDS; only front-matter pages are rendered REFUTED (front-matter-less Markdown is rendered too, live HTTP 200); hero recording exists as a GIF with no chapters PARTIAL; quickstart tested in CI PARTIAL (CI runs the built binary with demo --check pass, not the quickstart as written); Paper and amber hexes not in the brand README PARTIAL; v2 §15.1 themes are the TUI's PARTIAL; landing headline and attention-queue claim versus shipped adapters PARTIAL; Star light on Paper 4.08:1 PARTIAL; client-side search under Pages and the Claude Design file UNVERIFIABLE
-- **Notes**: Value 3: first impression and onboarding, not the core promise; urgency 5: stage 1; risk 2: published claims drifting from what ships; effort 3: layout, search, landing, example testing. Release engineer and docs. Pairs with MH-23, which uses the same brand tokens.
-
 ### MH-24: Scoped context, task dependencies and stale-evidence invalidation
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 2
 - **Gates**: G07, G13
 - **Score**: 3.0 = (value 5 + urgency 3 + risk 4) / effort 4
-- **Spec**: (none)
+- **Spec**: `delivery-scoped-context`
 - **Issue**: [#130](https://github.com/turbokast/mythhelm/issues/130)
 - **Source**: Master Specification v2 §§4, 9–11; Implementation Plan W07
 - **Summary**: Add mandatory original context, immutable source manifests, exact/lexical retrieval and versioned task dependencies with selective invalidation. Interface checkpoints may unblock dependent construction while final acceptance still requires the exact integrated implementation; optional search failure falls back to originals.
@@ -133,11 +109,11 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: Requires S1 and MH-15 continuity; bounded graph/context foundations precede MH-14 parallel writers. Value 5: reliable continuity; risk 4: leakage/stale acceptance; effort 4: canonical data, retrieval and invalidation.
 
 ### MH-25: Scoped export, retention, erasure and tested restoration
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 2
 - **Gates**: G13, G16
 - **Score**: 3.0 = (value 4 + urgency 3 + risk 5) / effort 4
-- **Spec**: (none)
+- **Spec**: `scoped-retention-maintenance`
 - **Issue**: [#131](https://github.com/turbokast/mythhelm/issues/131)
 - **Source**: Master Specification v2 §§5, 8–9, 12; Implementation Plan W13
 - **Summary**: Implement scoped export and dependency-aware retention, with explicit erasure through a quiescent validated ledger rewrite and recoverable swap. Rebuild derived stores, preserve active dependencies and report surviving backup/native/provider copies honestly.
@@ -145,7 +121,7 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: Requires durable migration and scoped context; must ship before optional-learning retention/deletion claims. Value 4: control and portability; risk 5: irreversible loss/leakage; effort 4: recovery and derived-state invalidation.
 
 ### MH-23: Complete TUI intervention, accessibility and safe declarative themes
-- **Status**: specced
+- **Status**: implementing
 - **Stage**: 1
 - **Gates**: G08, G09
 - **Score**: 2.8 = (value 5 + urgency 5 + risk 4) / effort 5
@@ -157,11 +133,11 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: Requires durable core control and the v2 one-agent workflow for complete journey acceptance; pairs with MH-3 for Herdr. Close the unusable q dialog and Ctrl-C-cancels-instead-of-detach gaps first. Value 5: the terminal is the product's face and G09 is a stage-1 gate; risk 4: misleading lifecycle/hidden controls; effort 5: interaction, visual system and human evidence.
 
 ### MH-5: Routing across authorised profiles
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 2
 - **Gates**: G02, G05
 - **Score**: 2.5 = (value 4 + urgency 3 + risk 3) / effort 4
-- **Spec**: (none)
+- **Spec**: `authorised-profile-routing`
 - **Issue**: [#26](https://github.com/turbokast/mythhelm/issues/26)
 - **Source**: Master Specification v2 §§7, 10, 12–13; W06/W10; historical issue #26
 - **Summary**: Rank only authorised qualified routes with deterministic preferences, capability filtering and recorded uncertainty. Preserve user pins and standing grants; invalid optional smart routing falls back to eligible P1 without paid calls or hidden harness substitution.
@@ -180,11 +156,11 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: Requires fixed-portfolio outcome evidence and qualified variants; parallel variants additionally require MH-14. Value 4: useful evidence; risk 5: spending/contamination; effort 4: controlled allocation and statistics. No automatic promotion in this slice.
 
 ### MH-30: Optional verified production delivery with effect reconciliation
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 6
 - **Gates**: G07, G15
 - **Score**: 2.5 = (value 4 + urgency 1 + risk 5) / effort 4
-- **Spec**: (none)
+- **Spec**: `verified-production-delivery`
 - **Issue**: [#136](https://github.com/turbokast/mythhelm/issues/136)
 - **Source**: Master Specification v2 §§8, 11, 17–18; Implementation Plan W15
 - **Summary**: Deliver an exact verified release to an explicitly authorised destination with independent health evidence, idempotency or reconciliation and bounded rollback. Without deployment authority, retain a reviewable release-ready candidate and report the blocked effect; deployment stays off by default.
@@ -192,11 +168,11 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: Depends on S1 and destination qualification, independently of S4/S5 learning. Value 4: completed software outcomes; risk 5: uncertain external effects; effort 4: destination-specific lifecycle. Stage 6 numbering must not force learning as a dependency.
 
 ### MH-26: Consented outcome evidence and the fixed execution portfolio
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 4
 - **Gates**: G14
 - **Score**: 2.3 = (value 4 + urgency 1 + risk 4) / effort 4
-- **Spec**: (none)
+- **Spec**: `consented-outcome-evidence`
 - **Issue**: [#132](https://github.com/turbokast/mythhelm/issues/132)
 - **Source**: Master Specification v2 §§10, 12–13; Implementation Plan W10
 - **Summary**: Implement P1/P2/P4 and later qualified P3, with optional scoped learning collection, pre-assignment provenance and all-started outcome comparisons against direct-native and simpler baselines. Essential receipts work with learning off; missingness, failed runs and delayed regressions remain visible.
@@ -204,11 +180,11 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: Requires scoped context and export/erasure; MH-14 only for P3. Value 4: defensible policy choice; risk 4: biased metrics; effort 4: instrumentation and offline evaluation. Urgency derives from S4; no collection or live experiment is authorised by this card.
 
 ### MH-28: Scoped policy promotion, rollback and new-model qualification
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 5
 - **Gates**: G02, G05, G14
 - **Score**: 2.2 = (value 5 + urgency 1 + risk 5) / effort 5
-- **Spec**: (none)
+- **Spec**: `bounded-policy-promotion`
 - **Issue**: [#134](https://github.com/turbokast/mythhelm/issues/134)
 - **Source**: Master Specification v2 §§7, 12–13; Implementation Plan W12
 - **Summary**: Promote immutable runtime policies only through protected scoped evidence gates, pin active attempts, canary new assignments and roll back under registered rules. Qualify new model/harness combinations and compare a new single agent against whole pipelines; a simpler winner may replace the pipeline.
@@ -216,11 +192,11 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: Requires protected experiments, route qualification and promotion authority; MH-14 only for parallel claims. Value 5: full adaptive promise; risk 5: regressions/authority drift; effort 5: cross-domain epic. Learning can be disabled without losing fixed-policy delivery.
 
 ### MH-29: Remaining native harness qualification and platform coverage tracks
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 2
 - **Gates**: G02, G05, G10, G12
 - **Score**: 2.2 = (value 4 + urgency 3 + risk 4) / effort 5
-- **Spec**: (none)
+- **Spec**: `remaining-native-targets`, `antigravity-native-qualification`, `cursor-agent-native-qualification`, `kimi-native-qualification`, `muse-native-qualification`, `opencode-native-qualification`
 - **Issue**: [#135](https://github.com/turbokast/mythhelm/issues/135)
 - **Source**: Master Specification v2 §§7, 14, 17; Implementation Plan W14; explicit UR-05/UR-06
 - **Summary**: Maintain owned independent tracks for OpenCode, Meta Muse Code, Kimi Code CLI, Cursor Agent CLI and Antigravity alongside MH-12 Claude Code and MH-4 Codex. Publish per-surface fidelity, billing, lifecycle, trust and OS/host evidence; blocked targets remain explicit product commitments with next tests.
@@ -228,33 +204,33 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Notes**: Requires MH-10 registry/contracts; individual tracks can qualify earlier when they unlock S1, with approved reprioritisation. MH-11 owns Windows process work, MH-3 Herdr, MH-7 release matrix. Value 4: seven-target/platform promise; risk 4: misleading support; effort 5: split by target before implementation. S2 is a continuing coverage track, not a promise all five ship in S2.
 
 ### MH-15: Native-session continuity and grounded cross-harness handoffs
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 2
 - **Gates**: G04, G13
 - **Score**: 2.0 = (value 3 + urgency 3 + risk 2) / effort 4
-- **Spec**: (none)
+- **Spec**: `native-session-continuity`
 - **Issue**: [#36](https://github.com/turbokast/mythhelm/issues/36)
 - **Source**: Master Specification v2 §§4, 6, 9; W06; historical issue #36
 - **Summary**: Continue a mission through acknowledged native-session deltas or an explicitly new admitted attempt, and reconstruct cross-harness handoffs from original requirements, decisions and immutable artifacts. Typed messages and context views project the canonical ledger instead of becoming a competing blackboard.
 - **Notes**: Requires S1, MH-21 and two independent route qualifications. Unsupported sessions preserve artifacts and declare loss; no private native-store patching or summary-only requirements.
 
 ### MH-6: Public plugin protocol, SDK and declarative workflow mods
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 3
 - **Gates**: G08
 - **Score**: 1.8 = (value 4 + urgency 2 + risk 3) / effort 5
-- **Spec**: (none)
+- **Spec**: `public-plugin-contracts`
 - **Issue**: [#27](https://github.com/turbokast/mythhelm/issues/27)
 - **Source**: Master Specification v2 §§8, 16; W09; historical issue #27
 - **Summary**: Stabilise versioned process plugins and declarative mods after built-in consumers exercise the interfaces, with trust, bounded transport, revocation and conformance examples. Core admission, evidence and effects remain authoritative; a useful plugin journey must work without paid credentials.
 - **Notes**: Requires MH-24; MH-14 only for parallel extensions. Basic S1 themes/keymaps belong to MH-23; public executable extensions are S3.
 
 ### MH-14: Bounded two-writer construction and serialized integration
-- **Status**: triaged
+- **Status**: specced
 - **Stage**: 3
 - **Gates**: G04, G05, G06
 - **Score**: 1.8 = (value 4 + urgency 2 + risk 3) / effort 5
-- **Spec**: (none)
+- **Spec**: `bounded-parallel-construction`
 - **Issue**: [#35](https://github.com/turbokast/mythhelm/issues/35)
 - **Source**: Master Specification v2 §§6, 9–11; W08; historical issue #35
 - **Summary**: Use versioned task dependencies to run at most two independently reserved writers in isolated mutable environments, then serialize exact-candidate integration and protected checks. Native children share declared billing/resource envelopes; semantic conflicts enter bounded repair rather than concurrent fallback.
@@ -397,6 +373,18 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Premise-grounded**: Confirmed at eb349c2: internal/supervisor and ADR 0005 use per-run owners; internal/journal/migrations/0001_init.sql has no v2 task/policy tables. This is a migration, not an already delivered daemon.
 - **Notes**: W01 contract review precedes dispatch APIs; W03 can use fake adapters before live qualification. Value 5: S1 continuity; risk 5: duplicate launch, loss and stale authority; effort 5: cross-domain epic. Split implementation into reviewed lifecycle specs before task execution.
 
+### MH-22: Protected acceptance and a complete v2 one-agent workflow
+- **Status**: shipped
+- **Stage**: 1
+- **Gates**: G01, G03, G05, G06, G07
+- **Score**: 3.8 = (value 5 + urgency 5 + risk 5) / effort 4
+- **Spec**: `protected-acceptance`
+- **Issue**: [#128](https://github.com/turbokast/mythhelm/issues/128)
+- **Source**: Master Specification v2 §§4, 8, 10–11, 15; Implementation Plan W04; issues #72–#76
+- **Summary**: Extend the existing snapshot/check/review/apply flow to deterministic P1 with strict qualified admission, protected acceptance bound to exact revisions, finite repair/resource envelopes and truthful receipts. Preserve an unverified candidate when checks are unavailable; candidate edits cannot weaken its protected evaluator.
+- **Premise-grounded**: Confirmed: internal/admission/billing.go blocks subscription-only; the current dogfood check/apply flow and schema v1 do not implement v2 TaskRevision or policy pins. Issues #72–#76 record remaining receipt and recovery gaps; implementation must re-check each issue before duplicating a fix.
+- **Notes**: Requires the durable supervisor/contracts card, MH-10 and at least one independently qualified route, MH-13 and the S1 portion of MH-16. Value 5: accepted delivery; risk 5: false acceptance/authority; effort 4: extends multiple existing paths.
+
 ### MH-32: TUI terminal recording (FR-3 follow-up)
 - **Status**: shipped
 - **Stage**: 1
@@ -407,3 +395,15 @@ Optional fields, after the required ones: **Premise-grounded** (the verdicts rec
 - **Source**: historical R1.1 recording contract (master spec §§14.9, 22.3; docs-site-demos FR-3/AC-3.2/AC-3.3, design §5); current contract Master Specification v2 §15 via W05; TUI evidence in specs/done/tui-slice/ (shipped 2026-10-04)
 - **Summary**: Record the shipped TUI on tape: drive the mission view, responsive layouts down to linear mode and keyboard flows with the TUI's own verification status on screen, limited to exactly the covered tui-slice behaviour; ship the full tape with header pins, a manifest entry naming qualifying tests, and a normalized transcript per the docs-site-demos tape contract, never pane text as proof.
 - **Premise-grounded**: 2026-10-05 — 8 claims, 6 HOLDS, 2 PARTIAL, 0 UNVERIFIABLE; R1.1 anchor PARTIAL (operative contract is docs-site-demos FR-3); v2 §15 via W05 PARTIAL (tape is this spec's evidence form); tui-slice AC-3.1/AC-6.2 partials excluded
+
+### MH-33: Docs site that shows the product: layout, search, demo-first landing and tested examples
+- **Status**: shipped
+- **Stage**: 1
+- **Gates**: G10
+- **Score**: 3.3 = (value 3 + urgency 5 + risk 2) / effort 3
+- **Spec**: `docs-site-restyle`
+- **Issue**: [#445](https://github.com/turbokast/mythhelm/issues/445)
+- **Source**: Master Specification v2 §15.1 (observatory and paper themes), §18.3 G10 (published limitations); design direction review 2026-10-12
+- **Summary**: Restyle the Jekyll site on GitHub Pages in the brand: a Night landing page that leads with the hero demo and the go run quickstart, Paper docs pages with a sidebar grouped Start / Use / Understand / Reference, an on-this-page list and client-side search, reported / estimated / unknown labels styled consistently, code examples marked and tested in CI, and a layout with no horizontal overflow at 390px. Keep Jekyll; revisit Starlight or mdBook only if search or build speed hurts.
+- **Premise-grounded**: 2026-10-12 — Layout replaces the theme with no brand assets HOLDS; flat nav HOLDS; User guide 516px at 390px (13 overflowing elements, re-measured live) HOLDS; no search or on-page contents HOLDS; existing docs CI HOLDS; only front-matter pages are rendered REFUTED (front-matter-less Markdown is rendered too, live HTTP 200); hero recording exists as a GIF with no chapters PARTIAL; quickstart tested in CI PARTIAL (CI runs the built binary with demo --check pass, not the quickstart as written); Paper and amber hexes not in the brand README PARTIAL; v2 §15.1 themes are the TUI's PARTIAL; landing headline and attention-queue claim versus shipped adapters PARTIAL; Star light on Paper 4.08:1 PARTIAL; client-side search under Pages and the Claude Design file UNVERIFIABLE
+- **Notes**: Value 3: first impression and onboarding, not the core promise; urgency 5: stage 1; risk 2: published claims drifting from what ships; effort 3: layout, search, landing, example testing. Release engineer and docs. Pairs with MH-23, which uses the same brand tokens.
