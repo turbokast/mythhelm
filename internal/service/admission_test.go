@@ -187,8 +187,9 @@ func configureSyntheticAdmission(t *testing.T, r *runtime, spec control.RunSpec)
 // admissionFramedConn runs the actual registered server through the same
 // frame/result codecs as the revision-aware client; it supplies no handler fake.
 type admissionFramedConn struct {
-	runtime *runtime
-	peer    control.Peer
+	runtime       *runtime
+	peer          control.Peer
+	observeResult func(control.Result)
 }
 
 func (c *admissionFramedConn) Peer() control.Peer { return c.peer }
@@ -205,6 +206,9 @@ func (c *admissionFramedConn) Request(ctx context.Context, frame []byte) ([]byte
 			return nil, err
 		}
 		result.Error = ce
+	}
+	if c.observeResult != nil {
+		c.observeResult(result)
 	}
 	return control.Encode(result)
 }
@@ -1564,10 +1568,17 @@ func TestServiceCanonicalRequestFixtureAliases(t *testing.T) {
 
 // Run serially so the process-stack barrier identifies this confirmation waiter.
 func TestConfirmationReplayRechecksQueuedPhysicalIdentity(t *testing.T) {
+	for _, waitMode := range []string{"preparation_store", "confirmation_sql"} {
+		t.Run(waitMode, func(t *testing.T) { testConfirmationReplayPhysicalIdentity(t, waitMode) })
+	}
+}
+
+func testConfirmationReplayPhysicalIdentity(t *testing.T, waitMode string) {
 	r := testRuntime(t)
 	spec := retentionOnlyRequestFixture(t)
 	configureSyntheticAdmission(t, r, spec)
-	client := control.NewPreparedRunClient(&admissionFramedConn{runtime: r, peer: control.Peer{SameUser: true, PID: 77}})
+	var observed control.Result
+	client := control.NewPreparedRunClient(&admissionFramedConn{runtime: r, peer: control.Peer{SameUser: true, PID: 77}, observeResult: func(result control.Result) { observed = result }})
 	prepared, err := client.PrepareRevisioned(t.Context(), "op_identity_prepare", spec)
 	if err != nil {
 		t.Fatal(err)
@@ -1581,23 +1592,19 @@ func TestConfirmationReplayRechecksQueuedPhysicalIdentity(t *testing.T) {
 		t.Fatal("initial confirmation not ready")
 	}
 	before := preparationImage(t, r, prepared.Run.PreparationID)
-	r.preparations.mu.Lock()
-	locked := true
-	defer func() {
-		if locked {
-			r.preparations.mu.Unlock()
-		}
-	}()
+	release, wait := holdConfirmationReplay(t, r, waitMode)
+	defer release()
 	type response struct {
 		reply control.PreparedReply
 		err   error
+		wire  control.Result
 	}
 	done := make(chan response, 1)
 	go func() {
 		reply, err := client.ConfirmRevisioned(t.Context(), "op_identity_confirm", 0, answer)
-		done <- response{reply, err}
+		done <- response{reply, err, observed}
 	}()
-	waitConfirmationStoreMutex(t)
+	wait()
 	root := r.journal.StateDir()
 	moved := root + "-original"
 	renameErr := os.Rename(root, moved)
@@ -1613,8 +1620,7 @@ func TestConfirmationReplayRechecksQueuedPhysicalIdentity(t *testing.T) {
 		if err := r.lease.CheckRootIdentity(t.Context(), root); err != nil {
 			t.Fatal(err)
 		}
-		r.preparations.mu.Unlock()
-		locked = false
+		release()
 		select {
 		case got := <-done:
 			if got.err != nil || !reflect.DeepEqual(got.reply, first) {
@@ -1650,16 +1656,20 @@ func TestConfirmationReplayRechecksQueuedPhysicalIdentity(t *testing.T) {
 	if err := r.journal.CheckStateIdentity(t.Context()); err == nil {
 		t.Fatal("replacement did not change original physical identity")
 	}
-	if image := preparationImage(t, r, prepared.Run.PreparationID); image != before {
-		t.Fatal("retained original journal lost preparation before replay")
+	if waitMode == "preparation_store" {
+		if image := preparationImage(t, r, prepared.Run.PreparationID); image != before {
+			t.Fatal("retained original journal lost preparation before replay")
+		}
 	}
-	r.preparations.mu.Unlock()
-	locked = false
+	release()
 	select {
 	case got := <-done:
 		var ce *control.Error
 		if !errors.As(got.err, &ce) || ce.Code != control.Code("dependency_stale") || got.reply.Revision != 0 || got.reply.Run.PreparationID != "" {
 			t.Fatalf("changed physical root released historical reply: %+v, %v", got.reply, got.err)
+		}
+		if len(got.wire.Body) != 0 || got.wire.Revision != 0 || got.wire.Error == nil || got.wire.Error.Code != control.Code("dependency_stale") {
+			t.Fatalf("changed physical root released historical wire data: %+v", got.wire)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("replay did not finish")
@@ -1683,4 +1693,71 @@ func waitConfirmationStoreMutex(t *testing.T) {
 		goruntime.Gosched()
 	}
 	t.Fatal("confirmation did not wait for preparation store after initial scope proof")
+}
+
+// Hold the real queue boundary, without substituting the retained journal or lease.
+func holdConfirmationReplay(t *testing.T, r *runtime, mode string) (release func(), wait func()) {
+	t.Helper()
+	if mode == "preparation_store" {
+		r.preparations.mu.Lock()
+		locked := true
+		return func() {
+			if locked {
+				r.preparations.mu.Unlock()
+				locked = false
+			}
+		}, func() { waitConfirmationStoreMutex(t) }
+	}
+	entered := make(chan struct{})
+	unblock := make(chan struct{})
+	finished := make(chan error, 1)
+	go func() {
+		finished <- r.journal.Transact(t.Context(), func(*sql.Tx) error {
+			close(entered)
+			select {
+			case <-unblock:
+				return nil
+			case <-t.Context().Done():
+				return t.Context().Err()
+			}
+		})
+	}()
+	released := false
+	release = func() {
+		if released {
+			return
+		}
+		released = true
+		close(unblock)
+		select {
+		case err := <-finished:
+			if err != nil {
+				t.Error(err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Error("held journal transaction did not finish")
+		}
+	}
+	select {
+	case <-entered:
+	case err := <-finished:
+		t.Fatalf("journal blocker failed before entering: %v", err)
+	case <-time.After(5 * time.Second):
+		release()
+		t.Fatal("journal blocker did not enter")
+	}
+	return release, func() {
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			buf := make([]byte, 1<<20)
+			buf = buf[:goruntime.Stack(buf, true)]
+			for g := range strings.SplitSeq(string(buf), "\n\n") {
+				if strings.Contains(g, "(*runtime).confirmAdmission(") && strings.Contains(g, "(*Journal).ConfirmPreparation(") && strings.Contains(g, "database/sql.(*DB).BeginTx(") {
+					return
+				}
+			}
+			goruntime.Gosched()
+		}
+		t.Fatal("historical confirmation did not wait inside journal BeginTx after physical proof")
+	}
 }

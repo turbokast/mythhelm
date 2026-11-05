@@ -225,6 +225,9 @@ func (r *runtime) prepareAdmission(ctx context.Context, peer control.Peer, in co
 		if err := validatePreparationEntry(ctx, entry); err != nil {
 			return control.Result{}, admissionWireError(err)
 		}
+		if err := r.checkAdmissionIdentity(ctx); err != nil {
+			return control.Result{}, err
+		}
 		out := replay.result
 		out.Body = append(json.RawMessage{}, out.Body...)
 		return out, nil
@@ -336,6 +339,10 @@ func (r *runtime) confirmAdmission(ctx context.Context, peer control.Peer, in co
 		observed := time.Now().UTC()
 		lookup := journal.PreparationLookup{PreparationID: metadata.PreparationID, PeerID: peerID, RootID: metadata.RootID, Generation: metadata.Generation, ContextEpoch: metadata.ContextEpoch, BindingSHA256: metadata.BindingSHA256, ExpectedRevision: uint64(in.ExpectedRevision), ObservedAt: observed}
 		state, err := r.journal.ConfirmPreparation(ctx, lookup, journal.ConfirmationV1{Operation: journal.PreparationOperation{OperationID: in.OperationID, ParamsSHA256: digest}, ChallengeID: answer.ChallengeID, BindingSHA256: answer.BindingSHA256, PeerID: peerID, RootID: metadata.RootID, ContextEpoch: metadata.ContextEpoch, Generation: metadata.Generation, Decision: ab.RetentionApprove, ObservedAt: observed})
+		// The durable replay can wait for a journal transaction after the earlier check.
+		if err := r.checkAdmissionIdentity(ctx); err != nil {
+			return control.Result{}, err
+		}
 		if err != nil {
 			return control.Result{}, admissionWireError(err)
 		}
