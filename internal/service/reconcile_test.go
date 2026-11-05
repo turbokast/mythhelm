@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -190,20 +191,62 @@ func newAdoptionFixture(t *testing.T, scenarios ...string) adoptionFixture {
 		}
 	})
 	until := time.Now().Add(15 * time.Second)
+	var lastReadErr error
 	for {
 		ready, err := adoptionFixtureLaunched(ctx, workers.AttemptDir(r.journal.StateDir(), d.RunID, d.AttemptID), d.RunID, d.AttemptID, proc.Pid)
 		if err != nil {
-			t.Fatal(err)
+			if !adoptionFixtureRetryIdentity(err, goruntime.GOOS) {
+				t.Fatal(err)
+			}
+			lastReadErr = err
 		}
 		if ready {
 			break
 		}
 		if time.Now().After(until) {
-			t.Fatal("worker did not record its matching native launch before fixture setup expired")
+			t.Fatalf("worker did not record its matching native launch before fixture setup expired; last identity read error: %v", lastReadErr)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	return adoptionFixture{r: r, run: d.RunID, attempt: d.AttemptID, proc: proc, launch: launch, pin: pin}
+}
+
+// Only the platform-specific sharing failures while opening this fixture's
+// identity may be retried. JSON errors, ACL failures and other files are fatal.
+func adoptionFixtureRetryIdentity(err error, platform string) bool {
+	var pathErr *os.PathError
+	return platform == "windows" && errors.As(err, &pathErr) &&
+		pathErr.Op == "open" && filepath.Base(pathErr.Path) == "worker.json" &&
+		(errors.Is(pathErr.Err, syscall.Errno(32)) || errors.Is(pathErr.Err, syscall.Errno(33)))
+}
+
+func TestAdoptionFixtureRetryIdentity(t *testing.T) {
+	t.Parallel()
+	pathErr := func(op, name string, errno syscall.Errno) error {
+		return &os.PathError{Op: op, Path: filepath.Join("attempt", name), Err: errno}
+	}
+	for _, c := range []struct {
+		name, platform string
+		err            error
+		want           bool
+	}{
+		{"Windows sharing read", "windows", pathErr("open", "worker.json", 32), true},
+		{"Windows locked read", "windows", pathErr("open", "worker.json", 33), true},
+		{"ACL denied", "windows", pathErr("open", "worker.json", 5), false},
+		{"foreign file", "windows", pathErr("open", "supervisor.beat", 32), false},
+		{"rename conflict", "windows", pathErr("rename", "worker.json", 32), false},
+		{"missing identity", "windows", os.ErrNotExist, false},
+		{"corrupt identity", "windows", &json.SyntaxError{}, false},
+		{"bare errno", "windows", syscall.Errno(32), false},
+		{"Unix errno32", "linux", pathErr("open", "worker.json", 32), false},
+		{"no error", "windows", nil, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := adoptionFixtureRetryIdentity(c.err, c.platform); got != c.want {
+				t.Fatalf("retry = %v, want %v for %v", got, c.want, c.err)
+			}
+		})
+	}
 }
 
 // The initial worker identity and spool precede native Start. The worker writes
