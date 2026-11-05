@@ -139,12 +139,13 @@ class ShardTests(unittest.TestCase):
                                (["cli"], ["go", "test", "-json", "-p", "1", CLI]),
                                (["rest", "--race"], ["go", "test", "-json", "-race", "-p", "1", "example.test/project/a"]),
                                (["rest"], ["go", "test", "-json", "-p", "1", "example.test/project/a"])):
-            with self.subTest(argv=argv), mock.patch.object(s.subprocess, "run", return_value=listing) as run, \
-                    mock.patch.object(s, "run_tests", return_value=7) as tests:
-                self.assertEqual(s.main(argv), 7)
-                self.assertEqual(tests.call_args.args[0], expected)
-                run.assert_called_once()
-                self.assertNotIn("shell", tests.call_args.kwargs)
+            for status in (0, 7, 23):
+                with self.subTest(argv=argv, status=status), mock.patch.object(s.subprocess, "run", return_value=listing) as run, \
+                        mock.patch.object(s, "run_tests", return_value=status) as tests:
+                    self.assertEqual(s.main(argv), status)
+                    self.assertEqual(tests.call_args.args[0], expected)
+                    run.assert_called_once()
+                    self.assertNotIn("shell", tests.call_args.kwargs)
 
     def test_os_error_is_not_suppressed(self):
         with mock.patch.object(s.subprocess, "run", side_effect=OSError("synthetic unavailable")), \
