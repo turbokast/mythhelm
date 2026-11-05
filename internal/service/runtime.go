@@ -186,6 +186,10 @@ func openRuntimePrepared(ctx context.Context, stateDir string, prepare func(cont
 		}
 	}
 	r.server = control.NewStatusServer(r.status)
+	if err := r.registerAttachments(); err != nil {
+		_ = r.shutdown(context.Background())
+		return nil, err
+	}
 	return r, nil
 }
 

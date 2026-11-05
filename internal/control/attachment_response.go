@@ -104,7 +104,7 @@ func (s *Server) RegisterAttachment(method string, h AttachmentHandler) error {
 // consulted; it never runs Execute, so no operation or result row exists.
 func (s *Server) runAttachment(ctx context.Context, peer Peer, in Intent) (*AttachmentResponse, error) {
 	if !peer.SameUser {
-		return nil, newError(CodePermissionDenied, "peer is not the supervisor user")
+		return nil, newError(CodePermissionDenied, "attachment unavailable")
 	}
 	if err := in.Validate(); err != nil {
 		return nil, newError(CodeInvalidContract, "invalid intent: %v", err)
