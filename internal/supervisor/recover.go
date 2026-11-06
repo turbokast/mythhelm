@@ -444,20 +444,30 @@ func (p *pipeline) descendantsResolved(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	var stop struct {
+	type stoppedReport struct {
 		Confirmed  bool                      `json:"confirmed"`
 		Scan       string                    `json:"descendant_scan"`
 		PIDs       []int                     `json:"unresolved_pids"`
 		Identities []workers.ProcessIdentity `json:"unresolved_identities"`
 	}
+	var stop stoppedReport
 	for _, ev := range events {
 		if ev.Type == "attempt.stopped" && ev.AttemptID == p.d.AttemptID {
-			if err := json.Unmarshal(ev.Payload, &stop); err != nil {
+			// A later incomplete report cannot inherit earlier ownership evidence.
+			var latest stoppedReport
+			if err := json.Unmarshal(ev.Payload, &latest); err != nil {
 				return false, err
 			}
+			stop = latest
 		}
 	}
-	if !stop.Confirmed || stop.Scan == "failed" || len(stop.PIDs) == 0 {
+	if !stop.Confirmed || stop.Scan == "failed" {
+		return false, nil
+	}
+	// The newly resolvable empty case requires an explicit complete Linux
+	// scan report. Missing legacy evidence is not an observed empty set.
+	// The fresh orphan scan below remains mandatory, even with no recorded PIDs.
+	if len(stop.PIDs) == 0 && (stop.Scan != "proc-environ" || stop.PIDs == nil || stop.Identities == nil || len(stop.Identities) != 0) {
 		return false, nil
 	}
 	for _, pid := range stop.PIDs {
