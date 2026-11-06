@@ -283,6 +283,11 @@ type pipeline struct {
 	out      Outcome
 	rendered int64 // run_sequence of the last event passed to h.Event
 
+	// The exact hold returned by this pipeline's committed admission. These
+	// are never reconstructed from other claims sharing the run or bucket.
+	quotaReservationID string
+	quotaBucket        string
+
 	// ceilings are the run's resolved envelope, set at admission; deadline is
 	// when its execution time ends (zero until the first attempt starts).
 	ceilings billing.Ceilings
@@ -324,7 +329,7 @@ func (p *pipeline) run(ctx context.Context) error {
 		return err
 	}
 	if err := p.snapshot(ctx); err != nil {
-		return errors.Join(err, p.runTo(ctx, RunFailed, "preflight_snapshot_failed"))
+		return errors.Join(err, p.finishBeforeSpawn(ctx, RunFailed, "preflight_snapshot_failed"))
 	}
 	if err := p.runTo(ctx, RunExecuting, ""); err != nil {
 		return err
@@ -358,6 +363,8 @@ func (p *pipeline) appendAdmission(ctx context.Context) error {
 	decl, trust, digest, repo := d.Declaration, d.RecordNativeTrust, d.NativeConfigDigest, d.RepoIdentity
 	rec, identityRef := quotaBucketInputs(d)
 	var holdErr, policyErr error
+	var quotaID string
+	bucket := admission.QuotaBucket(rec, identityRef)
 	// The envelope, the reservation and the pinned policy commit with the
 	// admission, so no admitted run exists without any of them, and a failed
 	// hold or policy leaves nothing behind (AC-3.2, I21, I20).
@@ -381,7 +388,7 @@ func (p *pipeline) appendAdmission(ctx context.Context) error {
 			UpdatedAt: at.Format(time.RFC3339Nano)}); err != nil {
 			return err
 		}
-		if _, holdErr = admission.HoldQuotaReservation(ctx, tx, admission.NewJournalReserver(ceilings, EvaluateBucket), d.RunID, rec, identityRef); holdErr != nil {
+		if quotaID, holdErr = admission.HoldQuotaReservation(ctx, tx, admission.NewJournalReserver(ceilings, EvaluateBucket), d.RunID, rec, identityRef); holdErr != nil {
 			return holdErr
 		}
 		return nil
@@ -402,7 +409,8 @@ func (p *pipeline) appendAdmission(ctx context.Context) error {
 		}
 		return err
 	}
-	p.inform(NoticeReservationHeld, admission.ReservationText(admission.QuotaBucket(rec, identityRef)))
+	p.quotaReservationID, p.quotaBucket = quotaID, bucket
+	p.inform(NoticeReservationHeld, admission.ReservationText(bucket))
 	return p.flush(ctx)
 }
 
@@ -449,7 +457,7 @@ func (p *pipeline) blockLaunch(ctx context.Context, err error) error {
 	if gate, ok := errors.AsType[*GateError](err); ok {
 		reason = gate.Reason
 	}
-	return errors.Join(err, p.runTo(ctx, RunBlocked, reason))
+	return errors.Join(err, p.finishBeforeSpawn(ctx, RunBlocked, reason))
 }
 
 // quotaBucketInputs builds the bucket's record from the decision: its
@@ -548,7 +556,7 @@ func (p *pipeline) attempt(ctx context.Context) error {
 		// worker would verify nothing it was admitted on, so nothing spawns.
 		return errors.Join(err,
 			p.attemptTo(ctx, AttemptInterrupted, "native_config_unbound"),
-			p.runTo(ctx, RunFailed, "native_config_unbound"))
+			p.finishBeforeSpawn(ctx, RunFailed, "native_config_unbound"))
 	}
 	launch.ExecutionDeadline = p.deadline
 	proc, reason, err := spawnPinned(ctx, p.exe, d.StateDir, d.RunID, d.AttemptID, launch,
@@ -556,8 +564,13 @@ func (p *pipeline) attempt(ctx context.Context) error {
 			return pinnedLaunch(ctx, p.j, p.prod, d.StateDir, d.RunID, d.TaskID, d.AttemptID, l)
 		})
 	if err != nil {
-		// The launch intent is journaled but the worker never ran: the
-		// attempt is interrupted rather than retried blind.
+		if reason == "admission_pin_failed" {
+			// spawnPinned returned before calling workers.Spawn. A failed OS
+			// spawn/handoff does not carry this proof and retains its claim.
+			return errors.Join(err,
+				p.attemptTo(ctx, AttemptInterrupted, reason),
+				p.finishBeforeSpawn(ctx, RunFailed, reason))
+		}
 		return errors.Join(err,
 			p.attemptTo(ctx, AttemptInterrupted, reason),
 			p.runTo(ctx, RunFailed, reason))
@@ -844,7 +857,7 @@ func (p *pipeline) stopBeforeSpawn(ctx context.Context) (bool, error) {
 		if err := p.runTo(ctx, RunStopping, ""); err != nil {
 			return true, err
 		}
-		return true, p.runTo(ctx, RunCancelled, "")
+		return true, p.finishBeforeSpawn(ctx, RunCancelled, "")
 	default:
 		return false, nil
 	}
@@ -1352,6 +1365,30 @@ func (p *pipeline) lose(ctx context.Context) error {
 		return err
 	}
 	return p.runTo(ctx, RunInterrupted, reason)
+}
+
+// finishBeforeSpawn is used only by exits that prove workers.Spawn has not
+// been called. A terminal state alone is not stop evidence: ordinary failures,
+// unknown spawn outcomes and recovery must never use this path (I24, v2 §2).
+func (p *pipeline) finishBeforeSpawn(ctx context.Context, to RunState, reason string) error {
+	switch to {
+	case RunFailed, RunBlocked, RunCancelled:
+	default:
+		return errors.New("pre-spawn completion requires a terminal state")
+	}
+	evidenceReason := reason
+	if to == RunCancelled && evidenceReason == "" {
+		evidenceReason = "cancelled_before_spawn"
+	}
+	if err := transitionRun(ctx, p.j, p.d.RunID, to, reason, p.prod, func(tx *sql.Tx) error {
+		return journal.ReleaseRunQuota(ctx, tx, journal.QuotaReservationRelease{
+			RunID: p.d.RunID, ReservationID: p.quotaReservationID, Bucket: p.quotaBucket,
+			Evidence: "worker not spawned: " + evidenceReason, ObservedAt: time.Now().UTC(),
+		})
+	}); err != nil {
+		return err
+	}
+	return p.settleRun(ctx, to, reason)
 }
 
 func (p *pipeline) runTo(ctx context.Context, to RunState, reason string) error {
