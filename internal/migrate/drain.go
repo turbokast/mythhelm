@@ -316,7 +316,13 @@ func quiesceRun(ctx context.Context, stateDir, runID string, deadline time.Time)
 // quarantines for stream-4 reconciliation. Nothing relaunches: a dead
 // worker's launch identity is never reused by a new launch (I12).
 func classifyRun(ctx context.Context, db *sql.DB, stateDir string, report *DrainReport, r drainRun) error {
-	if terminalRunState(r.state) {
+	// Enumeration precedes the owner wait. Read again under the held run
+	// lock so an in-flight completion cannot become a false quarantine.
+	state, err := quiescedRunState(ctx, db, r.id)
+	if err != nil {
+		return err
+	}
+	if terminalRunState(state) {
 		report.Drained = append(report.Drained, r.id)
 		return nil
 	}
@@ -330,6 +336,27 @@ func classifyRun(ctx context.Context, db *sql.DB, stateDir string, report *Drain
 	}
 	report.Quarantined = append(report.Quarantined, r.id)
 	return nil
+}
+
+// quiescedRunState preserves enumeration's schema-zero and directory-only
+// cases: neither has a run row. A failed read is never a cached-state fallback.
+func quiescedRunState(ctx context.Context, db *sql.DB, runID string) (string, error) {
+	var hasRuns int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='runs'`).Scan(&hasRuns); err != nil {
+		return "", persistenceError("drain", fmt.Sprintf("checking runs table: %v", err))
+	}
+	if hasRuns == 0 {
+		return "", nil
+	}
+	var state string
+	err := db.QueryRowContext(ctx, `SELECT state FROM runs WHERE run_id = ?`, runID).Scan(&state)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", persistenceError("drain", fmt.Sprintf("reading quiesced run %s: %v", runID, err))
+	}
+	return state, nil
 }
 
 // adoptable verifies the run's latest attempt for same-launch-identity

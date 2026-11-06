@@ -931,3 +931,119 @@ func TestDrainOwnerDeadlinePhase(t *testing.T) {
 		})
 	}
 }
+
+// I09/I23 (v2 §2): classification describes the state after the writer drains,
+// not the snapshot taken before migration acquired its run lock.
+func TestClassifyQuiescedRunReadsCurrentState(t *testing.T) {
+	for _, tc := range []struct {
+		name, before, after string
+		drained             bool
+	}{
+		{"completion during quiesce", "executing", "completed", true},
+		{"terminal snapshot became active", "completed", "executing", false},
+		{"unchanged active without worker", "executing", "executing", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateInstanceLock(t)
+			dir := t.TempDir()
+			db := openDrainDB(t, dir)
+			insertRun(t, db, "run_moving", tc.before)
+			runDir := filepath.Join(dir, "runs", "run_moving")
+			if err := os.MkdirAll(runDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			owner, err := supervisor.AcquireOwner(runDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(owner)
+			migration, err := acquireMigrationLocks("drain", dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer migration()
+			snapshot, err := enumerateRuns(t.Context(), db, dir)
+			if err != nil || len(snapshot) != 1 || snapshot[0].state != tc.before {
+				t.Fatalf("snapshot=%v error=%v", snapshot, err)
+			}
+			// Commit the last legacy write while its actual owner lock is held.
+			if _, err := db.Exec(`UPDATE runs SET state = ? WHERE run_id = 'run_moving'`, tc.after); err != nil {
+				t.Fatal(err)
+			}
+			owner()
+			release, err := quiesceRun(t.Context(), dir, "run_moving", drainDeadline(t.Context()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer release()
+			if other, err := supervisor.AcquireOwner(runDir); err == nil {
+				other()
+				t.Fatal("classification does not hold the run owner lock")
+			} else if !errors.Is(err, supervisor.ErrOwnerHeld) {
+				t.Fatal(err)
+			}
+			var got DrainReport
+			if err := classifyRun(t.Context(), db, dir, &got, snapshot[0]); err != nil {
+				t.Fatal(err)
+			}
+			want := DrainReport{Quarantined: []string{"run_moving"}}
+			if tc.drained {
+				want = DrainReport{Drained: []string{"run_moving"}}
+			}
+			if !slices.Equal(got.Drained, want.Drained) || !slices.Equal(got.Quarantined, want.Quarantined) || len(got.Adopted) != 0 {
+				t.Fatalf("classification=%+v; want %+v", got, want)
+			}
+		})
+	}
+}
+
+func TestQuiescedStateMissingAndUnreadable(t *testing.T) {
+	t.Run("schema zero has no run state", func(t *testing.T) {
+		// This parent also runs environment-isolated migration fixtures.
+		db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "empty.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = db.Close() }()
+		state, err := quiescedRunState(t.Context(), db, "run_absent")
+		if err != nil || state != "" {
+			t.Fatalf("schema-zero state=%q error=%v; want absent", state, err)
+		}
+	})
+	t.Run("directory-only run still quarantines", func(t *testing.T) {
+		isolateInstanceLock(t)
+		dir := t.TempDir()
+		db := openDrainDB(t, dir)
+		if err := os.MkdirAll(filepath.Join(dir, "runs", "run_orphan"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		got, err := Drain(t.Context(), db)
+		if err != nil || !slices.Equal(got.Quarantined, []string{"run_orphan"}) || len(got.Drained) != 0 || len(got.Adopted) != 0 {
+			t.Fatalf("orphan classification=%+v error=%v; want quarantine only", got, err)
+		}
+	})
+	t.Run("read failure cannot reuse terminal snapshot", func(t *testing.T) {
+		isolateInstanceLock(t)
+		dir := t.TempDir()
+		db := openDrainDB(t, dir)
+		insertRun(t, db, "run_done", "completed")
+		snapshot, err := enumerateRuns(t.Context(), db, dir)
+		if err != nil || len(snapshot) != 1 {
+			t.Fatalf("enumerate=%v error=%v", snapshot, err)
+		}
+		release, err := quiesceRun(t.Context(), dir, "run_done", drainDeadline(t.Context()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer release()
+		if _, err := db.Exec(`ALTER TABLE runs RENAME COLUMN state TO unavailable_state`); err != nil {
+			t.Fatal(err)
+		}
+		var got DrainReport
+		err = classifyRun(t.Context(), db, dir, &got, snapshot[0])
+		var ce *v2contract.ControlError
+		if !errors.As(err, &ce) || ce.Code != v2contract.CodePersistenceUnavailable || len(got.Drained)+len(got.Adopted)+len(got.Quarantined) != 0 {
+			t.Fatalf("unreadable current state=%+v error=%v; want persistence refusal and no classification", got, err)
+		}
+	})
+}
