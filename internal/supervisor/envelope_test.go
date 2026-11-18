@@ -314,9 +314,27 @@ func requireGateRefusal(t *testing.T, err error, reason string) {
 // returns the run as projected afterwards.
 func (w *gateWorld) blockedByGate(t *testing.T, gateErr error) journal.RunRow {
 	t.Helper()
-	p := &pipeline{d: admission.Decision{RunID: w.runID, RunDir: t.TempDir()}, j: w.j, prod: w.prod, h: Hooks{Event: func(journal.Event) {}, Notice: func(string) {}}, out: Outcome{RunID: w.runID, State: RunExecuting}}
+	// This gate-only fixture never spawns workers. Production appendAdmission
+	// commits a quota hold before reaching blockLaunch; retain that exact real
+	// storage identity here rather than allowing an empty synthetic identity.
+	const bucket = "synthetic-gate-bucket"
+	var quotaID string
+	if err := w.j.Transact(t.Context(), func(tx *sql.Tx) error {
+		var err error
+		quotaID, err = journal.InsertRunQuotaHold(t.Context(), tx, journal.QuotaReservationInput{
+			RunID: w.runID, Bucket: bucket, ExecutionNanos: int64(gateCeilings.Execution), ObservedAt: time.Now().UTC(),
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p := &pipeline{d: admission.Decision{RunID: w.runID, RunDir: t.TempDir()}, j: w.j, prod: w.prod, h: Hooks{Event: func(journal.Event) {}, Notice: func(string) {}}, out: Outcome{RunID: w.runID, State: RunExecuting}, quotaReservationID: quotaID, quotaBucket: bucket}
 	if err := p.blockLaunch(t.Context(), gateErr); err == nil {
 		t.Fatal("blockLaunch returned nil for a refused launch")
+	}
+	quota, err := w.j.Reservation(t.Context(), quotaID)
+	if err != nil || quota.Status != "released" || quota.ReleaseEvidence == "" {
+		t.Fatalf("blocked quota = %+v, %v", quota, err)
 	}
 	run, err := w.j.Run(t.Context(), w.runID)
 	if err != nil {

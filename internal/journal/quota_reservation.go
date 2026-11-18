@@ -106,3 +106,34 @@ func validateQuotaInput(tx *sql.Tx, in QuotaReservationInput) error {
 	}
 	return nil
 }
+
+// QuotaReservationRelease identifies one admission's run-owned quota hold.
+// The caller supplies its observed stop/no-spawn evidence while holding the
+// run owner lock; this storage operation grants no execution authority.
+type QuotaReservationRelease struct {
+	RunID, ReservationID, Bucket, Evidence string
+	ObservedAt                             time.Time
+}
+
+// ReleaseRunQuota releases exactly the held quota row returned by admission.
+// Host-backed service reservations and other owners/scopes never match. The
+// caller's transaction couples this projection to its durable terminal event.
+func ReleaseRunQuota(ctx context.Context, tx *sql.Tx, in QuotaReservationRelease) error {
+	if tx == nil || in.RunID == "" || in.ReservationID == "" || in.Bucket == "" || in.Evidence == "" || in.ObservedAt.IsZero() {
+		return errors.New("invalid quota release input")
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE reservations SET status='released', release_evidence=?, heartbeat_at=?
+ WHERE reservation_id=? AND run_id=? AND owner=? AND bucket=? AND scope=? AND execution_host='' AND status='held'`,
+		in.Evidence, formatTime(in.ObservedAt), in.ReservationID, in.RunID, in.RunID, in.Bucket, in.Bucket)
+	if err != nil {
+		return fmt.Errorf("releasing run quota reservation: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking run quota release: %w", err)
+	}
+	if count != 1 {
+		return fmt.Errorf("run quota reservation no longer matches its admission: %w", ErrNotFound)
+	}
+	return nil
+}
