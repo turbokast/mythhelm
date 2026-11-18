@@ -66,7 +66,7 @@ var afterDrain func()
 // step's single VACUUM INTO is the design-excluded file copy. On step
 // failure Apply returns the drain report with the error and the phase
 // row names the last completed step, so --apply is resumable: the drain
-// re-quiesces, the recorded backup is reused by digest (never re-taken
+// re-quiesces, a backup recorded at drained is reused by digest (never re-taken
 // over an existing one, and an unrecorded backup already at the default
 // path is refused, not reused), quarantine envelopes dedupe by event_id, and imported
 // runs skip by their import markers — resume never replays effects
@@ -130,7 +130,15 @@ func applyQuiesced(ctx context.Context, db *sql.DB, plan preview.Plan, stateDir 
 			return DrainReport{}, err
 		}
 		return report, nil
-	case PhaseNotStarted, PhasePreviewed, PhaseDrained:
+	case PhaseNotStarted, PhasePreviewed:
+		// Older writers could publish the backup before closing legacy
+		// admission. Its digest proves integrity, not that it includes later writes.
+		if backupPath != "" {
+			return report, applyError(v2contract.CodeInvalidContract, "apply", "",
+				"preserve the current ledger and recorded backup for migration recovery review; do not restore or discard either",
+				"recorded backup at phase %s may predate accepted legacy writes; refusing reuse", phase)
+		}
+	case PhaseDrained:
 	default:
 		return DrainReport{}, applyError(v2contract.CodeInvalidContract, "apply", "", "inspect the migration phase", "unknown migration phase")
 	}
@@ -153,13 +161,10 @@ func applyQuiesced(ctx context.Context, db *sql.DB, plan preview.Plan, stateDir 
 	if err != nil {
 		return report, err
 	}
-	if info.Path != backupPath {
-		if err := recordBackup(ctx, db, info.Path); err != nil {
+	if Phase(phase) != PhaseDrained || info.Path != backupPath {
+		if err := recordDrainedBackup(ctx, db, info.Path); err != nil {
 			return report, err
 		}
-	}
-	if err := recordPhase(ctx, db, PhaseDrained); err != nil {
-		return report, err
 	}
 	if err := persistQuarantine(ctx, db, report.Quarantined); err != nil {
 		return report, err
@@ -218,18 +223,19 @@ func markPreviewed(ctx context.Context, db *sql.DB) error {
 	})
 }
 
-// recordBackup records the backup path with the start marker and build
-// identity fill, so a resume reuses the backup instead of taking another.
-func recordBackup(ctx context.Context, db *sql.DB, path string) error {
+// recordDrainedBackup publishes the copy and the phase that closes legacy
+// admission together. A failed transaction leaves an unrecorded copy, which
+// backupOrReuse refuses rather than certifying after later legacy writes.
+func recordDrainedBackup(ctx context.Context, db *sql.DB, path string) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	build := buildinfo.Get().Version
 	return control.Mutate(ctx, db, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `UPDATE migration_state SET backup_path = ?,
+		_, err := tx.ExecContext(ctx, `UPDATE migration_state SET phase = 'drained', backup_path = ?,
 			started_at = CASE WHEN started_at = '' THEN ? ELSE started_at END,
 			build_version = ? WHERE id = 1`, path, now, build)
 		if err != nil {
 			return applyError(v2contract.CodePersistenceUnavailable, "apply", "",
-				"retry once the ledger is writable", "recording the backup: %v", err)
+				"retry once the ledger is writable", "recording the drained backup: %v", err)
 		}
 		return nil
 	})
@@ -262,8 +268,10 @@ func currentRunIDs(ctx context.Context, db *sql.DB, stateDir string) ([]string, 
 }
 
 // backupOrReuse takes the pre-migration backup, or reuses the one a
-// previous attempt recorded. With no backup recorded the copy must be
-// taken now, after this attempt's drain, or it would miss writes accepted
+// previous drained attempt recorded. The caller refuses recorded copies in
+// earlier phases, where legacy writes may have continued. With no backup
+// recorded the copy must be taken now, after this attempt's drain, or it would
+// miss writes accepted
 // since (a restore resets migration_state, and a crash can fall between
 // the backup and its record): Backup refuses to overwrite, so a backup
 // already at the default path is left for the operator to move aside
