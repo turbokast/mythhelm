@@ -103,6 +103,17 @@ class Examples(unittest.TestCase):
         gate = jobs['ci-ok']
         self.assertIn('    name: Site build', site)
         self.assertIn('    uses: ./.github/workflows/docs.yml', site)
+        # Support the original producer until its separately shipped successor
+        # declares the complete site-selection output and executable guard.
+        site_output = '      site: ${{ steps.detect.outputs.site }}'
+        requirements_lane = site_output in jobs['detect']
+        if requirements_lane:
+            self.assertEqual(1, jobs['detect'].count(site_output))
+            self.assertEqual(['    needs: detect'], [line for line in site if line.startswith('    needs:')])
+            self.assertEqual(["    if: needs.detect.outputs.site == 'true'"],
+                             [line for line in site if line.startswith('    if:')])
+        else:
+            self.assertFalse(any(line.startswith(('    needs:', '    if:')) for line in site))
         self.assertIn('    name: CI OK', gate)
         self.assertIn('    if: always()', gate)
         self.assertFalse(any(line.strip().startswith(('continue-on-error:', 'defaults:')) for line in gate))
@@ -140,10 +151,16 @@ class Examples(unittest.TestCase):
                      str(path), 'exec'), helper.__dict__)
         statuses = ('success', 'failure', 'cancelled', 'skipped')
         platforms = ['ubuntu-latest', 'ubuntu-24.04-arm', 'macos-latest', 'windows-latest', 'windows-11-arm']
-        for mode in ('full', 'docs-linux', 'harness-only'):
+        modes = ('full', 'docs-linux', 'harness-only') + (('requirements-only',) if requirements_lane else ())
+        self.assertEqual(modes, helper.MODES)
+        for mode in modes:
             selected = always | (runtime if mode == 'full' else {'go'} if mode == 'docs-linux' else set())
-            outputs = dict(mode=mode, go='false' if mode == 'harness-only' else 'true',
+            if mode == 'requirements-only':
+                selected = selected - {'site-build'}
+            outputs = dict(mode=mode, go='false' if mode in ('harness-only', 'requirements-only') else 'true',
                            matrix=json.dumps(platforms if mode == 'full' else ['ubuntu-latest'], separators=(',', ':')))
+            if requirements_lane:
+                outputs['site'] = 'false' if mode == 'requirements-only' else 'true'
             baseline = {job: dict(result='success' if job in selected else 'skipped', outputs={})
                         for job in dependencies}
             baseline['detect']['outputs'] = outputs
@@ -168,7 +185,8 @@ class Examples(unittest.TestCase):
                     actual['site-build']['result'] = site_result
                     result = subprocess.run([sys.executable, str(path), 'check'],
                         env=dict(os.environ, CI_NEEDS=json.dumps(actual)), capture_output=True, timeout=5)
-                    self.assertEqual(0 if site_result == 'success' else 1, result.returncode)
+                    wanted = 'success' if 'site-build' in selected else 'skipped'
+                    self.assertEqual(0 if site_result == wanted else 1, result.returncode)
 
     def test_workflow_build_and_gate_contract(self):
         ci = (repository / '.github/workflows/ci.yml').read_text()
